@@ -1,0 +1,638 @@
+/*
+ * The staffing screen (hire, edit, custom command) in the Instrument look: two modules (A position, B console), keys, LEDs.
+ * Built on base.css; the layout is that of docs/design/annunciator/{Hire,Edit,PhoneHire}.dc.html. Every class starts with staff-.
+ * Under 700 px wide the matrix has 3 columns and the big key sticks to the foot of the console module.
+ */
+
+.staff {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 24px 24px;
+}
+
+.staff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 2px 2px 0;
+}
+
+.staff-title {
+  flex: 1 1 280px;
+  font-size: 28px;
+}
+
+/* Focus lands on the title when the page opens, for a screen reader; a ring around the title is noise. */
+.staff-title:focus-visible {
+  outline: none;
+}
+
+.staff-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.staff-lcd {
+  display: inline-flex;
+  align-items: center;
+  min-width: 36px;
+  padding: 5px 9px 4px;
+  justify-content: flex-end;
+}
+
+.staff-lcd .lcd-num {
+  font-size: 19px;
+}
+
+.staff-body {
+  display: flex;
+  flex-wrap: wrap;
+  flex-grow: 1;
+  gap: 14px;
+}
+
+.staff-pick,
+.staff-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+}
+
+.staff-pick {
+  flex: 1.35 1 560px;
+}
+
+.staff-form {
+  flex: 1 1 420px;
+}
+
+.staff-form[data-edit] {
+  max-width: 640px;
+}
+
+/* The browser's grey placeholder is under 4.5:1 on a key. */
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* ---- tile heads: LED, call sign, cell number ---- */
+
+.staff-tile-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.staff-tile-num {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+/* ---- the position matrix ---- */
+
+.staff-matrix-scroll {
+  overflow-x: auto;
+}
+
+.staff-matrix {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 600px;
+  padding: 3px;
+}
+
+.staff .tile.staff-pos {
+  gap: 6px;
+  min-height: 96px;
+}
+
+.staff .tile.staff-pos:disabled {
+  cursor: not-allowed;
+}
+
+/* The summary sits on a light strip, like the two lines of a console in the room. */
+.staff-pos-short {
+  display: block;
+  min-height: 30px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: var(--well);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.staff .tile.staff-pos[data-kind='open'] .staff-pos-short,
+.staff .tile.staff-pos[data-kind='stopped'] .staff-pos-short {
+  padding-left: 0;
+  background: transparent;
+}
+
+.staff-pos-tag {
+  font-size: 9.5px;
+}
+
+.staff-wide-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.staff .tile.staff-wide {
+  flex: 1 1 240px;
+  justify-content: center;
+  gap: 4px;
+  min-height: 64px;
+  padding: 10px 14px;
+  border: 1px dashed var(--edge-2);
+  background: transparent;
+  --tile-sub: var(--muted);
+}
+
+.staff .tile.staff-wide[aria-pressed='false'] {
+  --led: var(--edge);
+}
+
+.staff .tile.staff-wide[aria-pressed='true'] {
+  border-style: solid;
+  border-color: var(--edge);
+  border-bottom-width: 3px;
+  background: var(--key);
+  --tile-sub: var(--text-2);
+}
+
+.staff .tile.staff-wide .tile-sub {
+  font-size: 11px;
+  white-space: normal;
+}
+
+.staff-picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 2px;
+  padding: 12px 14px;
+  --led: var(--work);
+}
+
+.staff-picked-name {
+  font-size: 22px;
+}
+
+.staff-picked-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.staff-picked-text {
+  flex: 1 1 100%;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ---- notices, the console form ---- */
+
+.staff-notice {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--well);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.staff-notice[data-lit] {
+  border-color: var(--work);
+  background: var(--key);
+  color: var(--text);
+  --led: var(--work);
+}
+
+.staff-notice .led {
+  margin-top: 5px;
+}
+
+.staff-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.staff .field[data-invalid] > label {
+  color: var(--nogo-text);
+}
+
+.staff-block {
+  display: block;
+  margin-top: 4px;
+}
+
+/* A select matches :read-only, which greys a read-only name: the engine select keeps the look of a field you can change. */
+.staff .input.staff-engine {
+  background: var(--key);
+  color: var(--text);
+}
+
+.staff-role {
+  height: 150px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+}
+
+/* ---- payload ---- */
+
+.staff-fold > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+
+.staff-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 4px;
+}
+
+.staff-servers {
+  height: 180px;
+}
+
+.staff-skills {
+  height: 90px;
+}
+
+/* ---- clean room ---- */
+
+.staff-clean {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.staff-clean .staff-check input {
+  accent-color: var(--work);
+}
+
+.staff-clean .hint {
+  margin: 0;
+}
+
+/* ---- permissions ---- */
+
+.staff-modes {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.staff-modes > legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.staff-mode-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
+  gap: 8px;
+}
+
+.staff .tile.staff-mode {
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 76px;
+}
+
+.staff .tile.staff-mode[aria-pressed='false'] {
+  --led: var(--edge);
+}
+
+.staff .tile.staff-mode[aria-pressed='true'] {
+  --led: var(--work);
+}
+
+.staff-mode-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.staff .tile.staff-mode[data-danger] {
+  border-color: var(--nogo);
+  color: var(--nogo-text);
+  --tile-sub: var(--nogo-text);
+}
+
+.staff .tile.staff-mode[data-danger][aria-pressed='true'] {
+  background: var(--nogo-tint);
+  --led: var(--nogo);
+}
+
+/* ---- the bypass confirmation: a raspberry tint, a plain question ---- */
+
+.staff-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.staff-confirm h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--nogo-text);
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.staff-confirm p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.staff-confirm .error {
+  align-self: stretch;
+  background: var(--key);
+}
+
+.staff-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.staff-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--nogo);
+}
+
+.staff-check label {
+  /* The label fills the 44 px row, so the whole row is the touch target, not only the 22 px box. */
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ---- the foot: the one action of the screen ---- */
+
+.staff-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.staff .btn.staff-go {
+  width: 100%;
+  padding: 8px 16px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+/* Bypass is about to run without asking: the key turns raspberry (tint, edge and text), still a key. */
+.staff .btn.staff-go[data-tone='nogo']:not([aria-disabled='true']) {
+  border-color: var(--nogo);
+  background: var(--nogo-tint);
+  color: var(--nogo-text);
+}
+
+.staff-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.staff-actions .btn {
+  flex: 1 1 0;
+}
+
+.staff-actions .btn:last-child:not(:first-child) {
+  flex-grow: 1.6;
+}
+
+/* ---- the room is full ---- */
+
+.staff-full {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+  padding: 16px 18px;
+  border-style: dashed;
+  border-color: var(--edge-2);
+  background: transparent;
+  color: var(--text-2);
+  --led: var(--nogo);
+}
+
+.staff-full h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 22px;
+}
+
+.staff-full p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---- phone ---- */
+
+@media (max-width: 699px) {
+  .staff {
+    gap: 10px;
+    padding: 10px 12px 12px;
+  }
+
+  .staff-head {
+    flex-wrap: nowrap;
+    gap: 10px;
+    padding: 0 0 0 2px;
+  }
+
+  .staff-title {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 22px;
+  }
+
+  .staff-count {
+    display: none;
+  }
+
+  .staff-body {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .staff-pick,
+  .staff-form {
+    flex: none;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .staff-matrix {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    min-width: 0;
+    padding: 3px 3px 0;
+  }
+
+  .staff .tile.staff-pos {
+    gap: 4px;
+    min-height: 56px;
+    padding: 6px 8px;
+  }
+
+  .staff .tile-legend {
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+  }
+
+  .staff-pos-short {
+    min-height: 0;
+    padding: 2px 5px;
+    overflow: hidden;
+    font-size: 9.5px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* The tag stays for a screen reader; a staffed seat is a solid tile, an open one a dashed tile. */
+  .staff-pos-tag,
+  .staff-mode-hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .staff-wide-row {
+    gap: 6px;
+  }
+
+  .staff .tile.staff-wide {
+    flex-basis: 150px;
+    min-height: 56px;
+    padding: 6px 8px;
+  }
+
+  .staff .tile.staff-wide .tile-legend {
+    font-size: 10px;
+  }
+
+  .staff .tile.staff-wide .tile-sub {
+    overflow: hidden;
+    font-size: 9.5px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .staff-picked {
+    gap: 2px 8px;
+    margin-top: 0;
+    padding: 10px 12px;
+  }
+
+  .staff-picked-name {
+    font-size: 20px;
+  }
+
+  .staff-picked-title {
+    display: none;
+  }
+
+  .staff-picked-text {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .staff-fields {
+    gap: 10px;
+  }
+
+  .staff-role {
+    height: 96px;
+  }
+
+  .staff-mode-tiles {
+    display: flex;
+    gap: 5px;
+  }
+
+  .staff .tile.staff-mode {
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    padding: 0 6px;
+  }
+
+  .staff-mode .tile-legend {
+    font-size: 9.5px;
+    letter-spacing: 0.04em;
+  }
+
+  .staff .tile.staff-mode:nth-child(2) {
+    flex-grow: 1.5;
+  }
+
+  .staff-confirm {
+    padding: 12px;
+  }
+
+  /* The big key stays in view at the foot of the console module. */
+  .staff-foot {
+    position: sticky;
+    bottom: 0;
+    margin: 0 -12px -12px;
+    padding: 8px 12px 12px;
+    border-top: 1px solid var(--edge);
+    border-radius: 0 0 var(--radius-module) var(--radius-module);
+    background: var(--panel);
+  }
+}

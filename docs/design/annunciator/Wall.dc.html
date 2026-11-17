@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo: the wall in every T-minus state</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@700;900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Michroma&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F3F1EA}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="width: 1440px; height: 940px; box-sizing: border-box; padding: 40px; background: #060606; color: #F3F1EA; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; display: flex; flex-direction: column; gap: 12px">
+
+<section aria-label="Standby" style="flex: 1 1 0; display: flex; align-items: center; gap: 32px; padding: 0 32px; border: 1.5px solid #2B2C30">
+<span style="flex: none; width: 500px; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 150px; line-height: 0.8; color: #6E6F74">STANDBY</span>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 17px; font-weight: 500">No poll. 5 consoles can be asked.</span>
+<div style="display: flex; gap: 6px">
+<sc-for list="{{standby}}" as="v" hint-placeholder-count="5">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.08em; padding: 6px 8px 5px; background: {{v.bg}}; color: {{v.fg}}; border: 1.5px solid {{v.bd}}">{{v.text}}</span>
+</sc-for>
+</div>
+</div>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606">POLL THE ROOM</button>
+</section>
+
+<section aria-label="Polling" style="flex: 1 1 0; display: flex; align-items: center; gap: 32px; padding: 0 32px; border: 1.5px solid #F3F1EA">
+<span style="flex: none; width: 500px; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 150px; line-height: 0.8">POLLING</span>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 17px; font-weight: 500">3 of 5 in. Waiting for CONTROL, SURGEON.</span>
+<div style="display: flex; gap: 6px">
+<sc-for list="{{polling}}" as="v" hint-placeholder-count="5">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.08em; padding: 6px 8px 5px; background: {{v.bg}}; color: {{v.fg}}; border: 1.5px solid {{v.bd}}">{{v.text}}</span>
+</sc-for>
+</div>
+</div>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #F3F1EA; border-radius: 0; background: transparent; color: #F3F1EA">HOLD</button>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #FF4B1F; border-radius: 0; background: transparent; color: #FF4B1F">ABORT</button>
+</section>
+
+<section aria-label="Hold by the Director" style="flex: 1 1 0; display: flex; align-items: center; gap: 32px; padding: 0 32px; background: #F3F1EA; color: #060606">
+<span style="flex: none; width: 500px; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 150px; line-height: 0.8">HOLD</span>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 17px; font-weight: 600">Held by the Director. Votes still count: 4 of 5 in.</span>
+<div style="display: flex; gap: 6px">
+<sc-for list="{{held}}" as="v" hint-placeholder-count="5">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.08em; padding: 6px 8px 5px; background: {{v.bg}}; color: {{v.fg}}; border: 1.5px solid {{v.bd}}">{{v.text}}</span>
+</sc-for>
+</div>
+</div>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #060606; border-radius: 0; background: transparent; color: #060606">ABORT</button>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #060606; border-radius: 0; background: #060606; color: #F3F1EA">CLEAR</button>
+</section>
+
+<section aria-label="No-go" style="flex: 1 1 0; display: flex; align-items: center; gap: 32px; padding: 0 32px; background: #FF4B1F; color: #060606">
+<span style="flex: none; width: 500px; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 150px; line-height: 0.8">NO-GO</span>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 19px; font-weight: 600; line-height: 1.25">RSO: the export route has no auth check</span>
+<div style="display: flex; gap: 6px">
+<sc-for list="{{nogo}}" as="v" hint-placeholder-count="5">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.08em; padding: 6px 8px 5px; background: {{v.bg}}; color: {{v.fg}}; border: 1.5px solid {{v.bd}}">{{v.text}}</span>
+</sc-for>
+</div>
+</div>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #060606; border-radius: 0; background: transparent; color: #060606">CLEAR</button>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #060606; border-radius: 0; background: #060606; color: #F3F1EA">ABORT</button>
+</section>
+
+<section aria-label="Go" style="flex: 1 1 0; display: flex; align-items: center; gap: 32px; padding: 0 32px; background: #38E08C; color: #060606">
+<span style="flex: none; width: 500px; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 150px; line-height: 0.8">GO</span>
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 19px; font-weight: 600; line-height: 1.25">5 of 5. FLIGHT has been told to proceed.</span>
+<div style="display: flex; gap: 6px">
+<sc-for list="{{go}}" as="v" hint-placeholder-count="5">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.08em; padding: 6px 8px 5px; background: {{v.bg}}; color: {{v.fg}}; border: 1.5px solid {{v.bd}}">{{v.text}}</span>
+</sc-for>
+</div>
+</div>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 12px; letter-spacing: 0.12em; height: 56px; padding: 0 22px; border: 2px solid #060606; border-radius: 0; background: #060606; color: #F3F1EA">CLEAR</button>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":940}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var K = '#060606', W = '#F3F1EA', G = '#38E08C', M = '#A3A19A';
+    var CALLS = ['FAO', 'GUIDO', 'CONTROL', 'SURGEON', 'RSO'];
+    // onDark: the slab behind the chips is black; otherwise it is a lit colour and the chips are black.
+    function chip(call, verdict, onDark) {
+      if (verdict === 'GO') return onDark ? { text: call + ' GO', bg: G, fg: K, bd: G } : { text: call + ' GO', bg: K, fg: G, bd: K };
+      if (verdict === 'NO-GO') return { text: call + ' NO-GO', bg: W, fg: K, bd: K };
+      return onDark ? { text: call + ' ' + verdict, bg: 'transparent', fg: M, bd: '#55565B' } : { text: call + ' ' + verdict, bg: 'transparent', fg: K, bd: K };
+    }
+    function row(verdicts, onDark) { return CALLS.map(function (c, i) { return chip(c, verdicts[i], onDark); }); }
+    return {
+      standby: row(['READY', 'READY', 'READY', 'READY', 'READY'], true),
+      polling: row(['GO', 'GO', 'WAIT', 'WAIT', 'GO'], true),
+      held: row(['GO', 'GO', 'GO', 'WAIT', 'GO'], false),
+      nogo: row(['GO', 'GO', 'GO', 'GO', 'NO-GO'], false),
+      go: row(['GO', 'GO', 'GO', 'GO', 'GO'], false)
+    };
+  }
+}
+</script>
+</body>
+</html>

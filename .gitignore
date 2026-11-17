@@ -1,0 +1,12 @@
+node_modules
+dist
+.DS_Store
+scratch
+*.tgz
+.env
+.env.*
+.gonogo
+*.log
+test/fixtures/tmp
+.vitepress/cache
+.vitepress/dist

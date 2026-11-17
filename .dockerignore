@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+*.tgz
+.env
+.env.*
+.gonogo
+docs
+# the app imports its logo from here
+!docs/brand
+test
+scratch
+.DS_Store
+.vitepress
+.github

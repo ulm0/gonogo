@@ -1,0 +1,1754 @@
+/*
+ * The shell: top bar, wall, room matrix, console panel, system states and the phone layout.
+ * Built on base.css (the Instrument tokens and primitives); sizes and colours come from
+ * docs/design/instrument/{InstRoom,InstPhone,InstGo}.dc.html. Views without a mockup take the same language.
+ */
+
+:root {
+  /* Only what the mockups use and base.css does not name. */
+  --track: #d6d3cb; /* an empty ring, a vote that has not come */
+  --seq-base: #e2dfd7; /* the empty line of a sequence track */
+  --lcd-warm: #f1d79a; /* LCD text on a console that needs the Director */
+  --go-lit: #7cc493; /* the LED of the GO key (on the dark key) */
+  --you-key: #b8933f; /* the edge of a key that sits on the saffron tint */
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.link {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The LED of a console takes the colour of its kind; a tile gets it from the kind of the tile too. */
+.led[data-kind='working'],
+.led[data-kind='starting'] {
+  --led: var(--work);
+}
+
+.led[data-kind='needs'] {
+  --led: var(--you);
+}
+
+.led[data-kind='idle'] {
+  --led: var(--go);
+}
+
+.led[data-kind='stopped'] {
+  --led: var(--edge-2);
+}
+
+.led[data-kind='open'] {
+  --led: transparent;
+}
+
+/* On a tint the label is the darker grey: --muted is for the page and the panel. */
+.flood .label {
+  color: var(--text-2);
+}
+
+/* ---- top bar ---- */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-height: 64px;
+  padding: 20px 24px 0;
+}
+
+.mark {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+}
+
+.mark {
+  align-items: center;
+}
+
+/* The logo: the two answer keys and the dot-matrix word, drawn in docs/brand/lockup.svg. */
+.mark-name {
+  display: block;
+  height: 26px;
+  width: auto;
+}
+
+/* The logo is a picture with colours of its own: on a dark livery it is turned (light and dark swap, the hues stay) so that the word still reads. */
+:root[data-scheme='dark'] .mark-name {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Seven keys (Livery is the seventh) and the long name of the unit do not fit on one line below 1400 px: the name gives way, GN-1 stays. */
+@media (min-width: 700px) and (max-width: 1399px) {
+  .mark-unit-long {
+    display: none;
+  }
+}
+
+/* It starts small and grows into the room that is left, up to 24 characters: a top bar with seven keys must stay on one line at 1280 px (its gap is 10 px for that). */
+.topbar-dir {
+  flex: 1 1 6ch;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-grow {
+  flex-grow: 1;
+}
+
+.lamp {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+}
+
+.lamp[data-link='up'] .led {
+  --led: var(--go);
+}
+
+.lamp[data-link='wait'] .led {
+  --led: var(--you);
+}
+
+.lamp[data-link='down'] .led {
+  --led: var(--nogo);
+}
+
+.topbar .chip {
+  margin-left: 2px;
+}
+
+.gone-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 12px 24px 0;
+  padding: 6px 14px;
+  color: var(--you-ink);
+  font-size: 12px;
+}
+
+/* ---- the wall: five modules ---- */
+
+.wall {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.15fr) minmax(0, 1.1fr) minmax(0, 0.8fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 16px 24px 0;
+}
+
+.wall-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.wall-block > .label,
+.wall-head .label {
+  margin: 0;
+}
+
+/* The mission: the brief and the clock on one LCD. The clock is sized by the width of the screen it is on. */
+.wall-lcd {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px 12px;
+  container-type: inline-size;
+}
+
+.wall-mission-text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--lcd-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.wall-clock {
+  color: var(--lcd-text);
+  font-size: min(64px, 19cqw);
+  line-height: 0.95;
+  white-space: nowrap;
+}
+
+.wall-clock[data-ghost='true'] {
+  color: var(--lcd-dim);
+}
+
+.wall-clock-label {
+  font-size: 10.5px;
+}
+
+.wall-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.wall-head .label {
+  margin-right: auto;
+}
+
+.seq-key {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.seq-swatch {
+  width: 10px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--work);
+}
+
+.seq-swatch[data-kind='needs'] {
+  height: 8px;
+  background: var(--you);
+}
+
+.seq-tracks {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  justify-content: center;
+  gap: 6px;
+}
+
+.seq-tracks[data-dense='true'] {
+  gap: 2px;
+}
+
+.seq-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.seq-call {
+  flex: none;
+  width: 58px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The track is as tall as a needs-you span (8 px); a working span and the empty line are the 4 px in its middle. */
+.seq-track {
+  position: relative;
+  flex: 1 1 0;
+  height: 8px;
+}
+
+.seq-track::before {
+  position: absolute;
+  inset: 2px 0;
+  border-radius: 2px;
+  background: var(--seq-base);
+  content: '';
+}
+
+.seq-span {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  background: var(--work);
+}
+
+.seq-span[data-kind='custom'] {
+  background: var(--muted);
+}
+
+.seq-span[data-kind='needs'] {
+  top: 0;
+  bottom: 0;
+  background: var(--you);
+}
+
+.seq-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 66px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+/* T-minus: the word, the keys of the votes, the note, the buttons. A finished poll tints this module only. */
+.wall-word {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+
+.wall-word .disp {
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.wall-word .disp[data-ghost='true'] {
+  color: var(--muted);
+}
+
+.wall-count {
+  font-size: 22px;
+}
+
+.wall-note {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.vote-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vote-chip {
+  display: flex;
+  flex: 1 1 52px;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 84px;
+  padding: 8px 2px 7px;
+  border: 1px solid var(--edge);
+  border-bottom-width: 3px;
+  border-radius: var(--radius-key);
+  background: var(--key);
+}
+
+.vote-chip .led {
+  width: 9px;
+  height: 9px;
+  --led: var(--track);
+}
+
+.vote-chip[data-verdict='GO'] .led {
+  --led: var(--go);
+}
+
+.vote-chip[data-verdict='NO-GO'] .led {
+  --led: var(--nogo);
+}
+
+.vote-call {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+}
+
+.vote-verdict {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+.wall-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.wall-actions .btn {
+  flex: 1 1 0;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* Max Q: a knob. The ring is --work as far as the agents working are of the limit (270 degrees = all of them). */
+.wall-maxq {
+  align-items: center;
+  gap: 8px;
+}
+
+.wall-maxq > .label {
+  align-self: flex-start;
+}
+
+.knob {
+  --fill: 0deg;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: conic-gradient(from 225deg, var(--work) 0deg var(--fill), var(--track) var(--fill) 270deg, transparent 270deg 360deg);
+}
+
+.wall-limit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin: 0;
+  border: 1px solid var(--edge);
+  border-radius: 50%;
+  background: var(--key);
+  box-shadow: 0 3px 0 var(--edge);
+  font-size: 30px;
+}
+
+.wall-maxq-note {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.stepper-off {
+  padding: 0 12px;
+  font-size: 10.5px;
+}
+
+/* Propellant: window keys, the count on an LCD, a bar to the limit, and the limit's own field. */
+.fuel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  --fuel: var(--go);
+}
+
+.fuel[data-level='warn'] {
+  --fuel: var(--you);
+}
+
+.fuel[data-level='over'] {
+  --fuel: var(--nogo);
+}
+
+.fuel-windows {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.fuel-window {
+  min-height: 32px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.fuel-window[aria-pressed='true'] {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.fuel-lcd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.fuel-lcd .led {
+  align-self: center;
+}
+
+.fuel-used {
+  font-size: 26px;
+}
+
+.fuel-limit {
+  overflow: hidden;
+  color: var(--lcd-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fuel-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.fuel-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--fuel);
+}
+
+.fuel-form {
+  display: flex;
+  gap: 6px;
+}
+
+.fuel-input {
+  flex: 1 1 auto;
+  height: 44px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.fuel-form .btn {
+  padding: 0 10px;
+}
+
+.panel-fuel > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+
+/* ---- the room ---- */
+
+.room {
+  display: flex;
+  flex-wrap: wrap;
+  flex-grow: 1;
+  align-items: stretch;
+  gap: 16px;
+  padding: 16px 24px 24px;
+}
+
+.room-main {
+  display: flex;
+  flex: 999 1 640px;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.operations {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.operations-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.operations-head .label {
+  margin: 0;
+}
+
+.matrix {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 2px 2px 4px;
+}
+
+/* A console: LED, call sign and cell number; a small LCD with two lines; the state. */
+.room-tile {
+  min-height: 96px;
+}
+
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tile-num {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+.tile-lcd {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 39px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: var(--well);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.tile-lcd .tile-sub {
+  color: inherit;
+}
+
+.room-tile[data-kind='working'] .tile-lcd {
+  background: var(--lcd);
+  color: var(--lcd-text);
+}
+
+.room-tile[data-kind='needs'] .tile-lcd {
+  background: var(--lcd);
+  color: var(--lcd-warm);
+}
+
+.room-tile[data-kind='stopped'] .tile-lcd {
+  background: var(--body);
+  color: var(--muted);
+}
+
+.room-tile[data-kind='open'] .tile-lcd {
+  background: transparent;
+  color: var(--muted);
+}
+
+.tile-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.room-tile .tile-state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-state-vote {
+  display: none;
+}
+
+.tile-chip {
+  padding: 1px 6px;
+  font-size: 8.5px;
+}
+
+/* ---- your console: what needs the Director ---- */
+
+.your-console,
+.needs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* On a wide page the tints dock at the foot of the viewport while the matrix is on screen. */
+.needs-dock {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+}
+
+.need {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 14px;
+}
+
+.need-led {
+  width: 10px;
+  height: 10px;
+}
+
+.need-text {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.need-title,
+.foot-ask .disp {
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.need-detail {
+  color: var(--you-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.need-error {
+  flex: 1 1 100%;
+}
+
+.go-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.flood[data-tone='amber'] .btn:not([data-kind='primary']) {
+  border-color: var(--you-key);
+}
+
+.need .btn[data-size='big'],
+.foot-ask .btn {
+  min-height: 48px;
+  padding: 0 20px;
+  border-bottom-width: 3px;
+  border-radius: var(--radius-key);
+  font-size: 12px;
+}
+
+.need .btn[data-kind='primary'][data-size='big'] {
+  padding: 0 30px;
+}
+
+/* ---- the selected console ---- */
+
+.panel {
+  display: flex;
+  flex: 1 1 440px;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  --panel-pad: 0px; /* the panel pads its own sides: the traffic strip (loop.css) must not add its 14 px again */
+}
+
+.panel-empty {
+  min-height: 240px;
+}
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-id {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.panel-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.panel-title .led {
+  width: 10px;
+  height: 10px;
+}
+
+.panel-legend {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.panel-sub {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.panel-actions .btn {
+  padding: 0 12px;
+  font-size: 10.5px;
+}
+
+/* A console that needs the Director: its header band takes the saffron tint, edge to edge. */
+.panel[data-mode='ask'],
+.panel[data-mode='needs'] {
+  border-color: var(--you-edge);
+}
+
+.panel[data-mode='ask'] .panel-head,
+.panel[data-mode='needs'] .panel-head {
+  margin: -14px -14px 0;
+  padding: 14px;
+  border-bottom: 1px solid var(--you-edge);
+  border-radius: 11px 11px 0 0;
+  background: var(--you-tint);
+}
+
+.panel[data-mode='ask'] .panel-sub,
+.panel[data-mode='needs'] .panel-sub {
+  color: var(--you-ink);
+}
+
+.panel[data-mode='stopped'] {
+  background: var(--well);
+}
+
+.panel[data-mode='stopped'] .panel-legend {
+  color: var(--muted);
+}
+
+.panel[data-mode='starting'] {
+  border-style: dashed;
+}
+
+.panel-details {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.panel-clean {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.panel-clean code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.pane-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pane-notice {
+  min-width: 0;
+  color: var(--you-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pane-notice:empty {
+  display: none;
+}
+
+/* The terminal is an LCD: dark olive, sunk. The shadow and the focus ring are overlays, because xterm paints over the host. */
+.term-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 360px;
+  overflow: hidden;
+  border-radius: var(--radius-key);
+  background: var(--lcd);
+}
+
+.term-wrap::before {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  border-radius: inherit;
+  box-shadow: inset 0 2px 8px rgb(0 0 0 / 35%);
+  content: '';
+  pointer-events: none;
+}
+
+/* The host has no padding and no border: the fit addon measures it, and the padding is on .xterm, which it also subtracts. */
+.term-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.term-host[data-scroll='true'] {
+  overflow: auto;
+}
+
+.term-host[data-dim='true'] {
+  opacity: 0.6;
+}
+
+.term-host .xterm {
+  padding: 12px 14px 8px;
+}
+
+/* xterm.css paints the viewport black, and the viewport also covers the padding above. */
+.term-host .xterm .xterm-viewport {
+  background-color: var(--lcd);
+}
+
+/* An outline on the host is painted under xterm's positioned layers: the ring is an overlay of the wrapper. It stays for as long as the terminal has the keyboard. */
+.term-wrap:has(.term-host:focus-within)::after {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border: 2px solid var(--lcd-text);
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+}
+
+.pane-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--lcd-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.pane-hint {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.foot-exit {
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.foot-command {
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.foot-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.foot-ask .disp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.foot-ask .go-buttons .btn {
+  flex: 1 1 0;
+}
+
+.foot-ask .btn[data-kind='primary'] {
+  flex: 1.4 1 0;
+}
+
+.remove {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.remove .disp {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.remove p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.remove-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.remove-buttons .btn {
+  flex: 1 1 0;
+  font-size: 12px;
+}
+
+.remove-buttons .btn:first-child {
+  flex: 1.4 1 0;
+}
+
+/* ---- system states ---- */
+
+.system {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 24px;
+}
+
+.system-slab {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+  padding: 26px 28px;
+}
+
+.system-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-word {
+  font-size: clamp(40px, 8vw, 64px);
+  line-height: 1;
+}
+
+.system-word[data-ghost='true'] {
+  color: var(--muted);
+}
+
+.system-lead {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.system-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.system-address {
+  padding: 12px 14px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.system-steps {
+  display: flex;
+  gap: 8px;
+}
+
+.system-steps span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--work);
+  animation: ins-step 1.5s ease-in-out infinite;
+}
+
+.system-steps span:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.system-steps span:nth-child(3) {
+  animation-delay: 1s;
+}
+
+/* A middle-sized window: the wall is two rows of two modules and the room starts higher. */
+@media (min-width: 700px) and (max-width: 999px) {
+  .topbar {
+    padding: 16px 20px 0;
+  }
+
+  .wall {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 12px 20px 0;
+  }
+
+  .wall-fuel {
+    grid-column: 1 / -1;
+  }
+
+  .room {
+    padding: 12px 20px 20px;
+  }
+
+  .gone-strip {
+    margin: 12px 20px 0;
+  }
+}
+
+/* ---- phone: under 700 px ---- */
+
+.topbar-plus {
+  flex: none; /* two of them in the bar: they must not shrink under the 44 px of a touch target */
+  width: 44px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.phone-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+  padding: 8px 12px 12px;
+  background: var(--body);
+}
+
+.phone-bar .btn {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 48px;
+  padding: 0 2px; /* seven keys must fit in 390 px at 44 px or more each */
+  border-radius: 9px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+/* The counts of Down and Plan sit on the key's corner, so a long count never squeezes the other keys under 44 px. */
+.phone-bar .chip {
+  position: absolute;
+  top: -7px;
+  right: -3px;
+  margin: 0;
+  padding: 1px 6px;
+}
+
+.phone-console {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.phone-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 2px 14px 2px 6px;
+}
+
+.phone-back {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.phone-legend {
+  flex-grow: 1;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.phone-sub {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 8px;
+}
+
+.phone-sub .panel-sub {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-sub .btn {
+  padding: 0 12px;
+  font-size: 10.5px;
+}
+
+.phone-console .panel-actions {
+  flex: none;
+  padding: 0 14px 8px;
+}
+
+.phone-console .panel-clean {
+  flex: none;
+  padding: 0 14px 8px;
+}
+
+.phone-console .pane {
+  flex: 1 1 0;
+  margin: 0 12px 8px;
+}
+
+.phone-console .term-wrap {
+  min-height: 120px;
+}
+
+.phone-console .pane-hint {
+  display: none;
+}
+
+.phone-console .panel-error,
+.phone-console > .error {
+  margin: 0 12px 8px;
+}
+
+.phone-console .remove {
+  flex: none;
+  margin: 0 12px 8px;
+  padding: 12px 14px;
+}
+
+.phone-console .foot {
+  flex: none;
+  padding: 8px 12px 0;
+}
+
+.phone-traffic {
+  flex: none;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.phone-keys {
+  display: flex;
+  flex: none;
+  gap: 5px;
+  padding: 8px 12px 0;
+}
+
+.phone-key {
+  flex: 1 1 0;
+  min-height: 46px;
+  padding: 0;
+  font-size: 15px;
+}
+
+.phone-key[data-kind='primary'] {
+  flex: 1.4 1 0;
+}
+
+.phone-type {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 8px 12px 14px;
+}
+
+.phone-type .input {
+  flex: 1 1 0;
+  height: 46px;
+  font-size: 16px;
+}
+
+.phone-type .btn {
+  height: 46px;
+  padding: 0 14px;
+  font-size: 10.5px;
+}
+
+/* The go screen: one question, two big keys. */
+.phone-go {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 0 14px 16px;
+}
+
+.phone-go-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 52px;
+  margin: 0 -6px;
+}
+
+.phone-go-head .phone-back {
+  border: 0;
+  background: transparent;
+}
+
+.phone-go-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+}
+
+.phone-go-call {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.phone-go-call .led {
+  width: 12px;
+  height: 12px;
+  --led: var(--you);
+}
+
+.phone-go-call .led[data-on='true'] {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--led) 25%, transparent);
+}
+
+.phone-go-title {
+  font-size: 34px;
+  line-height: 1.05;
+}
+
+.phone-go-what {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.phone-go-tool {
+  color: var(--lcd-dim);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phone-go-detail {
+  color: var(--lcd-text);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.phone-go-dir {
+  color: var(--lcd-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.phone-go-held {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.phone-go-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.phone-go-buttons .btn {
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 10px;
+  height: 120px;
+  border-bottom-width: 5px;
+  border-radius: 16px;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+
+.phone-go-buttons .phone-go-yes {
+  flex-grow: 1.4;
+}
+
+.phone-go-buttons .led {
+  width: 12px;
+  height: 12px;
+}
+
+.phone-go-no .led {
+  --led: var(--nogo);
+}
+
+.phone-go-yes .led {
+  --led: var(--go-lit);
+}
+
+.phone-go-link {
+  align-self: flex-end;
+}
+
+@media (max-width: 699px) {
+  /* The height of .phone-bar (8 + 48 + 12): the brief box of the loop (loop.css) sticks above it. */
+  .app {
+    --bottom-bar: 68px;
+  }
+
+  .topbar {
+    flex-wrap: nowrap;
+    gap: 10px;
+    min-height: 52px;
+    padding: 4px 8px 4px 14px;
+  }
+
+  .mark-name {
+    height: 22px;
+  }
+
+  .mark-unit {
+    font-size: 9.5px;
+  }
+
+  .mark-unit-long,
+  .label-letter {
+    display: none;
+  }
+
+  .gone-strip {
+    margin: 6px 12px 0;
+  }
+
+  /* One module for the whole wall; the sequence is a desktop block. */
+  .wall {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 12px;
+    padding: 12px;
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-module);
+    background: var(--panel);
+  }
+
+  .wall-sequence,
+  .wall-fuel {
+    display: none;
+  }
+
+  .wall-block.module:not(.flood) {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .wall-block {
+    gap: 8px;
+  }
+
+  .wall-block.flood {
+    padding: 10px;
+  }
+
+  .wall-mission > .label,
+  .wall-clock-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .wall-lcd {
+    gap: 2px;
+    padding: 10px 12px;
+  }
+
+  .wall-mission-text {
+    font-size: 10.5px;
+    -webkit-line-clamp: 1;
+  }
+
+  .wall-clock {
+    font-size: min(40px, 19cqw);
+  }
+
+  /* T-minus on a phone: label, word, the dots of the votes and the buttons on one line (the buttons wrap when they must), the note under them. */
+  .wall-tminus {
+    flex-flow: row wrap;
+    align-items: center;
+    gap: 6px 8px;
+  }
+
+  .wall-tminus .wall-note,
+  .wall-tminus .error {
+    flex: 1 1 100%;
+    order: 5;
+    -webkit-line-clamp: 2;
+  }
+
+  .wall-tminus > .label {
+    font-size: 10px;
+  }
+
+  .wall-word {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .wall-word .disp {
+    font-size: 16px;
+  }
+
+  .wall-count {
+    font-size: 18px;
+  }
+
+  .vote-chips {
+    gap: 4px;
+  }
+
+  .vote-chip {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .vote-call,
+  .vote-verdict {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .wall-actions {
+    margin: 0 0 0 auto;
+  }
+
+  .wall-actions .btn {
+    flex: none;
+    padding: 0 12px;
+    font-size: 10.5px;
+  }
+
+  /* Max Q on a phone: a small dial, the note and the keys. */
+  .wall-maxq {
+    flex-flow: row wrap;
+    gap: 6px 10px;
+  }
+
+  .wall-maxq > .label {
+    align-self: center;
+    font-size: 10px;
+  }
+
+  .knob {
+    width: 40px;
+    height: 40px;
+  }
+
+  .wall-limit {
+    width: 30px;
+    height: 30px;
+    box-shadow: 0 2px 0 var(--edge);
+    font-size: 12px;
+  }
+
+  .wall-maxq-note {
+    flex: 1 1 60px;
+    min-width: 0;
+    font-size: 9.5px;
+    text-align: left;
+    -webkit-line-clamp: 2;
+  }
+
+  .stepper {
+    margin: 0 0 0 auto;
+  }
+
+  /* nowrap: a wrapping column sizes its one line by the widest child, which pushed the page past the screen. */
+  .room-phone {
+    display: flex;
+    flex: 1 1 auto;
+    flex-flow: column nowrap;
+    gap: 0;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .room-phone > * {
+    min-width: 0;
+  }
+
+  .needs {
+    gap: 8px;
+    margin: 10px 12px 0;
+  }
+
+  .need {
+    flex-wrap: nowrap;
+    padding: 8px 12px;
+  }
+
+  .need-text {
+    flex: 1 1 0;
+  }
+
+  .need-title {
+    font-size: 14px;
+  }
+
+  .need-detail {
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .need .btn {
+    flex: none;
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 11px;
+  }
+
+  .operations {
+    gap: 0;
+    padding: 12px 12px 8px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .operations-head {
+    display: none;
+  }
+
+  .matrix {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 2px 0;
+  }
+
+  .room-tile {
+    min-height: 0;
+    height: 64px;
+    padding: 7px 8px 6px;
+    border-radius: 9px;
+  }
+
+  .tile-head {
+    gap: 6px;
+  }
+
+  .tile-num,
+  .tile-right {
+    display: none;
+  }
+
+  .room-tile .tile-legend {
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+  }
+
+  /* The two-line screen is one plain line here. */
+  .room-tile[data-kind] .tile-lcd {
+    min-height: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 9.5px;
+    line-height: 1.4;
+  }
+
+  .tile-lcd .tile-sub:nth-child(2) {
+    display: none;
+  }
+
+  .tile-foot {
+    justify-content: flex-start;
+    gap: 4px;
+  }
+
+  .tile-state-vote {
+    display: inline;
+  }
+
+  .room-tile .tile-state {
+    font-size: 9px;
+  }
+
+  .system {
+    padding: 14px;
+  }
+
+  .system-slab {
+    padding: 20px 18px;
+  }
+}

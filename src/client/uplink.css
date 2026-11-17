@@ -1,0 +1,160 @@
+/*
+ * Uplink: the module under the schedules of Launch Window, in the Instrument look. It reuses the form, the list and the keys of
+ * launch.css (win-); only what is new is up-: the section, the row (an address instead of a next fire), the log of deliveries
+ * and the panel that shows a secret once. Under 700 px wide a row stacks; every key, the switch and the summary are 44 px tall.
+ */
+
+.up {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.up-title {
+  font-size: 22px;
+}
+
+/* A read-only field is greyed by base.css; an address or a secret is what you came for, so it keeps full ink. */
+.input.up-value:read-only {
+  background: var(--key);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.up-secret {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+  padding: 12px 14px;
+}
+
+.up-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.up-notice:empty {
+  display: none;
+}
+
+/* ---- the list ---- */
+
+.up-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'main'
+    'url'
+    'last'
+    'log'
+    'buttons'
+    'confirm'
+    'error';
+  align-items: start;
+  gap: 8px 18px;
+  padding: 14px 0;
+}
+
+.up-row + .up-row {
+  border-top: 1px solid var(--edge);
+}
+
+.up-row[data-off] .win-name {
+  color: var(--text-2);
+}
+
+.up-url {
+  grid-area: url;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.up-log {
+  grid-area: log;
+  min-width: 0;
+}
+
+.up-log summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  list-style: none;
+  cursor: pointer;
+}
+
+/* Safari keeps its own marker on a flex summary. */
+.up-log summary::-webkit-details-marker {
+  display: none;
+}
+
+/* No native marker (the summary is a flex box): a plus and a minus say that it opens. The empty alternative keeps them out of the reading order. */
+.up-log summary::before {
+  content: '+' / '';
+  width: 18px;
+}
+
+.up-log[open] summary::before {
+  content: '\2212' / '';
+}
+
+.up-deliveries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+
+.up-deliveries li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 12.5px;
+}
+
+.up-at {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.up-note {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 700px) {
+  .up-row {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.7fr) auto;
+    grid-template-areas:
+      'main url buttons'
+      'last last buttons'
+      'log log log'
+      'confirm confirm confirm'
+      'error error error';
+  }
+
+  .up-row .win-buttons {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 699px) {
+  .up-secret {
+    max-width: none;
+  }
+}

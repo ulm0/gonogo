@@ -1,0 +1,238 @@
+/*
+ * Mission Log, the memory every agent shares, in the Instrument look. The page head and the empty line are those of the comm
+ * loop (loop.css); everything else is log-. The list of entries is on the left and the open entry on the right; under 900 px
+ * wide the entry replaces the list while it is open. Every key and field is at least 44 px tall.
+ */
+
+.log {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 20px;
+}
+
+/* Focus lands on the title when the page opens, for a screen reader; a ring around the title is noise. */
+.log-heading:focus-visible,
+.log-entry-title:focus-visible {
+  outline: none;
+}
+
+.log-cols {
+  display: grid;
+  grid-template-columns: minmax(260px, 380px) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.log-list,
+.log-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.log-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+}
+
+.log-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---- a row of the list ---- */
+
+.log-row {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--edge);
+  border-bottom-width: 3px;
+  border-radius: var(--radius-key);
+  background: var(--key);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.log-row[aria-current='true'] {
+  border-color: var(--work);
+  box-shadow: inset 3px 0 0 var(--work);
+}
+
+.log-row-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.log-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.log-snippet {
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.log-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ---- the open entry ---- */
+
+.log-entry,
+.log-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.log-entry-title {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.log-id {
+  color: var(--muted);
+}
+
+/* The text of an entry is shown as it was typed: a preformatted block, wrapped, never read as HTML. */
+.log-body {
+  max-height: 60vh;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.log-confirm {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 12px;
+}
+
+.log-confirm p {
+  flex: 1 1 140px;
+}
+
+/* ---- the form ---- */
+
+.log-form {
+  max-width: 720px;
+}
+
+.log-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.log-body-input {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.log-form .log-actions .btn {
+  flex: 1 1 0;
+}
+
+/* ---- narrower than 900 px: one column, the entry in place of the list while it is open ---- */
+
+@media (max-width: 899px) {
+  .log-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .log[data-open] .log-list,
+  .log-pick {
+    display: none;
+  }
+}
+
+@media (max-width: 699px) {
+  .log {
+    gap: 10px;
+    padding: 10px 12px 12px;
+  }
+
+  .log-form {
+    max-width: none;
+  }
+
+  .log-body {
+    max-height: none;
+  }
+}

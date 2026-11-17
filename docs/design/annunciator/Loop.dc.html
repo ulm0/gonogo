@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo: comm loop</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@700;900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Michroma&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F3F1EA}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="min-height: 900px; box-sizing: border-box; padding: 28px 40px 32px; background: #060606; color: #F3F1EA; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; display: flex; flex-direction: column; gap: 20px">
+
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 24px">
+<h1 style="margin: 0; flex: 1 1 320px; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 104px; line-height: 0.82">COMM LOOP</h1>
+<div role="group" aria-label="Filter" style="display: flex; flex-wrap: wrap; gap: 6px">
+<button type="button" aria-pressed="true" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 14px; border: 1.5px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em">ALL 8</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 14px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em">TO YOU 2</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 14px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em">HELD 1</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 14px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em">UNDELIVERED 1</button>
+</div>
+<a href="Room.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1.5px solid #55565B; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 11px; letter-spacing: 0.12em; text-decoration: none">ROOM</a>
+</header>
+
+<div style="overflow-x: auto; flex-grow: 1">
+<div style="min-width: 760px; display: flex; flex-direction: column; border-bottom: 1.5px solid #2B2C30">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<div style="display: grid; grid-template-columns: 56px 210px minmax(0, 1fr) 170px; align-items: start; gap: 18px; padding: 14px 0; border-top: 1.5px solid #2B2C30">
+<span style="color: #A3A19A; padding-top: 2px">{{r.time}}</span>
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 11px; letter-spacing: 0.06em; line-height: 1.5">{{r.route}}</span>
+<div style="min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 15px; font-weight: 600">{{r.subject}}</span>
+<span style="font-size: 12.5px; line-height: 1.5; color: #A3A19A">{{r.note}}</span>
+<sc-if value="{{r.open}}" hint-placeholder-val="{{false}}">
+<div style="margin-top: 8px; padding: 14px 16px; background: #111214; border: 1.5px solid #F3F1EA; display: flex; flex-direction: column; gap: 12px">
+<p style="margin: 0; font-size: 13.5px; line-height: 1.55">CSV export is in and tested: 41 unit tests, 6 end to end. RSO flags that /reports/export has no auth check. GUIDO can add it now, about ten minutes. Go or no-go?</p>
+<form style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0">
+<label for="reply" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em">REPLY TO FLIGHT</label>
+<input id="reply" type="text" placeholder="Go, add the check first" style="flex: 1 1 200px; min-width: 0; box-sizing: border-box; height: 44px; padding: 0 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px; color: #F3F1EA; background: #060606; border: 1.5px solid #55565B; border-radius: 0">
+<button type="button" style="appearance: none; cursor: pointer; height: 44px; padding: 0 18px; border: 1.5px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em">SEND</button>
+</form>
+</div>
+</sc-if>
+</div>
+<span style="justify-self: end; font-weight: 600; font-size: 10px; letter-spacing: 0.1em; padding: 5px 8px; background: {{r.bg}}; color: {{r.fg}}; border: 1.5px solid {{r.bd}}">{{r.status}}</span>
+</div>
+</sc-for>
+</div>
+</div>
+
+<form style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0">
+<label for="brief" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 11px; letter-spacing: 0.14em">BRIEF FLIGHT</label>
+<input id="brief" type="text" placeholder="What do you want done?" style="flex: 1 1 240px; min-width: 0; box-sizing: border-box; height: 48px; padding: 0 14px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 14px; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0">
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 11px; letter-spacing: 0.12em; height: 48px; padding: 0 22px; border: 1.5px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606">SEND</button>
+</form>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var K = '#060606', W = '#F3F1EA', A = '#FFB020', O = '#FF4B1F', M = '#A3A19A';
+    var CHIP = {
+      you: { bg: W, fg: K, bd: W },
+      held: { bg: A, fg: K, bd: A },
+      lost: { bg: O, fg: K, bd: O },
+      read: { bg: 'transparent', fg: M, bd: '#55565B' }
+    };
+    function row(time, route, subject, note, status, kind, open) {
+      var c = CHIP[kind];
+      return { time: time, route: route, subject: subject, note: note, status: status, bg: c.bg, fg: c.fg, bd: c.bd, open: !!open };
+    }
+    var rows = [
+      row('22:44', 'FLIGHT › DIRECTOR', 'Export: done, one open risk', 'Asks you for a go or no-go.', 'TO YOU', 'you', true),
+      row('22:42', 'RSO › DIRECTOR', 'No-go on the export route', 'No auth check on /reports/export.', 'TO YOU', 'you'),
+      row('22:41', 'DIRECTOR › ROOM', 'T-minus: go/no-go poll', '5 consoles asked.', '4 OF 5 READ', 'read'),
+      row('22:40', 'GUIDO › SURGEON', 'CSV export is ready for tests', 'Waits until you answer SURGEON.', 'HELD', 'held'),
+      row('22:39', 'CONTROL › PAO', 'Button copy for the changelog', 'PAO is stopped, so this came to you.', 'UNDELIVERED', 'lost'),
+      row('22:38', 'RSO › FLIGHT', 'Review done', 'One finding, sent to the Director.', 'READ', 'read'),
+      row('22:33', 'FLIGHT › GUIDO', 'Task 2: CSV serializer and the export route', 'Typed as a pointer, read 4 s later.', 'READ', 'read'),
+      row('22:31', 'DIRECTOR › FLIGHT', 'Add CSV export to the reports page', 'Your brief. The mission clock started here.', 'READ', 'read')
+    ];
+    return { rows: rows };
+  }
+}
+</script>
+</body>
+</html>

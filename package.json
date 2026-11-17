@@ -1,0 +1,79 @@
+{
+  "name": "gonogo",
+  "version": "0.1.0",
+  "description": "Self-hosted mission control for AI coding agents: real Claude Code terminals in a browser tab (a phone too), agents that message each other, schedules, webhooks and token budgets.",
+  "keywords": [
+    "claude-code",
+    "gemini-cli",
+    "codex",
+    "ai-agents",
+    "agents",
+    "multi-agent",
+    "mission-control",
+    "self-hosted",
+    "webhooks",
+    "pty",
+    "terminal",
+    "mcp"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "gonogo": "bin/gonogo.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "scripts": {
+    "build": "pnpm run build:client && pnpm run build:server",
+    "build:client": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node bin/gonogo.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && pnpm run build",
+    "smoke:real": "node scripts/smoke-real.mjs",
+    "check:pack": "node scripts/check-pack.mjs",
+    "docs:dev": "vitepress dev",
+    "docs:build": "vitepress build",
+    "docs:preview": "vitepress preview"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "1.2.0-beta.18",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/headless": "6.0.0",
+    "ws": "8.23.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@fontsource/doto": "5.3.0",
+    "@fontsource/geist": "5.3.0",
+    "@fontsource/geist-mono": "5.3.0",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
+    "@vitejs/plugin-react": "6.3.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitepress": "2.0.0-alpha.21",
+    "vitest": "5.1.0"
+  },
+  "packageManager": "pnpm@10.34.9+sha512.f49b5a8ea0fdedb44bb3c0c1d6575092a53c2950d95b7ad15df11f17974877a2de3a01c07e934e9b28ce716e51c09a94962c7306d09be2e1e4b18a8c8762fd32",
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  }
+}

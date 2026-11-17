@@ -1,0 +1,194 @@
+/*
+ * Downlink, the Director's inbox, in the Instrument look: one module of rows, unread first, each row with its own keys.
+ * The page head, the filters, the open message and the reply box are those of the comm loop (loop.css); everything else is
+ * dl-. An unread row is a key-coloured band with a bar at its edge and a lit light. Under 700 px wide the rows stack.
+ */
+
+.dl {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 20px;
+}
+
+/* Focus lands on the title when the page opens, for a screen reader; a ring around the title is noise. */
+.dl-heading:focus-visible {
+  outline: none;
+}
+
+.dl-keys {
+  margin: 0;
+}
+
+.dl-scroll {
+  padding: 0 14px;
+}
+
+.dl-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dl-row + .dl-row {
+  border-top: 1px solid var(--edge);
+}
+
+.dl-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'head actions'
+    'open open';
+  align-items: start;
+  gap: 8px 14px;
+  padding: 10px 0;
+}
+
+.dl-item[data-unread] {
+  margin: 0 -14px;
+  padding: 10px 14px;
+  background: var(--key);
+  box-shadow: inset 3px 0 0 var(--work);
+}
+
+.dl-item[data-unread] .led {
+  --led: var(--work);
+}
+
+.dl-head {
+  grid-area: head;
+  appearance: none;
+  display: grid;
+  grid-template-columns: 14px 96px 150px minmax(0, 1fr);
+  grid-template-areas: 'led when who text';
+  align-items: start;
+  gap: 14px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.dl-head {
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.dl-head .led {
+  grid-area: led;
+  margin-top: 5px;
+}
+
+.dl-when {
+  grid-area: when;
+  padding-top: 2px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.dl-who {
+  grid-area: who;
+  justify-self: start;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+
+.dl-text {
+  grid-area: text;
+  min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.dl-item[data-unread] .dl-text {
+  font-weight: 600;
+}
+
+/* An open message: its text and the reply box, in line with the text column. */
+.dl-open {
+  grid-area: open;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 0 28px;
+  padding: 12px 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.dl-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dl-actions .btn {
+  font-size: 11px;
+}
+
+.dl-more {
+  padding: 10px 0;
+}
+
+@media (max-width: 699px) {
+  .dl {
+    gap: 10px;
+    padding: 10px 12px 12px;
+  }
+
+  .dl-keys {
+    display: none;
+  }
+
+  .dl-scroll {
+    padding: 0 12px;
+  }
+
+  .dl-item[data-unread] {
+    margin: 0 -12px;
+    padding: 10px 12px;
+  }
+
+  .dl-head {
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'led who when'
+      'text text text';
+    align-items: center;
+    gap: 4px 10px;
+  }
+
+  .dl-head .led {
+    margin-top: 0;
+  }
+
+  .dl-when {
+    padding-top: 0;
+    font-size: 11px;
+  }
+
+  .dl-item {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'head'
+      'open'
+      'actions';
+  }
+
+  .dl-open {
+    margin-left: 0;
+  }
+}

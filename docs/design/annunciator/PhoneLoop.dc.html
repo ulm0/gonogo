@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo on a phone: comm loop and brief</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@700;900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Michroma&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F3F1EA}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: #060606; color: #F3F1EA; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; display: flex; flex-direction: column">
+
+<header style="padding: 12px 14px 10px; display: flex; flex-direction: column; gap: 10px">
+<h1 style="margin: 0; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 72px; line-height: 0.82">COMM LOOP</h1>
+<div role="group" aria-label="Filter" style="display: flex; gap: 5px">
+<button type="button" aria-pressed="true" style="appearance: none; cursor: pointer; height: 44px; padding: 0 12px; border: 1.5px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.1em">ALL 8</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; height: 44px; padding: 0 12px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.1em">TO YOU 2</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; height: 44px; padding: 0 12px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.1em">HELD 1</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; height: 44px; padding: 0 12px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.1em">LOST 1</button>
+</div>
+</header>
+
+<div style="flex-grow: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+<button type="button" style="appearance: none; cursor: pointer; text-align: left; border: 0; border-top: 1.5px solid #2B2C30; border-radius: 0; padding: 11px 14px; background: {{r.bg}}; color: {{r.fg}}; display: flex; flex-direction: column; gap: 4px; font-family: 'IBM Plex Mono', ui-monospace, monospace">
+<span style="display: flex; align-items: center; gap: 8px">
+<span style="flex: 1 1 0; min-width: 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9.5px; letter-spacing: 0.06em">{{r.route}}</span>
+<span style="font-weight: 600; font-size: 9px; letter-spacing: 0.1em; padding: 3px 6px; background: {{r.chipBg}}; color: {{r.chipFg}}; border: 1.5px solid {{r.chipBd}}">{{r.status}}</span>
+<span style="font-size: 11px; color: {{r.sub}}">{{r.time}}</span>
+</span>
+<span style="font-size: 14px; font-weight: 600; line-height: 1.3">{{r.subject}}</span>
+<span style="font-size: 11.5px; line-height: 1.4; color: {{r.sub}}">{{r.note}}</span>
+</button>
+</sc-for>
+</div>
+
+<form style="display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 12px; border-top: 1.5px solid #F3F1EA">
+<label for="brief" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Brief FLIGHT</label>
+<input id="brief" type="text" placeholder="Brief FLIGHT" style="flex: 1 1 0; min-width: 0; box-sizing: border-box; height: 48px; padding: 0 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 14px; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0">
+<button type="button" style="appearance: none; cursor: pointer; flex: none; height: 48px; padding: 0 16px; border: 1.5px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em">SEND</button>
+</form>
+
+<nav aria-label="Sections" style="display: flex; height: 60px; box-sizing: border-box; border-top: 1.5px solid #2B2C30">
+<a href="PhoneRoom.dc.html" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.14em; text-decoration: none">ROOM</a>
+<a href="PhoneLoop.dc.html" aria-current="page" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.14em; text-decoration: none">LOOP</a>
+<a href="PhoneLoop.dc.html" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.14em; text-decoration: none">BRIEF</a>
+</nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var K = '#060606', W = '#F3F1EA', A = '#FFB020', O = '#FF4B1F', M = '#A3A19A';
+    // A message addressed to the Director is a lit row; the rest stay dark with a status chip.
+    function row(time, route, subject, note, status, kind) {
+      var lit = kind === 'you';
+      var chip = kind === 'held' ? { bg: A, fg: K, bd: A } : kind === 'lost' ? { bg: O, fg: K, bd: O } : lit ? { bg: K, fg: W, bd: K } : { bg: 'transparent', fg: M, bd: '#55565B' };
+      return {
+        time: time, route: route, subject: subject, note: note, status: status,
+        bg: lit ? W : 'transparent', fg: lit ? K : W, sub: lit ? '#3A3A38' : M,
+        chipBg: chip.bg, chipFg: chip.fg, chipBd: chip.bd
+      };
+    }
+    var rows = [
+      row('22:44', 'FLIGHT › DIRECTOR', 'Export: done, one open risk', 'Asks you for a go or no-go.', 'TO YOU', 'you'),
+      row('22:42', 'RSO › DIRECTOR', 'No-go on the export route', 'No auth check on /reports/export.', 'TO YOU', 'you'),
+      row('22:41', 'DIRECTOR › ROOM', 'T-minus: go/no-go poll', '5 consoles asked.', '4 OF 5', 'read'),
+      row('22:40', 'GUIDO › SURGEON', 'CSV export is ready for tests', 'Waits until you answer SURGEON.', 'HELD', 'held'),
+      row('22:39', 'CONTROL › PAO', 'Button copy for the changelog', 'PAO is stopped, so this came to you.', 'LOST', 'lost'),
+      row('22:38', 'RSO › FLIGHT', 'Review done', 'One finding, sent to the Director.', 'READ', 'read')
+    ];
+    return { rows: rows };
+  }
+}
+</script>
+</body>
+</html>

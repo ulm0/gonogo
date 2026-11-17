@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo on a phone: the room</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@700;900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Michroma&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F3F1EA}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: #060606; color: #F3F1EA; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; display: flex; flex-direction: column">
+
+<header style="display: flex; align-items: center; gap: 10px; padding: 2px 4px 2px 14px; height: 48px; box-sizing: border-box">
+<div role="img" aria-label="gonogo" style="display: flex">
+<span style="background: #38E08C; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 11px; letter-spacing: 0.08em; padding: 6px 8px 5px">GO</span>
+<span style="background: #FF4B1F; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 11px; letter-spacing: 0.08em; padding: 6px 8px 5px">NO GO</span>
+</div>
+<div style="flex-grow: 1"></div>
+<span style="display: flex; align-items: center; gap: 6px; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.14em; color: #38E08C"><span aria-hidden="true" style="width: 8px; height: 8px; background: #38E08C"></span>LINK UP</span>
+<a href="PhoneHire.dc.html" aria-label="Staff a console" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; font-size: 24px; text-decoration: none">+</a>
+</header>
+
+<section aria-label="The wall" style="padding: 6px 14px 12px; display: flex; flex-direction: column; gap: 6px; border-top: 1.5px solid #2B2C30">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.16em; color: #A3A19A">MISSION · BRIEFED 22:31</span>
+<span style="font-size: 14px; font-weight: 500">Add CSV export to the reports page</span>
+<span style="font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 104px; line-height: 0.84; font-variant-numeric: tabular-nums">00:10:42</span>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 2px">
+<span style="font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 32px; line-height: 1">POLLING</span>
+<span style="font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 26px; line-height: 1; color: #A3A19A">3/5</span>
+<div style="flex-grow: 1"></div>
+<button type="button" style="appearance: none; cursor: pointer; height: 44px; padding: 0 12px; border: 1.5px solid #F3F1EA; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9.5px; letter-spacing: 0.12em">HOLD</button>
+<button type="button" style="appearance: none; cursor: pointer; height: 44px; padding: 0 12px; border: 1.5px solid #FF4B1F; border-radius: 0; background: transparent; color: #FF4B1F; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9.5px; letter-spacing: 0.12em">ABORT</button>
+</div>
+</section>
+
+<section aria-label="Needs you" style="padding: 10px 10px 10px 14px; background: #FFB020; color: #060606; display: flex; align-items: center; gap: 10px">
+<div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 27px; line-height: 0.95">SURGEON ASKS FOR A GO</span>
+<span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bash · npm run test:e2e</span>
+</div>
+<a href="PhoneGo.dc.html" style="flex: none; display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 16px; background: #060606; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em; text-decoration: none">ANSWER</a>
+</section>
+
+<section aria-label="Operations" style="flex-grow: 1; min-height: 0; padding: 12px 12px 0">
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{tiles}}" as="t" hint-placeholder-count="17">
+<button type="button" style="appearance: none; cursor: pointer; text-align: left; min-width: 0; height: 62px; box-sizing: border-box; padding: 7px 8px; border: {{t.border}}; border-radius: 0; background: {{t.bg}}; color: {{t.fg}}; display: flex; flex-direction: column; justify-content: space-between; font-family: 'IBM Plex Mono', ui-monospace, monospace">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.04em">{{t.legend}}</span>
+<span style="font-size: 9.5px; color: {{t.sub}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.l1}}</span>
+<span style="font-weight: 600; font-size: 9px; letter-spacing: 0.08em">{{t.state}}</span>
+</button>
+</sc-for>
+</div>
+</section>
+
+<nav aria-label="Sections" style="display: flex; height: 60px; box-sizing: border-box; border-top: 1.5px solid #2B2C30">
+<a href="PhoneRoom.dc.html" aria-current="page" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.14em; text-decoration: none">ROOM</a>
+<a href="PhoneLoop.dc.html" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.14em; text-decoration: none">LOOP<span style="background: #F3F1EA; color: #060606; padding: 2px 6px 1px; font-size: 9px">2</span></a>
+<a href="PhoneLoop.dc.html" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.14em; text-decoration: none">BRIEF</a>
+</nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var K = '#060606', W = '#F3F1EA', A = '#FFB020', M = '#A3A19A', D = '#85847E';
+    var KIND = {
+      idle: { bg: '#17181B', fg: W, sub: M, border: '1.5px solid #17181B' },
+      working: { bg: W, fg: K, sub: '#3A3A38', border: '1.5px solid ' + W },
+      needs: { bg: A, fg: K, sub: '#3D2A00', border: '1.5px solid ' + A },
+      stopped: { bg: 'repeating-linear-gradient(135deg, #17181B 0 6px, #0C0C0E 6px 12px)', fg: M, sub: M, border: '1.5px solid #2B2C30' },
+      open: { bg: 'transparent', fg: D, sub: D, border: '1.5px dashed #45464B' }
+    };
+    function tile(kind, legend, state, l1) {
+      var k = KIND[kind];
+      return { legend: legend, state: state, l1: l1 || '', bg: k.bg, fg: k.fg, sub: k.sub, border: k.border };
+    }
+    var tiles = [
+      tile('idle', 'FLIGHT', 'IDLE 2 M', 'Polled the room.'),
+      tile('idle', 'FAO', 'IDLE · GO', 'Plan v2 sent.'),
+      tile('open', 'FIDO', 'OPEN'),
+      tile('working', 'GUIDO', 'WORKING · GO', 'Writing the route…'),
+      tile('working', 'CONTROL', 'WORKING 1 M', 'ExportButton.tsx'),
+      tile('open', 'DPS', 'OPEN'),
+      tile('open', 'INCO', 'OPEN'),
+      tile('open', 'EECOM', 'OPEN'),
+      tile('open', 'BOOSTER', 'OPEN'),
+      tile('needs', 'SURGEON', 'NEEDS YOU 3 M', 'npm run test:e2e'),
+      tile('open', 'SIMSUP', 'OPEN'),
+      tile('open', 'RETRO', 'OPEN'),
+      tile('idle', 'RSO', 'IDLE · GO', 'No findings.'),
+      tile('stopped', 'PAO', 'STOPPED 21 M'),
+      tile('open', 'CAPCOM', 'OPEN'),
+      tile('working', 'LOGS', 'PRINTING', 'tail -f logs/app.log'),
+      tile('open', 'SPARE', 'OPEN')
+    ];
+    return { tiles: tiles };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo, Instrument: the room</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Doto:wght@700;900&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#26272b}a:hover{color:#000000}
+@keyframes ins-led{50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="min-height: 1000px; box-sizing: border-box; padding: 20px 24px 24px; background: #e4e2dc; color: #26272b; font-family: 'Geist', system-ui, sans-serif; font-size: 13px; display: flex; flex-direction: column; gap: 16px">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 18px; min-height: 44px">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<span style="font-family: 'Geist', sans-serif; font-weight: 600; font-size: 22px; letter-spacing: -0.02em">gonogo</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #6b6a66">GN-1 · OPERATIONS UNIT</span>
+</div>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: #6b6a66">/projects/app</span>
+<div style="flex-grow: 1"></div>
+<span style="display: flex; align-items: center; gap: 7px; font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #44463f"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #5e9e73; box-shadow: 0 0 0 3px rgba(94, 158, 115, 0.2)"></span>LINK</span>
+<button type="button" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 16px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6; color: #26272b; font-family: 'Geist Mono', monospace; font-size: 11.5px; letter-spacing: 0.06em">LOOP <span style="color: #6b6a66">2</span></button>
+<button type="button" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 16px; border: 1px solid #26272b; border-bottom-width: 3px; border-radius: 8px; background: #26272b; color: #f1f0ec; font-family: 'Geist Mono', monospace; font-size: 11.5px; letter-spacing: 0.06em">+ STAFF</button>
+</header>
+
+<section aria-label="The wall" style="display: grid; grid-template-columns: 1.35fr 1.15fr 1.1fr 0.75fr; gap: 12px">
+
+<div style="background: #f1f0ec; border: 1px solid #c9c6be; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #6b6a66">A · MISSION</span>
+<div style="background: #2b2f2a; border-radius: 8px; padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35)">
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #9fb79b">Add CSV export to the reports page</span>
+<span style="font-family: 'Doto', 'Geist Mono', monospace; font-weight: 900; font-size: 64px; line-height: 0.95; letter-spacing: 0.02em; color: #cfe6c9">00:10:42</span>
+</div>
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; color: #6b6a66">ELAPSED SINCE THE BRIEF · 22:31</span>
+</div>
+
+<div style="background: #f1f0ec; border: 1px solid #c9c6be; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 9px">
+<div style="display: flex; align-items: center; gap: 12px">
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #6b6a66">B · SEQUENCE</span>
+<div style="flex-grow: 1"></div>
+<span style="display: flex; align-items: center; gap: 5px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #6b6a66"><span aria-hidden="true" style="width: 10px; height: 4px; border-radius: 2px; background: #4a5bd4"></span>work</span>
+<span style="display: flex; align-items: center; gap: 5px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #6b6a66"><span aria-hidden="true" style="width: 10px; height: 8px; border-radius: 2px; background: #e0a93a"></span>you</span>
+</div>
+<div role="img" aria-label="GUIDO and CONTROL are working; SURGEON has needed you for three minutes" style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1; justify-content: center">
+<sc-for list="{{tracks}}" as="t" hint-placeholder-count="7">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="flex: none; width: 58px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #44463f">{{t.call}}</span>
+<span style="flex: 1 1 0; height: {{t.h}}; border-radius: 2px; background: {{t.bg}}"></span>
+</div>
+</sc-for>
+</div>
+</div>
+
+<div style="background: #f1f0ec; border: 1px solid #c9c6be; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #6b6a66">C · T-MINUS</span>
+<div style="flex-grow: 1"></div>
+<span style="font-family: 'Doto', 'Geist Mono', monospace; font-weight: 900; font-size: 22px; line-height: 1">3/5</span>
+</div>
+<div style="display: flex; gap: 6px">
+<sc-for list="{{keys}}" as="k" hint-placeholder-count="5">
+<span style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px 7px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6">
+<span aria-hidden="true" style="width: 9px; height: 9px; border-radius: 50%; background: {{k.led}}; box-shadow: {{k.glow}}; animation: {{k.anim}}"></span>
+<span style="font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.02em">{{k.call}}</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 9.5px; color: #6b6a66">{{k.verdict}}</span>
+</span>
+</sc-for>
+</div>
+<span style="font-size: 12px; color: #44463f">Waiting for CONTROL and SURGEON.</span>
+<div style="display: flex; gap: 6px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; min-height: 44px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6; color: #26272b; font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.06em">HOLD</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; min-height: 44px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6; color: #a8323c; font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.06em">ABORT</button>
+</div>
+</div>
+
+<div style="background: #f1f0ec; border: 1px solid #c9c6be; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px">
+<span style="align-self: flex-start; font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #6b6a66">D · MAX Q</span>
+<div role="img" aria-label="Max Q: 2 of 3 working" style="position: relative; width: 104px; height: 104px; border-radius: 50%; background: conic-gradient(from 225deg, #4a5bd4 0deg 180deg, #d6d3cb 180deg 270deg, transparent 270deg 360deg); display: flex; align-items: center; justify-content: center">
+<span style="width: 80px; height: 80px; border-radius: 50%; background: #faf9f6; border: 1px solid #c9c6be; box-shadow: 0 3px 0 #c9c6be; display: flex; align-items: center; justify-content: center; font-family: 'Doto', 'Geist Mono', monospace; font-weight: 900; font-size: 30px">2/3</span>
+</div>
+<span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #6b6a66">CLAUDE AGENTS WORKING</span>
+<div style="display: flex; gap: 6px">
+<button type="button" aria-label="Lower the limit" style="appearance: none; cursor: pointer; width: 44px; height: 44px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 50%; background: #faf9f6; color: #26272b; font-family: 'Geist Mono', monospace; font-size: 16px">−</button>
+<button type="button" aria-label="Raise the limit" style="appearance: none; cursor: pointer; width: 44px; height: 44px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 50%; background: #faf9f6; color: #26272b; font-family: 'Geist Mono', monospace; font-size: 16px">+</button>
+</div>
+</div>
+
+</section>
+
+<main style="display: flex; flex-wrap: wrap; gap: 16px; flex-grow: 1">
+
+<div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+
+<section aria-label="Operations" style="background: #f1f0ec; border: 1px solid #c9c6be; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: baseline; gap: 12px">
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #6b6a66">E · OPERATIONS</span>
+<span style="font-size: 12px; color: #6b6a66">8 staffed · 16 open</span>
+</div>
+<div style="overflow-x: auto">
+<div style="min-width: 640px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 2px 2px 4px">
+<sc-for list="{{mods}}" as="m" hint-placeholder-count="17">
+<button type="button" style="appearance: none; cursor: pointer; text-align: left; min-width: 0; min-height: 96px; padding: 9px 10px 8px; border: 1px {{m.style}} {{m.bd}}; border-bottom-width: {{m.bb}}; border-radius: 10px; background: {{m.bg}}; color: #26272b; outline: {{m.outline}}; outline-offset: 2px; display: flex; flex-direction: column; gap: 6px; font-family: 'Geist', sans-serif">
+<span style="display: flex; align-items: center; gap: 7px">
+<span aria-hidden="true" style="flex: none; width: 8px; height: 8px; border-radius: 50%; background: {{m.led}}; box-shadow: {{m.glow}}; animation: {{m.anim}}"></span>
+<span style="font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 11.5px; letter-spacing: 0.04em; color: {{m.fg}}">{{m.call}}</span>
+<span style="flex-grow: 1"></span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 9.5px; color: #6b6a66">{{m.num}}</span>
+</span>
+<span style="display: flex; flex-direction: column; gap: 1px; padding: 5px 7px; min-height: 30px; border-radius: 5px; background: {{m.screen}}; font-family: 'Geist Mono', monospace; font-size: 10px; line-height: 1.45; color: {{m.screenFg}}">
+<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{m.l1}}</span>
+<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{m.l2}}</span>
+</span>
+<span style="display: flex; justify-content: space-between; gap: 6px; font-family: 'Geist Mono', monospace; font-size: 9.5px; color: #44463f"><span>{{m.state}}</span><span>{{m.right}}</span></span>
+</button>
+</sc-for>
+</div>
+</div>
+</section>
+
+<section aria-label="Your console" style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: #f4e3b7; border: 1px solid #d9b45a">
+<span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 50%; background: #e0a93a; box-shadow: 0 0 0 4px rgba(224, 169, 58, 0.25); animation: ins-led 1.6s ease-in-out infinite"></span>
+<div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-weight: 600; font-size: 15px">SURGEON asks for a go</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11.5px; color: #5c4a1c">Bash · npm run test:e2e · 3 m · 1 message held</span>
+</div>
+<button type="button" style="appearance: none; cursor: pointer; min-height: 48px; padding: 0 20px; border: 1px solid #b8933f; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6; color: #a8323c; font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 12px; letter-spacing: 0.06em">NO-GO</button>
+<button type="button" style="appearance: none; cursor: pointer; min-height: 48px; padding: 0 30px; border: 1px solid #26272b; border-bottom-width: 3px; border-radius: 8px; background: #26272b; color: #f1f0ec; font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 12px; letter-spacing: 0.06em">GO</button>
+</section>
+
+<form style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0">
+<label for="ins-brief" style="font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #44463f">BRIEF FLIGHT</label>
+<input id="ins-brief" type="text" placeholder="What do you want done?" style="flex: 1 1 240px; min-width: 0; box-sizing: border-box; height: 46px; padding: 0 14px; font-family: 'Geist', sans-serif; font-size: 14px; color: #26272b; background: #faf9f6; border: 1px solid #c9c6be; border-radius: 8px">
+<button type="button" style="appearance: none; cursor: pointer; min-height: 46px; padding: 0 20px; border: 1px solid #26272b; border-bottom-width: 3px; border-radius: 8px; background: #26272b; color: #f1f0ec; font-family: 'Geist Mono', monospace; font-size: 11.5px; letter-spacing: 0.06em">SEND</button>
+</form>
+
+</div>
+
+<aside aria-label="Selected console" style="flex: 1 1 440px; min-width: 0; display: flex; flex-direction: column; gap: 10px; background: #f1f0ec; border: 1px solid #c9c6be; border-radius: 12px; padding: 14px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 50%; background: #4a5bd4; box-shadow: 0 0 0 4px rgba(74, 91, 212, 0.2); animation: ins-led 1.4s ease-in-out infinite"></span>
+<div style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 160px; min-width: 0">
+<h2 style="margin: 0; font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 18px; letter-spacing: 0.02em">GUIDO</h2>
+<span style="font-size: 12px; color: #6b6a66">Guidance officer · working 38 s</span>
+</div>
+<button type="button" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 12px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6; color: #26272b; font-family: 'Geist Mono', monospace; font-size: 10.5px">RESTART</button>
+<button type="button" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 12px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6; color: #26272b; font-family: 'Geist Mono', monospace; font-size: 10.5px">STOP</button>
+<button type="button" style="appearance: none; cursor: pointer; min-height: 44px; padding: 0 12px; border: 1px solid #c9c6be; border-bottom-width: 3px; border-radius: 8px; background: #faf9f6; color: #26272b; font-family: 'Geist Mono', monospace; font-size: 10.5px">EDIT</button>
+</div>
+<div style="flex-grow: 1; min-height: 360px; border-radius: 8px; background: #2b2f2a; box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35); padding: 14px; font-family: 'Geist Mono', monospace; font-size: 12px; line-height: 1.6; color: #cfd8cb; display: flex; flex-direction: column">
+<div style="white-space: pre-wrap"><span style="color: #9fd0a4">●</span> I'll add the CSV serializer and wire it to the export route.</div>
+<div style="white-space: pre-wrap; margin-top: 10px"><span style="color: #9fd0a4">●</span> Update(src/export/csv.ts)</div>
+<div style="white-space: pre-wrap; color: #98a394">  ⎿ Added 42 lines, removed 3</div>
+<div style="white-space: pre-wrap; margin-top: 10px"><span style="color: #9fd0a4">●</span> Bash(npm test -- export)</div>
+<div style="white-space: pre-wrap; color: #98a394">  ⎿ 41 passed (1.8 s)</div>
+<div style="white-space: pre-wrap; margin-top: 10px; color: #b9c2ff">✻ Writing the route handler… (38s)</div>
+<div style="flex-grow: 1"></div>
+<div style="border: 1px solid #4b5148; border-radius: 6px; padding: 8px 12px; color: #98a394">&gt;</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; color: #6b6a66">TRAFFIC</span>
+<div style="display: flex; align-items: center; gap: 10px; font-size: 12px"><span style="font-family: 'Geist Mono', monospace; color: #6b6a66">22:41</span><span style="flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Director → GUIDO · T-minus poll</span><span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 3px 7px; border-radius: 999px; background: #d7e8da; color: #2c5a3a">VOTED GO</span></div>
+<div style="display: flex; align-items: center; gap: 10px; font-size: 12px"><span style="font-family: 'Geist Mono', monospace; color: #6b6a66">22:40</span><span style="flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">GUIDO → SURGEON · CSV export is ready</span><span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 3px 7px; border-radius: 999px; background: #f4e3b7; color: #5c4a1c">HELD</span></div>
+</div>
+</aside>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var IND = '#4a5bd4', SAF = '#e0a93a', SAGE = '#5e9e73', OFF = '#c9c6be';
+    function mod(num, call, kind, l1, l2, state, right, selected) {
+      var m = { num: num, call: call, l1: l1 || '', l2: l2 || '', state: state, right: right || '', outline: selected ? '2px solid #26272b' : 'none', anim: 'none', glow: 'none', fg: '#26272b' };
+      if (kind === 'working') { m.bg = '#faf9f6'; m.bd = '#c9c6be'; m.style = 'solid'; m.bb = '3px'; m.led = IND; m.glow = '0 0 0 3px rgba(74, 91, 212, 0.2)'; m.anim = 'ins-led 1.4s ease-in-out infinite'; m.screen = '#2b2f2a'; m.screenFg = '#cfd8cb'; }
+      else if (kind === 'needs') { m.bg = '#f4e3b7'; m.bd = '#d9b45a'; m.style = 'solid'; m.bb = '3px'; m.led = SAF; m.glow = '0 0 0 3px rgba(224, 169, 58, 0.3)'; m.anim = 'ins-led 1.6s ease-in-out infinite'; m.screen = '#2b2f2a'; m.screenFg = '#f1d79a'; }
+      else if (kind === 'idle') { m.bg = '#faf9f6'; m.bd = '#c9c6be'; m.style = 'solid'; m.bb = '3px'; m.led = SAGE; m.screen = '#e9e7e1'; m.screenFg = '#44463f'; }
+      else if (kind === 'stopped') { m.bg = '#e9e7e1'; m.bd = '#c9c6be'; m.style = 'solid'; m.bb = '1px'; m.led = OFF; m.screen = '#e4e2dc'; m.screenFg = '#6b6a66'; m.fg = '#6b6a66'; }
+      else { m.bg = 'transparent'; m.bd = '#b9b6ae'; m.style = 'dashed'; m.bb = '1px'; m.led = 'transparent'; m.screen = 'transparent'; m.screenFg = '#6b6a66'; m.fg = '#6b6a66'; }
+      return m;
+    }
+    var mods = [
+      mod('01', 'FLIGHT', 'idle', 'Polled the room.', 'Waiting on 2.', 'IDLE 2M'),
+      mod('02', 'FAO', 'idle', 'Plan v2 sent.', '4 tasks, 2 done.', 'IDLE 6M', 'GO'),
+      mod('03', 'FIDO', 'open', 'Architect', '', 'OPEN'),
+      mod('04', 'GUIDO', 'working', 'Update csv.ts', 'route handler…', 'WORK 38S', 'GO', true),
+      mod('05', 'CONTROL', 'working', 'Write Export…', 'in the browser…', 'WORK 1M', 'WAIT'),
+      mod('06', 'DPS', 'open', 'Data', '', 'OPEN'),
+      mod('07', 'INCO', 'open', 'Integrations', '', 'OPEN'),
+      mod('08', 'EECOM', 'open', 'Infrastructure', '', 'OPEN'),
+      mod('09', 'BOOSTER', 'open', 'Release', '', 'OPEN'),
+      mod('10', 'SURGEON', 'needs', 'npm run test:e2e', 'Proceed?', 'NEEDS YOU', 'WAIT'),
+      mod('11', 'SIMSUP', 'open', 'Breaks things', '', 'OPEN'),
+      mod('12', 'RETRO', 'open', 'Reviewer', '', 'OPEN'),
+      mod('13', 'RSO', 'idle', 'No findings.', '', 'IDLE 9M', 'GO'),
+      mod('14', 'PAO', 'stopped', 'Stopped.', '', 'STOP 21M'),
+      mod('15', 'CAPCOM', 'open', 'Reporter', '', 'OPEN'),
+      mod('16', 'LOGS', 'working', 'tail -f app.log', 'GET /reports 200', 'PRINTING', 'CMD'),
+      mod('17', 'SPARE', 'open', 'Any agent', '', 'OPEN')
+    ];
+    function key(call, verdict) {
+      if (verdict === 'GO') return { call: call, verdict: verdict, led: SAGE, glow: '0 0 0 3px rgba(94, 158, 115, 0.25)', anim: 'none' };
+      return { call: call, verdict: verdict, led: '#d6d3cb', glow: 'none', anim: 'ins-led 2s ease-in-out infinite' };
+    }
+    var keys = [key('FAO', 'GO'), key('GUIDO', 'GO'), key('RSO', 'GO'), key('CTRL', 'WAIT'), key('SURG', 'WAIT')];
+    var BASE = '#e2dfd7';
+    function track(call, segs) {
+      var parts = [], pos = 0, tall = false;
+      segs.forEach(function (s) {
+        if (s[0] > pos) parts.push(BASE + ' ' + pos + '% ' + s[0] + '%');
+        parts.push(s[2] + ' ' + s[0] + '% ' + s[1] + '%');
+        if (s[2] === SAF) tall = true;
+        pos = s[1];
+      });
+      if (pos < 100) parts.push(BASE + ' ' + pos + '% 100%');
+      return { call: call, h: tall ? '8px' : '4px', bg: 'linear-gradient(90deg, ' + parts.join(', ') + ')' };
+    }
+    var tracks = [
+      track('FLIGHT', [[0, 14, IND], [36, 41, IND], [78, 82, IND]]),
+      track('FAO', [[12, 34, IND]]),
+      track('GUIDO', [[30, 68, IND], [74, 100, IND]]),
+      track('CONTROL', [[33, 58, IND], [88, 100, IND]]),
+      track('SURGEON', [[40, 52, IND], [66, 70, IND], [70, 100, SAF]]),
+      track('RSO', [[20, 31, IND], [60, 64, IND]]),
+      track('PAO', [])
+    ];
+    return { mods: mods, keys: keys, tracks: tracks };
+  }
+}
+</script>
+</body>
+</html>

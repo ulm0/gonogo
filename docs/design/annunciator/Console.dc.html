@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo: a console in its other states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@700;900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Michroma&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#060606}a:hover{color:#000000}
+@keyframes gg-pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="width: 1440px; height: 760px; box-sizing: border-box; padding: 40px; background: #060606; color: #F3F1EA; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
+
+<section aria-label="A console that needs you" style="display: flex; flex-direction: column; border: 1.5px solid #FFB020; background: #111214; min-width: 0">
+<div style="padding: 16px; background: #FFB020; color: #060606; display: flex; flex-direction: column; gap: 6px">
+<h2 style="margin: 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-weight: 400; font-size: 24px; line-height: 1; letter-spacing: 0.04em">SURGEON</h2>
+<span style="font-weight: 600; font-size: 10.5px; letter-spacing: 0.1em">NEEDS YOU 3 M · PERMISSION</span>
+<span style="font-size: 11.5px">surgeon · Flight surgeon</span>
+</div>
+<div style="flex-grow: 1; background: #000000; padding: 14px; font-size: 11.5px; line-height: 1.6; color: #D8D6CF">
+<div style="white-space: pre-wrap"><span style="color: #38E08C">●</span> I'll run the end-to-end suite against the new export route.</div>
+<div style="white-space: pre-wrap; margin-top: 10px"><span style="color: #FFB020">●</span> Bash(npm run test:e2e)</div>
+<div style="white-space: pre-wrap; margin-top: 10px">  Do you want to proceed?</div>
+<div style="white-space: pre-wrap; color: #F3F1EA; font-weight: 600">  ❯ 1. Yes</div>
+<div style="white-space: pre-wrap">    2. Yes, always in this folder</div>
+<div style="white-space: pre-wrap">    3. No</div>
+</div>
+<div style="padding: 14px 16px 10px; background: #FFB020; color: #060606; display: flex; flex-direction: column; gap: 10px">
+<span style="font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 36px; line-height: 0.95">ASKS FOR A GO</span>
+<span style="font-size: 12px; font-weight: 500">Bash · npm run test:e2e</span>
+<div style="display: flex; gap: 8px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; height: 56px; border: 2.5px solid #060606; border-radius: 0; background: transparent; color: #060606; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 26px; letter-spacing: 0.04em">NO-GO</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1.4 1 0; height: 56px; border: 2.5px solid #060606; border-radius: 0; background: #060606; color: #F3F1EA; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 26px; letter-spacing: 0.04em">GO</button>
+</div>
+<a href="#always" style="display: flex; align-items: center; min-height: 44px; font-size: 12px; font-weight: 500">Go, and always allow in this folder</a>
+</div>
+</section>
+
+<section aria-label="A stopped console" style="display: flex; flex-direction: column; border: 1.5px solid #2B2C30; background: #111214; min-width: 0">
+<div style="padding: 16px; background: repeating-linear-gradient(135deg, #1D1E22 0 8px, #0C0C0E 8px 16px); display: flex; flex-direction: column; gap: 6px">
+<h2 style="margin: 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-weight: 400; font-size: 24px; line-height: 1; letter-spacing: 0.04em; color: #C9C7C0">PAO</h2>
+<span style="font-weight: 600; font-size: 10.5px; letter-spacing: 0.1em; color: #C9C7C0">STOPPED 21 M</span>
+<span style="font-size: 11.5px; color: #C9C7C0">pao · Public affairs officer</span>
+</div>
+<div style="flex-grow: 1; background: #000000; padding: 14px; font-size: 11.5px; line-height: 1.6; color: #A3A19A">
+<div style="white-space: pre-wrap">● Changelog entry written.</div>
+<div style="white-space: pre-wrap; margin-top: 10px">● gonogo - send_message (to: flight)</div>
+<div style="white-space: pre-wrap">  ⎿ delivered</div>
+<div style="white-space: pre-wrap; margin-top: 16px; color: #F3F1EA">Stopped by the Director at 22:20.</div>
+</div>
+<div style="padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; border-top: 1.5px solid #2B2C30">
+<span style="font-size: 12px; line-height: 1.45; color: #A3A19A">Mail to a stopped console comes back to you undelivered. Start picks up its last session.</span>
+<button type="button" style="appearance: none; cursor: pointer; height: 56px; border: 2px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 26px; letter-spacing: 0.04em">START</button>
+<div style="display: flex; gap: 8px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em; min-height: 44px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA">EDIT</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em; min-height: 44px; border: 1.5px solid #FF4B1F; border-radius: 0; background: transparent; color: #FF4B1F">REMOVE</button>
+</div>
+</div>
+</section>
+
+<section aria-label="A starting console" style="display: flex; flex-direction: column; border: 1.5px dashed #F3F1EA; background: #111214; min-width: 0">
+<div style="padding: 16px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1.5px dashed #F3F1EA">
+<h2 style="margin: 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-weight: 400; font-size: 24px; line-height: 1; letter-spacing: 0.04em">FIDO</h2>
+<span style="font-weight: 600; font-size: 10.5px; letter-spacing: 0.1em; animation: gg-pulse 1.2s ease-in-out infinite">STARTING 2 S</span>
+<span style="font-size: 11.5px; color: #A3A19A">fido · Flight dynamics officer</span>
+</div>
+<div style="flex-grow: 1; background: #000000; padding: 14px; font-size: 11.5px; line-height: 1.6; color: #D8D6CF">
+<div style="white-space: pre-wrap; color: #F3F1EA; font-weight: 600">Claude Code</div>
+<div style="white-space: pre-wrap; color: #A3A19A">/projects/app</div>
+<div style="white-space: pre-wrap; margin-top: 12px; color: #A3A19A">Reading the role and the memory file…</div>
+</div>
+<div style="padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; border-top: 1.5px solid #2B2C30">
+<span style="font-size: 12px; line-height: 1.45; color: #A3A19A">Mail waits until FIDO is idle. If Claude Code asks to trust the folder, it shows here as a go or no-go.</span>
+<button type="button" style="appearance: none; cursor: pointer; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em; min-height: 44px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA">STOP</button>
+</div>
+</section>
+
+<section aria-label="A custom command" style="display: flex; flex-direction: column; border: 1.5px solid #F3F1EA; background: #111214; min-width: 0">
+<div style="padding: 16px; background: #F3F1EA; color: #060606; display: flex; flex-direction: column; gap: 6px">
+<h2 style="margin: 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-weight: 400; font-size: 24px; line-height: 1; letter-spacing: 0.04em">LOGS</h2>
+<span style="font-weight: 600; font-size: 10.5px; letter-spacing: 0.1em">PRINTING · CUSTOM COMMAND</span>
+<span style="font-size: 11.5px">logs · /projects/app</span>
+</div>
+<div style="flex-grow: 1; background: #000000; padding: 14px; font-size: 11px; line-height: 1.6; color: #D8D6CF">
+<div style="white-space: pre-wrap">22:41:07 GET /reports 200 12 ms</div>
+<div style="white-space: pre-wrap">22:41:09 GET /reports/export 401 3 ms</div>
+<div style="white-space: pre-wrap">22:41:15 GET /health 200 1 ms</div>
+<div style="white-space: pre-wrap">22:41:22 GET /reports 200 11 ms</div>
+<div style="white-space: pre-wrap">22:41:30 GET /health 200 1 ms</div>
+</div>
+<div style="padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; border-top: 1.5px solid #2B2C30">
+<span style="font-size: 11.5px; padding: 8px 10px; border: 1px solid #55565B; color: #F3F1EA; overflow-wrap: anywhere">["tail","-f","logs/app.log"]</span>
+<span style="font-size: 12px; line-height: 1.45; color: #A3A19A">No hooks and no mail. Lit means it is printing. It takes no Max Q slot and is never polled.</span>
+<div style="display: flex; gap: 8px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em; min-height: 44px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA">RESTART</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em; min-height: 44px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA">STOP</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.12em; min-height: 44px; border: 1.5px solid #55565B; border-radius: 0; background: transparent; color: #F3F1EA">EDIT</button>
+</div>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

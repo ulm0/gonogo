@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo: edit a console, a custom command, confirmations</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@700;900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Michroma&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F3F1EA}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="width: 1440px; height: 860px; box-sizing: border-box; padding: 40px; background: #060606; color: #F3F1EA; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px">
+
+<form aria-label="Edit a running console" style="margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<h2 style="margin: 0; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 72px; line-height: 0.85">EDIT GUIDO</h2>
+<p style="margin: 0; padding: 10px 12px; background: #F3F1EA; color: #060606; font-size: 12.5px; font-weight: 500; line-height: 1.4">GUIDO is working. Changes apply at its next start.</p>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="e-name" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em; color: #A3A19A">NAME</label>
+<input id="e-name" type="text" value="guido" readonly style="box-sizing: border-box; height: 48px; padding: 0 14px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 15px; color: #A3A19A; background: repeating-linear-gradient(135deg, #17181B 0 6px, #0C0C0E 6px 12px); border: 1.5px solid #2B2C30; border-radius: 0">
+<span style="font-size: 11.5px; color: #A3A19A">Stop the console to rename it.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="e-role" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em">ROLE</label>
+<textarea id="e-role" rows="5" style="box-sizing: border-box; padding: 12px 14px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12.5px; line-height: 1.5; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0; resize: vertical">You are GUIDO, the guidance officer. You own the core logic and the backend. Make small, correct changes, keep the tests green and run the checks before you report.</textarea>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="e-dir" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em">WORKING DIRECTORY</label>
+<input id="e-dir" type="text" value="/projects/app" style="box-sizing: border-box; height: 48px; padding: 0 14px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 15px; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0">
+</div>
+<fieldset style="margin: 0; padding: 0; border: 0">
+<legend style="padding: 0; margin-bottom: 8px; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em">PERMISSIONS</legend>
+<div style="display: flex; gap: 6px">
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; flex: 1 1 0; min-height: 48px; border: 1.5px solid #17181B; border-radius: 0; background: #17181B; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.08em">ASK</button>
+<button type="button" aria-pressed="true" style="appearance: none; cursor: pointer; flex: 1.4 1 0; min-height: 48px; border: 1.5px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.08em">ACCEPT EDITS</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; flex: 1 1 0; min-height: 48px; border: 1.5px solid #FF4B1F; border-radius: 0; background: transparent; color: #FF4B1F; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.08em">BYPASS</button>
+</div>
+</fieldset>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; gap: 8px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; height: 60px; border: 2px solid #F3F1EA; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 24px; letter-spacing: 0.04em">SAVE</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1.6 1 0; height: 60px; border: 2px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 24px; letter-spacing: 0.04em">SAVE AND RESTART</button>
+</div>
+</form>
+
+<form aria-label="Staff a custom command" style="margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<h2 style="margin: 0; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 72px; line-height: 0.85">CUSTOM COMMAND</h2>
+<p style="margin: 0; padding: 10px 12px; border: 1.5px solid #55565B; font-size: 12.5px; line-height: 1.4; color: #C9C7C0">Any program in a terminal. No position, no permissions, no hooks and no mail.</p>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="c-name" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em">NAME</label>
+<input id="c-name" type="text" value="logs" style="box-sizing: border-box; height: 48px; padding: 0 14px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 15px; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="c-cmd" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em; color: #FF4B1F">COMMAND</label>
+<input id="c-cmd" type="text" value="[&quot;tail&quot;,&quot;-f&quot;" aria-invalid="true" aria-describedby="c-cmd-err" style="box-sizing: border-box; height: 48px; padding: 0 14px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 15px; color: #F3F1EA; background: #111214; border: 2.5px solid #FF4B1F; border-radius: 0">
+<span id="c-cmd-err" style="padding: 8px 10px; background: #FF4B1F; color: #060606; font-size: 12.5px; font-weight: 600">Not a valid JSON array of strings.</span>
+<span style="font-size: 11.5px; line-height: 1.45; color: #A3A19A">Words split on spaces, or a JSON array when an argument has spaces. No shell: pipes and quotes need the array form, for example ["sh","-c","make watch"].</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="c-dir" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10px; letter-spacing: 0.14em">WORKING DIRECTORY</label>
+<input id="c-dir" type="text" value="/projects/app" style="box-sizing: border-box; height: 48px; padding: 0 14px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 15px; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0">
+<span style="font-size: 11.5px; line-height: 1.45; color: #A3A19A">The command is saved in plain text. Keep secrets out of it.</span>
+</div>
+<div style="flex-grow: 1"></div>
+<button type="button" aria-disabled="true" style="appearance: none; cursor: not-allowed; height: 60px; border: 2px dashed #55565B; border-radius: 0; background: transparent; color: #A3A19A; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 24px; letter-spacing: 0.04em">FIX THE COMMAND TO STAFF LOGS</button>
+</form>
+
+<div style="min-width: 0; display: flex; flex-direction: column; gap: 24px">
+
+<section role="alertdialog" aria-label="Bypass permissions" style="padding: 22px 22px 20px; border: 2.5px solid #FF4B1F; background: #111214; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 52px; line-height: 0.88; color: #FF4B1F">BYPASS PERMISSIONS?</h2>
+<p style="margin: 0; font-size: 13px; line-height: 1.5">FIDO will run every tool without asking: shell commands, file edits, the network. It runs as you, with your Claude login.</p>
+<div style="display: flex; align-items: center; gap: 12px; min-height: 44px">
+<input id="b-ok" type="checkbox" style="width: 22px; height: 22px; margin: 0; accent-color: #FF4B1F">
+<label for="b-ok" style="font-size: 13px; font-weight: 500">I understand. Let FIDO run without asking.</label>
+</div>
+<div style="display: flex; gap: 8px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; height: 56px; border: 2px solid #F3F1EA; border-radius: 0; background: transparent; color: #F3F1EA; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 22px; letter-spacing: 0.04em">BACK</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1.6 1 0; height: 56px; border: 2px solid #FF4B1F; border-radius: 0; background: #FF4B1F; color: #060606; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 22px; letter-spacing: 0.04em">STAFF FIDO UNGUARDED</button>
+</div>
+</section>
+
+<section role="alertdialog" aria-label="Remove a console" style="padding: 22px 22px 20px; background: #FF4B1F; color: #060606; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 52px; line-height: 0.88">REMOVE PAO?</h2>
+<p style="margin: 0; font-size: 13px; font-weight: 500; line-height: 1.5">The console and its session go. Its notes folder stays on disk at ~/.gonogo/agents/pao until you delete it.</p>
+<div style="display: flex; gap: 8px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1.6 1 0; height: 56px; border: 2.5px solid #060606; border-radius: 0; background: transparent; color: #060606; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 22px; letter-spacing: 0.04em">KEEP PAO</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; height: 56px; border: 2.5px solid #060606; border-radius: 0; background: #060606; color: #F3F1EA; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 22px; letter-spacing: 0.04em">REMOVE</button>
+</div>
+</section>
+
+<section aria-label="The room is full" style="padding: 18px 22px; border: 1.5px dashed #55565B; display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 40px; line-height: 0.9; color: #C9C7C0">ROOM FULL</h2>
+<p style="margin: 0; font-size: 13px; line-height: 1.5; color: #C9C7C0">All 24 consoles are staffed. Remove one to staff another.</p>
+</section>
+
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

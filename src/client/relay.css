@@ -1,0 +1,90 @@
+/*
+ * Relay: the module under UPLINK in the Launch Window view, in the Instrument look. It reuses the form, the list and the keys of
+ * launch.css (win-) and the fold and the address field of uplink.css (up-); only what is new is rl-: the cards of the four
+ * services, the target form and the list of uplinks inside a card. Under 700 px wide the cards stack; every key, field and
+ * switch is at least 44 px tall.
+ */
+
+.rl {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.rl-forward {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+}
+
+.rl-forward legend {
+  padding: 0;
+}
+
+.rl-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.rl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.rl-target {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rl-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rl-steps ol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 6px 22px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rl-steps code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.rl-uplinks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rl-uplinks li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rl-make {
+  align-self: flex-start;
+}

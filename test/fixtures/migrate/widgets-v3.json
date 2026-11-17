@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "widgets": [
+    { "name": "a", "size": 3, "unit": "cm" },
+    { "name": "b", "size": 5, "unit": "cm" }
+  ]
+}

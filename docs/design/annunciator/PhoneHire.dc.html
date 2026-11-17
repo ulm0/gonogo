@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo on a phone: staff a console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@700;900&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Michroma&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F3F1EA}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: #060606; color: #F3F1EA; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px; display: flex; flex-direction: column">
+
+<header style="display: flex; align-items: flex-end; gap: 10px; padding: 10px 4px 8px 14px">
+<h1 style="margin: 0; flex: 1 1 0; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 60px; line-height: 0.82">STAFF A CONSOLE</h1>
+<a href="PhoneRoom.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 10px; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9.5px; letter-spacing: 0.12em; text-decoration: none">CANCEL</a>
+</header>
+
+<section aria-label="Position" style="padding: 4px 12px 0">
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{positions}}" as="p" hint-placeholder-count="15">
+<button type="button" aria-pressed="{{p.pressed}}" style="appearance: none; cursor: pointer; text-align: left; min-width: 0; height: 50px; box-sizing: border-box; padding: 6px 8px; border: {{p.border}}; border-radius: 0; background: {{p.bg}}; color: {{p.fg}}; display: flex; flex-direction: column; justify-content: space-between; font-family: 'IBM Plex Mono', ui-monospace, monospace">
+<span style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 10.5px; letter-spacing: 0.04em">{{p.legend}}</span>
+<span style="font-size: 9.5px; color: {{p.sub}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.short}}</span>
+</button>
+</sc-for>
+</div>
+</section>
+
+<section aria-label="Picked position" style="margin: 10px 12px 0; padding: 10px 12px; background: #F3F1EA; color: #060606; display: flex; align-items: center; gap: 12px">
+<span style="font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 40px; line-height: 0.9">FIDO</span>
+<span style="flex: 1 1 0; min-width: 0; font-size: 11.5px; font-weight: 500; line-height: 1.4">Architect: picks the approach and the interfaces. Default role, yours to rewrite.</span>
+</section>
+
+<form style="margin: 0; padding: 12px 12px 0; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; min-height: 0">
+<div style="display: flex; flex-direction: column; gap: 5px">
+<label for="p-name" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.14em">NAME</label>
+<input id="p-name" type="text" value="fido" style="box-sizing: border-box; height: 46px; padding: 0 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 15px; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0">
+</div>
+<div style="display: flex; flex-direction: column; gap: 5px">
+<label for="p-dir" style="font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.14em">WORKING DIRECTORY</label>
+<input id="p-dir" type="text" value="/projects/app" style="box-sizing: border-box; height: 46px; padding: 0 12px; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 15px; color: #F3F1EA; background: #111214; border: 1.5px solid #55565B; border-radius: 0">
+</div>
+<fieldset style="margin: 0; padding: 0; border: 0">
+<legend style="padding: 0; margin-bottom: 5px; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.14em">PERMISSIONS</legend>
+<div style="display: flex; gap: 5px">
+<button type="button" aria-pressed="true" style="appearance: none; cursor: pointer; flex: 1 1 0; height: 46px; border: 1.5px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.06em">ASK</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; flex: 1.5 1 0; height: 46px; border: 1.5px solid #17181B; border-radius: 0; background: #17181B; color: #F3F1EA; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.06em">ACCEPT EDITS</button>
+<button type="button" aria-pressed="false" style="appearance: none; cursor: pointer; flex: 1 1 0; height: 46px; border: 1.5px solid #FF4B1F; border-radius: 0; background: transparent; color: #FF4B1F; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 9px; letter-spacing: 0.06em">BYPASS</button>
+</div>
+</fieldset>
+<div style="flex-grow: 1"></div>
+<button type="button" style="appearance: none; cursor: pointer; height: 72px; margin-bottom: 14px; border: 2px solid #F3F1EA; border-radius: 0; background: #F3F1EA; color: #060606; font-family: 'Big Shoulders', 'Arial Narrow', sans-serif; font-weight: 900; font-size: 38px; letter-spacing: 0.03em">STAFF FIDO</button>
+</form>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var K = '#060606', W = '#F3F1EA', M = '#A3A19A';
+    function pos(legend, short, kind) {
+      if (kind === 'picked') return { legend: legend, short: short, pressed: 'true', bg: W, fg: K, sub: '#3A3A38', border: '1.5px solid ' + W };
+      if (kind === 'boss') return { legend: legend, short: 'The boss', pressed: 'false', bg: 'repeating-linear-gradient(135deg, #17181B 0 6px, #0C0C0E 6px 12px)', fg: M, sub: M, border: '1.5px solid #2B2C30' };
+      if (kind === 'staffed') return { legend: legend, short: short + ' · staffed', pressed: 'false', bg: '#17181B', fg: W, sub: M, border: '1.5px solid #17181B' };
+      return { legend: legend, short: short, pressed: 'false', bg: 'transparent', fg: W, sub: M, border: '1.5px dashed #55565B' };
+    }
+    var positions = [
+      pos('FLIGHT', '', 'boss'), pos('FAO', 'Planner', 'staffed'), pos('FIDO', 'Architect', 'picked'),
+      pos('GUIDO', 'Backend', 'staffed'), pos('CONTROL', 'Frontend', 'staffed'), pos('DPS', 'Data', 'open'),
+      pos('INCO', 'Integrations', 'open'), pos('EECOM', 'Infrastructure', 'open'), pos('BOOSTER', 'Release', 'open'),
+      pos('SURGEON', 'Tests', 'staffed'), pos('SIMSUP', 'Breaks things', 'open'), pos('RETRO', 'Reviewer', 'open'),
+      pos('RSO', 'Security', 'staffed'), pos('PAO', 'Docs', 'staffed'), pos('CAPCOM', 'Reporter', 'open')
+    ];
+    return { positions: positions };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+# syntax=docker/dockerfile:1
+#
+# gonogo container image: STARTING POINT, NOT BUILT.
+# The Docker daemon was not running when this file was written (docker info failed:
+# "Cannot connect to the Docker daemon at unix:///Volumes/<volume>/lima/default/sock/docker.sock").
+# Every choice below is backed by registry metadata, package contents and docs read on 2026-11-16
+# (see docs/facts/toolchain-docker.md), but `docker build` has never run. The two RUN checks near
+# the end exist so that the first real build proves the unverified claims or fails loudly.
+#
+# Build, from the repository root (add a .dockerignore with node_modules, dist, .git):
+#   docker build -t gonogo:probe .
+#
+# Prove the claims the task asked for (all UNVERIFIED until run):
+#   docker run --rm --entrypoint claude gonogo:probe --version
+#   docker run --rm --entrypoint id gonogo:probe                      # expect uid=1000(node)
+#   docker image ls gonogo:probe                                      # image size
+#   docker run --rm --entrypoint sh gonogo:probe -c 'ls -l /usr/local/bin/claude /usr/local/bin/gonogo'
+#
+# Run (first run needs one credential in the environment; see docs/facts/toolchain-docker.md section 4):
+#   docker run -d --name gonogo --init \
+#     -p 127.0.0.1:7777:7777 \
+#     -e CLAUDE_CODE_OAUTH_TOKEN \
+#     -v gonogo-state:/state \
+#     -v "$PWD/projects":/projects \
+#     gonogo:probe
+#   docker logs gonogo        # the URL with the access token is printed here
+#
+# Never put a credential in the image. Set one credential only (an API key outranks the token).
+#
+# First-run dialogs (checked on the host with Claude Code 2.1.325, fake credentials): in a fresh home the
+# claude TUI stops at theme picker, login method, workspace trust, bypass warning and API-key approval (the
+# confirmation dialogs default to "No"). This image does not hide them. The gonogo server must start every claude child with
+# IS_DEMO=1 (documented: "skips onboarding"), with projects["<cwd>"].hasTrustDialogAccepted=true already written
+# into $CLAUDE_CONFIG_DIR/.claude.json (without it hooks stay silent), with --permission-mode <mode>, and with
+# --settings <per-agent file>. An API key must reach claude through apiKeyHelper in that file, not as
+# ANTHROPIC_API_KEY in the child's environment. Details: toolchain-docker.md section 4.2.
+
+ARG NODE_IMAGE=node:22-bookworm-slim
+
+# ---------------------------------------------------------------------------
+# Stage 1: build the npm tarball exactly as `npm publish` would ship it.
+# The runtime stage installs that tarball, so the container runs the same artifact as `npx gonogo`
+# and a packaging mistake (missing file in "files", missing shebang) fails the image build.
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS build
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+# "prepack" in package.json must build the server (tsc) and the client (vite build).
+RUN npm pack --pack-destination /out
+
+# ---------------------------------------------------------------------------
+# Stage 2: runtime. Debian slim (glibc), not Alpine: the node-pty prebuilt binaries and the
+# @lydell/node-pty platform packages are linked against glibc (libc.so.6) and have no musl build.
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS runtime
+ARG CLAUDE_CODE_VERSION=2.1.325
+ARG GONOGO_PACKAGE=gonogo
+
+# node:*-slim ships neither git nor a CA bundle (checked in the image layers). The claude binary itself
+# needs only libc6 (>= 2.17) and bash, both present. Hooks use the built-in HTTP hook type, so no curl.
+# Optional extras agents often want: curl, openssh-client, ripgrep, procps, jq, python3, build-essential.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git \
+ && rm -rf /var/lib/apt/lists/* \
+ && git config --system --add safe.directory '*'
+
+# claude CLI, version pinned: the npm method is the one the Claude Code docs give for reproducible containers.
+# Do NOT add --ignore-scripts: the postinstall step hard-links the ~350 MiB native binary onto bin/claude.exe,
+# and npm 12 skips that step unless allowed (then `claude` prints "native binary not installed").
+# `claude --version` right after fails the build in that case. Keep this layer BEFORE the gonogo layer so
+# a gonogo rebuild does not re-push the large layer.
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+ && claude --version
+
+# gonogo from the tarball built in stage 1. Production dependencies only; the pty library must install
+# from prebuilt binaries because this image has no compiler (node-pty 1.1.0 has no Linux prebuilds and would
+# fail here; node-pty 1.2.0-beta.18 and @lydell/node-pty ship linux-x64 and linux-arm64 binaries).
+COPY --from=build /out/*.tgz /tmp/
+RUN npm install -g /tmp/*.tgz && rm -f /tmp/*.tgz
+
+# State and projects. The node user (uid 1000, home /home/node) already exists in the base image.
+# Named volumes copy this ownership on first use; bind mounts keep the host's ownership.
+RUN mkdir -p /state /projects && chown node:node /state /projects
+
+ENV HOME=/home/node \
+    CLAUDE_CONFIG_DIR=/state/claude \
+    GONOGO_HOME=/state/gonogo \
+    DISABLE_AUTOUPDATER=1
+# CLAUDE_CONFIG_DIR puts .claude.json (onboarding, trust, API key approval) inside the volume together with
+# settings, credentials and session files (documented in the Claude Code dev container page).
+# GONOGO_HOME and the flags in CMD are placeholders: align them with the real CLI.
+# Optional: CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 turns off telemetry, error reports and release-note fetches.
+
+USER node
+WORKDIR /projects
+
+# Build-time proof, run as the non-root user: the claude binary starts and the pty library loads and spawns.
+RUN claude --version \
+ && cd "$(npm root -g)/${GONOGO_PACKAGE}" \
+ && node -e 'const n=["@lydell/node-pty","node-pty"].find(x=>{try{require.resolve(x);return true}catch{return false}});const pty=require(n);const p=pty.spawn("/bin/sh",["-c","echo pty-ok"],{});let o="";p.onData(d=>o+=d);p.onExit(()=>{console.log(n,JSON.stringify(o.trim()));process.exit(/pty-ok/.test(o)?0:1)})'
+
+VOLUME ["/state", "/projects"]
+EXPOSE 7777
+ENTRYPOINT ["gonogo"]
+CMD ["--host", "0.0.0.0", "--port", "7777", "--home", "/state/gonogo"]

@@ -1,0 +1,475 @@
+/**
+ * Every timing constant, limit, fixed string and TUI marker of the server, with one line saying why that value.
+ * Plain values, plus one tiny logger at the bottom. Owner: contract author; builders import and never edit.
+ * Limits that the browser also needs live in src/shared/protocol.ts and are re-exported here.
+ * Times are in milliseconds unless the name says otherwise.
+ */
+import type { DialogKind, Logger } from '../shared/protocol.js';
+import { positionById } from '../shared/positions.js';
+
+export {
+  AGENT_NAME_MAX,
+  AGENT_NAME_PATTERN,
+  ROLE_MAX_CHARS,
+  DIR_MAX_CHARS,
+  SUBJECT_MAX_CHARS,
+  BODY_MAX_CHARS,
+  MAX_AGENTS,
+  ACTIVITY_WIRE_BODY_CHARS,
+  ACTIVITY_CLIENT_MAX,
+} from '../shared/protocol.js';
+
+/* ---- startup and readiness ---- */
+/** Design: not ready 5 s after spawn while the pty is producing output means a startup dialog is waiting. */
+export const STARTUP_READY_TIMEOUT_MS = 5_000;
+/** If the pty has produced no output at the 5 s mark, look again this often (claude may just be slow). */
+export const STARTUP_RECHECK_MS = 1_000;
+/** Design: exit code 1 within 3 s of a start means --session-id/--resume was the wrong flag: flip once and retry. */
+export const SESSION_FLIP_WINDOW_MS = 3_000;
+/**
+ * The flip happens only when the exit tail holds claude's own message for the flag that was used (any other exit 1 within
+ * 3 s, such as a refused flag, root refusing bypassPermissions or a bad cwd, is a different problem and a retry would hide it):
+ * `Error: Session ID <uuid> is already in use.` after --session-id, `No conversation found with session ID: <uuid>` after --resume.
+ */
+export const SESSION_IN_USE_TEXT = 'is already in use';
+export const SESSION_MISSING_TEXT = 'No conversation found with session ID';
+
+/* ---- stopping ---- */
+/** Design: SIGKILL 5 s after SIGTERM. Measured: claude exits about 2.4 s after SIGTERM (plugin hooks and MCP children). */
+export const STOP_KILL_AFTER_MS = 5_000;
+/** After SIGKILL the exit event comes within milliseconds; if it does not, report the process gone after this long. */
+export const STOP_GIVEUP_AFTER_KILL_MS = 3_000;
+/** Whole-server shutdown: SIGTERM, then KILL_AFTER, then GIVEUP, plus slack. */
+export const SHUTDOWN_MAX_MS = 12_000;
+
+/* ---- delivery ---- */
+/** Design: the pointer must be confirmed by UserPromptSubmit within 2 s (measured 60-120 ms). */
+export const PROMPT_SUBMIT_CONFIRM_MS = 2_000;
+/** Design: a draft latch that nobody releases stops holding mail after 30 minutes (60 s fired while users only paused). */
+export const DRAFT_EXPIRY_MS = 30 * 60_000;
+/** The screen may clear a draft latch (never set one): the box row must have been empty this long after the last browser input (echo grace; prior-art lesson 27). */
+export const DRAFT_SCREEN_CLEAR_MS = 1_000;
+/** Wait after the first queued message so a burst of messages becomes one pointer. */
+export const DELIVERY_COALESCE_MS = 300;
+/** After a Stop hook the TUI needs a moment to redraw the idle box (title flips within 10-30 ms); wait before typing. */
+export const DELIVERY_SETTLE_MS = 300;
+/** Claude Code ignores the 9th consecutive Stop block (cap 8, resets on a tool call), so never send more than 8. */
+export const MAX_STOP_BLOCKS = 8;
+/** Design: hop cap 8, GONOGO_MAX_HOPS to change it. */
+export const DEFAULT_MAX_HOPS = 8;
+/** Upper bound accepted for GONOGO_MAX_HOPS (a typo such as 8000 would disable the guard). */
+export const MAX_HOPS_LIMIT = 100;
+/** Pointer lists at most this many sender names, then "and others". */
+export const POINTER_MAX_SENDERS = 3;
+/** A message becomes `delivered` at most this many times: one pointer, and one more when the agent's turn ended without read_messages. Then the strip says it was not read. */
+export const POINTER_MAX_ATTEMPTS = 2;
+/** Pointer text always starts with this (never "/", "!", "?" or "@", which the TUI treats as triggers). */
+export const POINTER_PREFIX = 'gonogo: ';
+
+/* ---- state reconciliation (hooks lie by omission: Esc, denied dialogs and ! commands fire no hook) ---- */
+/** Design: title shows the idle glyph while the state is working for more than 2 s (counted from the later of the glyph change and the last state change) => idle. */
+export const TITLE_IDLE_RECONCILE_MS = 2_000;
+/**
+ * Working glyph for this long, counted from the later of the glyph change and the last state change, while the state is idle
+ * (R3: shell command, slash command, lost hook) or needs_you for a permission or dialog (R4: the user allowed the tool and
+ * no hook fires until it ends) => working. Longer than the 60-120 ms hook latency and the 10-30 ms the title lags a Stop.
+ */
+export const TITLE_WORKING_CONFIRM_MS = 1_000;
+/** Prompt box back on screen, no dialog, idle glyph for this long => the permission dialog was answered without a hook. */
+export const NEEDS_YOU_CLEAR_MS = 1_500;
+/** Cadence of the hub sweep: reconciliation, draft expiry, delivery retries. */
+export const RECONCILE_TICK_MS = 500;
+
+/* ---- hooks and HTTP ---- */
+/** "timeout" (seconds) written into every http hook; claude's default is 600 s and a hung hook would freeze the agent. */
+export const HOOK_TIMEOUT_S = 10;
+/** PostToolUse carries tool output (a Read of a big file); 8 MiB covers it, bigger gets 413 (a non-blocking error for claude). */
+export const MAX_HOOK_BODY_BYTES = 8 * 1024 * 1024;
+/** Errors that a client can cause after the server started (a reset socket, a destroyed stream, an oversized WebSocket frame): logged, never fatal (contract 2.8). */
+export const TRANSIENT_ERROR_CODES = [
+  'ECONNRESET',
+  'EPIPE',
+  'ERR_STREAM_DESTROYED',
+  'ERR_STREAM_WRITE_AFTER_END',
+  'ERR_STREAM_PREMATURE_CLOSE',
+  'ERR_HTTP_HEADERS_SENT',
+] as const;
+/** Error codes that start with one of these are transient too (the `ws` library reports WS_ERR_*). */
+export const TRANSIENT_ERROR_PREFIXES = ['WS_ERR_'] as const;
+/** MCP JSON-RPC bodies are tiny; send_message bodies are capped at 20,000 chars. */
+export const MAX_MCP_BODY_BYTES = 1024 * 1024;
+/** REST bodies: hire form, edit, a user message of up to 20,000 chars. */
+export const MAX_REST_BODY_BYTES = 256 * 1024;
+export const WS_MAX_FRAME_BYTES = 256 * 1024; // the client splits a paste into WS_INPUT_CHUNK_CHARS pieces (protocol.ts), so only a misbehaving client sends more; bigger frames close the socket with 1009
+export const WS_MAX_BUFFERED_BYTES = 4 * 1024 * 1024; // slow reader: close with 1013 and let it reconnect with a fresh snapshot
+export const WS_PING_INTERVAL_MS = 20_000; // detects dead browsers behind NATs; two missed pongs close the socket
+export const WS_CLOSE_BACKPRESSURE = 1013;
+export const WS_CLOSE_GOING_AWAY = 1001;
+
+/* ---- terminal ---- */
+export const DEFAULT_COLS = 120; // size used in every experiment of docs/facts
+export const DEFAULT_ROWS = 40;
+export const MIN_COLS = 20; // below this claude's box (needs a rule of >= 20 characters) cannot be recognised
+export const MAX_COLS = 500;
+export const MIN_ROWS = 5;
+export const MAX_ROWS = 200;
+/** Mirror scrollback; the classic renderer keeps history in it, the fullscreen renderer does not use it. */
+export const MIRROR_SCROLLBACK_LINES = 2_000;
+/** serialize({ scrollback }) limit: keeps a snapshot at a few KB (measured 1.8-2.8 KB for a screen). */
+export const SNAPSHOT_SCROLLBACK_LINES = 1_000;
+export const EXIT_TAIL_LINES = 20; // exit reason lines kept for the UI ("No conversation found ...")
+export const EXIT_TAIL_CHARS = 2_000;
+
+/* ---- hub memory ---- */
+export const ACTIVITY_BACKLOG = 100; // messages loaded from messages.jsonl at start
+export const ACTIVITY_HUB_MAX = 200; // items the hub keeps and sends in StateSnapshot
+export const ROSTER_ROLE_CHARS = 300; // role text per agent in list_roster
+export const PERMISSION_SUMMARY_CHARS = 100; // tool input summary in "permission request: ..."
+
+/* ---- limits on mail: one agent token must not grow server memory or messages.jsonl without bound ---- */
+/** Unread messages (queued, held or delivered) one recipient may hold: five full read_messages calls, more than an agent can act on. */
+export const MAILBOX_MAX_MESSAGES = 100;
+/** Body characters of that unread mail: 256 KiB, about six full read_messages results, which is all an agent can take in. */
+export const MAILBOX_MAX_BODY_CHARS = 256 * 1024;
+/** Messages one agent may send per rolling SEND_RATE_WINDOW_MS (two a second): a boss briefing all 24 agents at once sends 24. The owner is not limited. */
+export const SEND_RATE_MAX = 120;
+export const SEND_RATE_WINDOW_MS = 60_000;
+/** One read_messages result holds at most this many messages ... */
+export const READ_MAX_MESSAGES = 20;
+/** ... or this many characters of their JSON, whichever comes first: 10,000 tokens of English and 20,000 of symbols, under the 25,000 at which Claude Code refuses an MCP result. */
+export const READ_MAX_CHARS = 40_000;
+
+/* ---- server defaults ---- */
+export const DEFAULT_PORT = 7777;
+export const DEFAULT_HOST = '127.0.0.1';
+export const DEFAULT_HOME_DIRNAME = '.gonogo';
+export const MIN_NODE_MAJOR = 24;
+export const TOKEN_BYTES = 32; // 32 random bytes = 64 hex chars, for the browser token and for every agent token
+
+/* ---- files under the home directory ---- */
+export const AGENTS_FILE = 'agents.json';
+export const MESSAGES_FILE = 'messages.jsonl';
+/** messages.jsonl is renamed to this when it is larger than MESSAGES_ROTATE_BYTES at start. */
+export const MESSAGES_ROTATED_FILE = 'messages.jsonl.1';
+export const MESSAGES_ROTATE_BYTES = 32 * 1024 * 1024;
+/** Only this many bytes from the end of messages.jsonl are read at start (history and the id counter), so a long-running home starts fast. */
+export const MESSAGES_TAIL_BYTES = 1024 * 1024;
+/** <home>/server.lock holds the pid of the gonogo that uses the home directory. */
+export const LOCK_FILE = 'server.lock';
+export const BROWSER_TOKEN_FILE = 'token';
+export const AGENTS_DIR = 'agents';
+export const SETTINGS_FILE = 'settings.json';
+export const MCP_FILE = 'mcp.json';
+export const MEMORY_FILE = 'memory.md';
+export const AGENT_TOKEN_FILE = 'token';
+export const DIR_MODE = 0o700;
+export const FILE_MODE = 0o600;
+
+/* ---- launching claude ---- */
+/** Seed mode: after writing the trust key, read the file back this many times (spaced by the delay) before giving up (claude rewrites the file on every start, O11). */
+export const TRUST_VERIFY_ATTEMPTS = 3;
+export const TRUST_VERIFY_DELAY_MS = 200;
+export const CLAUDE_BIN = 'claude';
+export const TERM_VALUE = 'xterm-256color';
+export const COLORTERM_VALUE = 'truecolor';
+export const HOOK_PATH_PREFIX = '/hook/';
+export const MCP_PATH = '/mcp';
+export const API_KEY_HELPER_COMMAND = 'printenv GONOGO_API_KEY';
+export const ALLOWED_TOOLS = [
+  'mcp__gonogo__send_message',
+  'mcp__gonogo__list_roster',
+  'mcp__gonogo__read_messages',
+  'mcp__gonogo__go_nogo',
+  'mcp__gonogo__task_list',
+  'mcp__gonogo__task_create',
+  'mcp__gonogo__task_update',
+  'mcp__gonogo__log_write',
+  'mcp__gonogo__log_search',
+  'mcp__gonogo__log_read',
+  'mcp__gonogo__livery_submit',
+] as const;
+/** claude's own cross-session messaging tools, denied so agents use gonogo's tools. */
+export const DENIED_TOOLS = ['SendMessage', 'ListAgents'] as const;
+/** Exact names removed from the child environment (the session identity of the claude that started gonogo, if any). */
+export const SCRUB_ENV_EXACT = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_BRIDGE_SESSION_ID',
+  'CLAUDE_PID',
+  'CLAUDE_EFFORT',
+  'AI_AGENT',
+  'GONOGO_TOKEN',
+  'GONOGO_API_KEY',
+] as const;
+/** Also removed, so future members of these identity families do not leak. CLAUDE_CODE_OAUTH_TOKEN and CLAUDE_CONFIG_DIR are kept on purpose. */
+export const SCRUB_ENV_PREFIXES = [
+  'CLAUDE_CODE_MESSAGING_',
+  'CLAUDE_CODE_SESSION_',
+  'CLAUDE_CODE_BRIDGE_',
+  'CLAUDE_CODE_CHILD_',
+] as const;
+
+/* ---- what the TUI draws and sends (claude 2.1.325; see docs/facts/claude-code-terminal.md sections 3 to 5) ---- */
+export const PASTE_START = '\x1b[200~';
+export const PASTE_END = '\x1b[201~';
+export const ENTER = '\r'; // the only submit key; a bare LF only inserts a newline
+export const PROMPT_GLYPH = '❯'; // "❯"
+export const NBSP = ' '; // the prompt row is "❯" + NBSP, never a normal space
+export const RULE_CHAR = '─'; // "─"
+export const RULE_MIN_RUN = 20; // a rule row holds a run of at least this many RULE_CHARs
+/** Rows below the prompt row searched for the closing rule (a draft may wrap to a few rows). */
+export const BOX_MAX_ROWS = 10;
+export const TITLE_IDLE_GLYPH = '✳'; // "✳": not running a turn (also while a permission dialog is open!)
+/** "◐" "◑": a model turn or a shell-mode command is running. Add frames here if a real run shows more. */
+export const TITLE_WORKING_GLYPHS = ['◐', '◑'] as const;
+/**
+ * Dialog recognition on the mirror rows (JS RegExp source, no flags unless noted). Order = priority.
+ * A row matches a pattern when the row text (right-trimmed) satisfies it. Rule for `permission`: a row matching
+ * `^\s*Do you want to ` AND a `menu` row must both be on screen. `menu` alone is reported as 'menu'.
+ */
+export const DIALOG_PATTERNS: ReadonlyArray<{ kind: DialogKind; source: string }> = [
+  { kind: 'theme', source: 'Choose the text style' },
+  { kind: 'login', source: 'Select login method' },
+  { kind: 'trust', source: 'Quick safety check|Is this a project you created or one you trust' },
+  { kind: 'bypass', source: 'WARNING: Claude Code running in Bypass Permissions mode' },
+  { kind: 'api_key', source: 'Detected a custom API key' },
+  { kind: 'resume', source: 'Resume this conversation' },
+  { kind: 'permission', source: '^\\s*Do you want to ' },
+  { kind: 'menu', source: '^\\s*❯\\s+(\\d+\\.\\s|No, |Yes, )' },
+];
+/** The one reason text for startup dialogs (design). */
+export const STARTUP_DIALOG_REASON = 'startup dialog: answer it in the terminal';
+/** needs_you reason when a dialog is on screen but no PermissionRequest hook announced it. */
+export const SCREEN_DIALOG_REASON = 'a dialog is waiting in the terminal: answer it there';
+
+/* ---- text given to agents ---- */
+/** Appended to every agent's system prompt. Placeholders: {name}, {memory}, {role}. No dates, no roster: keeps the prompt cache warm. */
+export const ROLE_PREAMBLE = [
+  'You are "{name}", an agent in a gonogo operations room: a team of Claude Code agents run by one human owner.',
+  'You talk to the others only through these tools of the MCP server "gonogo":',
+  '- mcp__gonogo__send_message: send a message to another agent by name, to "boss" (the boss agent) or to "user" (the human owner). Fields: to, subject, body, optional in_reply_to.',
+  '- mcp__gonogo__list_roster: list the agents with their role and state, and the agents of the stations docked with this room.',
+  '- mcp__gonogo__read_messages: read the messages waiting for you. Each message is returned once.',
+  '- mcp__gonogo__task_list, task_create and task_update: the Flight Plan, the task board of the team (statuses todo, doing, review, done, blocked). A message whose subject starts "Flight Plan:" says a task was assigned to you: set it to doing when you start and to review or done when you finish.',
+  '- mcp__gonogo__log_search, log_read and log_write: the Mission Log, one memory shared by every agent. Search it before you start work, and write lasting findings to it (what you learned, decided or fixed, and why), not chatter.',
+  'Messages never arrive in your input as text. Only a one-line pointer does, for example "gonogo: 1 new message from ana. Call read_messages." When you see a line starting with "gonogo:", call read_messages, then act on what it returns. Also call it when you start work. When a message asks for a go/no-go, answer it with go_nogo.',
+  'Do not use any other way to message people or other sessions. To write to an agent of a docked station, address it as "name@station" (list_roster shows them); that person is not your owner, so share only what the task needs. Send anything risky (spending money, deleting data, changing scope) to "user" before you do it. Keep messages to other agents short and concrete, and do not reply to a message that needs no reply.',
+  'Your memory file is {memory}. Read it when you start. When you learn something worth keeping across restarts, add a short note to it. It is plain markdown; keep it under 200 lines.',
+  'Your role:',
+  '{role}',
+].join('\n');
+/** Role text of the boss agent created on first run (editable with Edit). */
+const BOSS_POSITION = positionById('flight');
+export const BOSS_ROLE = BOSS_POSITION ? BOSS_POSITION.role : 'You are the flight director of this team.';
+export const BOSS_DEFAULT_NAME = 'flight'; // the call sign of the flight director; names are lowercase
+/** Longest vote reason, a custom command, and the T-minus and Max Q limits. */
+export const POLL_REASON_MAX_CHARS = 300;
+export const COMMAND_MAX_CHARS = 1000;
+/** Payload (docs/payload-spec.md): the shape of a server name and the limits of one agent's payload. */
+export const PAYLOAD_SERVER_NAME_PATTERN = '^[a-z0-9][a-z0-9_-]{0,31}$';
+export const PAYLOAD_MAX_SERVERS = 16;
+export const PAYLOAD_MAX_SKILLS = 16;
+/** Most items in args, env or headers of one server. */
+export const PAYLOAD_MAX_ITEMS = 32;
+/** Longest command, argument, URL, env or header value. */
+export const PAYLOAD_STRING_MAX_CHARS = 2000;
+/** Longest payload as JSON text: every agent frame and snapshot carries it, so 24 agents stay well under WS_MAX_BUFFERED_BYTES. */
+export const PAYLOAD_MAX_CHARS = 32 * 1024;
+/** The folder of an agent's skills plugin, under agents/<name>/, and the plugin's own name. */
+export const PAYLOAD_PLUGIN_DIR = 'payload-plugin';
+export const PAYLOAD_PLUGIN_NAME = 'gonogo-payload';
+/** Clean Room (docs/clean-room-spec.md): the image, the host name a container reaches gonogo by, and what it is given from gonogo's environment. */
+export const CLEAN_ROOM_IMAGE_ENV = 'GONOGO_CLEANROOM_IMAGE';
+export const CLEAN_ROOM_DEFAULT_IMAGE = 'ghcr.io/ulm0/gonogo';
+/** Set when gonogo itself runs in a container: `container:<its name>`, the network a Clean Room joins instead of reaching the host. */
+export const CLEAN_ROOM_NETWORK_ENV = 'GONOGO_CLEANROOM_NETWORK';
+export const CLEAN_ROOM_NETWORK_PATTERN = '^container:[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$';
+export const DOCKER_BIN = 'docker';
+export const GIT_BIN = 'git';
+/** An image name or id: a leading dash would be read as a docker option. */
+export const CLEAN_ROOM_IMAGE_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,199}$';
+export const CLEAN_ROOM_HOST = 'host.docker.internal';
+/** The container's HOME, under agents/<name>/: its Claude config and sessions stay across restarts and never touch the owner's ~/.claude. */
+export const CLEAN_ROOM_HOME_DIR = 'cleanroom-home';
+/** The credentials a container may get from gonogo's environment, by name. GONOGO_API_KEY is how seed mode carries ANTHROPIC_API_KEY. */
+export const CLEAN_ROOM_CREDENTIALS = ['CLAUDE_CODE_OAUTH_TOKEN', 'GONOGO_API_KEY'] as const;
+/** The variables of the child's environment that the container needs as well. */
+export const CLEAN_ROOM_ENV = ['GONOGO_TOKEN', 'TERM', 'COLORTERM', 'IS_DEMO'] as const;
+/** `docker version`, `git worktree add` and the like must answer within this. */
+export const CLEAN_ROOM_COMMAND_MS = 30_000;
+/** Added to the role of a Clean Room agent: git cannot reach the repository from the container. {branch} is its branch. */
+export const CLEAN_ROOM_NOTE =
+  'You run in a sandbox: a container that holds only a copy of the project (a git worktree on the branch "{branch}") and your own files. git cannot reach the repository from there, so do not try to commit: edit the files, and the owner commits and merges the branch from outside.';
+export const MAX_WORKING_ENV = 'GONOGO_MAX_WORKING';
+/** A custom command counts as working while it printed something in the last CUSTOM_ACTIVE_MS, and as starting until it prints or CUSTOM_START_MS pass. */
+export const CUSTOM_ACTIVE_MS = 2000;
+export const CUSTOM_START_MS = 3000;
+/** Redline: what trips the circuit breaker of one Claude agent (docs/redline-propellant-spec.md). */
+export const REDLINE_ENV = 'GONOGO_REDLINE';
+/** The same tool with the same input this many times in a row is a loop. */
+export const REDLINE_REPEATS = 5;
+/** This many failed tool calls within the window is an error storm. */
+export const REDLINE_TOOL_FAILURES = 8;
+export const REDLINE_TOOL_FAILURE_WINDOW_MS = 120_000;
+/** This many API errors (StopFailure) within the window is an error storm. */
+export const REDLINE_API_ERRORS = 3;
+export const REDLINE_API_ERROR_WINDOW_MS = 600_000;
+/** More than this many messages to the same recipient within the window is a ping-pong. */
+export const REDLINE_SENDS_TO_ONE = 15;
+export const REDLINE_SEND_WINDOW_MS = 600_000;
+/** Propellant reads a transcript at every Stop and, during a long turn, at most this often on a tool hook. */
+export const METER_INTERVAL_MS = 20_000;
+/** Ledger entries older than this are dropped (the longest window is 30 days). */
+export const FUEL_KEEP_MS = 31 * 24 * 3_600_000;
+/** One read of a transcript takes at most this many bytes; the rest waits for the next read. */
+export const METER_READ_MAX_BYTES = 32 * 1024 * 1024;
+/** The largest token limit accepted (10^12). */
+export const FUEL_LIMIT_MAX = 1_000_000_000_000;
+/** Launch Window (docs/launch-window-spec.md): the file in the home directory, how late a fire may still go, and the longest result kept. */
+export const SCHEDULES_FILE = 'schedules.json';
+export const SCHEDULE_GRACE_MS = 60_000;
+export const SCHEDULE_RESULT_MAX_CHARS = 300;
+/** Uplink (docs/uplink-spec.md): the file, the largest delivery, the rate limit of one uplink, and the longest note of a delivery. */
+export const UPLINKS_FILE = 'uplinks.json';
+export const UPLINK_BODY_MAX_BYTES = 256 * 1024;
+export const UPLINK_RATE_MAX = 30;
+export const UPLINK_RATE_WINDOW_MS = 60_000;
+export const UPLINK_NOTE_MAX_CHARS = 300;
+/** Docking (docs/docking-spec.md): the files, the station name variable, the lifetime of a docking code, how far a signed call's clock may be from ours, and the limits of /dock/*. */
+export const DOCKING_FILE = 'docking.json';
+export const STATION_FILE = 'station.json';
+export const STATION_ENV = 'GONOGO_STATION';
+export const DOCK_CODE_TTL_MS = 15 * 60_000;
+export const DOCK_CODES_MAX = 5;
+export const DOCK_SKEW_MS = 5 * 60_000;
+export const DOCK_BODY_MAX_BYTES = 256 * 1024;
+export const DOCK_RATE_MAX = 60;
+export const DOCK_RATE_WINDOW_MS = 60_000;
+/** A call to another station gives up after this; Undock waits less, because the Director is waiting. */
+export const DOCK_TIMEOUT_MS = 10_000;
+export const DOCK_UNDOCK_TIMEOUT_MS = 3000;
+/** How often the roster of each docked station is pulled. */
+export const DOCK_PULL_MS = 30_000;
+/** Flight Plan (docs/flight-plan-spec.md): the file, the history lines one task keeps, and how many done tasks are kept. */
+export const TASKS_FILE = 'tasks.json';
+export const TASK_NOTES_MAX = 20;
+export const TASKS_DONE_KEEP = 100;
+/**
+ * Downlink (docs/downlink-spec.md): the file, how many events and messages the inbox keeps, the longest event text, how many ids one
+ * call may carry, how many messages of the log are read at start to find the Director's mail, and the bad-signature rule of an uplink
+ * (more than UPLINK_BAD_MAX in UPLINK_BAD_WINDOW_MS is one event, at most one per window).
+ */
+export const DOWNLINK_FILE = 'downlink.json';
+export const DOWNLINK_EVENTS_MAX = 1000;
+export const DOWNLINK_MAIL_MAX = 200;
+export const DOWNLINK_TEXT_MAX_CHARS = 300;
+export const DOWNLINK_IDS_MAX = 200;
+export const DOWNLINK_HISTORY = 1000;
+export const UPLINK_BAD_MAX = 3;
+export const UPLINK_BAD_WINDOW_MS = 10 * 60_000;
+/**
+ * Relay (docs/relay-spec.md): the file; one outbound call (10 s, 3 tries, 1 s then 2 s between them, a Retry-After no longer than 10 s
+ * is honoured); the send queue, which drops its oldest entry past RELAY_QUEUE_MAX; the longest text sent (Telegram stops at 4096,
+ * Slack asks for less than 4000); how many forwarded messages and how many handled inbound ids are remembered (oldest forgotten
+ * first); how old a Slack signature may be.
+ */
+export const RELAY_FILE = 'relay.json';
+export const RELAY_TIMEOUT_MS = 10_000;
+export const RELAY_TRIES = 3;
+export const RELAY_BACKOFF_MS = 1_000;
+export const RELAY_RETRY_AFTER_MAX_MS = 10_000;
+export const RELAY_QUEUE_MAX = 50;
+export const RELAY_TEXT_MAX_CHARS = 3500;
+export const RELAY_THREADS_MAX = 500;
+export const RELAY_SEEN_MAX = 500;
+export const RELAY_NOTE_MAX_CHARS = 200;
+export const SLACK_SIGNATURE_MAX_AGE_MS = 5 * 60_000;
+/** Livery (docs/livery-spec.md): the custom liveries are `<home>/liveries/<slug>.json`; the chosen one is `<home>/livery.json`. */
+export const LIVERY_DIR = 'liveries';
+export const LIVERY_FILE = 'livery.json';
+/** Propellant (docs/redline-propellant-spec.md): the limits and cursors file; the ledger fuel.jsonl is a log and has no version. */
+export const PROPELLANT_FILE = 'propellant.json';
+/** Mission Log (docs/mission-log-spec.md): the folder under the home, and how long a snippet of a search result is and how much of the text before the match it shows. */
+export const LOG_DIR = 'mission-log';
+export const LOG_SNIPPET_CHARS = 200;
+export const LOG_SNIPPET_LEAD_CHARS = 40;
+export const MCP_DESCRIPTIONS = {
+  go_nogo:
+    'Answer a T-minus poll from the Director: vote "go" when you are ready to proceed, or "no-go" with a one-sentence reason. Call it when a message asks for a go/no-go. The result says whether the vote counted.',
+  send_message:
+    'Send a message to another agent (by name), to the boss ("boss") or to the human owner ("user"). An agent of a docked station is addressed as "name@station". The recipient gets a one-line pointer and reads the text with read_messages. The result tells you at once whether the message was queued or could not be delivered.',
+  list_roster: 'List every agent in the operations room with its name, role and current state, and say which one is the boss. Agents of docked stations are listed too, under docked.',
+  read_messages:
+    'Return the messages waiting for you (each message is returned once) and mark them read. Call it when a line starting with "gonogo:" says messages are waiting.',
+  task_list:
+    'List the tasks of the Flight Plan, the team task board, most recently changed first. Optional filters: mine (only the tasks assigned to you) and status (todo, doing, review, done or blocked).',
+  task_create:
+    'Add a task to the Flight Plan. It starts as todo. Give a short title, a detail with what done means, and optionally the name of the agent it is assigned to; that agent gets a message.',
+  task_update:
+    'Change a task of the Flight Plan by its id: its status (todo, doing, review, done, blocked), its assignee (an agent name, or null to unassign) and a short note for the history. Assigning it to another agent sends that agent a message.',
+  log_write:
+    'Write to the Mission Log, the memory shared by every agent: a title, a body in plain markdown and optional tags. Give an id to change an entry you wrote earlier (any of title, body, tags). Keep an entry to one finding.',
+  log_search:
+    'Search the Mission Log. Returns up to limit entries (at most 20), best first, each with its id, title, author, tags and a snippet around the best match. Read the whole entry with log_read.',
+  log_read: 'Read one entry of the Mission Log by its id: the title, tags, author, times and the whole body.',
+  livery_submit:
+    'Submit a livery, a colour theme for gonogo, when the Director asked you to design one: a name, a one-line description and tokens, an object that holds every token the message named, each a CSS colour (#rgb, #rrggbb, rgb(), hsl() or oklch()). It is checked for colours and for contrast; if it is refused, the answer says what to fix. The Director chooses whether to apply it.',
+} as const;
+
+/* ---- the tiny logger ---- */
+const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 } as const;
+export type LogLevel = keyof typeof LEVELS;
+
+export interface LoggerOptions {
+  /** Default 'info'. */
+  level?: LogLevel;
+  /** Default: one line to process.stderr. Tests pass a collector or use nullLogger. */
+  sink?: (line: string) => void;
+  prefix?: string;
+}
+
+function render(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.stack ?? value.message;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/** Never log tokens, API keys, message bodies or hook payloads (event names and ids only). */
+export function createLogger(options: LoggerOptions = {}): Logger {
+  const min = LEVELS[options.level ?? 'info'];
+  const sink = options.sink ?? ((line: string) => void process.stderr.write(line + '\n'));
+  const prefix = options.prefix ? `[${options.prefix}] ` : '';
+  const emit = (level: LogLevel, message: string, extra: unknown[]): void => {
+    if (LEVELS[level] < min) return;
+    const tail = extra.length ? ' ' + extra.map(render).join(' ') : '';
+    sink(`${new Date().toISOString()} ${level.padEnd(5)} ${prefix}${message}${tail}`);
+  };
+  return {
+    debug: (m, ...e) => emit('debug', m, e),
+    info: (m, ...e) => emit('info', m, e),
+    warn: (m, ...e) => emit('warn', m, e),
+    error: (m, ...e) => emit('error', m, e),
+    child: (p) => createLogger({ ...options, prefix: options.prefix ? `${options.prefix}/${p}` : p }),
+  };
+}
+
+/** Prints nothing. The default logger of every module, so tests print nothing. */
+export const nullLogger: Logger = {
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+  child() {
+    return nullLogger;
+  },
+};

@@ -1,0 +1,105 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard", ":rebaseStalePrs"],
+  "timezone": "America/Santiago",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "rangeStrategy": "pin",
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  },
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "Security fixes first. prPriority is valid only in packageRules, and a vulnerability update carries isVulnerabilityAlert",
+      "matchJsonata": ["isVulnerabilityAlert = true"],
+      "prPriority": 10
+    },
+    {
+      "description": "gonogo supports Node 24 and up: the engines field and the Node 24 types stay on 24",
+      "matchDepTypes": ["engines"],
+      "enabled": false
+    },
+    {
+      "matchPackageNames": ["@types/node"],
+      "allowedVersions": "<25"
+    },
+    {
+      "groupName": "fonts",
+      "matchPackageNames": ["@fontsource/**"]
+    },
+    {
+      "groupName": "xterm",
+      "matchPackageNames": ["@xterm/**"]
+    },
+    {
+      "groupName": "react",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"]
+    },
+    {
+      "groupName": "vite",
+      "matchPackageNames": ["vite", "@vitejs/**", "vitest"]
+    },
+    {
+      "description": "These change how agents start, report state or get mail: a stand-in cannot catch that",
+      "matchPackageNames": ["@lydell/node-pty", "@modelcontextprotocol/sdk", "ws"],
+      "labels": ["needs-real-smoke"],
+      "prBodyNotes": ["Before merging: `pnpm build && node scripts/smoke-real.mjs --spend` (real claude, haiku; spends a little quota)."]
+    },
+    {
+      "description": "package.json `packageManager` and the Dockerfile's PNPM_VERSION name the same pnpm: one pull request moves both",
+      "groupName": "pnpm",
+      "matchPackageNames": ["pnpm"]
+    },
+    {
+      "description": "The Docker base stays on Node 24 bookworm-slim; Renovate pins and refreshes its digest",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["node"],
+      "pinDigests": true,
+      "allowedVersions": "/^24-bookworm-slim$/"
+    },
+    {
+      "description": "One pull request for the GitHub Actions; each `uses:` is pinned to a commit SHA with its version in a comment",
+      "groupName": "github actions",
+      "matchManagers": ["github-actions"]
+    },
+    {
+      "description": "CI runs the lowest Node gonogo supports, as the Docker image does",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["node"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The Node image is an ARG default in the Dockerfile, which the dockerfile manager does not read",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG NODE_IMAGE=(?<depName>[a-z0-9./-]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"],
+      "datasourceTemplate": "docker",
+      "autoReplaceStringTemplate": "ARG NODE_IMAGE={{depName}}:{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}"
+    },
+    {
+      "customType": "regex",
+      "description": "The docker CLI image (for Clean Room in a container) is an ARG default in the Dockerfile as well",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG DOCKER_CLI_IMAGE=(?<depName>[a-z0-9./-]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"],
+      "datasourceTemplate": "docker",
+      "autoReplaceStringTemplate": "ARG DOCKER_CLI_IMAGE={{depName}}:{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}"
+    },
+    {
+      "customType": "regex",
+      "description": "The pnpm that installs Claude Code in the image is an ARG default in the Dockerfile",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG PNPM_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    }
+  ]
+}

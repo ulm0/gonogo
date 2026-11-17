@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gonogo, Instrument: phone go or no-go</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Doto:wght@700;900&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#26272b}a:hover{color:#000000}
+@keyframes ins-led{50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: #e4e2dc; color: #26272b; font-family: 'Geist', system-ui, sans-serif; font-size: 13px; display: flex; flex-direction: column; padding: 0 14px 16px; gap: 12px">
+
+<header style="display: flex; align-items: center; gap: 10px; height: 52px; margin: 0 -6px">
+<a href="InstPhone.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 8px; font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.06em; text-decoration: none">‹ ROOM</a>
+<div style="flex-grow: 1"></div>
+<span style="font-family: 'Geist Mono', monospace; font-size: 10.5px; color: #6b6a66">WAITING 3 M</span>
+</header>
+
+<section aria-label="SURGEON asks for a go" style="padding: 16px; background: #f1f0ec; border: 1px solid #c9c6be; border-radius: 14px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 50%; background: #e0a93a; box-shadow: 0 0 0 5px rgba(224, 169, 58, 0.25); animation: ins-led 1.6s ease-in-out infinite"></span>
+<span style="font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 13px; letter-spacing: 0.04em">10 · SURGEON</span>
+</div>
+<h1 style="margin: 0; font-weight: 600; font-size: 34px; line-height: 1.05; letter-spacing: -0.02em">Asks for a go</h1>
+<div style="background: #2b2f2a; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35)">
+<span style="font-family: 'Geist Mono', monospace; font-size: 10px; letter-spacing: 0.08em; color: #9fb79b">BASH</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 16px; color: #cfe6c9">npm run test:e2e</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #9fb79b">in /projects/app</span>
+</div>
+<span style="font-size: 13px; color: #44463f; line-height: 1.45">1 message for SURGEON waits until you answer.</span>
+</section>
+
+<div style="flex-grow: 1"></div>
+
+<div style="display: flex; gap: 10px">
+<button type="button" style="appearance: none; cursor: pointer; flex: 1 1 0; height: 120px; border: 1px solid #c9c6be; border-bottom-width: 5px; border-radius: 16px; background: #faf9f6; color: #a8323c; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 15px; letter-spacing: 0.08em">
+<span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 50%; background: #c2414b"></span>NO-GO
+</button>
+<button type="button" style="appearance: none; cursor: pointer; flex: 1.4 1 0; height: 120px; border: 1px solid #26272b; border-bottom-width: 5px; border-radius: 16px; background: #26272b; color: #f1f0ec; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-family: 'Geist Mono', monospace; font-weight: 600; font-size: 15px; letter-spacing: 0.08em">
+<span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 50%; background: #7cc493"></span>GO
+</button>
+</div>
+
+<div style="display: flex; justify-content: space-between; gap: 12px">
+<a href="#always" style="display: flex; align-items: center; min-height: 44px; font-size: 12.5px">Always allow in this folder</a>
+<a href="#terminal" style="display: flex; align-items: center; min-height: 44px; font-size: 12.5px">Open the terminal</a>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+/*
+ * Docking: the module under Relay in Launch Window, in the Instrument look. It reuses the list, the keys and the confirm of
+ * launch.css and uplink.css (win-, up-); only what is new is dk-: the list of a station's agents, the code panel and the
+ * hand-off form of a card of the Flight Plan. Under 700 px wide everything stacks; every key and field is 44 px tall.
+ */
+
+.dk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.dk-station {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.dk-station strong {
+  color: var(--text);
+}
+
+.dk-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+
+.dk-agents li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 12.5px;
+}
+
+.dk-agents .dk-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.dk-agents .dk-role {
+  flex: 1 1 200px;
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.dk-code {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+  padding: 12px 14px;
+}
+
+.dk-handoff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.dk-handoff .field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.dk-handed {
+  align-self: flex-start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dk * {
+    transition: none;
+    animation: none;
+  }
+}
+
+.dk-hint {
+  flex-basis: 100%;
+  margin: 0;
+}

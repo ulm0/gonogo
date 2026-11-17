@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "items": [
+    { "name": "a", "size": 3 },
+    { "name": "b", "size": 5 }
+  ]
+}
