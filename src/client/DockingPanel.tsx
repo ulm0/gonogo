@@ -5,6 +5,7 @@
  * from the other station). The code holds a one-time token and is on screen once, in the state of this component.
  */
 import { useEffect, useId, useRef, useState } from 'react';
+import { roomOrigin } from './base.js';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { DOCKS_MAX } from '../shared/protocol.js';
 import type { DockCode, DockView, Task, TaskStatus } from '../shared/protocol.js';
@@ -29,7 +30,7 @@ interface Problems {
 /** The address of this station, and for Pair the code. Make a code answers with the code, Pair with a new row. */
 function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; onMade(made: DockCode): void; onNotice(text: string): void }): ReactElement {
   const id = useId();
-  const [address, setAddress] = useState(location.origin);
+  const [address, setAddress] = useState(roomOrigin());
   const [code, setCode] = useState('');
   const [problems, setProblems] = useState<Problems>({});
   const [topError, setTopError] = useState<string | null>(null);
