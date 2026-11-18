@@ -9,11 +9,14 @@ import { HireForm } from './HireForm.js';
 import { LaunchWindow } from './LaunchWindow.js';
 import { Livery } from './Livery.js';
 import { MissionLog } from './MissionLog.js';
+import { PatchPanel } from './PatchPanel.js';
+import { Commissioning, FlightRules } from './Rules.js';
+import { isPanelKey } from './shell.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { openConsole, openHire, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showWindow, useStore } from './store.js';
+import { openConsole, openHire, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import logo from '../../docs/brand/lockup.svg';
@@ -58,7 +61,7 @@ function UnreadCount(): ReactElement | null {
 
 const downlinkName = (unread: number): string => (unread === 0 ? 'Downlink' : `Downlink, ${unreadText(unread)}`);
 
-function TopBar({ phone }: { phone: boolean }): ReactElement {
+function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactElement {
   const list = useAgentList();
   const dir = list.find((a) => a.boss)?.dir ?? null;
   const unread = useStore((s) => s.downlink.unread);
@@ -105,7 +108,17 @@ function TopBar({ phone }: { phone: boolean }): ReactElement {
           Mission Log
         </button>
       )}
-      {/* a round key on every width: a seventh word in the bar would not fit on one line at 1280 px */}
+      {!phone && (
+        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Patch Panel" aria-keyshortcuts="Meta+K Control+K" title="Patch Panel (Cmd+K or Ctrl+K)" onClick={onPanel}>
+          <span className="patch-mark" aria-hidden="true" />
+        </button>
+      )}
+      {!phone && (
+        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Flight Rules" title="Flight Rules" aria-current={view === 'rules' ? 'page' : undefined} onClick={showRules}>
+          <span className="rules-mark" aria-hidden="true" />
+        </button>
+      )}
+      {/* round keys: another word in the bar would not fit on one line at 1280 px */}
       <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Livery" title="Livery" aria-current={view === 'livery' ? 'page' : undefined} onClick={showLivery}>
         <span className="livery-mark" aria-hidden="true" />
       </button>
@@ -123,7 +136,7 @@ function TopBar({ phone }: { phone: boolean }): ReactElement {
 }
 
 /** The wall of a phone is mission, clock, poll and Max Q; the three screens are one bar away. */
-function PhoneBar(): ReactElement {
+function PhoneBar({ onPanel }: { onPanel(): void }): ReactElement {
   const view = useStore((s) => s.view);
   const unread = useStore((s) => s.downlink.unread);
   const planCount = activeText(activeOf(useStore((s) => s.tasks)));
@@ -156,6 +169,9 @@ function PhoneBar(): ReactElement {
       </button>
       <button type="button" className="btn" data-kind={view === 'log' ? 'primary' : undefined} aria-label="Mission Log" aria-current={view === 'log' ? 'page' : undefined} onClick={showLog}>
         Log
+      </button>
+      <button type="button" className="btn" aria-label="Patch Panel" onClick={onPanel}>
+        Patch
       </button>
     </nav>
   );
@@ -283,11 +299,13 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'downlink') return <Downlink />;
   if (view === 'log') return <MissionLog />;
   if (view === 'livery') return <Livery />;
+  if (view === 'rules') return <FlightRules />;
   if (phone) {
     return (
       <main className="room room-phone">
         <Wall />
         <Needs phone />
+        <Commissioning />
         <Operations phone />
       </main>
     );
@@ -297,6 +315,7 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
       <Wall />
       <main className="room">
         <div className="room-main">
+          <Commissioning />
           <Operations phone={false} />
           <YourConsole />
         </div>
@@ -311,22 +330,35 @@ function Office(): ReactElement {
   const form = useStore((s) => s.form);
   const consoleOpen = useStore((s) => s.consoleOpen);
   const view = useStore((s) => s.view);
+  const [panel, setPanel] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!isPanelKey(e)) return;
+      e.preventDefault();
+      setPanel(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const patch = <PatchPanel open={panel} phone={phone} onClose={() => setPanel(false)} />;
   // A console open on a phone is a full screen with its own header and no bottom bar.
   if (phone && consoleOpen && form === null && view === 'room') {
     return (
       <>
         <PhoneConsoleScreen />
         <LiveRegion />
+        {patch}
       </>
     );
   }
   return (
     <>
-      <TopBar phone={phone} />
+      <TopBar phone={phone} onPanel={() => setPanel(true)} />
       <GoneStrip />
       <Screen phone={phone} />
-      {phone && form === null && <PhoneBar />}
+      {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
       <LiveRegion />
+      {patch}
     </>
   );
 }

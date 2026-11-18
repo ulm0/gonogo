@@ -32,7 +32,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
+  gap: 8px; /* nine keys on one line at 1280 px (Patch Panel, Flight Rules and Livery are round) */
   min-height: 64px;
   padding: 20px 24px 0;
 }
@@ -60,14 +60,14 @@
   filter: invert(1) hue-rotate(180deg);
 }
 
-/* Seven keys (Livery is the seventh) and the long name of the unit do not fit on one line below 1400 px: the name gives way, GN-1 stays. */
+/* Nine keys (three of them round) and the long name of the unit do not fit on one line below 1400 px: the name gives way, GN-1 stays. */
 @media (min-width: 700px) and (max-width: 1399px) {
   .mark-unit-long {
     display: none;
   }
 }
 
-/* It starts small and grows into the room that is left, up to 24 characters: a top bar with seven keys must stay on one line at 1280 px (its gap is 10 px for that). */
+/* It starts small and grows into the room that is left, up to 24 characters: a top bar with nine keys must stay on one line at 1280 px (its gap is 8 px for that). */
 .topbar-dir {
   flex: 1 1 6ch;
   min-width: 0;
@@ -1122,9 +1122,9 @@
   position: sticky;
   bottom: 0;
   display: flex;
-  gap: 6px;
+  gap: 3px;
   margin-top: auto;
-  padding: 8px 12px 12px;
+  padding: 8px 6px 12px;
   background: var(--body);
 }
 
@@ -1132,7 +1132,7 @@
   position: relative;
   flex: 1 1 0;
   min-height: 48px;
-  padding: 0 2px; /* seven keys must fit in 390 px at 44 px or more each */
+  padding: 0 1px; /* eight keys must fit in 390 px at 44 px or more each (with the gap and the side padding of the bar) */
   border-radius: 9px;
   font-size: 11px;
   letter-spacing: 0;

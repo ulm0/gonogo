@@ -251,7 +251,7 @@ function TMinus(): ReactElement {
   );
 }
 
-function MaxQ(): ReactElement {
+export function MaxQ(): ReactElement {
   const governor = useStore((s) => s.governor);
   const { busy, error, run } = useRun();
   const gauge = gaugeSegments(governor);
@@ -306,7 +306,7 @@ function MaxQ(): ReactElement {
   );
 }
 
-function Propellant(): ReactElement {
+export function Propellant(): ReactElement {
   return (
     <div className="wall-block wall-fuel module">
       <Heading letter="F">PROPELLANT</Heading>

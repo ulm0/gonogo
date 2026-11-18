@@ -100,8 +100,8 @@ Plan:
 
 ## 9. App shell
 
-- [ ] Onboarding wizard and a settings screen.
-- [ ] Command bar.
+- [x] Onboarding wizard and a settings screen. Built 2026-11-18 as Commissioning and Flight Rules (`docs/shell-spec.md`).
+- [x] Command bar. Built 2026-11-18 as the Patch Panel (`docs/shell-spec.md`).
 - [ ] Office themes.
 - [ ] Avatars that walk around the floor. This needs art of our own: the reference's tile sets cannot be used.
 - [ ] Auto-update.
