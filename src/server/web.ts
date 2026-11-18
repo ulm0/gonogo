@@ -16,6 +16,7 @@ import type {
   ApiErrorCode,
   Attachment,
   EditRequest,
+  EngineCheck,
   ErrorFrame,
   GovernorRequest,
   HireRequest,
@@ -63,6 +64,8 @@ import {
   sendUnauthorized,
 } from './hooks.js';
 import { readCustomCommand } from './command.js';
+import type { BlackBox } from './blackbox.js';
+import type { Board } from './board.js';
 import type { Downlink } from './downlink.js';
 import { DOCK_ROUTES } from './docking.js';
 import { HANGAR_BODY_MAX_BYTES } from './hangar.js';
@@ -71,10 +74,14 @@ import type { Docking } from './docking.js';
 import { createMcpHandler } from './mcp.js';
 import { parsePropellantRequest } from './propellant.js';
 import type { Liveries } from './livery.js';
+import type { MassBudget } from './massbudget.js';
 import type { MissionLog } from './missionlog.js';
 import type { Propellant } from './propellant.js';
 import type { Recorder } from './recorder.js';
+import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
+import type { Relief } from './relief.js';
+import type { Rollout } from './rollout.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
 import type { Uplinks } from './uplinks.js';
@@ -97,6 +104,8 @@ export interface WebOptions {
   isReady: () => boolean;
   /** Token use and limits; absent in tests that do not need them (the snapshot then shows no use and no limits). */
   propellant?: Pick<Propellant, 'view' | 'setLimits'>;
+  /** Telemetry: GET /api/agents/:name/telemetry. Without it the list is empty. */
+  telemetry?: Pick<Telemetry, 'calls'>;
   /** Launch Window; absent in tests that do not need it (the snapshot then lists none and the routes answer 404). It tells the browsers itself. */
   schedules?: Pick<Schedules, 'list' | 'create' | 'update' | 'remove' | 'run'>;
   /** Uplink; absent in tests that do not need it (the snapshot then lists none and the routes answer 404). It tells the browsers itself. */
@@ -106,7 +115,13 @@ export interface WebOptions {
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
-  missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update' | 'remove'>;
+  missionLog?: Pick<MissionLog, 'search' | 'get' | 'chart' | 'create' | 'update' | 'remove'>;
+  /** Mass Budget; absent in tests that do not need it (the routes answer 404). The page asks; no frame. */
+  massBudget?: Pick<MassBudget, 'view' | 'reflect'>;
+  /** Plot Board; absent in tests that do not need it (the route answers 404 and the board tools say it is not available). The page asks again every few seconds; no frame. */
+  board?: Pick<Board, 'get' | 'write'>;
+  /** Black Box; absent in tests that do not need it (the route answers 404). The page asks again every few seconds; no frame. */
+  blackBox?: Pick<BlackBox, 'view'>;
   /** Livery; absent in tests that do not need it (the snapshot then has no livery, the routes answer 404 and the livery tool says it is not available). It tells the browsers itself. */
   liveries?: Pick<Liveries, 'view' | 'select' | 'remove' | 'submit' | 'design'>;
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
@@ -116,6 +131,12 @@ export interface WebOptions {
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
   recorder?: Recorder;
+  /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
+  relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
+  /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
+  rollout?: Pick<Rollout, 'view'>;
+  /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
+  engines?: () => Promise<EngineCheck[]>;
   log: Logger;
 }
 
@@ -312,7 +333,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, model, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -343,6 +364,15 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
     if (typeof cleanRoom !== 'object' || cleanRoom === null || Array.isArray(cleanRoom)) return fieldError('cleanRoom', 'an object');
     value.cleanRoom = cleanRoom;
   }
+  // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
+  if (model !== undefined) {
+    if (typeof model !== 'string') return fieldError('model', 'a string');
+    value.model = model;
+  }
+  if (keys !== undefined) {
+    if (!isRecord(keys)) return fieldError('keys', 'an object');
+    value.keys = keys as Record<string, string>;
+  }
   return { ok: true, value };
 }
 
@@ -351,6 +381,10 @@ function parsePoll(o: Record<string, unknown>): Parsed<PollRequest> {
   if (o.agents !== undefined) {
     if (!Array.isArray(o.agents) || !o.agents.every((a) => typeof a === 'string')) return fieldError('agents', 'a list of names');
     value.agents = o.agents as string[];
+  }
+  if (o.subject !== undefined) {
+    if (typeof o.subject !== 'string') return fieldError('subject', 'text');
+    value.subject = o.subject;
   }
   return { ok: true, value };
 }
@@ -400,6 +434,14 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
     if (o.cleanRoom !== null && (typeof o.cleanRoom !== 'object' || Array.isArray(o.cleanRoom))) return fieldError('cleanRoom', 'an object or null');
     value.cleanRoom = o.cleanRoom;
   }
+  if (o.model !== undefined) {
+    if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');
+    value.model = o.model;
+  }
+  if (o.keys !== undefined) {
+    if (!isRecord(o.keys)) return fieldError('keys', 'an object');
+    value.keys = o.keys as Record<string, string | null>;
+  }
   return { ok: true, value };
 }
 
@@ -447,7 +489,9 @@ export function createWebServer(options: WebOptions): WebServer {
     resolveToken: options.resolveToken,
     tasks: options.tasks,
     missionLog: options.missionLog,
+    board: options.board,
     liveries: options.liveries,
+    relief: options.relief,
     log: log.child('mcp'),
     version: () => options.info().version,
   });
@@ -530,6 +574,8 @@ export function createWebServer(options: WebOptions): WebServer {
     downlink: options.downlink?.view() ?? { unread: 0, items: [] },
     livery: options.liveries?.view(),
     docking: options.docking?.view(),
+    relief: options.relief?.view(),
+    rollout: options.rollout?.view(),
   });
 
   const sendHubError = (res: ServerResponse, e: unknown): void => {
@@ -616,6 +662,11 @@ export function createWebServer(options: WebOptions): WebServer {
   const matchApi = (s: string[]): ApiRoute | null => {
     if (s.length === 2 && s[1] === 'state') {
       return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, snapshot()) };
+    }
+    if (s.length === 2 && s[1] === 'engines') {
+      const engines = options.engines;
+      if (!engines) return null;
+      return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, await engines()) };
     }
     if (s.length === 2 && s[1] === 'agents') {
       return {
@@ -819,6 +870,7 @@ export function createWebServer(options: WebOptions): WebServer {
         };
       }
       const id = s[2] ?? '';
+      if (id === 'chart') return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, missionLog.chart()) };
       return {
         allow: ['GET', 'PUT', 'DELETE'],
         run: async (req, res) => {
@@ -836,6 +888,26 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) sendJson(res, 200, await missionLog.update(id, body, null));
         },
       };
+    }
+    if (s[1] === 'board' && s.length === 2) {
+      const board = options.board;
+      if (!board) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') {
+            sendJson(res, 200, board.get());
+            return;
+          }
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await board.write('user', body));
+        },
+      };
+    }
+    if (s[1] === 'black-box' && s.length === 2) {
+      const blackBox = options.blackBox;
+      if (!blackBox) return null;
+      return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, blackBox.view()) };
     }
     if (s[1] === 'liveries' || s[1] === 'livery') {
       const liveries = options.liveries;
@@ -879,6 +951,15 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) sendJson(res, 200, await (name === 'forward' ? relay.forward(body) : relay.set(name, body)));
         },
       };
+    }
+    if (s[1] === 'relief' && s.length <= 4) {
+      const relief = options.relief;
+      if (!relief) return null;
+      if (s.length === 2) return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, relief.view()) };
+      // browser token only, like every /api route: an agent's token never reaches here, so the boss cannot answer its own request
+      if (s.length !== 4 || (s[3] !== 'go' && s[3] !== 'no-go')) return null;
+      const verdict = s[3];
+      return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await relief.decide(s[2] ?? '', verdict, { kind: 'user' })) };
     }
     if (s[1] === 'downlink' && s.length <= 3) {
       const downlink = options.downlink;
@@ -957,12 +1038,31 @@ export function createWebServer(options: WebOptions): WebServer {
         },
       };
     }
-    if (s.length === 4 && s[3] === 'resume') {
+    if (s.length === 4 && (s[3] === 'memory' || s[3] === 'reflect') && options.massBudget) {
+      const massBudget = options.massBudget;
+      return {
+        allow: [s[3] === 'memory' ? 'GET' : 'POST'],
+        run: async (_req, res) => {
+          const name = agentName(res, s[2]);
+          if (name !== null) sendJson(res, s[3] === 'memory' ? 200 : 201, await (s[3] === 'memory' ? massBudget.view(name) : massBudget.reflect(name)));
+        },
+      };
+    }
+    if (s.length === 4 && (s[3] === 'resume' || s[3] === 'hold')) {
       return {
         allow: ['POST'],
         run: (_req, res) => {
           const name = agentName(res, s[2]);
-          if (name !== null) sendJson(res, 200, hub.resume(name));
+          if (name !== null) sendJson(res, 200, s[3] === 'hold' ? hub.hold(name) : hub.resume(name));
+        },
+      };
+    }
+    if (s.length === 4 && s[3] === 'telemetry') {
+      return {
+        allow: ['GET'],
+        run: (_req, res) => {
+          const name = agentName(res, s[2]);
+          if (name !== null) sendJson(res, 200, { calls: options.telemetry?.calls(name) ?? [] });
         },
       };
     }

@@ -201,6 +201,8 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     command: null,
     payload: null,
     cleanRoom: null,
+    model: null,
+    keys: {},
     doing: null,
     history: [{ state: 'idle', at: 1 }],
     ...over,
@@ -255,6 +257,12 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       return agentView(name, { state: 'stopped' });
     },
     trip: (name, reason) => rec('trip', name, reason),
+    hold: (name) => {
+      rec('hold', name);
+      if (name === 'ghost') throw new FakeHubError('not_found', 'unknown agent');
+      if (name === 'ben') throw new FakeHubError('conflict', 'ben is already on hold');
+      return agentView(name, { state: 'needs_you', needsKind: 'redline', needsReason: 'on hold' });
+    },
     resume: (name) => {
       rec('resume', name);
       if (name === 'ghost') throw new FakeHubError('not_found', 'unknown agent');
@@ -881,6 +889,49 @@ describe('home', () => {
     await home.saveRoster(file);
     expect(home.loadRoster()).toEqual(file);
     expect(home.loadRoster().agents[2]).not.toHaveProperty('cleanRoom');
+  });
+
+  it('round-trips a model and the names of keys, and the file holds no value', async () => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    const id = '123e4567-e89b-42d3-a456-426614174000';
+    const base = { dir: '/w', mode: 'default' as const, sessionId: id, createdAt: 1, boss: false };
+    const file: RosterFile = {
+      version: 1,
+      agents: [
+        { ...base, name: 'ana', role: 'dev', desk: 1, model: 'sonnet', keys: { OPENAI_API_KEY: 5, GEMINI_API_KEY: 6 } },
+        { ...base, name: 'gem', role: 'dev', desk: 2, provider: 'gemini', model: 'flash' },
+        { ...base, name: 'old', role: 'dev', desk: 3 },
+      ],
+    };
+    await home.saveRoster(file);
+    expect(home.loadRoster()).toEqual(file);
+    expect(home.loadRoster().agents[2]).not.toHaveProperty('model');
+    expect(home.loadRoster().agents[2]).not.toHaveProperty('keys');
+  });
+
+  it.each([
+    ['a model that is not text', { model: 5 }],
+    ['a model that looks like a flag', { model: '--yolo' }],
+    ['a model on an opencode agent', { provider: 'opencode', model: 'x' }],
+    ['a model on a custom agent', { provider: 'custom', command: 'ls', model: 'x' }],
+    ['keys that are a list', { keys: ['A_KEY'] }],
+    ['a key with a lower case name', { keys: { openai: 5 } }],
+    ['a key of a reserved name', { keys: { PATH: 5 } }],
+    ['a key whose time is not a number', { keys: { A_KEY: 'now' } }],
+    ['17 keys', { keys: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`K${i}`, 1])) }],
+  ])('refuses a roster with %s, and the message holds no key name or value', (_what, over) => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [agentRecord('ana', over)] }));
+    let message = '';
+    try {
+      home.loadRoster();
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toMatch(/fix or delete this file/);
+    expect(message).not.toMatch(/PATH|openai|OPENAI|A_KEY/);
   });
 
   it('serialises saves: the last call wins even when they overlap, and the object is copied at call time', async () => {
@@ -1815,6 +1866,7 @@ describe('mission log', () => {
           known(id);
           return entry;
         },
+        chart: () => ({ total: 7, shown: 1, nodes: [{ id: 'entry:l1', kind: 'entry', ref: 'l1', label: 'Cache key', weight: 1 }], edges: [] }),
         create: async (author, input) => {
           calls.push(['create', author, input]);
           if ((input as { title?: unknown }).title === 'bad') throw new FakeHubError('bad_request', 'title must be 1 to 200 characters on one line', 'title');
@@ -1841,6 +1893,8 @@ describe('mission log', () => {
     expect((await api(port, 'GET', '/api/log')).json()).toEqual({ total: 7, hits: [hit] });
     expect((await api(port, 'GET', '/api/log?q=')).status).toBe(200);
     expect((await api(port, 'GET', '/api/log/l1')).json()).toEqual(entry);
+    expect((await api(port, 'GET', '/api/log/chart')).json()).toMatchObject({ total: 7, shown: 1, nodes: [{ id: 'entry:l1' }], edges: [] });
+    for (const method of ['POST', 'PUT', 'DELETE'] as const) expect((await api(port, method, '/api/log/chart', method === 'DELETE' ? undefined : {})).status, method).toBe(405);
     const made = await api(port, 'POST', '/api/log', { title: 'Cache key', body: 'b', tags: ['build'] });
     expect([made.status, made.json()]).toEqual([201, entry]);
     expect((await api(port, 'POST', '/api/log', { title: 'bad' })).json()).toEqual({ error: 'title must be 1 to 200 characters on one line', code: 'bad_request', field: 'title' });
@@ -2019,6 +2073,25 @@ describe('livery', () => {
     expect((await api(none.port, 'POST', '/api/liveries/design', { brief: 'x' })).status).toBe(404);
   });
 
+  it('Pad Check: GET /api/engines answers the engines, wants the browser token, allows only GET, and is 404 without it', async () => {
+    const checks = [{ provider: 'claude', label: 'Claude Code', bin: 'claude', path: '/bin/claude', version: '2.1.325', install: 'curl x | bash', docs: 'https://a.example' }];
+    const { port } = await startWeb({ engines: async () => checks as never });
+    const res = await api(port, 'GET', '/api/engines');
+    expect([res.status, res.json()]).toEqual([200, checks]);
+    expect((await api(port, 'GET', '/api/engines', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await send(port, { path: '/api/engines' })).status).toBe(401);
+    expect((await api(port, 'POST', '/api/engines', {})).status).toBe(405);
+    expect((await api(port, 'GET', '/api/engines/claude')).status).toBe(404);
+    expect((await api((await startWeb()).port, 'GET', '/api/engines')).status).toBe(404);
+  });
+
+  it('Rollout: the state carries the view when there is one, and nothing when there is not', async () => {
+    const view = { enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: 5, newer: true, command: 'pnpm add -g @ulm0/gonogo@latest' };
+    const { port } = await startWeb({ rollout: { view: () => view } });
+    expect(((await api(port, 'GET', '/api/state')).json() as { rollout: unknown }).rollout).toEqual(view);
+    expect('rollout' in ((await api((await startWeb()).port, 'GET', '/api/state')).json() as object)).toBe(false);
+  });
+
   it('gives the agents livery_submit, and the author is the agent of the token', async () => {
     const { calls, liveries } = fakeLiveries();
     const { port } = await startWeb({ liveries });
@@ -2048,6 +2121,120 @@ describe('livery', () => {
     const { port } = await startWeb();
     const ana = await connectMcp(port, ANA_TOKEN);
     expect(toolOutcome(await ana.callTool({ name: 'livery_submit', arguments: { name: 'x', tokens: {} } }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"Livery is not available"}' });
+  });
+});
+
+describe('relief', () => {
+  const request = { id: 'h1', by: 'flight', at: 5, expiresAt: 9, name: 'guido-1', position: 'guido', role: 'r', dir: '/work', provider: 'claude', mode: 'acceptEdits', cleanRoom: null } as const;
+  const view = { requests: [request] };
+  /** A Relief that records what the routes and the tool ask of it. */
+  function fakeRelief(): { calls: unknown[][]; relief: NonNullable<WebOptions['relief']> } {
+    const calls: unknown[][] = [];
+    return {
+      calls,
+      relief: {
+        view: () => view,
+        request: async (by, input) => {
+          calls.push(['request', by, input]);
+          if ((input as { name?: unknown }).name === 'full') throw new FakeHubError('conflict', 'the operations room is full (24 agents)');
+          return { id: 'h1', status: 'pending', note: 'waiting for the Director' };
+        },
+        decide: async (id, verdict, by) => {
+          calls.push(['decide', id, verdict, by]);
+          if (id === 'h9') throw new FakeHubError('not_found', 'no such hire request: it may have expired or been answered');
+          return { requests: [] };
+        },
+      },
+    };
+  }
+
+  it('lists the requests, and answers GO and NO-GO as the Director', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    expect((await api(port, 'GET', '/api/relief')).json()).toEqual(view);
+    expect((await api(port, 'POST', '/api/relief/h1/go')).json()).toEqual({ requests: [] });
+    expect((await api(port, 'POST', '/api/relief/h1/no-go')).json()).toEqual({ requests: [] });
+    expect((await api(port, 'POST', '/api/relief/h9/go')).json()).toEqual({ error: 'no such hire request: it may have expired or been answered', code: 'not_found' });
+    expect(calls).toEqual([['decide', 'h1', 'go', { kind: 'user' }], ['decide', 'h1', 'no-go', { kind: 'user' }], ['decide', 'h9', 'go', { kind: 'user' }]]);
+  });
+
+  it('puts the requests in the state, and allows only the methods of each route', async () => {
+    const { relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    expect(((await api(port, 'GET', '/api/state')).json() as { relief: unknown }).relief).toEqual(view);
+    expect((await api(port, 'POST', '/api/relief', {})).status).toBe(405);
+    expect((await api(port, 'GET', '/api/relief/h1/go')).status).toBe(405);
+    expect((await api(port, 'PUT', '/api/relief/h1/no-go', {})).status).toBe(405);
+    expect((await api(port, 'POST', '/api/relief/h1/maybe')).status).toBe(404);
+    expect((await api(port, 'POST', '/api/relief/h1')).status).toBe(404);
+    expect((await api(port, 'POST', '/api/relief/h1/go/x')).status).toBe(404);
+  });
+
+  it('an agent token cannot answer, or even list: the boss cannot approve its own request', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    for (const token of [ANA_TOKEN, BEN_TOKEN, 'nope']) {
+      expect((await api(port, 'POST', '/api/relief/h1/go', undefined, token)).status, token).toBe(401);
+      expect((await api(port, 'POST', '/api/relief/h1/no-go', undefined, token)).status, token).toBe(401);
+      expect((await api(port, 'GET', '/api/relief', undefined, token)).status, token).toBe(401);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('has no requests in the state and answers 404 without a Relief', async () => {
+    const none = await startWeb();
+    expect('relief' in ((await api(none.port, 'GET', '/api/state')).json() as object)).toBe(false);
+    expect((await api(none.port, 'GET', '/api/relief')).status).toBe(404);
+    expect((await api(none.port, 'POST', '/api/relief/h1/go')).status).toBe(404);
+  });
+
+  it('gives the agents hire_agent, and the requester is the agent of the token', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const sent = toolOutcome(await ana.callTool({ name: 'hire_agent', arguments: { name: 'guido-1', position: 'guido', dir: '/work', engine: 'claude', mode: 'acceptEdits' } }));
+    expect(sent).toMatchObject({ isError: false, json: { ok: true, id: 'h1', status: 'pending' } });
+    expect(calls).toEqual([['request', { agent: 'ana', generation: 3 }, { name: 'guido-1', position: 'guido', dir: '/work', engine: 'claude', mode: 'acceptEdits' }]]);
+  });
+
+  it('tells the agent why when the request is refused', async () => {
+    const { relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'hire_agent', arguments: { name: 'full', role: 'r', dir: '/work' } }))).toMatchObject({
+      isError: true,
+      text: '{"ok":false,"error":"the operations room is full (24 agents)"}',
+    });
+  });
+
+  it('refuses a field the tool does not have, and a bad shape, before Relief is asked', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const bad = [
+      { name: 'x', role: 'r', dir: '/work', confirmBypass: true },
+      { name: 'x', role: 'r', dir: '/work', command: 'sh' },
+      { name: 'x', role: 'r', dir: '/work', payload: {} },
+      { name: 'x', role: 'r', dir: '/work', cleanRoom: {} },
+      { name: 'x', role: 'r', dir: '/work', provider: 'custom' },
+      { name: '', role: 'r' },
+      { name: 'x'.repeat(33), role: 'r' },
+      { role: 'r' },
+      { name: 'x', role: 'r'.repeat(4001) },
+      { name: 'x', dir: 'd'.repeat(1025) },
+      { name: 'x', mode: 5 },
+    ];
+    for (const args of bad) {
+      const out = await ana.callTool({ name: 'hire_agent', arguments: args }).catch(() => ({ isError: true }));
+      expect((out as { isError?: boolean }).isError, JSON.stringify(args)).toBe(true);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('says Relief is not available when the server has none', async () => {
+    const { port } = await startWeb();
+    const ana = await connectMcp(port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'hire_agent', arguments: { name: 'x', role: 'r', dir: '/work' } }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"Relief is not available"}' });
   });
 });
 
@@ -2693,6 +2880,49 @@ describe('web: REST', () => {
       expect(res.json()).toMatchObject({ code: 'bad_request', field: 'cleanRoom', error: expect.stringContaining('docker version') });
     });
 
+    it('passes a model and keys to the hub as they are: a string or null for the model, an object of keys', async () => {
+      const { port, hubCalls } = await startWeb();
+      await api(port, 'PATCH', '/api/agents/ana', { model: 'sonnet', keys: { OPENAI_API_KEY: 'sk-test-1', OLD_KEY: null } });
+      await api(port, 'PATCH', '/api/agents/ana', { model: null });
+      await api(port, 'POST', '/api/agents', { name: 'zed', role: 'r', dir: '/w', mode: 'default', model: 'flash', keys: { GEMINI_API_KEY: 'g-1' } });
+      expect(hubCalls.filter((c) => c.fn === 'edit').map((c) => c.args)).toStrictEqual([['ana', { model: 'sonnet', keys: { OPENAI_API_KEY: 'sk-test-1', OLD_KEY: null } }], ['ana', { model: null }]]);
+      expect(hubCalls.filter((c) => c.fn === 'hire').map((c) => c.args[0])).toStrictEqual([{ name: 'zed', role: 'r', dir: '/w', mode: 'default', model: 'flash', keys: { GEMINI_API_KEY: 'g-1' } }]);
+    });
+
+    it.each([
+      ['a model that is a number', { model: 5 }, 'model'],
+      ['a model that is a list', { model: [] }, 'model'],
+      ['keys that are a list', { keys: [] }, 'keys'],
+      ['keys that are text', { keys: 'OPENAI_API_KEY=x' }, 'keys'],
+      ['keys that are null on a hire', { keys: null }, 'keys'],
+    ])('answers 400 with the field %s names for %s, on hire; the edit says the same unless it takes null', async (_what, body, field) => {
+      const { port, hubCalls } = await startWeb();
+      const hire = await api(port, 'POST', '/api/agents', { name: 'zed', role: 'r', dir: '/w', mode: 'default', ...body });
+      expect(hire.status).toBe(400);
+      expect(hire.json()).toMatchObject({ code: 'bad_request', field });
+      if (field === 'keys' || !('model' in body && body.model === null)) {
+        const edit = await api(port, 'PATCH', '/api/agents/ana', body);
+        expect(edit.status).toBe(400);
+        expect(edit.json()).toMatchObject({ code: 'bad_request', field });
+      }
+      expect(hubCalls.filter((c) => c.fn === 'edit' || c.fn === 'hire')).toEqual([]);
+    });
+
+    it('answers 400 with the field keys for keys the hub refuses, and the answer never holds the value', async () => {
+      const secret = 'sk-test-the-secret-value';
+      const { port } = await startWeb({}, { edit: async () => { throw new FakeHubError('bad_request', 'a key name uses capital letters, digits and _, starting with a letter (at most 64 characters)', 'keys'); } });
+      const res = await api(port, 'PATCH', '/api/agents/ana', { keys: { [secret]: 'x', OTHER: secret } });
+      expect(res.status).toBe(400);
+      expect(res.json()).toMatchObject({ code: 'bad_request', field: 'keys' });
+      expect(res.body).not.toContain(secret);
+    });
+
+    it('keys and the model need the browser token like every other route', async () => {
+      const { port } = await startWeb();
+      expect((await api(port, 'PATCH', '/api/agents/ana', { keys: { A_KEY: 'x' } }, ANA_TOKEN)).status).toBe(401);
+      expect((await send(port, { method: 'PATCH', path: '/api/agents/ana', headers: JSON_HEADERS, body: JSON.stringify({ model: 'x' }) })).status).toBe(401);
+    });
+
     it('passes position (a string or null to clear it) and command to the hub', async () => {
       const { port, hubCalls } = await startWeb();
       await api(port, 'PATCH', '/api/agents/ana', { position: 'fido' });
@@ -2787,6 +3017,27 @@ describe('web: REST', () => {
       expect((await api(port, 'POST', '/api/agents/ben/resume')).json()).toEqual({ error: 'ben has not tripped the redline', code: 'conflict' });
       expect((await api(port, 'GET', '/api/agents/ana/resume')).status).toBe(405);
       expect(hubCalls.map((c) => [c.fn, ...c.args])).toStrictEqual([['resume', 'ana'], ['resume', 'ghost'], ['resume', 'ben']]);
+    });
+
+    it('POST /api/agents/:name/hold answers with the view, 404 and 409 from the name and the hub', async () => {
+      const { port, hubCalls } = await startWeb();
+      const ok = await api(port, 'POST', '/api/agents/ana/hold');
+      expect(ok.status).toBe(200);
+      expect(ok.json()).toMatchObject({ name: 'ana', needsReason: 'on hold' });
+      expect((await api(port, 'POST', '/api/agents/ghost/hold')).status).toBe(404);
+      expect((await api(port, 'POST', '/api/agents/ben/hold')).json()).toEqual({ error: 'ben is already on hold', code: 'conflict' });
+      expect((await api(port, 'GET', '/api/agents/ana/hold')).status).toBe(405);
+      expect(hubCalls.map((c) => [c.fn, ...c.args])).toStrictEqual([['hold', 'ana'], ['hold', 'ghost'], ['hold', 'ben']]);
+    });
+
+    it('GET /api/agents/:name/telemetry lists the calls, empty without a recorder', async () => {
+      const call = { at: 1, ms: 20, tool: 'Bash', summary: 'Bash: ls', failed: false };
+      const { port } = await startWeb({ telemetry: { calls: (name) => (name === 'ana' ? [call] : []) } });
+      expect((await api(port, 'GET', '/api/agents/ana/telemetry')).json()).toEqual({ calls: [call] });
+      expect((await api(port, 'GET', '/api/agents/ben/telemetry')).json()).toEqual({ calls: [] });
+      expect((await api(port, 'POST', '/api/agents/ana/telemetry')).status).toBe(405);
+      const bare = await startWeb();
+      expect((await api(bare.port, 'GET', '/api/agents/ana/telemetry')).json()).toEqual({ calls: [] });
     });
 
     it('PUT /api/propellant checks the body, saves the limits and tells every browser', async () => {
@@ -3440,6 +3691,15 @@ describe('web: REST', () => {
       expect((await api(port, 'DELETE', '/api/poll')).status).toBe(204);
       expect((await api(port, 'POST', '/api/poll')).status).toBe(201);
       expect(hubCalls.filter((c) => c.fn === 'startPoll').map((c) => c.args[0])).toStrictEqual([{ agents: ['ana', 'ben'] }, {}]);
+    });
+
+    it('POST /api/poll passes a static fire subject to the hub, and refuses one that is not text', async () => {
+      const { port, hubCalls } = await startWeb();
+      expect((await api(port, 'POST', '/api/poll', { subject: 'the login form' })).status).toBe(201);
+      expect(hubCalls.filter((c) => c.fn === 'startPoll').map((c) => c.args[0])).toStrictEqual([{ subject: 'the login form' }]);
+      const bad = await api(port, 'POST', '/api/poll', { subject: 3 });
+      expect(bad.status).toBe(400);
+      expect(bad.json()).toMatchObject({ code: 'bad_request', field: 'subject' });
     });
 
     it.each([
@@ -6842,6 +7102,142 @@ describe('seams with the real hub, launcher and terminal host', () => {
 /* ================================================================================================================
  * the conventions of contract section 11, for the files of this builder
  * ============================================================================================================== */
+
+describe('plot board', () => {
+  const view = { text: 'ship it', revision: 2, author: 'flight', updatedAt: 5 };
+  /** A board that records what the routes and the tools ask of it, and refuses a revision that is not the current one. */
+  function fakeBoard(): { calls: unknown[][]; board: NonNullable<WebOptions['board']> } {
+    const calls: unknown[][] = [];
+    return {
+      calls,
+      board: {
+        get: () => {
+          calls.push(['get']);
+          return view;
+        },
+        write: async (by, input) => {
+          calls.push(['write', by, input]);
+          const body = input as { text?: unknown; revision?: unknown };
+          if (typeof body.text !== 'string') throw new FakeHubError('bad_request', 'text is required', 'text');
+          if (body.revision !== 2) throw new FakeHubError('conflict', `the Plot Board is at revision 2, not ${String(body.revision)}: read it again, then write`, 'revision');
+          return { ...view, text: body.text, revision: 3, author: by };
+        },
+      },
+    };
+  }
+  const asBoss = { rosterFor: (agent: string) => ({ you: agent, boss: 'ana', agents: [], specialRecipients: ['boss', 'user'] }) };
+
+  it('reads and writes the plan as the Director, with the revision it was made from', async () => {
+    const { calls, board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    expect((await api(port, 'GET', '/api/board')).json()).toEqual(view);
+    const put = await api(port, 'PUT', '/api/board', { text: 'new plan', revision: 2 });
+    expect([put.status, put.json()]).toEqual([200, { text: 'new plan', revision: 3, author: 'user', updatedAt: 5 }]);
+    expect(calls[1]).toEqual(['write', 'user', { text: 'new plan', revision: 2 }]);
+    const stale = await api(port, 'PUT', '/api/board', { text: 'late', revision: 1 });
+    expect([stale.status, stale.json()]).toEqual([409, { error: 'the Plot Board is at revision 2, not 1: read it again, then write', code: 'conflict', field: 'revision' }]);
+    expect((await api(port, 'PUT', '/api/board', { revision: 2 })).json()).toEqual({ error: 'text is required', code: 'bad_request', field: 'text' });
+    expect((await api(port, 'PUT', '/api/board', [1])).status).toBe(400);
+  });
+
+  it('allows GET and PUT only, wants a browser token, and is 404 without a board', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    for (const method of ['POST', 'PATCH', 'DELETE']) expect((await api(port, method, '/api/board', {})).status, method).toBe(405);
+    expect((await api(port, 'GET', '/api/board/x')).status).toBe(404);
+    expect((await api(port, 'GET', '/api/board', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await api(port, 'PUT', '/api/board', { text: 'x', revision: 2 }, ANA_TOKEN)).status).toBe(401);
+    expect((await api((await startWeb()).port, 'GET', '/api/board')).status).toBe(404);
+  });
+
+  it('lets every agent read it, and says whether it may write', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    const ben = await connectMcp(port, BEN_TOKEN);
+    expect(toolOutcome(await ben.callTool({ name: 'board_read', arguments: {} }))).toMatchObject({ isError: false, json: { ok: true, ...view, canWrite: false } });
+    const boss = await connectMcp((await startWeb({ board }, asBoss)).port, ANA_TOKEN);
+    expect(toolOutcome(await boss.callTool({ name: 'board_read', arguments: {} }))).toMatchObject({ isError: false, json: { ok: true, canWrite: true } });
+  });
+
+  it('lets only the boss write it, as itself whatever the call says, and never answers with the text', async () => {
+    const { calls, board } = fakeBoard();
+    const other = await startWeb({ board });
+    const ben = await connectMcp(other.port, BEN_TOKEN);
+    const refused = toolOutcome(await ben.callTool({ name: 'board_write', arguments: { text: 'mine', revision: 2 } }));
+    expect(refused).toMatchObject({ isError: true, text: '{"ok":false,"error":"only the boss may write the Plot Board"}' });
+    expect(calls).toEqual([]);
+    const { port } = await startWeb({ board }, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const written = toolOutcome(await ana.callTool({ name: 'board_write', arguments: { text: 'the plan', revision: 2, author: 'user' } }));
+    expect(written).toMatchObject({ isError: false, json: { ok: true, revision: 3, updatedAt: 5 } });
+    expect(written.text).not.toContain('the plan');
+    expect(calls).toEqual([['write', 'ana', { text: 'the plan', revision: 2 }]]);
+  });
+
+  it('tells the boss to read again when the board moved on', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board }, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'board_write', arguments: { text: 'x', revision: 1 } }))).toMatchObject({
+      isError: true,
+      text: '{"ok":false,"error":"the Plot Board is at revision 2, not 1: read it again, then write"}',
+    });
+  });
+
+  it('refuses a bad argument without calling the board', async () => {
+    const { calls, board } = fakeBoard();
+    const { port } = await startWeb({ board }, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    for (const args of [{}, { text: 'x' }, { revision: 1 }, { text: 'x'.repeat(10_001), revision: 2 }, { text: 5, revision: 2 }, { text: 'x', revision: -1 }, { text: 'x', revision: 1.5 }, { text: 'x', revision: '2' }]) {
+      const out = await ana.callTool({ name: 'board_write', arguments: args }).catch(() => ({ isError: true }));
+      expect((out as { isError?: boolean }).isError, JSON.stringify(args)).toBe(true);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('says the board is not available when the server has none', async () => {
+    const { port } = await startWeb({}, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    for (const [name, args] of [['board_read', {}], ['board_write', { text: 'x', revision: 0 }]] as const) {
+      expect(toolOutcome(await ana.callTool({ name, arguments: args }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"the Plot Board is not available"}' });
+    }
+  });
+
+  it('describes its two tools as the server says', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    const tools = (await (await connectMcp(port)).listTools()).tools;
+    const read = tools.find((t) => t.name === 'board_read');
+    const write = tools.find((t) => t.name === 'board_write');
+    expect(read?.description).toBe(MCP_DESCRIPTIONS.board_read);
+    expect(write?.description).toBe(MCP_DESCRIPTIONS.board_write);
+    expect(Object.keys(write?.inputSchema.properties ?? {}).sort()).toEqual(['revision', 'text']);
+    expect([...(write?.inputSchema.required ?? [])].sort()).toEqual(['revision', 'text']);
+    expect(write?.inputSchema.properties?.text).toMatchObject({ maxLength: 10_000 });
+  });
+});
+
+describe('black box', () => {
+  const view = { git: 'ok', note: '', dir: '/home/x/black-box', command: "git -C '/home/x/black-box' log -p", events: [{ at: 1, kind: 'crew', text: 'Director hired ana' }] };
+
+  it('lists the recent events and the command, to the browser only', async () => {
+    const { port } = await startWeb({ blackBox: { view: () => view as never } });
+    expect((await api(port, 'GET', '/api/black-box')).json()).toEqual(view);
+    expect((await api(port, 'GET', '/api/black-box', undefined, ANA_TOKEN)).status).toBe(401);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await api(port, method, '/api/black-box', {})).status, method).toBe(405);
+    expect((await api(port, 'GET', '/api/black-box/x')).status).toBe(404);
+  });
+
+  it('is 404 without a Black Box', async () => {
+    expect((await api((await startWeb()).port, 'GET', '/api/black-box')).status).toBe(404);
+  });
+
+  it('gives the agents no tool to read or write it', async () => {
+    const { port } = await startWeb({ blackBox: { view: () => view as never } });
+    const names = (await (await connectMcp(port)).listTools()).tools.map((t) => t.name);
+    expect(names.filter((name) => /audit|black|box|record/i.test(name))).toEqual([]);
+  });
+});
 
 describe('conventions', () => {
   const sources = ['home', 'hooks', 'mcp', 'web', 'cli'].map((name) => [name, readFileSync(join(PROJECT_ROOT, 'src', 'server', `${name}.ts`), 'utf8')] as const);

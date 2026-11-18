@@ -17,7 +17,7 @@ import {
 import { appendFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { POSITION_IDS } from '../shared/positions.js';
-import { ACTIVITY_STATUSES, PERMISSION_MODES, PROVIDERS, RESERVED_NAMES } from '../shared/protocol.js';
+import { ACTIVITY_STATUSES, KEYS_MAX, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo, RESERVED_NAMES } from '../shared/protocol.js';
 import type {
   ActivityStatus,
   AgentRecord,
@@ -47,8 +47,10 @@ import {
 import { readCustomCommand } from './command.js';
 import { migrateHome } from './migrate.js';
 import { parseCleanRoom } from './cleanroom.js';
+import { keyNameProblem } from './clearance.js';
 import { parsePayload, payloadRefusal } from './payload.js';
 
+const MODEL_RE = new RegExp(MODEL_PATTERN);
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
@@ -212,6 +214,22 @@ function parseAgent(a: unknown): AgentRecord | string {
     const checked = parseCleanRoom(cleanRoom, record.provider);
     if (!checked.ok) return `${name}: ${checked.error}`;
     record.cleanRoom = checked.cleanRoom;
+  }
+  const { model, keys } = a;
+  if (model !== undefined) {
+    if (typeof model !== 'string' || !MODEL_RE.test(model)) return `${name}: model is not a usable name`;
+    if (providerInfo(record.provider).model === null) return `${name}: ${providerInfo(record.provider).label} takes no model setting`;
+    record.model = model;
+  }
+  if (keys !== undefined) {
+    if (!isRecord(keys) || Object.keys(keys).length > KEYS_MAX) return `${name}: keys must be an object of at most ${KEYS_MAX} names`;
+    const names: Record<string, number> = {};
+    // shortcut: a name that a later gonogo reserves makes the roster unusable here (the start stops and names the agent); delete it from `keys` to go on
+    for (const [key, at] of Object.entries(keys)) {
+      if (keyNameProblem(key) !== null || typeof at !== 'number' || !Number.isFinite(at)) return `${name}: keys holds a name or a time that is not usable`;
+      names[key] = at;
+    }
+    if (Object.keys(names).length > 0) record.keys = names;
   }
   return record;
 }

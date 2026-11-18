@@ -1,0 +1,52 @@
+/*
+ * Mass Budget: the memory file of a console, under the panel's header. A row (name, size, REFLECT), the warning in the tint of a
+ * console that needs you, and small hints. REFLECT is a 44 px key (primitives.css). The colours are tokens, so the four liveries hold.
+ */
+
+.mass {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.mass-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.mass-size {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.mass-size code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.mass-over {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-key);
+  background: var(--you-tint);
+  color: var(--you-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.mass .hint,
+.mass .error {
+  margin: 0;
+}
+
+.phone-console .mass {
+  padding: 0 14px 8px;
+}

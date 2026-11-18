@@ -1,0 +1,186 @@
+/*
+ * Flight Rules and Commissioning, in the Instrument look. The page head is that of the comm loop (loop.css); the two wall modules
+ * keep their own look (shell.css). Every key is at least 44 px tall and nothing is wider than the screen at 390 px.
+ */
+
+.rules {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 20px;
+}
+
+.rules-title:focus-visible {
+  outline: none;
+}
+
+.rules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.rules-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+}
+
+.rules-block > .label,
+.rules-block > .hint,
+.rules-value {
+  margin: 0;
+}
+
+.rules-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.rules-consoles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules-consoles li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rules-call {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.rules-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The key of the top bar: three sliders, the sign of settings. */
+.rules-mark {
+  width: 16px;
+  height: 14px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 1px / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 6px / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 11px / 100% 2px no-repeat,
+    radial-gradient(circle, currentColor 2.5px, transparent 3px) 2px -1px / 6px 6px no-repeat,
+    radial-gradient(circle, currentColor 2.5px, transparent 3px) 9px 4px / 6px 6px no-repeat,
+    radial-gradient(circle, currentColor 2.5px, transparent 3px) 4px 9px / 6px 6px no-repeat;
+}
+
+/* ---- Commissioning ---- */
+
+.commission {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.commission-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.commission-head .label {
+  margin: 0;
+}
+
+.commission-head .btn {
+  margin-left: auto;
+}
+
+.commission-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.commission-steps li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.commission-text {
+  min-width: 0;
+}
+
+.commission-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.commission-steps li[data-done] .commission-title {
+  color: var(--text-2);
+  text-decoration: line-through;
+}
+
+.commission-text .hint,
+.commission-note p {
+  margin: 2px 0 0;
+}
+
+.commission-note summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.commission-note p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 699px) {
+  .room-phone > .commission {
+    margin: 10px 12px 0;
+  }
+
+  /* The phone's wall hides Propellant and flattens its modules (shell.css); here they are whole: this is the phone's place for them. */
+  .rules .wall-fuel {
+    display: flex;
+  }
+
+  .rules .wall-block.module:not(.flood) {
+    padding: 14px;
+    border: 1px solid var(--edge);
+    font-size: inherit;
+  }
+
+  .rules {
+    gap: 10px;
+    padding: 10px 12px 12px;
+  }
+
+  .commission-steps li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .commission-steps li > .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

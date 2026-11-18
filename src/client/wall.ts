@@ -1,5 +1,5 @@
 import type { ActivityItem, AgentView, FuelGauge, FuelLimits, FuelWindow, GovernorView, PollView } from '../shared/protocol.js';
-import { HISTORY_WINDOW_MS, MAX_AGENTS, providerInfo } from '../shared/protocol.js';
+import { HISTORY_WINDOW_MS, MAX_AGENTS, providerInfo, STATIC_FIRE_POSITIONS } from '../shared/protocol.js';
 
 // Pure logic of the wall (mission, sequence, T-minus, Max Q), kept out of Wall.tsx so that it can be tested without a DOM.
 
@@ -19,12 +19,12 @@ export interface Mission {
 const firstLine = (text: string): string => text.split('\n').find((line) => line.trim() !== '')?.trim() ?? '';
 
 /**
- * The latest message from the Director to the boss that is not a T-minus poll. Its subject, or the first line of its body
+ * The latest message from the Director to the boss that is not a T-minus poll or a Relief answer. Its subject, or the first line of its body
  * when the subject says nothing ("Brief" is what the brief box sends). `activity` is newest first.
  */
 export function missionOf(activity: readonly ActivityItem[], boss: string | null): Mission | null {
   if (boss === null) return null;
-  const item = activity.find((i) => i.from === 'user' && i.to === boss && !i.subject.startsWith('T-minus:'));
+  const item = activity.find((i) => i.from === 'user' && i.to === boss && !i.subject.startsWith('T-minus:') && !i.subject.startsWith('Relief:'));
   if (item === undefined) return null;
   const subject = item.subject.trim();
   const fromBody = firstLine(item.body);
@@ -125,6 +125,14 @@ export function pollTargets(agents: readonly AgentView[]): AgentView[] {
   return agents.filter((a) => a.state !== 'stopped' && a.transition === null && providerInfo(a.provider).mcp && !a.boss);
 }
 
+/** Agents a static fire briefs: the poll targets in the SIMSUP or RETRO position (the server picks the same). */
+export function fireTargets(agents: readonly AgentView[]): AgentView[] {
+  return pollTargets(agents).filter((a) => (STATIC_FIRE_POSITIONS as readonly string[]).includes(a.position ?? ''));
+}
+
+/** The heading of the poll block: STATIC FIRE while one is on the wall, else T-MINUS. */
+export const pollHeading = (poll: PollView | null): string => (poll?.subject === undefined ? 'T-MINUS' : 'STATIC FIRE');
+
 export type Verdict = 'GO' | 'NO-GO' | 'WAIT' | 'READY';
 export interface VoteChip {
   agent: string;
@@ -148,7 +156,7 @@ export function noteLine(poll: PollView | null, targets: readonly AgentView[], l
     return `No poll. ${targets.length} ${targets.length === 1 ? 'console' : 'consoles'} can be asked.`;
   }
   const reasons = poll.entries.flatMap((e) => (e.vote !== null && e.reason !== '' ? [`${legendOf(legends, e.agent)}: ${e.reason}`] : []));
-  return [poll.note, ...reasons].filter((part) => part !== '').join(' · ');
+  return [poll.subject ?? '', poll.note, ...reasons].filter((part) => part !== '').join(' · ');
 }
 
 export type PollButton = 'poll' | 'hold' | 'abort' | 'clear';

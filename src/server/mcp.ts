@@ -5,6 +5,9 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { LIVERY_DESCRIPTION_MAX_CHARS, LIVERY_NAME_MAX_CHARS } from '../shared/livery.js';
 import {
+  AGENT_NAME_MAX,
+  DIR_MAX_CHARS,
+  BOARD_MAX_CHARS,
   LOG_BODY_MAX_CHARS,
   LOG_QUERY_MAX_CHARS,
   LOG_SEARCH_MAX,
@@ -12,6 +15,7 @@ import {
   LOG_TITLE_MAX_CHARS,
   MCP_SERVER_NAME,
   POLL_VOTES,
+  ROLE_MAX_CHARS,
   TASK_DETAIL_MAX_CHARS,
   TASK_NOTE_MAX_CHARS,
   TASK_STATUSES,
@@ -20,8 +24,10 @@ import {
 import type { AgentIdentity, AgentSendRequest, Hub, Logger, Task } from '../shared/protocol.js';
 import { BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
+import type { Board } from './board.js';
 import type { Liveries } from './livery.js';
 import type { MissionLog } from './missionlog.js';
+import type { Relief } from './relief.js';
 import type { Tasks } from './tasks.js';
 
 export interface McpDeps {
@@ -31,8 +37,12 @@ export interface McpDeps {
   tasks?: Pick<Tasks, 'list' | 'create' | 'update'>;
   /** The Mission Log; absent in tests that do not need it (the three log tools then answer that it is not available). */
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update'>;
+  /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
+  board?: Pick<Board, 'get' | 'write'>;
   /** Livery; absent in tests that do not need it (the tool then answers that it is not available). */
   liveries?: Pick<Liveries, 'submit'>;
+  /** Relief; absent in tests that do not need it (the tool then answers that it is not available). */
+  relief?: Pick<Relief, 'request'>;
   resolveToken(token: string): AgentIdentity | null;
   log: Logger;
   /** Reported to the client in the initialize result; read per request so a late-bound value works. */
@@ -209,6 +219,28 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
       guarded('log_read', () => (missionLog ? toolResult({ ok: true, entry: missionLog.get(id) }, false) : noLog())),
     );
 
+    const { board } = deps;
+    const noPlot = (): CallToolResult => toolResult({ ok: false, error: 'the Plot Board is not available' }, true);
+    // the boss is the one the hub says it is, asked at each call: a rename or a new boss takes effect at once
+    const bossName = (): string | null => hub.rosterFor(agent, generation).boss;
+
+    server.registerTool('board_read', { description: MCP_DESCRIPTIONS.board_read }, () =>
+      guarded('board_read', () => (board ? toolResult({ ok: true, ...board.get(), canWrite: bossName() === agent }, false) : noPlot())),
+    );
+
+    server.registerTool(
+      'board_write',
+      { description: MCP_DESCRIPTIONS.board_write, inputSchema: { text: z.string().max(BOARD_MAX_CHARS), revision: z.number().int().min(0) } },
+      (args) =>
+        guarded('board_write', async () => {
+          if (!board) return noPlot();
+          if (bossName() !== agent) return toolResult({ ok: false, error: 'only the boss may write the Plot Board' }, true);
+          // the author is the caller's own name, never a field of the call
+          const view = await board.write(agent, args);
+          return toolResult({ ok: true, revision: view.revision, updatedAt: view.updatedAt }, false);
+        }),
+    );
+
     const { liveries } = deps;
     server.registerTool(
       'livery_submit',
@@ -222,6 +254,29 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           // the author is the caller's own name, never a field of the call
           const entry = await liveries.submit(agent, args);
           return toolResult({ ok: true, slug: entry.slug, note: 'saved; the Director chooses whether to apply it' }, false);
+        }),
+    );
+
+    const { relief } = deps;
+    server.registerTool(
+      'hire_agent',
+      {
+        description: MCP_DESCRIPTIONS.hire_agent,
+        // strict: a field the tool does not have (confirmBypass, command, payload) is refused, not dropped; the mode is checked by Relief, so that its answer says why
+        inputSchema: z.strictObject({
+          name: z.string().min(1).max(AGENT_NAME_MAX),
+          position: z.string().max(32).optional(),
+          role: z.string().max(ROLE_MAX_CHARS).optional(),
+          dir: z.string().max(DIR_MAX_CHARS).optional(),
+          engine: z.string().max(32).optional(),
+          mode: z.string().max(32).optional(),
+        }),
+      },
+      (args) =>
+        guarded('hire_agent', async () => {
+          if (!relief) return toolResult({ ok: false, error: 'Relief is not available' }, true);
+          // the requester is the agent of the token, never a field of the call
+          return toolResult({ ok: true, ...(await relief.request({ agent, generation }, args)) }, false);
         }),
     );
 

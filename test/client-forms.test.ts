@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ActivityItem, AgentView } from '../src/shared/protocol.js';
+import type { ActivityItem, AgentView, EngineCheck } from '../src/shared/protocol.js';
 import { SUBJECT_MAX_CHARS } from '../src/shared/protocol.js';
 import { POSITIONS, positionById } from '../src/shared/positions.js';
 import {
@@ -10,6 +10,7 @@ import {
   CUSTOM_ROLE,
   editRequest,
   engineHint,
+  engineNote,
   engineOptions,
   hireRequest,
   initialValues,
@@ -69,7 +70,7 @@ function item(id: string, from: string, to: string, extra: Partial<ActivityItem>
   };
 }
 
-const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false };
+const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, model: '', keys: [], keysRemoved: [] };
 
 describe('staffing a seat, no position or a custom command', () => {
   it('picking a position after a custom command makes the agent a Claude one and replaces the placeholder role', () => {
@@ -315,6 +316,137 @@ describe('the Clean Room box', () => {
     expect(plainValues.cleanRoom).toBe(false);
     expect(editRequest(plainValues, plain, true)).toBeNull();
     expect(editRequest({ ...plainValues, cleanRoom: true }, plain, true)).toEqual({ cleanRoom: {} });
+  });
+});
+
+describe('the model field (Engine Bay)', () => {
+  const base: Values = { ...EMPTY, name: 'ana', role: 'does things' };
+
+  it('is in the hire request trimmed, for an engine that takes one, and nowhere when empty', () => {
+    expect(hireRequest({ ...base, model: ' sonnet ' })).toMatchObject({ model: 'sonnet' });
+    expect(hireRequest({ ...base, model: '  ' })).not.toHaveProperty('model');
+    expect(hireRequest(base)).not.toHaveProperty('model');
+    expect(hireRequest({ ...base, provider: 'gemini', model: 'flash' })).toMatchObject({ model: 'flash' });
+  });
+
+  it('is never sent for an engine without a model setting, a custom command included', () => {
+    expect(hireRequest({ ...base, provider: 'opencode', model: 'x' })).not.toHaveProperty('model');
+    expect(hireRequest({ ...chooseCustom(base, {}), name: 'logs', command: 'htop', model: 'x' })).not.toHaveProperty('model');
+    expect(validate({ ...base, provider: 'opencode', model: '--bad' }, {}, null, false)).toEqual({});
+  });
+
+  it('turning to another engine empties it, because the engines name their models differently', () => {
+    expect(chooseEngine({ ...base, model: 'sonnet' }, 'gemini').model).toBe('');
+    expect(chooseCustom({ ...base, model: 'sonnet' }, {}).model).toBe('');
+  });
+
+  it.each(['-x', '--model', 'a b', 'a;b', '$(id)', 'x'.repeat(101)])('refuses %j', (model) => {
+    expect(validate({ ...base, model }, {}, null, false).model).toMatch(/Use letters/);
+    expect(submitLabel({ model: 'x' }, 'ANA', false)).toBe('FIX THE MODEL TO STAFF ANA');
+  });
+
+  it.each(['sonnet', 'claude-sonnet-4', 'openai/gpt-4o', 'sonnet:high', 'o3.mini', 'a@b+c'])('accepts %j', (model) => {
+    expect(validate({ ...base, model }, {}, null, false)).toEqual({});
+  });
+
+  it('starts the edit form from the stored model, sends only a change, and null to go back to the default', () => {
+    const stored = agent('ana', 1, { model: 'opus' });
+    const values = initialValues({ mode: 'edit', name: 'ana' }, stored, { ana: stored }, '/cwd');
+    expect(values.model).toBe('opus');
+    expect(editRequest(values, stored, true)).toBeNull();
+    expect(editRequest({ ...values, model: 'haiku' }, stored, true)).toEqual({ model: 'haiku' });
+    expect(editRequest({ ...values, model: ' ' }, stored, true)).toEqual({ model: null });
+    const plain = agent('ben', 2, { model: null });
+    expect(editRequest(initialValues({ mode: 'edit', name: 'ben' }, plain, { ben: plain }, '/cwd'), plain, true)).toBeNull();
+  });
+});
+
+describe('the keys of Clearance', () => {
+  const SECRET = 'sk-test-0123456789';
+  const base: Values = { ...EMPTY, name: 'ana', role: 'does things' };
+  const withRow = (name: string, value: string): Values => ({ ...base, keys: [{ name, value }] });
+
+  it('go in the hire request by name, trimmed, and an empty row is nothing', () => {
+    expect(hireRequest(withRow(' OPENAI_API_KEY ', ` ${SECRET} `))).toMatchObject({ keys: { OPENAI_API_KEY: SECRET } });
+    expect(hireRequest({ ...base, keys: [{ name: '', value: '' }] })).not.toHaveProperty('keys');
+    expect(hireRequest(base)).not.toHaveProperty('keys');
+    expect(validate({ ...base, keys: [{ name: '', value: '' }] }, {}, null, false)).toEqual({});
+  });
+
+  it('go in the request of a custom command and of every engine', () => {
+    expect(hireRequest({ ...withRow('OPENAI_API_KEY', SECRET), provider: 'gemini' })).toMatchObject({ keys: { OPENAI_API_KEY: SECRET } });
+    expect(hireRequest({ ...chooseCustom(withRow('OPENAI_API_KEY', SECRET), {}), name: 'logs', command: 'htop' })).toMatchObject({ keys: { OPENAI_API_KEY: SECRET } });
+  });
+
+  it.each([
+    ['a lower case name', withRowOf('openai', SECRET)],
+    ['a name with a dash', withRowOf('A-B', SECRET)],
+    ['no name', withRowOf('', SECRET)],
+    ['no value', withRowOf('OPENAI_API_KEY', '')],
+    ['a value with a space inside', withRowOf('OPENAI_API_KEY', 'a b')],
+    ['a value over 4096 characters', withRowOf('OPENAI_API_KEY', 'x'.repeat(4097))],
+  ])('refuses %s, and says nothing of the value', (_what, values) => {
+    const problem = validate(values, {}, null, false).keys ?? '';
+    expect(problem).toMatch(/^Key 1:/);
+    expect(problem).not.toContain(SECRET);
+    expect(submitLabel({ keys: problem }, 'ANA', false)).toBe('FIX THE KEYS TO STAFF ANA');
+  });
+
+  it('refuses a name used twice and more than 16 keys, counting those already set', () => {
+    expect(validate({ ...base, keys: [{ name: 'A_KEY', value: 'x' }, { name: 'A_KEY', value: 'y' }] }, {}, null, false).keys).toBe('Key 2: the name is used twice.');
+    const stored = agent('ana', 1, { keys: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`K${i}`, 1])) });
+    const values = initialValues({ mode: 'edit', name: 'ana' }, stored, { ana: stored }, '/cwd');
+    expect(validate({ ...values, keys: [{ name: 'ONE_MORE', value: 'x' }] }, { ana: stored }, stored, true).keys).toBe('At most 16 keys.');
+    // replacing one, or removing one to make room, is fine
+    expect(validate({ ...values, keys: [{ name: 'K1', value: 'x' }] }, { ana: stored }, stored, true).keys).toBeUndefined();
+    expect(validate({ ...values, keys: [{ name: 'ONE_MORE', value: 'x' }], keysRemoved: ['K0'] }, { ana: stored }, stored, true).keys).toBeUndefined();
+  });
+
+  it('an edit sends only what was typed or marked for removal, and a stored key is never in the form', () => {
+    const stored = agent('ana', 1, { keys: { OPENAI_API_KEY: 5, GEMINI_API_KEY: 6 } });
+    const values = initialValues({ mode: 'edit', name: 'ana' }, stored, { ana: stored }, '/cwd');
+    expect(values.keys).toEqual([]);
+    expect(editRequest(values, stored, true)).toBeNull();
+    expect(editRequest({ ...values, keysRemoved: ['GEMINI_API_KEY'] }, stored, true)).toEqual({ keys: { GEMINI_API_KEY: null } });
+    expect(editRequest({ ...values, keys: [{ name: 'OPENAI_API_KEY', value: SECRET }], keysRemoved: ['GEMINI_API_KEY'] }, stored, true)).toEqual({ keys: { OPENAI_API_KEY: SECRET, GEMINI_API_KEY: null } });
+    // a name marked for removal that is not set (a stale click) is not sent
+    expect(editRequest({ ...values, keysRemoved: ['GONE_KEY'] }, stored, true)).toBeNull();
+    // typed again for a key marked for removal: the value wins
+    expect(editRequest({ ...values, keys: [{ name: 'GEMINI_API_KEY', value: 'g' }], keysRemoved: ['GEMINI_API_KEY'] }, stored, true)).toEqual({ keys: { GEMINI_API_KEY: 'g' } });
+    const custom = agent('tail', 2, { provider: 'custom', command: 'htop', keys: {} });
+    expect(editRequest({ ...initialValues({ mode: 'edit', name: 'tail' }, custom, { tail: custom }, '/cwd'), keys: [{ name: 'A_KEY', value: 'v' }] }, custom, true)).toEqual({ keys: { A_KEY: 'v' } });
+  });
+
+  function withRowOf(name: string, value: string): Values {
+    return { ...base, keys: [{ name, value }] };
+  }
+});
+
+describe('the engine note (Pad Check)', () => {
+  const check = (over: Partial<EngineCheck> = {}): EngineCheck => ({ provider: 'codex', label: 'Codex', bin: 'codex', path: null, version: null, install: 'npm install -g @openai/codex', docs: 'https://github.com/openai/codex', ...over });
+
+  it('a missing program: where to find it, the vendor\'s command to copy, the page', () => {
+    expect(engineNote('codex', ['claude', 'custom'], undefined)).toEqual({
+      found: false,
+      text: 'codex is not on the PATH of the machine gonogo runs on.',
+      install: 'npm install -g @openai/codex',
+      docs: 'https://github.com/openai/codex',
+    });
+    expect(engineNote('codex', [], check()).install).toBe('npm install -g @openai/codex');
+  });
+
+  it('a program with no install command that was checked says so by giving none', () => {
+    expect(engineNote('kimi', [], undefined)).toMatchObject({ found: false, install: null, docs: 'https://moonshotai.github.io/kimi-cli/' });
+  });
+
+  it('a program that is there: its path and version when Pad Check has answered, no command', () => {
+    expect(engineNote('codex', ['codex'], undefined)).toEqual({ found: true, text: 'Codex found.', install: null, docs: 'https://github.com/openai/codex' });
+    expect(engineNote('codex', ['codex'], check({ path: '/bin/codex', version: 'codex 0.1.2' })).text).toBe('Codex found at /bin/codex, codex 0.1.2.');
+    expect(engineNote('codex', ['codex'], check({ path: '/bin/codex' })).text).toBe('Codex found at /bin/codex.');
+  });
+
+  it('a program installed after the server started shows as found once Pad Check sees it', () => {
+    expect(engineNote('codex', ['claude'], check({ path: '/bin/codex', version: '1' }))).toMatchObject({ found: true, install: null });
   });
 });
 

@@ -9,6 +9,8 @@ import type {
   LiveryView,
   PollView,
   PropellantView,
+  ReliefRequest,
+  RolloutView,
   ScheduleView,
   ServerFrame,
   ServerInfo,
@@ -35,8 +37,8 @@ export interface ClientState {
   selected: string | null;
   /** The staffing screen. A hire may start from an open seat (its position) or as a custom command. */
   form: null | { mode: 'hire'; position?: string | null; custom?: boolean } | { mode: 'edit'; name: string };
-  /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log or the Livery. */
-  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'hangar' | 'recorder';
+  /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log, the Livery, the Flight Rules, Party Line, the Plot Board, the Black Box, the Hangar or the Recorder. */
+  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules' | 'party' | 'board' | 'blackbox' | 'hangar' | 'recorder';
   /** Phone only: a console is open full screen over the room. A wide page ignores it (the selected console is always in its side panel). */
   consoleOpen: boolean;
   /** Transient message animations (Envelope lives in protocol.ts so that this file needs no .tsx). */
@@ -61,6 +63,10 @@ export interface ClientState {
   livery: LiveryView;
   /** Docking: this station's name and the stations docked with it. */
   docking: DockingView;
+  /** Relief: the hire requests of the boss that wait for the Director's GO. */
+  relief: ReliefRequest[];
+  /** Rollout: what the daily update check saw, or null from an older server. */
+  rollout: RolloutView | null;
 }
 
 export interface Store {
@@ -156,6 +162,8 @@ export function emptyState(): ClientState {
     log: NO_LOG_NEWS,
     livery: defaultView(),
     docking: NO_DOCKING,
+    relief: [],
+    rollout: null,
   };
 }
 
@@ -186,6 +194,10 @@ export const showPlan = (): void => store.setState((s) => ({ ...s, view: 'plan',
 export const showDownlink = (): void => store.setState((s) => ({ ...s, view: 'downlink', consoleOpen: false }));
 export const showLog = (): void => store.setState((s) => ({ ...s, view: 'log', consoleOpen: false }));
 export const showLivery = (): void => store.setState((s) => ({ ...s, view: 'livery', consoleOpen: false }));
+export const showRules = (): void => store.setState((s) => ({ ...s, view: 'rules', consoleOpen: false }));
+export const showParty = (): void => store.setState((s) => ({ ...s, view: 'party', consoleOpen: false }));
+export const showBoard = (): void => store.setState((s) => ({ ...s, view: 'board', consoleOpen: false }));
+export const showBlackBox = (): void => store.setState((s) => ({ ...s, view: 'blackbox', consoleOpen: false }));
 /** Hangar and Recorder work on the selected console; opened from it, they follow `selected`. */
 export const showHangar = (): void => store.setState((s) => ({ ...s, view: 'hangar', consoleOpen: false }));
 export const showRecorder = (): void => store.setState((s) => ({ ...s, view: 'recorder', consoleOpen: false }));
@@ -313,6 +325,9 @@ function applyState(s: ClientState, snapshot: StateSnapshot, now: number): Clien
     livery: snapshot.livery ?? defaultView(),
     // an older server, or one without Docking, sends none
     docking: snapshot.docking ?? NO_DOCKING,
+    // an older server, or one without Relief, sends none
+    relief: snapshot.relief?.requests ?? [],
+    rollout: snapshot.rollout ?? null,
     // a state is a connect or a reconnect: frames may have been missed, so the view asks again
     log: { rev: s.log.rev + 1, changed: [], removed: [] },
   };
@@ -402,6 +417,10 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, livery: frame.livery };
     case 'docking':
       return { ...s, docking: frame.docking };
+    case 'relief':
+      return { ...s, relief: frame.relief.requests };
+    case 'rollout':
+      return { ...s, rollout: frame.rollout };
     case 'log':
       return { ...s, log: { rev: s.log.rev + 1, changed: frame.changed, removed: frame.removed } };
     default:

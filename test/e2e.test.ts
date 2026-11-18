@@ -43,6 +43,8 @@ import type {
   AgentState,
   AgentView,
   ApiError,
+  AuditView,
+  BoardView,
   ClientFrame,
   DockCode,
   DockingView,
@@ -53,11 +55,15 @@ import type {
   HireRequest,
   LiveryFrame,
   LiveryView,
+  LogChart,
   LogEntry,
   LogSearch,
   Payload,
   PollFrame,
   PollView,
+  ReflectResult,
+  ReliefFrame,
+  ReliefView,
   RosterFile,
   RosterResult,
   ScheduleView,
@@ -122,8 +128,12 @@ interface ServerOptions {
   sessionDir?: boolean;
   maxHops?: number;
   staticDir?: string | null;
-  /** What Relay posts with (scenario 28): a fake, so that nothing leaves the machine. */
+  /** What Relay posts with (scenario 28), and what Rollout asks the registry with (scenario 32): a fake, so that nothing leaves the machine. */
   relayFetch?: typeof fetch;
+  /** A home that an earlier server used (scenario 36): this one goes on from it. */
+  home?: string;
+  /** Rollout on (scenario 33). Off by default, as in startGonogo. */
+  updateCheck?: boolean;
 }
 
 const harnesses: Harness[] = [];
@@ -131,7 +141,7 @@ const clients: Client[] = [];
 
 async function startServer(options: ServerOptions = {}): Promise<Harness> {
   const tmp = await mkdtemp(join(tmpdir(), 'gonogo-'));
-  const home = join(tmp, 'home');
+  const home = options.home ?? join(tmp, 'home');
   const logDir = join(tmp, 'log');
   const configDir = join(tmp, 'claude');
   const work = join(tmp, 'work');
@@ -150,6 +160,7 @@ async function startServer(options: ServerOptions = {}): Promise<Harness> {
       agentCmd: [process.execPath, FAKE],
       staticDir: options.staticDir ?? null,
       fetch: options.relayFetch,
+      updateCheck: options.updateCheck,
       env: {
         ...process.env,
         CLAUDE_CONFIG_DIR: configDir,
@@ -341,6 +352,9 @@ interface StartEvent extends FakeEvent {
   tokenLength: number;
   cwd: string;
   pid: number;
+  /** Engine Bay: the --model the stand-in was given, and the OPENAI_API_KEY of its environment (a made-up value). */
+  model: string | null;
+  openaiKey: string | null;
 }
 interface PromptEvent extends FakeEvent {
   e: 'prompt';
@@ -419,7 +433,7 @@ const pidAlive = (pid: number): boolean => {
 };
 
 /** The first-start argv of 7.2, written from the contract: the launcher's own builders are not used to judge the launcher. */
-function expectedArgv(h: Harness, name: string, role: string, flag: 'session-id' | 'resume', pluginDir?: string): string[] {
+function expectedArgv(h: Harness, name: string, role: string, flag: 'session-id' | 'resume', pluginDir?: string, model?: string): string[] {
   const entry = rosterEntry(h, name);
   const dir = join(h.home, 'agents', name);
   return [
@@ -433,6 +447,7 @@ function expectedArgv(h: Harness, name: string, role: string, flag: 'session-id'
     '--mcp-config',
     join(dir, 'mcp.json'),
     ...(pluginDir === undefined ? [] : ['--plugin-dir', pluginDir]),
+    ...(model === undefined ? [] : ['--model', model]),
     '--append-system-prompt',
     buildRoleText(name, role, join(dir, 'memory.md')),
     '--system-prompt-snapshot',
@@ -2262,6 +2277,178 @@ describe('end to end with the stand-in agent', () => {
     expect(await api<ApiError>(a, 'DELETE', `/api/docking/${dockOfB.id}`)).toMatchObject({ status: 404 });
   }, 180_000);
 
+  it('31. Relief: the boss asks to hire, the request waits with every parameter, only the Director\'s go hires, and the limits hold', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    await waitState(h, 'flight', 'idle');
+    const c = await Client.open(h);
+    const mark = c.mark();
+    const reliefFrames = (): ReliefView[] => c.frames.slice(mark).filter((f): f is ReliefFrame => f.t === 'relief').map((f) => f.relief);
+    const tell = async (who: string, request: Record<string, unknown>): Promise<void> => {
+      const sent = await send(h, who, `@fake relief hire_agent ${JSON.stringify(request)}`, 'relief');
+      await itemRead(h, sent.body.id);
+      await waitState(h, who, 'idle');
+    };
+    const asked = { name: 'guido-1', position: 'guido', dir: h.work, mode: 'acceptEdits' };
+
+    // the boss asks: the request waits, the browsers are told, the inbox has the event, and nobody is hired
+    await tell('flight', asked);
+    expect(tools(h, 'flight', 'hire_agent').at(-1)).toMatchObject({ isError: false, result: { ok: true, id: 'h1', status: 'pending' } });
+    await waitFor(() => reliefFrames().length === 1, 5000, 'the relief frame');
+    const waiting = (await getState(h)).relief?.requests ?? [];
+    expect(waiting).toEqual([expect.objectContaining({ id: 'h1', by: 'flight', name: 'guido-1', position: 'guido', dir: h.work, provider: 'claude', mode: 'acceptEdits', cleanRoom: null })]);
+    expect(waiting[0]?.role).toContain('GUIDO');
+    expect(await view(h, 'guido-1')).toBeUndefined();
+    const inbox = (await api<DownlinkView>(h, 'GET', '/api/downlink')).body;
+    expect(inbox.items.find((item) => item.type === 'event' && item.kind === 'relief')).toMatchObject({ text: `flight asks to hire guido-1 as GUIDO: claude, acceptEdits, ${h.work}`, read: false });
+
+    // the limits: nothing above acceptEdits, no field of the tool's own beyond its six, no custom command, a free valid name, a folder that is there
+    const refused = async (who: string, request: Record<string, unknown>): Promise<unknown> => {
+      await tell(who, request);
+      const call = tools(h, who, 'hire_agent').at(-1);
+      expect(call?.isError, JSON.stringify(request)).toBe(true);
+      return call?.result;
+    };
+    expect(await refused('flight', { ...asked, name: 'x1', mode: 'bypassPermissions' })).toMatchObject({ ok: false, error: expect.stringMatching(/default or acceptEdits at most/) });
+    await refused('flight', { ...asked, name: 'x2', mode: 'auto' });
+    await refused('flight', { ...asked, name: 'x3', confirmBypass: true });
+    await refused('flight', { ...asked, name: 'x4', command: 'sh' });
+    await refused('flight', { ...asked, name: 'x5', engine: 'custom' });
+    expect(await refused('flight', { ...asked, name: 'ana' })).toMatchObject({ ok: false, error: expect.stringMatching(/exists already/) });
+    expect(await refused('flight', asked)).toMatchObject({ ok: false, error: expect.stringMatching(/exists already/) });
+    await refused('flight', { ...asked, name: 'Bad Name' });
+    expect(await refused('flight', { ...asked, name: 'x6', dir: join(h.work, 'missing') })).toMatchObject({ ok: false, error: expect.stringMatching(/does not exist/) });
+    expect(await refused('ana', { ...asked, name: 'x7' })).toMatchObject({ ok: false, error: 'only the boss can ask for a hire' });
+    expect((await getState(h)).relief?.requests.map((r) => r.id)).toEqual(['h1']);
+
+    // an agent's token cannot answer, not even the boss's for its own request; a bad id or verdict finds nothing
+    const bossToken = await readToken(h, 'flight');
+    expect((await api(h, 'POST', '/api/relief/h1/go', undefined, bossToken)).status).toBe(401);
+    expect((await api(h, 'POST', '/api/relief/h1/go', undefined, null)).status).toBe(401);
+    expect(await api<ApiError>(h, 'POST', '/api/relief/h9/go')).toMatchObject({ status: 404 });
+    expect((await api(h, 'POST', '/api/relief/h1/maybe')).status).toBe(404);
+    expect((await getState(h)).relief?.requests).toHaveLength(1);
+
+    // GO: the hub staffs it as the form does (the stand-in checks the arguments of a start), and the boss is told
+    const went = await api<ReliefView>(h, 'POST', '/api/relief/h1/go');
+    expect([went.status, went.body.requests]).toEqual([200, []]);
+    const guido = await waitState(h, 'guido-1', 'idle');
+    expect(guido).toMatchObject({ name: 'guido-1', position: 'guido', dir: h.work, mode: 'acceptEdits', provider: 'claude', boss: false });
+    expect((JSON.parse(readFileSync(join(h.home, 'agents.json'), 'utf8')) as RosterFile).agents.find((a) => a.name === 'guido-1')).toMatchObject({ mode: 'acceptEdits', position: 'guido' });
+    const told = (await getState(h)).activity.find((item) => item.to === 'flight' && item.subject === 'Relief: guido-1 is staffed');
+    expect(told).toMatchObject({ from: 'user' });
+    await waitFor(() => reliefFrames().at(-1)?.requests.length === 0, 5000, 'the frame of the answer');
+    expect((await api(h, 'POST', '/api/relief/h1/go')).status).toBe(404);
+
+    // NO-GO: nobody is hired and the boss hears it
+    await tell('flight', { name: 'fido-1', role: 'Reads the plan.', dir: h.work });
+    expect(tools(h, 'flight', 'hire_agent').at(-1)).toMatchObject({ isError: false, result: { id: 'h2' } });
+    expect((await api<ReliefView>(h, 'POST', '/api/relief/h2/no-go')).body.requests).toEqual([]);
+    expect(await view(h, 'fido-1')).toBeUndefined();
+    expect((await getState(h)).activity.some((item) => item.to === 'flight' && item.subject === 'Relief: request for fido-1 refused')).toBe(true);
+    const events = ((await api<DownlinkView>(h, 'GET', '/api/downlink')).body.items.filter((item) => item.type === 'event' && item.kind === 'relief') as Array<{ text: string }>).map((item) => item.text);
+    expect(events).toEqual(expect.arrayContaining(['guido-1 hired (asked by flight)', 'hire of fido-1 refused']));
+  }, 120_000);
+
+  it('32. Engine Bay: a model and keys reach one agent only, no page, file or log but keys.json holds a value, and rename and remove take the keys along', async () => {
+    const SECRET = 'sk-e2e-secret-0001';
+    const NEW_SECRET = 'sk-e2e-secret-0002';
+    // the server's own environment has a value of that name too: an agent's key beats it, and one without a key still gets it
+    const h = await startServer({ env: { OPENAI_API_KEY: 'host-value' } });
+    await waitState(h, 'flight', 'idle');
+    const valid = { name: 'ana', role: 'Reviews', dir: h.work, mode: 'default' };
+    const refuse = async (changes: Record<string, unknown>, field: string): Promise<void> => {
+      const response = await api<ApiError>(h, 'POST', '/api/agents', { ...valid, ...changes });
+      expect(response.status, JSON.stringify(changes)).toBe(400);
+      expect(response.body.field).toBe(field);
+      expect(JSON.stringify(response.body)).not.toContain(SECRET);
+    };
+    await refuse({ model: '--dangerously' }, 'model');
+    await refuse({ model: 'x', provider: 'opencode' }, 'model');
+    await refuse({ keys: { PATH: SECRET } }, 'keys');
+    await refuse({ keys: { OPENAI_API_KEY: `${SECRET} with a space` } }, 'keys');
+    await refuse({ keys: { [SECRET]: 'x' } }, 'keys');
+    expect(existsSync(join(h.home, 'keys.json')), 'a refused hire writes no key').toBe(false);
+
+    await hire(h, 'ana', { role: valid.role, model: 'haiku', keys: { OPENAI_API_KEY: SECRET } });
+    await hire(h, 'ben', { role: 'Other' });
+    const [first] = starts(h, 'ana');
+    expect(first?.argv).toEqual(expectedArgv(h, 'ana', valid.role, 'session-id', undefined, 'haiku'));
+    expect(first).toMatchObject({ model: 'haiku', openaiKey: SECRET });
+    expect(starts(h, 'ben')[0]).toMatchObject({ model: null, openaiKey: 'host-value' });
+    expect((await view(h, 'ana'))).toMatchObject({ model: 'haiku', keys: { OPENAI_API_KEY: expect.any(Number) } });
+
+    // the value is in keys.json (0600) and nowhere else of the home, and the roster and the state hold the name only
+    const keysFile = join(h.home, 'keys.json');
+    expect(statSync(keysFile).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(keysFile, 'utf8'))).toEqual({ version: 1, agents: { ana: { OPENAI_API_KEY: SECRET } } });
+    expect(rosterEntry(h, 'ana')).toMatchObject({ model: 'haiku', keys: { OPENAI_API_KEY: expect.any(Number) } });
+    const holders = (readdirSync(h.home, { recursive: true }) as string[]).filter((entry) => {
+      const path = join(h.home, entry);
+      return statSync(path).isFile() && readFileSync(path, 'utf8').includes(SECRET);
+    });
+    expect(holders).toEqual(['keys.json']);
+    expect(JSON.stringify(await getState(h))).not.toContain(SECRET);
+    const agentDir = join(h.home, 'agents', 'ana');
+    for (const file of ['settings.json', 'mcp.json']) expect(readFileSync(join(agentDir, file), 'utf8')).not.toContain(SECRET);
+
+    // an edit: the key replaced, then removed; the agent is dirty until the restart, and then sees what is left
+    const changed = await api<AgentView>(h, 'PATCH', '/api/agents/ana', { keys: { OPENAI_API_KEY: NEW_SECRET } });
+    expect(changed).toMatchObject({ status: 200, body: { dirty: true } });
+    expect(JSON.stringify(changed.body)).not.toContain(NEW_SECRET);
+    await api(h, 'POST', '/api/agents/ana/restart');
+    await waitView(h, 'ana', (agent) => agent.state === 'idle' && starts(h, 'ana').length === 2, 15_000, 'ana to restart');
+    expect(starts(h, 'ana')[1]).toMatchObject({ model: 'haiku', openaiKey: NEW_SECRET });
+    const removedKey = await api<AgentView>(h, 'PATCH', '/api/agents/ana', { keys: { OPENAI_API_KEY: null }, model: null });
+    expect(removedKey.body).toMatchObject({ model: null, keys: {}, dirty: true });
+    expect('keys' in rosterEntry(h, 'ana') && 'model' in rosterEntry(h, 'ana')).toBe(false);
+    await api(h, 'POST', '/api/agents/ana/restart');
+    await waitView(h, 'ana', (agent) => agent.state === 'idle' && starts(h, 'ana').length === 3, 15_000, 'ana to restart again');
+    expect(starts(h, 'ana')[2]).toMatchObject({ model: null, openaiKey: 'host-value' });
+
+    // a rename moves the keys with the folder, and a remove drops them
+    await api<AgentView>(h, 'PATCH', '/api/agents/ana', { keys: { OPENAI_API_KEY: SECRET } });
+    await api(h, 'POST', '/api/agents/ana/stop');
+    expect((await api<AgentView>(h, 'PATCH', '/api/agents/ana', { name: 'cat' })).status).toBe(200);
+    expect(JSON.parse(readFileSync(keysFile, 'utf8')).agents).toEqual({ cat: { OPENAI_API_KEY: SECRET } });
+    await api(h, 'POST', '/api/agents/cat/restart');
+    await waitState(h, 'cat', 'idle');
+    expect(starts(h, 'cat')[0]).toMatchObject({ openaiKey: SECRET });
+    expect((await api(h, 'DELETE', '/api/agents/cat')).status).toBe(204);
+    expect(JSON.parse(readFileSync(keysFile, 'utf8')).agents).toEqual({});
+    // a new agent of that name starts with no key
+    await hire(h, 'cat', { role: 'again' });
+    expect(starts(h, 'cat').at(-1)).toMatchObject({ openaiKey: 'host-value' });
+  }, 120_000);
+
+  it('33. Rollout: the daily check asks the registry once with a plain GET, the state says a newer gonogo is out, the file is private, and off asks nothing', async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const fake = ((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return Promise.resolve(new Response(JSON.stringify({ name: '@ulm0/gonogo', version: '99.1.0' })));
+    }) as typeof fetch;
+    const on = await startServer({ relayFetch: fake, updateCheck: true });
+    const seen = await waitFor(async () => (await getState(on)).rollout?.latest, 5000, 'the registry answer in the state');
+    expect(seen).toBe('99.1.0');
+    expect((await getState(on)).rollout).toMatchObject({ enabled: true, latest: '99.1.0', newer: true, checkedAt: expect.any(Number) });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('https://registry.npmjs.org/@ulm0%2Fgonogo/latest');
+    expect(calls[0]?.init?.headers).toEqual({ accept: 'application/json' });
+    expect(JSON.parse(readFileSync(join(on.home, 'rollout.json'), 'utf8'))).toMatchObject({ version: 1, latest: '99.1.0' });
+    expect(statSync(join(on.home, 'rollout.json')).mode & 0o777).toBe(0o600);
+    // the page is told when a client is connected while the check ends: the frame carries the view
+    const c = await Client.open(on);
+    const state = c.frames.find((f) => f.t === 'state');
+    expect(state?.t === 'state' && state.state.rollout?.newer).toBe(true);
+
+    const off = await startServer({ relayFetch: fake, updateCheck: false });
+    await waitState(off, 'flight', 'idle');
+    await sleep(300);
+    expect(calls).toHaveLength(1);
+    expect((await getState(off)).rollout).toMatchObject({ enabled: false, latest: null, newer: false });
+    expect(existsSync(join(off.home, 'rollout.json'))).toBe(false);
+  }, 60_000);
+
   it('Clean Room: a console runs through docker on its own worktree and reaches the hub by the name containers use for the host', async () => {
     const aux = await mkdtemp(join(tmpdir(), 'gonogo-'));
     try {
@@ -2335,6 +2522,179 @@ describe('end to end with the stand-in agent', () => {
       expect(JSON.parse(readFileSync(dockerLog, 'utf8').trim().split('\n')[2] ?? '{}')).toEqual({ verb: 'rm', argv: ['-f', run?.name] });
     } finally {
       await rm(aux, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('34. Mass Budget and Star Chart: a request to condense is a message, the file is copied and never written by gonogo, and the chart follows the log', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    const memory = join(h.home, 'agents', 'ana', 'memory.md');
+    const notes = readFileSync(memory, 'utf8');
+    expect((await api(h, 'GET', '/api/agents/ana/memory')).body).toMatchObject({ exists: true, bytes: Buffer.byteLength(notes), lines: 3, over: false, backup: null });
+
+    // the request is a message from the Director that the agent reads like any other; the copy is private and the file is as it was
+    const asked = await api<ReflectResult>(h, 'POST', '/api/agents/ana/reflect');
+    expect(asked).toMatchObject({ status: 201, body: { send: { ok: true, to: 'ana' }, memory: { backup: { bytes: Buffer.byteLength(notes) } } } });
+    await itemRead(h, asked.body.send.id);
+    expect(tools(h, 'ana', 'read_messages').at(-1)?.result).toMatchObject({ messages: [{ from: 'user', subject: 'Mass Budget: condense your memory file', body: expect.stringContaining(memory) }] });
+    expect(readFileSync(`${memory}.bak`, 'utf8')).toBe(notes);
+    expect(statSync(`${memory}.bak`).mode & 0o777).toBe(0o600);
+    expect(readFileSync(memory, 'utf8')).toBe(notes);
+
+    // a stopped agent is not asked, and its older copy stays
+    await api(h, 'POST', '/api/agents/ana/stop');
+    await waitState(h, 'ana', 'stopped');
+    expect((await api<ReflectResult>(h, 'POST', '/api/agents/ana/reflect')).body).toMatchObject({ send: { ok: false, status: 'undelivered' } });
+    expect(readFileSync(`${memory}.bak`, 'utf8')).toBe(notes);
+    expect(readdirSync(join(h.home, 'agents', 'ana')).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+
+    // the routes are the browser's, for a name that is an agent
+    expect((await rawRequest(h, '/api/agents/ana/memory', { Authorization: 'Bearer nope' })).status).toBe(401);
+    expect((await api(h, 'GET', '/api/agents/ghost/memory')).status).toBe(404);
+    expect((await api(h, 'POST', '/api/agents/Bad Name/reflect')).status).toBe(404);
+    expect((await api(h, 'GET', '/api/agents/ana/reflect')).status).toBe(405);
+
+    // the chart: entries, tags, authors and the ids that entries name, from the same log
+    await api(h, 'POST', '/api/log', { title: 'Cache key', body: 'The key has the node version.', tags: ['build', 'cache'] });
+    await api(h, 'POST', '/api/log', { title: 'Cache miss', body: 'Follows l1.', tags: ['build', 'cache'] });
+    const chart = (await api<LogChart>(h, 'GET', '/api/log/chart')).body;
+    expect(chart).toMatchObject({ total: 2, shown: 2 });
+    expect(chart.nodes.map((n) => n.id).sort()).toEqual(['author:user', 'entry:l1', 'entry:l2', 'tag:build', 'tag:cache']);
+    expect(chart.edges.filter((e) => e.kind === 'mention')).toEqual([{ from: 'entry:l2', to: 'entry:l1', kind: 'mention', weight: 1 }]);
+    expect(chart.edges.filter((e) => e.kind === 'cooccur')).toEqual([{ from: 'tag:build', to: 'tag:cache', kind: 'cooccur', weight: 2 }]);
+    expect((await rawRequest(h, '/api/log/chart', { Authorization: 'Bearer nope' })).status).toBe(401);
+  }, 60_000);
+
+  it('35. Plot Board: every agent reads one plan, only the boss and the Director write it, a write names the revision it read, and the file is private', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    await waitState(h, 'flight', 'idle');
+    const tell = async (name: string, line: string): Promise<void> => {
+      const sent = await send(h, name, `@fake board ${line}`, 'board');
+      await itemRead(h, sent.body.id);
+      await waitState(h, name, 'idle');
+    };
+
+    // an agent that is not the boss reads it and is refused when it writes
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body).toEqual({ text: '', revision: 0, author: null, updatedAt: null });
+    await tell('ana', 'board_read {}');
+    expect(tools(h, 'ana', 'board_read').at(-1)).toMatchObject({ isError: false, result: { ok: true, text: '', revision: 0, canWrite: false } });
+    await tell('ana', 'board_write {"text":"ana takes over","revision":0}');
+    expect(tools(h, 'ana', 'board_write').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: 'only the boss may write the Plot Board' } });
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body.revision).toBe(0);
+
+    // the boss writes it, and the author is its own name
+    await tell('flight', 'board_read {}');
+    expect(tools(h, 'flight', 'board_read').at(-1)).toMatchObject({ result: { canWrite: true } });
+    await tell('flight', 'board_write {"text":"# Plan\\n\\n1. ship the audit log","revision":0,"author":"user"}');
+    expect(tools(h, 'flight', 'board_write').at(-1)).toMatchObject({ isError: false, result: { ok: true, revision: 1 } });
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body).toMatchObject({ text: '# Plan\n\n1. ship the audit log', revision: 1, author: 'flight' });
+
+    // every agent sees it
+    await tell('ana', 'board_read {}');
+    expect(tools(h, 'ana', 'board_read').at(-1)).toMatchObject({ result: { text: '# Plan\n\n1. ship the audit log', revision: 1, author: 'flight', canWrite: false } });
+
+    // the Director edits it from the page: a stale revision is a 409 and changes nothing
+    expect(await api<ApiError>(h, 'PUT', '/api/board', { text: 'late', revision: 0 })).toMatchObject({ status: 409, body: { code: 'conflict', field: 'revision' } });
+    expect(await api<ApiError>(h, 'PUT', '/api/board', { text: 'x'.repeat(10_001), revision: 1 })).toMatchObject({ status: 400, body: { field: 'text' } });
+    expect(await api<BoardView>(h, 'PUT', '/api/board', { text: '# Plan\n\n1. ship the audit log\n2. then the board', revision: 1 })).toMatchObject({ status: 200, body: { revision: 2, author: 'user' } });
+
+    // the boss that wrote from the revision it read before the Director's edit is refused, and told to read again
+    await tell('flight', 'board_write {"text":"overwrite","revision":1}');
+    expect(tools(h, 'flight', 'board_write').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: expect.stringMatching(/revision 2, not 1: read it again/) } });
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body.text).toBe('# Plan\n\n1. ship the audit log\n2. then the board');
+
+    // the browser token is the only key to the route, and the file is private with a version
+    expect((await rawRequest(h, '/api/board', { Authorization: 'Bearer nope' })).status).toBe(401);
+    expect(statSync(join(h.home, 'board.md')).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(h.home, 'board.md'), 'utf8')).toMatch(/^---\nversion: 1\nrevision: 2\nauthor: "user"\nupdatedAt: "[^"]+"\n---\n# Plan\n\n1\. ship the audit log\n2\. then the board\n$/);
+  }, 90_000);
+
+  it('36. Black Box: what happens in the room is recorded as names and ids, the server commits it to a git repository of its own, and a restart goes on from it', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    await waitState(h, 'flight', 'idle');
+    const secret = 'topsecret-value-1234567890';
+    const events = async (): Promise<AuditView> => (await api<AuditView>(h, 'GET', '/api/black-box')).body;
+
+    // the Director's calls, an agent's task, a poll that is held, an uplink with a secret, the boss's plan
+    expect((await api(h, 'POST', '/api/agents', { name: 'ben', role: `ben keeps ${secret} to himself`, dir: h.work, mode: 'default', command: undefined })).status).toBe(201);
+    await waitState(h, 'ben', 'idle');
+    await api(h, 'PATCH', '/api/agents/ben', { role: `ben keeps ${secret} still` });
+    const tell = async (name: string, line: string): Promise<void> => {
+      const sent = await send(h, name, line, 'audit');
+      await itemRead(h, sent.body.id);
+      await waitState(h, name, 'idle');
+    };
+    await tell('ana', `@fake task task_create {"title":"Write ${secret}","detail":"${secret}"}`);
+    await tell('flight', `@fake board board_write {"text":"plan ${secret}","revision":0}`);
+    expect((await api(h, 'POST', '/api/poll')).status).toBe(201);
+    expect((await api(h, 'POST', '/api/poll/hold')).status).toBe(200);
+    const made = await api<UplinkCreated>(h, 'POST', '/api/uplinks', { name: 'GitHub', to: 'ana' });
+    const delivery = await fetch(`${h.base}/uplink/u1`, { method: 'POST', headers: { authorization: `Bearer ${made.body.secret}` }, body: `{"text":"${secret}"}` });
+    expect(delivery.status).toBe(202);
+    expect((await api(h, 'POST', '/api/agents/ben/stop')).status).toBe(200);
+
+    const seen = (await events()).events.map((e) => `${e.kind}: ${e.text}`);
+    const wanted = [
+      /^audit: gonogo \S+ started$/,
+      /^crew: Director hired ana$/,
+      /^crew: Director hired ben$/,
+      /^config: Director edited ben: role$/,
+      /^plan: ana created task t1$/,
+      /^plan: flight wrote the Plot Board: revision 1, \d+ characters$/,
+      /^poll: Director started a T-minus poll$/,
+      /^poll: Director held the poll$/,
+      /^poll: T-minus poll HOLD: held by the Director$/,
+      /^config: Director made an uplink u1$/,
+      /^uplink: Uplink u1 delivered message m\d+$/,
+      /^crew: Director stopped ben$/,
+    ];
+    for (const pattern of wanted) expect(seen.some((line) => pattern.test(line)), `${pattern} in ${JSON.stringify(seen)}`).toBe(true);
+    // no text of a task, a role, a plan, a message or an uplink, and no secret of any
+    expect(JSON.stringify(await events())).not.toContain(secret);
+    expect(JSON.stringify(await events())).not.toContain(made.body.secret);
+    expect((await events())).toMatchObject({ git: 'ok', note: '', dir: join(h.home, 'black-box') });
+    expect((await events()).command).toBe(`git -C '${join(h.home, 'black-box')}' log -p`);
+    expect((await rawRequest(h, '/api/black-box', { Authorization: 'Bearer nope' })).status).toBe(401);
+
+    // after a stop the repository holds the events, committed by gonogo and by nobody else, and the files are private
+    await h.run.stop();
+    const repo = join(h.home, 'black-box');
+    expect(statSync(repo).mode & 0o777).toBe(0o700);
+    const day = readdirSync(repo).find((name) => name.endsWith('.jsonl')) ?? '';
+    expect(statSync(join(repo, day)).mode & 0o777).toBe(0o600);
+    const git = (...args: string[]): string => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
+    expect(git('status', '--porcelain')).toBe('');
+    expect(git('log', '--format=%an <%ae>').split('\n').every((line) => line === 'gonogo <gonogo@localhost>')).toBe(true);
+    const committed = git('show', `HEAD:${day}`).split('\n').map((line) => JSON.parse(line) as { text: string });
+    expect(committed.map((e) => e.text)).toContain('gonogo stopped');
+    expect(committed.map((e) => e.text)).toContain('Director hired ana');
+    expect(git('log', '-p')).not.toContain(secret);
+
+    // a second start on the same home goes on with the same repository, and lists what the first one wrote
+    const again = await startServer({ home: h.home });
+    const list = (await api<AuditView>(again, 'GET', '/api/black-box')).body;
+    expect(list.git).toBe('ok');
+    expect(list.events.map((e) => e.text)).toContain('Director hired ana');
+    expect(list.events[0]?.text).toMatch(/^gonogo \S+ started$/);
+    await again.run.stop();
+  }, 120_000);
+
+  it('37. Black Box without git: the room works, the page says git was not found, and the events are still written', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'gonogo-nogit-'));
+    try {
+      const h = await startServer({ env: { PATH: empty } });
+      await hire(h, 'ana');
+      const list = (await api<AuditView>(h, 'GET', '/api/black-box')).body;
+      expect(list).toMatchObject({ git: 'missing', note: 'git was not found on the PATH' });
+      expect(list.events.map((e) => e.text)).toContain('Director hired ana');
+      expect(existsSync(join(h.home, 'black-box', '.git'))).toBe(false);
+      await h.run.stop();
+      const day = readdirSync(join(h.home, 'black-box')).find((name) => name.endsWith('.jsonl')) ?? '';
+      expect(readFileSync(join(h.home, 'black-box', day), 'utf8')).toContain('Director hired ana');
+    } finally {
+      await rm(empty, { recursive: true, force: true });
     }
   }, 60_000);
 });

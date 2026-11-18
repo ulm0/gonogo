@@ -38,6 +38,7 @@ import {
   SCREEN_DIALOG_REASON,
   SEND_RATE_MAX,
   SEND_RATE_WINDOW_MS,
+  SUBJECT_MAX_CHARS,
   SESSION_FLIP_WINDOW_MS,
   SESSION_IN_USE_TEXT,
   SESSION_MISSING_TEXT,
@@ -79,7 +80,7 @@ import type {
   TitleGlyph,
   TitleInfo,
 } from '../src/shared/protocol.js';
-import { DOING_MAX_CHARS, HISTORY_MAX, HISTORY_WINDOW_MS } from '../src/shared/protocol.js';
+import { DOING_MAX_CHARS, HISTORY_MAX, HISTORY_WINDOW_MS, HOLD_REASON } from '../src/shared/protocol.js';
 
 /* ------------------------------------------------------------------------------------------------------------
  * The fake world
@@ -2804,6 +2805,8 @@ describe('hire (4.9)', () => {
       command: null,
       payload: null,
       cleanRoom: null,
+      model: null,
+      keys: {},
       doing: null,
       history: [{ state: 'starting', at: T0 }],
     });
@@ -4709,6 +4712,35 @@ describe('T-minus', () => {
     expect(h.hub.poll()?.entries[0]?.vote).toBeNull();
   });
 
+  it('static fire: briefs the running SIMSUP and RETRO, waits for every answer, tells the inbox with the answers, not the boss', async () => {
+    const h = await threeAgents();
+    expectHubError(() => h.hub.startPoll({ subject: 'login' }), 'bad_request', 'no SIMSUP or RETRO is running');
+    for (const [name, position] of [['sim', 'simsup'], ['ret', 'retro'], ['sim-2', 'simsup']] as const) {
+      await h.hub.hire({ name, role: 'x', dir: `/work/${name}`, mode: 'default', position });
+      h.ready(name);
+    }
+    await h.hub.stop('sim-2');
+    expectHubError(() => h.hub.startPoll({ subject: '  ' }), 'bad_request', /subject must be text/, 'subject');
+    expectHubError(() => h.hub.startPoll({ subject: 'x'.repeat(SUBJECT_MAX_CHARS) }), 'bad_request', /subject must be text/, 'subject');
+    expectHubError(() => h.hub.startPoll({ subject: 'login', agents: ['ana'] }), 'bad_request', /picks SIMSUP and RETRO/, 'agents');
+    const view = h.hub.startPoll({ subject: ' the\nlogin  form ' });
+    expect(view).toMatchObject({ subject: 'the login form', status: 'open', note: 'waiting for sim, ret' });
+    expect(messagesTo(h, 'sim')).toMatchObject([{ from: 'user', subject: 'Static fire: the login form', body: expect.stringContaining('try to break it') }]);
+    expect(messagesTo(h, 'ret')).toMatchObject([{ from: 'user', subject: 'Static fire: the login form', body: expect.stringContaining('rollback plan') }]);
+    expect(messagesTo(h, 'ana')).toHaveLength(0);
+    vote(h, 'sim', 'no-go', 'empty password accepted');
+    expect(h.hub.poll()).toMatchObject({ status: 'open', note: 'waiting for ret' });
+    expect(h.notices).toEqual([]);
+    vote(h, 'ret', 'go', 'revert the merge');
+    expect(h.hub.poll()).toMatchObject({ status: 'hold', note: 'no-go: sim' });
+    expect(h.notices).toEqual([['tminus', 'Static fire on the login form: HOLD: no-go: sim · sim: empty password accepted · ret: revert the merge']]);
+    vote(h, 'sim', 'go', 'fixed now');
+    expect(h.hub.poll()).toMatchObject({ status: 'go', note: 'all go' });
+    expect(messagesTo(h, 'flight')).toHaveLength(0);
+    h.hub.abortPoll();
+    expect(messagesTo(h, 'sim').at(-1)).toMatchObject({ subject: 'Static fire: aborted' });
+  });
+
   it('holdPoll turns an open poll to hold; hold, abort and a finished poll answer conflict where the spec says', async () => {
     const h = await threeAgents();
     expectHubError(() => h.hub.holdPoll(), 'conflict');
@@ -5339,6 +5371,63 @@ describe('Redline', () => {
     expect(h.view('ana')).toMatchObject({ state: 'working', needsKind: null });
   });
 
+  it('Hold: the Director trips it by hand, with no Downlink notice; resume ends it and the mail goes', async () => {
+    const h = await withAna();
+    h.work('ana');
+    expect(h.hub.hold('ana')).toMatchObject({ state: 'needs_you', needsKind: 'redline', needsReason: HOLD_REASON });
+    expect(h.pressed).toEqual([{ name: 'ana', generation: h.gen('ana'), data: '\x1b' }]);
+    expect(h.notices).toEqual([]);
+    h.send('user', 'ana', 'when you are back');
+    expect(h.msg('m1')).toMatchObject({ status: 'held', note: 'held: ana is on hold' });
+    h.hook('ana', 'Stop');
+    expect(h.view('ana').needsReason).toBe(HOLD_REASON);
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana is already on hold');
+    h.setTitle('ana', 'idle');
+    expect(h.hub.resume('ana')).toMatchObject({ state: 'idle', needsKind: null });
+    await h.advance(DELIVERY_SETTLE_MS);
+    expect(h.typed).toHaveLength(1);
+  });
+
+  it('Hold of an idle agent presses nothing; it is refused while tripped, needing you, stopped or without hooks', async () => {
+    const h = await withAna();
+    expect(h.hub.hold('ana').needsReason).toBe(HOLD_REASON);
+    expect(h.pressed).toEqual([]);
+    h.hub.resume('ana');
+    h.work('ana');
+    loop(h, 'ana', REDLINE_REPEATS);
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana has tripped the redline: resume or stop it');
+    h.hub.resume('ana');
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana needs you: answer it first');
+    await h.hub.stop('ana');
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana is not running');
+    await h.hub.hire({ name: 'tail', role: 'watches', dir: '/work/tail', mode: 'default', provider: 'custom', command: 'htop' });
+    expectHubError(() => h.hub.hold('tail'), 'conflict', 'tail reports no hooks, so gonogo cannot hold it');
+    expectHubError(() => h.hub.hold('ghost'), 'not_found');
+  });
+
+  it('Telemetry: the tool hooks of the current process go to io.toolHook', async () => {
+    const h = await withAna();
+    const seen: Array<[string, string, unknown]> = [];
+    h.io.toolHook = (name, event, payload) => void seen.push([name, event, payload.tool_use_id]);
+    h.work('ana');
+    h.hook('ana', 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' }, tool_use_id: 't1' });
+    h.hook('ana', 'PostToolUse', { tool_name: 'Bash', tool_use_id: 't1' });
+    h.hook('ana', 'PostToolUseFailure', { tool_name: 'Bash', tool_use_id: 't2' });
+    h.hook('ana', 'Stop');
+    expect(seen).toEqual([
+      ['ana', 'PreToolUse', 't1'],
+      ['ana', 'PostToolUse', 't1'],
+      ['ana', 'PostToolUseFailure', 't2'],
+    ]);
+    h.io.toolHook = () => {
+      throw new Error('disk full');
+    };
+    h.hook('ana', 'PreToolUse', { tool_name: 'Read', tool_input: { file_path: '/x' } });
+    expect(h.view('ana').state).toBe('working');
+  });
+
   it('a restart ends the trip', async () => {
     const h = await withAna();
     h.work('ana');
@@ -5737,5 +5826,224 @@ describe('docking', () => {
     expect(h.msg('m1').status).toBe('delivered');
     expect(h.msg('m2')).toMatchObject({ status: 'undelivered', note: 'server restarted before it was read; the message went to the user' });
     expect(h.msg('m3').status).toBe('undelivered');
+  });
+});
+
+/* ------------------------------------------------------------------------------------------------------------
+ * Engine Bay: the model of an agent and Clearance, its keys (docs/engine-bay-spec.md)
+ * ---------------------------------------------------------------------------------------------------------- */
+
+describe('Engine Bay: the model and the keys of an agent', () => {
+  const SECRET = 'sk-test-0123456789abcdef';
+  /** A key store of memory: what the hub asked it, and what it holds. */
+  function withKeys(h: Harness): { held: Map<string, Record<string, string>>; calls: string[] } {
+    const held = new Map<string, Record<string, string>>();
+    const calls: string[] = [];
+    h.io.keys = {
+      values: (name) => ({ ...held.get(name) }),
+      apply: async (name, patch, fresh = false) => {
+        calls.push(`apply ${name}${fresh ? ' fresh' : ''}`);
+        const next: Record<string, string> = { ...(fresh ? {} : held.get(name)) };
+        for (const [key, value] of Object.entries(patch)) {
+          if (value === null) delete next[key];
+          else next[key] = value;
+        }
+        if (Object.keys(next).length === 0) held.delete(name);
+        else held.set(name, next);
+      },
+      rename: async (oldName, newName) => {
+        calls.push(`rename ${oldName} ${newName}`);
+        const keys = held.get(oldName);
+        if (keys) held.set(newName, keys);
+        held.delete(oldName);
+      },
+      remove: async (name) => {
+        calls.push(`remove ${name}`);
+        held.delete(name);
+      },
+    };
+    return { held, calls };
+  }
+  const hireWith = (h: Harness, patch: Record<string, unknown> = {}): Promise<AgentView> =>
+    h.hub.hire({ name: 'ana', role: 'x', dir: '/work/ana', mode: 'default', ...patch } as unknown as HireRequest);
+
+  it('hire stores the model in the record and the view, and hands the record to the launcher', async () => {
+    const h = await started();
+    const view = await hireWith(h, { model: ' sonnet ' });
+    expect(view.model).toBe('sonnet');
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')?.model).toBe('sonnet');
+    expect(h.spawns.at(-1)?.agent.model).toBe('sonnet');
+  });
+
+  it('empty text is no model: no key in the record, null in the view', async () => {
+    const h = await started();
+    expect((await hireWith(h, { model: '  ' })).model).toBeNull();
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('model');
+    expect((await hireWith(h, { name: 'ben', dir: '/work/ben' })).model).toBeNull();
+  });
+
+  it('refuses a bad name, a name that looks like a flag, a model for an engine that has none, and a model that is not text', async () => {
+    const h = await started();
+    for (const model of ['-x', '--model', 'a b', 'a;b', '$(id)', 'x'.repeat(101), '\nx;']) {
+      await expectHubReject(hireWith(h, { model }), 'bad_request', /model must be 1 to 100 letters/, 'model');
+    }
+    await expectHubReject(hireWith(h, { model: 'x', provider: 'opencode' }), 'bad_request', 'opencode takes no model setting', 'model');
+    await expectHubReject(hireWith(h, { model: 'x', provider: 'custom', command: 'htop' }), 'bad_request', 'Custom command takes no model setting', 'model');
+    await expectHubReject(hireWith(h, { model: 5 }), 'bad_request', /model must be/, 'model');
+    expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
+    expect((await hireWith(h, { model: 'flash', provider: 'gemini' })).model).toBe('flash');
+  });
+
+  it('edit changes and clears the model, and either is dirty until the restart', async () => {
+    const h = await withAna();
+    const set = await h.hub.edit('ana', { model: 'opus' });
+    expect(set).toMatchObject({ model: 'opus', dirty: true });
+    await h.hub.restart('ana');
+    expect(h.spawns.at(-1)?.agent.model).toBe('opus');
+    expect(h.view('ana').dirty).toBe(false);
+    await h.hub.edit('ana', { model: 'opus' });
+    expect(h.view('ana').dirty).toBe(false);
+    const cleared = await h.hub.edit('ana', { model: null });
+    expect(cleared).toMatchObject({ model: null, dirty: true });
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('model');
+  });
+
+  it('hire keeps the values in the key store and only their names and times in the record, the view and the roster file', async () => {
+    const h = await started();
+    const { held, calls } = withKeys(h);
+    const view = await hireWith(h, { keys: { OPENAI_API_KEY: SECRET } });
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: SECRET });
+    expect(calls).toEqual(['apply ana fresh']);
+    expect(view.keys).toEqual({ OPENAI_API_KEY: T0 });
+    for (const text of [JSON.stringify(view), JSON.stringify(h.saves), JSON.stringify(h.events), JSON.stringify(h.logged), h.warnings.join('\n'), JSON.stringify(h.spawns)]) {
+      expect(text).not.toContain(SECRET);
+    }
+  });
+
+  it('a hire without keys still starts from none, so a removed agent of that name leaves nothing behind', async () => {
+    const h = await started();
+    const { held, calls } = withKeys(h);
+    held.set('ana', { OLD_KEY: 'left-over' });
+    const view = await hireWith(h);
+    expect(calls).toEqual(['apply ana fresh']);
+    expect(held.has('ana')).toBe(false);
+    expect(view.keys).toEqual({});
+  });
+
+  it('refuses bad keys with the field keys, and creates nothing', async () => {
+    const h = await started();
+    const { held } = withKeys(h);
+    for (const keys of [{ lower: 'x' }, { PATH: 'x' }, { OPENAI_API_KEY: '' }, { OPENAI_API_KEY: 'a b' }, { OPENAI_API_KEY: null }, [], 'x', { OPENAI_API_KEY: SECRET, [`K${SECRET}`]: 5 }]) {
+      await expectHubReject(hireWith(h, { keys }), 'bad_request', undefined, 'keys');
+    }
+    expect(held.size).toBe(0);
+    expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
+  });
+
+  it('a hub without a key store refuses keys, and hires without them as before', async () => {
+    const h = await started();
+    await expectHubReject(hireWith(h, { keys: { OPENAI_API_KEY: SECRET } }), 'bad_request', 'this server cannot keep keys', 'keys');
+    expect((await hireWith(h)).keys).toEqual({});
+  });
+
+  it('a roster that cannot be saved takes the values of the hire back', async () => {
+    const h = await started();
+    const { held } = withKeys(h);
+    h.script.saveError = 'disk full';
+    await expectHubReject(hireWith(h, { keys: { OPENAI_API_KEY: SECRET } }), 'internal', 'could not save the roster: disk full');
+    expect(held.has('ana')).toBe(false);
+  });
+
+  it('edit sets, replaces and removes keys by name, leaves the others, and is dirty until the restart', async () => {
+    const h = await started();
+    const { held } = withKeys(h);
+    await hireWith(h, { keys: { OPENAI_API_KEY: SECRET, GEMINI_API_KEY: 'g-1' } });
+    expect(h.view('ana').dirty).toBe(false);
+    await h.advance(5);
+    const view = await h.hub.edit('ana', { keys: { OPENAI_API_KEY: 'sk-new-value', GEMINI_API_KEY: null, XAI_API_KEY: 'x-1' } });
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: 'sk-new-value', XAI_API_KEY: 'x-1' });
+    expect(Object.keys(view.keys).sort()).toEqual(['OPENAI_API_KEY', 'XAI_API_KEY']);
+    expect(view.dirty).toBe(true);
+    expect(JSON.stringify(h.saves) + JSON.stringify(h.events)).not.toContain('sk-new-value');
+    // an edit that names nothing is refused as before
+    await expectHubReject(h.hub.edit('ana', {}), 'bad_request', /nothing to change/);
+    // removing the last ones leaves no keys in the record
+    await h.hub.edit('ana', { keys: { OPENAI_API_KEY: null, XAI_API_KEY: null } });
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('keys');
+    expect(held.has('ana')).toBe(false);
+  });
+
+  it('a changed value of a key that was already set shows as dirty: its time changes', async () => {
+    const h = await started();
+    withKeys(h);
+    await hireWith(h, { keys: { OPENAI_API_KEY: SECRET } });
+    expect(h.view('ana').dirty).toBe(false);
+    await h.advance(10);
+    expect((await h.hub.edit('ana', { keys: { OPENAI_API_KEY: 'another-value' } })).dirty).toBe(true);
+  });
+
+  it('a refused edit changes nothing, and an edit is checked against the 16 keys of the agent', async () => {
+    const h = await started();
+    const { held } = withKeys(h);
+    const sixteen = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`K${i}`, 'v']));
+    await hireWith(h, { keys: sixteen });
+    await expectHubReject(h.hub.edit('ana', { keys: { ONE_MORE: 'v' } }), 'bad_request', 'at most 16 keys', 'keys');
+    expect(Object.keys(held.get('ana') ?? {})).toHaveLength(16);
+    await h.hub.edit('ana', { keys: { K1: 'changed', K2: null } });
+    expect(Object.keys(held.get('ana') ?? {})).toHaveLength(15);
+  });
+
+  it('a roster that cannot be saved leaves the names and the values as they were', async () => {
+    const h = await started();
+    const { held } = withKeys(h);
+    await hireWith(h, { keys: { OPENAI_API_KEY: SECRET } });
+    h.script.saveError = 'disk full';
+    await expectHubReject(h.hub.edit('ana', { keys: { OPENAI_API_KEY: null } }), 'internal', 'could not save the roster: disk full');
+    expect(Object.keys(h.view('ana').keys)).toEqual(['OPENAI_API_KEY']);
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: SECRET });
+    // a replaced value comes back, and a key the edit added goes again
+    await expectHubReject(h.hub.edit('ana', { keys: { OPENAI_API_KEY: 'sk-new-value', NEW_KEY: 'n' } }), 'internal', 'could not save the roster: disk full');
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: SECRET });
+    expect(Object.keys(h.view('ana').keys)).toEqual(['OPENAI_API_KEY']);
+  });
+
+  it('a rename whose roster cannot be saved puts the values back under the old name', async () => {
+    const h = await started();
+    const { held } = withKeys(h);
+    // like the glue of cli.ts: the keys move with the folder, and move back with it
+    const moveFolder = h.io.renameAgentFiles;
+    h.io.renameAgentFiles = async (from, to) => {
+      await moveFolder(from, to);
+      await h.io.keys?.rename(from, to);
+    };
+    await hireWith(h, { keys: { OPENAI_API_KEY: SECRET } });
+    await h.hub.stop('ana');
+    h.script.saveError = 'disk full';
+    await expectHubReject(h.hub.edit('ana', { name: 'bea', keys: { OPENAI_API_KEY: 'sk-new-value' } }), 'internal', 'could not save the roster: disk full');
+    expect([...held.keys()]).toEqual(['ana']);
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: SECRET });
+  });
+
+  it('a rename writes the new values under the new name, after the folder moved; a remove drops them', async () => {
+    const h = await started();
+    const { held, calls } = withKeys(h);
+    await hireWith(h, { keys: { OPENAI_API_KEY: SECRET } });
+    await h.hub.stop('ana');
+    await h.hub.edit('ana', { name: 'bea', keys: { GEMINI_API_KEY: 'g' } });
+    expect(h.renames).toEqual([['ana', 'bea']]);
+    expect(calls.at(-1)).toBe('apply bea');
+    await h.hub.remove('bea');
+    expect(calls.at(-1)).toBe('remove bea');
+    expect(held.has('bea')).toBe(false);
+  });
+
+  it('a key store that fails to remove is a warning, and the agent is gone', async () => {
+    const h = await started();
+    withKeys(h);
+    await hireWith(h);
+    h.io.keys = { values: () => ({}), apply: async () => undefined, rename: async () => undefined, remove: () => Promise.reject(new Error('disk full')) };
+    await h.hub.remove('ana');
+    expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
+    expect(h.warnings.some((line) => line.includes('could not remove the keys of ana'))).toBe(true);
   });
 });

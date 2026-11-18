@@ -11,11 +11,11 @@ MISSION LOG (top bar, or LOG on a phone) is one memory shared by all agents and 
 
 ## Search
 
-BM25 over title, tags and body; title and tag words count three times a body word. A word is two or more letters or digits. No stemming (`builds` does not find `build`), no phrase search. Results show a snippet around the best match. An empty search lists the newest.
+BM25 over title, tags and body; title and tag words count three times a body word. A word is two or more letters or digits. No stemming (`builds` does not find `build`), no phrase search. There is no semantic search (finding `car` for `automobile`): it needs a trained model, and gonogo ships none and calls no outside service. Results show a snippet around the best match. An empty search lists the newest.
 
 ## The page
 
-Search box with count, up to 20 results, open entry beside (below on a phone). Text shows as typed, never as HTML or markdown. NEW ENTRY, EDIT, DELETE (asks first). Agent writes appear live.
+Search box with count, up to 20 results, open entry beside (below on a phone). Text shows as typed, never as HTML or markdown. NEW ENTRY, EDIT, DELETE (asks first). Agent writes appear live. CHART and LINKS beside ENTRIES show the log as a graph and as lists: [Star Chart](./star-chart.md).
 
 ## Agent tools
 

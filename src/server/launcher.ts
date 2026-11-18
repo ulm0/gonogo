@@ -151,6 +151,8 @@ export function buildArgv(input: {
   roleText: string;
   /** A plugin folder holding the agent's skills (Payload), loaded for this session only. */
   pluginDir?: string | null;
+  /** Engine Bay: the model of the agent; none leaves the CLI's own default. */
+  model?: string;
 }): string[] {
   return [
     input.flag === 'resume' ? '--resume' : '--session-id',
@@ -163,6 +165,7 @@ export function buildArgv(input: {
     '--mcp-config',
     input.mcpPath,
     ...(input.pluginDir ? ['--plugin-dir', input.pluginDir] : []),
+    ...(input.model ? ['--model', input.model] : []),
     '--append-system-prompt',
     input.roleText,
     '--system-prompt-snapshot',
@@ -206,6 +209,8 @@ export function buildChildEnv(input: {
   /** null for a custom command: it has no token to carry. */
   token: string | null;
   seed: boolean;
+  /** Clearance: this agent's own keys. They win over the same name in `base` and are not scrubbed: the Director set them for this agent. */
+  keys?: Record<string, string>;
 }): Record<string, string> {
   const env: Record<string, string> = {};
   const extra = operatorScrub(input.base[SCRUB_EXTRA_VAR]);
@@ -214,6 +219,7 @@ export function buildChildEnv(input: {
     if (SCRUB_ENV_PREFIXES.some((prefix) => key.startsWith(prefix)) || extra.prefixes.some((prefix) => key.startsWith(prefix))) continue;
     env[key] = value;
   }
+  Object.assign(env, input.keys);
   if (input.seed) {
     env.IS_DEMO = '1';
     // A plain ANTHROPIC_API_KEY triggers a dialog whose default is "No" (or "Not logged in" under IS_DEMO)
@@ -460,7 +466,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     if (!file) throw new Error(`the command of ${name} is empty`);
     const dirInfo = await stat(agent.dir).catch(() => null);
     if (!dirInfo?.isDirectory()) throw new Error(`working directory does not exist: ${agent.dir}`);
-    return { spec: { file, args, env: buildChildEnv({ base: options.env ?? process.env, token: null, seed: false }), cwd: agent.dir }, flag: 'session-id', token: '' };
+    return { spec: { file, args, env: buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name) }), cwd: agent.dir }, flag: 'session-id', token: '' };
   };
 
   /** Engine Bay: another agent CLI, started by its program name with the files and flags of its adapter (providers.ts). */
@@ -476,10 +482,11 @@ export function createLauncher(options: LauncherOptions): Launcher {
       tokenFile: join(base, AGENT_TOKEN_FILE),
       token,
       seed: options.seed,
+      model: agent.model,
     };
     const start = buildProviderStart(provider, ctx);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
-    const env = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false }), ...start.env };
+    const env = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: options.keys?.(agent.name) }), ...start.env };
     log.debug(`prepared ${agent.name} to run ${provider}`);
     return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: agent.dir }, flag: 'session-id', token };
   };
@@ -528,7 +535,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const agentUrl = clean === null ? hubUrl : containerUrl(hubUrl);
       const settingsPath = join(base, SETTINGS_FILE);
       const mcpPath = join(base, MCP_FILE);
-      const moveApiKey = seed && hasText(env.ANTHROPIC_API_KEY);
+      const keys = options.keys?.(name) ?? {};
+      const moveApiKey = seed && hasText(keys.ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY);
       const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey });
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
       await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, agent.payload?.mcpServers), null, 2), FILE_MODE);
@@ -561,9 +569,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [dir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir });
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
-      const childEnv = buildChildEnv({ base: env, token, seed });
+      const childEnv = buildChildEnv({ base: env, token, seed, keys });
       let spec: PreparedStart['spec'];
       if (clean === null) {
         spec = { file, args: [...leading, ...claudeArgs], env: childEnv, cwd: agent.dir };
@@ -572,7 +580,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
         const gid = process.getgid?.();
         if (uid === undefined || gid === undefined) throw new Error('Clean Room needs a user id: it runs on macOS and Linux only');
         // by name: docker reads the values from its own environment, so no secret is on the command line
-        const names = [...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS].filter((variable) => hasText(childEnv[variable]));
+        // The agent's own keys go the same way: the container gets their names, and nothing else of the host's environment.
+        const names = [...new Set([...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS, ...Object.keys(keys)])].filter((variable) => hasText(childEnv[variable]));
         const command: [string, ...string[]] = [file, ...leading, ...claudeArgs];
         const args = buildDockerArgs({ image: cleanRoomImage(agent.cleanRoom ?? {}, env), uid, gid, place: clean, agentDir: base, names, command });
         spec = { file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree };

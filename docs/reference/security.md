@@ -18,12 +18,30 @@
   - Uplink secrets and Slack/Linear signing secrets: `uplinks.json`.
   - Relay bot tokens: `relay.json`. Never logged or sent to the browser.
   - Docking secrets: `docking.json`.
+  - Per-agent keys (Clearance, for example `OPENAI_API_KEY`): `keys.json`. Write-only in the page, which gets the names and the time they were set. Never logged, never in a message, Downlink item, Relay post, answer or error, and never in `agents.json`. Each agent's process gets only its own keys; in a Clean Room they pass by name (`docker run -e NAME`), never on a command line. The agent itself can read its keys (`env`).
   - Payload env and header values (tokens, API keys): `agents.json` and the agent's `mcp.json`; the page receives them so Edit can show them. To keep one out, write `${NAME}` and Claude Code expands it from the agent's environment (gonogo's minus the scrubbed variables; from Claude Code's docs, not tried).
 - A payload server is code or a service you chose; its tools run with the agent's permission mode.
+
+## Mass Budget
+
+REFLECT reads and copies one agent's `memory.md`; gonogo never writes that file. The agent name must match the name pattern and be an agent, so no path comes from the request. The file is opened without following a symbolic link and without waiting on a pipe, must be a regular file, and is read up to 1 MiB; `memory.md.bak` is written through a temporary file and a rename, so a link standing in its place is replaced, never written through. The routes need the browser token like every `/api` route. The text of the notes is never logged. An agent that runs as you can still put anything in its own folder.
 
 ## Uplink
 
 **`POST /uplink/<id>` takes no browser token.** It needs that uplink's secret (a body signature, or the secret as a bearer token). At most 256 KiB and 30 a minute per uplink. Unknown and disabled uplinks both answer 404. The Host check applies; a request with an `Origin` header is refused. An agent reads a delivery as a message from you.
+
+## Relief
+
+`hire_agent` makes a request, never a hire: the agent is hired only after your GO, a call that takes the browser token (an agent's token, the boss's too, gets 401). A request cannot hold `auto` or `bypassPermissions`, a custom command, a payload or a Clean Room of its own; 3 may wait, 5 in 10 minutes, each 30 minutes. **The role text it carries is what the new agent obeys, and a boss that read untrusted text may write something you would not**: read the block before GO. A role with a character you could not see (zero width, a direction override, the Unicode tag block, a control code) is refused. A Clean Room boss hires only Clean Room agents inside its own folder.
+
+## Party Line
+
+No route, file or setting of its own: the page groups the messages it already holds, and an answer is the comm loop's `POST /api/messages` with the browser token. The page offers no box to a `name@station`, which the hub refuses from the Director. An agent chooses the `in_reply_to` of its messages and the hub checks only its shape, so the page follows it only when the sender is one of the two ends of the message it names (or the Director): an agent cannot write itself into a conversation of others and take the default place of the answer.
+
+## Plot Board and Black Box
+
+- **Plot Board:** `PUT /api/board` takes the browser token; `board_write` takes the boss's agent token and the server asks the hub who the boss is at each call, so any other agent is refused. Every agent reads the plan like mail, and `board.md` is plain text (mode 0600): keep secrets out.
+- **Black Box:** records names, ids and counts, never a message body, a title or a secret. git runs without a shell, with a 10 second limit, an environment of the server's `PATH` and a few `GIT_*` settings of its own (none of the process's `GIT_*` variables, none of your git config) and hooks, signing and fsmonitor off even when the repository's config asks for them. A `black-box` folder that is a link is refused, and so is a link where a day's file goes. The record shows an edit, it cannot prevent one: an agent in `bypassPermissions` runs as you and can change the files or the history.
 
 ## Docking
 
@@ -46,6 +64,11 @@
 - **Seed mode trusts the folders you hire agents into**, so a repository's own `.claude/settings.json` hooks and permission rules run with your credential before any model turn. Add only repositories you trust.
   - Trust covers subfolders that are not git repositories (per Claude Code's docs), so gonogo refuses to record trust for `/` and for any folder that is or holds your home, gonogo's home or Claude Code's configuration folder: `cannot record folder trust for <folder>: ...` (the boss too).
   - Entries stay after an agent is removed. They are the `hasTrustDialogAccepted` keys under `projects` in `<CLAUDE_CONFIG_DIR>/.claude.json` (`~/.claude.json` if unset, `/state/claude/.claude.json` in the image); delete one to revoke it.
+
+## Engine checks and the update check
+
+- **Pad Check** (`gonogo doctor`, `GET /api/engines`, the hire form) runs `<program> --version` for each engine found on the `PATH`: no shell, 5 seconds, an environment of `PATH`, `HOME`, `LANG` and `NO_COLOR` only. It is the same program gonogo would start for an agent. It never runs an installer; the install commands are text from each vendor's page.
+- **Rollout** makes one GET a day to `registry.npmjs.org` for the `latest` version of `@ulm0/gonogo`. It sends an `Accept` header and nothing about you or the machine, reads at most 256 KiB, accepts only a stable `x.y.z`, and installs nothing. Off with `GONOGO_UPDATE_CHECK=0` or `--no-update-check` ([Rollout](../features/rollout.md)).
 
 ## Dependencies
 

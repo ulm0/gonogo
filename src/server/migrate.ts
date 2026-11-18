@@ -10,8 +10,9 @@
  * To change a format: add a step at the end of `steps` of its entry in FORMATS (version n to n + 1; it gets the parsed file and
  * returns the new one; the runner sets `version`), and change the store to read and write the new shape.
  *
- * Not run through here: the logs messages.jsonl and fuel.jsonl (a line a reader cannot parse is skipped; a new line format needs a
- * new file name) and the Mission Log entries (their front matter has `version`, checked in missionlog.ts).
+ * Not run through here: the logs messages.jsonl, fuel.jsonl and the day files of the Black Box (a line a reader cannot parse is
+ * skipped; a new line format needs a new file name), and the Mission Log entries and board.md (their front matter has `version`,
+ * checked in missionlog.ts and board.ts).
  * shortcut: a home with one file too new and another to upgrade can upgrade the second before it refuses the first; the copy
  * makes that harmless, so there is no check pass.
  */
@@ -24,10 +25,12 @@ import {
   DOCKING_FILE,
   DOWNLINK_FILE,
   FILE_MODE,
+  KEYS_FILE,
   LIVERY_DIR,
   LIVERY_FILE,
   PROPELLANT_FILE,
   RELAY_FILE,
+  ROLLOUT_FILE,
   SCHEDULES_FILE,
   STATION_FILE,
   TASKS_FILE,
@@ -59,6 +62,8 @@ export const FORMATS: Format[] = [
   STATION_FILE,
   LIVERY_FILE,
   PROPELLANT_FILE,
+  KEYS_FILE,
+  ROLLOUT_FILE,
   LIVERY_DIR + ALL_JSON,
 ].map((file): Format => (file === PROPELLANT_FILE ? { file, steps: [], unversionedIs1: true } : { file, steps: [] }));
 

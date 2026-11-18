@@ -1,0 +1,90 @@
+/*
+ * Patch Panel: a modal <dialog> near the top of the screen, a field and the list of matches. The chosen line has a key's face and
+ * an indigo bar at its left; every line is 44 px tall. Under 700 px it is the width of the screen less 12 px each side.
+ */
+
+.patch {
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(70vh, 560px);
+  margin: 10vh auto auto;
+  padding: 14px;
+  color: var(--text);
+  flex-direction: column;
+  gap: 10px;
+}
+
+.patch[open] {
+  display: flex;
+}
+
+.patch::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.patch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.patch-title {
+  margin: 0;
+}
+
+.patch-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.patch-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-key);
+  cursor: pointer;
+}
+
+.patch-option[aria-selected='true'] {
+  background: var(--key);
+  box-shadow: inset 3px 0 0 var(--work), 0 0 0 1px var(--edge);
+}
+
+.patch-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.patch-group {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.patch-foot {
+  margin: 0;
+}
+
+/* The key of the top bar: a patch panel's jacks, three by three. */
+.patch-mark {
+  width: 16px;
+  height: 16px;
+  background: radial-gradient(circle, currentColor 2px, transparent 2.5px) 0 0 / 33.3% 33.3%;
+}
+
+@media (max-width: 699px) {
+  .patch {
+    margin-top: 12px;
+    max-height: calc(100dvh - 24px);
+  }
+}
