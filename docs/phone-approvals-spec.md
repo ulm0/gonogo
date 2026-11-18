@@ -37,7 +37,7 @@ Telegram message cannot carry GO and NO-GO.
   `needsKind: 'permission'` (from `PermissionRequest`, once per dialog) and when `Relief.request` makes a request. Text, one
   line, at most 300 characters, control characters turned into spaces, as for every event: `ana asks: Bash: pnpm
   vitest run` (`describePermission`) and `FLIGHT asks to hire guido-1 (claude, acceptEdits) in /path`. They appear in the
-  inbox like the others. They are forwardable in Relay (a fifth and sixth switch; default **off**, because they ask for
+  inbox like the others. They are forwarded by Relay only when `phoneApprovals` allows Telegram (default **off**, because they ask for
   something the Director may not want on a third-party service).
 - **Buttons, Telegram first.** For these two kinds Relay's Telegram send adds `reply_markup.inline_keyboard` with two
   buttons, GO and NO-GO. `callback_data` is `a:<kind>:<id>:<verdict>:<tag>` (64-byte Telegram limit), where `<id>` is the
@@ -64,20 +64,32 @@ Telegram message cannot carry GO and NO-GO.
   secret) and cannot press the button (it has no Telegram). Text in the message comes from an agent (the tool input), so it is
   plain text only, truncated and shown in `<pre>`-free plain form, as Relay already does. A rate limit of 10 callbacks a
   minute per uplink uses Uplink's limiter. The page's `answer` route and the page itself are unchanged.
-- **The optional pass-through (step 5, unverified).** Per-agent `remoteControl?: {}` makes the launcher add
-  `--remote-control` (or type `/remote-control`) so the Director can also approve in the Claude app, for the Claude-login
-  rooms only. gonogo gains nothing from it but the flag; its pending block clears when the hook reports the outcome.
-  It must be tried with a real login before anyone trusts it, and is built **last or not at all**.
-- **No top-bar key.** Settings are two switches and a note in the existing RELAY module of the Launch Window view; the
-  Patch Panel lists it.
+- **Two paths, the Director chooses (decided 2026-11-18).** A room setting in Flight Rules, `phoneApprovals`: `off`
+  (default), `telegram`, `remote-control` or `both`. Nothing is forwarded or started while it is `off`.
+  - **Path A: Telegram signed GO/NO-GO buttons**, as designed above. Active for `telegram` or `both`, and only when a
+    Telegram target exists (the rule says so when it does not). Relay forwards the two new kinds only then.
+  - **Path B: `--remote-control` passthrough.** Per-agent `remoteControl?: {}` (Claude Code only; absent is off), offered in
+    the staffing form only when the setting is `remote-control` or `both`. The launcher adds `--remote-control` with the
+    session name prefix `gonogo-<name>`, so the agent's own session is reachable from the claude.ai phone app and the
+    Director approves there. gonogo gets nothing from the channel: its pending block and Downlink event stay until the hook
+    reports the outcome (the state leaves `needs_you`), and an approval made in the app is not a page answer, so Black Box
+    does not record it as one. **Limits, stated on the feature page:** it needs a claude.ai (subscription) login on the
+    machine, so it does **not** work for `CLAUDE_CODE_OAUTH_TOKEN` or API-key rooms and **not** for Clean Room agents (hire
+    and edit refuse the combination, field `remoteControl`). **Not verified:** the flag was read from `claude --help` only;
+    run it once with a real login (does it start unattended, does it need a first-run answer, does an approval in the app
+    clear the terminal dialog) before it is trusted.
+  - **Both:** the first answer wins; a Telegram tap after an app approval gets `Too late` through `needSeq`.
+- **No top-bar key.** The choice is in Flight Rules (and listed in the Patch Panel); the Telegram target stays in the RELAY
+  module of the Launch Window view.
 
 ## Options
 
-1. **Own channel with signed buttons (pick).** Works on any engine with hooks, any login, Clean Room included, and gonogo
+1. **Own channel with signed buttons (pick as the default path).** Works on any engine with hooks, any login, Clean Room included, and gonogo
    keeps seeing and recording every answer (Black Box, Recorder), which a Claude-app approval would bypass.
 2. Same, but Relief GO on the phone too. Rejected for the first build for the hidden-text reason above; revisit if the role
    text is made short enough to show whole.
-3. Web Push to the installed phone page instead of Telegram. Needs HTTPS (`docs/https.md`), a service worker and keys, and
+3. Path B alone (no Telegram): kept, as a choice in Flight Rules, not the default.
+4. Web Push to the installed phone page instead of Telegram. Needs HTTPS (`docs/https.md`), a service worker and keys, and
    the page's token on the phone. More to build for the same result; later.
 
 ## Interfaces
@@ -95,7 +107,8 @@ Telegram message cannot carry GO and NO-GO.
 3. Relay: forward the kinds as plain text (default off).
 4. Buttons and the callback path (tag, uplink kind, answers, edit). Feature page `docs/features/phone-approvals.md` that
    opens with the Remote Control verdict.
-5. Optional `remoteControl` pass-through, only after a real login run.
+5. The `phoneApprovals` setting in Flight Rules (do it with step 3; it gates 3 and 4).
+6. Path B: `remoteControl` field, launcher flag, form box, refusal with Clean Room; after a real login run.
 
 ## Test plan
 
