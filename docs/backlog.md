@@ -73,17 +73,31 @@ Plan:
 
 ## 5. Voice
 
-- [ ] Realtime voice mode for the boss *(inferred)*.
-- [ ] Dictation.
-- [ ] Meeting transcription.
+Excluded by the owner (2026-11-18): none of these will be built.
+
+- Excluded: realtime voice mode for the boss *(inferred)*.
+- Excluded: dictation.
+- Excluded: meeting transcription.
 
 ## 6. Integrations
 
-- [ ] Slack.
-- [ ] Webhooks, with a tunnel so that outside services can reach the machine *(tunnel inferred)*.
-- [ ] Triggers and their history.
-- [ ] GitHub.
-- [ ] Integrations registry, skills tab and MCP defaults.
+Built as Relay, Uplink, Launch Window and Payload; section 11 has the names and dates and is where those features are
+tracked. Only what is still missing stays open here.
+
+- [x] Slack. Built 2026-11-17 in **Relay**: bot mentions and DMs come in through an uplink; messages to you, Redline
+      trips, T-minus results and blocked tasks go out; thread replies reach the agent. Not tried against a real Slack.
+- [x] GitHub. Built 2026-11-17 in **Relay**, inbound only: push, pull request, issue, comment and workflow-run events
+      become messages. gonogo never writes to GitHub; an agent that must open a PR uses its own `git` or an MCP server.
+      Not tried against a real GitHub.
+- [x] Webhooks. Built 2026-11-17 as **Uplink**: a signed `POST /uplink/<id>` that reaches an agent as a message.
+- [ ] A tunnel so that outside services can reach the machine *(inferred)*. Not built: gonogo ships none.
+      `docs/https.md` and the Uplink page describe your own HTTPS reverse proxy that forwards only `/uplink/`.
+- [x] Triggers. Built 2026-11-17: **Launch Window** (cron schedules) and **Uplink** (webhooks) start work by themselves.
+- [ ] History of triggers. Only part is built: an uplink keeps its last 20 deliveries, but a schedule keeps only its
+      last run and the hub's answer to it.
+- [ ] Integrations registry, skills tab and MCP defaults. Only part is built: **Payload** sets MCP servers and skills
+      per agent from text you write. Missing: a list of known servers and skills to pick from, defaults for new
+      agents, and a skills tab apart from the hire form.
 
 ## 7. Cost and safety
 
@@ -103,11 +117,12 @@ Plan:
 
 - [x] Onboarding wizard and a settings screen. Built 2026-11-18 as Commissioning and Flight Rules (`docs/shell-spec.md`).
 - [x] Command bar. Built 2026-11-18 as the Patch Panel (`docs/shell-spec.md`).
-- [ ] Office themes.
-- [ ] Avatars that walk around the floor. This needs art of our own: the reference's tile sets cannot be used.
+- [x] Office themes. Built 2026-11-17 as **Livery**: four built-in colour themes, custom ones, and an agent that designs one
+      from a line of text. It changes colours only, not the floor art.
+- Excluded by the owner (2026-11-18): avatars that walk around the floor.
 - [x] Auto-update. Built 2026-11-18 as **Rollout**: a daily registry check and `gonogo update`, which prints the command. gonogo never updates itself.
-- [ ] Translations.
-- [ ] Windows.
+- Excluded by the owner (2026-11-18): translations.
+- Excluded by the owner (2026-11-18): Windows.
 
 ## 10. Theme: mission control (chosen by the owner)
 
@@ -137,7 +152,7 @@ default role text, and all three can still be edited. A custom position with a f
 Decided with the owner:
 
 - The human is the **Director**: they brief FLIGHT, and permission prompts read as go/no-go calls.
-- The boss's default name changes from `flight` to `flight`.
+- The boss's default name is `flight` (`BOSS_DEFAULT_NAME`). The recipient alias `boss` still reaches whoever is the boss.
 - The call signs are public job titles and nothing else is borrowed: no NASA logos, no mission names, no names
   of real people.
 
