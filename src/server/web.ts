@@ -165,7 +165,7 @@ export interface WebOptions {
   statusLine?: (agent: string, body: unknown) => void;
   /** Test clock of the status-line rate limit. */
   statusLineNow?: () => number;
-  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition'>;
+  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
@@ -1227,6 +1227,17 @@ export function createWebServer(options: WebOptions): WebServer {
       const models = options.models;
       if (!models) return null;
       if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, models.view()) };
+      // PUT /api/models/engine and /api/models/effort: the room's default engine, and its default effort for Claude Code
+      if (s.length === 3 && (s[2] === 'engine' || s[2] === 'effort')) {
+        const key = s[2];
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await (key === 'engine' ? models.setEngine(body.engine) : models.setEffort(body.effort)));
+          },
+        };
+      }
       // PUT /api/models/positions/<id>: the model of a position
       if (s.length === 4) {
         if (s[2] !== 'positions') return null;

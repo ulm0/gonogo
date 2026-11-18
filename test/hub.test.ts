@@ -192,6 +192,7 @@ interface HarnessOptions {
   roster?: AgentRecord[];
   history?: MessageRecord[];
   maxWorking?: number | null;
+  defaultEngine?: () => Provider;
   redline?: boolean;
   /** Live reload: what kept running in the pty host. */
   adoptable?: HubIo['adoptable'];
@@ -362,7 +363,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   if (options.startup) io.startup = () => options.startup as StartupSettings;
   if (options.runSet !== undefined) io.runSet = () => options.runSet ?? null;
   if (options.marks) io.markRun = (name, running, working) => void options.marks?.push([name, running, working]);
-  hub = createHub(io, { maxHops: options.maxHops ?? 8, bossDir: '/work/boss', maxWorking: options.maxWorking, redline: options.redline });
+  hub = createHub(io, { maxHops: options.maxHops ?? 8, bossDir: '/work/boss', maxWorking: options.maxWorking, redline: options.redline, defaultEngine: options.defaultEngine });
 
   const view = (name: string): AgentView => {
     const found = hub.views().find((candidate) => candidate.name === name);
@@ -6073,6 +6074,12 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     const plain = await hireWith(h, { name: 'ben', dir: '/work/ben' });
     expect(plain.effort).toBeNull();
     expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ben')).not.toHaveProperty('effort');
+  });
+
+  it('a hire that names no engine gets the room\'s default engine, and a named one wins', async () => {
+    const h = await started({ defaultEngine: () => 'gemini' });
+    expect((await hireWith(h)).provider).toBe('gemini');
+    expect((await hireWith(h, { name: 'ben', dir: '/work/ben', provider: 'claude' })).provider).toBe('claude');
   });
 
   it('refuses a level that is not one, a number, and an effort for an engine that takes none', async () => {

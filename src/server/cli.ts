@@ -447,6 +447,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       keys: (name) => clearance.values(name),
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
+      defaultEffort: () => modelDefaults.effort(),
       defaultPermissions: () => permissionDefaults.get(),
       subagents: () => subagentStore.view(),
       log: log.child('launcher'),
@@ -639,7 +640,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('hub'),
     };
-    const hubInstance = createHub(io, { maxHops, bossDir: cwd, maxWorking, redline });
+    const hubInstance = createHub(io, { maxHops, bossDir: cwd, maxWorking, redline, defaultEngine: () => modelDefaults.engine() });
     hub = hubInstance;
 
     // subscribed before the first spawn; the revoke comes first so a hook that is still in flight after the exit gets a 401
@@ -771,6 +772,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const tabName = audited(createTabName({ dir: home.dir, fallback: (env[STATION_ENV] ?? '').trim() === '' ? null : stationName(env[STATION_ENV], hostname()), emit: (view) => web?.broadcast({ t: 'tabname', tabName: view }), log: log.child('tabname') }), blackBox.record, TABNAME_AUDIT);
     const relief = createRelief({
       hub: hubInstance,
+      defaultEngine: () => modelDefaults.engine(),
       checkDirectory: io.checkDirectory,
       now: io.now,
       setTimer: io.setTimer,

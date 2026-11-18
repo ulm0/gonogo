@@ -191,6 +191,14 @@ describe('a request', () => {
     expect(relief.view().requests[0]).toMatchObject({ provider: 'opencode', mode: 'default' });
   });
 
+  it('uses the room\'s default engine when the request names none, and the named one wins', async () => {
+    relief = make({ defaultEngine: () => 'pi' });
+    await ask();
+    expect(relief.view().requests[0]).toMatchObject({ provider: 'pi' });
+    await ask({ name: 'guido-2', engine: 'claude' });
+    expect(relief.view().requests[1]).toMatchObject({ provider: 'claude' });
+  });
+
   it('answers a copy: changing the view does not change the request', async () => {
     await ask();
     relief.view().requests[0]!.name = 'other';

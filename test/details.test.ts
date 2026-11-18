@@ -2,7 +2,7 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
-import { detailsLine, detailsOf, effectiveModel, modelText } from '../src/shared/details.js';
+import { detailsLine, detailsOf, effectiveEffort, effectiveModel, modelText } from '../src/shared/details.js';
 import { EFFORTS, takesEffort } from '../src/shared/protocol.js';
 import type { AgentView, ModelDefaults } from '../src/shared/protocol.js';
 import { DetailChips } from '../src/client/DetailChips.js';
@@ -40,13 +40,25 @@ describe('the facts', () => {
 
   it('words the engine, the model with its source and the effort, in the page and in the terminal', () => {
     const d = detailsOf(agent({ position: 'fido', effort: 'xhigh' }), defaults);
-    expect(d).toEqual({ engine: 'Claude Code', model: { name: 'opus', from: 'position' }, effort: 'xhigh' });
+    expect(d).toEqual({ engine: 'Claude Code', model: { name: 'opus', from: 'position' }, effort: { level: 'xhigh', from: 'console' } });
     expect(modelText({ name: 'opus', from: 'position' })).toBe('opus · position default');
     expect(modelText({ name: 'sonnet', from: 'room' })).toBe('sonnet · room default');
     expect(modelText({ name: 'haiku', from: 'console' })).toBe('haiku');
     expect(detailsLine(d)).toBe('Claude Code · opus · position default · xhigh');
     expect(detailsLine(d, true)).toBe('Claude · opus · xhigh');
     expect(detailsLine(detailsOf(agent({ provider: 'pi' }), defaults), true)).toBe('pi');
+  });
+});
+
+describe('the effort a console starts with', () => {
+  it('is its own, else the room\'s for Claude Code only, else none', () => {
+    const room: ModelDefaults = { models: {}, effort: 'high' };
+    expect(effectiveEffort(agent({ effort: 'low' }), room)).toEqual({ level: 'low', from: 'console' });
+    expect(effectiveEffort(agent(), room)).toEqual({ level: 'high', from: 'room' });
+    expect(effectiveEffort(agent({ provider: 'pi' }), room)).toBeNull();
+    expect(effectiveEffort(agent(), { models: {} })).toBeNull();
+    expect(effectiveEffort(agent(), null)).toBeNull();
+    expect(detailsLine(detailsOf(agent(), room))).toBe('Claude Code · high · room default');
   });
 });
 
@@ -96,6 +108,12 @@ describe('the chips', () => {
     expect(out).toContain('data-detail="engine"');
     expect(out).not.toContain('data-detail="model"');
     expect(out).not.toContain('data-detail="effort"');
+  });
+
+  it('the room\'s effort has its source in the chip, and a console\'s own has none', () => {
+    publishModelDefaults({ models: {}, effort: 'high' });
+    expect(renderToString(createElement(DetailChips, { agent: agent() })).replace(/<!-- -->/g, '')).toMatch(/data-detail="effort">effort high · room default</);
+    expect(renderToString(createElement(DetailChips, { agent: agent({ effort: 'low' }) })).replace(/<!-- -->/g, '')).toMatch(/data-detail="effort">effort low</);
   });
 
   it('the console\'s own model has no source in its text', () => {

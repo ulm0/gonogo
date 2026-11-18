@@ -2079,7 +2079,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   }
 
   function checkProvider(value: unknown): Provider {
-    if (value === undefined) return 'claude';
+    if (value === undefined) return options.defaultEngine?.() ?? 'claude';
     if (typeof value !== 'string' || !(PROVIDERS as readonly string[]).includes(value)) {
       throw new HubError('bad_request', `provider must be one of ${PROVIDERS.join(', ')}`, 'provider');
     }

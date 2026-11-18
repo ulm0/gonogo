@@ -232,6 +232,14 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [keysOpen, setKeysOpen] = useState(false);
   const [checks, setChecks] = useState<EngineCheck[]>([]);
   const roomModels = useModelDefaults();
+  // The room's default engine preselects a new hire, once the defaults are known and only while the form is still as it opened.
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || form.mode !== 'hire' || roomModels === null) return;
+    preselected.current = true;
+    const engine = roomModels.engine;
+    if (engine !== undefined) setValues((v) => (v.provider === 'claude' && v.name === '' && v.role === '' ? chooseEngine(v, engine) : v));
+  }, [roomModels, form.mode]);
   const formRef = useRef<HTMLFormElement | null>(null);
   const bypassTile = useRef<HTMLButtonElement | null>(null);
   const confirmBox = useRef<HTMLInputElement | null>(null);

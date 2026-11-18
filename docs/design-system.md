@@ -219,7 +219,9 @@ Each is built from the keys, chips, lights, modules and fields above, so it foll
 <div class="ds-frame" :data-livery="look">
 <div class="ds-stack" style="max-width: 460px">
 <span class="label">Engine, model and effort chips</span>
-<span style="display: flex; flex-wrap: wrap; gap: 4px 6px"><span class="chip" data-tone="quiet">Claude Code</span><span class="chip" data-tone="quiet">opus · position default</span><span class="chip" data-tone="quiet">effort xhigh</span></span>
+<span style="display: flex; flex-wrap: wrap; gap: 4px 6px"><span class="chip" data-tone="quiet">Claude Code</span><span class="chip" data-tone="quiet">opus · position default</span><span class="chip" data-tone="quiet">effort high · room default</span></span>
+<span class="label">Version corner</span>
+<span style="font-family: var(--font-mono); font-size: 10px; line-height: 1.4; color: var(--text-2); opacity: 0.7">gonogo 0.3.0</span>
 <span class="label">Verdict line and review note</span>
 <span style="font-weight: 600">Approved 2 minutes ago.</span>
 <span style="font-weight: 600; color: var(--you-ink)">Approved 2 minutes ago: an older diff (the changes have moved on since).</span>
@@ -248,7 +250,7 @@ ROOM
 </div>
 </div>
 
-These are drawn from the app's own rules (the console chips of Engine Bay, Review, Missions, Worktrees, Room editor, Notifications, the terminal client and Rollout): the verdict line is bold text, amber with the tone token when it was of an older diff; a note has a `--edge` border and a left edge in the tone (word on a chip, never colour alone); the room editor's card is a `.module` with a handle row and a corner grip of `--text-2`, and its tray a `.module` with RESTORE keys; the terminal frame is `.lcd` text with a glyph and a word for each state. Only the tokens above colour them, so text keeps 4.5:1 (7:1 in High Contrast). Not drawn here because it is not in the app yet: the version corner, and the feature toggle row of the features PR.
+These are drawn from the app's own rules (the console chips of Engine Bay, Review, Missions, Worktrees, Room editor, Notifications, the terminal client and Rollout): the verdict line is bold text, amber with the tone token when it was of an older diff; a note has a `--edge` border and a left edge in the tone (word on a chip, never colour alone); the room editor's card is a `.module` with a handle row and a corner grip of `--text-2`, and its tray a `.module` with RESTORE keys; the terminal frame is `.lcd` text with a glyph and a word for each state. Only the tokens above colour them, so text keeps 4.5:1 (7:1 in High Contrast). The version corner is the app's small mono `--text-2` text, fixed at the bottom right (above the phone bar on a phone), at 70% opacity and full on hover or focus. Not drawn here because it is not in the app yet: the feature toggle row of the features PR.
 
 ## Shape, depth and motion
 

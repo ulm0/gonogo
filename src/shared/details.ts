@@ -14,8 +14,8 @@ export interface Details {
   engine: string;
   /** The model and where it comes from, or null when nothing sets one. */
   model: { name: string; from: ModelSource } | null;
-  /** `high`, `xhigh`, ... or null. */
-  effort: string | null;
+  /** The effort a Claude Code console starts with and where it comes from, or null. */
+  effort: { level: string; from: 'console' | 'room' } | null;
 }
 
 /** The model a console starts with, as `claude` does it: own, then the position's (Claude Code only), then the engine's. */
@@ -29,8 +29,14 @@ export function effectiveModel(agent: Pick<AgentView, 'model' | 'provider' | 'po
   return room ? { name: room, from: 'room' } : null;
 }
 
+/** The effort a console starts with: its own, else the room's for Claude Code; null when neither is set. */
+export function effectiveEffort(agent: Pick<AgentView, 'provider' | 'effort'>, defaults: ModelDefaults | null): Details['effort'] {
+  if (agent.effort) return { level: agent.effort, from: 'console' };
+  return agent.provider === 'claude' && defaults?.effort ? { level: defaults.effort, from: 'room' } : null;
+}
+
 export function detailsOf(agent: Pick<AgentView, 'model' | 'provider' | 'position' | 'effort'>, defaults: ModelDefaults | null): Details {
-  return { engine: providerInfo(agent.provider).label, model: effectiveModel(agent, defaults), effort: agent.effort ?? null };
+  return { engine: providerInfo(agent.provider).label, model: effectiveModel(agent, defaults), effort: effectiveEffort(agent, defaults) };
 }
 
 const SOURCE_TEXT: Readonly<Record<ModelSource, string>> = { console: '', position: ' · position default', room: ' · room default' };
@@ -38,7 +44,10 @@ const SOURCE_TEXT: Readonly<Record<ModelSource, string>> = { console: '', positi
 /** The model chip's text: `sonnet`, or `sonnet · room default` when the console did not choose it. */
 export const modelText = (model: NonNullable<Details['model']>): string => `${model.name}${SOURCE_TEXT[model.from]}`;
 
+/** The effort chip's text: `effort high`, or `effort high · room default`. */
+export const effortText = (effort: NonNullable<Details['effort']>): string => `effort ${effort.level}${effort.from === 'room' ? ' · room default' : ''}`;
+
 /** One line for a place that has no chips (the terminal's room list, a label): `Claude Code · sonnet · high`. */
 export function detailsLine(d: Details, short = false): string {
-  return [short ? d.engine.replace(/ (CLI|Code|Agent)$/, '') : d.engine, d.model === null ? null : short ? d.model.name : modelText(d.model), d.effort].filter((x): x is string => x !== null).join(' · ');
+  return [short ? d.engine.replace(/ (CLI|Code|Agent)$/, '') : d.engine, d.model === null ? null : short ? d.model.name : modelText(d.model), d.effort === null ? null : short ? d.effort.level : `${d.effort.level}${d.effort.from === 'room' ? ' · room default' : ''}`].filter((x): x is string => x !== null).join(' · ');
 }

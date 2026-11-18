@@ -661,7 +661,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort: agent.effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort: agent.effort ?? options.defaultEffort?.(), toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);

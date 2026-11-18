@@ -765,6 +765,10 @@ export interface ModelDefaults {
   models: Partial<Record<Provider, string>>;
   /** Position id to a model for a Claude Code agent in that position; wins over `models.claude`, loses to the agent's own model. Absent from an older server. */
   positions?: Record<string, string>;
+  /** The room's default engine: preselects the hire form, and is what a hire without an engine (Relief, hire_agent) gets. Absent means Claude Code. Never `custom`. */
+  engine?: Provider;
+  /** The room's default effort for a Claude Code console with none of its own. Absent means the CLI's own. */
+  effort?: Effort;
 }
 
 export interface RelayView {
@@ -1830,6 +1834,8 @@ export interface LauncherOptions {
   defaultModel?: (provider: Provider, position?: string) => string | undefined;
   /** Feature toggles: the MCP tools of features that are off; they are left out of `--allowedTools`. Default none. */
   toolsOff?: () => string[];
+  /** The room's default effort for a Claude Code console with none of its own. */
+  defaultEffort?: () => Effort | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
   /** Subagents: the room's setting, read at each start. Default: allowed. */
@@ -2016,6 +2022,8 @@ export interface HubOptions {
   maxWorking?: number | null;
   /** Redline's automatic detectors (loop, error storm, ping-pong). Default true; GONOGO_REDLINE=off. Hub.trip works either way. */
   redline?: boolean;
+  /** The room's default engine (Flight Rules): hired when a request names none. Default claude. */
+  defaultEngine?: () => Provider;
 }
 
 export interface AgentSendRequest {

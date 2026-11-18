@@ -4,7 +4,7 @@
  * is not known here, and a guess is not shown). The effort is the stored one, never read from the running console.
  */
 import type { ReactElement } from 'react';
-import { detailsOf, modelText } from '../shared/details.js';
+import { detailsOf, effortText, modelText } from '../shared/details.js';
 import type { AgentView } from '../shared/protocol.js';
 import { useModelDefaults } from './models.js';
 import './details.css';
@@ -23,7 +23,7 @@ export function DetailChips({ agent }: { agent: Pick<AgentView, 'model' | 'provi
       )}
       {d.effort !== null && (
         <span className="chip" data-tone="quiet" data-detail="effort">
-          {`effort ${d.effort}`}
+          {effortText(d.effort)}
         </span>
       )}
     </span>
