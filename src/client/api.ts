@@ -875,6 +875,10 @@ export async function setPhoneMode(mode: PhoneMode): Promise<RelayView> {
 }
 
 /** Update from the page: installs `version` (the newer one the check found), then reloads. The progress comes in the rollout frames. */
+export async function undoUpdate(): Promise<void> {
+  await call('POST', '/update/undo');
+}
+
 export async function startUpdate(version: string): Promise<void> {
   await call('POST', '/update', { version });
 }

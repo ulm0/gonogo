@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
 import { Comms } from './Comms.js';
+import type { StartupPolicy } from '../shared/protocol.js';
 import { startNotifications } from './notify-browser.js';
 import * as api from './api.js';
 import { BlackBox } from './BlackBox.js';
@@ -23,6 +24,7 @@ import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
 import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
+import { agentCounts, updateDialogText } from './selfupdate.js';
 import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
@@ -298,29 +300,64 @@ function RolloutStrip(): ReactElement | null {
   const [copied, setCopied] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const code = useRef<HTMLElement | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [policy, setPolicy] = useState<StartupPolicy | null>(null);
+  const agents = useStore((s) => s.agents);
   const update = rollout?.update;
-  const busy = update !== undefined && (update.state === 'running' || update.state === 'reloading');
-  if (rollout === null || !rollout.newer || rollout.latest === null) return null;
+  const busy = update !== undefined && (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off');
+  // what the last Docker self-update left (done, rolled back) is shown after the restart, when the new version is no longer "newer"
+  const result = update !== undefined && (update.state === 'done' || (update.state === 'failed' && !(rollout?.newer ?? false)));
+  if (rollout === null || (!rollout.newer && !result) || (rollout.latest === null && !result)) return null;
   if (dismissed === rollout.latest && update === undefined) return null;
-  const { latest, command } = rollout;
+  const { command } = rollout;
+  const latest = rollout.latest ?? update?.version ?? '';
+  const inContainer = rollout.selfUpdate === true;
+  const press = (): void => {
+    if (busy) return;
+    setError(null);
+    if (!inContainer) {
+      api.startUpdate(latest).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      return;
+    }
+    // a container update stops every agent: say so, with the autostart state, and ask once more
+    setConfirming(true);
+    api.startupSettings().then((found) => setPolicy(found.policy), () => setPolicy(null));
+  };
   return (
     <aside className="rollout-strip" aria-label="Update">
-      <span>
-        gonogo {latest} is out (this is {rollout.current}).{rollout.canUpdate === true ? '' : ' To update, run:'}
-      </span>
+      {rollout.newer && (
+        <span>
+          gonogo {latest} is out (this is {rollout.current}).{rollout.canUpdate === true ? '' : ' To update, run:'}
+        </span>
+      )}
       {rollout.canUpdate !== true && <code ref={code}>{command}</code>}
-      {rollout.canUpdate === true && (
-        <button
-          type="button"
-          className="btn"
-          aria-disabled={busy || undefined}
-          onClick={() => {
-            if (busy) return;
-            setError(null);
-            api.startUpdate(latest).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-          }}
-        >
+      {rollout.canUpdate === true && rollout.newer && (
+        <button type="button" className="btn" aria-disabled={busy || undefined} onClick={press}>
           Update to {latest}
+        </button>
+      )}
+      {confirming && !busy && (
+        <div className="rollout-confirm" role="alertdialog" aria-label={`Update to ${latest}`}>
+          <p>{updateDialogText(latest, agentCounts(Object.values(agents).map((a) => a.state)), policy)}</p>
+          <button
+            type="button"
+            className="btn"
+            data-kind="primary"
+            onClick={() => {
+              setConfirming(false);
+              api.startUpdate(latest).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+            }}
+          >
+            Update now
+          </button>
+          <button type="button" className="btn" data-kind="quiet" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {update?.undo === true && (
+        <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => api.undoUpdate().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}>
+          UNDO
         </button>
       )}
       {rollout.canUpdate !== true && (

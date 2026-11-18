@@ -68,9 +68,10 @@ export function installKind(where: { file: string; docker: boolean; clone: boole
 }
 
 /** The line the page shows about the install: how it was told, and what the Update button can do. */
-export function installNote(kind: InstallKind, canUpdate: boolean): string {
+export function installNote(kind: InstallKind, canUpdate: boolean, docker?: { ready: boolean; text: string }): string {
   switch (kind) {
     case 'docker':
+      if (docker?.ready === true) return 'Installed as a container image with the Docker socket: Update pulls this container\'s own tag and recreates it. The agents stop and the page reconnects.';
       return canUpdate ? 'Installed as a container image; an update hook is set, so Update asks it to pull and restart.' : 'Installed as a container image: a container cannot replace its own image, so run the command on the host.';
     case 'npm':
       return 'Installed with npm (an rpm or other package under lib/node_modules reads as npm: there is no gonogo rpm).';
@@ -143,6 +144,9 @@ export interface RolloutOptions {
   install?: InstallKind;
   installNote?: string;
   canUpdate?: boolean;
+  selfUpdate?: boolean;
+  /** The update state a result of the last Docker self-update left (update.json), shown until the Director goes on. */
+  update?: UpdateView;
   emit(view: RolloutView): void;
   log?: Logger;
 }
@@ -167,7 +171,7 @@ export function createRollout(options: RolloutOptions): Rollout {
   let timer: NodeJS.Timeout | undefined;
   let closed = false;
   let running: Promise<RolloutView> | null = null;
-  let update: UpdateView | undefined;
+  let update: UpdateView | undefined = options.update;
 
   const view = (): RolloutView => ({
     enabled: options.enabled,
@@ -176,7 +180,7 @@ export function createRollout(options: RolloutOptions): Rollout {
     checkedAt,
     newer: options.enabled && latest !== null && isNewer(latest, options.current),
     command: options.command,
-    ...(options.install === undefined ? {} : { install: options.install, installNote: options.installNote ?? '', canUpdate: options.enabled && options.canUpdate === true }),
+    ...(options.install === undefined ? {} : { install: options.install, installNote: options.installNote ?? '', canUpdate: options.enabled && options.canUpdate === true, ...(options.selfUpdate === true ? { selfUpdate: true } : {}) }),
     ...(update === undefined ? {} : { update }),
   });
 

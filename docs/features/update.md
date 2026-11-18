@@ -1,5 +1,7 @@
 # Update from the page, and the version in the corner
 
+<SelfUpdateMock class="doc-mock" />
+
 The running version is shown small in the bottom corner of every page (above the phone bar on a phone) and links to the
 changelog. The terminal view (`gonogo tui`) is not built yet, so it has no header to put it in.
 
@@ -10,7 +12,7 @@ It now also tells **how this gonogo was installed**, from where its own file is,
 
 | Install | How it is told | What the strip offers |
 |---|---|---|
-| Container image | `GONOGO_INSTALL=docker` (the image sets it), `/.dockerenv` or `/run/.containerenv` | the commands `docker compose pull && docker compose up -d` (run in the folder of your `compose.yaml`); an **Update** button only when an update hook is set (below) |
+| Container image | `GONOGO_INSTALL=docker` (the image sets it), `/.dockerenv` or `/run/.containerenv` | **Update** recreates this container when the Docker socket is mounted and the tag is a moving one (below); else the commands `docker compose pull && docker compose up -d` (run in the folder of your `compose.yaml`), or **Update** through an update hook |
 | Homebrew | file under `Cellar/gonogo/` | the command only: `brew upgrade gonogo`. The **Update** button never runs brew |
 | npm global | file under `lib/node_modules/@ulm0/gonogo/` | **Update**: `npm install -g @ulm0/gonogo@<version>` |
 | pnpm global | file under a `pnpm` folder, or an unknown place | **Update**: `pnpm add -g @ulm0/gonogo@<version>` |
@@ -40,18 +42,30 @@ is asked and nothing can be started. The server runs exactly one command and not
 The API is `POST /api/update` with `{ "version": "x.y.z" }` (the page's token, like every route): 202 with the state, 400 for a bad
 version, 409 for everything that is not allowed, with the reason.
 
-## In a container
+## In a container: Update recreates gonogo itself
 
-A container cannot replace its own image. Without a hook, the strip shows the commands to run on the host. With one, **Update** calls it:
+With the Docker socket mounted (compose.yaml does, for the Clean Room) and a **moving tag** (`:latest`, `:0`, `:0.3`), **Update to x.y.z** replaces this container with the newer image. Trust, in one sentence: **the update runs the code of the image's publisher on this host, with the Docker socket (root), the same trust as `docker compose pull`**, and the only guards are the version check and your click.
 
-- `GONOGO_UPDATE_HOOK`: an `http://` or `https://` URL, for example Watchtower's `http://watchtower:8080/v1/update`;
+1. The click opens a confirmation: how many agents are **working** and how many are **idle** (they all stop), and what **autostart** will do after (all that were running start again in waves; only the boss; or they stay stopped). It is refused while a **T-minus poll or Static fire** is open.
+2. The server pulls **its own tag** (the one in its container's `Config.Image`) and reads the image's `org.opencontainers.image.version` label. **If it is not exactly the version you clicked, nothing is changed** (the registry may lag; try later). A **pinned tag** (`:0.3.0`) or a digest is refused: change the tag in your compose file.
+3. It starts a short-lived **helper container** (from the new image; for UNDO from the image that runs now, because the old one may be too old to have `self-update`) (`gonogo self-update`, label `gonogo.helper`, removed when done) with the socket and the home folder mounted. The helper uses the Docker Engine API on the one container it was started for: it creates a copy of it on the new image from `inspect` (ports, binds, `init`, extra hosts, `group_add`, restart policy, networks and aliases, every label including compose's), stops the old one (gonogo stops its agents gracefully), renames it `<name>-prev-<random>` (the copy is made as `<name>-next-<random>`, so a leftover of an earlier try never blocks this one), starts the copy under the name, and waits up to 3 minutes for Docker's **`healthy`** (the image's healthcheck).
+4. **Healthy**: the old container is removed and `<home>/run/update.json` records the result and the previous image id. **Not healthy, or it did not start**: the copy is removed, the old one is renamed back and started again, and the page says why, with the last lines of the copy's log. If even that fails, the page says so and both containers are left under `-prev` and `-next` names for you.
+5. The page reconnects to the new container and shows *Updated 0.3.0 to 0.4.0* with **UNDO**: it runs the same helper on the **previous image** (kept on the host: `docker image prune -a` removes it, and UNDO then says so). One step back only; beyond that, pin a tag in compose.
+
+The copy runs from the image **id**, so the moving tag it came from is kept in the label `gonogo.self-update.ref` and the next update and UNDO read it there. If the helper does not answer within **5 minutes** (it died half way), the page says so and what to look at (`docker ps -a`, `docker logs` of the `gonogo.helper` container) and how to bring gonogo back (`docker compose up -d`). It needs **Docker 25 or newer** (API 1.44); Pad Check says so on an older daemon. The image's own HEALTHCHECK (the page at `127.0.0.1:7777/` answers 200) is what "healthy" means: with another `--port` or `GONOGO_PORT` the probe must be changed too (see the Docker guide), or every update rolls back. After a good update the helper also removes **stopped** containers named `<name>-prev-<6 hex>` or `<name>-next-<6 hex>` that carry the same compose project and service labels (a stopped one with `restart: always` could otherwise come back after a daemon restart on the same `/state`, two writers).
+
+**Under `gonogo rooms`** (several rooms behind one port) Update does not recreate the container: it would stop every room while a page counts only its own agents. The strip says to update from the host (`docker compose pull && docker compose up -d`); each room's home survives that as it does any restart. Self-update for a supervised container is not built.
+
+Limits, stated plainly: a compose file edited since the container was created is **not** re-read (only `docker compose up -d` does that), and the copy's `config-hash` label is the old one, so the next `docker compose up -d` recreates it once more, harmlessly, to the same image. A private image that needs a registry login needs `docker compose pull` on the host (the container has no credentials). A new image that starts, passes its healthcheck and is broken afterwards is not caught: use UNDO. `gonogo doctor` and the strip say "Docker self-update: ready / needs the Docker socket / pinned to 0.3.0". The API is `POST /api/update` as for npm, and `POST /api/update/undo`.
+
+**Without the socket**, or with a pinned tag, Update calls an update hook if you set one, else the strip shows the commands to run on the host:
+
+- `GONOGO_UPDATE_HOOK`: an `http://` or `https://` URL that updates the container (for example a **Watchtower** `/v1/update`; Watchtower is **archived and unmaintained** since December 2025, so gonogo does not recommend it);
 - `GONOGO_UPDATE_HOOK_TOKEN` (optional): sent as `Authorization: Bearer <token>`.
 
-One POST, no redirect followed, 15 s. The hook decides what to pull and when to restart; gonogo only says "now". If it updates this
-container, the page reconnects when the new one is up. The URL comes from the environment of the server, never from a request.
-The Dockerfile sets `GONOGO_INSTALL=docker`.
+One POST, no redirect followed, 15 s. The URL comes from the environment of the server, never from a request. The Dockerfile sets `GONOGO_INSTALL=docker`.
 
 ## Not tried
 
-The install of a real package from the registry (the tests use a fake installer), a Watchtower, Windows, and the strip in a browser
+The install of a real package from the registry (the tests use a fake installer), **the Docker path against a real daemon, a real pull and a real healthy new image (the tests use a fake Engine API; try it by hand in a throwaway compose project before you rely on it)**, a Watchtower, Windows, and the strip in a browser
 (there was no browser here; the client logic is tested, the component was only typechecked and built).

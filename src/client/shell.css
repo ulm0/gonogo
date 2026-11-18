@@ -1955,3 +1955,16 @@
 .fuel-plan[data-stale] {
   opacity: 0.7;
 }
+
+.rollout-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-basis: 100%;
+}
+
+.rollout-confirm p {
+  flex-basis: 100%;
+  margin: 0;
+}
