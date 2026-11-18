@@ -2,7 +2,7 @@
  * Plan quota (docs/quota-spec.md): the 5-hour and weekly use of the Claude plan, as Claude Code's own status line reports it.
  * A per-agent status-line shim posts only `rate_limits` to /hook/<agent>/StatusLine; the report with the newest time wins (the
  * plan is one pool for every agent). Kept in memory and in quota.json (mode 0600), so a restart shows the last value as stale.
- * Alerts: one Downlink `redline` event per window and threshold (80 and 95 %), armed again when the window resets or falls under.
+ * Alerts: one Downlink `redline` event per window and threshold (80 and 95 %), armed again only when a window's resets_at moves forward by more than a minute.
  * No automatic trip. gonogo never asks Anthropic for this number.
  *
  * shortcut: the thresholds are fixed at 80 and 95 %, and `rate_limits.spend_limit` (gateway rooms) is not read; add both when a room needs them.
@@ -57,8 +57,8 @@ export function createQuota(options: { dir: string; now: () => number; notify?: 
   const { now, log } = options;
   const path = join(options.dir, QUOTA_FILE);
   let state: { windows: Partial<Record<WindowKey, PlanWindow>>; at: number; source: string } | null = null;
-  /** `window|threshold|resetsAt` already told. */
-  const told = new Set<string>();
+  /** `window|threshold` to the `resetsAt` of the window it was told for: told again only when a window with a later reset reaches it. */
+  const told = new Map<string, number>();
   let chain: Promise<unknown> = Promise.resolve();
 
   const open = (): Partial<Record<WindowKey, PlanWindow>> => {
@@ -93,23 +93,19 @@ export function createQuota(options: { dir: string; now: () => number; notify?: 
     return `${Math.floor(m / 1440)} d ${Math.floor((m % 1440) / 60)} h`;
   };
 
-  /** The tell for each window and threshold crossed, once; a window that reset or fell under is armed again. quiet: remember only. */
+  /** The tell for each window and threshold crossed, once; a threshold is told again only for a window whose reset moved forward, so a percentage that dips and rises is one alert. quiet: remember only. */
   const alert = (quiet: boolean): void => {
     const current = open();
-    for (const key of [...told]) {
-      const [name, threshold, resets] = key.split('|');
-      const w = current[name as WindowKey];
-      if (w === undefined || String(w.resetsAt) !== resets || w.pct < Number(threshold)) told.delete(key);
-    }
     for (const key of WINDOWS) {
       const w = current[key];
       if (w === undefined) continue;
       // one event per crossing: when 95 % arrives at once, it is told once, not as 80 and 95
       let fresh = false;
       for (const threshold of THRESHOLDS) {
-        const id = `${key}|${threshold}|${w.resetsAt}`;
-        if (w.pct < threshold || told.has(id)) continue;
-        told.add(id);
+        const id = `${key}|${threshold}`;
+        const was = told.get(id);
+        if (w.pct < threshold || (was !== undefined && w.resetsAt <= was + 60_000)) continue;
+        told.set(id, w.resetsAt);
         fresh = true;
       }
       if (fresh && !quiet) options.notify?.('redline', `${NAME[key]} is at ${Math.floor(w.pct)} %, resets in ${hoursText(w.resetsAt - now())}`);

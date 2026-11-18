@@ -85,7 +85,10 @@ export const STATUS_LINE_SHIM = [
   'const w=r&&(r.seven_day||r.five_hour);if(w&&typeof w.used_percentage==="number")o="plan "+Math.round(w.used_percentage)+"%"+(r.seven_day?" wk":" 5h");',
   'if(r)await fetch(process.argv[1],{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GONOGO_TOKEN},',
   'body:JSON.stringify({rate_limits:r}),signal:AbortSignal.timeout(3000)}).catch(()=>{})}catch{}',
-  'if(process.argv[2]){try{o=require("child_process").execSync(process.argv[2],{input:d,timeout:4000,encoding:"utf8"}).trim()}catch{}}',
+  // detached: the whole process group is killed when the command exits or after 4 s, so a grandchild cannot hold the shim
+  'if(process.argv[2])o=await new Promise(r=>{const c=require("child_process").spawn("sh",["-c",process.argv[2]],{detached:true,stdio:["pipe","pipe","ignore"]});let s="",n=0;',
+  'const e=()=>{if(n++)return;clearTimeout(t);try{process.kill(-c.pid,"SIGKILL")}catch{}r(s.trim()||o)};const t=setTimeout(e,4000);',
+  'c.stdout.on("data",x=>s+=x);c.on("exit",()=>setTimeout(e,100));c.on("error",e);c.stdin.on("error",()=>{});c.stdin.end(d)});',
   'process.stdout.write(o+"\\n")})',
 ].join('');
 

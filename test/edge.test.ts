@@ -1477,6 +1477,22 @@ describe('hooks', () => {
     expect(onHookCalls(hubCalls)).toEqual([]);
   });
 
+  it('StatusLine takes one post per agent every 10 s and drops the faster ones with a plain 200', async () => {
+    let t = 1_000_000;
+    const seen: unknown[] = [];
+    const { port } = await startWeb({ statusLine: (_a, b) => seen.push(b), statusLineNow: () => t });
+    const post = (n: number) => postHook(port, '/hook/ana/StatusLine', { body: `{"rate_limits":{"n":${n}}}` });
+    expect((await post(1)).status).toBe(200);
+    t += 9_999;
+    expect((await post(2)).json()).toEqual({});
+    t += 1;
+    expect((await post(3)).status).toBe(200);
+    expect(seen).toEqual([{ rate_limits: { n: 1 } }, { rate_limits: { n: 3 } }]);
+    // another agent has its own clock
+    expect((await postHook(port, '/hook/ben/StatusLine', { token: BEN_TOKEN, body: '{"rate_limits":{"n":9}}' })).status).toBe(200);
+    expect(seen).toHaveLength(3);
+  });
+
   it('answers 401 without a usable agent token, and keeps serving', async () => {
     const { port, hubCalls } = await startWeb();
     const attempts: Array<string | null> = [null, 'f'.repeat(64), '', 'é'.repeat(64), TOKEN];

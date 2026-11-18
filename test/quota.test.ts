@@ -135,6 +135,15 @@ describe('the alerts', () => {
     expect(events).toHaveLength(3);
   });
 
+  it('a percentage that dips under and rises again inside one window is one alert; a drift of seconds in resets_at is not a new window', async () => {
+    const q = await make();
+    q.report('ana', body(82));
+    q.report('ana', body(70));
+    q.report('ana', body(83));
+    q.report('ana', body(85, undefined, NOW + 24 * HOUR + 5_000));
+    expect(events).toHaveLength(1);
+  });
+
   it('tells 95 once when it arrives at once, and nothing after a restart for what was told', async () => {
     const q = await make();
     q.report('ana', body(undefined, 96));
@@ -183,6 +192,25 @@ describe('the status line shim', () => {
     expect(await run('http://127.0.0.1:9/hook/ana/StatusLine', input)).toEqual({ out: 'plan 41% wk\n', code: 0 });
     expect(await run('http://127.0.0.1:9/x', 'not json')).toEqual({ out: '\n', code: 0 });
   });
+
+  it('a chained command that leaves a sleeping child does not hold the shim, and the child is killed with its group', async () => {
+    const pidFile = join(dir, 'child.pid');
+    const started = Date.now();
+    const { out } = await run('http://127.0.0.1:9/x', input, `sleep 30 & echo $! > ${pidFile}; echo mine`);
+    expect(out).toBe('mine\n');
+    expect(Date.now() - started).toBeLessThan(3000);
+    const pid = Number((await readFile(pidFile, 'utf8')).trim());
+    await new Promise((r) => setTimeout(r, 200));
+    expect(() => process.kill(pid, 0)).toThrow();
+  });
+
+  it('a chained command that never answers is cut at 4 seconds and the plan line shows', async () => {
+    const started = Date.now();
+    const { out, code } = await run('http://127.0.0.1:9/x', input, 'sleep 30');
+    expect(code).toBe(0);
+    expect(out).toBe('plan 41% wk\n');
+    expect(Date.now() - started).toBeLessThan(6000);
+  }, 10_000);
 
   it("chains the Director's own status line: it gets the same JSON and its output is what shows", async () => {
     const { out } = await run('http://127.0.0.1:9/x', input, "node -e 'process.stdin.on(\"data\",d=>process.stdout.write(\"mine:\"+JSON.parse(d).cwd))'");
