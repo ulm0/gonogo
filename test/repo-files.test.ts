@@ -150,6 +150,7 @@ const committed = [
   '.vitepress/config.mts',
   '.vitepress/theme/index.ts',
   '.vitepress/theme/custom.css',
+  '.vitepress/theme/LiverySwitch.vue',
   'README.md',
   'CHANGELOG.md',
   'CONTRIBUTING.md',

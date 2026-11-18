@@ -235,6 +235,37 @@ works and turns warm when it needs you, and a foot (`.tile-foot`, `.tile-state`)
 The phone layout starts under 700 px: the wall folds into one module, the room into three columns, and a bar of seven keys sits at
 the foot of the screen.
 
+## This site
+
+The docs site is built on the same two files. `.vitepress/theme/custom.css` points every VitePress colour variable (`--vp-c-*`)
+at a token and declares no colour of its own; the livery key in the top bar (`LiverySwitch.vue`) puts one of the four on
+`<html>`, keeps it in the browser, and follows the system's light or dark until you pick one. The top bar is a row of keys, each
+sidebar group a lettered module, a code block an LCD in a console's frame, and the containers are the status lights:
+
+::: info
+A plain module with the indigo light: something to know.
+:::
+
+::: tip
+GO, sage: the way that works.
+:::
+
+::: warning
+Needs you, saffron: read this before you go on.
+:::
+
+::: danger
+NO-GO, raspberry: this breaks something or loses data.
+:::
+
+::: details A folded module
+Open it for the rest.
+:::
+
+```sh
+GONOGO_REDLINE=off gonogo --port 7890
+```
+
 ## The logo
 
 <div class="ds-logos">

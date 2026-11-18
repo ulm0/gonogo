@@ -1,14 +1,11 @@
 ---
+# A placeholder: the landing page replaces this home.
 layout: home
 
 hero:
   name: gonogo
   text: Mission control for coding agents, in a browser tab
   tagline: One Node process starts each agent as a real claude (or another CLI) in a terminal, shows the terminals and a room of consoles in the browser (it works on a phone), and lets the agents message each other. Closing the tab stops nothing. One person per installation.
-  image:
-    light: /lockup.svg
-    dark: /lockup-dark.svg
-    alt: gonogo
   actions:
     - theme: brand
       text: Get started
@@ -16,23 +13,6 @@ hero:
     - theme: alt
       text: GitHub
       link: https://github.com/ulm0/gonogo
-
-features:
-  - title: Room
-    details: Consoles, a wall, a Brief box, go/no-go polls, FLIGHT the boss.
-    link: /guide/the-room
-  - title: Guard rails
-    details: Redline (stops loops and error storms), Propellant (token budgets), Clean Room (a container per agent).
-    link: /features/redline
-  - title: Work in
-    details: Launch Window (schedules), Uplink (webhooks), Relay (Slack, GitHub, Linear, Telegram), Flight Plan (tasks), Downlink (inbox).
-    link: /features/launch-window
-  - title: Shared
-    details: Mission Log (memory with search), Payload (MCP servers and skills), Engine Bay (Gemini, Codex and other CLIs, not yet tried against a model).
-    link: /features/mission-log
-  - title: Look and links
-    details: Livery (themes), Docking (two installations message each other and hand off tasks).
-    link: /features/livery
 ---
 
 ## Quick start
