@@ -15,7 +15,7 @@
   font-size: 22px;
 }
 
-/* A read-only field is greyed by base.css; an address or a secret is what you came for, so it keeps full ink. */
+/* A read-only field is greyed by primitives.css; an address or a secret is what you came for, so it keeps full ink. */
 .input.up-value:read-only {
   background: var(--key);
   color: var(--text);

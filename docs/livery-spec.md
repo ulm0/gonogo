@@ -6,7 +6,7 @@ values of the colour tokens.
 
 ## Intent
 
-The look of gonogo is a set of colour tokens (`base.css`, `shell.css`). A livery is a value for each of them. Four ship; the
+The look of gonogo is a set of colour tokens (`src/client/tokens.css`). A livery is a value for each of them. Four ship; the
 Director can ask any agent to design another from a line of text, and the agent's answer is checked by a program, not by the
 agent: a livery whose text cannot be read is refused. The choice is kept on the server, so the desk and the phone show the same.
 
@@ -16,9 +16,9 @@ agent: a livery whose text cannot be read is refused. The choice is kept on the 
 
 `src/shared/livery.ts` (used by the server and the page) lists 28 tokens with the role of each: the surfaces (`--body`,
 `--panel`, `--key`, `--well`), the lines (`--edge`, `--edge-2`), the text (`--text`, `--text-2`, `--muted`), the screen (`--lcd`
-and its three text colours), the four signals with their tints, inks and keys, and two track colours. A test reads the `:root`
-blocks of `base.css` and `shell.css` and fails if a colour token is missing from the list, or if the Instrument livery differs
-from the CSS.
+and its three text colours), the four signals with their tints, inks and keys, and two track colours. A test reads the blocks
+of `tokens.css` (`:root` for Instrument, `[data-livery='<slug>']` for the other three) and fails if a colour token is missing
+from the list, or if a livery that ships differs from the CSS.
 
 A value is `#rgb`, `#rrggbb`, `rgb()`, `hsl()` or `oklch()`: no alpha, no names, no `var()`, at most 64 characters, commas or
 spaces but not both. Each form is parsed with a strict pattern, so a value can never carry a `;`, a brace or a second property.

@@ -1,6 +1,6 @@
 /*
  * The comm loop (full screen and the strip under a console) and the brief box, in the Instrument look: the rows are one
- * module, the brief box another; the status is a chip. Built on base.css; the layout is that of
+ * module, the brief box another; the status is a chip. Built on primitives.css; the layout is that of
  * docs/design/annunciator/{Loop,PhoneLoop}.dc.html and the TRAFFIC strip of docs/design/instrument/InstRoom.dc.html.
  * Classes start with loop- or brief-. Under 700 px wide the rows stack.
  */
