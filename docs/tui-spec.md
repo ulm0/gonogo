@@ -11,7 +11,7 @@ is a gap in the API and is fixed there, for both clients.
 ## What the server already gives
 
 - Browser token in `<home>/<BROWSER_TOKEN_FILE>` (0600). The TUI runs as the same user, so it reads the file; no URL to copy.
-  Override: `--url`, `--token` (or `GONOGO_TOKEN`) for a server on another host.
+  Override: `--url`, `--token` (or `GONOGO_BROWSER_TOKEN`) for a server on another host.
 - `GET /api/state` and the WebSocket `/ws` (`gonogo.v1` plus the token as second subprotocol): `snapshot`, then frames for agents,
   messages, Downlink, polls, Relief, Flight Plan. `attach`/`detach`/`input`/`resize` frames and binary output frames
   (`[kind, seq, bytes]`) for a console.
@@ -71,6 +71,7 @@ xterm-compatible ones; say so in the docs.
 Built to the spec above. Where the build chose or differs:
 
 - **Files.** `src/server/tui-*.ts`, flat in the server folder (`tui-state`, `tui-keys`, `tui-render`, `tui-client`, `tui-console`, `tui-app`, `tui-cli`), not a `src/tui/` folder: the package check lists `dist/server/*.js` module by module, so a new folder would have needed its own rule for no gain. `gonogo tui` is read in `main` before the server arguments and loads `tui-cli` only then.
+- **The token variable is `GONOGO_BROWSER_TOKEN`, not `GONOGO_TOKEN`.** gonogo sets `GONOGO_TOKEN` to the agent's own token in the environment of every agent it starts, so a terminal opened inside a console would have sent an agent token and been refused. The browser token has its own name.
 - **State.** `src/client/store.ts` cannot be imported (it needs React), so `tui-state.ts` keeps the few facts the terminal shows: the roster, the Downlink, Relief and the poll. Every text of the server goes through `clean` (control, C1 and bidi characters become spaces) before it is drawn; a test feeds an escape sequence into every field.
 - **GO and NO-GO only on the NEEDS screen.** The strip on every screen names the first request and says "(press 3)"; `g` and `x` act on the request under the cursor of NEEDS, so a key never answers something the Director has not seen in full. A permission answer carries the `needSeq` of the dialog it was shown, so a dialog that changed in the meantime is a 409 and not a wrong answer.
 - **Keys.** ROOM: arrows or `j` `k`, Enter attach, `n` message, `h` hold, `r` resume. INBOX: Enter reads (and marks read), `r` replies to the author with the id of the message (`inReplyTo`), `a` archives. NEEDS: `g`, `x`. POLL: `t` calls a poll. `1`-`4` and Tab switch, `?` helps, `q` or Ctrl-C leaves. A message is one line (Enter sends; there is no bracketed paste, so a pasted line break sends early); Esc cancels, Ctrl-U clears.

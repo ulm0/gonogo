@@ -1,6 +1,6 @@
 /**
  * gonogo tui (docs/tui-spec.md): the command line. It finds the server and the browser token the way the page's user would:
- * the token file in gonogo's home (the same user can read it), or --token / GONOGO_TOKEN for a server somewhere else, and
+ * the token file in gonogo's home (the same user can read it), or --token / GONOGO_BROWSER_TOKEN for a server somewhere else, and
  * --url for its address. The token is read and never printed. It needs a terminal: with none it says so and exits 2.
  */
 import { readFileSync } from 'node:fs';
@@ -17,7 +17,7 @@ questions, and a console you type into. It uses the same server as the page, and
 
 Options:
   --url <address>    the server (default http://127.0.0.1:<GONOGO_PORT or ${DEFAULT_PORT}>)
-  --token <token>    the browser token (env GONOGO_TOKEN); visible in \`ps\`, so prefer the environment
+  --token <token>    the browser token (env GONOGO_BROWSER_TOKEN); visible in \`ps\`, so prefer the environment
   --home <dir>       gonogo's state directory, where the token file is (default ~/${DEFAULT_HOME_DIRNAME}; env GONOGO_HOME)
   -h, --help         show this help
 
@@ -69,9 +69,9 @@ export function resolveUrl(url: string | undefined, env: Env): { url: string } |
   return { url: `http://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}` };
 }
 
-/** The browser token: --token, else GONOGO_TOKEN, else the file in gonogo's home. */
+/** The browser token: --token, else GONOGO_BROWSER_TOKEN, else the file in gonogo's home. */
 export function resolveToken(token: string | undefined, home: string | undefined, env: Env, read: (path: string) => string = (p) => readFileSync(p, 'utf8')): { token: string } | { error: string } {
-  const given = token ?? (env.GONOGO_TOKEN === '' ? undefined : env.GONOGO_TOKEN);
+  const given = token ?? (env.GONOGO_BROWSER_TOKEN === '' ? undefined : env.GONOGO_BROWSER_TOKEN);
   if (given !== undefined) return { token: given.trim() };
   const dir = resolve(home ?? (env.GONOGO_HOME || join(homedir(), DEFAULT_HOME_DIRNAME)));
   try {
@@ -80,7 +80,7 @@ export function resolveToken(token: string | undefined, home: string | undefined
   } catch {
     // no file: the message below says what to do
   }
-  return { error: `no browser token: there is none in ${dir}. Start gonogo first (or pass --home), or give --token / GONOGO_TOKEN and --url for a server elsewhere.` };
+  return { error: `no browser token: there is none in ${dir}. Start gonogo first (or pass --home), or give --token / GONOGO_BROWSER_TOKEN and --url for a server elsewhere.` };
 }
 
 export interface TuiIo {

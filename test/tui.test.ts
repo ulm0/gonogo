@@ -347,19 +347,21 @@ describe('the command line', () => {
     expect(resolveUrl(undefined, { GONOGO_PORT: 'x' })).toHaveProperty('error');
   });
 
-  it('takes the token from --token, then GONOGO_TOKEN, then the file of the home, and says where it looked', () => {
+  it('takes the token from --token, then GONOGO_BROWSER_TOKEN, then the file of the home, and never the agent token GONOGO_TOKEN', () => {
     const read = (path: string): string => {
       if (path === '/home/a/token') return ' filetoken\n';
       throw new Error('ENOENT');
     };
-    expect(resolveToken('given', undefined, { GONOGO_TOKEN: 'env' }, read)).toEqual({ token: 'given' });
-    expect(resolveToken(undefined, undefined, { GONOGO_TOKEN: 'env' }, read)).toEqual({ token: 'env' });
+    expect(resolveToken('given', undefined, { GONOGO_BROWSER_TOKEN: 'env' }, read)).toEqual({ token: 'given' });
+    expect(resolveToken(undefined, undefined, { GONOGO_BROWSER_TOKEN: 'env' }, read)).toEqual({ token: 'env' });
     expect(resolveToken(undefined, '/home/a', {}, read)).toEqual({ token: 'filetoken' });
     expect(resolveToken(undefined, undefined, { GONOGO_HOME: '/home/a' }, read)).toEqual({ token: 'filetoken' });
     const none = resolveToken(undefined, '/home/b', {}, read);
     expect(none).toHaveProperty('error');
     expect((none as { error: string }).error).toContain('/home/b');
-    expect(resolveToken(undefined, '/home/a', { GONOGO_TOKEN: '' }, read)).toEqual({ token: 'filetoken' });
+    expect(resolveToken(undefined, '/home/a', { GONOGO_BROWSER_TOKEN: '' }, read)).toEqual({ token: 'filetoken' });
+    // the variable gonogo sets for an agent is an agent token: it must not be taken for the browser's
+    expect(resolveToken(undefined, '/home/a', { GONOGO_TOKEN: 'agent-token' }, read)).toEqual({ token: 'filetoken' });
   });
 
   it('needs a terminal: with none it says so and exits 2, and the help and the errors need none', async () => {
@@ -372,7 +374,7 @@ describe('the command line', () => {
     expect(await tuiMain([], {}, io(false))).toBe(2);
     expect(err.join('')).toContain('needs a terminal');
     err.length = 0;
-    expect(await tuiMain(['--url', 'ftp://x'], { GONOGO_TOKEN: 't' }, io(true))).toBe(2);
+    expect(await tuiMain(['--url', 'ftp://x'], { GONOGO_BROWSER_TOKEN: 't' }, io(true))).toBe(2);
     expect(await tuiMain([], { GONOGO_HOME: '/nowhere/at/all' }, io(true))).toBe(1);
     expect(err.join('')).toContain('no browser token');
     expect(err.join('')).not.toMatch(/token: [0-9a-f]{20}/);
