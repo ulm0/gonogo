@@ -281,9 +281,11 @@ describe('after review of #85', () => {
     const socket = await connect(old);
     const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
     rotateDirectorToken(home);
-    // the supervisor looks at the file when something asks: the next request does
-    expect((await get(s, '/api/rooms', old)).status).toBe(401);
+    // no request follows: the supervisor's own 2 s beat looks at the file and ends the old socket
+    const started = Date.now();
     await closed;
+    expect(Date.now() - started).toBeLessThan(4000);
+    expect((await get(s, '/api/rooms', old)).status).toBe(401);
     await expect(connect(old)).rejects.toThrow(/401/);
     const fresh = await connect(readFileSync(join(home, 'token'), 'utf8').trim());
     fresh.close();

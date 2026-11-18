@@ -493,7 +493,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     releaseLock();
     throw error;
   }
-  const poll = setInterval(reconcile, POLL_MS);
+  // the token file is looked at on this beat too, so a rotated token closes the old sockets within seconds whatever the traffic
+  const poll = setInterval(() => {
+    currentToken();
+    reconcile();
+  }, POLL_MS);
   // `gonogo rooms add` looks for this file to tell whether anything will act on a change
   writeSupervisorFile(options.home, options.host, (server.address() as { port: number }).port);
   poll.unref();
