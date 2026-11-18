@@ -1,4 +1,4 @@
-import type { ActivityItem, AgentView, FuelGauge, FuelLimits, FuelWindow, GovernorView, PollView } from '../shared/protocol.js';
+import type { ActivityItem, AgentView, Budget, CostGauge, FuelGauge, FuelLimits, FuelWindow, GovernorView, PollView } from '../shared/protocol.js';
 import { HISTORY_WINDOW_MS, MAX_AGENTS, providerInfo, STATIC_FIRE_POSITIONS } from '../shared/protocol.js';
 
 // Pure logic of the wall (mission, sequence, T-minus, Max Q), kept out of Wall.tsx so that it can be tested without a DOM.
@@ -219,6 +219,22 @@ export function fuelLevel(gauge: FuelGauge, window: FuelWindow): FuelLevel {
   if (limit === undefined) return 'none';
   const used = gauge.used[window];
   return used >= limit ? 'over' : used >= limit * WARN_AT ? 'warn' : 'ok';
+}
+
+/** Like fuelLevel, for the dollars of a window against its budget. */
+export function budgetLevel(cost: CostGauge, window: FuelWindow): FuelLevel {
+  const budget = cost.budget[window];
+  if (budget === undefined) return 'none';
+  const used = cost.usd[window];
+  return used >= budget ? 'over' : used >= budget * WARN_AT ? 'warn' : 'ok';
+}
+
+/** The budget with this window set to `usd`, or removed for null. */
+export function withBudget(budget: Budget, window: FuelWindow, usd: number | null): Budget {
+  const next: Budget = { ...budget };
+  if (usd === null) delete next[window];
+  else next[window] = usd;
+  return next;
 }
 
 /** The limits with this window set to `tokens`, or removed for null. */

@@ -1,9 +1,16 @@
 /**
  * Prices of models in dollars per million tokens, and what a split of tokens costs (docs/cost-spec.md). Pure: no file, no network.
  *
- * The defaults are Anthropic's list prices (platform.claude.com/docs/en/about-claude/pricing), copied by hand at `asOf`; the
- * owner's `~/.gonogo/prices.json` wins over them. A model that matches no prefix is unpriced: its tokens are shown, never costed.
- * Cache writes are priced at the 5-minute rate; the 1-hour rate and long-context surcharges are not modelled.
+ * The defaults are copied by hand from Anthropic's pricing page (https://platform.claude.com/docs/en/about-claude/pricing, the
+ * "Model pricing" table) on PRICES_AS_OF; the owner's `~/.gonogo/prices.json` wins over them. Cache writes are the 5-minute
+ * column; cache reads are the page's "cache hits" column as printed. The page's cache-read ratio is not the same for every model
+ * (0.1x of input for most, 0.05x for Opus 5.5 and Sonnet 5.5, 0.025x for Fable 5.2 and 5.1), so each row below is the printed
+ * number, not a formula. Not modelled: the 1-hour cache write, Haiku 5.5 above 100,000 prompt tokens, batch and per-call fees.
+ * Mythos models are left out (limited availability).
+ *
+ * A model that matches no row is unpriced: its tokens are shown, never costed. A default row matches only its own id, with a
+ * date (`-20260101`), `-latest` or `[1m]` after it: a newer model that merely starts with the same letters (`claude-sonnet-5-6`)
+ * is not guessed to cost the same. Your own rows are prefixes, as you type them.
  */
 
 export interface ModelPrice {
@@ -29,10 +36,16 @@ export interface PriceRow extends ModelPrice {
   asOf?: string;
 }
 
+/** GET /api/prices: the merged table, and the label of its currency. */
+export interface PricesView {
+  currency: string;
+  rows: Record<string, PriceRow>;
+}
+
 export const PRICES_AS_OF = '2026-11-18';
 const p = (input: number, cacheWrite: number, cacheRead: number, output: number): ModelPrice => ({ input, output, cacheWrite, cacheRead });
 
-/** Prefix of a model id to its list price. Longest prefix wins, so `claude-opus-4-1` beats `claude-opus-4`. */
+/** Model id (or your prefix) to its list price. */
 export const DEFAULT_PRICES: PriceTable = {
   'claude-fable-5-2': p(8, 10, 0.2, 40),
   'claude-fable-5-1': p(10, 12.5, 0.25, 50),
@@ -67,11 +80,14 @@ export function mergePrices(file: PriceTable = {}): Record<string, PriceRow> {
 }
 
 /** The price of a model by the longest matching prefix, or null (unpriced). */
-export function priceFor(table: Record<string, ModelPrice>, model: string | undefined): ModelPrice | null {
+export function priceFor(table: Record<string, ModelPrice | PriceRow>, model: string | undefined): ModelPrice | null {
   if (!model) return null;
   let best: string | null = null;
-  for (const prefix of Object.keys(table)) {
-    if (model.startsWith(prefix) && (best === null || prefix.length > best.length)) best = prefix;
+  for (const [prefix, row] of Object.entries(table)) {
+    if (!model.startsWith(prefix)) continue;
+    // a built-in row is one model, not a family: only a date, -latest or [1m] may follow it
+    if ('source' in row && row.source === 'default' && !/^(-\d{8}|-latest)?(\[1m\])?$/.test(model.slice(prefix.length))) continue;
+    if (best === null || prefix.length > best.length) best = prefix;
   }
   return best === null ? null : (table[best] ?? null);
 }

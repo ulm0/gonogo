@@ -1,6 +1,6 @@
 # Spec: Cost in Propellant (draft)
 
-Design by FIDO, 2026-11-18. Extends `docs/redline-propellant-spec.md`. Status: draft, not built.
+Design by FIDO, 2026-11-18. Extends `docs/redline-propellant-spec.md`. Status: built.
 
 ## Intent
 

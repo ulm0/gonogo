@@ -1,5 +1,7 @@
 # Spec: Redline and Propellant
 
+Prices and dollar budgets for Propellant: see `docs/cost-spec.md`.
+
 Written 2026-11-17 and approved by the owner the same day. The first two features of the self-hosted roadmap
 (`docs/backlog.md` section 11). Both exist to stop spend that nobody asked for.
 

@@ -413,6 +413,20 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       else if (kind === 'tminus') blackBox.record('poll', pollText(text));
     };
 
+    /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, an agent's own only that agent. */
+    const enforce = (name: string): void => {
+      const over = propellant.over(name);
+      if (over === null || !hub) return;
+      const names = over.scope === 'room' ? hub.views().filter((v) => v.provider === 'claude').map((v) => v.name) : [name];
+      for (const n of names) {
+        try {
+          hub.trip(n, over.reason);
+        } catch (e) {
+          log.debug(`could not trip ${n}`, e);
+        }
+      }
+    };
+
     let seq = home.lastMessageSeq();
     // arrow functions on purpose: nothing here relies on `this` of the object it came from
     const io: HubIo = {
@@ -466,20 +480,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return info !== null && info.running && info.generation === generation && terminalHost.write(name, data);
       },
       meter: (name, _generation, transcriptPath) => {
-        void propellant.record(name, transcriptPath).then((tokens) => {
-          if (tokens === 0 || !hub) return;
+        void propellant.record(name, transcriptPath).then((used) => {
+          if (used === 0 || !hub) return;
           web?.broadcast({ t: 'propellant', propellant: propellant.view() });
-          const over = propellant.over(name);
-          if (over === null) return;
-          // a room limit stops every Claude agent that runs, an agent's own limit only that agent
-          const names = over.scope === 'room' ? hub.views().filter((v) => v.provider === 'claude').map((v) => v.name) : [name];
-          for (const n of names) {
-            try {
-              hub.trip(n, over.reason);
-            } catch (e) {
-              log.debug(`could not trip ${n}`, e);
-            }
-          }
+          enforce(name);
         });
       },
       toolHook: (name, event, payload) => telemetry.hook(name, event, payload),
@@ -625,6 +629,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       isReady: () => ready,
       propellant: audited(propellant, blackBox.record, PROPELLANT_AUDIT),
       prices: audited(prices, blackBox.record, PRICES_AUDIT),
+      // a changed price or budget is checked at once, not at the next reply
+      spendChanged: () => {
+        propellant.recheck();
+        for (const v of hub?.views() ?? []) if (v.provider === 'claude') enforce(v.name);
+      },
       telemetry,
       schedules: audited(schedules, blackBox.record, SCHEDULES_AUDIT),
       uplinks: audited(uplinks, blackBox.record, UPLINKS_AUDIT),

@@ -69,6 +69,7 @@ import {
   WS_SUBPROTOCOL,
   WS_TOKEN_PROTOCOL_PREFIX,
 } from '../shared/protocol.js';
+import type { ModelPrice, PricesView } from '../shared/prices.js';
 import { applyServerFrame, pruneEnvelopes, readStored, store, writeStored } from './store.js';
 
 /** What the terminal pane receives. api.ts drops snapshots and output of an attach that is no longer the current one. */
@@ -193,6 +194,12 @@ function toPropellantView(value: unknown): PropellantView {
     throw failure('The server sent an answer gonogo does not understand.');
   }
   return value as PropellantView;
+}
+
+function toPricesView(value: unknown): PricesView {
+  const record = asRecord(value);
+  if (record === null || asRecord(record.rows) === null) throw failure('The server sent an answer gonogo does not understand.');
+  return value as PricesView;
 }
 
 function toScheduleView(value: unknown): ScheduleView {
@@ -397,6 +404,21 @@ export async function setGovernor(request: GovernorRequest): Promise<GovernorVie
 /** Propellant: token limits for the room and per agent; {} clears a scope. */
 export async function setPropellant(request: PropellantRequest): Promise<PropellantView> {
   return toPropellantView(await call('PUT', '/propellant', request));
+}
+
+/** Cost: the model prices, the defaults with your own rows over them. */
+export async function getPrices(): Promise<PricesView> {
+  return toPricesView(await call('GET', '/prices'));
+}
+
+/** Replaces your own rows (the defaults stay behind them). */
+export async function setPrices(models: Record<string, ModelPrice>): Promise<PricesView> {
+  return toPricesView(await call('PUT', '/prices', { models }));
+}
+
+/** Drops one of your rows: the default comes back. */
+export async function removePrice(prefix: string): Promise<PricesView> {
+  return toPricesView(await call('DELETE', `/prices/${encodeURIComponent(prefix)}`));
 }
 
 /** Clears a Redline trip: the agent gets its mail again. */

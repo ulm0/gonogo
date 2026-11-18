@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Cost.** Propellant can show dollars (an API-equivalent estimate at list prices) with a budget, a chart of the last 14 days and an editable price table (`~/.gonogo/prices.json`, no network). A budget trips Redline like a token limit and warns once at 80 %. New ledger lines keep the model and the token split; older ones show as unpriced.
+
 ## 0.1.2 (2026-11-18)
 
 Features from the backlog. Each was tried with the stand-in agent and in Chrome, none yet with a real `claude` or another real CLI.

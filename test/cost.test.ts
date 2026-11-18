@@ -50,13 +50,27 @@ afterEach(async () => {
 const PRICE = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 };
 
 describe('prices', () => {
-  it('matches a model by the longest prefix and calls no match unpriced', () => {
-    expect(priceFor(DEFAULT_PRICES, 'claude-sonnet-5-5-20260101')).toEqual(DEFAULT_PRICES['claude-sonnet-5-5']);
-    expect(priceFor(DEFAULT_PRICES, 'claude-sonnet-5-1')).toEqual(DEFAULT_PRICES['claude-sonnet-5']);
-    expect(priceFor(DEFAULT_PRICES, 'claude-opus-4-1-2025')).toEqual(DEFAULT_PRICES['claude-opus-4-1']);
-    expect(priceFor(DEFAULT_PRICES, 'gpt-9')).toBeNull();
-    expect(priceFor(DEFAULT_PRICES, undefined)).toBeNull();
-    expect(priceFor(DEFAULT_PRICES, '')).toBeNull();
+  it('prices a built-in model by its id with a date, and calls anything else unpriced', () => {
+    const rows = mergePrices();
+    const pick = (m: string): unknown => priceFor(rows, m);
+    expect(pick('claude-sonnet-5-5-20260101')).toMatchObject(DEFAULT_PRICES['claude-sonnet-5-5'] ?? {});
+    expect(pick('claude-sonnet-5-5')).toMatchObject(DEFAULT_PRICES['claude-sonnet-5-5'] ?? {});
+    expect(pick('claude-opus-5-5[1m]')).toMatchObject(DEFAULT_PRICES['claude-opus-5-5'] ?? {});
+    expect(pick('claude-opus-4-1-20250805')).toMatchObject(DEFAULT_PRICES['claude-opus-4-1'] ?? {});
+    expect(pick('claude-haiku-4-5-latest')).toMatchObject(DEFAULT_PRICES['claude-haiku-4-5'] ?? {});
+    // a newer model that starts the same is not guessed
+    expect(pick('claude-sonnet-5-6')).toBeNull();
+    expect(pick('claude-sonnet-5-1')).toBeNull();
+    expect(pick('claude-opus-5-5x')).toBeNull();
+    expect(pick('gpt-9')).toBeNull();
+    expect(priceFor(rows, undefined)).toBeNull();
+    expect(priceFor(rows, '')).toBeNull();
+  });
+
+  it('matches your own rows as prefixes, the longest first', () => {
+    const rows = mergePrices({ 'claude-sonnet-5': { ...PRICE, input: 7 }, 'claude-sonnet-5-6': { ...PRICE, input: 9 } });
+    expect(priceFor(rows, 'claude-sonnet-5-6-x')?.input).toBe(9);
+    expect(priceFor(rows, 'claude-sonnet-5-1')?.input).toBe(7);
   });
 
   it("lets the owner's rows win over the defaults and names each source", () => {
@@ -64,7 +78,7 @@ describe('prices', () => {
     expect(rows['claude-sonnet-5-5']).toMatchObject({ ...PRICE, source: 'file' });
     expect(rows['my-model']?.source).toBe('file');
     expect(rows['claude-haiku-4-5']).toMatchObject({ source: 'default', asOf: expect.stringMatching(/^\d{4}-\d\d-\d\d$/) as string });
-    expect(priceFor(rows, 'claude-sonnet-5-5-x')).toMatchObject(PRICE);
+    expect(priceFor(rows, 'claude-sonnet-5-5-20260101')).toMatchObject(PRICE);
   });
 
   it('costs each of the four kinds and does not round', () => {
@@ -126,8 +140,8 @@ describe('the prices file', () => {
 
 describe('lineUsage', () => {
   it('returns the model and the four-way split', () => {
-    const line = JSON.stringify({ message: { id: 'm', model: 'claude-sonnet-5-5-x', usage: { input_tokens: 1, cache_creation_input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 4 } } });
-    expect(lineUsage(line)).toMatchObject({ model: 'claude-sonnet-5-5-x', tokens: 6, split: { i: 1, cw: 2, o: 3, cr: 4 } });
+    const line = JSON.stringify({ message: { id: 'm', model: 'claude-sonnet-5-5-20260101', usage: { input_tokens: 1, cache_creation_input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 4 } } });
+    expect(lineUsage(line)).toMatchObject({ model: 'claude-sonnet-5-5-20260101', tokens: 6, split: { i: 1, cw: 2, o: 3, cr: 4 } });
   });
 });
 
@@ -135,12 +149,12 @@ describe('cost in the view', () => {
   it('prices two models with cache reads, keeps cache reads out of the tokens, and sums the unpriced apart', async () => {
     await writeFile(
       transcript,
-      reply('a', 'claude-sonnet-5-5-1', { input_tokens: 1_000_000, cache_creation_input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 2_000_000 }) +
-        reply('b', 'claude-haiku-4-5-1', { output_tokens: 1_000_000 }) +
+      reply('a', 'claude-sonnet-5-5-20260101', { input_tokens: 1_000_000, cache_creation_input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 2_000_000 }) +
+        reply('b', 'claude-haiku-4-5-20251001', { output_tokens: 1_000_000 }) +
         reply('c', 'some-other-model', { output_tokens: 12_000 }),
     );
     const p = await make();
-    expect(await p.record('ana', transcript)).toBe(2_012_000);
+    expect(await p.record('ana', transcript)).toBe(4_012_000); // tokens plus the 2M cache reads
     const v = p.view();
     // sonnet 5.5: 1M input at $2 + 2M cache reads at $0.10 = $2.20; haiku 4.5: 1M output at $5
     expect(v.cost.room.usd.day).toBeCloseTo(7.2, 6);
@@ -202,9 +216,36 @@ describe('cost in the view', () => {
   it('counts a reply that only read the cache for cost but not for tokens', async () => {
     await writeFile(transcript, reply('a', 'claude-haiku-4-5', { cache_read_input_tokens: 1_000_000 }));
     const p = await make();
-    expect(await p.record('ana', transcript)).toBe(0);
+    // not 0: the caller checks the budget whenever a read added anything, cache reads included
+    expect(await p.record('ana', transcript)).toBe(1_000_000);
     expect(p.view().room.used.day).toBe(0);
     expect(p.view().cost.room.usd.day).toBeCloseTo(0.1, 6);
+  });
+
+  it('trips a budget on a reply that only read the cache', async () => {
+    const p = await make();
+    await p.setBudget({ agents: { ana: { day: 0.05 } } });
+    await appendFile(transcript, reply('a', 'claude-haiku-4-5', { cache_read_input_tokens: 1_000_000 }));
+    expect(await p.record('ana', transcript)).toBeGreaterThan(0);
+    expect(p.over('ana')?.reason).toBe('out of propellant: ana spent $0.10 of $0.05 in 24 h');
+  });
+
+  it('re-runs the 80 % warning and the over check when a price changes', async () => {
+    let table = mergePrices();
+    const p = createPropellant({ dir: home, projectsRoot: projects, now: () => clock, log: quiet, prices: () => table, notify: (k, t) => events.push([k, t]) });
+    await p.load();
+    await appendFile(transcript, reply('a', 'claude-haiku-4-5', { output_tokens: 1_000_000 })); // $5
+    await p.record('ana', transcript);
+    await p.setBudget({ agents: { ana: { day: 10 } } });
+    expect(events).toEqual([]);
+    expect(p.over('ana')).toBeNull();
+    table = mergePrices({ 'claude-haiku-4-5': { ...PRICE, output: 9 } }); // $9 = 90 %
+    p.recheck();
+    expect(events).toEqual([['redline', 'ana is at 90 % of its day budget']]);
+    table = mergePrices({ 'claude-haiku-4-5': { ...PRICE, output: 11 } });
+    expect(p.over('ana')?.reason).toBe('out of propellant: ana spent $11.00 of $10.00 in 24 h');
+    p.recheck();
+    expect(events).toHaveLength(1);
   });
 });
 

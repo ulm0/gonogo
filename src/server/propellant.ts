@@ -181,10 +181,12 @@ export interface PropellantOptions {
 
 export interface Propellant {
   load(): Promise<void>;
-  /** Counts what the transcript gained since the last read. Resolves with the new tokens (0 when nothing or refused). */
+  /** Counts what the transcript gained since the last read. Resolves with the new tokens plus new cache reads (0 when nothing or refused): a reply that only read the cache still costs money, so the caller must check the budget. */
   record(agent: string, transcriptPath: string): Promise<number>;
   view(): PropellantView;
   setLimits(request: PropellantRequest): Promise<PropellantView>;
+  /** The prices or a budget changed: posts the 80 % warning for what is now past it. The caller then checks over(). */
+  recheck(): void;
   /** Replaces the dollar budget of each scope given ({} clears it); posts the 80 % warning when a new budget is already past it. */
   setBudget(budget: NonNullable<PropellantRequest['budget']>): Promise<PropellantView>;
   /** Why this agent must stop, or null: its own limit first, then the room's. */
@@ -368,6 +370,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
     }
     const handle = await open(path, 'r');
     let tokens = 0;
+    let reads = 0;
     try {
       const size = (await handle.stat()).size;
       let offset = saved.cursors[path] ?? 0;
@@ -402,6 +405,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
           fresh.push(entry);
         }
         tokens += usage.tokens;
+        reads += split.cr;
       }
       saved.cursors[path] = offset + end + 1;
       const cut = now() - FUEL_KEEP_MS;
@@ -416,7 +420,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
     } finally {
       await handle.close();
     }
-    return tokens;
+    return tokens + reads;
   };
 
   const view = (): PropellantView => {
@@ -516,6 +520,10 @@ export function createPropellant(options: PropellantOptions): Propellant {
       }
       await saveLimits();
       return view();
+    },
+
+    recheck() {
+      warn(false);
     },
 
     async setBudget(budget) {

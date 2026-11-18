@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mergePrices, PRICE_MAX, PRICE_PREFIX_PATTERN } from '../shared/prices.js';
-import type { ModelPrice, PriceRow, PriceTable } from '../shared/prices.js';
+import type { ModelPrice, PriceRow, PricesView, PriceTable } from '../shared/prices.js';
 import type { Logger } from '../shared/protocol.js';
 import { FILE_MODE, PRICES_FILE } from './constants.js';
 
@@ -47,11 +47,6 @@ export function parsePricesRequest(body: Record<string, unknown>): { ok: true; m
     models[prefix] = price;
   }
   return { ok: true, models };
-}
-
-export interface PricesView {
-  currency: string;
-  rows: Record<string, PriceRow>;
 }
 
 export interface Prices {

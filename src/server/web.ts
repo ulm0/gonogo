@@ -109,6 +109,8 @@ export interface WebOptions {
   propellant?: Pick<Propellant, 'view' | 'setLimits' | 'setBudget'>;
   /** The owner's model prices (docs/cost-spec.md); absent in tests that do not need them (the routes answer 404). */
   prices?: Pick<Prices, 'view' | 'replace' | 'remove'>;
+  /** Called after a price or a budget changed, so the budget is checked against the new numbers at once. */
+  spendChanged?: () => void;
   /** Telemetry: GET /api/agents/:name/telemetry. Without it the list is empty. */
   telemetry?: Pick<Telemetry, 'calls'>;
   /** Launch Window; absent in tests that do not need it (the snapshot then lists none and the routes answer 404). It tells the browsers itself. */
@@ -729,7 +731,10 @@ export function createWebServer(options: WebOptions): WebServer {
           const { budget, ...limits } = parsed.value;
           let view = propellant.view();
           if (budget === undefined || Object.keys(limits).length > 0) view = await propellant.setLimits(limits);
-          if (budget !== undefined) view = await propellant.setBudget(budget);
+          if (budget !== undefined) {
+            view = await propellant.setBudget(budget);
+            options.spendChanged?.();
+          }
           broadcast({ t: 'propellant', propellant: view });
           sendJson(res, 200, view);
         },
@@ -755,6 +760,7 @@ export function createWebServer(options: WebOptions): WebServer {
             }
             const view = await prices.replace(parsed.models, typeof body.currency === 'string' ? body.currency : undefined);
             // a price changed: the whole history is priced again
+            options.spendChanged?.();
             if (options.propellant) broadcast({ t: 'propellant', propellant: options.propellant.view() });
             sendJson(res, 200, view);
           },
@@ -772,6 +778,7 @@ export function createWebServer(options: WebOptions): WebServer {
             sendApiError(res, 404, `no price of your own for "${prefix}"`, 'not_found');
             return;
           }
+          options.spendChanged?.();
           if (options.propellant) broadcast({ t: 'propellant', propellant: options.propellant.view() });
           sendJson(res, 200, prices.view());
         },

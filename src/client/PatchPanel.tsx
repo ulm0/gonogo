@@ -52,6 +52,20 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
       return api.markAllRead();
     case 'livery':
       return api.selectLivery(act.slug);
+    case 'propellant':
+      // the room's Propellant is in Flight Rules: open the fold, or switch the meter to dollars, once the page has drawn it
+      showRules();
+      requestAnimationFrame(() => {
+        if (act.part === 'prices') {
+          const fold = document.getElementById('fuel-prices');
+          if (fold instanceof HTMLDetailsElement) fold.open = true;
+          fold?.querySelector('summary')?.focus();
+        } else {
+          document.getElementById('fuel-the room-dollars')?.click();
+          requestAnimationFrame(() => document.getElementById('fuel-the room')?.focus());
+        }
+      });
+      return null;
   }
 }
 

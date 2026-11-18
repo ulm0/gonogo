@@ -2,10 +2,10 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseTokens, tokenText } from '../src/shared/fuel.js';
+import { parseMoney, parseTokens, tokenText } from '../src/shared/fuel.js';
 import { createPropellant, lineUsage, parseLimits, parsePropellantRequest } from '../src/server/propellant.js';
 import type { Propellant } from '../src/server/propellant.js';
-import { fuelLevel, withLimit } from '../src/client/wall.js';
+import { budgetLevel, fuelLevel, withBudget, withLimit } from '../src/client/wall.js';
 import type { Logger } from '../src/shared/protocol.js';
 
 const quiet: Logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, child: () => quiet } as unknown as Logger;
@@ -186,5 +186,27 @@ describe('token amounts', () => {
     expect(fuelLevel({ ...gauge, used: { ...gauge.used, '5h': 10 } }, '5h')).toBe('ok');
     expect(withLimit({ '5h': 1 }, 'day', 5)).toEqual({ '5h': 1, day: 5 });
     expect(withLimit({ '5h': 1, day: 5 }, 'day', null)).toEqual({ '5h': 1 });
+  });
+});
+
+describe('dollars in the meter', () => {
+  it('reads dollars the way people type them', () => {
+    expect(parseMoney('12')).toBe(12);
+    expect(parseMoney('$12.40')).toBe(12.4);
+    expect(parseMoney(' 1.5k ')).toBe(1500);
+    expect(parseMoney('0.005')).toBeNull();
+    expect(parseMoney('0')).toBeNull();
+    expect(parseMoney('1.234')).toBeNull();
+    expect(parseMoney('2000k')).toBeNull();
+    expect(parseMoney('ten')).toBeNull();
+  });
+
+  it('tells the budget level and edits one window', () => {
+    const cost = { usd: { '5h': 8, day: 10, week: 1, month: 1 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: { '5h': 10, day: 10 } };
+    expect(budgetLevel(cost, '5h')).toBe('warn');
+    expect(budgetLevel(cost, 'day')).toBe('over');
+    expect(budgetLevel(cost, 'week')).toBe('none');
+    expect(withBudget({ '5h': 1 }, 'day', 5)).toEqual({ '5h': 1, day: 5 });
+    expect(withBudget({ '5h': 1, day: 5 }, 'day', null)).toEqual({ '5h': 1 });
   });
 });
