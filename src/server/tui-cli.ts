@@ -10,12 +10,13 @@ import { BROWSER_TOKEN_FILE, DEFAULT_HOME_DIRNAME, DEFAULT_HOST, DEFAULT_PORT } 
 
 type Env = Record<string, string | undefined>;
 
-export const TUI_USAGE = `Usage: gonogo tui [--url <address>] [--token <token>] [--home <dir>]
+export const TUI_USAGE = `Usage: gonogo tui [--room <id>] [--url <address>] [--token <token>] [--home <dir>]
 
 A terminal client of a running gonogo: the room, the Downlink with replies, the go and no-go
 questions, and a console you type into. It uses the same server as the page, and both can be open.
 
 Options:
+  --room <id>        the room to open (default main); the token is the Director token of the root home
   --url <address>    the server (default http://127.0.0.1:<GONOGO_PORT or ${DEFAULT_PORT}>)
   --token <token>    the browser token (env GONOGO_BROWSER_TOKEN); visible in \`ps\`, so prefer the environment
   --home <dir>       gonogo's state directory, where the token file is (default ~/${DEFAULT_HOME_DIRNAME}; env GONOGO_HOME)
@@ -25,17 +26,17 @@ Keys: 1 2 3 4 or Tab switch screens, ? lists the rest. In a console, Ctrl-] then
 Needs an ANSI terminal (xterm-compatible) of at least 20 columns and 6 rows. NO_COLOR is honoured.
 `;
 
-export type TuiArgs = { kind: 'run'; url?: string; token?: string; home?: string } | { kind: 'help' } | { kind: 'error'; message: string };
+export type TuiArgs = { kind: 'run'; url?: string; token?: string; home?: string; room?: string } | { kind: 'help' } | { kind: 'error'; message: string };
 
 /** The arguments after `tui`. */
 export function parseTuiArgs(argv: readonly string[]): TuiArgs {
   if (argv.includes('--help') || argv.includes('-h')) return { kind: 'help' };
-  const out: { url?: string; token?: string; home?: string } = {};
+  const out: { url?: string; token?: string; home?: string; room?: string } = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
     const flag = eq === -1 ? arg : arg.slice(0, eq);
-    if (flag !== '--url' && flag !== '--token' && flag !== '--home') return { kind: 'error', message: `unknown option ${arg}` };
+    if (flag !== '--url' && flag !== '--token' && flag !== '--home' && flag !== '--room') return { kind: 'error', message: `unknown option ${arg}` };
     let value: string;
     if (eq !== -1) value = arg.slice(eq + 1);
     else {
@@ -47,7 +48,10 @@ export function parseTuiArgs(argv: readonly string[]): TuiArgs {
     if (value === '') return { kind: 'error', message: `${flag} needs a value` };
     if (flag === '--url') out.url = value;
     else if (flag === '--token') out.token = value;
-    else out.home = value;
+    else if (flag === '--room') {
+      if (!/^[a-z][a-z0-9-]{0,23}$/.test(value)) return { kind: 'error', message: '--room is a room id: lower-case letters, digits and dashes' };
+      out.room = value;
+    } else out.home = value;
   }
   return { kind: 'run', ...out };
 }
@@ -80,7 +84,7 @@ export function resolveToken(token: string | undefined, home: string | undefined
   } catch {
     // no file: the message below says what to do
   }
-  return { error: `no browser token: there is none in ${dir}. Start gonogo first (or pass --home), or give --token / GONOGO_BROWSER_TOKEN and --url for a server elsewhere.` };
+  return { error: `no browser token: there is none in ${dir}. Start gonogo first (or pass --home of the root; a room's own folder has no token, use --room), or give --token / GONOGO_BROWSER_TOKEN and --url for a server elsewhere.` };
 }
 
 export interface TuiIo {
@@ -115,5 +119,7 @@ export async function tuiMain(argv: readonly string[], env: Env, io: TuiIo = { s
     return 1;
   }
   const { runTui } = await import('./tui-app.js');
-  return runTui({ url: url.url, token: token.token, stdin: io.stdin, stdout: io.stdout, env });
+  // room main is at the root; another room is under /r/<id> (the Director token opens every room through the front port)
+  const address = args.room === undefined || args.room === 'main' ? url.url : `${url.url}/r/${args.room}`;
+  return runTui({ url: address, token: token.token, stdin: io.stdin, stdout: io.stdout, env });
 }

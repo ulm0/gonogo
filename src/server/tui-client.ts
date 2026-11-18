@@ -46,7 +46,8 @@ export interface TuiClient {
 export function wsUrl(url: string): string {
   const u = new URL(url);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-  u.pathname = '/ws';
+  // the address may carry a room prefix (/r/<id>): the WebSocket of that room is under it
+  u.pathname = `${u.pathname.replace(/\/+$/, '')}/ws`;
   u.search = '';
   u.hash = '';
   return u.toString();
@@ -133,7 +134,7 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
   async function request(method: string, path: string, body?: unknown): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(new URL(path, options.url), {
+      response = await fetch(`${options.url.replace(/\/+$/, '')}${path}`, {
         method,
         headers: { Authorization: `Bearer ${options.token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
         body: body === undefined ? undefined : JSON.stringify(body),
