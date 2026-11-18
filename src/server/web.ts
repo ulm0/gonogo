@@ -10,6 +10,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
 import { PERMISSION_MODES, PROVIDERS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
+  UpdateView,
   PropellantView,
   AgentIdentity,
   AnswerRequest,
@@ -91,6 +92,7 @@ import type { ModelDefaultsStore } from './models.js';
 import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
 import type { Rollout } from './rollout.js';
+import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
 import type { Missions } from './missions.js';
@@ -149,6 +151,8 @@ export interface WebOptions {
   liveries?: Pick<Liveries, 'view' | 'select' | 'remove' | 'submit' | 'design'>;
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   /** Live reload (Flight Rules): asks this server to hand over to a new one. Returns what the page shows, or a reason it cannot. Absent: the route says so. */
+  /** Update from the page (Flight Rules): installs the named newer version, then reloads. Throws UpdateError with a reason the page shows. */
+  update?: (version: unknown) => UpdateView;
   reload?: () => { ok: true; note: string } | { ok: false; reason: string };
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'setPhone' | 'test'>;
   /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
@@ -800,6 +804,22 @@ export function createWebServer(options: WebOptions): WebServer {
           const parsed = parseUserMessage(body);
           if (!parsed.ok) sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
           else sendJson(res, 201, hub.sendFromUser(parsed.value));
+        },
+      };
+    }
+    if (s.length === 2 && s[1] === 'update') {
+      return {
+        allow: ['POST'],
+        run: async (req, res) => {
+          const body = await jsonObject(req, res);
+          if (!body) return;
+          if (!options.update) return sendApiError(res, 409, 'update from the page is not available here', 'conflict');
+          try {
+            sendJson(res, 202, options.update(body.version));
+          } catch (error) {
+            if (error instanceof UpdateError) sendApiError(res, error.code === 'bad_request' ? 400 : 409, error.message, error.code, error.code === 'bad_request' ? 'version' : undefined);
+            else throw error;
+          }
         },
       };
     }

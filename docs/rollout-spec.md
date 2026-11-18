@@ -1,7 +1,7 @@
 # Spec: Rollout
 
 Written and built 2026-11-18. Backlog section 9, "Auto-update", without the auto: gonogo tells the Director when a newer
-`@ulm0/gonogo` exists and says which command updates it. It never updates itself.
+`@ulm0/gonogo` exists and says which command updates it. It never updates itself without a click (see `docs/features/update.md`).
 
 ## Intent
 

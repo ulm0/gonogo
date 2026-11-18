@@ -1055,6 +1055,23 @@ export interface StateSnapshot {
   rollout?: RolloutView;
 }
 
+/** How this gonogo was installed, from where its own file is. rpm: there is no rpm package, so such an install reads as npm (its file is under lib/node_modules) or other. */
+export const INSTALL_KINDS = ['docker', 'npm', 'pnpm', 'dlx', 'clone', 'other'] as const;
+export type InstallKind = (typeof INSTALL_KINDS)[number];
+
+/** The update the Director started from the page: install the new version, then reload. */
+export interface UpdateView {
+  state: 'idle' | 'running' | 'installed' | 'reloading' | 'hook-sent' | 'failed';
+  /** The version being installed, or null. */
+  version: string | null;
+  /** One line for the page. */
+  note: string;
+  /** The last lines of the installer's output (no environment, no token), at most 8. */
+  tail: string[];
+  /** The command that goes back to the version that was running, shown after an install. */
+  rollback: string | null;
+}
+
 /** Rollout (docs/rollout-spec.md): the newest @ulm0/gonogo the daily check saw. */
 export interface RolloutView {
   /** The check is on (GONOGO_UPDATE_CHECK, --no-update-check). When off, `latest` stays what was saved before, or null. */
@@ -1067,8 +1084,16 @@ export interface RolloutView {
   checkedAt: number | null;
   /** `latest` is newer than `current`. */
   newer: boolean;
-  /** The command that updates the way this gonogo was installed (what `gonogo update` prints). Never run by gonogo. */
+  /** The command that updates the way this gonogo was installed (what `gonogo update` prints). Only run by gonogo when the Director clicks Update and `canUpdate` is true. */
   command: string;
+  /** How it was installed. Absent from an older server. */
+  install?: InstallKind;
+  /** One line about the install, for the page (for example that an rpm install is treated as npm). */
+  installNote?: string;
+  /** The page may offer an Update button: npm or pnpm global, or a container with an update hook (GONOGO_UPDATE_HOOK). */
+  canUpdate?: boolean;
+  /** The update in progress or the last one. */
+  update?: UpdateView;
 }
 
 /** One engine as `gonogo doctor` and GET /api/engines report it (Pad Check, docs/engine-bay-spec.md). */

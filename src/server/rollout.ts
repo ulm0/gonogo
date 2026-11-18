@@ -11,7 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Logger, RolloutView } from '../shared/protocol.js';
+import type { InstallKind, Logger, RolloutView, UpdateView } from '../shared/protocol.js';
 import { FILE_MODE, nullLogger, ROLLOUT_EVERY_MS, ROLLOUT_FILE, ROLLOUT_MAX_BYTES, ROLLOUT_OFF_WORDS, ROLLOUT_TIMEOUT_MS, ROLLOUT_URL } from './constants.js';
 
 const STABLE = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
@@ -47,10 +47,50 @@ export function updateCommand(where: { file: string; docker: boolean; clone: boo
   return 'pnpm add -g @ulm0/gonogo@latest';
 }
 
+/**
+ * How this gonogo was installed. `docker`: the container (/.dockerenv, or GONOGO_INSTALL=docker, which the image sets). `clone`: a git
+ * checkout. `dlx`: a pnpm dlx run, which has nothing installed to replace. `npm`: npm's lib/node_modules. `pnpm`: pnpm's global folder, or the
+ * default. There is no rpm package: an install from one (or any package manager that puts files under lib/node_modules) reads as npm.
+ */
+export function installKind(where: { file: string; docker: boolean; clone: boolean }): InstallKind {
+  const path = where.file.replace(/\\/g, '/');
+  if (where.docker) return 'docker';
+  if (where.clone) return 'clone';
+  if (path.includes('/pnpm/dlx/')) return 'dlx';
+  if (path.includes('/lib/node_modules/@ulm0/gonogo/')) return 'npm';
+  if (path.includes('/pnpm/')) return 'pnpm';
+  return 'other';
+}
+
+/** The line the page shows about the install: how it was told, and what the Update button can do. */
+export function installNote(kind: InstallKind, canUpdate: boolean): string {
+  switch (kind) {
+    case 'docker':
+      return canUpdate ? 'Installed as a container image; an update hook is set, so Update asks it to pull and restart.' : 'Installed as a container image: a container cannot replace its own image, so run the command on the host.';
+    case 'npm':
+      return 'Installed with npm (an rpm or other package under lib/node_modules reads as npm: there is no gonogo rpm).';
+    case 'pnpm':
+      return 'Installed with pnpm (global).';
+    case 'dlx':
+      return 'Started with pnpm dlx: nothing is installed here; the next dlx run fetches the new version.';
+    case 'clone':
+      return 'Running from a git checkout: update it with git.';
+    default:
+      return 'The install type is not known, so it is treated as a pnpm global install: check the command before you run it.';
+  }
+}
+
+/** The command that installs one exact version for npm or pnpm, and the one that goes back; null for the other kinds. */
+export function installCommand(kind: InstallKind, version: string): { file: string; args: string[] } | null {
+  if (kind === 'npm') return { file: 'npm', args: ['install', '-g', `@ulm0/gonogo@${version}`] };
+  if (kind === 'pnpm') return { file: 'pnpm', args: ['add', '-g', `@ulm0/gonogo@${version}`] };
+  return null;
+}
+
 /** What `gonogo update` prints. */
 export function updateText(command: string, docker: boolean, view: Pick<RolloutView, 'current' | 'latest' | 'newer'>): string {
   const state = view.newer ? `gonogo ${view.latest} is out; this is ${view.current}.` : `This is gonogo ${view.current}${view.latest === null ? '' : `; the newest the last check saw is ${view.latest}`}.`;
-  return [state, 'To update, run:', '', `  ${command}`, '', docker ? 'in the folder of your compose.yaml. gonogo never updates itself.' : 'gonogo never updates itself.'].join('\n') + '\n';
+  return [state, 'To update, run:', '', `  ${command}`, '', docker ? 'in the folder of your compose.yaml. gonogo never updates itself without your click.' : 'gonogo never updates itself without your click.'].join('\n') + '\n';
 }
 
 /** The last check as `gonogo --version` shows it, from the file alone: no network. */
@@ -93,6 +133,9 @@ export interface RolloutOptions {
   current: string;
   /** What `gonogo update` prints, see updateCommand. */
   command: string;
+  install?: InstallKind;
+  installNote?: string;
+  canUpdate?: boolean;
   emit(view: RolloutView): void;
   log?: Logger;
 }
@@ -100,6 +143,8 @@ export interface RolloutOptions {
 export interface Rollout {
   load(): Promise<void>;
   view(): RolloutView;
+  /** The update the Director started: shown with the view and sent to every page. */
+  setUpdate(update: UpdateView): void;
   /** Asks now when a day has passed since the last try, then looks again every hour. A no-op while off. */
   start(): void;
   /** Asks now, whatever the cache says (one ask at a time); resolves with the view. While off it asks nothing. */
@@ -115,6 +160,7 @@ export function createRollout(options: RolloutOptions): Rollout {
   let timer: NodeJS.Timeout | undefined;
   let closed = false;
   let running: Promise<RolloutView> | null = null;
+  let update: UpdateView | undefined;
 
   const view = (): RolloutView => ({
     enabled: options.enabled,
@@ -123,6 +169,8 @@ export function createRollout(options: RolloutOptions): Rollout {
     checkedAt,
     newer: options.enabled && latest !== null && isNewer(latest, options.current),
     command: options.command,
+    ...(options.install === undefined ? {} : { install: options.install, installNote: options.installNote ?? '', canUpdate: options.enabled && options.canUpdate === true }),
+    ...(update === undefined ? {} : { update }),
   });
 
   async function save(): Promise<void> {
@@ -172,6 +220,10 @@ export function createRollout(options: RolloutOptions): Rollout {
     },
     view,
     check,
+    setUpdate(next) {
+      update = next;
+      if (!closed) options.emit(view());
+    },
     start() {
       if (!options.enabled || closed) return;
       const tick = (): void => {

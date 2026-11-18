@@ -285,7 +285,7 @@ export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | 
     if (check.install !== null) lines.push(`    docs: ${check.docs}`);
   }
   if (agentCmd !== null) lines.push('', `GONOGO_AGENT_CMD is set (${agentCmd}): it replaces claude.`);
-  lines.push('', 'gonogo never runs an install command: copy the one you want.', `docs: ${DOCS_URL}`);
+  lines.push('', 'doctor never runs an install command: copy the one you want. (Only the page\'s Update button installs gonogo itself, after your click.)', `docs: ${DOCS_URL}`);
   return lines.join('\n') + '\n';
 }
 

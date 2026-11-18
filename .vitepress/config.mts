@@ -80,6 +80,7 @@ export default defineConfig({
           { text: 'Relay', link: '/features/relay' },
           { text: 'Phone approvals', link: '/features/phone-approvals' },
           { text: 'Live reload', link: '/features/live-reload' },
+          { text: 'Update from the page', link: '/features/update' },
           { text: 'Flight Plan', link: '/features/flight-plan' },
           { text: 'Missions', link: '/features/missions' },
           { text: 'Room editor', link: '/features/room-editor' },

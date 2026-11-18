@@ -122,6 +122,43 @@
   font-size: 12px;
 }
 
+.rollout-progress {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text);
+}
+
+.rollout-progress pre {
+  margin: 4px 0 0;
+  max-width: 100%;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* The running version: small, fixed in a corner, never over the content that matters (on a phone it sits above the phone bar). */
+.version-corner {
+  position: fixed;
+  right: 8px;
+  bottom: 4px;
+  z-index: 1;
+  padding: 0 4px;
+  color: var(--text-3, var(--text-2));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  text-decoration: none;
+  opacity: 0.7;
+}
+
+.version-corner:hover,
+.version-corner:focus-visible {
+  opacity: 1;
+  text-decoration: underline;
+}
+
 /* ---- the wall: five modules ---- */
 
 .wall {
@@ -1574,6 +1611,11 @@
   /* The height of .phone-bar (8 + 48 + 12): the brief box of the loop (loop.css) sticks above it. */
   .app {
     --bottom-bar: 68px;
+  }
+
+  /* above the phone bar, not over its keys */
+  .version-corner {
+    bottom: 70px;
   }
 
   .topbar {

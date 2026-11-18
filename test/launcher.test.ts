@@ -410,6 +410,8 @@ describe('buildChildEnv', () => {
       CLAUDE_PID: '42',
       CLAUDE_EFFORT: 'high',
       AI_AGENT: 'x',
+      GONOGO_UPDATE_HOOK: 'http://h/',
+      GONOGO_UPDATE_HOOK_TOKEN: 'ht',
       GONOGO_TOKEN: 'stale',
       GONOGO_API_KEY: 'stale-key',
       CLAUDE_CODE_MESSAGING_FUTURE: 'x',
@@ -953,6 +955,13 @@ describe('tokens', () => {
     expect(l.resolveToken(a.token)).toStrictEqual({ agent: 'ana', generation: 3 });
     expect(l.resolveToken(b.token)).toStrictEqual({ agent: 'ben', generation: 1 });
     expect(l.resolveToken('0'.repeat(64))).toBeNull();
+  });
+
+  it('a started agent never gets the update hook or its token', async () => {
+    const l = launcher({ env: { ...baseEnv(), GONOGO_UPDATE_HOOK: 'http://watchtower/v1/update', GONOGO_UPDATE_HOOK_TOKEN: 'hook-secret' } });
+    const { spec } = await l.prepareStart(agent(), { generation: 1, flag: null });
+    expect(Object.keys(spec.env).filter((name) => name.startsWith('GONOGO_UPDATE'))).toEqual([]);
+    expect(JSON.stringify(spec)).not.toContain('hook-secret');
   });
 
   it('answers null for anything that is not a live token', () => {

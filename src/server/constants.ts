@@ -211,6 +211,9 @@ export const SCRUB_ENV_EXACT = [
   'GONOGO_API_KEY',
   // the Director's own token (gonogo tui): an agent must never inherit it
   'GONOGO_BROWSER_TOKEN',
+  // the update hook is the Director's: an agent with it could pull and restart gonogo without the click
+  'GONOGO_UPDATE_HOOK',
+  'GONOGO_UPDATE_HOOK_TOKEN',
 ] as const;
 /** Also removed, so future members of these identity families do not leak. CLAUDE_CODE_OAUTH_TOKEN and CLAUDE_CONFIG_DIR are kept on purpose. */
 export const SCRUB_ENV_PREFIXES = [

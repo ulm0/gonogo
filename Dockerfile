@@ -134,6 +134,7 @@ RUN mkdir -p /state /state/config/git /projects \
 # IS_DEMO is not set here: the server gives it to each claude child in seed mode, and an image-wide value would
 # hide the account in every claude started in the container.
 ENV HOME=/home/node \
+    GONOGO_INSTALL=docker \
     CLAUDE_CONFIG_DIR=/state/claude \
     XDG_CONFIG_HOME=/state/config \
     GIT_CONFIG_GLOBAL=/state/config/git/config \

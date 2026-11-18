@@ -792,6 +792,11 @@ export async function setPhoneMode(mode: PhoneMode): Promise<RelayView> {
   return toRelayView(await call('PUT', '/relay/phone', { mode }));
 }
 
+/** Update from the page: installs `version` (the newer one the check found), then reloads. The progress comes in the rollout frames. */
+export async function startUpdate(version: string): Promise<void> {
+  await call('POST', '/update', { version });
+}
+
 /** Live reload: the server hands over to the installed gonogo (Flight Rules). Resolves with the note the server gives. */
 export async function reloadServer(): Promise<string> {
   const answer = asRecord(await call('POST', '/reload'));

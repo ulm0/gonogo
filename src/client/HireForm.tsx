@@ -163,7 +163,7 @@ function EngineNoteView({ note, id }: { note: EngineNote; id: string }): ReactEl
           <a href={note.docs} target="_blank" rel="noreferrer">
             install page
           </a>
-          . gonogo never runs an installer.
+          . gonogo never installs an agent CLI.
         </p>
       )}
     </div>
