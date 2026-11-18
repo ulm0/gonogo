@@ -1,0 +1,197 @@
+/*
+ * Room editor, in the Instrument look. A saved layout puts the blocks on a 12-column grid; the editor draws them as cards on the same
+ * grid with a fixed row height, so a pointer is a cell. Every key is at least 44 px tall and nothing is wider than the screen.
+ */
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: minmax(64px, auto);
+  gap: 12px;
+  margin: 16px 24px 0;
+}
+
+.room-cell {
+  display: flex;
+  min-width: 0;
+}
+
+.room-cell > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.room-strips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 24px 0;
+}
+
+.room-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+}
+
+.operations-edit {
+  margin-left: auto;
+}
+
+/* ---- the editor ---- */
+
+.room-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 24px 24px;
+}
+
+.re-bar,
+.re-tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+}
+
+.re-bar .label,
+.re-tray .label,
+.re-bar .hint {
+  margin: 0;
+}
+
+.re-bar .hint {
+  flex: 1 1 320px;
+}
+
+.re-bar-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.re-bar .remove {
+  flex: 1 1 100%;
+}
+
+.re-grid {
+  display: grid;
+  min-width: 0;
+  padding: 8px;
+  background-image: linear-gradient(var(--edge) 1px, transparent 1px);
+  background-size: 100% 76px;
+  background-position: 0 8px;
+  border: 1px dashed var(--edge);
+  border-radius: 6px;
+}
+
+.re-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 10px 14px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.re-block:focus-visible {
+  outline: 2px solid var(--focus, currentColor);
+  outline-offset: 2px;
+}
+
+.re-block[data-moving] {
+  outline: 2px dashed var(--focus, currentColor);
+}
+
+.re-handle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: grab;
+  user-select: none;
+}
+
+.re-title {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.re-hide {
+  margin-left: auto;
+  min-height: 32px;
+}
+
+.re-note {
+  margin: 0;
+}
+
+.re-grip {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 22px;
+  height: 22px;
+  cursor: nwse-resize;
+  border-right: 3px solid var(--text-2);
+  border-bottom: 3px solid var(--text-2);
+  border-radius: 0 0 4px 0;
+}
+
+.re-desks {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow: auto;
+  cursor: default;
+}
+
+.re-desks-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.re-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.re-chip {
+  min-height: 36px;
+  padding: 4px 10px;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--well, transparent);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  cursor: grab;
+}
+
+.re-chip[data-moving] {
+  outline: 2px dashed var(--focus, currentColor);
+}
+
+@media (max-width: 899px) {
+  .room-grid {
+    margin: 12px 16px 0;
+  }
+}

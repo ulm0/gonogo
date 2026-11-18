@@ -16,6 +16,7 @@ import type {
   ServerInfo,
   StateSnapshot,
   Mission,
+  RoomView,
   Task,
   UplinkView,
 } from '../shared/protocol.js';
@@ -58,6 +59,10 @@ export interface ClientState {
   tasks: Task[];
   /** Missions: every mission, in the order they were made. */
   missions: Mission[];
+  /** Room editor: the saved layout of the Room view (`layout: null` is today's page) and its revision. */
+  room: RoomView;
+  /** Room editor: the Director is editing a draft of the layout. */
+  editingRoom: boolean;
   /** The mission whose detail the Missions view shows, or null for the list. */
   selectedMission: string | null;
   /** The Missions view opens on a new-mission form with these fields (from the Patch Panel or the brief box), or null. */
@@ -148,6 +153,8 @@ export const NO_PROPELLANT: PropellantView = {
   agents: {},
   cost: { room: { usd: { ...NO_WINDOWS }, unpriced: { ...NO_WINDOWS }, budget: {} }, agents: {}, days: [], pricedSince: null },
 };
+/** No saved layout: the page is as it always was. */
+export const NO_ROOM: RoomView = { rev: 0, layout: null };
 export const NO_DOWNLINK: DownlinkView = { unread: 0, items: [] };
 export const NO_DOCKING: DockingView = { station: '', docks: [] };
 
@@ -171,6 +178,8 @@ export function emptyState(): ClientState {
     uplinks: [],
     tasks: [],
     missions: [],
+    room: NO_ROOM,
+    editingRoom: false,
     selectedMission: null,
     missionDraft: null,
     downlink: NO_DOWNLINK,
@@ -210,6 +219,8 @@ export const showDownlink = (): void => store.setState((s) => ({ ...s, view: 'do
 export const showLog = (): void => store.setState((s) => ({ ...s, view: 'log', consoleOpen: false }));
 export const showLivery = (): void => store.setState((s) => ({ ...s, view: 'livery', consoleOpen: false }));
 export const showRules = (): void => store.setState((s) => ({ ...s, view: 'rules', consoleOpen: false }));
+/** Starts or ends editing the room: the draft itself lives in the editor. */
+export const setEditingRoom = (editing: boolean): void => store.setState((s) => (s.editingRoom === editing ? s : { ...s, editingRoom: editing, view: editing ? 'room' : s.view, consoleOpen: false }));
 export const showMissions = (): void => store.setState((s) => ({ ...s, view: 'missions', consoleOpen: false, missionDraft: null }));
 /** Opens the Missions view on its New mission form; `draft` fills it (the brief box does). */
 export const openNewMission = (draft: { name: string; goal: string } = { name: '', goal: '' }): void =>
@@ -342,6 +353,8 @@ function applyState(s: ClientState, snapshot: StateSnapshot, now: number): Clien
     tasks: snapshot.tasks ?? [],
     // an older server sends no missions
     missions: snapshot.missions ?? [],
+    // an older server sends no room
+    room: snapshot.room ?? NO_ROOM,
     downlink: snapshot.downlink ?? NO_DOWNLINK,
     // an older server sends no livery: the page then shows the default look
     livery: snapshot.livery ?? defaultView(),
@@ -435,6 +448,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, tasks: frame.tasks };
     case 'missions':
       return { ...s, missions: frame.missions };
+    case 'room':
+      return { ...s, room: frame.room };
     case 'downlink':
       return { ...s, downlink: frame.downlink };
     case 'livery':

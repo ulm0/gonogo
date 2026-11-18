@@ -57,6 +57,8 @@ import type {
   UplinkPatch,
   UplinkRequest,
   UplinkView,
+  Block,
+  DeskOrder,
   Mission,
   MissionPatch,
   MissionRequest,
@@ -70,6 +72,7 @@ import type {
   ReviewStatus,
   ReviewVerdictKind,
   ReviewView,
+  RoomView,
   UserMessageRequest,
   WorktreeStatus,
 } from '../shared/protocol.js';
@@ -513,6 +516,20 @@ export async function runSchedule(id: string): Promise<ScheduleView> {
   return toScheduleView(await call('POST', `/schedules/${encodeURIComponent(id)}/run`));
 }
 
+/** Room editor: save the layout from the revision it was made from, or go back to today's page (all of it, or only the order of the desks). */
+export async function saveRoom(request: { rev: number; blocks: Block[]; desks: DeskOrder }): Promise<RoomView> {
+  return toRoomView(await call('PUT', '/room', request));
+}
+
+export async function resetRoom(part: 'all' | 'desks'): Promise<RoomView> {
+  return toRoomView(await call('DELETE', `/room${part === 'desks' ? '?part=desks' : ''}`));
+}
+
+function toRoomView(value: unknown): RoomView {
+  if (typeof asRecord(value)?.rev !== 'number') throw failure('The server sent an answer gonogo does not understand.');
+  return value as RoomView;
+}
+
 /** Missions: named goals that tasks serve. The list comes in the state and in `missions` frames. */
 export async function createMission(request: MissionRequest): Promise<Mission> {
   return toMission(await call('POST', '/missions', request));
@@ -830,6 +847,7 @@ function parseFrame(text: string): ServerFrame | null {
   else if (frame.t === 'uplinks') valid = Array.isArray(frame.uplinks);
   else if (frame.t === 'tasks') valid = Array.isArray(frame.tasks);
   else if (frame.t === 'missions') valid = Array.isArray(frame.missions);
+  else if (frame.t === 'room') valid = typeof asRecord(frame.room)?.rev === 'number';
   else if (frame.t === 'livery') valid = asRecord(frame.livery) !== null && Array.isArray(asRecord(frame.livery)?.liveries) && typeof asRecord(frame.livery)?.current === 'string';
   else if (frame.t === 'relief') valid = isReliefView(frame.relief);
   else if (frame.t === 'docking') valid = typeof asRecord(frame.docking)?.station === 'string' && Array.isArray(asRecord(frame.docking)?.docks);

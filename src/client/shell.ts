@@ -1,5 +1,7 @@
 import { DEFAULT_LIVERY } from '../shared/livery.js';
-import type { AgentView, LiveryView, PollView, PropellantView } from '../shared/protocol.js';
+import { CATALOGUE } from '../shared/layout.js';
+import type { BlockId } from '../shared/layout.js';
+import type { AgentView, LiveryView, PollView, PropellantView, RoomView } from '../shared/protocol.js';
 import type { ClientState } from './store.js';
 import { readStored, writeStored } from './store.js';
 import { pollButtons, pollTargets } from './wall.js';
@@ -17,6 +19,9 @@ export type Act =
   | { kind: 'hire' }
   | { kind: 'new-mission' }
   | { kind: 'docs' }
+  | { kind: 'edit-room' }
+  | { kind: 'reset-room' }
+  | { kind: 'show-block'; block: BlockId }
   | { kind: 'brief' }
   | { kind: 'poll' }
   | { kind: 'read' }
@@ -56,10 +61,12 @@ export interface CommandInput {
   poll: PollView | null;
   unread: number;
   livery: LiveryView;
+  /** The saved layout of the room: lines to edit it, reset it and show a hidden block. Absent: only EDIT ROOM. */
+  room?: RoomView;
 }
 
 /** Every line the panel may show now: only actions the page has, and only when they can run (a poll needs somebody to poll). */
-export function commands({ agents, legends, poll, unread, livery }: CommandInput): Command[] {
+export function commands({ agents, legends, poll, unread, livery, room }: CommandInput): Command[] {
   const out: Command[] = [];
   for (const a of agents) {
     const legend = Object.hasOwn(legends, a.name) ? legends[a.name] : a.name.toUpperCase();
@@ -71,6 +78,13 @@ export function commands({ agents, legends, poll, unread, livery }: CommandInput
   out.push({ id: 'propellant:prices', label: 'Propellant: prices', group: 'Action', also: 'cost model dollars', act: { kind: 'propellant', part: 'prices' } });
   out.push({ id: 'propellant:budget', label: 'Propellant: budget', group: 'Action', also: 'cost dollars limit spend', act: { kind: 'propellant', part: 'budget' } });
   out.push({ id: 'docs', label: 'Docs', group: 'Action', also: 'documentation help manual website online', act: { kind: 'docs' } });
+  out.push({ id: 'edit-room', label: 'Edit room', group: 'Action', also: 'layout blocks move resize arrange desks', act: { kind: 'edit-room' } });
+  if (room?.layout !== null && room?.layout !== undefined) {
+    out.push({ id: 'reset-room', label: 'Reset the room layout', group: 'Action', also: 'default blocks', act: { kind: 'reset-room' } });
+    for (const b of room.layout.blocks) {
+      if (b.hidden === true) out.push({ id: `show-block:${b.id}`, label: `Show ${CATALOGUE[b.id].label.toLowerCase()}`, group: 'Action', also: 'block room restore', act: { kind: 'show-block', block: b.id } });
+    }
+  }
   out.push({ id: 'new-mission', label: 'New mission', group: 'Action', also: 'goal plan start', act: { kind: 'new-mission' } });
   out.push({ id: 'hire', label: 'Staff a console', group: 'Action', also: 'hire new agent', act: { kind: 'hire' } });
   if (agents.some((a) => a.boss)) out.push({ id: 'brief', label: 'Brief FLIGHT', group: 'Action', also: 'mission message', act: { kind: 'brief' } });

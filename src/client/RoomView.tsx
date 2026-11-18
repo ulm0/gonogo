@@ -41,6 +41,7 @@ import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showLoop, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
+import { EditRoomKey } from './EditRoomKey.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
 import { AgentTelemetry } from './TelemetryPanel.js';
@@ -74,7 +75,8 @@ export function useAgentList(): AgentView[] {
 /** The seats of the room and the names they give. */
 export function useSeats(): { cells: Cell[]; legends: ReturnType<typeof legendsOf> } {
   const list = useAgentList();
-  const cells = useMemo(() => seat(list), [list]);
+  const desks = useStore((s) => s.room.layout?.desks);
+  const cells = useMemo(() => seat(list, desks), [list, desks]);
   return { cells, legends: useMemo(() => legendsOf(cells), [cells]) };
 }
 
@@ -175,6 +177,7 @@ export function Operations({ phone }: { phone: boolean }): ReactElement {
           OPERATIONS
         </h2>
         <span className="hint">{staffedText(staffed)}</span>
+        {!phone && <EditRoomKey />}
       </div>
       <div className="matrix">
         {cells.map((cell) => (

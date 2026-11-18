@@ -8,6 +8,7 @@ import { BlackBox } from './BlackBox.js';
 import { Downlink } from './Downlink.js';
 import { FlightPlan } from './FlightPlan.js';
 import { Missions } from './Missions.js';
+import { RoomDesktop } from './RoomLayout.js';
 import { Hangar } from './Hangar.js';
 import { HireForm } from './HireForm.js';
 import { LaunchWindow } from './LaunchWindow.js';
@@ -21,7 +22,7 @@ import { isPanelKey } from './shell.js';
 import { PartyLine } from './PartyLine.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
-import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
+import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
 import { openConsole, openHire, readStored, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
 import { copyText } from './uplink.js';
@@ -370,19 +371,7 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
       </main>
     );
   }
-  return (
-    <>
-      <Wall />
-      <main className="room">
-        <div className="room-main">
-          <Commissioning />
-          <Operations phone={false} />
-          <YourConsole />
-        </div>
-        <SelectedConsole />
-      </main>
-    </>
-  );
+  return <RoomDesktop />;
 }
 
 function Office(): ReactElement {
