@@ -245,6 +245,8 @@ describe('updateCommand: which command, by how gonogo was installed', () => {
     ['/home/me/.local/share/pnpm/global/5/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
     ['/home/me/.cache/pnpm/dlx/abc/def/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm dlx @ulm0/gonogo@latest'],
     ['/home/me/.nvm/versions/node/v24.0.0/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', 'npm install -g @ulm0/gonogo@latest'],
+    ['/opt/homebrew/Cellar/gonogo/0.4.0/libexec/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', 'brew upgrade gonogo'],
+    ['/home/linuxbrew/.linuxbrew/Cellar/gonogo/0.4.0/libexec/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', 'brew upgrade gonogo'],
     ['/somewhere/else/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
   ])('%s', (file, command) => {
     expect(updateCommand({ file, ...where })).toBe(command);

@@ -33,6 +33,9 @@ export function isNewer(latest: string, current: string): boolean {
   return now[4] === '-';
 }
 
+/** Homebrew keeps a formula under <prefix>/Cellar/gonogo/<version>/; its npm layout would otherwise read as npm, so this is tested first. */
+const BREW = /\/Cellar\/gonogo\//;
+
 /**
  * The command that updates the way this gonogo was installed, from the path of its own file. `docker`: it runs in a container;
  * `clone`: its folder is a git checkout. Never run by gonogo.
@@ -43,6 +46,7 @@ export function updateCommand(where: { file: string; docker: boolean; clone: boo
   if (where.docker) return 'docker compose pull && docker compose up -d';
   if (where.clone) return 'git pull && pnpm install && pnpm build';
   if (path.includes('/pnpm/dlx/')) return 'pnpm dlx @ulm0/gonogo@latest';
+  if (BREW.test(path)) return 'brew upgrade gonogo';
   if (path.includes('/lib/node_modules/@ulm0/gonogo/')) return 'npm install -g @ulm0/gonogo@latest';
   return 'pnpm add -g @ulm0/gonogo@latest';
 }
@@ -57,6 +61,7 @@ export function installKind(where: { file: string; docker: boolean; clone: boole
   if (where.docker) return 'docker';
   if (where.clone) return 'clone';
   if (path.includes('/pnpm/dlx/')) return 'dlx';
+  if (BREW.test(path)) return 'brew';
   if (path.includes('/lib/node_modules/@ulm0/gonogo/')) return 'npm';
   if (path.includes('/pnpm/')) return 'pnpm';
   return 'other';
@@ -71,6 +76,8 @@ export function installNote(kind: InstallKind, canUpdate: boolean): string {
       return 'Installed with npm (an rpm or other package under lib/node_modules reads as npm: there is no gonogo rpm).';
     case 'pnpm':
       return 'Installed with pnpm (global).';
+    case 'brew':
+      return 'Installed with Homebrew: run brew upgrade gonogo. The Update button never runs brew.';
     case 'dlx':
       return 'Started with pnpm dlx: nothing is installed here; the next dlx run fetches the new version.';
     case 'clone':

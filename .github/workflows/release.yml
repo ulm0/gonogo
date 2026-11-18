@@ -9,6 +9,10 @@ name: Release
 # Auth: npm trusted publishing (OIDC). npmjs.com trusts this repository's release.yml for @ulm0/gonogo, so the publish
 # job's `id-token: write` is the whole credential: no token lives in the repository. pnpm hands the tarball to the npm
 # CLI of Node 24, which must be 11.5.1 or newer for OIDC (checked below).
+#
+# Homebrew: the job `homebrew` opens a pull request on the tap ulm0/homebrew-tap with the new url and sha256 of the npm
+# tarball. It is off until the repository variable HOMEBREW_TAP is `true` and the secret HOMEBREW_TAP_TOKEN exists (a
+# fine-grained token with Contents and Pull requests write on the tap repository only). A pre-release is skipped.
 on:
   push:
     tags: ['v*']
@@ -126,3 +130,49 @@ jobs:
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes --prerelease="$prerelease"
           fi
+
+  homebrew:
+    needs: publish
+    if: ${{ vars.HOMEBREW_TAP == 'true' && !contains(inputs.tag || github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/homebrew-tap
+          path: tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Update the formula and open the pull request
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          version=${TAG#v}
+          url="https://registry.npmjs.org/@${GITHUB_REPOSITORY_OWNER}/gonogo/-/gonogo-$version.tgz"
+          # npm can take a moment to serve a version it just accepted
+          for i in 1 2 3 4 5 6; do
+            curl -fsSL "$url" -o gonogo.tgz && break
+            [ "$i" = 6 ] && { echo "::error::$url is not served"; exit 1; }
+            sleep 20
+          done
+          sha=$(sha256sum gonogo.tgz | cut -d' ' -f1)
+          mkdir -p tap/Formula
+          sed -e "s|^  url .*|  url \"$url\"|" -e "s|^  sha256 .*|  sha256 \"$sha\"|" packaging/homebrew/gonogo.rb > tap/Formula/gonogo.rb
+          cd tap
+          if git diff --quiet -- Formula/gonogo.rb && [ -z "$(git ls-files --others --exclude-standard Formula/gonogo.rb)" ]; then
+            echo "the tap has $version already"
+            exit 0
+          fi
+          branch="gonogo-$version"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git add Formula/gonogo.rb
+          git commit -m "gonogo $version"
+          git push --force origin "$branch"
+          gh pr create --title "gonogo $version" --body "From the release workflow of $GITHUB_REPOSITORY, tag $TAG." --head "$branch" || echo "the pull request exists already"

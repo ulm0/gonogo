@@ -32,6 +32,7 @@ From npm:
 ```
 pnpm dlx @ulm0/gonogo                      # run it once
 pnpm add -g @ulm0/gonogo && gonogo         # or install the gonogo command
+brew install ulm0/tap/gonogo               # or with Homebrew (macOS, Linux); update with brew upgrade gonogo
 ```
 
 Use the scoped name: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. [Options](../reference/configuration.md#options) go after the command: `pnpm dlx @ulm0/gonogo --port 7780`.

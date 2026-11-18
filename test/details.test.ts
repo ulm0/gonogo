@@ -164,6 +164,7 @@ describe('a claude that does not know --effort', () => {
     const checks = await checkEngines({ PATH: dir });
     expect(checks.find((c) => c.provider === 'claude')?.effort).toBe(false);
     expect(formatDoctor(checks, null)).toMatch(/does not list --effort/);
+    expect(formatDoctor(checks, null, 'gonogo itself: brew')).toMatch(/gonogo itself: brew/);
     await mkdir(join(dir, 'work'), { recursive: true });
     const l = createLauncher({ homeDir: join(dir, 'home'), hubUrl: () => 'http://127.0.0.1:1', seed: false, claudeBin: old, env: { PATH: dir, HOME: join(dir, 'user') } });
     const rec = (effort?: 'high') => ({ name: 'ana', role: 'r', dir: join(dir, 'work'), mode: 'default' as const, sessionId: '0b2f5c1e-6d3a-4f7e-9a1b-2c3d4e5f6a7b', desk: 1, boss: false, createdAt: 1, ...(effort ? { effort } : {}) });
