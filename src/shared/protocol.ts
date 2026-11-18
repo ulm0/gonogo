@@ -585,9 +585,20 @@ export interface DayCost {
   unpriced: number;
   byAgent: Record<string, number>;
 }
+/** What a mission or a task has cost, from the ledger lines that carry its id (the last 31 days kept), and the mission's budget. */
+export interface SpendOf {
+  usd: number;
+  /** Tokens that could not be priced: an old ledger line or a model with no price. */
+  unpriced: number;
+  /** Dollars the mission may spend in all; absent when it has no budget (a task has none). */
+  budget?: number;
+}
 export interface CostView {
   room: CostGauge;
   agents: Record<string, CostGauge>;
+  /** By mission id and by task id, for the ones that spent or have a budget. Absent from an older server. */
+  missions?: Record<string, SpendOf>;
+  tasks?: Record<string, SpendOf>;
   /** The last 14 local calendar days, oldest first. */
   days: DayCost[];
   /** Epoch ms of the oldest ledger line that carries a model, so it can be priced; null when none does. */
@@ -665,6 +676,8 @@ export interface RelayTargetView {
 /** Default models: the room's model for each engine that takes one (PROVIDER_INFO.model), applied when an agent has none of its own. Names only, never a secret. */
 export interface ModelDefaults {
   models: Partial<Record<Provider, string>>;
+  /** Position id to a model for a Claude Code agent in that position; wins over `models.claude`, loses to the agent's own model. Absent from an older server. */
+  positions?: Record<string, string>;
 }
 
 export interface RelayView {
@@ -1178,7 +1191,7 @@ export interface PropellantRequest {
   room?: FuelLimits;
   agents?: Record<string, FuelLimits>;
   /** Dollar budgets; same rules as the limits. */
-  budget?: { room?: Budget; agents?: Record<string, Budget> };
+  budget?: { room?: Budget; agents?: Record<string, Budget>; /** Mission id to dollars in all, or null to clear. */ missions?: Record<string, number | null> };
 }
 /** POST /api/schedules. */
 export interface ScheduleRequest {
@@ -1611,7 +1624,7 @@ export interface LauncherOptions {
   /** Clearance: the values of an agent's keys, put in that agent's environment only. Default none. */
   keys?: (name: string) => Record<string, string>;
   /** Default models: the model of a provider that the room sets, used when an agent has no `model` of its own. Default none. */
-  defaultModel?: (provider: Provider) => string | undefined;
+  defaultModel?: (provider: Provider, position?: string) => string | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
   log?: Logger;

@@ -144,7 +144,7 @@ export interface WebOptions {
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'setPhone' | 'test'>;
   /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
-  models?: Pick<ModelDefaultsStore, 'view' | 'set'>;
+  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
@@ -1118,10 +1118,21 @@ export function createWebServer(options: WebOptions): WebServer {
       }
       return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await liveries.remove(s[2] ?? '')) };
     }
-    if (s[1] === 'models' && s.length <= 3) {
+    if (s[1] === 'models' && s.length <= 4) {
       const models = options.models;
       if (!models) return null;
       if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, models.view()) };
+      // PUT /api/models/positions/<id>: the model of a position
+      if (s.length === 4) {
+        if (s[2] !== 'positions') return null;
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await models.setPosition(s[3] ?? '', body.model));
+          },
+        };
+      }
       return {
         allow: ['PUT'],
         run: async (req, res) => {

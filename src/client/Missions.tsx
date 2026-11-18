@@ -8,7 +8,9 @@ import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { MISSION_GOAL_MAX_CHARS, MISSION_NAME_MAX_CHARS } from '../shared/protocol.js';
 import type { Mission } from '../shared/protocol.js';
 import * as api from './api.js';
-import { actionsOf, emptyMissionValues, progressOf, sortMissions, STATUS_LABELS, STATUS_TONES, tasksOf, validateMission } from './missions.js';
+import { parseMoney } from '../shared/fuel.js';
+import { moneyText } from '../shared/prices.js';
+import { actionsOf, budgetShare, emptyMissionValues, progressOf, spendText, sortMissions, STATUS_LABELS, STATUS_TONES, tasksOf, validateMission } from './missions.js';
 import type { MissionValues } from './missions.js';
 import { cardId, labelOf } from './plan.js';
 import { useAgentList } from './RoomView.js';
@@ -24,6 +26,52 @@ function Status({ mission }: { mission: Mission }): ReactElement {
     <span className="chip" data-tone={STATUS_TONES[mission.status]}>
       {STATUS_LABELS[mission.status]}
     </span>
+  );
+}
+
+/** What the mission has cost, and its budget: Redline warns at 80 % and stops the agents working on it at 100 %. */
+function MissionCost({ mission }: { mission: Mission }): ReactElement {
+  const id = useId();
+  const spend = useStore((s) => s.propellant.cost.missions?.[mission.id]);
+  const { busy, error, run } = useRun();
+  const [text, setText] = useState('');
+  const [invalid, setInvalid] = useState(false);
+  const share = budgetShare(spend);
+  const save = (usd: number | null): void => run(async () => {
+    await api.setPropellant({ budget: { missions: { [mission.id]: usd } } });
+    setText('');
+  });
+  const submit = (event: FormEvent): void => {
+    event.preventDefault();
+    const usd = parseMoney(text);
+    setInvalid(usd === null);
+    if (usd !== null) save(usd);
+  };
+  return (
+    <section className="mis-cost" aria-label={`Cost of ${mission.name}`}>
+      <h3 className="label">COST</h3>
+      <p className="mis-spend" data-level={share === null ? undefined : share >= 1 ? 'over' : share >= 0.8 ? 'low' : undefined}>
+        {spendText(spend) || 'Nothing spent yet. Replies are counted to the mission while an agent has one of its tasks on doing.'}
+      </p>
+      <form className="mis-budget" onSubmit={submit} noValidate>
+        <label htmlFor={id}>Budget in dollars</label>
+        <input id={id} className="input" value={text} inputMode="decimal" autoComplete="off" placeholder={spend?.budget === undefined ? 'no budget' : moneyText(spend.budget)} aria-invalid={invalid} onChange={(e) => setText(e.target.value)} />
+        <button type="submit" className="btn" aria-disabled={busy || undefined}>
+          Set
+        </button>
+        {spend?.budget !== undefined && (
+          <button type="button" className="btn" data-kind="quiet" aria-disabled={busy || undefined} onClick={() => save(null)}>
+            Clear
+          </button>
+        )}
+      </form>
+      {invalid && <p className="error">Dollars from 0.01 to 1,000,000, for example 25 or $12.50.</p>}
+      {error !== null && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -147,6 +195,7 @@ function Detail({ mission }: { mission: Mission }): ReactElement {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const keep = useRef<HTMLButtonElement | null>(null);
+  const taskSpend = useStore((s) => s.propellant.cost.tasks) ?? {};
   const linked = tasksOf(tasks, mission.id);
   const progress = progressOf(tasks, mission.id);
   useEffect(() => {
@@ -215,6 +264,7 @@ function Detail({ mission }: { mission: Mission }): ReactElement {
           </div>
         </section>
       )}
+      <MissionCost mission={mission} />
       <h3 className="label">TASKS</h3>
       {linked.length === 0 ? (
         <p className="hint">No task serves this mission yet. Link one from its card in the Flight Plan, or give a task this mission when you make it.</p>
@@ -224,6 +274,7 @@ function Detail({ mission }: { mission: Mission }): ReactElement {
             <li key={t.id}>
               <button type="button" className="btn mis-task" data-kind="quiet" aria-label={`Open ${t.id} in the Flight Plan: ${t.title}`} onClick={() => open(t.id)}>
                 <span className="plan-id">{t.id}</span> <span className="chip" data-tone={t.status === 'done' ? 'quiet' : 'amber'}>{labelOf(t.status)}</span> {t.title}
+                {spendText(taskSpend[t.id]) !== '' && <span className="hint"> · {spendText(taskSpend[t.id])}</span>}
               </button>
             </li>
           ))}
@@ -248,6 +299,7 @@ export function Missions(): ReactElement {
   const titleId = useId();
   const missions = useStore((s) => s.missions);
   const tasks = useStore((s) => s.tasks);
+  const missionSpend = useStore((s) => s.propellant.cost.missions) ?? {};
   const selected = useStore((s) => s.selectedMission);
   const draft = useStore((s) => s.missionDraft);
   const heading = useRef<HTMLHeadingElement | null>(null);
@@ -299,6 +351,7 @@ export function Missions(): ReactElement {
                     <span className="mis-row-name">{m.name}</span>
                     <span className="hint mis-row-lead">{m.lead ?? 'no lead'}</span>
                     <span className="mis-progress">{progressOf(tasks, m.id).text}</span>
+                    {spendText(missionSpend[m.id]) !== '' && <span className="hint mis-row-cost">{spendText(missionSpend[m.id])}</span>}
                   </button>
                 </li>
               ))}

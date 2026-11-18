@@ -6,7 +6,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROTOCOL_VERSION } from '../shared/protocol.js';
 import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
-import type { DownlinkNotify, Hub, HubIo, Logger, ServerInfo, TerminalHost } from '../shared/protocol.js';
+import type { DownlinkNotify, Hub, HubIo, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
 import {
   CLAUDE_BIN,
   DEFAULT_HOME_DIRNAME,
@@ -372,15 +372,23 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       env,
       agentCmd,
       keys: (name) => clearance.values(name),
-      defaultModel: (provider) => modelDefaults.get(provider),
+      defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       defaultPermissions: () => permissionDefaults.get(),
       log: log.child('launcher'),
     });
 
     const prices = createPrices({ dir: home.dir, log: log.child('prices') });
     await prices.load();
+    /** The Flight Plan, once it exists: Propellant asks it what an agent is working on. */
+    let flightPlan: () => Task[] = () => [];
+    /** Cost attribution: the mission and task of the agent's `doing` task now, if it has one. */
+    const workingOn = (agent: string): { mission?: string; task?: string } => {
+      const doing = flightPlan().find((t) => t.assignee === agent && t.status === 'doing');
+      return doing === undefined ? {} : { task: doing.id, ...(doing.missionId === undefined ? {} : { mission: doing.missionId }) };
+    };
     const propellant = createPropellant({
       dir: home.dir,
+      attribute: workingOn,
       prices: () => prices.table(),
       // the 80 % budget warning: the inbox and Relay, not the Black Box (it is not a trip)
       notify: (kind, text) => {
@@ -428,11 +436,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       else if (kind === 'tminus') blackBox.record('poll', pollText(text));
     };
 
-    /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, an agent's own only that agent. */
+    /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, a mission's budget the agents working on it, an agent's own only that agent. */
     const enforce = (name: string): void => {
       const over = propellant.over(name);
       if (over === null || !hub) return;
-      const names = over.scope === 'room' ? hub.views().filter((v) => v.provider === 'claude').map((v) => v.name) : [name];
+      const claude = hub.views().filter((v) => v.provider === 'claude').map((v) => v.name);
+      const names = over.scope === 'room' ? claude : over.scope === 'mission' ? claude.filter((n) => workingOn(n).mission === over.mission) : [name];
       for (const n of names) {
         try {
           hub.trip(n, over.reason);
@@ -576,6 +585,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('flight plan'),
     }), blackBox.record, TASKS_AUDIT);
+    flightPlan = () => tasks.list();
     const missions = audited(createMissions({
       dir: home.dir,
       now: io.now,

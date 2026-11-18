@@ -24,6 +24,10 @@ The task form has a **Mission** select (when any mission exists), and each card 
 - **FLIGHT, the boss**: `mission_create { name, goal?, lead? }` (a planned mission) and `mission_update { id, status?, note? }`. A name, a goal or a lead of an existing mission, and removal, are yours only.
 - **Every agent**: `mission_list { status? }`, with the progress of each mission; and `missionId` on `task_create` and `task_update`.
 
+## Cost
+
+Each mission's page has a COST block: what it has cost so far (an API-equivalent estimate, see [Cost](./cost.md#cost-per-mission-and-task-and-a-budget-per-mission)), a budget in dollars, and the cost beside each of its tasks. At 80 % of the budget the Downlink is told; at 100 % Redline stops the agents that have a task of the mission on `doing`.
+
 ## API
 
 `GET /api/missions`, `POST /api/missions` (201), `PATCH /api/missions/<id>` (`name`, `goal`, `status`, `lead`, `note`), `DELETE /api/missions/<id>` (`?unlink=1` is required when it has tasks, else 409). The list is also in the state and in `missions` frames. File: `missions.json` in gonogo's home (mode 0600). At most 50 missions that are not finished; the 20 most recent finished ones are kept. Mission changes are in the [Black Box](./black-box.md) as kinds of change, never a name or a goal.

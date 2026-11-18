@@ -6,6 +6,9 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 - **Amazon Bedrock.** Checked against the vendors' docs and gonogo's code, not run against AWS: Claude Code is expected to work with the AWS variables as Clearance keys or in the shell (a Clean Room needs keys; it has no `~/.aws`), Bedrock ids fit the model field and show as unpriced until you add a price row. The hire form suggests the Bedrock key names. A Bedrock section in the Engine Bay page and `docs/facts/bedrock.md`.
 - **Tool permissions.** Choose what a Claude Code console's harness may do: allow, ask and deny rules (`Bash(git:*)`, `WebFetch(domain:...)`) in a console's form, with room-wide rules in Flight Rules. They go into the console's own settings file after gonogo's rules, which stay; the mode is unchanged. Other engines say "not supported".
+- **Model per position.** Flight Rules has a BY POSITION list: a Claude Code console in a position starts with that position's model before its engine's room default; its own model still wins.
+- **Cost per mission and task.** A reply is counted to the mission and task the agent has on `doing`; the Missions view shows the cost of each mission and each task.
+- **Mission budget.** A dollar budget on a mission: one Downlink warning at 80 %, and Redline stops the agents working on it at 100 %.
 
 ## 0.2.0 (2026-11-18)
 

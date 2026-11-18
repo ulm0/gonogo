@@ -370,6 +370,10 @@ export async function setModelDefault(provider: Provider, model: string | null):
   return toModelDefaults(await call('PUT', `/models/${encodeURIComponent(provider)}`, { model }));
 }
 
+export async function setPositionModel(position: string, model: string | null): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', `/models/positions/${encodeURIComponent(position)}`, { model }));
+}
+
 function toModelDefaults(value: unknown): ModelDefaults {
   const models = asRecord(asRecord(value)?.models);
   if (models === null) throw failure('The server sent an answer gonogo does not understand.');

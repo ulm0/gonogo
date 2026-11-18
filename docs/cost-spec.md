@@ -86,6 +86,11 @@ chart and prices fold; `fuel.ts` gets `moneyText(usd)` (`$0.42`, `$12.40`, `$1.2
 - Prices routes: unknown field, negative number, huge number, a prefix with odd characters (`^[A-Za-z0-9._-]{1,80}$`).
 - Client: the switch, the unpriced note, 390 px, the chart's accessible table.
 
+## Missions and tasks (added with PR M)
+
+A ledger line may carry `mission` and `task`: the `doing` task of the agent (assignee = agent, status doing, the first when there are several) and its `missionId`, read at the moment the transcript is counted (`createPropellant({ attribute })`; cli.ts supplies it from the Flight Plan). No new file: the view derives `cost.missions` and `cost.tasks` from the ledger. A budget on a mission is dollars in all (`propellant.json` `budget.missions`), warned once at 80 % like the others (`mission ms3 is at 80 % of its budget`) and checked in `over()` after the agent's budget: the reason is `out of propellant: mission ms3 spent $10.00 of $10.00`, scope `mission`, and cli.ts trips every Claude agent whose current mission is that one. Idea from docs/kimchi-review.md; no code was taken from Kimchi.
+Tests: test/mission-cost.test.ts.
+
 ## Known limits
 
 - The estimate ignores batch discounts, long-context surcharges, and web-search or other per-call fees.
