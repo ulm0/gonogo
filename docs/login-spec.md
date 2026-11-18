@@ -2,6 +2,8 @@
 
 Design by FIDO, 2026-11-18, task t56a, revised after RSO's review (Mission Log l17, R1 to R11). Status: draft, not built; **PR 1 may start now that R1 to R6 are below**. Read from `web.ts` (token, Host and Origin checks, WebSocket subprotocol), `docs/reference/security.md`, `docs/https.md`, `roomproxy.ts`; web facts read on 2026-11-18 from MDN (WebAuthn, `PublicKeyCredentialCreationOptions`) and the Node docs (`crypto.argon2`). Nothing was run.
 
+> **Single mode (docs/single-mode-spec.md, t58):** `gonogo` always runs the supervisor, so the login lives only in the supervisor: one account, setup, session store and rate limiter, the Host normalizer at the front port, and one cookie with `Path=/` for `/` and `/r/<id>/`. Every child is reached only through its `run/api.sock` (R8 is the baseline, not an add-on) and accepts no token on TCP. Wherever this spec says "gonogo" for the process that checks logins, read "the supervisor". Login PR 1 comes after the two single-mode PRs.
+
 ## Why the token is not enough once the page leaves the machine
 
 One static secret, the browser token, opens every `/api` route and `/ws`. It never expires, has no second factor, and has been printed in compose logs, bookmarks and shell history. What it opens is a shell on the host: hire an agent with a **custom command**, start `bypassPermissions` agents, **type into every terminal**, write files in an agent's folder (Hangar), commit (Recorder), answer permission dialogs, start Docker updates. On localhost that was acceptable; behind a tunnel it is not.
