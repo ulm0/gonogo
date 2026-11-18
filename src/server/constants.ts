@@ -22,6 +22,16 @@ export {
 /* ---- startup and readiness ---- */
 /** Design: not ready 5 s after spawn while the pty is producing output means a startup dialog is waiting. */
 export const STARTUP_READY_TIMEOUT_MS = 5_000;
+/** Autostart (docs/autostart-spec.md): agents started at once after the boss, and how long a wave may take before the next one begins. */
+export const STARTUP_WAVE = 3;
+export const STARTUP_WAVE_TIMEOUT_MS = 60_000;
+/** run-state.json older than this is ignored. */
+export const RUN_STATE_MAX_AGE_MS = 7 * 24 * 3_600_000;
+export const RUN_STATE_FILE = 'run-state.json';
+export const STARTUP_FILE = 'startup.json';
+export const CARRY_ON_NOTE = 'Server restarted: gonogo was restarted while you were working. Check your last step and carry on.';
+/** start_agent: at most this many starts a minute from the boss. */
+export const START_AGENT_RATE_MAX = 6;
 /** If the pty has produced no output at the 5 s mark, look again this often (claude may just be slow). */
 export const STARTUP_RECHECK_MS = 1_000;
 /** Design: exit code 1 within 3 s of a start means --session-id/--resume was the wrong flag: flip once and retry. */
@@ -190,6 +200,7 @@ export const ALLOWED_TOOLS = [
   'mcp__gonogo__board_write',
   'mcp__gonogo__livery_submit',
   'mcp__gonogo__hire_agent',
+  'mcp__gonogo__start_agent',
 ] as const;
 /** claude's own cross-session messaging tools, denied so agents use gonogo's tools. */
 export const DENIED_TOOLS = ['SendMessage', 'ListAgents'] as const;
@@ -493,6 +504,8 @@ export const MCP_DESCRIPTIONS = {
     'Read the uncommitted changes of an agent for review: your own by default, or another agent\'s when the Director asked you to review it. Answers the changed files with their hunk ranges, the review notes (open first, each with where its line is now: exact, moved, outdated) and the verdict. Add patch: true (and path for one file) to get the patch text with line numbers to note, cut at 100 KiB.',
   review_note:
     'Add review notes to the changes of an agent: your own (a walkthrough: what each change does and why, or an answer to a note: give replyTo) or one the Director asked you to review (your right ends when you send your notes). Up to 20 notes in one call, all or none: each has path, side (old or new), line (a line of the diff), body (up to 2000 characters), optional tone (info, warning, error), or replyTo (a note id) instead of path, side and line. A reply to a note on your own diff marks that note addressed. You never change a file, a verdict or the status of a note with it.',
+  start_agent:
+    'Boss only. Starts an agent that is stopped (not one that is running or on hold), as the Director\'s START key does. Takes {name}. It is limited to a few starts a minute and recorded in the Black Box.',
   hire_agent:
     'Boss only. Ask the Director to hire an agent: name (lowercase letters, digits and hyphens), position (a call sign such as guido or surgeon, which gives the role text) and/or role (the role text itself), dir (an absolute folder; a Clean Room boss leaves it out), engine (default claude) and mode (default or acceptEdits; nothing higher is possible). It only makes a request: the Director sees every field and decides, and you are told his answer by message. At most 3 requests wait at once, 5 per 10 minutes, and one expires after 30 minutes.',
 } as const;

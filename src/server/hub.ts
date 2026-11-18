@@ -21,6 +21,9 @@ import type {
   AnswerRequest,
   ApiErrorCode,
   CleanRoom,
+  RunEntry,
+  HoldAllResult,
+  ResumeAllResult,
   Worktree,
   RemoteControl,
   PermissionRules,
@@ -129,6 +132,9 @@ import {
   SESSION_MISSING_TEXT,
   STARTUP_DIALOG_REASON,
   STARTUP_READY_TIMEOUT_MS,
+  STARTUP_WAVE,
+  STARTUP_WAVE_TIMEOUT_MS,
+  CARRY_ON_NOTE,
   STARTUP_RECHECK_MS,
   SUBJECT_MAX_CHARS,
   TITLE_IDLE_RECONCILE_MS,
@@ -685,6 +691,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       worktree: record.worktree ?? null,
       remoteControl: record.remoteControl ?? null,
       permissions: record.permissions ?? null,
+      autostart: record.autostart !== false,
       model: record.model ?? null,
       keys: { ...record.keys },
       doing: rt.doing,
@@ -872,6 +879,22 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     rt.needsKind = state === 'needs_you' && needs ? needs.kind : null;
     rt.needsReason = state === 'needs_you' && needs ? needs.reason : null;
+    markRun(rt);
+  }
+
+  /**
+   * Autostart: the run state holds the agents whose process is up and that are not held or tripped (a Hold and a trip keep the state
+   * `needs_you` with a process alive, and a cold restart must leave them stopped). Nothing is written during a shutdown: the set stays as it was.
+   */
+  function markRun(rt: Rt): void {
+    if (closing) return;
+    const running = !rt.removed && rt.state !== 'stopped' && rt.redline === null;
+    const working = running && (rt.state === 'working' || (rt.state === 'needs_you' && rt.needsKind === 'permission'));
+    try {
+      io.markRun?.(rt.record.name, running, working);
+    } catch (error) {
+      log.warn('run state failed', error);
+    }
   }
 
   function markReady(rt: Rt): void {
@@ -1173,6 +1196,32 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
     flush(rt);
     return buildView(rt);
+  }
+
+  function holdAll(): HoldAllResult {
+    assertOpen();
+    const out: HoldAllResult = { held: [], skipped: [] };
+    for (const rt of sortedAgents()) {
+      try {
+        hold(rt.record.name);
+        out.held.push(rt.record.name);
+      } catch {
+        // stopped, already held, at a dialog or without hooks: left as it is
+        if (rt.state !== 'stopped' && rt.redline !== HOLD_REASON) out.skipped.push(rt.record.name);
+      }
+    }
+    return out;
+  }
+
+  function resumeAll(): ResumeAllResult {
+    assertOpen();
+    const resumed: string[] = [];
+    for (const rt of sortedAgents()) {
+      if (rt.redline !== HOLD_REASON) continue;
+      resume(rt.record.name);
+      resumed.push(rt.record.name);
+    }
+    return { resumed };
   }
 
   /** Telemetry: every tool hook goes to the recorder; a failure there never touches the hub's own handling. */
@@ -1865,6 +1914,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     cancelTimers(rt);
     rt.removed = true;
+    markRun(rt);
     agents.delete(rt.record.name);
     emit({ t: 'agent-removed', name: rt.record.name });
     publishGovernor();
@@ -1979,6 +2029,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.remoteControl = from.remoteControl;
     if (from.permissions === undefined) delete target.permissions;
     else target.permissions = from.permissions;
+    if (from.autostart === undefined) delete target.autostart;
+    else target.autostart = from.autostart;
     if (from.model === undefined) delete target.model;
     else target.model = from.model;
     if (from.keys === undefined) delete target.keys;
@@ -2139,6 +2191,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const cleanRoom = req.cleanRoom === undefined ? undefined : await checkCleanRoom(provider, req.cleanRoom, dir);
       const worktree = req.worktree === undefined ? undefined : await checkWorktree(req.worktree, dir, req.cleanRoom);
       const permissions = req.permissions === undefined ? undefined : checkPermissions(provider, req.permissions);
+      if (req.autostart !== undefined && typeof req.autostart !== 'boolean') throw new HubError('bad_request', 'autostart must be true or false', 'autostart');
       const remoteControl = req.remoteControl === undefined ? undefined : checkRemoteControl(provider, req.remoteControl, cleanRoom !== undefined);
       assertOpen();
       const record: AgentRecord = {
@@ -2159,6 +2212,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (worktree) record.worktree = worktree;
       if (remoteControl) record.remoteControl = remoteControl;
       if (permissions) record.permissions = permissions;
+      if (req.autostart === false) record.autostart = false;
       if (model) record.model = model;
       if (kept?.names) record.keys = kept.names;
       hiring.set(name, record);
@@ -2187,9 +2241,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'model', 'keys'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'model', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, model, keys');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
@@ -2239,6 +2293,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         // a new folder must be in a repository, and a Clean Room has a worktree of its own
         next.worktree = await checkWorktree(next.worktree, next.dir, next.cleanRoom);
       }
+      if (req.autostart !== undefined) {
+        if (typeof req.autostart !== 'boolean') throw new HubError('bad_request', 'autostart must be true or false', 'autostart');
+        if (req.autostart) delete next.autostart;
+        else next.autostart = false;
+      }
       if (req.remoteControl !== undefined) {
         if (req.remoteControl === null) delete next.remoteControl;
         else next.remoteControl = checkRemoteControl(current.provider ?? 'claude', req.remoteControl, next.cleanRoom !== undefined);
@@ -2283,6 +2342,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         worktreeKey(next) !== worktreeKey(current) ||
         remoteKey(next) !== remoteKey(current) ||
         rulesKey(next) !== rulesKey(current) ||
+        next.autostart !== current.autostart ||
         engineKey(next) !== engineKey(current);
       if (!changed) return buildView(rt);
 
@@ -2910,7 +2970,89 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     armSweep();
     const boss = bossRt();
-    if (boss && boss.state === 'stopped') await enqueue(boss, 'restart', () => restartOp(boss), true);
+    const settings = io.startup?.() ?? { policy: 'boss' as const, carryOn: false, bossMayStart: true };
+    // the set the last run left; without it (no file, too old) `running` is the same as `boss`
+    const set = settings.policy === 'running' ? (io.runSet?.() ?? null) : null;
+    const byName = new Map((set ?? []).map((entry) => [entry.name, entry]));
+    const startBoss = settings.policy === 'boss' || (settings.policy === 'running' && (set === null || (boss !== null && byName.has(boss.record.name) && boss.record.autostart !== false)));
+    // the set is what the next start will use: an agent that this start leaves stopped (the policy, an opt-out, a removed agent) is not in it
+    // an agent that is running already (taken over from the pty host) is not left out
+    for (const entry of io.runSet?.() ?? []) if (agents.get(entry.name)?.state === 'stopped' && !(startBoss && entry.name === boss?.record.name) && (settings.policy !== 'running' || set === null)) io.markRun?.(entry.name, false, false);
+    // an adopted boss is running already: nothing to start, and it was not cut in the middle of a turn
+    if (boss && startBoss && boss.state === 'stopped') {
+      await enqueue(boss, 'restart', () => restartOp(boss), true);
+      if (settings.carryOn && byName.get(boss.record.name)?.working === true) carryOn(boss);
+    }
+    if (set !== null) void autostart(set, settings.carryOn, boss).catch((error: unknown) => log.error('autostart failed', error));
+  }
+
+  /** One message from the Director to an agent that was in a turn when the server stopped; it goes through the usual door, so Max Q and Redline apply. */
+  function carryOn(rt: Rt): void {
+    try {
+      sendFromUser({ to: rt.record.name, subject: 'Server restarted', body: CARRY_ON_NOTE });
+    } catch (error) {
+      log.warn(`could not tell ${rt.record.name} to carry on`, error);
+    }
+  }
+
+  /** Waits until no agent of `list` is `starting`, or `ms` pass, or the server closes. */
+  function waitOutOfStarting(list: Rt[], ms: number): Promise<void> {
+    return new Promise((done) => {
+      let waited = 0;
+      const poll = (): void => {
+        waited += 500;
+        if (closing || waited >= ms || !list.some((rt) => rt.state === 'starting' && !rt.removed)) done();
+        else io.setTimer(poll, 500);
+      };
+      if (closing || !list.some((rt) => rt.state === 'starting' && !rt.removed)) done();
+      else io.setTimer(poll, 500);
+    });
+  }
+
+  /**
+   * Autostart (docs/autostart-spec.md): the agents of the saved set start again, a wave of STARTUP_WAVE at a time (fewer when Max Q is
+   * lower), each once. A start that fails leaves the agent stopped with the reason; an agent that opted out stays stopped.
+   */
+  async function autostart(set: RunEntry[], carry: boolean, boss: Rt | null): Promise<void> {
+    const todo: Rt[] = [];
+    const skipped: string[] = [];
+    for (const entry of set) {
+      const rt = agents.get(entry.name);
+      if (!rt || (rt === boss && rt.state !== 'stopped')) {
+        if (!rt) io.markRun?.(entry.name, false, false);
+        continue;
+      }
+      if (rt === boss) {
+        io.markRun?.(entry.name, false, false);
+        continue;
+      }
+      if (rt.state !== 'stopped') continue;
+      if (rt.record.autostart === false) {
+        skipped.push(`${entry.name} (opted out)`);
+        io.markRun?.(entry.name, false, false);
+      } else todo.push(rt);
+    }
+    const failed: string[] = [];
+    let started = boss !== null && boss.state !== 'stopped' ? 1 : 0;
+    const wave = Math.max(1, Math.min(STARTUP_WAVE, limit ?? STARTUP_WAVE));
+    for (let at = 0; at < todo.length && !closing; at += wave) {
+      const batch = todo.slice(at, at + wave);
+      await Promise.all(
+        batch.map(async (rt) => {
+          try {
+            await enqueue(rt, 'restart', () => restartOp(rt), true);
+            started += 1;
+            if (carry && set.find((entry) => entry.name === rt.record.name)?.working === true) carryOn(rt);
+          } catch (error) {
+            failed.push(`${rt.record.name} (${error instanceof Error ? error.message : String(error)})`);
+          }
+        }),
+      );
+      if (at + wave < todo.length) await waitOutOfStarting(batch, STARTUP_WAVE_TIMEOUT_MS);
+    }
+    if (closing) return;
+    const left = [...skipped, ...failed];
+    io.notify?.('startup', `Restarted ${started} ${started === 1 ? 'agent' : 'agents'} after the server start${left.length === 0 ? '' : `; not started: ${left.join(', ')}`}`);
   }
 
   function start(): Promise<void> {
@@ -2969,6 +3111,16 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const rt = lookup(name);
       return enqueue(rt, 'restart', () => restartOp(rt), true);
     },
+    startAgent: async (name, by) => {
+      assertOpen();
+      const rt = lookup(name);
+      if (rt.state !== 'stopped' || rt.transition !== null) {
+        throw new HubError('conflict', rt.redline === HOLD_REASON ? `${rt.record.name} is on hold: the Director resumes it` : rt.redline !== null ? `${rt.record.name} has tripped the redline: the Director resumes or stops it` : `${rt.record.name} is already running`);
+      }
+      if (io.startup?.().bossMayStart === false) throw new HubError('forbidden', 'the Director turned off "FLIGHT may start agents" in Flight Rules');
+      log.info(`${by} starts ${rt.record.name}`);
+      return enqueue(rt, 'restart', () => restartOp(rt), true);
+    },
     stop: async (name) => {
       assertOpen();
       const rt = lookup(name);
@@ -2986,6 +3138,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     trip,
     hold,
     resume,
+    holdAll,
+    resumeAll,
     readMessages,
     rosterFor,
     onHook,

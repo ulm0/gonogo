@@ -2685,6 +2685,62 @@ describe('end to end with the stand-in agent', () => {
     expect((await api<ApiError>(h, 'PATCH', '/api/agents/ben', { permissions: 'Bash' })).status).toBe(400);
   }, 60_000);
 
+  it('Autostart: a cold restart starts the agents that were running, not one that was stopped, held or opted out, and start_agent starts a stopped one', async () => {
+    const first = await startServer();
+    await waitState(first, 'flight', 'idle');
+    expect((await api(first, 'PUT', '/api/startup', { policy: 'sideways' })).status).toBe(400);
+    expect((await api(first, 'PUT', '/api/startup', { policy: 'running' })).body).toEqual({ policy: 'running', carryOn: true, bossMayStart: true });
+    for (const name of ['ana', 'ben', 'cy', 'dee']) await hire(first, name, name === 'dee' ? { autostart: false } : {});
+    expect((await api<AgentView>(first, 'POST', '/api/agents/ben/stop')).status).toBe(200);
+    expect((await api<AgentView>(first, 'POST', '/api/agents/cy/hold')).status).toBe(200);
+    await waitFor(() => existsSync(join(first.home, 'run-state.json')), 5000, 'the run state');
+    await waitFor(() => (JSON.parse(readFileSync(join(first.home, 'run-state.json'), 'utf8')) as { running: Array<{ name: string }> }).running.map((r) => r.name).sort().join() === 'ana,dee,flight', 5000, 'the set');
+    await first.run.stop();
+    // the graceful stop left the set as it was
+    expect((JSON.parse(readFileSync(join(first.home, 'run-state.json'), 'utf8')) as { running: Array<{ name: string }> }).running.map((r) => r.name).sort()).toEqual(['ana', 'dee', 'flight']);
+
+    const again = await startServer({ home: first.home });
+    await waitState(again, 'flight', 'idle');
+    await waitState(again, 'ana', 'idle', 20_000);
+    const states = Object.fromEntries((await getState(again)).agents.map((a) => [a.name, a.state]));
+    expect(states).toMatchObject({ flight: 'idle', ana: 'idle', ben: 'stopped', cy: 'stopped', dee: 'stopped' });
+    const inbox = (await api<DownlinkView>(again, 'GET', '/api/downlink')).body;
+    expect(inbox.items.find((item) => item.type === 'event' && item.kind === 'startup')).toMatchObject({ text: 'Restarted 2 agents after the server start; not started: dee (opted out)' });
+
+    // the boss starts a stopped agent with the tool, and the Black Box records who
+    const sent = await send(again, 'flight', '@fake relief start_agent {"name":"ben"}', 'start ben');
+    await itemRead(again, sent.body.id);
+    await waitState(again, 'ben', 'idle', 20_000);
+    expect(tools(again, 'flight', 'start_agent').at(-1)?.result).toMatchObject({ ok: true, name: 'ben' });
+    expect((await api<AuditView>(again, 'GET', '/api/black-box')).body.events.map((e) => e.text)).toContain('flight started ben');
+    // an agent that is not the boss cannot, and a running agent is refused
+    const intruder = await send(again, 'ana', '@fake relief start_agent {"name":"cy"}', 'start cy');
+    await itemRead(again, intruder.body.id);
+    await waitFor(() => tools(again, 'ana', 'start_agent').length === 1, 10_000, 'the call of ana');
+    expect(tools(again, 'ana', 'start_agent').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: 'only the boss may start an agent' } });
+    expect((await getState(again)).agents.find((a) => a.name === 'cy')?.state).toBe('stopped');
+    const refused = await send(again, 'flight', '@fake relief start_agent {"name":"ben"}', 'start ben again');
+    await itemRead(again, refused.body.id);
+    await waitFor(() => tools(again, 'flight', 'start_agent').length === 2, 10_000, 'the second call');
+    expect(tools(again, 'flight', 'start_agent').at(-1)?.result).toMatchObject({ ok: false });
+
+    // the switch of the tool, and ALL STOP / ALL RESUME
+    expect((await api(again, 'PUT', '/api/startup', { bossMayStart: false })).body).toMatchObject({ bossMayStart: false });
+    expect((await api(again, 'POST', '/api/agents/ben/stop')).status).toBe(200);
+    const off = await send(again, 'flight', '@fake relief start_agent {"name":"ben"}', 'start ben off');
+    await itemRead(again, off.body.id);
+    await waitFor(() => tools(again, 'flight', 'start_agent').length === 3, 10_000, 'the third call');
+    expect(tools(again, 'flight', 'start_agent').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: expect.stringContaining('FLIGHT may start agents') } });
+    const stopped = await api<{ held: string[]; skipped: string[] }>(again, 'POST', '/api/hold-all');
+    expect(stopped.body.held.sort()).toEqual(['ana', 'flight']);
+    expect((await getState(again)).agents.filter((a) => a.needsReason === 'on hold').map((a) => a.name).sort()).toEqual(['ana', 'flight']);
+    expect((await api<{ resumed: string[] }>(again, 'POST', '/api/resume-all')).body.resumed.sort()).toEqual(['ana', 'flight']);
+    const events = (await api<AuditView>(again, 'GET', '/api/black-box')).body.events.map((e) => e.text);
+    expect(events).toContain('Director pressed ALL STOP: 2 held');
+    expect(events).toContain('Director pressed ALL RESUME: 2 resumed');
+    await again.run.stop();
+  }, 120_000);
+
   it('34. Mass Budget and Star Chart: a request to condense is a message, the file is copied and never written by gonogo, and the chart follows the log', async () => {
     const h = await startServer();
     await hire(h, 'ana');

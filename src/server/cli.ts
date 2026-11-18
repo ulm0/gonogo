@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -66,6 +66,8 @@ import { checkEngines, formatDoctor, installedProviders, onPath } from './provid
 import { createClearance } from './clearance.js';
 import { createModelDefaults } from './models.js';
 import { createPermissionDefaults } from './permissions.js';
+import { createRunState } from './runstate.js';
+import { createStartupStore } from './startup.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { createUpdater } from './updater.js';
 import type { Updater } from './updater.js';
@@ -427,6 +429,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await modelDefaults.load();
     const permissionDefaults = createPermissionDefaults({ dir: home.dir, log: log.child('permissions') });
     await permissionDefaults.load();
+    const runState = createRunState({ dir: home.dir, now: () => Date.now(), log: log.child('run state') });
+    await runState.load();
+    const startupStore = createStartupStore({ dir: home.dir, log: log.child('startup') });
+    await startupStore.load();
     const launcher = createLauncher({
       homeDir: home.dir,
       tokensFile: remote ? join(runDir(home.dir), TOKENS_FILE) : null,
@@ -536,6 +542,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       checkCleanRoom: (dir) => checkCleanRoom(dir, env),
       checkWorktree: (dir) => checkWorktree(dir, env),
       loadRoster: async () => home.loadRoster(),
+      startup: () => startupStore.view(),
+      runSet: () => runState.previous(),
+      markRun: (name, running, working) => runState.mark(name, running, working),
       saveRoster: (r) => home.saveRoster(r),
       loadHistory: async (n) => home.loadRecentMessages(n),
       logMessage: (r) => home.appendMessage(r),
@@ -806,6 +815,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relay: audited(relay, blackBox.record, RELAY_AUDIT),
       models: modelDefaults,
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
+      startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -901,6 +911,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('relay close', () => relay.close());
       await step('models close', () => modelDefaults.close());
       await step('permissions close', () => permissionDefaults.close());
+      await step('startup close', async () => {
+        await startupStore.close();
+        await runState.close();
+      });
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
       await step('prices close', () => prices.close());

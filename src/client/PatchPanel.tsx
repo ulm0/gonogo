@@ -70,6 +70,10 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
       return api.startPoll({});
     case 'read':
       return api.markAllRead();
+    case 'all-stop':
+      return api.holdAll();
+    case 'all-resume':
+      return api.resumeAll();
     case 'livery':
       return api.selectLivery(act.slug);
     case 'propellant':

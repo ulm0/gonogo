@@ -9,7 +9,7 @@ import type { Position } from '../shared/positions.js';
 /** The server's COMMAND_MAX_CHARS (src/server/constants.ts, which the client build does not include). */
 export const COMMAND_MAX_CHARS = 1000;
 
-export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'remoteControl' | 'permissions' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'keys';
+export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'remoteControl' | 'autostart' | 'permissions' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'keys';
 export type Problems = Partial<Record<Field, string>>;
 
 /** One key typed in the form: a name and its value, which only ever travels from here to the server. */
@@ -40,6 +40,8 @@ export interface Values {
   remoteControl: boolean;
   /** Tool permissions: a rule on each line as `allow Bash(git:*)` (src/client/permissions.ts). Claude Code only; '' is none, and the room's rules apply. */
   rules: string;
+  /** Start with gonogo: false keeps the room's startup policy from starting this agent again. */
+  autostart: boolean;
   /** Engine Bay: the model for `--model`; '' is the CLI's default. */
   model: string;
   /** Clearance: keys typed now (a name that is already set replaces its value), and the names of set keys to remove. */
@@ -102,7 +104,7 @@ export function choosePosition(
 
 /** The custom command tile: no position, no permissions, and a fixed role (the form shows none for it). */
 export function chooseCustom(values: Values, agents: Readonly<Record<string, AgentView>>): Values {
-  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, rules: '', model: '', name: untouched(values, agents).name ? '' : values.name };
+  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, autostart: values.autostart, rules: '', model: '', name: untouched(values, agents).name ? '' : values.name };
 }
 
 /** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
@@ -173,6 +175,7 @@ export function initialValues(
     worktree: Boolean(current?.worktree),
     remoteControl: Boolean(current?.remoteControl),
     rules: rulesToText(current?.permissions),
+    autostart: current?.autostart !== false,
     model: current?.model ?? '',
     keys: [],
     keysRemoved: [],
@@ -386,6 +389,7 @@ export function hireRequest(values: Values): HireRequest {
   if (remoteControlOf(values) !== null) request.remoteControl = {};
   const rules = values.provider === 'claude' ? rulesOf(values.rules) : null;
   if (rules !== null) request.permissions = rules;
+  if (!values.autostart) request.autostart = false;
   return request;
 }
 
@@ -417,6 +421,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     const rules = rulesOf(values.rules);
     if (JSON.stringify(rules) !== JSON.stringify(original.permissions ?? null)) changes.permissions = rules;
   }
+  if (values.autostart !== (original.autostart !== false)) changes.autostart = values.autostart;
   if (JSON.stringify(remoteControlOf(values)) !== JSON.stringify(original.remoteControl ?? null)) changes.remoteControl = remoteControlOf(values);
   if (JSON.stringify(worktreeOf(values)) !== JSON.stringify(original.worktree ?? null)) changes.worktree = worktreeOf(values);
   const keys = keysOf(values, Object.keys(original.keys ?? {}));
