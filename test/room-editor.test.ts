@@ -4,7 +4,7 @@ import { defaultView } from '../src/shared/livery.js';
 import { DEFAULT_BLOCKS, DEFAULT_DESKS, hide, place } from '../src/shared/layout.js';
 import type { Block } from '../src/shared/layout.js';
 import { POSITIONS } from '../src/shared/positions.js';
-import type { AgentView, GovernorView, PollView, RoomView, StateSnapshot } from '../src/shared/protocol.js';
+import type { AgentView, GovernorView, PollView, PropellantView, RoomView, StateSnapshot } from '../src/shared/protocol.js';
 import { cellKey, seat } from '../src/client/room.js';
 import { autoArrange, cellAt, dragMove, dragResize, EDIT_GAP_PX, EDIT_ROW_PX, hiddenBlocks, keyStep, liveStrips, neighbour, pitchOf, swapDesks } from '../src/client/roomedit.js';
 import { commands } from '../src/client/shell.js';
@@ -148,6 +148,21 @@ describe('the strips for a hidden block with something live', () => {
     expect(liveStrips(hiddenAll, null, { ...quiet, holding: 1 })[0]?.text).toBe('MAX Q: 1 message waits for a free slot.');
     expect(liveStrips(hiddenAll, { ...poll, subject: 'the login form' } as PollView, quiet)[0]?.text).toBe('T-MINUS: static fire open, 2 of 4 answered.');
     expect(liveStrips(hiddenAll, { ...poll, status: 'hold' } as PollView, quiet)[0]?.text).toContain('hold');
+  });
+
+  it('says that a hidden PROPELLANT is at 80 % of a limit or a budget, or over it, and nothing below', () => {
+    const gauge = (used: number, limit: number | undefined): PropellantView => ({ room: { used: { '5h': 0, day: used, week: 0, month: 0 }, limits: limit === undefined ? {} : { day: limit } }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } });
+    const hiddenFuel = DEFAULT_BLOCKS.map((b) => (b.id === 'propellant' ? { ...b, hidden: true } : { ...b }));
+    expect(liveStrips(hiddenFuel, null, quiet, gauge(79, 100))).toEqual([]);
+    expect(liveStrips(hiddenFuel, null, quiet, gauge(80, 100))).toEqual([{ block: 'propellant', text: 'PROPELLANT: near the limit (day).' }]);
+    expect(liveStrips(hiddenFuel, null, quiet, gauge(100, 100))[0]?.text).toBe('PROPELLANT: over the limit (day).');
+    expect(liveStrips(hiddenFuel, null, quiet, gauge(500, undefined))).toEqual([]);
+    const dollars = gauge(0, undefined);
+    dollars.cost.room.usd.week = 9;
+    dollars.cost.room.budget.week = 10;
+    expect(liveStrips(hiddenFuel, null, quiet, dollars)[0]?.text).toBe('PROPELLANT: near the budget (week).');
+    // shown, the block says it itself
+    expect(liveStrips(DEFAULT_BLOCKS.map((b) => ({ ...b })), null, quiet, gauge(100, 100))).toEqual([]);
   });
 
   it('says nothing when the block is shown, or when nothing is going on', () => {

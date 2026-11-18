@@ -78,7 +78,7 @@ describe('the store', () => {
     await store.save({ rev: 0, blocks: moved() });
     const stale = await fails(store.save({ rev: 0, blocks: DEFAULT_BLOCKS }), 'conflict', 'rev');
     expect(stale.message).toContain('revision 1');
-    await fails(store.save({ rev: 1, blocks: [] }), 'bad_request', 'blocks');
+    await fails(store.save({ rev: 1, blocks: 'x' }), 'bad_request', 'blocks');
     await fails(store.save({ rev: 1, blocks: [...DEFAULT_BLOCKS.slice(0, 5), { ...DEFAULT_BLOCKS[5], hidden: true }] }), 'bad_request', 'blocks');
     await fails(store.save({ rev: 1, blocks: DEFAULT_BLOCKS, desks: { sort: 'x', order: [] } }), 'bad_request', 'desks');
     await fails(store.save({ blocks: DEFAULT_BLOCKS }), 'bad_request', 'rev');
@@ -102,13 +102,15 @@ describe('the store', () => {
   it('resets: the file goes and the page is today\'s, or only the order of the desks goes', async () => {
     const store = make();
     await store.load();
-    expect(await store.reset('all')).toEqual({ rev: 0, layout: null });
+    expect(await store.reset('all', 0)).toEqual({ rev: 0, layout: null });
     expect(emitted).toEqual([]);
     await store.save({ rev: 0, blocks: moved(), desks: { sort: 'manual', order: ['p:flight'] } });
-    const desks = await store.reset('desks');
+    await fails(store.reset('desks', 0), 'conflict', 'rev');
+    const desks = await store.reset('desks', 1);
     expect(desks.layout).toMatchObject({ blocks: moved(), desks: DEFAULT_DESKS });
     expect(desks.rev).toBe(2);
-    const all = await store.reset('all');
+    await fails(store.reset('all', 1), 'conflict', 'rev');
+    const all = await store.reset('all', 2);
     expect(all).toEqual({ rev: 3, layout: null });
     await expect(stat(join(dir, 'room.json'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(emitted.at(-1)).toEqual(all);
@@ -124,11 +126,47 @@ describe('the store', () => {
     expect(await readFile(join(dir, 'room.json.bad'), 'utf8')).toBe('{ nope');
     expect(logs.some((l) => l.includes('room.json could not be read'))).toBe(true);
     await rm(join(dir, 'room.json.bad'));
-    await writeFile(join(dir, 'room.json'), JSON.stringify({ version: 1, rev: 4, blocks: DEFAULT_BLOCKS.slice(1) }));
+    await writeFile(join(dir, 'room.json'), JSON.stringify({ version: 1, rev: 4, blocks: [{ ...DEFAULT_BLOCKS[0], x: 3 }, ...DEFAULT_BLOCKS.slice(1)] }));
     const other = make();
     await other.load();
     expect(other.view()).toEqual({ rev: 0, layout: null });
     expect((await readdir(dir)).sort()).toEqual(['room.json.bad']);
+  });
+
+  it('keeps the layout when a block was added or removed by another version: missing blocks come in hidden, unknown ones go', async () => {
+    const without = DEFAULT_BLOCKS.filter((b) => b.id !== 'propellant');
+    await writeFile(join(dir, 'room.json'), JSON.stringify({ version: 1, rev: 5, blocks: [...without, { id: 'notes', x: 0, y: 8, w: 3, h: 3 }], desks: { sort: 'name', order: [] } }));
+    const store = make();
+    await store.load();
+    expect(store.view().rev).toBe(5);
+    const blocks = store.view().layout?.blocks ?? [];
+    expect(blocks.map((b) => b.id).sort()).toEqual([...DEFAULT_BLOCKS.map((b) => b.id)].sort());
+    expect(blocks.find((b) => b.id === 'propellant')).toMatchObject({ hidden: true, x: 10, y: 0, w: 2, h: 2 });
+    expect(blocks.find((b) => b.id === 'mission')).toEqual(DEFAULT_BLOCKS[0]);
+    expect(store.view().layout?.desks.sort).toBe('name');
+    expect(await readdir(dir)).toEqual(['room.json']);
+    // a save from the page keeps working
+    expect((await store.save({ rev: 5, blocks, desks: { sort: 'name', order: [] } })).rev).toBe(6);
+  });
+
+  it('puts a missing OPERATIONS under everything, shown', async () => {
+    const without = DEFAULT_BLOCKS.filter((b) => b.id !== 'operations');
+    await writeFile(join(dir, 'room.json'), JSON.stringify({ version: 1, rev: 1, blocks: without }));
+    const store = make();
+    await store.load();
+    expect(store.view().layout?.blocks.find((b) => b.id === 'operations')).toMatchObject({ x: 0, y: 2, w: 12, h: 6 });
+    expect(store.view().layout?.blocks.find((b) => b.id === 'operations')?.hidden).toBeUndefined();
+  });
+
+  it('leaves a file it cannot read where it is: only a bad file is moved aside', async () => {
+    const { mkdir } = await import('node:fs/promises');
+    // a folder where the file should be: reading it fails with EISDIR, not with a bad shape
+    await mkdir(join(dir, 'room.json'));
+    const store = make();
+    await store.load();
+    expect(store.view()).toEqual({ rev: 0, layout: null });
+    expect(await readdir(dir)).toEqual(['room.json']);
+    expect(logs.some((l) => l.includes('EISDIR'))).toBe(true);
   });
 
   it('puts the view back when the file cannot be written', async () => {
@@ -147,8 +185,8 @@ describe('the Black Box', () => {
     const store = audited(make(), (kind, text) => void told.push([kind, text]), ROOM_AUDIT);
     await store.load();
     await store.save({ rev: 0, blocks: moved(), desks: { sort: 'manual', order: ['a:secret-name'] } });
-    await store.reset('desks');
-    await store.reset('all');
+    await store.reset('desks', 1);
+    await store.reset('all', 2);
     expect(told).toEqual([['config', 'Director saved the room layout'], ['config', 'Director reset the order of the desks'], ['config', 'Director reset the room layout']]);
     expect(JSON.stringify(told)).not.toContain('secret-name');
   });
@@ -191,11 +229,14 @@ describe('the routes', () => {
     expect(saved.json).toMatchObject({ rev: 1, layout: { blocks: moved(), desks: DEFAULT_DESKS } });
     const stale = await call(port, 'PUT', '/api/room', { rev: 0, blocks: moved() });
     expect([stale.status, stale.json.code, stale.json.field]).toEqual([409, 'conflict', 'rev']);
-    const bad = await call(port, 'PUT', '/api/room', { rev: 1, blocks: [] });
+    const bad = await call(port, 'PUT', '/api/room', { rev: 1, blocks: 'x' });
     expect([bad.status, bad.json.field]).toEqual([400, 'blocks']);
-    expect((await call(port, 'DELETE', '/api/room?part=desks')).json).toMatchObject({ rev: 2, layout: { desks: DEFAULT_DESKS } });
-    expect((await call(port, 'DELETE', '/api/room?part=nope')).status).toBe(400);
-    expect((await call(port, 'DELETE', '/api/room')).json).toEqual({ rev: 3, layout: null });
+    expect((await call(port, 'DELETE', '/api/room?rev=1&part=desks')).json).toMatchObject({ rev: 2, layout: { desks: DEFAULT_DESKS } });
+    expect((await call(port, 'DELETE', '/api/room?rev=2&part=nope')).status).toBe(400);
+    // a reset names the revision it saw: none, a bad one and a stale one are refused
+    expect([(await call(port, 'DELETE', '/api/room')).status, (await call(port, 'DELETE', '/api/room?rev=x')).status]).toEqual([400, 400]);
+    expect((await call(port, 'DELETE', '/api/room?rev=1')).json).toMatchObject({ code: 'conflict', field: 'rev' });
+    expect((await call(port, 'DELETE', '/api/room?rev=2')).json).toEqual({ rev: 3, layout: null });
   });
 
   it('wants the browser token, allows only GET, PUT and DELETE, and is 404 without a store', async () => {

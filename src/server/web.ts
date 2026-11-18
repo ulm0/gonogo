@@ -1018,7 +1018,9 @@ export function createWebServer(options: WebOptions): WebServer {
           if (req.method === 'DELETE') {
             const part = new URL(req.url ?? '/', 'http://localhost').searchParams.get('part');
             if (part !== null && part !== 'all' && part !== 'desks') return sendApiError(res, 400, 'part must be all or desks', 'bad_request', 'part');
-            return sendJson(res, 200, await room.reset(part === 'desks' ? 'desks' : 'all'));
+            const rev = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('rev'));
+            if (!Number.isSafeInteger(rev) || rev < 0 || new URL(req.url ?? '/', 'http://localhost').searchParams.get('rev') === null) return sendApiError(res, 400, 'rev must be the revision the room was seen at', 'bad_request', 'rev');
+            return sendJson(res, 200, await room.reset(part === 'desks' ? 'desks' : 'all', rev));
           }
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await room.save(body));

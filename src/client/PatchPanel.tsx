@@ -56,7 +56,7 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
       // a promise, so that a refusal (a screen under 900 px) shows in the panel instead of being thrown away
       return Promise.resolve().then(startEditing);
     case 'reset-room':
-      return api.resetRoom('all');
+      return api.resetRoom('all', store.getState().room.rev);
     case 'show-block': {
       const { room } = store.getState();
       return room.layout === null ? Promise.resolve() : api.saveRoom({ rev: room.rev, blocks: restore(room.layout.blocks, act.block), desks: room.layout.desks });

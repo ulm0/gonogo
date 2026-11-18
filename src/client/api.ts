@@ -521,8 +521,8 @@ export async function saveRoom(request: { rev: number; blocks: Block[]; desks: D
   return toRoomView(await call('PUT', '/room', request));
 }
 
-export async function resetRoom(part: 'all' | 'desks'): Promise<RoomView> {
-  return toRoomView(await call('DELETE', `/room${part === 'desks' ? '?part=desks' : ''}`));
+export async function resetRoom(part: 'all' | 'desks', rev: number): Promise<RoomView> {
+  return toRoomView(await call('DELETE', `/room?rev=${rev}${part === 'desks' ? '&part=desks' : ''}`));
 }
 
 function toRoomView(value: unknown): RoomView {

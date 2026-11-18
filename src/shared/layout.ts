@@ -174,7 +174,9 @@ export function checkLayout(input: unknown): LayoutCheck {
   if (!Array.isArray(input.blocks)) return { ok: false, error: 'blocks must be a list', field: 'blocks' };
   const blocks: Block[] = [];
   for (const raw of input.blocks) {
-    if (!isObject(raw) || typeof raw.id !== 'string' || !(BLOCK_IDS as readonly string[]).includes(raw.id)) return { ok: false, error: `a block must be one of: ${BLOCK_IDS.join(', ')}`, field: 'blocks' };
+    if (!isObject(raw) || typeof raw.id !== 'string') return { ok: false, error: 'a block must be an object with an id', field: 'blocks' };
+    // a block this version does not know (a downgrade, a newer file) is dropped, not an error: the rest of the layout stays
+    if (!(BLOCK_IDS as readonly string[]).includes(raw.id)) continue;
     for (const key of Object.keys(raw)) if (!['id', 'x', 'y', 'w', 'h', 'hidden'].includes(key)) return { ok: false, error: `a block has no field "${key}"`, field: 'blocks' };
     if (raw.hidden !== undefined && typeof raw.hidden !== 'boolean') return { ok: false, error: 'hidden must be true or false', field: 'blocks' };
     const block: Block = { id: raw.id as BlockId, x: raw.x as number, y: raw.y as number, w: raw.w as number, h: raw.h as number, ...(raw.hidden === true ? { hidden: true } : {}) };
@@ -183,7 +185,13 @@ export function checkLayout(input: unknown): LayoutCheck {
   }
   for (const id of BLOCK_IDS) {
     const count = blocks.filter((b) => b.id === id).length;
-    if (count !== 1) return { ok: false, error: `${id} must be in the layout once`, field: 'blocks' };
+    if (count > 1) return { ok: false, error: `${id} must be in the layout once`, field: 'blocks' };
+    // a block this file lacks (a new one) comes in hidden, in its default rectangle: it waits in the tray and nothing else moves.
+    // The consoles cannot be hidden: they go under everything.
+    if (count === 0) {
+      const spec = DEFAULT_BLOCKS.find((b) => b.id === id) as Block;
+      blocks.push(CATALOGUE[id].fixed ? { ...spec, y: blocks.reduce((n, b) => (isHidden(b) ? n : Math.max(n, b.y + b.h)), 0) } : { ...spec, hidden: true });
+    }
   }
   if (blocks.some((b) => CATALOGUE[b.id].fixed && isHidden(b))) return { ok: false, error: 'operations cannot be hidden', field: 'blocks' };
   const vis = shown(blocks);

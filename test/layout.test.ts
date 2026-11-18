@@ -168,9 +168,8 @@ describe('checkLayout', () => {
   it('refuses what is not a layout, naming the field', () => {
     refused(null, 'blocks');
     refused({ blocks: 'x' }, 'blocks');
-    refused({ blocks: DEFAULT_BLOCKS.slice(1) }, 'blocks', /mission must be in the layout once/);
     refused({ blocks: [...DEFAULT_BLOCKS, DEFAULT_BLOCKS[0]] }, 'blocks', /once/);
-    refused({ blocks: [...DEFAULT_BLOCKS.slice(0, 5), { id: 'notes', x: 0, y: 2, w: 3, h: 3 }] }, 'blocks', /one of/);
+    refused({ blocks: [...DEFAULT_BLOCKS, { id: 'notes' }, 3] }, 'blocks', /object with an id/);
     refused({ blocks: [{ ...DEFAULT_BLOCKS[0], w: 1 }, ...DEFAULT_BLOCKS.slice(1)] }, 'blocks', /does not fit/);
     refused({ blocks: [{ ...DEFAULT_BLOCKS[0], x: 11 }, ...DEFAULT_BLOCKS.slice(1)] }, 'blocks', /does not fit/);
     refused({ blocks: [{ ...DEFAULT_BLOCKS[0], extra: 1 }, ...DEFAULT_BLOCKS.slice(1)] }, 'blocks', /no field "extra"/);
@@ -182,6 +181,15 @@ describe('checkLayout', () => {
     refused({ desks: { sort: 'manual', order: ['../x'] } }, 'desks');
     refused({ desks: { sort: 'manual', order: Array.from({ length: 65 }, (_, i) => `a:n${i}`) } }, 'desks');
     refused({ desks: 'x' }, 'desks');
+  });
+
+  it('does not refuse a layout for a block it does not know or lacks: it drops the first and adds the second', () => {
+    const result = checkLayout({ blocks: [...DEFAULT_BLOCKS.slice(1), { id: 'notes', x: 0, y: 9, w: 3, h: 3 }] });
+    expect(result).toMatchObject({ ok: true });
+    const blocks = (result as { blocks: Block[] }).blocks;
+    expect(blocks.map((b) => b.id)).not.toContain('notes');
+    expect(blocks.find((b) => b.id === 'mission')).toEqual({ ...DEFAULT_BLOCKS[0], hidden: true });
+    expect(blocks).toHaveLength(6);
   });
 
   it('lets hidden blocks overlap the shown ones: they take no room', () => {

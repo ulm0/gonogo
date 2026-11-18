@@ -51,7 +51,8 @@ function RoomGrid({ blocks }: { blocks: readonly Block[] }): ReactElement {
   const poll = useStore((s) => s.poll);
   const governor = useStore((s) => s.governor);
   const rev = useStore((s) => s.room.rev);
-  const strips = liveStrips(blocks, poll, governor);
+  const propellant = useStore((s) => s.propellant);
+  const strips = liveStrips(blocks, poll, governor, propellant);
   const { busy, error, run } = useRun();
   return (
     <>
@@ -226,7 +227,7 @@ function RoomEditor(): ReactElement {
     setBusy(true);
     setError(null);
     try {
-      await api.resetRoom(part);
+      await api.resetRoom(part, base.current);
       setEditingRoom(false);
     } catch (e) {
       setError(messageOf(e));

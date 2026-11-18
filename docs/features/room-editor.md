@@ -20,7 +20,7 @@ SAVE keeps the layout for every browser. If another window saved first, the save
 
 ## Hidden but live
 
-A hidden block that has something going on says so in a strip above the room, with SHOW: `T-MINUS: poll open, 2 of 4 answered.` (the poll still counts and still ends), `MAX Q: 3 messages wait for a free slot.` A console that needs you is in the Needs strip, which is not a block. The Patch Panel has SHOW (a block) for each hidden one.
+A hidden block that has something going on says so in a strip above the room, with SHOW: `T-MINUS: poll open, 2 of 4 answered.` (the poll still counts and still ends), `MAX Q: 3 messages wait for a free slot.`, `PROPELLANT: near the budget (week).` (from 80 % of a limit or a budget) A console that needs you is in the Needs strip, which is not a block. The Patch Panel has SHOW (a block) for each hidden one.
 
 ## On a phone
 
@@ -28,4 +28,4 @@ A phone shows the same layout, read-only: the wall's blocks one under the other 
 
 ## API
 
-Browser token. `GET /api/room` → `{ rev, layout: { blocks, desks } | null }`. `PUT /api/room` with `{ rev, blocks, desks? }`: `rev` is the revision the draft was made from (409 if it is not the current one; 400 with the field for a bad layout: a block outside the grid or smaller than its minimum, two shown blocks that overlap, OPERATIONS hidden). `DELETE /api/room` resets; `?part=desks` only the order. A `room` frame carries the view. The file is `<home>/room.json` (mode 0600); a damaged one is kept as `room.json.bad` and the default layout is used.
+Browser token. `GET /api/room` → `{ rev, layout: { blocks, desks } | null }`. `PUT /api/room` with `{ rev, blocks, desks? }`: `rev` is the revision the draft was made from (409 if it is not the current one; 400 with the field for a bad layout: a block outside the grid or smaller than its minimum, two shown blocks that overlap, OPERATIONS hidden). `DELETE /api/room?rev=<n>` resets (the revision you saw: 400 without it, 409 if it is stale); `&part=desks` only the order. A `room` frame carries the view. The file is `<home>/room.json` (mode 0600); a damaged one (not JSON, or not a layout) is kept as `room.json.bad` and the default layout is used; one that cannot be read at all (permissions) is left where it is. A block this version lacks comes in hidden, in its default place (the consoles go under everything); one it does not know is dropped: a new block or a downgrade never resets your layout.

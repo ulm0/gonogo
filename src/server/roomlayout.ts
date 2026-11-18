@@ -27,8 +27,8 @@ export interface RoomLayoutStore {
   view(): RoomView;
   /** The input is a JSON value from the wire: `{ rev, blocks, desks? }`. A bad one is bad_request with the field, a stale `rev` a conflict. */
   save(input: unknown): Promise<RoomView>;
-  /** Back to today's page: all of it, or only the order of the desks. */
-  reset(part: 'all' | 'desks'): Promise<RoomView>;
+  /** Back to today's page: all of it, or only the order of the desks. `rev` is the revision the Director saw: a stale one is a conflict, as for a save. */
+  reset(part: 'all' | 'desks', rev: number): Promise<RoomView>;
   close(): Promise<void>;
 }
 
@@ -72,7 +72,10 @@ export function createRoomLayout(options: RoomLayoutOptions): RoomLayoutStore {
         if (!checked.ok) throw new Error(checked.error);
         current = { rev: saved.rev as number, layout: { blocks: checked.blocks, desks: checked.desks } };
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') return;
+        // a file we cannot read (permissions, not a file) is not a bad file: it stays where it is, the default layout is used, and the next save will fail loudly
+        if (typeof code === 'string') return void log.error(`${ROOM_FILE} could not be opened (${code}); the room uses the default layout and the file is left as it is`);
         // kept aside, and the default layout is used: the next save cannot overwrite what was there
         log.error(`${ROOM_FILE} could not be read; the room uses the default layout and the file is kept as ${ROOM_FILE}.bad`, error instanceof SyntaxError ? 'not valid JSON' : error);
         await rename(path, `${path}.bad`).catch(() => undefined);
@@ -91,7 +94,8 @@ export function createRoomLayout(options: RoomLayoutOptions): RoomLayoutStore {
       return change({ rev: current.rev + 1, layout: { blocks: checked.blocks, desks: checked.desks } });
     },
 
-    async reset(part) {
+    async reset(part, rev) {
+      if (rev !== current.rev) throw new HubError('conflict', `the room was saved by another window (revision ${current.rev}, not ${String(rev)}): reload it, then reset`, 'rev');
       if (current.layout === null) return current;
       if (part === 'desks') return change({ rev: current.rev + 1, layout: { blocks: current.layout.blocks, desks: { ...DEFAULT_DESKS, order: [] } } });
       return change({ rev: current.rev + 1, layout: null });

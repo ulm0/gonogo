@@ -5,7 +5,9 @@
  */
 import { CATALOGUE, GRID_COLUMNS, place, swapKeys } from '../shared/layout.js';
 import type { Block, BlockId, DeskOrder, DeskSort } from '../shared/layout.js';
-import type { GovernorView, PollView } from '../shared/protocol.js';
+import { FUEL_WINDOWS } from '../shared/protocol.js';
+import type { GovernorView, PollView, PropellantView } from '../shared/protocol.js';
+import { budgetLevel, fuelLevel } from './wall.js';
 
 /** The row height of the editor's grid and the gap between cells, in pixels: the pointer is turned into cells with them. */
 export const EDIT_ROW_PX = 64;
@@ -80,7 +82,7 @@ export interface Strip {
 }
 
 /** A hidden block with something going on says so: a poll that is open or held, mail that waits for a free slot. */
-export function liveStrips(blocks: readonly Block[], poll: PollView | null, governor: GovernorView): Strip[] {
+export function liveStrips(blocks: readonly Block[], poll: PollView | null, governor: GovernorView, fuel?: PropellantView): Strip[] {
   const hidden = (id: BlockId): boolean => blocks.some((b) => b.id === id && b.hidden === true);
   const out: Strip[] = [];
   if (hidden('tminus') && poll !== null) {
@@ -90,6 +92,16 @@ export function liveStrips(blocks: readonly Block[], poll: PollView | null, gove
   }
   if (hidden('maxq') && governor.holding > 0) {
     out.push({ block: 'maxq', text: `MAX Q: ${governor.holding} ${governor.holding === 1 ? 'message waits' : 'messages wait'} for a free slot.` });
+  }
+  if (hidden('propellant') && fuel !== undefined) {
+    // at 80 % of a limit or a budget the light turns amber on the page; a hidden block must not hide that
+    let worst: { level: 'warn' | 'over'; window: string; money: boolean } | null = null;
+    for (const w of FUEL_WINDOWS) {
+      for (const [level, money] of [[fuelLevel(fuel.room, w), false], [budgetLevel(fuel.cost.room, w), true]] as const) {
+        if ((level === 'warn' || level === 'over') && (worst === null || (level === 'over' && worst.level === 'warn'))) worst = { level, window: w, money };
+      }
+    }
+    if (worst !== null) out.push({ block: 'propellant', text: `PROPELLANT: ${worst.level === 'over' ? 'over' : 'near'} the ${worst.money ? 'budget' : 'limit'} (${worst.window}).` });
   }
   return out;
 }
