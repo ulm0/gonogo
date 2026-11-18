@@ -127,6 +127,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
        gonogo reload
+       gonogo tui [--url <address>] [--token <token>] [--home <dir>]
 
 Run a mission-control room of Claude Code agents from a browser tab.
 
@@ -134,6 +135,7 @@ Commands:
   doctor                list the agent CLIs on the PATH with their versions, and the install command of each missing one
   reload                hand over to the installed gonogo without stopping the agents (needs --pty-host on the running one)
   update                print the command that updates gonogo the way it was installed (it never runs it)
+  tui                   a terminal client of a running gonogo: the room, the inbox, go and no-go, and a console (gonogo tui --help)
 
 Options:
   --port <n>            listen port (default ${DEFAULT_PORT}; env GONOGO_PORT)
@@ -1011,6 +1013,13 @@ function installProcessHandlers(running: Running, log: Logger, argv: string[] = 
 
 export async function main(argv: string[], env: Env = process.env): Promise<void> {
   guardStreams();
+
+  // `gonogo tui` is a client of a server that runs already: it starts nothing here
+  if (argv[0] === 'tui') {
+    const { tuiMain } = await import('./tui-cli.js');
+    exit(await tuiMain(argv.slice(1), env));
+    return;
+  }
 
   const parsed = parseArgs(argv);
   if (parsed.kind === 'help') {
