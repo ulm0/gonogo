@@ -86,6 +86,7 @@ export default defineConfig({
           { text: 'Downlink', link: '/features/downlink' },
           { text: 'Party Line', link: '/features/party-line' },
           { text: 'Notifications', link: '/features/notifications' },
+          { text: 'gonogo tui', link: '/features/tui' },
           { text: 'Mission Log', link: '/features/mission-log' },
           { text: 'Star Chart', link: '/features/star-chart' },
           { text: 'Mass Budget', link: '/features/mass-budget' },
