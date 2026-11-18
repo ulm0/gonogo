@@ -184,3 +184,39 @@
     justify-self: start;
   }
 }
+
+/* Default models: a line for each engine, the name field growing and the key beside it. */
+.rules-models {
+  width: 100%;
+}
+
+.rules-model-list {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules-model {
+  display: grid;
+  grid-template-columns: minmax(96px, 150px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.rules-model .error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .rules-model {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .rules-model > label {
+    grid-column: 1 / -1;
+  }
+}

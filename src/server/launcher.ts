@@ -488,7 +488,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       tokenFile: join(base, AGENT_TOKEN_FILE),
       token,
       seed: options.seed,
-      model: agent.model,
+      model: agent.model ?? options.defaultModel?.(provider),
     };
     const start = buildProviderStart(provider, ctx);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
@@ -577,7 +577,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model });
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude') });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       let spec: PreparedStart['spec'];

@@ -85,6 +85,7 @@ import type { Propellant } from './propellant.js';
 import type { Recorder } from './recorder.js';
 import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
+import type { ModelDefaultsStore } from './models.js';
 import type { Relief } from './relief.js';
 import type { Rollout } from './rollout.js';
 import type { Schedules } from './schedules.js';
@@ -135,6 +136,8 @@ export interface WebOptions {
   liveries?: Pick<Liveries, 'view' | 'select' | 'remove' | 'submit' | 'design'>;
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'test'>;
+  /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
+  models?: Pick<ModelDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
   docking?: Pick<Docking, 'view' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
@@ -1003,6 +1006,18 @@ export function createWebServer(options: WebOptions): WebServer {
         };
       }
       return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await liveries.remove(s[2] ?? '')) };
+    }
+    if (s[1] === 'models' && s.length <= 3) {
+      const models = options.models;
+      if (!models) return null;
+      if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, models.view()) };
+      return {
+        allow: ['PUT'],
+        run: async (req, res) => {
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await models.set(decodeURIComponent(s[2] ?? ''), body.model));
+        },
+      };
     }
     if (s[1] === 'relay' && s.length <= 4) {
       const relay = options.relay;

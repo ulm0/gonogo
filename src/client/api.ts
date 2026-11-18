@@ -56,6 +56,8 @@ import type {
   UplinkPatch,
   UplinkRequest,
   UplinkView,
+  ModelDefaults,
+  Provider,
   UserMessageRequest,
   WorktreeStatus,
 } from '../shared/protocol.js';
@@ -346,6 +348,22 @@ export async function edit(name: string, request: EditRequest): Promise<AgentVie
 }
 
 /** Pad Check: where each engine is on the server's PATH and what its `--version` says. */
+/** Default models: the room's model for each engine, used when a console has none of its own. */
+export async function modelDefaults(): Promise<ModelDefaults> {
+  return toModelDefaults(await call('GET', '/models'));
+}
+
+/** Sets the room's model for one engine; null or empty clears it. */
+export async function setModelDefault(provider: Provider, model: string | null): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', `/models/${encodeURIComponent(provider)}`, { model }));
+}
+
+function toModelDefaults(value: unknown): ModelDefaults {
+  const models = asRecord(asRecord(value)?.models);
+  if (models === null) throw failure('The server sent an answer gonogo does not understand.');
+  return value as ModelDefaults;
+}
+
 export async function engines(): Promise<EngineCheck[]> {
   const list = await call('GET', '/engines');
   if (!Array.isArray(list) || !list.every((e) => typeof asRecord(e)?.provider === 'string')) throw failure('The server sent an answer gonogo does not understand.');

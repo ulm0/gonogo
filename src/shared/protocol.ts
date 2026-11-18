@@ -617,6 +617,11 @@ export interface RelayTargetView {
   to: string;
   last: RelayLast | null;
 }
+/** Default models: the room's model for each engine that takes one (PROVIDER_INFO.model), applied when an agent has none of its own. Names only, never a secret. */
+export interface ModelDefaults {
+  models: Partial<Record<Provider, string>>;
+}
+
 export interface RelayView {
   slack: RelayTargetView | null;
   telegram: RelayTargetView | null;
@@ -1496,6 +1501,8 @@ export interface LauncherOptions {
   claudeBin?: string;
   /** Clearance: the values of an agent's keys, put in that agent's environment only. Default none. */
   keys?: (name: string) => Record<string, string>;
+  /** Default models: the model of a provider that the room sets, used when an agent has no `model` of its own. Default none. */
+  defaultModel?: (provider: Provider) => string | undefined;
   log?: Logger;
 }
 

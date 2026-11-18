@@ -53,6 +53,7 @@ import { createTasks } from './tasks.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
+import { createModelDefaults } from './models.js';
 import { cachedLatest, createRollout, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import type { WebServer } from './web.js';
 
@@ -355,6 +356,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
 
     const clearance = createClearance({ dir: home.dir, log: log.child('clearance') });
     await clearance.load();
+    const modelDefaults = createModelDefaults({ dir: home.dir, log: log.child('models') });
+    await modelDefaults.load();
     const launcher = createLauncher({
       homeDir: home.dir,
       hubUrl: () => baseUrl,
@@ -362,6 +365,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       env,
       agentCmd,
       keys: (name) => clearance.values(name),
+      defaultModel: (provider) => modelDefaults.get(provider),
       log: log.child('launcher'),
     });
 
@@ -647,6 +651,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       blackBox,
       liveries: audited(liveries, blackBox.record, LIVERIES_AUDIT),
       relay: audited(relay, blackBox.record, RELAY_AUDIT),
+      models: modelDefaults,
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -718,6 +723,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('livery close', () => liveries.close());
       await step('relief close', async () => relief.close());
       await step('relay close', () => relay.close());
+      await step('models close', () => modelDefaults.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
       await step('prices close', () => prices.close());

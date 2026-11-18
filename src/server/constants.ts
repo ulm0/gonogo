@@ -416,6 +416,8 @@ export const PRICES_FILE = 'prices.json';
 export const BUDGET_MAX_USD = 1_000_000;
 /** Clearance (docs/engine-bay-spec.md): the values of the keys set for each agent, mode 0600. The roster keeps their names only. */
 export const KEYS_FILE = 'keys.json';
+/** Default models (docs/engine-bay-spec.md): the room's model for each engine, `{ version: 1, models: { claude: 'sonnet' } }`. */
+export const MODELS_FILE = 'models.json';
 /** Pad Check: `<bin> --version` gets this long, and its first line is cut to this many characters. */
 export const ENGINE_VERSION_MS = 5_000;
 export const ENGINE_VERSION_CHARS = 80;
