@@ -443,6 +443,8 @@ export const KEYS_FILE = 'keys.json';
 /** Default models (docs/engine-bay-spec.md): the room's model for each engine, `{ version: 1, models: { claude: 'sonnet' } }`. */
 export const MODELS_FILE = 'models.json';
 export const QUOTA_FILE = 'quota.json';
+/** Feature toggles (docs/features-spec.md): `{ version: 1, off: ['static-fire'] }`, only the off ids. */
+export const FEATURES_FILE = 'features.json';
 /** Tool permissions (docs/features/permissions.md): the room's rules, `{ version: 1, permissions: { allow: [...], ask: [...], deny: [...] } }`. */
 export const PERMISSIONS_FILE = 'permissions.json';
 /** Pad Check: `<bin> --version` gets this long, and its first line is cut to this many characters. */

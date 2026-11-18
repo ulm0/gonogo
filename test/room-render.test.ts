@@ -73,4 +73,30 @@ describe('the room drawn to a string', () => {
     expect(out.match(/class="re-block module"/g)).toHaveLength(6);
     expect(out).not.toContain('RESTORE');
   });
+
+  it('leaves out the block of a feature that is off, settles the others around the gap, and keeps its entry in the saved layout', () => {
+    load({ features: ['maxq'], room: { rev: 1, layout: { blocks: DEFAULT_BLOCKS.map((b) => ({ ...b })), desks: DEFAULT_DESKS } } });
+    const out = html();
+    expect(out).not.toContain('data-block="maxq"');
+    // PROPELLANT was at column 11: with MAX Q gone it settles up and stays where it was in the row, the saved file is untouched
+    expect(out).toContain('data-block="propellant"');
+    expect(store.getState().room.layout?.blocks.find((b) => b.id === 'maxq')).toMatchObject({ x: 8, y: 0, w: 2, h: 2 });
+  });
+
+  it('draws the editor without the block of an off feature, and the tray says so with no RESTORE for it', () => {
+    const blocks = hide(DEFAULT_BLOCKS.map((b) => ({ ...b })), 'maxq');
+    load({ features: ['maxq'], editingRoom: true, room: { rev: 2, layout: { blocks, desks: DEFAULT_DESKS } } });
+    const out = html().replace(/<!-- -->/g, '');
+    expect(out).toContain('MAX Q: off in Features');
+    expect(out).not.toContain('RESTORE MAX Q');
+    expect(out).not.toContain('Hide MAX Q');
+  });
+
+  it('draws the editor of a layout whose T-minus is on and shown, and leaves T-minus out when that feature goes off', () => {
+    const blocks = DEFAULT_BLOCKS.map((b) => ({ ...b }));
+    load({ editingRoom: true, room: { rev: 2, layout: { blocks, desks: DEFAULT_DESKS } } });
+    expect(html()).toContain('T-MINUS, column');
+    load({ features: ['tminus'], editingRoom: true, room: { rev: 2, layout: { blocks, desks: DEFAULT_DESKS } } });
+    expect(html()).not.toContain('T-MINUS, column');
+  });
 });

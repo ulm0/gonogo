@@ -1067,7 +1067,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
 
   /** The wait note when the load limit keeps this idle recipient's pointer back; Director messages (and polls) always pass. */
   function loadLimitNote(rt: Rt): string | null {
-    if (limit === null) return null;
+    if (limit === null || io.featureOn?.('maxq') === false) return null;
     const working = workingCount();
     if (working < limit || queued(rt).some((record) => record.from === 'user')) return null;
     return `${LOAD_LIMIT_NOTE} (${working} of ${limit} agents working)`;
@@ -1224,10 +1224,17 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     return { resumed };
   }
 
+  function refreshLimits(): void {
+    for (const rt of agents.values()) {
+      if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_COALESCE_MS);
+    }
+    publishGovernor();
+  }
+
   /** Telemetry: every tool hook goes to the recorder; a failure there never touches the hub's own handling. */
   function toolHook(rt: Rt, event: HookEvent, payload: Record<string, unknown>): void {
     try {
-      io.toolHook?.(rt.record.name, event, payload);
+      if (io.featureOn?.('telemetry') !== false) io.toolHook?.(rt.record.name, event, payload);
     } catch (error) {
       log.warn('telemetry failed', error);
     }
@@ -2795,6 +2802,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const req = asObject(request, 'the request');
     if (pollState !== null) throw new HubError('conflict', 'clear the poll first');
     const subject = staticFireSubject(req);
+    if (subject !== undefined && io.featureOn?.('static-fire') === false) throw new HubError('feature_off', 'Static fire is off', 'subject');
     const targets =
       subject === undefined
         ? pollTargets(req.agents)
@@ -3163,6 +3171,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     resume,
     holdAll,
     resumeAll,
+    refreshLimits,
     readMessages,
     rosterFor,
     onHook,

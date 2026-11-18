@@ -30,6 +30,7 @@ import {
   TASK_TITLE_MAX_CHARS,
 } from '../shared/protocol.js';
 import type { AgentIdentity, AgentSendRequest, Hub, Logger, Task } from '../shared/protocol.js';
+import { FEATURE_TOOLS } from '../shared/features.js';
 import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
 import type { Board } from './board.js';
@@ -57,6 +58,8 @@ export interface McpDeps {
   liveries?: Pick<Liveries, 'submit'>;
   /** Relief; absent in tests that do not need it (the tool then answers that it is not available). */
   relief?: Pick<Relief, 'request'>;
+  /** Feature toggles: is a feature switched off? Its tools are then not listed and a call is refused. Default: nothing is off. */
+  featureOff?(id: string): boolean;
   resolveToken(token: string): AgentIdentity | null;
   log: Logger;
   /** Reported to the client in the initialize result; read per request so a late-bound value works. */
@@ -100,6 +103,15 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
   // The identity is captured here, from the token: no tool argument can name a sender.
   const buildServer = ({ agent, generation }: AgentIdentity): McpServer => {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: deps.version?.() ?? '0.0.0' });
+    // the server object is made for each request, so the list of tools is the one of the features that are on now; a tool that is off is
+    // disabled, which leaves it out of tools/list and makes a call of it (an agent that cached the list) an error
+    const off = new Set(Object.entries(FEATURE_TOOLS).flatMap(([id, names]) => (deps.featureOff?.(id) === true ? names : [])));
+    const register = server.registerTool.bind(server) as (name: string, ...rest: unknown[]) => { disable(): void };
+    (server as { registerTool: unknown }).registerTool = (name: string, ...rest: unknown[]) => {
+      const tool = register(name, ...rest);
+      if (off.has(name)) tool.disable();
+      return tool;
+    };
 
     server.registerTool(
       'send_message',

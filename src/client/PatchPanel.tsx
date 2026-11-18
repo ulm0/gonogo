@@ -108,7 +108,8 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
   const [active, setActive] = useState(0);
   const { busy, error, run } = useRun();
   const room = useStore((s) => s.room);
-  const all = useMemo(() => commands({ agents: list, legends, poll, unread, livery, room }), [list, legends, poll, unread, livery, room]);
+  const off = useStore((s) => s.features);
+  const all = useMemo(() => commands({ agents: list, legends, poll, unread, livery, room, off }), [list, legends, poll, unread, livery, room, off]);
   const shown = useMemo(() => matchCommands(all, query), [all, query]);
   const at = Math.min(active, shown.length - 1);
 

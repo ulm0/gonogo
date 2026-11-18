@@ -40,6 +40,18 @@ export interface Command {
   act: Act;
 }
 
+/** The feature a view belongs to; a view without one is core. When the feature is off the page shows the Room. */
+export const VIEW_FEATURE: Partial<Record<View, string>> = {
+  window: 'launch-window',
+  plan: 'flight-plan',
+  log: 'mission-log',
+  livery: 'livery',
+  hangar: 'hangar',
+  recorder: 'recorder',
+  board: 'plot-board',
+  missions: 'missions',
+};
+
 export const VIEW_NAMES: Record<View, string> = {
   room: 'Room',
   loop: 'Loop',
@@ -66,16 +78,20 @@ export interface CommandInput {
   livery: LiveryView;
   /** The saved layout of the room: lines to edit it, reset it and show a hidden block. Absent: only EDIT ROOM. */
   room?: RoomView;
+  /** The features that are off: their views and actions are not offered. */
+  off?: readonly string[];
 }
 
 /** Every line the panel may show now: only actions the page has, and only when they can run (a poll needs somebody to poll). */
-export function commands({ agents, legends, poll, unread, livery, room }: CommandInput): Command[] {
+export function commands({ agents, legends, poll, unread, livery, room, off = [] }: CommandInput): Command[] {
   const out: Command[] = [];
+  const on = (id: string | undefined): boolean => id === undefined || !off.includes(id);
   for (const a of agents) {
     const legend = Object.hasOwn(legends, a.name) ? legends[a.name] : a.name.toUpperCase();
     out.push({ id: `console:${a.name}`, label: `Open ${legend}`, group: 'Console', also: `${a.name} console terminal`, act: { kind: 'console', name: a.name } });
   }
   for (const view of Object.keys(VIEW_NAMES) as View[]) {
+    if (!on(VIEW_FEATURE[view])) continue;
     out.push({ id: `view:${view}`, label: VIEW_NAMES[view], group: 'View', also: view === 'rules' ? 'settings' : '', act: { kind: 'view', view } });
   }
   out.push({ id: 'propellant:prices', label: 'Propellant: prices', group: 'Action', also: 'cost model dollars', act: { kind: 'propellant', part: 'prices' } });
@@ -88,10 +104,10 @@ export function commands({ agents, legends, poll, unread, livery, room }: Comman
       if (b.hidden === true) out.push({ id: `show-block:${b.id}`, label: `Show ${CATALOGUE[b.id].label.toLowerCase()}`, group: 'Action', also: 'block room restore', act: { kind: 'show-block', block: b.id } });
     }
   }
-  out.push({ id: 'new-mission', label: 'New mission', group: 'Action', also: 'goal plan start', act: { kind: 'new-mission' } });
+  if (on('missions')) out.push({ id: 'new-mission', label: 'New mission', group: 'Action', also: 'goal plan start', act: { kind: 'new-mission' } });
   out.push({ id: 'hire', label: 'Staff a console', group: 'Action', also: 'hire new agent', act: { kind: 'hire' } });
   if (agents.some((a) => a.boss)) out.push({ id: 'brief', label: 'Brief FLIGHT', group: 'Action', also: 'mission message', act: { kind: 'brief' } });
-  if (pollButtons(poll).includes('poll') && pollTargets(agents).length > 0) {
+  if (on('tminus') && pollButtons(poll).includes('poll') && pollTargets(agents).length > 0) {
     out.push({ id: 'poll', label: 'Start a T-minus poll', group: 'Action', also: 'go no-go', act: { kind: 'poll' } });
   }
   if (agents.some((a) => a.state !== 'stopped')) out.push({ id: 'all-stop', label: 'ALL STOP: hold every console', group: 'Action', also: 'hold interrupt freeze', act: { kind: 'all-stop' } });

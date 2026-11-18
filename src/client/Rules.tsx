@@ -9,6 +9,7 @@ import * as api from './api.js';
 import { DOCS_URL } from '../shared/protocol.js';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
+import { FeaturesBlock } from './Features.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AllStopBlock, StartupBlock } from './StartupRules.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
@@ -19,7 +20,7 @@ import type { PhoneMode, RelayView } from '../shared/protocol.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commissioningSteps, loadMarks, saveMarks, showCommissioning } from './shell.js';
 import type { Mark, Step } from './shell.js';
-import { openConsole, openEdit, showLivery, showRoom, showRules, showWindow, useStore } from './store.js';
+import { openConsole, openEdit, showLivery, showRoom, showRules, showWindow, useFeature, useStore } from './store.js';
 import { legendOf } from './wall.js';
 import { MaxQ, Propellant } from './WallView.js';
 import './loop.css';
@@ -141,6 +142,7 @@ function ReloadBlock(): ReactElement {
 }
 
 export function FlightRules(): ReactElement {
+  const maxqOn = useFeature('maxq');
   const titleId = useId();
   const list = useAgentList();
   const { legends } = useSeats();
@@ -161,7 +163,7 @@ export function FlightRules(): ReactElement {
       </header>
       <p className="hint">Every setting of the room. All of them are kept on the server, so every device shows the same; each one also has its place in the room.</p>
       <div className="rules-grid">
-        <MaxQ />
+        {maxqOn && <MaxQ />}
         <Propellant />
         <section className="module rules-block" aria-labelledby={`${titleId}-look`}>
           <h2 className="label" id={`${titleId}-look`}>
@@ -190,6 +192,7 @@ export function FlightRules(): ReactElement {
       <PermissionDefaultsBlock />
       <StartupBlock />
       <AllStopBlock />
+      <FeaturesBlock />
       <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
         <h2 className="label" id={`${titleId}-consoles`}>
           CONSOLES

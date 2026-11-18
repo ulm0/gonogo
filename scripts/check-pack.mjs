@@ -54,6 +54,7 @@ export function listProblems(entries, serverModules) {
     'package/dist/shared/layout.js',
     'package/dist/shared/livery.js',
     'package/dist/shared/prices.js',
+    'package/dist/shared/features.js',
     'package/dist/client/index.html',
     'package/dist/client/THIRD-PARTY-NOTICES.md',
     ...serverModules.map((m) => `package/dist/server/${m}.js`),
@@ -64,7 +65,7 @@ export function listProblems(entries, serverModules) {
     /^package\/package\.json$/,
     /^package\/README\.md$/,
     /^package\/licen[cs]e(\.[^/]+)?$/i,
-    /^package\/dist\/shared\/(protocol|positions|fuel|cron|diff|layout|livery|prices)\.js$/,
+    /^package\/dist\/shared\/(protocol|positions|fuel|cron|diff|layout|livery|prices|features)\.js$/,
     /^package\/dist\/client\/.+/,
   ];
   for (const e of entries) {

@@ -92,6 +92,8 @@ import type { ModelDefaultsStore } from './models.js';
 import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
 import type { StartupStore } from './startup.js';
+import type { FeatureStore } from './features.js';
+import { featureOfRoute } from '../shared/features.js';
 import type { Rollout } from './rollout.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
@@ -177,6 +179,8 @@ export interface WebOptions {
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
   /** The startup policy; absent in tests that do not need it (the routes answer 404). */
   startup?: Pick<StartupStore, 'view' | 'set'>;
+  /** Feature toggles; absent in tests that do not need it (every feature is then on and the routes answer 404). */
+  features?: Pick<FeatureStore, 'view' | 'isOn' | 'label' | 'plan' | 'apply'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
   rollout?: Pick<Rollout, 'view'>;
   /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
@@ -210,6 +214,7 @@ const ERROR_STATUS: Record<ApiErrorCode, number> = {
   internal: 500,
   unavailable: 503,
   rate_limited: 429,
+  feature_off: 404,
 };
 
 const MIME: Record<string, string> = {
@@ -574,6 +579,7 @@ export function createWebServer(options: WebOptions): WebServer {
     board: options.board,
     liveries: options.liveries,
     relief: options.relief,
+    featureOff: (id) => options.features?.isOn(id) === false,
     log: log.child('mcp'),
     version: () => options.info().version,
   });
@@ -660,6 +666,7 @@ export function createWebServer(options: WebOptions): WebServer {
     livery: options.liveries?.view(),
     docking: options.docking?.view(),
     relief: options.relief?.view(),
+    features: options.features?.view(),
     rollout: options.rollout?.view(),
   });
 
@@ -1273,6 +1280,22 @@ export function createWebServer(options: WebOptions): WebServer {
         },
       };
     }
+    if (s[1] === 'features' && s.length === 2) {
+      const features = options.features;
+      if (!features) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, features.view());
+          const body = await jsonObject(req, res);
+          if (!body) return;
+          // without `confirm` the answer is the plan and nothing changes; with it the same plan is worked out again and applied
+          if (body.confirm !== true) return sendJson(res, 200, { applied: false, plan: features.plan(body), ...features.view() });
+          const done = await features.apply(body);
+          sendJson(res, 200, { applied: true, plan: done.plan, ...done.view });
+        },
+      };
+    }
     if (s[1] === 'relief' && s.length <= 4) {
       const relief = options.relief;
       if (!relief) return null;
@@ -1436,6 +1459,12 @@ export function createWebServer(options: WebOptions): WebServer {
       sendNotFound(res);
       return;
     }
+    // a feature the Director switched off answers as a route that is not there, before its handler runs
+    const owner = featureOfRoute(segments.slice(1));
+    if (owner !== null && options.features?.isOn(owner) === false) {
+      sendApiError(res, 404, `${options.features.label(owner)} is off`, 'feature_off');
+      return;
+    }
     const method = req.method ?? 'GET';
     if (!route.allow.includes(method)) {
       sendMethodNotAllowed(res, route.allow.join(', '));
@@ -1533,7 +1562,7 @@ export function createWebServer(options: WebOptions): WebServer {
   const handleUplink = async (req: IncomingMessage, res: ServerResponse, segments: string[]): Promise<void> => {
     const uplinks = options.uplinks;
     const id = segments[1];
-    if (!uplinks || segments.length !== 2 || !id) {
+    if (!uplinks || segments.length !== 2 || !id || options.features?.isOn('uplink') === false) {
       sendNotFound(res);
       return;
     }
@@ -1568,7 +1597,7 @@ export function createWebServer(options: WebOptions): WebServer {
   const handleDock = async (req: IncomingMessage, res: ServerResponse, segments: string[]): Promise<void> => {
     const docking = options.docking;
     const route = segments[1] ?? '';
-    if (!docking || segments.length !== 2 || !Object.hasOwn(DOCK_ROUTES, route)) {
+    if (!docking || segments.length !== 2 || !Object.hasOwn(DOCK_ROUTES, route) || options.features?.isOn('docking') === false) {
       sendNotFound(res);
       return;
     }

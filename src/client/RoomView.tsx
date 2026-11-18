@@ -38,7 +38,7 @@ import {
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
 import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
-import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showLoop, useNow, useStore } from './store.js';
+import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showLoop, useFeature, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { EditRoomKey } from './EditRoomKey.js';
@@ -348,6 +348,8 @@ export function YourConsole(): ReactElement {
 /** The row of actions of a console. START is a button of the foot of a stopped console, not of this row. */
 function Actions({ agent, onRemove, removeRef, locked, run }: { agent: AgentView; onRemove(): void; removeRef: RefObject<HTMLButtonElement | null>; locked: boolean; run(action: () => Promise<unknown>): void }): ReactElement {
   const mode = consoleMode(agent);
+  const hangarOn = useFeature('hangar');
+  const recorderOn = useFeature('recorder');
   return (
     <div className="panel-actions">
       {holdable(agent) && (
@@ -368,12 +370,16 @@ function Actions({ agent, onRemove, removeRef, locked, run }: { agent: AgentView
       <button type="button" className="btn" data-kind="quiet" aria-disabled={locked || undefined} onClick={() => !locked && openEdit(agent.name)}>
         Edit
       </button>
-      <button type="button" className="btn" data-kind="quiet" onClick={() => openHangar(agent.name)}>
-        Open files
-      </button>
-      <button type="button" className="btn" data-kind="quiet" onClick={() => openRecorder(agent.name)}>
-        Open git
-      </button>
+      {hangarOn && (
+        <button type="button" className="btn" data-kind="quiet" onClick={() => openHangar(agent.name)}>
+          Open files
+        </button>
+      )}
+      {recorderOn && (
+        <button type="button" className="btn" data-kind="quiet" onClick={() => openRecorder(agent.name)}>
+          Open git
+        </button>
+      )}
       {!agent.boss && (
         <button type="button" className="btn" data-kind="danger" ref={removeRef} aria-disabled={locked || undefined} onClick={() => !locked && onRemove()}>
           Remove
@@ -516,6 +522,8 @@ function WorktreeLine({ agent }: { agent: AgentView }): ReactElement | null {
 }
 
 function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: string; position: Position | null }): ReactElement {
+  const massOn = useFeature('mass-budget');
+  const telemetryOn = useFeature('telemetry');
   const now = useNow();
   const activity = useStore((s) => s.activity);
   const { busy, error, run } = useRun();
@@ -552,7 +560,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
       {details.length > 0 && <p className="panel-details">{details.join(' · ')}</p>}
       <CleanRoomLine agent={agent} />
       <WorktreeLine agent={agent} />
-      <MassBudget agent={agent} />
+      {massOn && <MassBudget agent={agent} />}
       {confirming && (
         <Remove
           agent={agent}
@@ -573,7 +581,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
           <AgentFuel name={agent.name} />
         </details>
       )}
-      <AgentTelemetry name={agent.name} />
+      {telemetryOn && <AgentTelemetry name={agent.name} />}
       <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
     </aside>
   );
@@ -658,6 +666,8 @@ function PhoneGo({ agent, legend, n, onTerminal }: { agent: AgentView; legend: s
 }
 
 function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend: string; position: Position | null; n: number }): ReactElement {
+  const massOn = useFeature('mass-budget');
+  const telemetryOn = useFeature('telemetry');
   const now = useNow();
   const activity = useStore((s) => s.activity);
   const { busy, error, run } = useRun();
@@ -699,7 +709,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
         </button>
       </div>
       {more && <Actions agent={agent} onRemove={() => setConfirming(true)} removeRef={removeRef} locked={locked} run={run} />}
-      {more && <MassBudget agent={agent} />}
+      {more && massOn && <MassBudget agent={agent} />}
       {error !== null && (
         <p className="error" role="alert">
           {error}
@@ -723,7 +733,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
       <TerminalPane agent={agent} />
       <Foot agent={agent} run={run} locked={locked} />
       <div className="phone-traffic">
-        <AgentTelemetry name={agent.name} />
+        {telemetryOn && <AgentTelemetry name={agent.name} />}
         <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
       </div>
       <div className="phone-keys" role="group" aria-label="Terminal keys">

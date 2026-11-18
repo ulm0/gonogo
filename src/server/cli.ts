@@ -6,7 +6,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
 import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
-import type { DownlinkNotify, Hub, HubIo, InstallKind, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
+import type { AuditRecord, DownlinkNotify, Hub, HubIo, InstallKind, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
 import {
   CLAUDE_BIN,
   DEFAULT_HOME_DIRNAME,
@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, FEATURES_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -49,6 +49,8 @@ import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
 import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
+import { createFeatureStore } from './features.js';
+import { toolsOff } from '../shared/features.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
@@ -133,7 +135,6 @@ export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
        gonogo reload
-       gonogo tui [--url <address>] [--token <token>] [--home <dir>]
 
 Run a mission-control room of Claude Code agents from a browser tab.
 
@@ -141,7 +142,6 @@ Commands:
   doctor                list the agent CLIs on the PATH with their versions, and the install command of each missing one
   reload                hand over to the installed gonogo without stopping the agents (needs --pty-host on the running one)
   update                print the command that updates gonogo the way it was installed (it never runs it)
-  tui                   a terminal client of a running gonogo: the room, the inbox, go and no-go, and a console (gonogo tui --help)
 
 Options:
   --port <n>            listen port (default ${DEFAULT_PORT}; env GONOGO_PORT)
@@ -443,6 +443,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       agentCmd,
       keys: (name) => clearance.values(name),
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
+      toolsOff: () => toolsOff(features.view().off),
       defaultPermissions: () => permissionDefaults.get(),
       log: log.child('launcher'),
     });
@@ -475,7 +476,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       // the 80 % budget warning: the inbox and Relay, not the Black Box (it is not a trip)
       notify: (kind, text) => {
         downlink.post(kind, text);
-        relay.event(kind, text);
+        if (features.isOn('relay')) relay.event(kind, text);
       },
       projectsRoot: join(env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude'), 'projects'),
       now: () => Date.now(),
@@ -492,6 +493,19 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('downlink'),
     });
     await downlink.load();
+    // Feature toggles: every gate below asks this store, so a switch is the same for the page, the routes, the tools and the background work
+    const features = createFeatureStore({ dir: home.dir, emit: (view) => web?.broadcast({ t: 'features', features: view }), context: () => ({ pollOpen: hubInstance.poll()?.status === 'open', running: hubInstance.views().filter((v) => v.state !== 'stopped').map((v) => v.name) }), changed: () => {
+        hubInstance.refreshLimits();
+        // a finished poll (go, hold, aborted) that nobody cleared would stay on the wall with its block gone: it goes with T-minus
+        if (!features.isOn('tminus') && hubInstance.poll() !== null) {
+          try {
+            hubInstance.clearPoll();
+          } catch (error) {
+            log.warn('could not clear the finished poll', error);
+          }
+        }
+      }, log: log.child('features') });
+    await features.load();
     const relay = createRelay({
       dir: home.dir,
       now: () => Date.now(),
@@ -508,14 +522,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       path: env.PATH,
       log: log.child('black box'),
     });
+    /** What the audit tables tell the Black Box (core: it cannot be switched off, so the audit trail has no gap). */
+    const audit: AuditRecord = (kind, text) => blackBox.record(kind, text);
     /** What the parts of the server tell the Director's inbox goes to the targets of Relay too; a trip and a poll result go to the Black Box. */
     let phone: Phone | null = null;
     const tell: DownlinkNotify = (kind, text, ref) => {
       downlink.post(kind, text);
-      relay.event(kind, text);
+      if (features.isOn('relay')) relay.event(kind, text);
       if (ref !== undefined) phone?.approval(ref, text);
-      if (kind === 'redline') blackBox.record('redline', tripText(text));
-      else if (kind === 'tminus') blackBox.record('poll', pollText(text));
+      if (kind === 'redline') audit('redline', tripText(text));
+      else if (kind === 'tminus') audit('poll', pollText(text));
     };
 
     /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, a mission's budget the agents working on it, an agent's own only that agent. */
@@ -558,6 +574,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       startup: () => startupStore.view(),
       runSet: () => runState.previous(),
       markRun: (name, running, working) => runState.mark(name, running, working),
+      featureOn: (id) => features.isOn(id),
       saveRoster: (r) => home.saveRoster(r),
       loadHistory: async (n) => home.loadRecentMessages(n),
       logMessage: (r) => home.appendMessage(r),
@@ -613,7 +630,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (event) => {
         web?.broadcast(event);
         downlink.observe(event);
-        relay.observe(event);
+        if (features.isOn('relay')) relay.observe(event);
       },
       notify: tell,
       log: log.child('hub'),
@@ -647,6 +664,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       setTimer: io.setTimer,
       clearTimer: io.clearTimer,
       send: (request) => hubInstance.sendFromUser(request),
+      enabled: () => features.isOn('launch-window'),
       emit: (list) => web?.broadcast({ t: 'schedules', schedules: list }),
       notify: tell,
       log: log.child('launch window'),
@@ -691,7 +709,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (list) => web?.broadcast({ t: 'missions', missions: list }),
       notify: tell,
       log: log.child('missions'),
-    }), blackBox.record, MISSIONS_AUDIT);
+    }), audit, MISSIONS_AUDIT);
     missionsRef = missions;
     const docking = createDocking({
       dir: home.dir,
@@ -803,21 +821,21 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       allowedHosts,
       staticDir,
       // what the Director does through the browser is told to the Black Box by these copies
-      hub: audited(hubInstance, blackBox.record, HUB_AUDIT),
+      hub: audited(hubInstance, audit, HUB_AUDIT),
       terminals: terminalHost,
       resolveToken: (token) => launcher.resolveToken(token),
       info,
       isReady: () => ready,
-      propellant: audited(propellant, blackBox.record, PROPELLANT_AUDIT),
-      prices: audited(prices, blackBox.record, PRICES_AUDIT),
+      propellant: audited(propellant, audit, PROPELLANT_AUDIT),
+      prices: audited(prices, audit, PRICES_AUDIT),
       // a changed price or budget is checked at once, not at the next reply
       spendChanged: () => {
         propellant.recheck();
         for (const v of hub?.views() ?? []) if (v.provider === 'claude') enforce(v.name);
       },
       telemetry,
-      schedules: audited(schedules, blackBox.record, SCHEDULES_AUDIT),
-      uplinks: audited(uplinks, blackBox.record, UPLINKS_AUDIT),
+      schedules: audited(schedules, audit, SCHEDULES_AUDIT),
+      uplinks: audited(uplinks, audit, UPLINKS_AUDIT),
       tasks,
       missions,
       room,
@@ -825,11 +843,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       downlink,
       missionLog,
       massBudget,
-      board: audited(board, blackBox.record, BOARD_AUDIT),
+      board: audited(board, audit, BOARD_AUDIT),
       blackBox,
-      liveries: audited(liveries, blackBox.record, LIVERIES_AUDIT),
-      relay: audited(relay, blackBox.record, RELAY_AUDIT),
+      liveries: audited(liveries, audit, LIVERIES_AUDIT),
+      relay: audited(relay, audit, RELAY_AUDIT),
       models: modelDefaults,
+      features: audited(features, audit, FEATURES_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
@@ -879,7 +898,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await missionLog.load();
     await board.load();
     await blackBox.load();
-    blackBox.record('audit', `gonogo ${version} started`);
+    audit('audit', `gonogo ${version} started`);
     await liveries.load();
     await docking.load();
     hubStarting = true;
@@ -920,12 +939,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('tab name close', () => tabName.close());
       await step('mission log close', () => missionLog.close());
       await step('board close', () => board.close());
-      blackBox.record('audit', 'gonogo stopped');
+      audit('audit', 'gonogo stopped');
       await step('black box close', () => blackBox.close());
       await step('livery close', () => liveries.close());
       await step('relief close', async () => relief.close());
       await step('relay close', () => relay.close());
       await step('models close', () => modelDefaults.close());
+      await step('features close', () => features.close());
       await step('permissions close', () => permissionDefaults.close());
       await step('startup close', async () => {
         await startupStore.close();
@@ -1077,13 +1097,6 @@ function installProcessHandlers(running: Running, log: Logger, argv: string[] = 
 
 export async function main(argv: string[], env: Env = process.env): Promise<void> {
   guardStreams();
-
-  // `gonogo tui` is a client of a server that runs already: it starts nothing here
-  if (argv[0] === 'tui') {
-    const { tuiMain } = await import('./tui-cli.js');
-    exit(await tuiMain(argv.slice(1), env));
-    return;
-  }
 
   const parsed = parseArgs(argv);
   if (parsed.kind === 'help') {

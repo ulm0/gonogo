@@ -1,3 +1,4 @@
+import type { FeaturePlan } from '../shared/features.js';
 import type {
   AgentView,
   AnswerRequest,
@@ -425,6 +426,19 @@ function toStartupSettings(value: unknown): StartupSettings {
   const record = asRecord(value);
   if (record === null || typeof record.policy !== 'string' || typeof record.carryOn !== 'boolean' || typeof record.bossMayStart !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
   return value as StartupSettings;
+}
+
+/** Feature toggles: the plan of a change (nothing changes), then the same change with `confirm`. `off` is the whole list of off ids. */
+export async function planFeatures(off: string[]): Promise<FeaturePlan> {
+  const answer = asRecord(await call('PUT', '/features', { off }));
+  const plan = asRecord(answer?.plan);
+  if (plan === null || !Array.isArray(plan.turnOff)) throw failure('The server sent an answer gonogo does not understand.');
+  return plan as unknown as FeaturePlan;
+}
+
+/** `expect` is the `off` list of the plan that was shown: the server refuses (409) when the plan is not that any more. */
+export async function applyFeatures(off: string[], expect: string[]): Promise<void> {
+  await call('PUT', '/features', { off, expect, confirm: true });
 }
 
 export async function engines(): Promise<EngineCheck[]> {

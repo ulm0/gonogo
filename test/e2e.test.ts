@@ -2741,6 +2741,100 @@ describe('end to end with the stand-in agent', () => {
     await again.run.stop();
   }, 120_000);
 
+  it('Feature toggles: a plan changes nothing, a confirmed one is true on the routes, the tools, the allowed tools and the Black Box, and survives a restart', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    await hire(h, 'ana');
+    expect((await api(h, 'GET', '/api/features')).body).toEqual({ off: [] });
+    expect((await getState(h)).features).toEqual({ off: [] });
+
+    // the plan comes first and changes nothing
+    const planned = await api<{ applied: boolean; plan: { turnOff: string[]; forced: string[] }; off: string[] }>(h, 'PUT', '/api/features', { off: ['flight-plan', 'tminus', 'maxq'] });
+    expect(planned.body).toMatchObject({ applied: false, off: [], plan: { turnOff: ['maxq', 'tminus', 'flight-plan'], forced: ['static-fire', 'missions'] } });
+    expect((await api(h, 'POST', '/api/poll')).status).toBe(201);
+    // an open poll blocks turning T-minus off; once it is finished (aborted) it is cleared with the feature
+    expect((await api<ApiError>(h, 'PUT', '/api/features', { off: ['tminus'], expect: ['tminus', 'static-fire'], confirm: true })).status).toBe(409);
+    expect((await api(h, 'POST', '/api/poll/abort')).status).toBe(200);
+    expect((await getState(h)).poll).not.toBeNull();
+    // a core feature, an unknown id and a bad body are refused, and nothing is applied
+    expect((await api<ApiError>(h, 'PUT', '/api/features', { off: ['redline'], expect: [], confirm: true })).status).toBe(409);
+    expect((await api<ApiError>(h, 'PUT', '/api/features', { off: ['maxq', 'nope'], expect: [], confirm: true })).status).toBe(409);
+    expect((await api<ApiError>(h, 'PUT', '/api/features', { off: 'maxq' })).status).toBe(400);
+    expect((await api(h, 'GET', '/api/features')).body).toEqual({ off: [] });
+
+    const c = await Client.open(h);
+    const mark = c.mark();
+    const done = await api<{ applied: boolean; off: string[] }>(h, 'PUT', '/api/features', { off: ['flight-plan', 'tminus', 'maxq'], expect: ['tminus', 'static-fire', 'flight-plan', 'missions', 'maxq'], confirm: true });
+    expect(done.body).toMatchObject({ applied: true, off: ['maxq', 'tminus', 'static-fire', 'flight-plan', 'missions'] });
+    await c.waitFrame((f) => f.t === 'features' && f.features.off.includes('missions'), 5000, 'the features frame', mark);
+    expect((await getState(h)).poll, 'the finished poll went with T-minus').toBeNull();
+    expect(JSON.parse(readFileSync(join(h.home, 'features.json'), 'utf8'))).toEqual({ version: 1, off: ['maxq', 'tminus', 'static-fire', 'flight-plan', 'missions'] });
+
+    // routes: an off feature answers feature_off, the core and the features that are on still work
+    expect(await api<ApiError>(h, 'POST', '/api/poll')).toMatchObject({ status: 404, body: { code: 'feature_off', error: 'T-minus poll is off' } });
+    expect(await api<ApiError>(h, 'GET', '/api/tasks')).toMatchObject({ status: 404, body: { code: 'feature_off' } });
+    expect(await api<ApiError>(h, 'GET', '/api/missions')).toMatchObject({ status: 404, body: { code: 'feature_off', error: 'Missions is off' } });
+    expect((await api(h, 'GET', '/api/state')).status).toBe(200);
+    expect((await api(h, 'GET', '/api/log')).status).toBe(200);
+    expect((await api(h, 'GET', '/api/agents/ana/memory')).status).toBe(200);
+
+    // tools: a call of an off tool is refused, a tool that is on works
+    const tell = async (name: string, line: string): Promise<void> => {
+      const sent = await send(h, name, line, 'toggle');
+      await itemRead(h, sent.body.id);
+      await waitState(h, name, 'idle');
+    };
+    await tell('ana', '@fake task task_list {}');
+    expect(tools(h, 'ana', 'task_list').at(-1)).toMatchObject({ isError: true });
+    await tell('ana', '@fake log log_search {"query":"x"}');
+    expect(tools(h, 'ana', 'log_search').at(-1)?.isError).toBeFalsy();
+
+    // an agent started after the change has no off tool in its allowed tools; core tools stay
+    await hire(h, 'ben');
+    const allowed = starts(h, 'ben')[0]?.argv.slice((starts(h, 'ben')[0]?.argv.indexOf('--allowedTools') ?? 0) + 1) ?? [];
+    expect(allowed).toContain('mcp__gonogo__send_message');
+    expect(allowed).toContain('mcp__gonogo__log_search');
+    for (const gone of ['go_nogo', 'task_list', 'task_create', 'task_update']) expect(allowed).not.toContain(`mcp__gonogo__${gone}`);
+
+    // the Black Box is core: it records the switch itself, and cannot be switched off
+    expect((await api<ApiError>(h, 'PUT', '/api/features', { off: ['black-box'], expect: [], confirm: true })).status).toBe(409);
+    expect((await api<AuditView>(h, 'GET', '/api/black-box')).body.events.map((e) => e.text).join('\n')).toMatch(/Director switched features: off maxq, tminus, flight-plan, static-fire, missions/);
+
+    // a restart keeps the switches
+    await h.run.stop();
+    const again = await startServer({ home: h.home });
+    expect((await api(again, 'GET', '/api/features')).body).toEqual({ off: ['maxq', 'tminus', 'static-fire', 'flight-plan', 'missions'] });
+    expect((await api<ApiError>(again, 'GET', '/api/tasks')).status).toBe(404);
+
+    // turning one on again turns on what it needs, and brings the data back
+    // (only Static fire is asked to come back, and it needs T-minus)
+    const back = await api<{ plan: { turnOn: string[] }; off: string[] }>(again, 'PUT', '/api/features', { off: ['maxq', 'tminus', 'flight-plan', 'missions'], expect: ['maxq', 'flight-plan', 'missions'], confirm: true });
+    expect(back.body.plan.turnOn).toEqual(['tminus']);
+    expect(back.body.off).toEqual(['maxq', 'flight-plan', 'missions']);
+    // the poll route is there again (400: nobody is running after the restart, which is not feature_off)
+    expect((await api<ApiError>(again, 'POST', '/api/poll')).body.code).not.toBe('feature_off');
+    expect((await api<ApiError>(again, 'GET', '/api/tasks')).status).toBe(404);
+    await again.run.stop();
+  }, 120_000);
+
+  it('Feature toggles: Uplink off answers its endpoint as an id that is not there, and Max Q and Launch Window have their own gates', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    await hire(h, 'ana');
+    const made = await api<UplinkCreated>(h, 'POST', '/api/uplinks', { name: 'GitHub', to: 'ana' });
+    const post = (): Promise<Response> => fetch(`${h.base}/uplink/${made.body.id}`, { method: 'POST', headers: { authorization: `Bearer ${made.body.secret}` }, body: '{"text":"hi"}' });
+    expect((await post()).status).toBe(202);
+    expect((await api<{ off: string[] }>(h, 'PUT', '/api/features', { off: ['uplink'], expect: ['uplink', 'relay'], confirm: true })).body.off).toEqual(['uplink', 'relay']);
+    expect((await post()).status).toBe(404);
+    expect((await api<ApiError>(h, 'GET', '/api/uplinks')).body).toMatchObject({ code: 'feature_off' });
+    expect((await api<ApiError>(h, 'GET', '/api/relay')).body).toMatchObject({ code: 'feature_off', error: 'Relay is off' });
+    // Phone approvals has its own switch of the path in Relay, which stays reachable
+    expect((await api(h, 'PUT', '/api/governor', { limit: 2 })).status).toBe(200);
+    expect((await api(h, 'PUT', '/api/features', { off: ['uplink', 'relay', 'maxq'], expect: ['maxq', 'uplink', 'relay'], confirm: true })).status).toBe(200);
+    expect((await api<ApiError>(h, 'PUT', '/api/governor', { limit: 2 })).body).toMatchObject({ code: 'feature_off', error: 'Max Q is off' });
+    expect(((await getState(h)).features as { off: string[] }).off).toEqual(['maxq', 'uplink', 'relay']);
+  }, 120_000);
+
   it('34. Mass Budget and Star Chart: a request to condense is a message, the file is copied and never written by gonogo, and the chart follows the log', async () => {
     const h = await startServer();
     await hire(h, 'ana');

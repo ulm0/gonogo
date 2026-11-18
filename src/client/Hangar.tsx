@@ -12,7 +12,7 @@ import * as api from './api.js';
 import type { ApiFailure } from './api.js';
 import { drafts, gutterText, indentEdit, indentUnit, joinEol, joinPath, lineCount, newPathProblem, parentOf, sizeText, splitEol } from './editor.js';
 import type { Edit, Eol } from './editor.js';
-import { selectConsole, showHangar, showRecorder, showRoom, useStore } from './store.js';
+import { selectConsole, showHangar, showRecorder, showRoom, useFeature, useStore } from './store.js';
 import './loop.css';
 import './hangar.css';
 
@@ -22,6 +22,7 @@ const messageOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
 export function WorkspaceHead({ title, current, id, heading }: { title: string; current: 'hangar' | 'recorder'; id: string; heading: RefObject<HTMLHeadingElement | null> }): ReactElement {
   const order = useStore((s) => s.order);
   const selected = useStore((s) => s.selected);
+  const recorderOn = useFeature('recorder');
   return (
     <header className="loop-head hg-head">
       <h1 id={id} ref={heading} tabIndex={-1} className="disp loop-title hg-title">
@@ -42,9 +43,11 @@ export function WorkspaceHead({ title, current, id, heading }: { title: string; 
         <button type="button" className="btn" data-kind={current === 'hangar' ? 'primary' : 'quiet'} aria-current={current === 'hangar' ? 'page' : undefined} onClick={showHangar}>
           Files
         </button>
+        {recorderOn && (
         <button type="button" className="btn" data-kind={current === 'recorder' ? 'primary' : 'quiet'} aria-current={current === 'recorder' ? 'page' : undefined} onClick={showRecorder}>
           Git
         </button>
+        )}
       </nav>
       <button type="button" className="btn loop-room" data-kind="quiet" onClick={showRoom}>
         Room

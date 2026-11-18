@@ -6,7 +6,7 @@
  */
 import { useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
-import { CATALOGUE, DEFAULT_BLOCKS, GRID_COLUMNS, copyBlocks, describe, hide, restore, shown } from '../shared/layout.js';
+import { blockIsOff, CATALOGUE, DEFAULT_BLOCKS, displayBlocks, GRID_COLUMNS, copyBlocks, describe, hide, mergeEdit, restore, shown } from '../shared/layout.js';
 import type { Block, BlockId, DeskOrder, DeskSort } from '../shared/layout.js';
 import * as api from './api.js';
 import { cellKey, seat } from './room.js';
@@ -52,7 +52,8 @@ function RoomGrid({ blocks }: { blocks: readonly Block[] }): ReactElement {
   const governor = useStore((s) => s.governor);
   const rev = useStore((s) => s.room.rev);
   const propellant = useStore((s) => s.propellant);
-  const strips = liveStrips(blocks, poll, governor, propellant);
+  const off = useStore((s) => s.features);
+  const strips = liveStrips(blocks, poll, governor, propellant).filter((strip) => !blockIsOff({ id: strip.block, x: 0, y: 0, w: 1, h: 1 }, off));
   const { busy, error, run } = useRun();
   return (
     <>
@@ -74,7 +75,7 @@ function RoomGrid({ blocks }: { blocks: readonly Block[] }): ReactElement {
         </div>
       )}
       <section className="room-grid" aria-label="The room">
-        {shown(blocks).map((b) => (
+        {shown(displayBlocks(blocks, off)).map((b) => (
           <div key={b.id} className="room-cell" data-block={b.id} style={place(b)}>
             {b.id === 'operations' ? <Operations phone={false} /> : (() => {
               const Block = WALL_BLOCKS[b.id as keyof typeof WALL_BLOCKS];
@@ -118,11 +119,14 @@ function RoomEditor(): ReactElement {
   const grid = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ id: BlockId; kind: EditMode; dx: number; dy: number } | null>(null);
 
-  const setBlocks = (blocks: Block[]): void => setDraft((d) => ({ ...d, blocks }));
+  const off = useStore((s) => s.features);
+  // the blocks of a feature that is off are not in the draft's page (the others settle around the gap); their entries are kept as they are
+  const work = displayBlocks(draft.blocks, off);
+  const setBlocks = (blocks: Block[]): void => setDraft((d) => ({ ...d, blocks: mergeEdit(d.blocks, blocks, off) }));
   const say = (blocks: Block[], blockId: BlockId): void => setLive(describe(blocks.find((b) => b.id === blockId) as Block));
 
   const move = (blockId: BlockId, kind: EditMode, key: string): void => {
-    const next = keyStep(draft.blocks, blockId, kind, key);
+    const next = keyStep(work, blockId, kind, key);
     if (next === null) return;
     setBlocks(next);
     say(next, blockId);
@@ -148,7 +152,7 @@ function RoomEditor(): ReactElement {
     }
     if (e.key === 'm' || e.key === 'r') {
       e.preventDefault();
-      setMode({ id: b.id, kind: e.key === 'm' ? 'move' : 'resize', before: copyBlocks(draft.blocks) });
+      setMode({ id: b.id, kind: e.key === 'm' ? 'move' : 'resize', before: copyBlocks(work) });
       setLive(`${e.key === 'm' ? 'Moving' : 'Resizing'} ${CATALOGUE[b.id].label}: arrows, Enter to drop, Escape to cancel. ${describe(b)}`);
     } else if ((e.key === 'Delete' || e.key === 'h') && !CATALOGUE[b.id].fixed) {
       e.preventDefault();
@@ -157,11 +161,11 @@ function RoomEditor(): ReactElement {
   };
 
   const hideBlock = (blockId: BlockId): void => {
-    setBlocks(hide(draft.blocks, blockId));
+    setBlocks(hide(work, blockId));
     setLive(`${CATALOGUE[blockId].label} hidden. It is in the tray.`);
   };
   const restoreBlock = (blockId: BlockId): void => {
-    const next = restore(draft.blocks, blockId);
+    const next = restore(work, blockId);
     setBlocks(next);
     say(next, blockId);
   };
@@ -182,8 +186,8 @@ function RoomEditor(): ReactElement {
     const d = drag.current;
     if (d === null) return;
     const cell = cellOf(e);
-    const next = d.kind === 'move' ? dragMove(draft.blocks, d.id, cell, { dx: d.dx, dy: d.dy }) : dragResize(draft.blocks, d.id, cell);
-    if (JSON.stringify(next) !== JSON.stringify(draft.blocks)) {
+    const next = d.kind === 'move' ? dragMove(work, d.id, cell, { dx: d.dx, dy: d.dy }) : dragResize(work, d.id, cell);
+    if (JSON.stringify(next) !== JSON.stringify(work)) {
       setBlocks(next);
       say(next, d.id);
     }
@@ -284,15 +288,19 @@ function RoomEditor(): ReactElement {
       {tray.length > 0 && (
         <div className="re-tray module" role="group" aria-label="Hidden blocks">
           <span className="label">HIDDEN</span>
-          {tray.map((b) => (
-            <button key={b.id} type="button" className="btn" onClick={() => restoreBlock(b.id)}>
-              {`RESTORE ${CATALOGUE[b.id].label}`}
-            </button>
-          ))}
+          {tray.map((b) =>
+            blockIsOff(b, off) ? (
+              <span key={b.id} className="hint re-off">{`${CATALOGUE[b.id].label}: off in Features`}</span>
+            ) : (
+              <button key={b.id} type="button" className="btn" onClick={() => restoreBlock(b.id)}>
+                {`RESTORE ${CATALOGUE[b.id].label}`}
+              </button>
+            ),
+          )}
         </div>
       )}
       <div className="re-grid" ref={grid} style={{ gridAutoRows: `${EDIT_ROW_PX}px`, gap: `${EDIT_GAP_PX}px`, gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))` }}>
-        {shown(draft.blocks).map((b) => (
+        {shown(work).map((b) => (
           <div
             key={b.id}
             className="re-block module"

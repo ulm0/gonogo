@@ -23,14 +23,16 @@ export interface BlockSpec {
   minH: number;
   /** Cannot be hidden: the consoles are the room. */
   fixed: boolean;
+  /** The feature (src/shared/features.ts) the block belongs to: while it is off the block is not drawn, and its place in the layout is kept. */
+  feature?: string;
 }
 
 /** The catalogue: a new block is one row here and one component. */
 export const CATALOGUE: Readonly<Record<BlockId, BlockSpec>> = {
   mission: { id: 'mission', label: 'MISSION', minW: 2, minH: 2, fixed: false },
   sequence: { id: 'sequence', label: 'SEQUENCE', minW: 3, minH: 2, fixed: false },
-  tminus: { id: 'tminus', label: 'T-MINUS', minW: 2, minH: 2, fixed: false },
-  maxq: { id: 'maxq', label: 'MAX Q', minW: 2, minH: 2, fixed: false },
+  tminus: { id: 'tminus', label: 'T-MINUS', minW: 2, minH: 2, fixed: false, feature: 'tminus' },
+  maxq: { id: 'maxq', label: 'MAX Q', minW: 2, minH: 2, fixed: false, feature: 'maxq' },
   propellant: { id: 'propellant', label: 'PROPELLANT', minW: 2, minH: 2, fixed: false },
   operations: { id: 'operations', label: 'OPERATIONS', minW: 6, minH: 3, fixed: true },
 };
@@ -70,6 +72,29 @@ export function clampBlock(b: Block): Block {
   const x = Math.min(GRID_COLUMNS - w, Math.max(0, Math.round(b.x)));
   const y = Math.min(GRID_ROWS_MAX - h, Math.max(0, Math.round(b.y)));
   return { ...b, x, y, w, h };
+}
+
+/** Is the block of a feature that is switched off? `off` is the list of off ids (Flight Rules, FEATURES). */
+export const blockIsOff = (b: Block, off: readonly string[]): boolean => {
+  const feature = CATALOGUE[b.id].feature;
+  return feature !== undefined && off.includes(feature);
+};
+
+/**
+ * The blocks to draw: the shown ones without those of a feature that is off, the others settled upward around the gap. For display
+ * only: the saved layout keeps the place of a block whose feature is off, so turning the feature on puts it back where it was, unless the layout was saved while it was off: then it comes back in the tray (RESTORE).
+ */
+export const displayBlocks = (blocks: readonly Block[], off: readonly string[]): Block[] => (off.length === 0 ? copyBlocks(blocks) : compact(copyBlocks(blocks).filter((b) => !blockIsOff(b, off))));
+
+/**
+ * An edit made on the displayed blocks, put back into the draft: the blocks of an off feature keep their entry as it was. One that
+ * the edit now lies on is marked hidden (its rectangle stays), so that the layout is still one the server accepts.
+ */
+export function mergeEdit(draft: readonly Block[], edited: readonly Block[], off: readonly string[]): Block[] {
+  const kept = draft.filter((b) => blockIsOff(b, off)).map((b) => ({ ...b }));
+  const on = shown(edited);
+  for (const b of kept) if (!isHidden(b) && on.some((o) => overlaps(b, o))) b.hidden = true;
+  return [...copyBlocks(edited.filter((b) => !blockIsOff(b, off))), ...kept];
 }
 
 /** Blocks fall up until they rest on the top or on another block. `pinned` stays where it is and the others settle around it. */
@@ -190,7 +215,7 @@ export function checkLayout(input: unknown): LayoutCheck {
     // The consoles cannot be hidden: they go under everything.
     if (count === 0) {
       const spec = DEFAULT_BLOCKS.find((b) => b.id === id) as Block;
-      blocks.push(CATALOGUE[id].fixed ? { ...spec, y: blocks.reduce((n, b) => (isHidden(b) ? n : Math.max(n, b.y + b.h)), 0) } : { ...spec, hidden: true });
+      blocks.push(CATALOGUE[id].fixed ? { ...spec, y: Math.min(GRID_ROWS_MAX - spec.h, blocks.reduce((n, b) => (isHidden(b) ? n : Math.max(n, b.y + b.h)), 0)) } : { ...spec, hidden: true });
     }
   }
   if (blocks.some((b) => CATALOGUE[b.id].fixed && isHidden(b))) return { ok: false, error: 'operations cannot be hidden', field: 'blocks' };
