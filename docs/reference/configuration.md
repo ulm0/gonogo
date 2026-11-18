@@ -37,6 +37,7 @@ Everything lives under the home (`~/.gonogo` by default). Files are mode 0600 an
 | `agents.json` | The roster: name, role, directory, permission mode, session id, desk, position, provider, custom command, Payload servers and skill folders, `cleanRoom` setting. Plain text, including payload env and header values (keep secrets out or write `${NAME}`). A damaged file stops the start and names the path. |
 | `messages.jsonl` | Every message, one JSON line per change. Over 32 MiB it is renamed `messages.jsonl.1` at the next start. |
 | `fuel.jsonl` | Propellant's ledger: one line per agent and minute. Lines older than 31 days are dropped at start. |
+| `telemetry.jsonl` | Telemetry: one line per finished tool call (agent, start, duration, tool, summary, failed). Newest 200 per agent kept, cut at start and every 2000 new lines. |
 | `propellant.json` | Propellant limits (room and per agent) and how far each transcript was read. |
 | `schedules.json` | Launch Window schedules, message text and last result, in plain text. |
 | `uplinks.json` | Uplink webhooks: name, recipient, kind, **secret in plain text**, last 20 deliveries (no bodies). |
@@ -62,4 +63,4 @@ Every JSON file above with a format, and each Mission Log entry's front matter, 
 - **Newer file** stops the start: `<path> was saved by a newer gonogo (format version 2; this one reads up to 1). Start the gonogo that saved it, or move the file away to start without it.` To go back to an older gonogo, put the `.bak-v<n>` copy back (you lose later changes).
 - **Missing, not JSON or no version**: handled as described in the table. `propellant.json` without a version counts as version 1.
 - **Mission Log entries** are not upgraded; a newer one is skipped with a warning and kept.
-- **Not versioned**: `messages.jsonl` and `fuel.jsonl` (an unreadable line is skipped), `mission-log/.seq`, `token`, `server.lock`, and files under `agents/<name>/` rewritten every start.
+- **Not versioned**: `messages.jsonl`, `fuel.jsonl` and `telemetry.jsonl` (an unreadable line is skipped), `mission-log/.seq`, `token`, `server.lock`, and files under `agents/<name>/` rewritten every start.

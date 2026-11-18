@@ -80,7 +80,7 @@ import type {
   TitleGlyph,
   TitleInfo,
 } from '../src/shared/protocol.js';
-import { DOING_MAX_CHARS, HISTORY_MAX, HISTORY_WINDOW_MS } from '../src/shared/protocol.js';
+import { DOING_MAX_CHARS, HISTORY_MAX, HISTORY_WINDOW_MS, HOLD_REASON } from '../src/shared/protocol.js';
 
 /* ------------------------------------------------------------------------------------------------------------
  * The fake world
@@ -5367,6 +5367,63 @@ describe('Redline', () => {
     loop(h, 'ana', REDLINE_REPEATS);
     h.prompt('ana', 'stop looping and run the tests once');
     expect(h.view('ana')).toMatchObject({ state: 'working', needsKind: null });
+  });
+
+  it('Hold: the Director trips it by hand, with no Downlink notice; resume ends it and the mail goes', async () => {
+    const h = await withAna();
+    h.work('ana');
+    expect(h.hub.hold('ana')).toMatchObject({ state: 'needs_you', needsKind: 'redline', needsReason: HOLD_REASON });
+    expect(h.pressed).toEqual([{ name: 'ana', generation: h.gen('ana'), data: '\x1b' }]);
+    expect(h.notices).toEqual([]);
+    h.send('user', 'ana', 'when you are back');
+    expect(h.msg('m1')).toMatchObject({ status: 'held', note: 'held: ana is on hold' });
+    h.hook('ana', 'Stop');
+    expect(h.view('ana').needsReason).toBe(HOLD_REASON);
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana is already on hold');
+    h.setTitle('ana', 'idle');
+    expect(h.hub.resume('ana')).toMatchObject({ state: 'idle', needsKind: null });
+    await h.advance(DELIVERY_SETTLE_MS);
+    expect(h.typed).toHaveLength(1);
+  });
+
+  it('Hold of an idle agent presses nothing; it is refused while tripped, needing you, stopped or without hooks', async () => {
+    const h = await withAna();
+    expect(h.hub.hold('ana').needsReason).toBe(HOLD_REASON);
+    expect(h.pressed).toEqual([]);
+    h.hub.resume('ana');
+    h.work('ana');
+    loop(h, 'ana', REDLINE_REPEATS);
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana has tripped the redline: resume or stop it');
+    h.hub.resume('ana');
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana needs you: answer it first');
+    await h.hub.stop('ana');
+    expectHubError(() => h.hub.hold('ana'), 'conflict', 'ana is not running');
+    await h.hub.hire({ name: 'tail', role: 'watches', dir: '/work/tail', mode: 'default', provider: 'custom', command: 'htop' });
+    expectHubError(() => h.hub.hold('tail'), 'conflict', 'tail reports no hooks, so gonogo cannot hold it');
+    expectHubError(() => h.hub.hold('ghost'), 'not_found');
+  });
+
+  it('Telemetry: the tool hooks of the current process go to io.toolHook', async () => {
+    const h = await withAna();
+    const seen: Array<[string, string, unknown]> = [];
+    h.io.toolHook = (name, event, payload) => void seen.push([name, event, payload.tool_use_id]);
+    h.work('ana');
+    h.hook('ana', 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' }, tool_use_id: 't1' });
+    h.hook('ana', 'PostToolUse', { tool_name: 'Bash', tool_use_id: 't1' });
+    h.hook('ana', 'PostToolUseFailure', { tool_name: 'Bash', tool_use_id: 't2' });
+    h.hook('ana', 'Stop');
+    expect(seen).toEqual([
+      ['ana', 'PreToolUse', 't1'],
+      ['ana', 'PostToolUse', 't1'],
+      ['ana', 'PostToolUseFailure', 't2'],
+    ]);
+    h.io.toolHook = () => {
+      throw new Error('disk full');
+    };
+    h.hook('ana', 'PreToolUse', { tool_name: 'Read', tool_input: { file_path: '/x' } });
+    expect(h.view('ana').state).toBe('working');
   });
 
   it('a restart ends the trip', async () => {

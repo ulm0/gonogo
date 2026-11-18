@@ -35,6 +35,7 @@ import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
+import { createTelemetry } from './telemetry.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
@@ -330,6 +331,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('propellant'),
     });
     await propellant.load();
+    const telemetry = createTelemetry({ dir: home.dir, now: () => Date.now(), log: log.child('telemetry') });
+    await telemetry.load();
     const downlink = createDownlink({
       dir: home.dir,
       now: () => Date.now(),
@@ -414,6 +417,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
           }
         });
       },
+      toolHook: (name, event, payload) => telemetry.hook(name, event, payload),
       screen: (name) => terminalHost.screen(name),
       title: (name) => terminalHost.title(name),
       outputBytes: (name) => terminalHost.outputBytes(name),
@@ -519,6 +523,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       info,
       isReady: () => ready,
       propellant,
+      telemetry,
       schedules,
       uplinks,
       tasks,
@@ -577,6 +582,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('relay close', () => relay.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
+      await step('telemetry close', () => telemetry.close());
       await step('home close', () => home.close());
     };
     const stop = (): Promise<void> => {

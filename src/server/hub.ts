@@ -28,6 +28,7 @@ import type {
   GovernorView,
   HeldInfo,
   HireRequest,
+  HookEvent,
   HookInput,
   HookReply,
   Hub,
@@ -65,6 +66,7 @@ import {
   DOING_MAX_CHARS,
   HISTORY_MAX,
   HISTORY_WINDOW_MS,
+  HOLD_REASON,
   HOOK_EVENTS,
   PERMISSION_MODES,
   POLL_VOTES,
@@ -827,7 +829,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   }
 
   function redlineNote(rt: Rt): string {
-    return `held: redline on ${rt.record.name}`;
+    return rt.redline === HOLD_REASON ? `held: ${rt.record.name} is on hold` : `held: redline on ${rt.record.name}`;
   }
 
   function holdNote(rt: Rt): string | null {
@@ -1037,18 +1039,19 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.sentTo.clear();
   }
 
-  /** Trips the breaker: Escape interrupts a turn in progress, the state reads needs_you and the mail waits. */
-  function tripRt(rt: Rt, reason: string): void {
+  /** Trips the breaker: Escape interrupts a turn in progress, the state reads needs_you and the mail waits. A Hold is a trip the Director asked for. */
+  function tripRt(rt: Rt, reason: string, byHand = false): void {
     if (rt.redline !== null || rt.removed || !hooked(rt) || rt.state === 'stopped' || rt.transition !== null) return;
     const wasWorking = rt.state === 'working';
-    rt.redline = `redline: ${reason}`;
-    log.warn(`${rt.record.name} tripped the redline: ${reason}`);
+    rt.redline = byHand ? HOLD_REASON : `redline: ${reason}`;
+    if (byHand) log.info(`${rt.record.name} is on hold`);
+    else log.warn(`${rt.record.name} tripped the redline: ${reason}`);
     if (wasWorking && !io.press?.(rt.record.name, rt.generation, ESC)) {
       log.warn(`could not interrupt ${rt.record.name}`);
     }
     setState(rt, 'needs_you');
     syncHolds(rt);
-    io.notify?.('redline', `${rt.record.name}: ${reason}`);
+    if (!byHand) io.notify?.('redline', `${rt.record.name}: ${reason}`);
   }
 
   /** The automatic detectors trip only when they are on; a Propellant limit trips through Hub.trip either way. */
@@ -1074,6 +1077,19 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     flush(rt);
   }
 
+  function hold(name: string): AgentView {
+    assertOpen();
+    const rt = lookup(name);
+    const who = rt.record.name;
+    if (!hooked(rt)) throw new HubError('conflict', `${who} reports no hooks, so gonogo cannot hold it`);
+    if (rt.redline !== null) throw new HubError('conflict', rt.redline === HOLD_REASON ? `${who} is already on hold` : `${who} has tripped the redline: resume or stop it`);
+    if (rt.state === 'needs_you' && rt.transition === null) throw new HubError('conflict', `${who} needs you: answer it first`);
+    if ((rt.state !== 'idle' && rt.state !== 'working') || rt.transition !== null) throw new HubError('conflict', `${who} is not running`);
+    tripRt(rt, HOLD_REASON, true);
+    flush(rt);
+    return buildView(rt);
+  }
+
   function resume(name: string): AgentView {
     assertOpen();
     const rt = lookup(name);
@@ -1085,6 +1101,15 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
     flush(rt);
     return buildView(rt);
+  }
+
+  /** Telemetry: every tool hook goes to the recorder; a failure there never touches the hub's own handling. */
+  function toolHook(rt: Rt, event: HookEvent, payload: Record<string, unknown>): void {
+    try {
+      io.toolHook?.(rt.record.name, event, payload);
+    } catch (error) {
+      log.warn('telemetry failed', error);
+    }
   }
 
   /** Propellant reads the transcript at most every METER_INTERVAL_MS on a tool hook, and at every Stop. */
@@ -1215,15 +1240,18 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         onPromptSubmit(rt, payload);
         break;
       case 'PreToolUse':
+        toolHook(rt, input.event, payload);
         rt.doing = describeDoing(payload.tool_name, payload.tool_input);
         onToolHook(rt);
         detect(rt, repeatReason(rt, payload));
         meter(rt, payload, false);
         break;
       case 'PostToolUse':
+        toolHook(rt, input.event, payload);
         onToolHook(rt);
         break;
       case 'PostToolUseFailure':
+        toolHook(rt, input.event, payload);
         onToolHook(rt);
         if (countRecent(rt.toolFailAt, io.now(), REDLINE_TOOL_FAILURE_WINDOW_MS) >= REDLINE_TOOL_FAILURES) {
           detect(rt, `error storm: ${rt.toolFailAt.length} failed tool calls in 2 min`);
@@ -2685,6 +2713,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     sendFromStation,
     sendFromAgent,
     trip,
+    hold,
     resume,
     readMessages,
     rosterFor,

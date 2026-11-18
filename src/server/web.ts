@@ -71,6 +71,7 @@ import { parsePropellantRequest } from './propellant.js';
 import type { Liveries } from './livery.js';
 import type { MissionLog } from './missionlog.js';
 import type { Propellant } from './propellant.js';
+import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
@@ -94,6 +95,8 @@ export interface WebOptions {
   isReady: () => boolean;
   /** Token use and limits; absent in tests that do not need them (the snapshot then shows no use and no limits). */
   propellant?: Pick<Propellant, 'view' | 'setLimits'>;
+  /** Telemetry: GET /api/agents/:name/telemetry. Without it the list is empty. */
+  telemetry?: Pick<Telemetry, 'calls'>;
   /** Launch Window; absent in tests that do not need it (the snapshot then lists none and the routes answer 404). It tells the browsers itself. */
   schedules?: Pick<Schedules, 'list' | 'create' | 'update' | 'remove' | 'run'>;
   /** Uplink; absent in tests that do not need it (the snapshot then lists none and the routes answer 404). It tells the browsers itself. */
@@ -915,12 +918,21 @@ export function createWebServer(options: WebOptions): WebServer {
         },
       };
     }
-    if (s.length === 4 && s[3] === 'resume') {
+    if (s.length === 4 && (s[3] === 'resume' || s[3] === 'hold')) {
       return {
         allow: ['POST'],
         run: (_req, res) => {
           const name = agentName(res, s[2]);
-          if (name !== null) sendJson(res, 200, hub.resume(name));
+          if (name !== null) sendJson(res, 200, s[3] === 'hold' ? hub.hold(name) : hub.resume(name));
+        },
+      };
+    }
+    if (s.length === 4 && s[3] === 'telemetry') {
+      return {
+        allow: ['GET'],
+        run: (_req, res) => {
+          const name = agentName(res, s[2]);
+          if (name !== null) sendJson(res, 200, { calls: options.telemetry?.calls(name) ?? [] });
         },
       };
     }

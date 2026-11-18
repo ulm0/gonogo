@@ -34,6 +34,7 @@ import type {
   StateSnapshot,
   Task,
   TaskPatch,
+  ToolCall,
   TaskRequest,
   UplinkCreated,
   UplinkPatch,
@@ -317,6 +318,18 @@ export async function setPropellant(request: PropellantRequest): Promise<Propell
 /** Clears a Redline trip: the agent gets its mail again. */
 export async function resume(name: string): Promise<AgentView> {
   return toAgentView(await call('POST', `${agentPath(name)}/resume`));
+}
+
+/** Hold: the Director stops the agent's turn and its mail until RESUME. */
+export async function hold(name: string): Promise<AgentView> {
+  return toAgentView(await call('POST', `${agentPath(name)}/hold`));
+}
+
+/** Telemetry: the agent's tool calls, newest first. */
+export async function telemetry(name: string): Promise<ToolCall[]> {
+  const record = asRecord(await call('GET', `${agentPath(name)}/telemetry`));
+  if (record === null || !Array.isArray(record.calls)) throw failure('The server sent an answer gonogo does not understand.');
+  return record.calls as ToolCall[];
 }
 
 /** Launch Window: a schedule that sends a message by itself on a cron rule. The list comes in the state and in `schedules` frames. */
