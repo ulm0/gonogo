@@ -78,7 +78,7 @@ import { createUpdater } from './updater.js';
 import { addRoom, loadRooms, removeRoom, roomHome } from './rooms.js';
 import { startSupervisor } from './supervisor.js';
 import type { UpdateResult } from './dockerupdate.js';
-import { dockerUpdateStatus, readResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
+import { dockerUpdateStatus, readResult, settleResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
 import type { Updater } from './updater.js';
 import type { WebServer } from './web.js';
 
@@ -388,8 +388,9 @@ export function resolveSettings(options: StartOptions, log: Logger = nullLogger)
 
 /** The page's view of what the last Docker self-update left. */
 function updateOfResult(r: UpdateResult): UpdateView {
+  if (r.state === 'started') return { state: 'handed-off', version: r.to, note: r.note, tail: [], rollback: null };
   if (r.state === 'ok') return { state: 'done', version: r.to, note: r.note, tail: [], rollback: null, undo: r.previousImage !== '' };
-  return { state: 'failed', version: r.to, note: r.state === 'rolled-back' ? `The update to ${r.to} did not take: ${r.note}` : `The update to ${r.to} failed: ${r.note}`, tail: r.tail, rollback: null };
+  return { state: 'failed', version: r.to, note: r.state === 'rolled-back' ? `The update to ${r.to} did not take: ${r.note}` : r.state === 'interrupted' ? r.note : `The update to ${r.to} failed: ${r.note}`, tail: r.tail, rollback: null };
 }
 
 function packageVersion(): string {
@@ -857,7 +858,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const dockerStatus = dockerCall === null ? undefined : supervised ? { ready: false, text: 'this room runs under gonogo rooms: update the container from the host (docker compose pull && docker compose up -d); self-update does not know the other rooms' } : await dockerUpdateStatus(dockerCall, hostname());
     const canUpdate = installed.kind === 'npm' || installed.kind === 'pnpm' || (installed.kind === 'docker' && (dockerStatus?.ready === true || /^https?:\/\//.test(hookUrl)));
     // what the last self-update left: shown until the Director goes on
-    const lastResult = dockerCall === null ? null : await readResult(home.dir);
+    const found = dockerCall === null ? null : await readResult(home.dir);
+    const lastResult = dockerCall === null || found === null ? null : await settleResult(dockerCall, home.dir, found, hostname());
     const rollout = createRollout({
       dir: home.dir,
       now: io.now,
@@ -1267,7 +1269,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   if (parsed.kind === 'selfupdate') {
     // runs in the helper container: recreates the target from the new image, rolls back when it is not healthy, leaves the result for the new gonogo
     const home = resolve(parsed.home);
-    const result = await swap(socketCall(env.GONOGO_DOCKER_SOCKET || SOCKET_PATH), { target: parsed.target, image: parsed.image, expect: parsed.expect, home });
+    const result = await swap(socketCall(env.GONOGO_DOCKER_SOCKET || SOCKET_PATH), { target: parsed.target, image: parsed.image, expect: parsed.expect, home, record: (r) => writeResult(home, r) });
     await writeResult(home, result).catch((e: unknown) => process.stderr.write(`gonogo self-update: could not write the result: ${e instanceof Error ? e.message : String(e)}\n`));
     process.stdout.write(`gonogo self-update: ${result.state}: ${result.note}\n`);
     exit(result.state === 'ok' ? 0 : 1);
