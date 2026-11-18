@@ -1160,6 +1160,7 @@ async function runRooms(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, env: Env
     allowedHosts: settings.allowedHosts,
     command: [process.execPath, process.argv[1] ?? 'gonogo'],
     staticDir: settings.staticDir,
+    version: packageVersion(),
     env,
     log,
   });

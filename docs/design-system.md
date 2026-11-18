@@ -14,6 +14,7 @@ const tiles = [
   { kind: 'needs', name: 'GUIDO', n: '04', lines: ['Permission: Bash', 'git push origin'], state: 'Needs you' },
   { kind: 'starting', name: 'DPS', n: '06', lines: ['Data: schemas', 'and queries'], state: 'Starting' },
   { kind: 'stopped', name: 'RETRO', n: '12', lines: ['Code reviewer', ''], state: 'Stopped' },
+  { kind: 'crashed', name: 'ROOM B', n: '07', lines: ['Port 7801 in use', 'starting again'], state: 'Crashed' },
   { kind: 'open', name: 'PAO', n: '14', lines: ['Docs, README', 'changelog'], state: 'Open' },
 ];
 const lowest = (tokens) => Math.min(...CONTRAST_PAIRS.flatMap(([text, on]) => on.map((s) => contrast(tokens[text], tokens[s])))).toFixed(2);
@@ -194,9 +195,11 @@ Geist Mono 500, 10 px, capitals, a pill. `data-tone`: `lit`, `amber`, `go`, `nog
 </div>
 </div>
 
-`.tile`: a key holding a console, position or option. `data-kind` (`working`, `needs`, `starting`, `stopped`, `open`, none for
+`.tile`: a key holding a console, position or option. `data-kind` (`working`, `needs`, `starting`, `stopped`, `crashed`, `open`, none for
 idle) sets light and surface; `aria-pressed="true"` rings the chosen one. `.room-tile`: `.tile-head` (light, `.tile-legend`,
-`.tile-num`), a two-line `.tile-lcd` (lit while working, warm when it needs you), `.tile-foot` with `.tile-state`.
+`.tile-num`), a two-line `.tile-lcd` (lit while working, warm when it needs you or crashed), `.tile-foot` with `.tile-state`. The rooms
+page at `/` is one `.room-tile` for each room under the same top bar and version corner as the app, with `crashed` for a room that did not
+stay up; its keys are the ordinary `.btn` (OPEN primary, REMOVE `danger`) and the remove question is a `.flood` with `data-tone="nogo"`.
 
 ### Fields
 

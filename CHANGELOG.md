@@ -4,6 +4,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **The rooms page, dressed like the app.** The list at `/` has the top bar with the logo, the version corner, the livery of the last visit, and a card for each room like the Room view's tile: a light for its state (running, needs you, working, starting, stopped, crashed with its reason), the agents running, how many need you and are working, the last activity and the tab name. `GET /api/rooms` gains `working`, `lastActivity` and `tabName` for each room. NEW ROOM is a key in the bar, REMOVE asks inside the card instead of a browser dialog, and a room that is stopped has a disabled OPEN. The page keeps the keyboard focus when it refreshes. Looked at only through a stand-in for the DOM: no browser exists on the build host.
 - **Rooms from the page.** The list of rooms has a NEW ROOM form and RENAME and REMOVE on each room (REMOVE keeps the folder). The same calls are `POST /api/rooms`, `PATCH /api/rooms/<id>` and `DELETE /api/rooms/<id>` on the supervisor, with the Director token.
 
 ## 0.4.0 (2026-11-18)

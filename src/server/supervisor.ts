@@ -17,9 +17,9 @@ import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { bearerToken, sendApiError, sendJson, sendText } from './hooks.js';
-import { clientStylesheet, roomsPage, roomsPageHeaders } from './roomspage.js';
+import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
-import { addRoom, loadRooms, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
+import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { hostName } from './web.js';
 
@@ -42,9 +42,18 @@ export interface RoomView {
   agents: number | null;
   running: number | null;
   needsYou: number | null;
+  /** Agents in the working state; null while it cannot be asked. */
+  working: number | null;
+  /** ms epoch of the newest message or state change of the room, or null (none, or it cannot be asked). */
+  lastActivity: number | null;
+  /** The tab name of the room (the Director's, else the station's), or null. */
+  tabName: string | null;
   /** Why a room that is not running is not (its last error line), or null. */
   note: string | null;
 }
+
+type Counts = Pick<RoomView, 'agents' | 'running' | 'needsYou' | 'working' | 'lastActivity' | 'tabName'>;
+const NO_COUNTS: Counts = { agents: null, running: null, needsYou: null, working: null, lastActivity: null, tabName: null };
 
 export interface SupervisorOptions {
   /** The root home: room `main`, `rooms.json`, `rooms/<id>/`, the Director token. */
@@ -58,6 +67,8 @@ export interface SupervisorOptions {
   env: NodeJS.ProcessEnv;
   /** Extra arguments for every room (for a test's stand-in agent no flag is needed: the environment carries it). */
   roomArgs?: string[];
+  /** The running version, shown in the corner of the list page. */
+  version?: string;
   /** The built client (dist/client): its stylesheet dresses the list page, served from /assets/. Absent or without a build: plain styles. */
   staticDir?: string | null;
   log?: Logger;
@@ -108,7 +119,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const directorToken = directorTokenOf(options.home);
   const children = new Map<string, Child>();
   let stopping = false;
-  const statusCache = new Map<string, { at: number; value: Pick<RoomView, 'agents' | 'running' | 'needsYou'> }>();
+  const statusCache = new Map<string, { at: number; value: Counts }>();
 
   const allowedNames = new Set<string>(options.allowedHosts.map((h) => hostName(h) ?? h.trim().toLowerCase()).filter((h) => h !== ''));
   if (!['0.0.0.0', '::', ''].includes(options.host)) allowedNames.add(hostName(options.host) ?? options.host.toLowerCase());
@@ -235,16 +246,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   /* ---------------------------------------------------------------- what the list page shows */
 
-  async function statusOf(child: Child): Promise<Pick<RoomView, 'agents' | 'running' | 'needsYou'>> {
-    const none = { agents: null, running: null, needsYou: null };
+  async function statusOf(child: Child): Promise<Counts> {
+    const none: Counts = NO_COUNTS;
     if (child.port === null || child.token === null) return none;
     const cached = statusCache.get(child.entry.id);
     if (cached !== undefined && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
     try {
       const res = await fetch(`http://127.0.0.1:${child.port}/api/state`, { headers: { authorization: `Bearer ${child.token}` }, signal: AbortSignal.timeout(1500) });
-      const body = (await res.json()) as { agents?: Array<{ state?: string }> };
+      const body = (await res.json()) as { agents?: Array<{ state?: string; stateSince?: number }>; activity?: Array<{ at?: number }>; tabName?: { name?: string | null; fallback?: string | null } };
       const agents = Array.isArray(body.agents) ? body.agents : [];
-      const value = { agents: agents.length, running: agents.filter((a) => a.state !== 'stopped').length, needsYou: agents.filter((a) => a.state === 'needs_you').length };
+      const times = [...agents.map((a) => a.stateSince), body.activity?.[0]?.at].filter((t): t is number => typeof t === 'number' && t > 0);
+      const tab = body.tabName?.name ?? body.tabName?.fallback;
+      const value: Counts = {
+        agents: agents.length,
+        running: agents.filter((a) => a.state !== 'stopped').length,
+        needsYou: agents.filter((a) => a.state === 'needs_you').length,
+        working: agents.filter((a) => a.state === 'working').length,
+        lastActivity: times.length === 0 ? null : Math.max(...times),
+        tabName: typeof tab === 'string' && roomText(tab) !== '' ? roomText(tab) : null,
+      };
       statusCache.set(child.entry.id, { at: Date.now(), value });
       return value;
     } catch {
@@ -259,7 +279,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   const stylesheet = clientStylesheet(options.staticDir ?? null);
   const assetsDir = options.staticDir === null || options.staticDir === undefined ? null : join(options.staticDir, 'assets');
-  const TYPES: Record<string, string> = { css: 'text/css', woff: 'font/woff', woff2: 'font/woff2' };
+  const TYPES: Record<string, string> = { css: 'text/css', woff: 'font/woff', woff2: 'font/woff2', svg: 'image/svg+xml' };
 
   const proxy = createRoomProxy({
     directorToken,
@@ -354,20 +374,21 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     if (proxy.handle(req, res)) return;
     if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
     const path = (req.url ?? '').split('?')[0];
-    if (path === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
+    if (path === ROOMS_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
       res.writeHead(200, roomsPageHeaders());
-      res.end(req.method === 'HEAD' ? undefined : roomsPage(stylesheet));
+      res.end(req.method === 'HEAD' ? undefined : roomsPage(stylesheet, options.version ?? null));
       return;
     }
-    // the stylesheet and fonts of the built client, for the list page: a plain file name, only css and fonts
-    const asset = /^\/assets\/([\w.-]+\.(css|woff2?))$/.exec(path ?? '');
-    if (asset !== null && assetsDir !== null && req.method === 'GET' && !(asset[1] as string).includes('..')) {
+    // the stylesheet and fonts of the built client, and the logo (public/lockup.svg), for the list page: a plain file name, only css, fonts and that one svg
+    const asset = /^\/(?:assets\/([\w.-]+\.(css|woff2?))|(lockup)\.(svg))$/.exec(path ?? '');
+    const [file0, ext0] = asset?.[3] === undefined ? [join(assetsDir ?? '', asset?.[1] ?? ''), asset?.[2]] : [join(options.staticDir ?? '', 'lockup.svg'), 'svg'];
+    if (asset !== null && assetsDir !== null && req.method === 'GET' && !file0.includes('..')) {
       try {
         // a regular file only: a symlink in a writable install folder must not turn this route into a read of rooms-token
-        const file = join(assetsDir, asset[1] as string);
+        const file = file0;
         if (!lstatSync(file).isFile()) throw new Error('not a regular file');
         const body = readFileSync(file);
-        res.writeHead(200, { 'Content-Type': TYPES[asset[2] as string] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+        res.writeHead(200, { 'Content-Type': TYPES[ext0 as string] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff', ...(ext0 === 'svg' ? { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox" } : {}) });
         res.end(body);
       } catch {
         sendText(res, 404, 'not found');
@@ -404,7 +425,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     port,
     directorToken,
     url: `http://${shownHost}:${port}/#token=${directorToken}`,
-    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.lastError, agents: null, running: null, needsYou: null })),
+    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.lastError, ...NO_COUNTS })),
     async stop() {
       if (stopping) return;
       stopping = true;

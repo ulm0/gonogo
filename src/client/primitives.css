@@ -509,6 +509,13 @@ select.input:disabled {
   --tile-sub: var(--you-ink);
 }
 
+.tile[data-kind='crashed'] {
+  border-color: var(--nogo);
+  background: var(--nogo-tint);
+  --led: var(--nogo);
+  --tile-sub: var(--nogo-text);
+}
+
 .tile[data-kind='starting'] {
   border-style: dashed;
   border-bottom-width: 1px;
@@ -580,6 +587,11 @@ select.input:disabled {
 }
 
 .room-tile[data-kind='needs'] .tile-lcd {
+  background: var(--lcd);
+  color: var(--lcd-warm);
+}
+
+.room-tile[data-kind='crashed'] .tile-lcd {
   background: var(--lcd);
   color: var(--lcd-warm);
 }
