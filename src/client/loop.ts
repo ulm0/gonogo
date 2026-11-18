@@ -75,3 +75,6 @@ export function replyRequest(item: Pick<ActivityItem, 'id' | 'from' | 'subject'>
 /** The newest messages to or from one agent (the list is newest first). */
 export const trafficOf = (items: readonly ActivityItem[], name: string, limit = 3): ActivityItem[] =>
   items.filter((item) => item.from === name || item.to === name).slice(0, limit);
+
+/** The messages to or from one agent, all of them (the TRAFFIC filter); null is everyone. */
+export const ofAgent = (items: readonly ActivityItem[], name: string | null): readonly ActivityItem[] => (name === null ? items : items.filter((item) => item.from === name || item.to === name));

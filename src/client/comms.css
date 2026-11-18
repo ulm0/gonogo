@@ -1,0 +1,32 @@
+/* COMMS: the tab bar over the views it holds. The bodies keep their own layout. */
+.comms {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.comms-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 12px 24px 0;
+}
+
+.comms-panel {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.loop-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .comms-bar {
+    padding: 8px 12px 0;
+  }
+}

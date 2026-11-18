@@ -3,7 +3,7 @@ import { HOLD_REASON } from '../shared/protocol.js';
 import { CATALOGUE } from '../shared/layout.js';
 import type { BlockId } from '../shared/layout.js';
 import type { AgentView, LiveryView, PollView, PropellantView, RoomView } from '../shared/protocol.js';
-import type { ClientState } from './store.js';
+import type { ClientState, CommsTab } from './store.js';
 import { readStored, writeStored } from './store.js';
 import { pollButtons, pollTargets } from './wall.js';
 
@@ -17,6 +17,7 @@ export type View = ClientState['view'];
 export type Act =
   | { kind: 'console'; name: string }
   | { kind: 'view'; view: View }
+  | { kind: 'comms'; tab: CommsTab }
   | { kind: 'hire' }
   | { kind: 'new-mission' }
   | { kind: 'docs' }
@@ -54,14 +55,12 @@ export const VIEW_FEATURE: Partial<Record<View, string>> = {
 
 export const VIEW_NAMES: Record<View, string> = {
   room: 'Room',
-  loop: 'Loop',
-  party: 'Party Line',
+  comms: 'Comms',
   missions: 'Missions',
   board: 'Plot Board',
   blackbox: 'Black Box',
   hangar: 'Hangar',
   recorder: 'Recorder',
-  downlink: 'Downlink',
   window: 'Launch Window',
   plan: 'Flight Plan',
   log: 'Mission Log',
@@ -90,8 +89,12 @@ export function commands({ agents, legends, poll, unread, livery, room, off = []
     const legend = Object.hasOwn(legends, a.name) ? legends[a.name] : a.name.toUpperCase();
     out.push({ id: `console:${a.name}`, label: `Open ${legend}`, group: 'Console', also: `${a.name} console terminal`, act: { kind: 'console', name: a.name } });
   }
+  // COMMS is three lines, one for each tab; the old words still find them
+  out.push({ id: 'comms:inbox', label: 'Comms: inbox', group: 'View', also: 'downlink messages events', act: { kind: 'comms', tab: 'inbox' } });
+  out.push({ id: 'comms:traffic', label: 'Comms: traffic', group: 'View', also: 'loop comm loop all messages', act: { kind: 'comms', tab: 'traffic' } });
+  out.push({ id: 'comms:threads', label: 'Comms: threads', group: 'View', also: 'party line conversations', act: { kind: 'comms', tab: 'threads' } });
   for (const view of Object.keys(VIEW_NAMES) as View[]) {
-    if (!on(VIEW_FEATURE[view])) continue;
+    if (view === 'comms' || !on(VIEW_FEATURE[view])) continue;
     out.push({ id: `view:${view}`, label: VIEW_NAMES[view], group: 'View', also: view === 'rules' ? 'settings' : '', act: { kind: 'view', view } });
   }
   out.push({ id: 'propellant:prices', label: 'Propellant: prices', group: 'Action', also: 'cost model dollars', act: { kind: 'propellant', part: 'prices' } });

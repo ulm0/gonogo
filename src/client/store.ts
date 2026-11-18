@@ -42,7 +42,10 @@ export interface ClientState {
   /** The staffing screen. A hire may start from an open seat (its position) or as a custom command. */
   form: null | { mode: 'hire'; position?: string | null; custom?: boolean } | { mode: 'edit'; name: string };
   /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log, the Livery, the Flight Rules, Party Line, the Plot Board, the Black Box, the Hangar or the Recorder. */
-  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules' | 'party' | 'missions' | 'board' | 'blackbox' | 'hangar' | 'recorder';
+  view: 'room' | 'comms' | 'window' | 'plan' | 'log' | 'livery' | 'rules' | 'missions' | 'board' | 'blackbox' | 'hangar' | 'recorder';
+  /** Comms: which tab is up (INBOX the Downlink, TRAFFIC the Loop, THREADS Party Line), and the agent the traffic is filtered to, if any. */
+  commsTab: CommsTab;
+  commsAgent: string | null;
   /** Phone only: a console is open full screen over the room. A wide page ignores it (the selected console is always in its side panel). */
   consoleOpen: boolean;
   /** Transient message animations (Envelope lives in protocol.ts so that this file needs no .tsx). */
@@ -94,6 +97,10 @@ export interface Store {
 }
 
 export const SELECTED_STORAGE_KEY = 'gonogo.selected';
+export const COMMS_TAB_STORAGE_KEY = 'gonogo.commsTab';
+
+export const COMMS_TABS = ['inbox', 'traffic', 'threads'] as const;
+export type CommsTab = (typeof COMMS_TABS)[number];
 
 interface KeyValueStorage {
   getItem(key: string): string | null;
@@ -175,6 +182,8 @@ export function emptyState(): ClientState {
     selected: null,
     form: null,
     view: 'room',
+    commsTab: 'inbox',
+    commsAgent: null,
     consoleOpen: false,
     envelopes: [],
     poll: null,
@@ -202,6 +211,7 @@ export function emptyState(): ClientState {
 export const store: Store = createStore({
   ...emptyState(),
   selected: readStored(SELECTED_STORAGE_KEY),
+  commsTab: ((t) => (COMMS_TABS as readonly string[]).includes(t ?? '') ? (t as CommsTab) : 'inbox')(readStored(COMMS_TAB_STORAGE_KEY)),
 });
 
 // Persisting here, not in the components, keeps every writer of `selected` covered.
@@ -220,10 +230,28 @@ export const selectAgent = (name: string): void => store.setState((s) => (s.sele
 export const openConsole = (name: string): void => store.setState((s) => ({ ...s, selected: name, consoleOpen: true, view: 'room' }));
 export const closeConsole = (): void => store.setState((s) => (s.consoleOpen ? { ...s, consoleOpen: false } : s));
 export const showRoom = (): void => store.setState((s) => ({ ...s, view: 'room', consoleOpen: false }));
-export const showLoop = (): void => store.setState((s) => ({ ...s, view: 'loop', consoleOpen: false }));
+/** COMMS: one view with three tabs. With no tab it opens the one the Director used last (kept in this browser). A tab chosen in the bar is remembered; the shortcuts below only open it. */
+export const showComms = (tab?: CommsTab, agent: string | null = null): void => store.setState((s) => ({
+    ...s,
+    view: 'comms',
+    // asked for no tab (the top bar, the phone bar): what waits for the Director first, else the tab used last, and no agent filter left over
+    commsTab: tab ?? (s.downlink.unread > 0 ? 'inbox' : s.commsTab),
+    commsAgent: tab === undefined ? null : tab === 'traffic' ? agent : s.commsAgent,
+    consoleOpen: false,
+  }));
+export const chooseCommsTab = (tab: CommsTab): void => {
+  writeStored(COMMS_TAB_STORAGE_KEY, tab);
+  store.setState((s) => ({ ...s, commsTab: tab }));
+};
+export const setCommsAgent = (agent: string | null): void => store.setState((s) => ({ ...s, commsAgent: agent }));
+/** The old views, now tabs of COMMS: they keep their names so that the callers do not change. */
+export const showLoop = (): void => showComms('traffic');
+/** The console's "Comm loop" link: TRAFFIC filtered to that agent. */
+export const showTraffic = (agent: string): void => showComms('traffic', agent);
+export const showDownlink = (): void => showComms('inbox');
+export const showParty = (): void => showComms('threads');
 export const showWindow = (): void => store.setState((s) => ({ ...s, view: 'window', consoleOpen: false }));
 export const showPlan = (): void => store.setState((s) => ({ ...s, view: 'plan', consoleOpen: false }));
-export const showDownlink = (): void => store.setState((s) => ({ ...s, view: 'downlink', consoleOpen: false }));
 export const showLog = (): void => store.setState((s) => ({ ...s, view: 'log', consoleOpen: false }));
 export const showLivery = (): void => store.setState((s) => ({ ...s, view: 'livery', consoleOpen: false }));
 export const showRules = (): void => store.setState((s) => ({ ...s, view: 'rules', consoleOpen: false }));
@@ -234,7 +262,6 @@ export const showMissions = (): void => store.setState((s) => ({ ...s, view: 'mi
 export const openNewMission = (draft: { name: string; goal: string } = { name: '', goal: '' }): void =>
   store.setState((s) => ({ ...s, view: 'missions', consoleOpen: false, selectedMission: null, missionDraft: draft }));
 export const selectMission = (id: string | null): void => store.setState((s) => ({ ...s, selectedMission: id, missionDraft: null }));
-export const showParty = (): void => store.setState((s) => ({ ...s, view: 'party', consoleOpen: false }));
 export const showBoard = (): void => store.setState((s) => ({ ...s, view: 'board', consoleOpen: false }));
 export const showBlackBox = (): void => store.setState((s) => ({ ...s, view: 'blackbox', consoleOpen: false }));
 /** Hangar and Recorder work on the selected console; opened from it, they follow `selected`. */

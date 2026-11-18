@@ -12,7 +12,7 @@ A notification appears only while the tab is hidden or not focused, for:
 - **A T-minus poll** that holds on a no-go or comes out go, and a [Static fire](./static-fire.md) the same way.
 - **A [Relief](./relief.md) request** waiting for your GO or NO-GO.
 
-Clicking a notification focuses the tab and opens the Downlink (a message) or the room (a poll or a Relief request). What was in the inbox when the page connected is history and is not announced; messages that arrive while you are looking at the tab are not announced either.
+Clicking a notification focuses the tab and opens the INBOX tab of Comms (a message) or the room (a poll or a Relief request). What was in the inbox when the page connected is history and is not announced; messages that arrive while you are looking at the tab are not announced either.
 
 ## The tab title
 

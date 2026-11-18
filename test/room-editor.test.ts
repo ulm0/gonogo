@@ -198,7 +198,7 @@ describe('the store', () => {
   });
 
   it('starts and ends editing, and the editor opens on the Room view', () => {
-    store.setState((s) => ({ ...s, view: 'loop', editingRoom: false }));
+    store.setState((s) => ({ ...s, view: 'comms', editingRoom: false }));
     setEditingRoom(true);
     expect(store.getState()).toMatchObject({ editingRoom: true, view: 'room' });
     setEditingRoom(false);

@@ -216,7 +216,7 @@ describe('the page', () => {
     expect(ids(['missions'])).not.toContain('new-mission');
     expect(ids([])).toContain('new-mission');
     // the core views stay
-    expect(ids(['flight-plan', 'mission-log'])).toEqual(expect.arrayContaining(['view:room', 'view:rules', 'view:downlink', 'view:loop']));
+    expect(ids(['flight-plan', 'mission-log'])).toEqual(expect.arrayContaining(['view:room', 'view:rules', 'comms:inbox', 'comms:traffic']));
     for (const view of Object.keys(VIEW_FEATURE)) expect(featureById(VIEW_FEATURE[view as keyof typeof VIEW_FEATURE] as string)).toBeDefined();
   });
 });
