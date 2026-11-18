@@ -975,6 +975,13 @@ describe('tokens', () => {
     expect(JSON.stringify(spec)).not.toContain('hook-secret');
   });
 
+  it('a started agent never gets the reload target of its room', async () => {
+    const l = launcher({ env: { ...baseEnv(), GONOGO_SUPERVISOR_PID: '1234', GONOGO_ROOM: 'main' } });
+    const { spec } = await l.prepareStart(agent(), { generation: 1, flag: null });
+    expect(spec.env.GONOGO_SUPERVISOR_PID).toBeUndefined();
+    expect(spec.env.GONOGO_ROOM).toBeUndefined();
+  });
+
   it('answers null for anything that is not a live token', () => {
     const l = launcher();
     for (const value of ['', ' ', 'x'.repeat(100_000), '__proto__', 'constructor', 'toString', '\u0000']) {

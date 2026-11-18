@@ -410,6 +410,31 @@ describe('PR 2: the room side of the question, and Update from main only', () =>
   }, 60_000);
 });
 
+describe('PR 2: after review', () => {
+  it('only main gets the update hook in its environment; no room hands the reload target to its agents', async () => {
+    addRoom(home, 'team');
+    await supervise({ GONOGO_UPDATE_HOOK: 'http://hook.example/x', GONOGO_UPDATE_HOOK_TOKEN: 'hook-secret' });
+    await until(() => existsSync(join(home, 'rooms', 'team', 'dump.json')) && existsSync(join(home, 'dump.json')));
+    const env = (dir: string): Record<string, string> => (JSON.parse(readFileSync(join(dir, 'dump.json'), 'utf8')) as { env: Record<string, string> }).env;
+    expect(env(home).GONOGO_UPDATE_HOOK).toBe('http://hook.example/x');
+    expect(env(join(home, 'rooms', 'team')).GONOGO_UPDATE_HOOK).toBeUndefined();
+    expect(env(join(home, 'rooms', 'team')).GONOGO_UPDATE_HOOK_TOKEN).toBeUndefined();
+    expect(JSON.stringify(env(join(home, 'rooms', 'team')))).not.toContain('hook-secret');
+    expect(env(join(home, 'rooms', 'team')).GONOGO_ROOM).toBe('team');
+  }, 30_000);
+
+  it('a room other than main has no update route: 409, hook or not', async () => {
+    const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: 'team', GONOGO_UPDATE_HOOK: 'http://hook.example/x' } });
+    try {
+      const call = (path: string): Promise<Response> => fetch(`http://127.0.0.1:${running.port}${path}`, { method: 'POST', headers: { authorization: `Bearer ${running.browserToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ version: '9.9.9' }) });
+      expect((await call('/api/update')).status).toBe(409);
+      expect((await call('/api/update/undo')).status).toBe(409);
+    } finally {
+      await running.stop();
+    }
+  }, 30_000);
+});
+
 describe('PR 2: an update that asks first', () => {
   it('start() with Docker waits for the answer; a second click while the question is out is refused', async () => {
     const { createUpdater } = await import('../src/server/updater.js');

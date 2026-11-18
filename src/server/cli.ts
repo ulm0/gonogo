@@ -999,8 +999,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
       // only a gonogo started from the command line has the signal handler that does the hand-over; a test or an embedder has not
-      update: (version) => updater.start(version),
-      undoUpdate: () => updater.undo(),
+      // only room main updates (and so only main can reach an update hook or the Docker socket through the page); the others answer 409
+      ...(isMain ? { update: (version: unknown) => updater.start(version), undoUpdate: () => updater.undo() } : {}),
       reload: () => {
         if (!triggerReload()) return { ok: false, reason: 'reload is only available in a gonogo started from the command line' };
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
