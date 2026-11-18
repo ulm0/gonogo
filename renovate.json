@@ -5,10 +5,13 @@
   "schedule": ["before 6am on monday"],
   "prConcurrentLimit": 5,
   "rangeStrategy": "pin",
+  "minimumReleaseAge": "1 day",
+  "internalChecksFilter": "strict",
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security"],
-    "schedule": ["at any time"]
+    "schedule": ["at any time"],
+    "minimumReleaseAge": null
   },
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {

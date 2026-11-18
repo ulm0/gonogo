@@ -26,6 +26,10 @@ Docs are VitePress, from `docs/` (pages listed in `.vitepress/config.mts`): `pnp
 
 A new feature needs tests (unit and routes), a spec, a page in `docs/features/` with its sidebar line in `.vitepress/config.mts`, and a line in the revision log of `docs/contract.md`. Keep English plain and short. Mark a known limit with `shortcut: <the limit>, <when to upgrade>`. Add no dependency without a reason. pnpm runs no dependency build script unless `pnpm.onlyBuiltDependencies` in `package.json` names the package.
 
+## Dependency updates
+
+Renovate opens an update only once the release is a day old (`minimumReleaseAge`), and `internalChecksFilter: strict` hides a branch whose release is still too young, so no pull request exists to merge early. A security fix does not wait. pnpm can hold the same line on install: if it refuses a version that is younger than its `minimumReleaseAge`, name the package in `minimumReleaseAgeExclude` in a `pnpm-workspace.yaml` at the root, for example `minimumReleaseAgeExclude: ["vitest@5.1.1"]`, and remove the line once the release is old enough. Pin an exact version there, never a whole package.
+
 ## The stand-in agent
 
 `test/fake-claude.mjs` stands in for `claude`: it checks the arguments and the generated `settings.json` and `mcp.json`, draws a screen, posts the same hooks and calls the same MCP tools. `test/e2e.test.ts` runs the real server with it (`GONOGO_AGENT_CMD`) end to end, without a model or account. When you add or rename a tool or change `mcp.json`, update its `ALLOWED_TOOLS` and checks.
