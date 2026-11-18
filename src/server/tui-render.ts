@@ -4,7 +4,7 @@
  * a glyph and a word, so the colour is never the only mark, and a log of the session still reads. Every text of the server goes
  * through `clean` first: an agent wrote it, and the terminal acts on what it is given.
  */
-import { STATE_LABELS } from '../shared/protocol.js';
+import { DOCS_URL, STATE_LABELS } from '../shared/protocol.js';
 import type { AgentView, DownlinkItem } from '../shared/protocol.js';
 import { lengths } from './tui-keys.js';
 import type { Ui } from './tui-keys.js';
@@ -179,6 +179,7 @@ const HELP: readonly string[] = [
   '  ?       this help      q, Ctrl-C   leave',
   'In a console: everything you type goes to it. Ctrl-] then q leaves it, Ctrl-] then ? lists the keys, Ctrl-] twice sends Ctrl-].',
   'A console has one size: attaching resizes it to this terminal, and the page follows.',
+  `Docs: ${DOCS_URL}`,
 ];
 
 const FOOTERS: Readonly<Record<Ui['screen'], string>> = {

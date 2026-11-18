@@ -265,6 +265,7 @@ describe('the screen', () => {
 
   it('shows the help over the screen, and says so before the server has answered', () => {
     expect(draw(rich, { ...initialUi(), help: true }, 100, 24).map(plain).join('\n')).toContain('Ctrl-] then q leaves it');
+    expect(draw(rich, { ...initialUi(), help: true }, 100, 24).map(plain).join('\n')).toContain('Docs: https://gonogo.ulm0.com/');
     const waiting = draw(initialState(), initialUi(), 80, 24).map(plain).join('\n');
     expect(waiting).toContain('Waiting for the server…');
     expect(waiting).toContain('connecting…');
