@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, sym
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
 import { startGonogo } from '../src/server/cli.js';
 import { acquireSupervisorLock } from '../src/server/home.js';
 import { addRoom, loadRooms, ROOMS_FILE, RoomsError, RESERVED_ROOT_NAMES } from '../src/server/rooms.js';
@@ -263,4 +264,28 @@ describe('reserved names', () => {
     writeFileSync(join(home, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [{ id: 'api', name: 'Old' }, { id: 'rooms' }] }));
     expect(loadRooms(home).map((r) => r.id)).toEqual(['main', 'api', 'rooms']);
   });
+});
+
+describe('after review of #85', () => {
+  it('a Director token that changes on disk ends the sockets opened with the old one, and the new one opens a socket', async () => {
+    const s = await supervise();
+    await until(async () => (await roomsOf(s)).every((r) => r.state === 'running'));
+    const connect = (token: string): Promise<WebSocket> =>
+      new Promise((resolve, reject) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${s.port}/ws`, ['gonogo.v1', `token.${token}`]);
+        ws.once('open', () => resolve(ws));
+        ws.once('error', reject);
+        ws.once('unexpected-response', (_req, res) => reject(new Error(`status ${res.statusCode}`)));
+      });
+    const old = s.directorToken;
+    const socket = await connect(old);
+    const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+    rotateDirectorToken(home);
+    // the supervisor looks at the file when something asks: the next request does
+    expect((await get(s, '/api/rooms', old)).status).toBe(401);
+    await closed;
+    await expect(connect(old)).rejects.toThrow(/401/);
+    const fresh = await connect(readFileSync(join(home, 'token'), 'utf8').trim());
+    fresh.close();
+  }, 30_000);
 });

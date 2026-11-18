@@ -3,6 +3,7 @@
 import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import http from 'node:http';
+import { WebSocketServer } from 'ws';
 import { join } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -30,6 +31,13 @@ const server = http.createServer((req, res) => {
     return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
   }
   res.writeHead(200, { 'content-type': 'text/html' }).end(`<p>room at ${home}</p>`);
+});
+// a socket that stays open until the other side ends it (the proxy tests need one through the whole supervisor)
+const wss = new WebSocketServer({ noServer: true, handleProtocols: (set) => (set.has('gonogo.v1') ? 'gonogo.v1' : false) });
+server.on('upgrade', (req, socket, head) => {
+  const offered = String(req.headers['sec-websocket-protocol'] ?? '');
+  if (!offered.includes(`token.${token}`)) return void socket.destroy();
+  wss.handleUpgrade(req, socket, head, () => undefined);
 });
 // FAKE_ROOM_DELAY_MS: a room that takes its time to be ready (main only when FAKE_ROOM_DELAY_ONLY=main is the id of the home's folder name)
 const delay = Number(process.env.FAKE_ROOM_DELAY_MS ?? 0);

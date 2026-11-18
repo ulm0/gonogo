@@ -1255,6 +1255,11 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
       .then(() => {
         relaunch(process.argv.slice(2), process.argv[1]);
         exit(0);
+      })
+      .catch((error: unknown) => {
+        // nothing else is left to serve the port: leave non-zero so the service manager starts gonogo again
+        log.error('the reload failed; leaving', error);
+        exit(1);
       });
   });
   // announced when main answers (or after 30 s): scripts that read this line and call /api at once must find the room there

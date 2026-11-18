@@ -70,13 +70,14 @@ let main: Fake;
 let front: http.Server;
 let base: string;
 let stoppedRoom = false;
+let proxyUnderTest: ReturnType<typeof createRoomProxy>;
 
 beforeEach(async () => {
   a = await fakeRoom('a');
   b = await fakeRoom('b');
   main = await fakeRoom('main');
   stoppedRoom = false;
-  const proxy = createRoomProxy({
+  const proxy = (proxyUnderTest = createRoomProxy({
     directorToken: DIRECTOR,
     allowedNames: new Set(['rooms.example']),
     rooms: () => [
@@ -85,7 +86,7 @@ beforeEach(async () => {
       { id: 'main', port: main.port, token: TOKEN_MAIN },
       { id: 'down', port: stoppedRoom ? null : null, token: null },
     ],
-  });
+  }));
   front = http.createServer((req, res) => {
     if (!proxy.handle(req, res)) {
       res.writeHead(200);
@@ -146,7 +147,7 @@ describe('rooms proxy: HTTP', () => {
   });
 
   it('keeps the agents\' routes closed at the root too, in any case, and passes webhooks and docks without Authorization', async () => {
-    for (const path of ['/hook/ana/Stop', '/hook/', '/mcp', '/mcp?x=1', '/Hook/ana/Stop', '/MCP', '/r/main/Hook/x']) expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
+    for (const path of ['/hook/ana/Stop', '/hook/', '/mcp', '/mcp?x=1', '/Hook/ana/Stop', '/MCP', '/r/main/Hook/x', '/%68ook/ana/Stop', '/%48OOK/x', '/%6dcp', '/%6Dcp/x', '/r/a/%68ook/ana/Stop', '/r/main/%6dcp']) expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
     expect((await get('/uplink/u1', director, 'POST', '{}')).status).toBe(200);
     expect((await get('/dock/hello', director, 'POST', '{}')).status).toBe(200);
     expect(main.seen.map((x) => x.headers.authorization)).toEqual([undefined, undefined]);
@@ -234,7 +235,7 @@ describe('rooms proxy: HTTP', () => {
     expect(a.seen[0]?.headers.authorization).toBeUndefined();
     expect(a.seen[0]?.headers['x-signature']).toBe('sig');
     expect((await get('/r/a/dock/hello', {}, 'POST', '{}')).status).toBe(200);
-    for (const path of ['/r/a/hook/ana/Stop', '/r/a/mcp', '/r/a/mcp/x']) {
+    for (const path of ['/r/a/hook/ana/Stop', '/r/a/mcp', '/r/a/mcp/x', '/r/a/%68ook/ana/Stop', '/r/a/%6Dcp']) {
       expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
     }
     expect(a.seen).toHaveLength(2);
@@ -322,6 +323,16 @@ describe('rooms proxy: WebSocket', () => {
     await expect(open('/r/zz/ws', [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR])).rejects.toThrow(/404/);
     await expect(open('/r/down/ws', [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR])).rejects.toThrow(/503/);
     expect(a.seen).toEqual([]);
+  });
+
+  it('closeSockets ends every open socket (the Director token changed), and the page may open a new one', async () => {
+    const one = await open('/r/a/ws', [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR]);
+    const two = await open('/r/b/ws', [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR]);
+    const closed = Promise.all([one, two].map((ws) => new Promise<void>((resolve) => ws.once('close', () => resolve()))));
+    proxyUnderTest.closeSockets();
+    await closed;
+    const again = await open('/r/a/ws', [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR]);
+    again.close();
   });
 
   it('closing one side closes the other', async () => {

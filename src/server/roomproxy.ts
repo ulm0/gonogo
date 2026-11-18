@@ -47,6 +47,8 @@ export interface RoomProxy {
   handle(req: IncomingMessage, res: ServerResponse): boolean;
   /** True when the upgrade was proxied or refused here; false for a reserved path. */
   upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean;
+  /** Ends every WebSocket that is open through the proxy (the Director token changed: the page reconnects with the new one). */
+  closeSockets(): void;
 }
 
 const PREFIX = /^\/r\/([^/?#]*)(\/[^?#]*)?(\?[^#]*)?$/;
@@ -59,7 +61,8 @@ type Kind = 'browser' | 'passthrough' | 'closed';
 
 /** What the first segment of the path inside a room is for. */
 function kindOf(rest: string): Kind {
-  const first = rest.split('/')[1] ?? '';
+  // decoded, because a room's router decodes it (/%68ook is /hook there); suspicious() has already made sure it decodes
+  const first = decodeURIComponent(rest.split('/')[1] ?? '');
   // case-insensitive on purpose: a router that folds case must not find an agent's route through here
   if (['hook', 'mcp'].includes(first.toLowerCase())) return 'closed';
   if (first === 'uplink' || first === 'dock') return 'passthrough';
@@ -191,9 +194,15 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     return out;
   }
 
+  /** The browser sockets that are open through the proxy. */
+  const open = new Set<Duplex>();
+
   const directorOk = (token: string | null): boolean => sameToken(token, typeof options.directorToken === 'string' ? options.directorToken : options.directorToken());
 
   return {
+    closeSockets() {
+      for (const socket of [...open]) socket.destroy();
+    },
     handle(req, res) {
       if (isReserved(req.url ?? '')) return false;
       // /r/<id> without the slash: the page needs it for its relative asset paths
@@ -265,6 +274,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         if (head.length > 0) roomSocket.write(head);
         roomSocket.pipe(socket);
         socket.pipe(roomSocket);
+        open.add(socket);
+        socket.once('close', () => open.delete(socket));
         const end = (): void => {
           roomSocket.destroy();
           socket.destroy();

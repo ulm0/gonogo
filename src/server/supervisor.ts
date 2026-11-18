@@ -144,6 +144,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   // `gonogo token rotate` writes a new `token` file: it is taken up the next time anything asks, with no restart
   const tokenPath = join(options.home, DIRECTOR_TOKEN_FILE);
   let tokenStamp = '';
+  let closeDirectorSockets: () => void = () => undefined;
   const stampOf = (): string => {
     try {
       const st = statSync(tokenPath);
@@ -159,7 +160,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       tokenStamp = now;
       try {
         const fresh = readFileSync(tokenPath, 'utf8').trim();
-        if (/^[0-9a-f]{64}$/.test(fresh)) directorToken = fresh;
+        if (/^[0-9a-f]{64}$/.test(fresh) && fresh !== directorToken) {
+          directorToken = fresh;
+          // a socket opened with the old token must not outlive it: the page reconnects with the new one
+          closeDirectorSockets();
+        }
       } catch {
         // the old value stays until a readable one is there
       }
@@ -344,6 +349,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     allowedNames,
     rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, port: c.state === 'running' ? c.port : null, token: c.token })),
   });
+
+  closeDirectorSockets = () => proxy.closeSockets();
 
   const hostOk = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
