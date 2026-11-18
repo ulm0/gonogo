@@ -8,7 +8,6 @@
  * GONOGO_UPDATE_HOOK, optional bearer token GONOGO_UPDATE_HOOK_TOKEN); with none, the page shows the commands.
  */
 import { execFile } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import type { InstallKind, Logger, UpdateView } from '../shared/protocol.js';
 import { nullLogger } from './constants.js';
 import { installCommand } from './rollout.js';
@@ -37,6 +36,8 @@ export interface RunResult {
 
 export interface UpdaterOptions {
   kind: InstallKind;
+  /** Where the installer runs: a private folder (<home>/run), never a shared one, so a planted .npmrc in /tmp is not read. */
+  cwd: string;
   /** The version that runs now: the rollback goes back to it. */
   current: string;
   rollout: Pick<Rollout, 'view' | 'setUpdate'>;
@@ -68,9 +69,9 @@ export function installerEnv(from: NodeJS.ProcessEnv): Record<string, string> {
   return out;
 }
 
-const defaultRun = (file: string, args: string[]): Promise<RunResult> =>
+const defaultRun = (cwd: string, file: string, args: string[]): Promise<RunResult> =>
   new Promise((resolve) => {
-    execFile(file, args, { cwd: tmpdir(), env: installerEnv(process.env), timeout: INSTALL_TIMEOUT_MS, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+    execFile(file, args, { cwd, env: installerEnv(process.env), timeout: INSTALL_TIMEOUT_MS, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
       const code = error === null ? 0 : typeof (error as NodeJS.ErrnoException & { code?: unknown }).code === 'number' ? ((error as { code: number }).code) : null;
       resolve({ code, out: `${stdout}\n${stderr}${error !== null && code === null ? `\n${error.message}` : ''}` });
     });
@@ -89,7 +90,7 @@ export function tailOf(out: string): string[] {
 
 export function createUpdater(options: UpdaterOptions): Updater {
   const log = options.log ?? nullLogger;
-  const run = options.run ?? defaultRun;
+  const run = options.run ?? ((file: string, args: string[]) => defaultRun(options.cwd, file, args));
   let state: UpdateView = { state: 'idle', version: null, note: '', tail: [], rollback: null };
 
   const set = (next: Partial<UpdateView>): UpdateView => {

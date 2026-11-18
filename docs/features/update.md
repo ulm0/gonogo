@@ -26,7 +26,7 @@ The **Update to x.y.z** button is the Director's go. It is never pressed for you
 is asked and nothing can be started. The server runs exactly one command and nothing else:
 
 - npm: `npm install -g @ulm0/gonogo@x.y.z`; pnpm: `pnpm add -g @ulm0/gonogo@x.y.z`, without a shell, with a small environment (`PATH`,
-  `HOME`, `npm_config_*`, `PNPM_*`; none of gonogo's variables, no token), in a temporary folder, for at most 5 minutes.
+  `HOME`, `npm_config_*`, `PNPM_*`; none of gonogo's variables, no token), in a private folder (`<home>/run`, mode 0700: a planted `.npmrc` in `/tmp` is never read), for at most 5 minutes.
 - `x.y.z` must be a release number, the one the registry check found, and the same one the page sent: anything else is refused (400 or 409).
 - One update at a time. The page follows it through the rollout frames: *Installing…*, then *Reloading* or *Installed*, with the last 8
   lines of the installer's output and the **way back** (`npm install -g @ulm0/gonogo@<the version that ran>`, then reload).

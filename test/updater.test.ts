@@ -49,6 +49,7 @@ function setup(over: { kind?: Parameters<typeof createUpdater>[0]['kind']; view?
   const calls: Array<{ file: string; args: string[] }> = [];
   const updater = createUpdater({
     kind: over.kind ?? 'npm',
+    cwd: '/tmp',
     current: '0.2.0',
     rollout: { view: () => view, setUpdate: (u) => void seen.push(u) },
     run:

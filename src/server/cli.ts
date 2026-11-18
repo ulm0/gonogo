@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants as fsConstants, existsSync, readFileSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -759,8 +759,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 100).unref();
       return true;
     };
+    mkdirSync(runDir(home.dir), { recursive: true, mode: 0o700 });
     const updater: Updater = createUpdater({
       kind: installed.kind,
+      cwd: runDir(home.dir),
       current: version,
       rollout,
       reload: triggerReload,
