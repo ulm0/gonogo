@@ -5,6 +5,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 ## Unreleased
 
 - **Tab name.** Flight Rules has a TAB NAME field: the title of the browser tab becomes `<name> · gonogo` (the unread count stays in front), to tell several gonogo sessions apart. Kept on the server for every browser; default is the station name when `GONOGO_STATION` is set, else `gonogo`.
+- **`gonogo tui`: a console cannot write your clipboard or title.** The OSC 52 (clipboard) and OSC 0, 1, 2 (title) sequences in a console's output are cut before they reach your terminal, across the pieces the output arrives in.
 
 - **Link to the online docs.** <https://gonogo.ulm0.com/> is in the start-up log (a log line: stdout keeps its one `gonogo ready:` line), `gonogo --help`, `gonogo doctor`, a Docs line in the Patch Panel and the Commissioning checklist. One constant, `DOCS_URL`. The package `homepage` and the README already had it.
 
