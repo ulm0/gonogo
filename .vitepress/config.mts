@@ -79,6 +79,7 @@ export default defineConfig({
           { text: 'Uplink', link: '/features/uplink' },
           { text: 'Relay', link: '/features/relay' },
           { text: 'Phone approvals', link: '/features/phone-approvals' },
+          { text: 'Live reload', link: '/features/live-reload' },
           { text: 'Flight Plan', link: '/features/flight-plan' },
           { text: 'Missions', link: '/features/missions' },
           { text: 'Room editor', link: '/features/room-editor' },

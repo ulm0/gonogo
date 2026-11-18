@@ -3,8 +3,8 @@
  * the exact command line, the child environment and the token of one start. Claude's own files are touched in seed
  * mode only.
  */
-import { randomBytes } from 'node:crypto';
-import { unlinkSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
@@ -413,9 +413,11 @@ async function transcriptExists(projectsRoot: string, dirs: readonly string[], s
 export function createLauncher(options: LauncherOptions): Launcher {
   const log = options.log ?? nullLogger;
   const homeDir = resolve(options.homeDir);
+  /** Keyed by the SHA-256 of the token: the token itself is never kept here, so the table can be saved for a live reload. */
   const byToken = new Map<string, AgentIdentity>();
+  const hashOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
   /** `container`: the Clean Room container of that start, removed when the start ends. */
-  const byAgent = new Map<string, { token: string; generation: number; container?: string }>();
+  const byAgent = new Map<string, { hash: string; generation: number; container?: string }>();
   /** A removal still running per agent: the next start of that agent waits for it, so it never removes the new container. */
   const removals = new Map<string, Promise<void>>();
   let trustChain: Promise<unknown> = Promise.resolve();
@@ -425,12 +427,43 @@ export function createLauncher(options: LauncherOptions): Launcher {
     return join(homeDir, AGENTS_DIR, name);
   };
 
+  // Live reload: <home>/run/tokens.json holds name, generation and the hash of each live token (0600), so that a new server keeps
+  // answering the hook and MCP calls of agents that kept running. Off unless the option is given.
+  const tokensFile = options.tokensFile ?? null;
+  const saveTokens = (): void => {
+    if (tokensFile === null) return;
+    try {
+      const entries = [...byAgent.entries()].map(([name, v]) => ({ name, generation: v.generation, hash: v.hash }));
+      const temp = `${tokensFile}.${process.pid}.tmp`;
+      writeFileSync(temp, JSON.stringify({ version: 1, tokens: entries }), { mode: FILE_MODE });
+      renameSync(temp, tokensFile);
+    } catch (error) {
+      log.warn(`could not save the tokens: ${errorText(error)}`);
+    }
+  };
+  const loadTokens = (): void => {
+    if (tokensFile === null) return;
+    try {
+      const saved = JSON.parse(readFileSync(tokensFile, 'utf8')) as { tokens?: Array<{ name?: unknown; generation?: unknown; hash?: unknown }> };
+      for (const t of Array.isArray(saved.tokens) ? saved.tokens : []) {
+        if (typeof t.name !== 'string' || !NAME_RE.test(t.name) || typeof t.generation !== 'number' || typeof t.hash !== 'string' || !/^[0-9a-f]{64}$/.test(t.hash)) continue;
+        byToken.set(t.hash, { agent: t.name, generation: t.generation });
+        byAgent.set(t.name, { hash: t.hash, generation: t.generation });
+      }
+    } catch (error) {
+      if (errorCode(error) !== 'ENOENT') log.warn(`could not read the saved tokens: ${errorText(error)}`);
+    }
+  };
+  loadTokens();
+
   const issue = (name: string, generation: number): string => {
     const older = byAgent.get(name);
-    if (older) byToken.delete(older.token);
+    if (older) byToken.delete(older.hash);
     const token = randomBytes(TOKEN_BYTES).toString('hex');
-    byToken.set(token, { agent: name, generation });
-    byAgent.set(name, { token, generation });
+    const hash = hashOf(token);
+    byToken.set(hash, { agent: name, generation });
+    byAgent.set(name, { hash, generation });
+    saveTokens();
     return token;
   };
 
@@ -438,8 +471,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
   const revoke = (name: string, generation: number): void => {
     const current = byAgent.get(name);
     if (!current || current.generation !== generation) return;
-    byToken.delete(current.token);
+    byToken.delete(current.hash);
     byAgent.delete(name);
+    saveTokens();
     if (current.container !== undefined) removals.set(name, removeContainer(current.container, options.env ?? process.env));
     try {
       unlinkSync(join(agentDir(name), AGENT_TOKEN_FILE));
@@ -640,7 +674,15 @@ export function createLauncher(options: LauncherOptions): Launcher {
 
   return {
     prepareStart,
-    resolveToken: (token) => byToken.get(token) ?? null,
+    resolveToken: (token) => (typeof token === 'string' ? (byToken.get(hashOf(token)) ?? null) : null),
+    keepTokens: (live) => {
+      for (const [name, v] of [...byAgent.entries()]) {
+        if (live.some((l) => l.name === name && l.generation === v.generation)) continue;
+        byToken.delete(v.hash);
+        byAgent.delete(name);
+      }
+      saveTokens();
+    },
     revoke,
     renameAgentFiles,
     memoryPath: (name) => join(agentDir(name), MEMORY_FILE),

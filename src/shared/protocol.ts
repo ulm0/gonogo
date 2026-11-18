@@ -1641,6 +1641,20 @@ export interface TerminalHost {
    * Optional so that fakes of the host need not provide it.
    */
   forget?(name: string): void;
+  /** Every record the host knows (a finished one too), running or not. Optional: only the pty host and its client need it. */
+  list?(): TerminalListItem[];
+  /** Live reload: like spawn(), but it may wait for the answer of a pty host. When present, the server calls this one. */
+  spawnAsync?(name: string, generation: number, spec: SpawnSpec): Promise<{ pid: number }>;
+}
+
+/** One record of a terminal host (live reload). */
+export interface TerminalListItem {
+  name: string;
+  generation: number;
+  pid: number | null;
+  running: boolean;
+  /** Bracketed paste is on: submit() would be accepted. */
+  paste: boolean;
 }
 
 /** Options of createLauncher (owner: builder B; here so that cli.ts is written against one definition). */
@@ -1657,6 +1671,8 @@ export interface LauncherOptions {
   agentCmd?: string[] | null;
   /** Default CLAUDE_BIN. */
   claudeBin?: string;
+  /** Live reload: where the hashes of the live tokens are saved (0600) and read at creation. Default none: tokens live in memory only. */
+  tokensFile?: string | null;
   /** Clearance: the values of an agent's keys, put in that agent's environment only. Default none. */
   keys?: (name: string) => Record<string, string>;
   /** Default models: the model of a provider that the room sets, used when an agent has no `model` of its own. Default none. */
@@ -1674,6 +1690,8 @@ export interface Launcher {
    */
   prepareStart(agent: AgentRecord, opts: { generation: number; flag: SessionFlag | null }): Promise<PreparedStart>;
   resolveToken(token: string): AgentIdentity | null;
+  /** Live reload: forget every saved token that is not one of these (name and generation). */
+  keepTokens(live: Array<{ name: string; generation: number }>): void;
   /** Forget the token of that start and delete agents/<name>/token. No-op for an unknown or already revoked start. */
   revoke(name: string, generation: number): void;
   /** Rename <home>/agents/<old> to <new>. Rejects when <new> exists. Resolves when <old> does not exist. */
@@ -1746,6 +1764,10 @@ export type DirCheck = { ok: true; path: string } | { ok: false; error: string }
 
 /** Everything the hub needs from the outside world. cli.ts builds the real one; hub tests build a fake. */
 export interface HubIo {
+  /** The redline or hold text of each agent that has one, after every change (live reload keeps a hold across a restart). Optional. */
+  saveHolds?(holds: Record<string, string>): void;
+  /** Live reload: what kept running in the pty host and the saved holds, read once at start. Optional. */
+  adoptable?(): Promise<{ running: Array<{ name: string; generation: number }>; holds: Record<string, string> }>;
   /** ms epoch. */
   now(): number;
   setTimer(fn: () => void, ms: number): TimerHandle;
@@ -1936,6 +1958,16 @@ export interface Hub {
    */
   onUserInput(name: string, data: string): InputEffect;
   onTerminalEvent(event: TerminalEvent): void;
+  /**
+   * Live reload (docs/live-reload-spec.md): takes over agents that kept running in the pty host. For each one whose name is in the
+   * roster: its generation is restored and the state comes from the screen (a dialog or a hold reads needs_you, never idle by
+   * guess). `holds` is the saved redline text of each agent. Returns the names that are not in the roster (the caller stops them).
+   */
+  /** Live reload: the hub ends without stopping any agent (a hold stays in the saved file). */
+  release(): void;
+  /** Live reload: writes the holds now; throws HubError conflict when they cannot be saved (the reload is then refused). */
+  saveHoldsNow(): void;
+  adopt(running: Array<{ name: string; generation: number }>, holds: Record<string, string>): { adopted: string[]; unknown: string[] };
   /**
    * T-minus. Throws HubError: conflict when a poll is open or on hold ("clear it first"); bad_request for an unknown or stopped
    * agent (field 'agents') or when there is nobody to poll. Sends each polled agent a message from "user" (subject "T-minus:

@@ -13,6 +13,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 - **Mission budget.** A dollar budget on a mission: one Downlink warning at 80 %, and Redline stops the agents working on it at 100 %.
 - **Room editor.** EDIT ROOM puts the blocks of the Room view (the wall's five and OPERATIONS) on a 12-column grid: move and resize by pointer or keyboard, hide what you do not use (never OPERATIONS), choose the order of the consoles (drag, or Positions, Needs you first, Name). A saved layout is shared by every browser and read by the phone; a hidden block with something live shows a strip. Without one the page is as it was. Saves name the revision they were made from.
 
+- **Live reload (opt-in).** `gonogo --pty-host` keeps the agents in a small process of their own, so `gonogo reload` (or Reload in Flight Rules) starts a new gonogo without stopping them: the turn in progress, the screen, and a Hold all survive. Tokens are saved as hashes. Off by default for one release.
+
 ## 0.2.0 (2026-11-18)
 
 Features and fixes since 0.1.2. Each was tried with the stand-in agent only: not verified with a real `claude`, `agy`, Telegram or remote control, and not in a browser.

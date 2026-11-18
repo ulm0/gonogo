@@ -283,6 +283,14 @@ describe('Pad Check', () => {
 describe('the command line: doctor, update and the opt-out', () => {
   it('doctor and update stand alone', () => {
     expect(parseArgs(['doctor'])).toEqual({ kind: 'doctor' });
+    // live reload
+    expect(parseArgs(['reload'])).toEqual({ kind: 'reload' });
+    expect(parseArgs(['reload', '--home', '/h'])).toEqual({ kind: 'reload', home: '/h' });
+    expect(parseArgs(['reload', '--port', '1'])).toEqual({ kind: 'error', message: 'reload takes only --home <dir>' });
+    expect(parseArgs(['ptyhost', '--home', '/h'])).toEqual({ kind: 'ptyhost', home: '/h' });
+    expect(parseArgs(['ptyhost'])).toEqual({ kind: 'error', message: 'ptyhost needs --home <dir>' });
+    expect(parseArgs(['--pty-host'])).toEqual({ kind: 'run', options: { ptyHost: true } });
+    expect(parseArgs([])).toEqual({ kind: 'run', options: {} });
     expect(parseArgs(['update'])).toEqual({ kind: 'update' });
     expect(parseArgs(['doctor', '--port', '1'])).toEqual({ kind: 'error', message: 'doctor takes no arguments' });
     expect(parseArgs(['update', 'now'])).toEqual({ kind: 'error', message: 'update takes no arguments' });

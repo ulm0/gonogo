@@ -2,6 +2,7 @@
  * Launcher tests (contract 10.2): a temp home, no claude, no network. `node:fs/promises.rename` is wrapped so that a test can
  * play the part of a claude that rewrites .claude.json between our write and our read-back (open item O11).
  */
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -970,6 +971,53 @@ describe('tokens', () => {
     expect(l.resolveToken(first.token)).toBeNull();
     expect(l.resolveToken(second.token)).toStrictEqual({ agent: 'ana', generation: 2 });
     expect(await text(agentFile('ana', 'token'))).toBe(`${second.token}\n`);
+  });
+
+  describe('live reload: tokens saved as hashes', () => {
+    const file = (): string => join(home, 'run', 'tokens.json');
+    const withFile = (): Launcher => {
+      mkdirSync(join(home, 'run'), { recursive: true });
+      return launcher({ tokensFile: file() });
+    };
+
+    it('keeps working for a new launcher on the same file, and the file holds the hash, never the token, at 0600', async () => {
+      const first = withFile();
+      const { token } = await first.prepareStart(agent(), { generation: 3, flag: null });
+      const saved = await text(file());
+      expect(saved).not.toContain(token);
+      expect(saved).toMatch(/[0-9a-f]{64}/);
+      expect(statSync(file()).mode & 0o777).toBe(0o600);
+      const next = withFile();
+      expect(next.resolveToken(token)).toStrictEqual({ agent: 'ana', generation: 3 });
+      expect(next.resolveToken(token + 'x')).toBeNull();
+    });
+
+    it('a token that was revoked stays revoked after a reload', async () => {
+      const first = withFile();
+      const { token } = await first.prepareStart(agent(), { generation: 1, flag: null });
+      first.revoke('ana', 1);
+      expect(withFile().resolveToken(token)).toBeNull();
+    });
+
+    it('keepTokens drops the tokens of agents that no longer run there', async () => {
+      const first = withFile();
+      const a = await first.prepareStart(agent(), { generation: 1, flag: null });
+      const b = await first.prepareStart(agent({ name: 'ben' }), { generation: 2, flag: null });
+      const next = withFile();
+      next.keepTokens([{ name: 'ben', generation: 2 }]);
+      expect(next.resolveToken(a.token)).toBeNull();
+      expect(next.resolveToken(b.token)).toStrictEqual({ agent: 'ben', generation: 2 });
+      expect(withFile().resolveToken(a.token), 'the file follows').toBeNull();
+    });
+
+    it('ignores a damaged file and entries that are not hashes', async () => {
+      mkdirSync(join(home, 'run'), { recursive: true });
+      writeFileSync(file(), '{not json');
+      expect(() => launcher({ tokensFile: file() })).not.toThrow();
+      writeFileSync(file(), JSON.stringify({ version: 1, tokens: [{ name: 'ana', generation: 1, hash: 'plain-token' }, { name: '../x', generation: 1, hash: 'a'.repeat(64) }] }));
+      const l = launcher({ tokensFile: file() });
+      expect(l.resolveToken('plain-token')).toBeNull();
+    });
   });
 
   it('does nothing when the exit of an older generation arrives after a newer start', async () => {

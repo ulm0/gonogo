@@ -484,6 +484,33 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   }
 
   /** Engine Bay: working, idle and needs_you come from hooks (Claude Code, Gemini CLI); the rest are read from output activity. */
+  /** Live reload: the hold or redline text of each agent, saved after every change so that a restart of the hub never releases one. */
+  // A hold whose process ended without the Director asking (a pty host that stalled, a crash) stays in the file: the process may
+  // still be alive in the host, and the next hub that adopts it must find it held. A start, a resume or a requested stop clears it.
+  const lostHolds = new Map<string, string>();
+  let holdsSaved = true;
+
+  function saveHolds(): void {
+    if (!io.saveHolds) return;
+    const holds: Record<string, string> = {};
+    for (const [name, reason] of lostHolds) if (agents.has(name)) holds[name] = reason;
+    for (const [name, rt] of agents) if (rt.redline !== null) holds[name] = rt.redline;
+    try {
+      io.saveHolds(holds);
+      holdsSaved = true;
+    } catch (error) {
+      holdsSaved = false;
+      log.error('could not save the holds: a reload is refused until they are saved', error);
+    }
+  }
+
+  /** Live reload fails closed: with the holds not on disk, a new hub would release held agents. Saves again and throws when it cannot. */
+  function saveHoldsNow(): void {
+    if (!io.saveHolds) return;
+    saveHolds();
+    if (!holdsSaved) throw new HubError('conflict', 'the holds could not be saved, so a reload would release held agents: not reloading');
+  }
+
   function hooked(rt: Rt): boolean {
     return providerInfo(rt.record.provider).hooks;
   }
@@ -829,7 +856,10 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   /** The one way a state changes: `stateSince` moves only when the state value does (contract 4.4). */
   function setState(rt: Rt, state: AgentState, needs?: { kind: NeedsKind; reason: string }): void {
     // A trip outlives whatever the hooks and the screen say, until the Director resumes or the process ends.
-    if (rt.redline !== null && state === 'stopped') rt.redline = null;
+    if (rt.redline !== null && state === 'stopped') {
+      rt.redline = null;
+      saveHolds();
+    }
     if (rt.redline !== null) {
       state = 'needs_you';
       needs = { kind: 'redline', reason: rt.redline };
@@ -1071,7 +1101,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   /* ---- Redline ---- */
 
   function clearRedline(rt: Rt): void {
+    const had = rt.redline !== null || lostHolds.delete(rt.record.name);
     rt.redline = null;
+    if (had) saveHolds();
     rt.repeat = null;
     rt.toolFailAt = [];
     rt.apiErrorAt = [];
@@ -1083,6 +1115,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (rt.redline !== null || rt.removed || !hooked(rt) || rt.state === 'stopped' || rt.transition !== null) return;
     const wasWorking = rt.state === 'working';
     rt.redline = byHand ? HOLD_REASON : `redline: ${reason}`;
+    saveHolds();
     if (byHand) log.info(`${rt.record.name} is on hold`);
     else log.warn(`${rt.record.name} tripped the redline: ${reason}`);
     if (wasWorking && !io.press?.(rt.record.name, rt.generation, ESC)) {
@@ -1543,6 +1576,45 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     });
   }
 
+  function adopt(running: Array<{ name: string; generation: number }>, holds: Record<string, string>): { adopted: string[]; unknown: string[] } {
+    const adopted: string[] = [];
+    const unknown: string[] = [];
+    for (const item of running) {
+      const rt = agents.get(item.name);
+      if (!rt || rt.removed || rt.state !== 'stopped') {
+        unknown.push(item.name);
+        continue;
+      }
+      guarded('adopt', () => {
+        rt.generation = item.generation;
+        clearRedline(rt);
+        rt.exit = null;
+        rt.ready = true;
+        rt.hooksSeen = false;
+        rt.flag = null;
+        rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), permissions: rulesKey(rt.record), engine: engineKey(rt.record) };
+        const saved = holds[item.name];
+        const probe = screenOf(rt);
+        // errs toward needs_you, never toward idle by guess: a saved hold or trip, then a dialog, then a screen that cannot be read yet
+        if (typeof saved === 'string' && saved !== '') {
+          rt.redline = saved;
+          setState(rt, 'needs_you');
+        } else if (probe?.dialog) {
+          setState(rt, 'needs_you', { kind: 'dialog', reason: 'a dialog was open when gonogo reloaded' });
+        } else {
+          // the input box is drawn during a turn too, so it says nothing; the window title does (an unreadable one counts as working)
+          setState(rt, titleOf(rt)?.glyph === 'idle' ? 'idle' : 'working');
+        }
+        syncHolds(rt);
+        if (rt.state === 'idle' && rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
+        flush(rt);
+        adopted.push(item.name);
+      });
+    }
+    saveHolds();
+    return { adopted, unknown };
+  }
+
   function lastLine(text: string): string {
     const lines = text.split('\n').map((line) => line.trim());
     for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -1605,6 +1677,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       return;
     }
 
+    // an exit nobody asked for keeps the hold in the file (see lostHolds)
+    if (!info.requested && rt.redline !== null) lostHolds.set(rt.record.name, rt.redline);
     setState(rt, 'stopped');
     pollEntryStopped(name);
     rt.exit = { code: info.code, signal: info.signal, at: io.now(), requested: info.requested, text: exitText(info) };
@@ -2819,14 +2893,37 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       // Queues live in memory only: whatever the log still shows as waiting will never be typed.
       if (waiting(record)) setMessage(record, 'undelivered', SERVER_RESTARTED_NOTE);
     }
+    // live reload: agents that kept running in the pty host are taken over before anything is started
+    if (io.adoptable) {
+      try {
+        const found = await io.adoptable();
+        const { adopted, unknown } = adopt(found.running, found.holds);
+        for (const name of unknown) {
+          log.warn(`${name} runs in the pty host but is not in the roster (or is already running): stopping it`);
+          const gen = found.running.find((item) => item.name === name)?.generation ?? 0;
+          await io.stop(name, gen).catch(() => undefined);
+        }
+        if (adopted.length > 0) log.info(`took over ${adopted.length} running agent${adopted.length === 1 ? '' : 's'}: ${adopted.join(', ')}`);
+      } catch (error) {
+        log.warn('could not take over the running agents', error);
+      }
+    }
     armSweep();
     const boss = bossRt();
-    if (boss) await enqueue(boss, 'restart', () => restartOp(boss), true);
+    if (boss && boss.state === 'stopped') await enqueue(boss, 'restart', () => restartOp(boss), true);
   }
 
   function start(): Promise<void> {
     started ??= doStart();
     return started;
+  }
+
+  /** Live reload: the hub ends and the agents are left running in the pty host. A hold stays in the saved file. */
+  function release(): void {
+    closing = true;
+    disarm(sweepTimer);
+    sweepTimer = null;
+    for (const rt of agents.values()) cancelTimers(rt);
   }
 
   function shutdown(): Promise<void> {
@@ -2894,6 +2991,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     onHook,
     onUserInput,
     onTerminalEvent,
+    adopt,
+    release,
+    saveHoldsNow,
     startPoll,
     holdPoll,
     abortPoll,

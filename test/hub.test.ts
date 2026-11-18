@@ -191,6 +191,9 @@ interface HarnessOptions {
   history?: MessageRecord[];
   maxWorking?: number | null;
   redline?: boolean;
+  /** Live reload: what kept running in the pty host. */
+  adoptable?: HubIo['adoptable'];
+  saveHolds?: HubIo['saveHolds'];
 }
 
 function makeHarness(options: HarnessOptions = {}): Harness {
@@ -346,6 +349,8 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     emit: (event) => void events.push(event),
     log: logger,
   };
+  if (options.adoptable) io.adoptable = options.adoptable;
+  if (options.saveHolds) io.saveHolds = options.saveHolds;
   io.meter = (name, generation, transcriptPath) => void metered.push({ name, generation, transcriptPath });
   io.notify = (kind, text) => void notices.push([kind, text]);
   hub = createHub(io, { maxHops: options.maxHops ?? 8, bossDir: '/work/boss', maxWorking: options.maxWorking, redline: options.redline });
@@ -6251,5 +6256,106 @@ describe('Tool permissions: the rules of an agent (hire and edit)', () => {
     expect(await h.hub.edit('ana', { permissions: null })).toMatchObject({ permissions: null });
     expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('permissions');
     await expectHubReject(h.hub.edit('ana', { permissions: { allow: ['bad rule'] } }), 'bad_request', /is not a rule/, 'permissions');
+  });
+});
+
+describe('live reload: a new hub takes over the agents that kept running', () => {
+  const roster = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 })];
+
+  it('adopts a running agent with its generation, reads idle or working from the window title and does not start it again', async () => {
+    const h = makeHarness({ roster, adoptable: async () => ({ running: [{ name: 'flight', generation: 5 }, { name: 'ana', generation: 7 }], holds: {} }) });
+    h.setScreen('ana', { cols: 80, rows: 24, promptBox: true, dialog: null, promptText: '' });
+    h.setTitle('ana', 'idle');
+    h.setTitle('flight', 'working');
+    await h.hub.start();
+    await h.advance(10);
+    expect(h.spawns, 'nothing is spawned for an agent that is already running').toEqual([]);
+    expect(h.view('ana')).toMatchObject({ state: 'idle', generation: 7 });
+    expect(h.view('flight')).toMatchObject({ state: 'working', generation: 5 });
+    // the next start of the agent goes on from its generation
+    await h.hub.restart('ana');
+    expect(h.spawns.at(-1)).toMatchObject({ generation: 8 });
+  });
+
+  it('reads a dialog on the screen as needs_you, never idle', async () => {
+    const h = makeHarness({ roster, adoptable: async () => ({ running: [{ name: 'flight', generation: 1 }, { name: 'ana', generation: 2 }], holds: {} }) });
+    h.setScreen('ana', { cols: 80, rows: 24, promptBox: true, dialog: 'trust', promptText: '' });
+    await h.hub.start();
+    expect(h.view('ana')).toMatchObject({ state: 'needs_you' });
+  });
+
+  it('keeps a held agent held: the hold comes back from the saved file and mail waits behind it', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const h = makeHarness({
+      roster,
+      saveHolds: (holds) => void saved.push({ ...holds }),
+      adoptable: async () => ({ running: [{ name: 'flight', generation: 1 }, { name: 'ana', generation: 2 }], holds: { ana: 'hold: the Director asked' } }),
+    });
+    h.setScreen('ana', { cols: 80, rows: 24, promptBox: true, dialog: null, promptText: '' });
+    await h.hub.start();
+    expect(h.view('ana')).toMatchObject({ state: 'needs_you', needsKind: 'redline' });
+    const sent = h.send('flight', 'ana', 'do the thing');
+    await h.advance(DELIVERY_SETTLE_MS * 4);
+    expect(h.msg(sent.id).status, 'a held agent gets no mail').toBe('held');
+    expect(h.typed.filter((t) => t.name === 'ana')).toEqual([]);
+    expect(saved.at(-1)).toEqual({ ana: 'hold: the Director asked' });
+  });
+
+  it('saves a hold when it is made and takes it out of the file when it is lifted', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const h = await withAna({ saveHolds: (holds) => void saved.push({ ...holds }) });
+    h.hub.hold('ana');
+    expect(Object.keys(saved.at(-1) ?? {})).toEqual(['ana']);
+    h.hub.resume('ana');
+    expect(saved.at(-1)).toEqual({});
+  });
+
+  it('a hold stays in the saved file when its process ends without being asked to (a pty host that stalled)', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const h = await withAna({ saveHolds: (holds) => void saved.push({ ...holds }) });
+    h.hub.hold('ana');
+    expect(saved.at(-1)).toHaveProperty('ana');
+    h.exit('ana', { requested: false, signal: 9 });
+    expect(h.view('ana').state).toBe('stopped');
+    expect(saved.at(-1), 'the agent may still run in the host: the next hub must find it held').toHaveProperty('ana');
+    // the Director starting it again is the release
+    await h.hub.restart('ana');
+    expect(saved.at(-1)).toEqual({});
+  });
+
+  it('a hold ends with a stop the Director asked for', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const h = await withAna({ saveHolds: (holds) => void saved.push({ ...holds }) });
+    h.hub.hold('ana');
+    await h.hub.stop('ana');
+    expect(saved.at(-1)).toEqual({});
+  });
+
+  it('refuses a reload while the holds cannot be saved, and allows it again once they can', async () => {
+    let fail = false;
+    const h = await withAna({
+      saveHolds: () => {
+        if (fail) throw new Error('disk full');
+      },
+    });
+    h.hub.hold('ana');
+    fail = true;
+    expect(() => h.hub.saveHoldsNow()).toThrow(/not reloading/);
+    fail = false;
+    expect(() => h.hub.saveHoldsNow()).not.toThrow();
+  });
+
+  it('stops an agent that runs in the host but is not in the roster', async () => {
+    const h = makeHarness({ roster, adoptable: async () => ({ running: [{ name: 'flight', generation: 1 }, { name: 'ghost', generation: 4 }], holds: {} }) });
+    await h.hub.start();
+    expect(h.stops).toContainEqual({ name: 'ghost', generation: 4 });
+    expect(h.hub.views().map((v) => v.name)).not.toContain('ghost');
+  });
+
+  it('release ends the hub without stopping any agent', async () => {
+    const h = await withAna();
+    h.hub.release();
+    expect(h.stops).toEqual([]);
+    expect(() => h.hub.hold('ana')).toThrow();
   });
 });

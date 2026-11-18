@@ -17,6 +17,8 @@ import type { Terminal as HeadlessTerminal } from '@xterm/headless';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startGonogo } from '../src/server/cli.js';
+import { startPtyHost } from '../src/server/ptyhost.js';
+import type { PtyHost } from '../src/server/ptyhost.js';
 import type { Running } from '../src/server/cli.js';
 import {
   ALLOWED_TOOLS,
@@ -135,6 +137,10 @@ interface ServerOptions {
   home?: string;
   /** Rollout on (scenario 33). Off by default, as in startGonogo. */
   updateCheck?: boolean;
+  /** Live reload (scenario 38): the ptys are in a pty host that the test runs itself. */
+  ptyHost?: boolean;
+  /** The port of an earlier server (scenario 38): the agents it started keep posting their hooks there. Default any. */
+  port?: number;
 }
 
 const harnesses: Harness[] = [];
@@ -151,7 +157,7 @@ async function startServer(options: ServerOptions = {}): Promise<Harness> {
   let run: Running;
   try {
     run = await startGonogo({
-      port: 0,
+      port: options.port ?? 0,
       host: '127.0.0.1',
       home,
       cwd: tmp,
@@ -162,6 +168,7 @@ async function startServer(options: ServerOptions = {}): Promise<Harness> {
       staticDir: options.staticDir ?? null,
       fetch: options.relayFetch,
       updateCheck: options.updateCheck,
+      ptyHost: options.ptyHost,
       env: {
         ...process.env,
         CLAUDE_CONFIG_DIR: configDir,
@@ -2843,4 +2850,50 @@ describe('end to end with the stand-in agent', () => {
       await rm(empty, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it('38. Live reload: a new server takes over the running agents, a turn in progress finishes, a hold stays, the old tokens still work, and a stop ends the host', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gng-rl-'));
+    const host: PtyHost = await startPtyHost({ homeDir: home });
+    try {
+      const first = await startServer({ home, ptyHost: true });
+      await hire(first, 'ana');
+      await hire(first, 'ben');
+      // ana is in the middle of a turn; ben is on hold
+      await send(first, 'ana', '@fake sleep 2500\n@fake say finished-after-reload', 'long');
+      await waitState(first, 'ana', 'working');
+      expect((await api(first, 'POST', '/api/agents/ben/hold')).status).toBe(200);
+      const before = await view(first, 'ana');
+      const pidBefore = (await api<{ agents: Array<{ name: string; pid: number | null }> }>(first, 'GET', '/api/state')).body.agents.find((a) => a.name === 'ana')?.pid ?? null;
+
+      const port = first.run.port;
+      await first.run.release(); // what gonogo reload does to the old server: it ends, the agents stay
+      const second = await startServer({ home, ptyHost: true, port }); // the same port: the agents' hook and MCP URLs name it
+      expect(await view(second, 'ana')).toMatchObject({ state: 'working', generation: before?.generation });
+      expect(await view(second, 'ben')).toMatchObject({ state: 'needs_you', needsKind: 'redline' });
+      const pidAfter = (await api<{ agents: Array<{ name: string; pid: number | null }> }>(second, 'GET', '/api/state')).body.agents.find((a) => a.name === 'ana')?.pid ?? null;
+      expect(pidAfter, 'the same process, not a new one').toBe(pidBefore);
+
+      // the turn that began under the old server ends under the new one: its Stop hook is accepted with the saved token
+      await waitState(second, 'ana', 'idle', 20_000);
+      // mail to the held agent waits; mail to ana is read through the MCP tool with the same token
+      const held = await send(second, 'ben', 'for the held one');
+      expect(held.body).toMatchObject({ status: 'held' });
+      const sent = await send(second, 'ana', 'after the reload');
+      await waitItem(second, sent.body.id, (item) => item.status === 'read', 15_000, 'to be read');
+      // the stand-in of ana is the process of the first server: its log is where its prompts are
+      expect(prompts(first, 'ana').filter((text) => text.includes('read_messages')).length).toBeGreaterThanOrEqual(1);
+      // the files that carry the state are private
+      for (const file of ['hub-state.json', 'tokens.json', 'ptyhost.key', 'ptyhost.sock']) expect(statSync(join(home, 'run', file)).mode & 0o777).toBe(0o600);
+      const token = readFileSync(join(home, 'agents', 'ana', 'token'), 'utf8').trim();
+      expect(token).toMatch(/^[0-9a-f]{64}$/);
+      expect(readFileSync(join(home, 'run', 'tokens.json'), 'utf8'), 'the hash is saved, never the token').not.toContain(token);
+
+      // an ordinary stop ends the agents and the host
+      await second.run.stop();
+      await waitFor(() => !existsSync(join(home, 'run', 'ptyhost.sock')), 8000, 'the pty host to be gone');
+    } finally {
+      await host.close(true).catch(() => undefined);
+      await rm(home, { recursive: true, force: true });
+    }
+  }, 90_000);
 });

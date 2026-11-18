@@ -784,6 +784,12 @@ export async function setPhoneMode(mode: PhoneMode): Promise<RelayView> {
   return toRelayView(await call('PUT', '/relay/phone', { mode }));
 }
 
+/** Live reload: the server hands over to the installed gonogo (Flight Rules). Resolves with the note the server gives. */
+export async function reloadServer(): Promise<string> {
+  const answer = asRecord(await call('POST', '/reload'));
+  return typeof answer?.note === 'string' ? answer.note : 'reloading';
+}
+
 export async function removeRelayTarget(service: RelayService): Promise<RelayView> {
   return toRelayView(await call('DELETE', `/relay/${service}`));
 }

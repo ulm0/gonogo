@@ -145,6 +145,8 @@ export interface WebOptions {
   /** Livery; absent in tests that do not need it (the snapshot then has no livery, the routes answer 404 and the livery tool says it is not available). It tells the browsers itself. */
   liveries?: Pick<Liveries, 'view' | 'select' | 'remove' | 'submit' | 'design'>;
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
+  /** Live reload (Flight Rules): asks this server to hand over to a new one. Returns what the page shows, or a reason it cannot. Absent: the route says so. */
+  reload?: () => { ok: true; note: string } | { ok: false; reason: string };
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'setPhone' | 'test'>;
   /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition'>;
@@ -794,6 +796,16 @@ export function createWebServer(options: WebOptions): WebServer {
           const parsed = parseUserMessage(body);
           if (!parsed.ok) sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
           else sendJson(res, 201, hub.sendFromUser(parsed.value));
+        },
+      };
+    }
+    if (s.length === 2 && s[1] === 'reload') {
+      return {
+        allow: ['POST'],
+        run: (_req, res) => {
+          const answer = options.reload?.() ?? { ok: false as const, reason: 'reload is not available here' };
+          if (answer.ok) sendJson(res, 202, { ok: true, note: answer.note });
+          else sendApiError(res, 409, answer.reason, 'conflict');
         },
       };
     }
