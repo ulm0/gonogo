@@ -124,7 +124,7 @@ describe('the engine (Engine Bay)', () => {
     const options = engineOptions(['gemini', 'claude', 'custom']);
     expect(options.map((o) => o.provider)).toEqual(['claude', 'gemini', 'antigravity', 'codex', 'opencode', 'qwen', 'grok', 'kimi', 'crush', 'pi', 'copilot', 'cursor']);
     expect(options[0]?.text).toBe('Claude Code');
-    expect(options[1]?.text).toBe('Gemini CLI (legacy)');
+    expect(options[1]?.text).toBe('Gemini CLI');
     expect(options.find((o) => o.provider === 'codex')?.text).toBe('Codex · not installed · unverified');
     expect(options.find((o) => o.provider === 'pi')?.text).toBe('pi · not installed · no mail');
   });
