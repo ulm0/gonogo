@@ -5,7 +5,7 @@
 The `Own git worktree` box of the hire and edit form starts an agent in its own git worktree and branch of the
 project, on your machine, so that two agents never edit the same checkout. It works for every engine. Design and limits:
 [`docs/worktrees-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/worktrees-spec.md). It was tried with the
-stand-in agent and real `git`, never with a real `claude` ([What was not verified](../reference/not-verified.md)).
+stand-in agent and real `git`; the room that builds gonogo does not use it, so no real `claude` has run in one ([What was not verified](../reference/not-verified.md)).
 
 - **Needs.** A working directory inside a git repository. The form and each start refuse with the reason when it is not.
   The box is hidden while Clean Room is ticked, which has a worktree of its own (the two together are refused).

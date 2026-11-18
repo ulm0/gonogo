@@ -5,7 +5,7 @@
 The `Clean Room` box of the hire and edit form (Claude Code agents only) runs the agent in a Docker container that holds
 a copy of the project and the agent's own files, nothing else of your machine. Design and limits:
 [`docs/clean-room-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/clean-room-spec.md). It was tested against
-real Docker only with gonogo in a container and a stand-in agent, never with a real `claude`
+real Docker with the stand-in agent, and since 0.2.0 by RSO and SIMSUP, real Claude Code consoles of the room that builds gonogo
 ([What was not verified](../reference/not-verified.md)).
 
 - **Needs.** Docker running (`docker version` succeeds), an image with Claude Code (`docker build -t ghcr.io/ulm0/gonogo .`

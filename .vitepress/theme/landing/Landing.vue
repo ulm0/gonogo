@@ -303,8 +303,8 @@ const SMALL = [
         <p class="label">Engine Bay</p>
         <h2 id="lp-engine" class="disp">Bring your own engine.</h2>
         <p>
-          Each agent runs one CLI, picked when you hire it. You sign in to each CLI yourself. How far each one was checked is written down, and
-          only Claude Code has had real runs.
+          Each agent runs one CLI, picked when you hire it. You sign in to each CLI yourself. How far each one was checked is written down: Claude Code is used daily to build gonogo itself, the others
+          have not had real runs.
         </p>
         <a class="lp-more" href="/features/engine-bay">Engine Bay</a>
       </div>
