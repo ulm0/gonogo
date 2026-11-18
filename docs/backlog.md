@@ -43,27 +43,28 @@ Plan:
       verified). Engine Bay added Codex, opencode, Kimi, Copilot, pi, Qwen, Grok, Crush and Cursor Agent from their
       docs (pi from its help); each still needs a real run. The reference gives the non-Claude CLIs live state through a hook shim per CLI. Qwen has no
       hooks, so the reference watches its model traffic through a loopback proxy instead.
-- [ ] Per-provider model picker, API keys and a CLI installer.
+- [x] Per-provider model picker, API keys and a CLI installer. Built 2026-11-18: a `--model` field per engine and write-only API keys
+      (**Clearance**, `keys.json`), and **Pad Check** (`gonogo doctor`, the Engine Bay list): it finds each CLI and prints the vendor's
+      install command, but gonogo never runs an installer. Tested with the stand-in agent only (`docs/engine-bay-spec.md`).
 
 ## 2. Shared room state
 
-- [ ] Blackboard: a shared plan (`board.md`) with the boss as its only writer.
-- [ ] Task ledger with a kanban board.
+- [x] Blackboard: a shared plan (`board.md`) with the boss as its only writer. Built 2026-11-18 as the **Plot Board**.
+- [x] Task ledger with a kanban board. Built 2026-11-17 as the Flight Plan.
 - [ ] Missions *(inferred)*.
-- [ ] Threads panel: messages grouped by conversation *(inferred)*.
-- [ ] Git-committed audit log of the room, with the server as the only committer.
+- [x] Threads panel: messages grouped by conversation *(inferred)*. Built 2026-11-18 as **Party Line**.
+- [x] Git-committed audit log of the room, with the server as the only committer. Built 2026-11-18 as the **Black Box**.
 
 ## 3. Memory
 
-- [ ] Semantic search over agent memory (the reference wraps the MemPalace CLI).
-- [ ] Knowledge graph and its panel.
-- [ ] Reflection: summarising `memory.md` so that it does not grow without bound.
+- [ ] Semantic search over agent memory (the reference wraps the MemPalace CLI). Not built: it needs an embedding model that gonogo does not ship, and calling the Mission Log's word search "semantic" would be untrue.
+- [x] Knowledge graph and its panel. Built 2026-11-18 as the **Star Chart** (the Mission Log as a graph).
+- [x] Reflection: summarising `memory.md` so that it does not grow without bound. Built 2026-11-18 as **Mass Budget**: REFLECT asks the agent to condense it; gonogo keeps one copy and never writes the file.
 
 ## 4. Orchestration
 
-- [ ] A boss that hires agents by itself.
-- [ ] Waking idle workers that hold unread mail. gonogo already types a pointer into an idle agent; check what
-      more the reference does.
+- [x] A boss that hires agents by itself. Built 2026-11-18 as **Relief**: FLIGHT asks with `hire_agent`; only the Director's GO hires.
+- [x] Waking idle workers that hold unread mail. Already covered: gonogo types a pointer into an idle agent and redelivers (contract 5.3 and 5.5). No code was added.
 - [x] Hold button for an agent *(inferred)*. Built (2026-11-18) as **Hold**: a key in the console panel puts a Claude Code
       or Gemini CLI agent on hold through Redline's machinery (Escape if working, mail held) until RESUME
       (`docs/telemetry-spec.md`). Tested with the stand-in agent only.
@@ -87,16 +88,16 @@ Plan:
 ## 7. Cost and safety
 
 - [ ] Cost and usage tracking with pricing.
-- [ ] Telemetry.
-- [ ] Circuit breaker *(what trips it is not known: check the reference)*.
+- [x] Telemetry. Built 2026-11-18 (see the tool-call timeline below).
+- [x] Circuit breaker. Built 2026-11-17 as Redline.
 - [x] Tool-call waterfall: a timeline of what an agent did *(inferred)*. Built (2026-11-18) as **Telemetry**: a fold in
       the console panel with each tool call's start, duration, tool and one line, newest first, from the hooks (Claude Code;
       Gemini CLI without failures). 200 calls per agent in memory and in `telemetry.jsonl`. Tested with the stand-in agent only.
 
 ## 8. Workspace tools
 
-- [ ] File tree with a code editor.
-- [ ] Git tab.
+- [x] File tree with a code editor. Built 2026-11-18 as the **Hangar**: a tree and a plain textarea (no highlighting: CodeMirror measured 90 KB gzipped and was left out); it can create and save files, not delete or rename.
+- [x] Git tab. Built 2026-11-18 as the **Recorder**: status, diff, log and commit; no push, pull, checkout or reset.
 
 ## 9. App shell
 
@@ -104,7 +105,7 @@ Plan:
 - [x] Command bar. Built 2026-11-18 as the Patch Panel (`docs/shell-spec.md`).
 - [ ] Office themes.
 - [ ] Avatars that walk around the floor. This needs art of our own: the reference's tile sets cannot be used.
-- [ ] Auto-update.
+- [x] Auto-update. Built 2026-11-18 as **Rollout**: a daily registry check and `gonogo update`, which prints the command. gonogo never updates itself.
 - [ ] Translations.
 - [ ] Windows.
 
@@ -218,6 +219,19 @@ Order, one feature per design and commit:
 | **Clean Room** (built 2026-11-17) | Optional sandbox: agents work in their own container on a copy of the project | Sandbox Office |
 | **Livery** (built 2026-11-17) | Visual themes, and an agent that designs one from a line of text | Simulations |
 | **Docking** (built 2026-11-17) | Two installations connect so that their agents can message and hand off work | Team Network |
+| **Static fire** (built 2026-11-18) | A T-minus poll with a subject: SIMSUP tries to break it, RETRO writes the rollback | Max Q, reading (b) |
+| **Hold** (built 2026-11-18) | Put one agent on hold by hand | pause |
+| **Telemetry** (built 2026-11-18) | The tool calls of an agent as a timeline | waterfall |
+| **Patch Panel** (built 2026-11-18) | Command bar, Cmd+K or Ctrl+K | command bar |
+| **Flight Rules** and **Commissioning** (built 2026-11-18) | Every setting on one screen, and the checklist of an empty room | settings, onboarding |
+| **Party Line** (built 2026-11-18) | Messages as conversations | threads |
+| **Plot Board** (built 2026-11-18) | The one plan, written by the boss | blackboard |
+| **Black Box** (built 2026-11-18) | A git record of the room, committed by the server | audit log |
+| **Relief** (built 2026-11-18) | The boss asks to hire; the Director says go | boss hires |
+| **Mass Budget** (built 2026-11-18) | Condense an agent's notes | reflection |
+| **Star Chart** (built 2026-11-18) | The Mission Log as a graph | knowledge graph |
+| **Hangar** and **Recorder** (built 2026-11-18) | Files and git of one agent's folder | file tree, git tab |
+| **Clearance**, **Pad Check** and **Rollout** (built 2026-11-18) | Model and keys per agent, the engines found on the machine, the update check | pickers, installer, auto-update |
 
 Also needed for an open-source release, without a name (built 2026-11-17, `docs/release-readiness-spec.md`): a version and
 migrations for the saved state, a guide for exposing gonogo behind HTTPS (`docs/https.md`), a short README and a
