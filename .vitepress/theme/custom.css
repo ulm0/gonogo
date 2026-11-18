@@ -413,14 +413,112 @@
   text-transform: uppercase;
 }
 
+/* Headings in the print of the hardware: an h2 is a module's name on the wall, lettered as the wall's are ("A · REQUIREMENTS"); an
+   h3 a smaller print with an unlit light. The letter and the light are drawn, so the outline, the anchors and a screen reader keep
+   the heading's own words. */
+.vp-doc {
+  counter-reset: wall;
+}
+
 .vp-doc h2,
 .vp-doc h3 {
+  font-family: var(--font-mono);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .vp-doc h2 {
+  counter-increment: wall;
   border-top-color: var(--edge);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.vp-doc h2::before {
+  content: counter(wall, upper-alpha) ' · ';
+  content: counter(wall, upper-alpha) ' · ' / '';
+  color: var(--muted);
+}
+
+.vp-doc h3 {
+  font-size: 13.5px;
+}
+
+.vp-doc h3::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-inline-end: 10px;
+  border-radius: 50%;
+  background: var(--edge-2);
+  vertical-align: 0.1em;
+}
+
+/* A room piece from the landing at the top of a page (theme/landing). */
+.vp-doc .doc-mock {
+  margin: 24px 0 32px;
+}
+
+.vp-doc .doc-mock img {
+  margin: 0;
+}
+
+/* A page that is a sequence (pageClass: countdown) counts down its steps: each h2 wears its T-minus on a small LCD, and the steps
+   (<div class="t-step">) hang on one rail, a light at each. shortcut: the count starts at 4 for three steps; a page with another
+   number of steps needs its own reset. */
+.countdown .vp-doc {
+  counter-reset: wall t-minus 4;
+}
+
+.countdown .vp-doc h2 {
+  counter-increment: wall t-minus -1;
+}
+
+.countdown .vp-doc h2::before {
+  content: 'T-' counter(t-minus);
+  content: 'T-' counter(t-minus) / '';
+  display: inline-block;
+  margin-inline-end: 12px;
+  padding: 5px 8px;
+  border-radius: var(--radius-key);
+  background: var(--lcd);
+  box-shadow: inset 0 2px 6px rgb(0 0 0 / 35%);
+  color: var(--lcd-text);
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  vertical-align: 0.1em;
+}
+
+.t-step {
+  margin: 0 0 0 5px;
+  padding: 32px 0 8px 26px;
+  border-inline-start: 2px solid var(--edge);
+}
+
+.vp-doc .t-step h2 {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.vp-doc .t-step h2 .header-anchor {
+  top: 0;
+}
+
+/* The light of a step, on the rail. */
+.vp-doc .t-step h2::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  inset-inline-start: -33px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--go);
+  box-shadow: 0 0 0 4px var(--body);
 }
 
 .vp-doc a {
@@ -456,7 +554,7 @@
 
 .vp-doc thead th {
   border-top: 0;
-  background: transparent;
+  background: var(--well);
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -495,7 +593,7 @@
   border-radius: 5px;
 }
 
-/* The containers: a module tinted as the app tints a block, with its status light before the title. */
+/* The containers: a module tinted as the app tints a block; the title an annunciator, a framed window with its status light. */
 .custom-block {
   border-radius: var(--radius-module);
   color: var(--text);
@@ -506,11 +604,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: fit-content;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--led, var(--edge-2));
+  border-radius: var(--radius-key);
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.custom-block > summary {
+  min-height: 44px;
 }
 
 .custom-block .custom-block-title::before {

@@ -1,3 +1,5 @@
 # Propellant: the token budget
 
+<PropellantMock class="doc-mock" />
+
 gonogo reads each Claude agent's own transcript (under `~/.claude/projects`, or `$CLAUDE_CONFIG_DIR/projects`) at the end of every turn, and every 20 seconds during a long one, and counts input, cache creation and output tokens. Cache reads are not counted, because in a long session they would dwarf everything else. The F · PROPELLANT module on the wall shows the room's use in a rolling 5 hours, day (24 h), week (7 days) or month (30 days), with a limit per window; the PROPELLANT fold in a console's panel does the same for one agent. A limit is typed as `2000000`, `500k` or `2M`. The bar turns saffron at 80 %. Only Claude Code transcripts are counted. When a limit is reached, Redline stops that agent (its own limit) or every Claude agent (the room's), at the end of their current turn or tool call. A Resume while still over the limit allows one more turn. `PUT /api/propellant` takes `{"room": {"day": 2000000}, "agents": {"ana": {"5h": 500000}}}`, and `{}` for a scope clears its limits.
