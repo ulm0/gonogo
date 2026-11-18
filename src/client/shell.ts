@@ -16,6 +16,7 @@ export type Act =
   | { kind: 'view'; view: View }
   | { kind: 'hire' }
   | { kind: 'new-mission' }
+  | { kind: 'docs' }
   | { kind: 'brief' }
   | { kind: 'poll' }
   | { kind: 'read' }
@@ -69,6 +70,7 @@ export function commands({ agents, legends, poll, unread, livery }: CommandInput
   }
   out.push({ id: 'propellant:prices', label: 'Propellant: prices', group: 'Action', also: 'cost model dollars', act: { kind: 'propellant', part: 'prices' } });
   out.push({ id: 'propellant:budget', label: 'Propellant: budget', group: 'Action', also: 'cost dollars limit spend', act: { kind: 'propellant', part: 'budget' } });
+  out.push({ id: 'docs', label: 'Docs', group: 'Action', also: 'documentation help manual website online', act: { kind: 'docs' } });
   out.push({ id: 'new-mission', label: 'New mission', group: 'Action', also: 'goal plan start', act: { kind: 'new-mission' } });
   out.push({ id: 'hire', label: 'Staff a console', group: 'Action', also: 'hire new agent', act: { kind: 'hire' } });
   if (agents.some((a) => a.boss)) out.push({ id: 'brief', label: 'Brief FLIGHT', group: 'Action', also: 'mission message', act: { kind: 'brief' } });

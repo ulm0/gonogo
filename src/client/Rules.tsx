@@ -6,6 +6,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import * as api from './api.js';
+import { DOCS_URL } from '../shared/protocol.js';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
@@ -289,6 +290,9 @@ export function Commissioning(): ReactElement | null {
           </li>
         ))}
       </ol>
+      <p className="hint commission-extra">
+        Docs: <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">{DOCS_URL}</a>
+      </p>
       <p className="hint commission-extra">Away from this tab a lot? Flight Rules can turn on notifications for messages to you, T-minus polls and Relief requests.</p>
     </section>
   );

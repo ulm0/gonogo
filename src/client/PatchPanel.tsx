@@ -5,6 +5,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
+import { DOCS_URL } from '../shared/protocol.js';
 import * as api from './api.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commands, matchCommands, stepIndex } from './shell.js';
@@ -41,6 +42,10 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
       return null;
     case 'hire':
       openHire();
+      return null;
+    case 'docs':
+      // a new tab, with no opener: the docs site is not part of this page
+      window.open(DOCS_URL, '_blank', 'noopener,noreferrer');
       return null;
     case 'new-mission':
       openNewMission();

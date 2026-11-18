@@ -7,7 +7,7 @@
 import { execFile } from 'node:child_process';
 import { accessSync, constants as fsConstants, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { MCP_SERVER_NAME, PROVIDER_INFO, PROVIDERS } from '../shared/protocol.js';
+import { DOCS_URL, MCP_SERVER_NAME, PROVIDER_INFO, PROVIDERS } from '../shared/protocol.js';
 import type { EngineCheck, HookEvent, McpServer, PermissionMode, Provider } from '../shared/protocol.js';
 import { ENGINE_VERSION_CHARS, ENGINE_VERSION_MS, HOOK_PATH_PREFIX, HOOK_TIMEOUT_S, MCP_PATH } from './constants.js';
 
@@ -285,7 +285,7 @@ export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | 
     if (check.install !== null) lines.push(`    docs: ${check.docs}`);
   }
   if (agentCmd !== null) lines.push('', `GONOGO_AGENT_CMD is set (${agentCmd}): it replaces claude.`);
-  lines.push('', 'gonogo never runs an install command: copy the one you want.');
+  lines.push('', 'gonogo never runs an install command: copy the one you want.', `docs: ${DOCS_URL}`);
   return lines.join('\n') + '\n';
 }
 
