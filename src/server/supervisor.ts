@@ -19,7 +19,7 @@ import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { bearerToken, sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
-import { addRoom, loadRooms, MAIN_ROOM, removeRoom, renameRoom, RoomsError, roomHome, validRoomId } from './rooms.js';
+import { addRoom, loadRooms, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { hostName } from './web.js';
 
@@ -392,6 +392,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     server.listen(options.port, options.host, () => resolve());
   });
   const poll = setInterval(reconcile, POLL_MS);
+  // `gonogo rooms add` looks for this file to tell whether anything will act on a change
+  writeSupervisorFile(options.home, options.host, (server.address() as { port: number }).port);
   poll.unref();
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : options.port;
@@ -407,6 +409,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       if (stopping) return;
       stopping = true;
       clearInterval(poll);
+      removeSupervisorFile(options.home);
       server.closeAllConnections?.();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await Promise.all([...children.values()].map((c) => halt(c)));

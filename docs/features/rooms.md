@@ -41,6 +41,10 @@ pty host with `--pty-host`), so count tens of megabytes each.
 Open the printed address (the list page wears the app's own styles, taken from the built client): the list shows each room with its agents and how many need you, and OPEN goes to `/r/<id>/`. In a room,
 **Rooms** in the Patch Panel (Cmd+K) goes back to the list.
 
+## Plain gonogo is one room
+
+`gonogo` without `rooms` is a single room and never reads `rooms.json`. If you run `gonogo rooms add team` while only plain `gonogo` runs (a container started with the image's default command, for example), the room is saved and nothing starts it: the command tells you so (it looks for a running supervisor), and plain `gonogo` logs one line at start when the file lists rooms. Start gonogo as `gonogo rooms` (in Docker: `command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]`).
+
 ## Add, rename and remove from the page
 
 The list page has a **NEW ROOM** form (an id, and a name if you want one) and, on every room but main, **RENAME** and **REMOVE**. REMOVE

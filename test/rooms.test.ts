@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome } from '../src/server/rooms.js';
+import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
+import { startGonogo } from '../src/server/cli.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
@@ -361,6 +362,76 @@ describe('the supervisor', () => {
       const hash = `'sha256-${createHash('sha256').update(script, 'utf8').digest('base64')}'`;
       expect(res.headers.get('content-security-policy')).toContain(`script-src ${hash}`);
     });
+  });
+
+  describe('is a supervisor running?', () => {
+    it('is no without a file, with a dead pid, with a port nobody listens on, and yes while the supervisor runs; the file goes with it', async () => {
+      expect(await supervisorRunning(home)).toBe(false);
+      writeFileSync(join(home, SUPERVISOR_FILE), JSON.stringify({ pid: 2 ** 22 - 1, host: '127.0.0.1', port: 9 }));
+      expect(await supervisorRunning(home)).toBe(false);
+      writeFileSync(join(home, SUPERVISOR_FILE), JSON.stringify({ pid: process.pid, host: '127.0.0.1', port: 1 }));
+      expect(await supervisorRunning(home)).toBe(false);
+      writeFileSync(join(home, SUPERVISOR_FILE), 'nope');
+      expect(await supervisorRunning(home)).toBe(false);
+      rmSync(join(home, SUPERVISOR_FILE));
+      const s = await supervise();
+      expect(await supervisorRunning(home)).toBe(true);
+      expect(statSync(join(home, SUPERVISOR_FILE)).mode & 0o777).toBe(0o600);
+      await s.stop();
+      sup = null;
+      expect(existsSync(join(home, SUPERVISOR_FILE))).toBe(false);
+      expect(await supervisorRunning(home)).toBe(false);
+    }, 40_000);
+
+    const run = async (...args: string[]): Promise<string> => {
+      const { main } = await import('../src/server/cli.js');
+      let out = '';
+      const write = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => ((out += String(chunk)), true));
+      const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+      try {
+        await main(args, { PATH: process.env.PATH });
+      } finally {
+        write.mockRestore();
+        exit.mockRestore();
+      }
+      return out;
+    };
+
+    it('rooms add and remove say when no supervisor will act on the change, and stay quiet when one runs; list never says it', async () => {
+      const without = await run('rooms', 'add', 'ninah', '--home', home);
+      expect(without).toContain('added room ninah');
+      expect(without).toContain('no `gonogo rooms` supervisor is running');
+      expect(without).toContain('"rooms", "--host", "0.0.0.0"');
+      expect(await run('rooms', 'remove', 'ninah', '--home', home)).toContain('no `gonogo rooms` supervisor is running');
+      expect(await run('rooms', 'list', '--home', home)).not.toContain('supervisor');
+      await supervise();
+      expect(await run('rooms', 'add', 'ninah', '--home', home)).not.toContain('supervisor is running');
+      expect(await run('rooms', 'remove', 'ninah', '--home', home)).not.toContain('supervisor is running');
+    }, 40_000);
+
+    it('plain gonogo logs one line at start when rooms.json lists rooms, none when it lists none, and none for a room of a supervisor', async () => {
+      const lines: string[] = [];
+      const log = { debug() {}, info() {}, warn: (m: string) => void lines.push(m), error() {}, child: () => log };
+      const start = async (extra: Record<string, unknown> = {}): Promise<void> => {
+        const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, new URL('./fake-claude.mjs', import.meta.url).pathname], staticDir: null, checkClaude: false, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home }, log, ...extra });
+        await running.stop();
+      };
+      await start();
+      expect(lines.filter((l) => l.includes('rooms.json'))).toEqual([]);
+      addRoom(home, 'ninah');
+      addRoom(home, 'team');
+      await start();
+      const found = lines.filter((l) => l.includes('rooms.json'));
+      expect(found).toHaveLength(1);
+      expect(found[0]).toContain('2 other rooms (ninah, team)');
+      expect(found[0]).toContain('plain gonogo, one room');
+      lines.length = 0;
+      await start({ exitWithStdin: true });
+      expect(lines.filter((l) => l.includes('rooms.json'))).toEqual([]);
+      writeFileSync(join(home, ROOMS_FILE), '{nope');
+      await start();
+      expect(lines.filter((l) => l.includes('rooms.json'))).toEqual([]);
+    }, 60_000);
   });
 
   it('stops every room gracefully (SIGTERM) and closes the port', async () => {

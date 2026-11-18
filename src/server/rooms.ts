@@ -4,7 +4,8 @@
  * The root home is room `main` (nothing moves); every other room lives in `<home>/rooms/<id>/` and starts from zero. The file is
  * 0600, written atomically. `remove` only takes a room off the list: it never deletes a folder.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import { join } from 'node:path';
 
 export const MAIN_ROOM = 'main';
@@ -108,3 +109,55 @@ export function renameRoom(root: string, id: unknown, name: unknown): RoomEntry 
   saveRooms(root, rooms.filter((r) => r.id !== MAIN_ROOM).map((r) => (r.id === id ? next : r)));
   return next;
 }
+
+/* ---- is a supervisor running on this home? ---- */
+
+export const SUPERVISOR_FILE = 'rooms-supervisor.json';
+
+/** The supervisor says it runs: its pid and the port it listens on (0600). */
+export function writeSupervisorFile(root: string, host: string, port: number): void {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  writeFileSync(join(root, SUPERVISOR_FILE), JSON.stringify({ pid: process.pid, host: ['0.0.0.0', '::', ''].includes(host) ? '127.0.0.1' : host, port }), { mode: 0o600 });
+}
+
+export function removeSupervisorFile(root: string): void {
+  try {
+    unlinkSync(join(root, SUPERVISOR_FILE));
+  } catch {
+    // already gone
+  }
+}
+
+/**
+ * Whether a `gonogo rooms` supervisor holds this home: the file names a live pid AND something answers on its port (a pid alone can be a
+ * stranger's after a restart of a container, where pids repeat). Never throws.
+ */
+export function supervisorRunning(root: string): Promise<boolean> {
+  let saved: { pid?: unknown; host?: unknown; port?: unknown };
+  try {
+    saved = JSON.parse(readFileSync(join(root, SUPERVISOR_FILE), 'utf8')) as typeof saved;
+  } catch {
+    return Promise.resolve(false);
+  }
+  const { pid, port, host } = saved;
+  if (typeof host !== 'string' || typeof pid !== 'number' || typeof port !== 'number' || !Number.isInteger(pid) || pid <= 0 || port < 1 || port > 65535) return Promise.resolve(false);
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const done = (up: boolean): void => {
+      socket.destroy();
+      resolve(up);
+    };
+    socket.setTimeout(700, () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
+
+/** What `gonogo rooms add|remove` adds when nothing would act on the change. */
+export const NO_SUPERVISOR_HINT =
+  'saved in rooms.json; no `gonogo rooms` supervisor is running, so the room will not start or stop. Run gonogo as `gonogo rooms ...` (Docker: command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]).';
