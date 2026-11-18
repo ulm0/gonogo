@@ -850,14 +850,11 @@ function Staff({ form }: { form: Target }): ReactElement {
               {modelField}
               {dirField}
               {cleanRoomBox}
-            {worktreeBox}
-            {remoteBox}
               {worktreeBox}
               {remoteBox}
               {modes}
               {confirmPanel}
               {payloadFold}
-            {rulesFold}
               {rulesFold}
               {keysFold}
             </fieldset>
@@ -950,9 +947,12 @@ function Staff({ form }: { form: Target }): ReactElement {
             {modelField}
             {dirField}
             {cleanRoomBox}
+            {worktreeBox}
+            {remoteBox}
             {modes}
             {confirmPanel}
             {payloadFold}
+            {rulesFold}
             {keysFold}
           </fieldset>
           {alert}
