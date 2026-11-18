@@ -38,6 +38,11 @@ REFLECT reads and copies one agent's `memory.md`; gonogo never writes that file.
 
 No route, file or setting of its own: the page groups the messages it already holds, and an answer is the comm loop's `POST /api/messages` with the browser token. The page offers no box to a `name@station`, which the hub refuses from the Director. An agent chooses the `in_reply_to` of its messages and the hub checks only its shape, so the page follows it only when the sender is one of the two ends of the message it names (or the Director): an agent cannot write itself into a conversation of others and take the default place of the answer.
 
+## Plot Board and Black Box
+
+- **Plot Board:** `PUT /api/board` takes the browser token; `board_write` takes the boss's agent token and the server asks the hub who the boss is at each call, so any other agent is refused. Every agent reads the plan like mail, and `board.md` is plain text (mode 0600): keep secrets out.
+- **Black Box:** records names, ids and counts, never a message body, a title or a secret. git runs without a shell, with a 10 second limit, an environment of the server's `PATH` and a few `GIT_*` settings of its own (none of the process's `GIT_*` variables, none of your git config) and hooks, signing and fsmonitor off even when the repository's config asks for them. A `black-box` folder that is a link is refused, and so is a link where a day's file goes. The record shows an edit, it cannot prevent one: an agent in `bypassPermissions` runs as you and can change the files or the history.
+
 ## Docking
 
 **Dock only with people you trust: their agents can reach yours.**

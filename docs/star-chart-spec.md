@@ -74,6 +74,6 @@ graph library. The same chart is a set of lists that a keyboard, a screen reader
   has them.
 - Tested: the graph on its own (mentions, co-occurrence, the caps, order, the edges that name only nodes that exist), the layout and
   the lists on their own (bounds, same input same output, 150 entries under a second, strange edges), the route with a fake and with a
-  real server and the stand-in agent (scenario 31), and the page in Chrome at 1440 and 390 px in Instrument and Night Shift (the clicks
+  real server and the stand-in agent (scenario 34), and the page in Chrome at 1440 and 390 px in Instrument and Night Shift (the clicks
   by script). Contrast of every colour it uses was computed for the four liveries (text 4.5:1; the outline of each shape and the lines 3:1 or better against the panel; the pale fill of a tag or an author is about 1.2:1, so the outline and the shape carry it, not the fill). Not
   tried: Firefox, Safari, a screen reader, a log of hundreds of entries, a layout that someone judges to be good.

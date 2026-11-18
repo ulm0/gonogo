@@ -3,12 +3,14 @@ import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
 import { Loop } from './Activity.js';
 import * as api from './api.js';
+import { BlackBox } from './BlackBox.js';
 import { Downlink } from './Downlink.js';
 import { FlightPlan } from './FlightPlan.js';
 import { HireForm } from './HireForm.js';
 import { LaunchWindow } from './LaunchWindow.js';
 import { Livery } from './Livery.js';
 import { MissionLog } from './MissionLog.js';
+import { PlotBoard } from './PlotBoard.js';
 import { PatchPanel } from './PatchPanel.js';
 import { Commissioning, FlightRules } from './Rules.js';
 import { isPanelKey } from './shell.js';
@@ -347,6 +349,8 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'downlink') return <Downlink />;
   if (view === 'log') return <MissionLog />;
   if (view === 'livery') return <Livery />;
+  if (view === 'board') return <PlotBoard />;
+  if (view === 'blackbox') return <BlackBox />;
   if (view === 'rules') return <FlightRules />;
   if (view === 'party') return <PartyLine />;
   if (phone) {

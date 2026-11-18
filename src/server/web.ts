@@ -64,6 +64,8 @@ import {
   sendUnauthorized,
 } from './hooks.js';
 import { readCustomCommand } from './command.js';
+import type { BlackBox } from './blackbox.js';
+import type { Board } from './board.js';
 import type { Downlink } from './downlink.js';
 import { DOCK_ROUTES } from './docking.js';
 import type { Docking } from './docking.js';
@@ -113,6 +115,10 @@ export interface WebOptions {
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'chart' | 'create' | 'update' | 'remove'>;
   /** Mass Budget; absent in tests that do not need it (the routes answer 404). The page asks; no frame. */
   massBudget?: Pick<MassBudget, 'view' | 'reflect'>;
+  /** Plot Board; absent in tests that do not need it (the route answers 404 and the board tools say it is not available). The page asks again every few seconds; no frame. */
+  board?: Pick<Board, 'get' | 'write'>;
+  /** Black Box; absent in tests that do not need it (the route answers 404). The page asks again every few seconds; no frame. */
+  blackBox?: Pick<BlackBox, 'view'>;
   /** Livery; absent in tests that do not need it (the snapshot then has no livery, the routes answer 404 and the livery tool says it is not available). It tells the browsers itself. */
   liveries?: Pick<Liveries, 'view' | 'select' | 'remove' | 'submit' | 'design'>;
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
@@ -477,6 +483,7 @@ export function createWebServer(options: WebOptions): WebServer {
     resolveToken: options.resolveToken,
     tasks: options.tasks,
     missionLog: options.missionLog,
+    board: options.board,
     liveries: options.liveries,
     relief: options.relief,
     log: log.child('mcp'),
@@ -837,6 +844,26 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) sendJson(res, 200, await missionLog.update(id, body, null));
         },
       };
+    }
+    if (s[1] === 'board' && s.length === 2) {
+      const board = options.board;
+      if (!board) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') {
+            sendJson(res, 200, board.get());
+            return;
+          }
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await board.write('user', body));
+        },
+      };
+    }
+    if (s[1] === 'black-box' && s.length === 2) {
+      const blackBox = options.blackBox;
+      if (!blackBox) return null;
+      return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, blackBox.view()) };
     }
     if (s[1] === 'liveries' || s[1] === 'livery') {
       const liveries = options.liveries;

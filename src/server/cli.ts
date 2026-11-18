@@ -26,6 +26,9 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { createBlackBox } from './blackbox.js';
+import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
 import { createDownlink } from './downlink.js';
 import { createHub } from './hub.js';
@@ -383,10 +386,20 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('relay'),
     });
     await relay.load();
-    /** What the parts of the server tell the Director's inbox goes to the targets of Relay too. */
+    const blackBox = createBlackBox({
+      dir: home.dir,
+      now: () => Date.now(),
+      setTimer: (fn, ms) => setTimeout(fn, ms).unref(),
+      clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
+      path: env.PATH,
+      log: log.child('black box'),
+    });
+    /** What the parts of the server tell the Director's inbox goes to the targets of Relay too; a trip and a poll result go to the Black Box. */
     const tell: DownlinkNotify = (kind, text) => {
       downlink.post(kind, text);
       relay.event(kind, text);
+      if (kind === 'redline') blackBox.record('redline', tripText(text));
+      else if (kind === 'tminus') blackBox.record('poll', pollText(text));
     };
 
     let seq = home.lastMessageSeq();
@@ -513,7 +526,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       inbound: relay,
       log: log.child('uplink'),
     });
-    const tasks = createTasks({
+    const tasks = audited(createTasks({
       dir: home.dir,
       now: io.now,
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
@@ -526,7 +539,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (list) => web?.broadcast({ t: 'tasks', tasks: list }),
       notify: tell,
       log: log.child('flight plan'),
-    });
+    }), blackBox.record, TASKS_AUDIT);
     const docking = createDocking({
       dir: home.dir,
       name: stationName(env[STATION_ENV], hostname()),
@@ -545,6 +558,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (frame) => web?.broadcast(frame),
       log: log.child('mission log'),
     });
+    const board = createBoard({ dir: home.dir, now: io.now });
     const massBudget = createMassBudget({
       memoryPath: (name) => launcher.memoryPath(name),
       agent: (name) => hubInstance.views().find((v) => v.name === name),
@@ -585,22 +599,25 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       browserToken: home.browserToken,
       allowedHosts,
       staticDir,
-      hub: hubInstance,
+      // what the Director does through the browser is told to the Black Box by these copies
+      hub: audited(hubInstance, blackBox.record, HUB_AUDIT),
       terminals: terminalHost,
       resolveToken: (token) => launcher.resolveToken(token),
       info,
       isReady: () => ready,
-      propellant,
+      propellant: audited(propellant, blackBox.record, PROPELLANT_AUDIT),
       telemetry,
-      schedules,
-      uplinks,
+      schedules: audited(schedules, blackBox.record, SCHEDULES_AUDIT),
+      uplinks: audited(uplinks, blackBox.record, UPLINKS_AUDIT),
       tasks,
       downlink,
       missionLog,
       massBudget,
-      liveries,
-      relay,
-      docking,
+      board: audited(board, blackBox.record, BOARD_AUDIT),
+      blackBox,
+      liveries: audited(liveries, blackBox.record, LIVERIES_AUDIT),
+      relay: audited(relay, blackBox.record, RELAY_AUDIT),
+      docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief,
       rollout,
       engines: () => checkEngines(env),
@@ -622,6 +639,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // before the hub starts any agent: a task_create that came first would take an id of the file and lose that task
     await tasks.load();
     await missionLog.load();
+    await board.load();
+    await blackBox.load();
+    blackBox.record('audit', `gonogo ${version} started`);
     await liveries.load();
     await docking.load();
     hubStarting = true;
@@ -651,6 +671,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('uplinks close', () => uplinks.close());
       await step('tasks close', () => tasks.close());
       await step('mission log close', () => missionLog.close());
+      await step('board close', () => board.close());
+      blackBox.record('audit', 'gonogo stopped');
+      await step('black box close', () => blackBox.close());
       await step('livery close', () => liveries.close());
       await step('relief close', async () => relief.close());
       await step('relay close', () => relay.close());

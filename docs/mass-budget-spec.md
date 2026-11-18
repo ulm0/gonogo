@@ -70,6 +70,6 @@ the file grows. The Director sees the size in the console panel and, with one ke
   (`cleanroom.ts`), so the same request applies; not tried with real Docker.
 - The size on screen is as of the last ask: an agent that writes while the page is open shows the new size at its next state change.
 - Tested with a temporary folder (the module: sizes, limits, links, pipes, folders, copies kept and replaced, a refused request, a
-  double ask), the client words, the edge routes with a fake, and a real server with the stand-in agent (scenario 31). The page was
+  double ask), the client words, the edge routes with a fake, and a real server with the stand-in agent (scenario 34). The page was
   opened in Chrome at 1440 and 390 px in Instrument and Night Shift against a real server with the stand-in agent; the click was made by
   script, not by hand or with a screen reader.

@@ -25,6 +25,8 @@ import {
   openConsole,
   openEdit,
   openHire,
+  showBlackBox,
+  showBoard,
   showLivery,
   showLog,
   showLoop,
@@ -882,6 +884,17 @@ describe('navigation of the shell', () => {
     openConsole('ana');
     showParty();
     expect(store.getState()).toMatchObject({ view: 'party', consoleOpen: false });
+  });
+
+  it('opens the Plot Board and the Black Box and leaves a console that was open', () => {
+    openConsole('ana');
+    showBoard();
+    expect(store.getState()).toMatchObject({ view: 'board', consoleOpen: false });
+    openConsole('ana');
+    showBlackBox();
+    expect(store.getState()).toMatchObject({ view: 'blackbox', consoleOpen: false });
+    showRoom();
+    expect(store.getState().view).toBe('room');
   });
 
   it('opens the staffing screen from a seat, from the spare seat and for an edit', () => {

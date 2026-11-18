@@ -7103,6 +7103,142 @@ describe('seams with the real hub, launcher and terminal host', () => {
  * the conventions of contract section 11, for the files of this builder
  * ============================================================================================================== */
 
+describe('plot board', () => {
+  const view = { text: 'ship it', revision: 2, author: 'flight', updatedAt: 5 };
+  /** A board that records what the routes and the tools ask of it, and refuses a revision that is not the current one. */
+  function fakeBoard(): { calls: unknown[][]; board: NonNullable<WebOptions['board']> } {
+    const calls: unknown[][] = [];
+    return {
+      calls,
+      board: {
+        get: () => {
+          calls.push(['get']);
+          return view;
+        },
+        write: async (by, input) => {
+          calls.push(['write', by, input]);
+          const body = input as { text?: unknown; revision?: unknown };
+          if (typeof body.text !== 'string') throw new FakeHubError('bad_request', 'text is required', 'text');
+          if (body.revision !== 2) throw new FakeHubError('conflict', `the Plot Board is at revision 2, not ${String(body.revision)}: read it again, then write`, 'revision');
+          return { ...view, text: body.text, revision: 3, author: by };
+        },
+      },
+    };
+  }
+  const asBoss = { rosterFor: (agent: string) => ({ you: agent, boss: 'ana', agents: [], specialRecipients: ['boss', 'user'] }) };
+
+  it('reads and writes the plan as the Director, with the revision it was made from', async () => {
+    const { calls, board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    expect((await api(port, 'GET', '/api/board')).json()).toEqual(view);
+    const put = await api(port, 'PUT', '/api/board', { text: 'new plan', revision: 2 });
+    expect([put.status, put.json()]).toEqual([200, { text: 'new plan', revision: 3, author: 'user', updatedAt: 5 }]);
+    expect(calls[1]).toEqual(['write', 'user', { text: 'new plan', revision: 2 }]);
+    const stale = await api(port, 'PUT', '/api/board', { text: 'late', revision: 1 });
+    expect([stale.status, stale.json()]).toEqual([409, { error: 'the Plot Board is at revision 2, not 1: read it again, then write', code: 'conflict', field: 'revision' }]);
+    expect((await api(port, 'PUT', '/api/board', { revision: 2 })).json()).toEqual({ error: 'text is required', code: 'bad_request', field: 'text' });
+    expect((await api(port, 'PUT', '/api/board', [1])).status).toBe(400);
+  });
+
+  it('allows GET and PUT only, wants a browser token, and is 404 without a board', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    for (const method of ['POST', 'PATCH', 'DELETE']) expect((await api(port, method, '/api/board', {})).status, method).toBe(405);
+    expect((await api(port, 'GET', '/api/board/x')).status).toBe(404);
+    expect((await api(port, 'GET', '/api/board', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await api(port, 'PUT', '/api/board', { text: 'x', revision: 2 }, ANA_TOKEN)).status).toBe(401);
+    expect((await api((await startWeb()).port, 'GET', '/api/board')).status).toBe(404);
+  });
+
+  it('lets every agent read it, and says whether it may write', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    const ben = await connectMcp(port, BEN_TOKEN);
+    expect(toolOutcome(await ben.callTool({ name: 'board_read', arguments: {} }))).toMatchObject({ isError: false, json: { ok: true, ...view, canWrite: false } });
+    const boss = await connectMcp((await startWeb({ board }, asBoss)).port, ANA_TOKEN);
+    expect(toolOutcome(await boss.callTool({ name: 'board_read', arguments: {} }))).toMatchObject({ isError: false, json: { ok: true, canWrite: true } });
+  });
+
+  it('lets only the boss write it, as itself whatever the call says, and never answers with the text', async () => {
+    const { calls, board } = fakeBoard();
+    const other = await startWeb({ board });
+    const ben = await connectMcp(other.port, BEN_TOKEN);
+    const refused = toolOutcome(await ben.callTool({ name: 'board_write', arguments: { text: 'mine', revision: 2 } }));
+    expect(refused).toMatchObject({ isError: true, text: '{"ok":false,"error":"only the boss may write the Plot Board"}' });
+    expect(calls).toEqual([]);
+    const { port } = await startWeb({ board }, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const written = toolOutcome(await ana.callTool({ name: 'board_write', arguments: { text: 'the plan', revision: 2, author: 'user' } }));
+    expect(written).toMatchObject({ isError: false, json: { ok: true, revision: 3, updatedAt: 5 } });
+    expect(written.text).not.toContain('the plan');
+    expect(calls).toEqual([['write', 'ana', { text: 'the plan', revision: 2 }]]);
+  });
+
+  it('tells the boss to read again when the board moved on', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board }, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'board_write', arguments: { text: 'x', revision: 1 } }))).toMatchObject({
+      isError: true,
+      text: '{"ok":false,"error":"the Plot Board is at revision 2, not 1: read it again, then write"}',
+    });
+  });
+
+  it('refuses a bad argument without calling the board', async () => {
+    const { calls, board } = fakeBoard();
+    const { port } = await startWeb({ board }, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    for (const args of [{}, { text: 'x' }, { revision: 1 }, { text: 'x'.repeat(10_001), revision: 2 }, { text: 5, revision: 2 }, { text: 'x', revision: -1 }, { text: 'x', revision: 1.5 }, { text: 'x', revision: '2' }]) {
+      const out = await ana.callTool({ name: 'board_write', arguments: args }).catch(() => ({ isError: true }));
+      expect((out as { isError?: boolean }).isError, JSON.stringify(args)).toBe(true);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('says the board is not available when the server has none', async () => {
+    const { port } = await startWeb({}, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    for (const [name, args] of [['board_read', {}], ['board_write', { text: 'x', revision: 0 }]] as const) {
+      expect(toolOutcome(await ana.callTool({ name, arguments: args }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"the Plot Board is not available"}' });
+    }
+  });
+
+  it('describes its two tools as the server says', async () => {
+    const { board } = fakeBoard();
+    const { port } = await startWeb({ board });
+    const tools = (await (await connectMcp(port)).listTools()).tools;
+    const read = tools.find((t) => t.name === 'board_read');
+    const write = tools.find((t) => t.name === 'board_write');
+    expect(read?.description).toBe(MCP_DESCRIPTIONS.board_read);
+    expect(write?.description).toBe(MCP_DESCRIPTIONS.board_write);
+    expect(Object.keys(write?.inputSchema.properties ?? {}).sort()).toEqual(['revision', 'text']);
+    expect([...(write?.inputSchema.required ?? [])].sort()).toEqual(['revision', 'text']);
+    expect(write?.inputSchema.properties?.text).toMatchObject({ maxLength: 10_000 });
+  });
+});
+
+describe('black box', () => {
+  const view = { git: 'ok', note: '', dir: '/home/x/black-box', command: "git -C '/home/x/black-box' log -p", events: [{ at: 1, kind: 'crew', text: 'Director hired ana' }] };
+
+  it('lists the recent events and the command, to the browser only', async () => {
+    const { port } = await startWeb({ blackBox: { view: () => view as never } });
+    expect((await api(port, 'GET', '/api/black-box')).json()).toEqual(view);
+    expect((await api(port, 'GET', '/api/black-box', undefined, ANA_TOKEN)).status).toBe(401);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await api(port, method, '/api/black-box', {})).status, method).toBe(405);
+    expect((await api(port, 'GET', '/api/black-box/x')).status).toBe(404);
+  });
+
+  it('is 404 without a Black Box', async () => {
+    expect((await api((await startWeb()).port, 'GET', '/api/black-box')).status).toBe(404);
+  });
+
+  it('gives the agents no tool to read or write it', async () => {
+    const { port } = await startWeb({ blackBox: { view: () => view as never } });
+    const names = (await (await connectMcp(port)).listTools()).tools.map((t) => t.name);
+    expect(names.filter((name) => /audit|black|box|record/i.test(name))).toEqual([]);
+  });
+});
+
 describe('conventions', () => {
   const sources = ['home', 'hooks', 'mcp', 'web', 'cli'].map((name) => [name, readFileSync(join(PROJECT_ROOT, 'src', 'server', `${name}.ts`), 'utf8')] as const);
 

@@ -1,6 +1,8 @@
 import type {
   AgentView,
   AnswerRequest,
+  AuditView,
+  BoardView,
   ClientFrame,
   DockCode,
   DockHandoffRequest,
@@ -247,6 +249,18 @@ function toLogEntry(value: unknown): LogEntry {
   return value as LogEntry;
 }
 
+function toBoardView(value: unknown): BoardView {
+  const record = asRecord(value);
+  if (record === null || typeof record.text !== 'string' || typeof record.revision !== 'number') throw failure('The server sent an answer gonogo does not understand.');
+  return value as BoardView;
+}
+
+function toAuditView(value: unknown): AuditView {
+  const record = asRecord(value);
+  if (record === null || typeof record.git !== 'string' || typeof record.command !== 'string' || !Array.isArray(record.events)) throw failure('The server sent an answer gonogo does not understand.');
+  return value as AuditView;
+}
+
 function toLogChart(value: unknown): LogChart {
   const record = asRecord(value);
   if (record === null || typeof record.total !== 'number' || !Array.isArray(record.nodes) || !Array.isArray(record.edges)) {
@@ -486,6 +500,20 @@ export async function updateLogEntry(id: string, request: LogRequest): Promise<L
 
 export async function deleteLogEntry(id: string): Promise<void> {
   await call('DELETE', `/log/${encodeURIComponent(id)}`);
+}
+
+/** Plot Board: the plan. The page asks again every few seconds; a write names the revision it was made from. */
+export async function readBoard(): Promise<BoardView> {
+  return toBoardView(await call('GET', '/board'));
+}
+
+export async function writeBoard(text: string, revision: number): Promise<BoardView> {
+  return toBoardView(await call('PUT', '/board', { text, revision }));
+}
+
+/** Black Box: the newest events and the command that reads the repository. */
+export async function readBlackBox(): Promise<AuditView> {
+  return toAuditView(await call('GET', '/black-box'));
 }
 
 /** Star Chart: the newest entries with their tags, authors and mentions. Asked again when a `log` frame says something changed. */

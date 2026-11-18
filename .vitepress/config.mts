@@ -81,6 +81,8 @@ export default defineConfig({
           { text: 'Mission Log', link: '/features/mission-log' },
           { text: 'Star Chart', link: '/features/star-chart' },
           { text: 'Mass Budget', link: '/features/mass-budget' },
+          { text: 'Plot Board', link: '/features/plot-board' },
+          { text: 'Black Box', link: '/features/black-box' },
           { text: 'Livery', link: '/features/livery' },
           { text: 'Docking', link: '/features/docking' },
           { text: 'Patch Panel', link: '/features/patch-panel' },
