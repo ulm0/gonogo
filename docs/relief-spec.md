@@ -27,7 +27,7 @@ boss never staffs the room by itself: the request is data, and only the Director
 - **Clean Room.** A Clean Room boss's request is a Clean Room request: the new agent gets the boss's `cleanRoom` setting
   (same image), Claude Code only, and `dir` must be the boss's own `dir` or inside it, by `realpath` on both sides, so a
   `..` or a symbolic link that leaves is refused (`forbidden`, field `dir`). It may leave `dir` out and gets the boss's. The
-  check runs again at the GO against the boss's current record, so a folder swapped for a link in between is refused.
+  check runs again at the GO against the boss's current record, so a folder swapped for a link in between is refused, and so is a request made by a boss that has become a Clean Room agent since (its agent would not be one).
 - **Limits** (`constants.ts`): `RELIEF_PENDING_MAX` 3 waiting at once (`conflict`), `RELIEF_RATE_MAX` 5 requests in
   `RELIEF_RATE_WINDOW_MS` 10 minutes (`rate_limited`; a refused request does not count), `RELIEF_TTL_MS` 30 minutes until a
   request expires, and the room cap `MAX_AGENTS` (24), checked when asked and by `Hub.hire` at the GO. The same limits are
@@ -81,7 +81,7 @@ boss never staffs the room by itself: the request is data, and only the Director
 
 | What | How | Result |
 |---|---|---|
-| Every limit and the abuse cases: a mode above acceptEdits, an extra field, `custom`, bad and taken names (also two calls at once), the room cap (at the request and at the GO), the pending cap, the rate window, expiry (timer and clock), an agent answering, two GOs, a Clean Room boss with `..`, links, a prefix twin and a swap | `test/relief.test.ts` (38 tests, a fake hub and clock, real folders and links in a temporary directory) | pass |
+| Every limit and the abuse cases: a mode above acceptEdits, an extra field, `custom`, bad and taken names (also two calls at once), the room cap (at the request and at the GO), the pending cap, the rate window, expiry (timer and clock), an agent answering, two GOs, a Clean Room boss with `..`, links, a prefix twin and a swap | `test/relief.test.ts` (40 tests, a fake hub and clock, real folders and links in a temporary directory) | pass |
 | The routes, the token rule, the state, the tool's schema and its refusals | `test/edge.test.ts` (`relief`) | pass |
 | The real server with the stand-in agent: ask, wait, refuse by tool, an agent token on the route, GO hires `guido-1` with the mode and position through `agents.json`, NO-GO, the boss's messages, the Downlink | `test/e2e.test.ts` scenario 31 | pass |
 | The words of the block, the store, the live region | `test/client-relief.test.ts` | pass |

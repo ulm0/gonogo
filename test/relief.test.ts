@@ -429,6 +429,15 @@ describe('a Clean Room boss', () => {
     expect(told[0]).toMatchObject({ subject: 'Relief: ana could not be hired' });
   });
 
+  it('a boss that became a Clean Room agent after it asked cannot get a host agent through the GO', async () => {
+    views = [flight()];
+    await relief.request(BOSS, { name: 'ana', role: 'r', dir: project });
+    views = [{ ...flight(), dir: box, cleanRoom: {} }];
+    expect((await refusal(relief.decide('h1', 'go', { kind: 'user' }))).code).toBe('forbidden');
+    expect(hired).toEqual([]);
+    expect(told[0]).toMatchObject({ subject: 'Relief: ana could not be hired' });
+  });
+
   it('insideRealpath: the root itself, a child, a twin, a missing folder', async () => {
     expect(await insideRealpath(box, box)).toBe(true);
     expect(await insideRealpath(box, join(box, 'sub'))).toBe(true);

@@ -223,8 +223,11 @@ export function createRelief(options: ReliefOptions): Relief {
       }
       try {
         const requester = hub.views().find((agent) => agent.name === request.by);
-        // the boss may have been edited since it asked: a Clean Room boss still hires inside its box
-        if (requester) await confine(requester, request.dir);
+        // the boss may have been edited since it asked: a Clean Room boss hires only Clean Room agents, inside its box
+        if (requester) {
+          if (requester.cleanRoom !== null && request.cleanRoom === null) throw new HubError('forbidden', 'the boss runs in a Clean Room now: the agent it asked for would not, so ask again');
+          await confine(requester, request.dir);
+        }
         const hired = await hub.hire(hireOf(request));
         notify(`${hired.name} hired (asked by ${request.by})`);
         tell(request.by, `Relief: ${hired.name} is staffed`, `The Director said go. ${hired.name} is hired in ${hired.dir} and starting. Brief it with send_message.`);
