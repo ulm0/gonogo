@@ -239,6 +239,8 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
   const hub: Hub = {
     start: async () => rec('start'),
     shutdown: async () => rec('shutdown'),
+    release: () => rec('release'),
+    adopt: () => ({ adopted: [], unknown: [] }),
     views: () => [agentView('flight'), agentView('ana'), agentView('ben')],
     activity: () => [],
     hire: async (req) => {
@@ -5699,6 +5701,7 @@ function installFakes(options: { stopAllGate?: Promise<void>; hub?: Partial<Hub>
   const fake = makeTerminals({ order, stopAllGate: options.stopAllGate });
   const launcherCalls: Call[] = [];
   const launcher: Launcher = {
+    keepTokens: () => undefined,
     prepareStart: async (agent, opts) => {
       launcherCalls.push({ fn: 'prepareStart', args: [agent, opts] });
       return { spec: { file: 'fake-claude', args: ['--x'], env: { A: '1' }, cwd: agent.dir }, flag: opts.flag ?? 'session-id', token: 'tok' };
@@ -7141,12 +7144,12 @@ describe('seams with the real hub, launcher and terminal host', () => {
 
     const terminals = terminalModule.createTerminalHost({ log: nullLogger });
     expect(members(terminals)).toEqual(
-      ['attach', 'forget', 'info', 'onEvent', 'outputBytes', 'rename', 'resize', 'screen', 'spawn', 'stop', 'stopAll', 'submit', 'title', 'write'].sort(),
+      ['attach', 'forget', 'info', 'list', 'onEvent', 'outputBytes', 'rename', 'resize', 'screen', 'spawn', 'stop', 'stopAll', 'submit', 'title', 'write'].sort(),
     );
 
     const home = tmpDir();
     const launcher = launcherModule.createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:1', seed: false, env: {}, log: nullLogger });
-    expect(members(launcher)).toEqual(['memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke']);
+    expect(members(launcher)).toEqual(['keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke']);
     expect(launcher.resolveToken('f'.repeat(64))).toBeNull();
 
     const io = {

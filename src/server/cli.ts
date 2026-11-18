@@ -39,6 +39,11 @@ import { checkWorktree, removeWorktree, worktreeBranch, worktreePath, worktreeSt
 import { openHome } from './home.js';
 import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
+import { createRemoteTerminalHost } from './remoteterminal.js';
+import type { RemoteTerminalHost } from './remoteterminal.js';
+import { runDir } from './ptyhost.js';
+import { TOKENS_FILE } from './ptyhostproto.js';
+import { createHoldStore, relaunch, requestReload, runPtyHost, spawnHostProcess } from './reload.js';
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
 import { createPrices } from './prices.js';
@@ -95,6 +100,10 @@ export interface StartOptions {
   fetch?: typeof fetch;
   /** Rollout, the daily check for a newer gonogo. Default false here, so that a test never reaches the registry: `main` turns it on unless GONOGO_UPDATE_CHECK=0 or --no-update-check. */
   updateCheck?: boolean;
+  /** Live reload (opt-in for one release): the ptys live in a separate `gonogo ptyhost` process, so `gonogo reload` leaves the agents running. Default env GONOGO_PTY_HOST is "1" or "true". */
+  ptyHost?: boolean;
+  /** [node, entry] that starts the pty host, default the entry this process was started with. A test hands in its own. */
+  ptyHostCommand?: string[];
 }
 
 export interface Running {
@@ -107,6 +116,8 @@ export interface Running {
   home: string;
   /** Idempotent graceful shutdown. */
   stop(): Promise<void>;
+  /** Live reload: ends this server and leaves the agents running in the pty host (a hold stays saved). Only with ptyHost; else it stops. */
+  release(): Promise<void>;
 }
 
 /* ---------------------------------------------------------------- arguments */
@@ -114,17 +125,20 @@ export interface Running {
 export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
+       gonogo reload
 
 Run a mission-control room of Claude Code agents from a browser tab.
 
 Commands:
   doctor                list the agent CLIs on the PATH with their versions, and the install command of each missing one
+  reload                hand over to the installed gonogo without stopping the agents (needs --pty-host on the running one)
   update                print the command that updates gonogo the way it was installed (it never runs it)
 
 Options:
   --port <n>            listen port (default ${DEFAULT_PORT}; env GONOGO_PORT)
   --host <addr>         bind address (default ${DEFAULT_HOST}; env GONOGO_HOST)
   --home <dir>          state directory (default ~/${DEFAULT_HOME_DIRNAME}; env GONOGO_HOME)
+  --pty-host            keep the agents in a separate process so that gonogo reload does not stop them (env GONOGO_PTY_HOST=1)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
@@ -147,6 +161,8 @@ export type ParsedArgs =
   | { kind: 'version' }
   | { kind: 'doctor' }
   | { kind: 'update' }
+  | { kind: 'reload'; home?: string }
+  | { kind: 'ptyhost'; home: string }
   | { kind: 'run'; options: StartOptions }
   | { kind: 'error'; message: string };
 
@@ -163,12 +179,24 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (argv.includes('--help') || argv.includes('-h')) return { kind: 'help' };
   if (argv.includes('--version') || argv.includes('-v')) return { kind: 'version' };
   if (argv[0] === 'doctor' || argv[0] === 'update') return argv.length === 1 ? { kind: argv[0] } : { kind: 'error', message: `${argv[0]} takes no arguments` };
+  if (argv[0] === 'reload' || argv[0] === 'ptyhost') {
+    const rest = argv.slice(1);
+    let home: string | undefined;
+    if (rest.length === 2 && rest[0] === '--home' && rest[1] !== '') home = rest[1];
+    else if (rest.length > 0) return { kind: 'error', message: `${argv[0]} takes only --home <dir>` };
+    if (argv[0] === 'ptyhost') return home === undefined ? { kind: 'error', message: 'ptyhost needs --home <dir>' } : { kind: 'ptyhost', home };
+    return home === undefined ? { kind: 'reload' } : { kind: 'reload', home };
+  }
   const options: StartOptions = {};
   const allowedHosts: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     if (arg === '--seed-claude') {
       options.seed = true;
+      continue;
+    }
+    if (arg === '--pty-host') {
+      options.ptyHost = true;
       continue;
     }
     if (arg === '--no-update-check') {
@@ -229,6 +257,7 @@ interface Settings {
   staticDir: string | null;
   env: Env;
   checkClaude: boolean;
+  ptyHost: boolean;
 }
 
 /** "localhost" would bind whichever address the resolver lists first, often ::1 only, and every 127.0.0.1 URL handed to the agents would be refused. */
@@ -286,6 +315,7 @@ export function resolveSettings(options: StartOptions, log: Logger = nullLogger)
     staticDir: options.staticDir !== undefined ? options.staticDir : defaultStaticDir(),
     env,
     checkClaude: options.checkClaude ?? true,
+    ptyHost: options.ptyHost ?? (env.GONOGO_PTY_HOST === '1' || env.GONOGO_PTY_HOST?.toLowerCase() === 'true'),
   };
 }
 
@@ -349,7 +379,29 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
   try {
     // a corrupt agents.json stops the start here, before anything listens
     home.loadRoster();
-    const terminalHost = createTerminalHost({ log: log.child('terminal') });
+    // Live reload: the ptys live in a pty host process of their own; this gonogo is only its client
+    const entry = process.argv[1];
+    const remote: RemoteTerminalHost | null = settings.ptyHost
+      ? createRemoteTerminalHost({
+          homeDir: home.dir,
+          log: log.child('ptyhost'),
+          startHost: () => spawnHostProcess(home.dir, options.ptyHostCommand ?? (entry === undefined ? ['gonogo'] : [process.execPath, entry])),
+        })
+      : null;
+    const holdStore = remote ? createHoldStore(home.dir, log.child('holds')) : null;
+    if (remote) {
+      let hello = await remote.connect();
+      if (!hello.ok && hello.reason === 'version') {
+        // the host on this home speaks another protocol: its agents cannot be taken over, so they are stopped and resume (restart with --resume)
+        log.warn(`the pty host is of another version (${hello.detail}): stopping its agents; they will resume`);
+        await remote.quitHost();
+        await new Promise((done) => setTimeout(done, 500));
+        hello = await remote.connect();
+      }
+      if (!hello.ok) throw new Error(`could not reach the pty host: ${hello.detail}`);
+      log.info(`pty host connected (pid ${hello.pid}); ${hello.agents.filter((a) => a.running).length} agent(s) running there`);
+    }
+    const terminalHost = remote ?? createTerminalHost({ log: log.child('terminal') });
     terminals = terminalHost;
     for (const dir of new Set([home.dir, cwd])) {
       try {
@@ -367,6 +419,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await permissionDefaults.load();
     const launcher = createLauncher({
       homeDir: home.dir,
+      tokensFile: remote ? join(runDir(home.dir), TOKENS_FILE) : null,
       hubUrl: () => baseUrl,
       seed,
       env,
@@ -481,7 +534,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       spawn: async (req) => {
         const prepared = await launcher.prepareStart(req.agent, { generation: req.generation, flag: req.flag });
         try {
-          const { pid } = terminalHost.spawn(req.agent.name, req.generation, prepared.spec);
+          const { pid } = await (terminalHost.spawnAsync?.(req.agent.name, req.generation, prepared.spec) ?? Promise.resolve(terminalHost.spawn(req.agent.name, req.generation, prepared.spec)));
           return { generation: req.generation, flag: prepared.flag, pid };
         } catch (e) {
           launcher.revoke(req.agent.name, req.generation);
@@ -489,6 +542,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         }
       },
       stop: (name, generation) => terminalHost.stop(name, generation),
+      saveHolds: holdStore ? (holds) => holdStore.save(holds) : undefined,
+      adoptable: remote
+        ? async () => {
+            const running = remote.list().filter((item) => item.running).map((item) => ({ name: item.name, generation: item.generation }));
+            // only the agents still running there keep a token
+            launcher.keepTokens(running);
+            return { running, holds: holdStore?.load() ?? {} };
+          }
+        : undefined,
       typePointer: (name, generation, text) => terminalHost.submit(name, generation, text),
       // TerminalHost.write has no generation: only keys for the running process of that generation may be typed.
       press: (name, generation, data) => {
@@ -699,6 +761,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
+      // only a gonogo started from the command line has the signal handler that does the hand-over; a test or an embedder has not
+      reload: () => {
+        if (process.listenerCount('SIGUSR2') === 0) return { ok: false, reason: 'reload is only available in a gonogo started from the command line' };
+        setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 100).unref();
+        return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
+      },
       engines: () => checkEngines(env),
       hangar: createHangar(roots),
       worktrees: {
@@ -754,12 +822,19 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         log.error(`${what} failed`, e);
       }
     };
-    const shutdown = async (): Promise<void> => {
+    const shutdown = async (leave: boolean): Promise<void> => {
       // no schedule fires from here on
       await step('schedules close', () => schedules.close());
       // the hub first: it refuses new lifecycle calls from here on, while hooks, MCP and open sockets keep working so the agents can finish
-      await step('hub shutdown', () => hubInstance.shutdown());
-      await step('terminal shutdown', () => terminalHost.stopAll());
+      // a reload leaves the agents running in the pty host (their holds are in the saved file); an ordinary stop ends them and the host
+      if (leave && remote) {
+        await step('hub release', async () => hubInstance.release());
+        remote.disconnect();
+      } else {
+        await step('hub shutdown', () => hubInstance.shutdown());
+        await step('terminal shutdown', () => terminalHost.stopAll());
+        if (remote) await step('pty host quit', async () => void (await remote.quitHost()));
+      }
       await step('web server close', () => webServer.close());
       await step('docking close', () => docking.close());
       await step('uplinks close', () => uplinks.close());
@@ -782,7 +857,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('clearance close', () => clearance.close());
       await step('home close', () => home.close());
     };
-    const stop = (): Promise<void> => {
+    const stopWith = (leave: boolean): Promise<void> => {
       stopping ??= (async () => {
         let timer: NodeJS.Timeout | undefined;
         const tooLong = new Promise<void>((done) => {
@@ -791,11 +866,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
             done();
           }, SHUTDOWN_MAX_MS);
         });
-        await Promise.race([shutdown(), tooLong]);
+        await Promise.race([shutdown(leave), tooLong]);
         clearTimeout(timer);
       })();
       return stopping;
     };
+    const stop = (): Promise<void> => stopWith(false);
+    const release = (): Promise<void> => stopWith(remote !== null);
 
     log.info(`listening on ${addr.host.includes(':') ? `[${addr.host}]` : addr.host}:${addr.port}, home ${home.dir}`);
     running = {
@@ -805,6 +882,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       browserToken: home.browserToken,
       home: home.dir,
       stop,
+      release,
     };
   } catch (e) {
     // a failed start leaves no listening port, no process and no lock
@@ -815,9 +893,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         log.error(`${what} failed`, err);
       }
     };
-    if (hubStarting) await quietly('hub shutdown', () => hub?.shutdown());
+    // with a pty host, a failed start leaves the agents running there (they may be ones a reload meant to keep)
+    const leave = terminals !== undefined && 'disconnect' in terminals;
+    if (hubStarting) await quietly('hub shutdown', async () => (leave ? hub?.release() : hub?.shutdown()));
     await quietly('web server close', () => web?.close());
-    await quietly('terminal shutdown', () => terminals?.stopAll());
+    await quietly('terminal shutdown', async () => (leave ? (terminals as RemoteTerminalHost).disconnect() : terminals?.stopAll()));
     await quietly('home close', () => home.close());
     throw e;
   }
@@ -851,7 +931,7 @@ function logLevel(value: string | undefined): LogLevel {
   return value === 'debug' || value === 'info' || value === 'warn' || value === 'error' ? value : 'info';
 }
 
-function installProcessHandlers(running: Running, log: Logger): void {
+function installProcessHandlers(running: Running, log: Logger, argv: string[] = [], entry?: string): void {
   let signalled = false;
   const onSignal = (signal: NodeJS.Signals): void => {
     if (signalled) {
@@ -866,6 +946,22 @@ function installProcessHandlers(running: Running, log: Logger): void {
       .finally(() => exit(0));
   };
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(signal, onSignal);
+
+  // gonogo reload: this server lets go of the home and the port (the agents keep running in the pty host, or resume when there is none),
+  // then the installed gonogo starts with the same arguments
+  let reloading = false;
+  process.on('SIGUSR2', () => {
+    if (reloading || signalled) return;
+    reloading = true;
+    log.info('reloading: handing over to a new gonogo');
+    void running
+      .release()
+      .catch((e: unknown) => log.error('release failed', e))
+      .finally(() => {
+        relaunch(argv, entry);
+        exit(0);
+      });
+  });
 
   // the last resort, not the policy: every agent dies with the server
   let failing = false;
@@ -918,6 +1014,25 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     exit(0);
     return;
   }
+  if (parsed.kind === 'ptyhost') {
+    try {
+      await runPtyHost(resolve(parsed.home), createLogger({ level: logLevel(env.GONOGO_LOG_LEVEL) }));
+    } catch (e) {
+      process.stderr.write(`gonogo ptyhost: ${e instanceof Error ? e.message : String(e)}\n`);
+      exit(1);
+    }
+    return;
+  }
+  if (parsed.kind === 'reload') {
+    try {
+      process.stdout.write(`${requestReload(parsed.home === undefined ? homeOf(env) : resolve(parsed.home))}\n`);
+      exit(0);
+    } catch (e) {
+      process.stderr.write(`gonogo reload: ${e instanceof Error ? e.message : String(e)}\n`);
+      exit(1);
+    }
+    return;
+  }
   if (parsed.kind === 'error') {
     process.stderr.write(`gonogo: ${parsed.message}\n\n${USAGE}`);
     exit(2);
@@ -928,14 +1043,25 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   const log = createLogger({ level });
   // shortcut: a signal during the start-up (about a second) takes Node's default and ends the process at once; the ptys hang up on their children and the next start replaces the stale lock
   let running: Running;
-  try {
-    running = await startGonogo({ ...parsed.options, updateCheck: parsed.options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env, log });
-  } catch (e) {
-    process.stderr.write(`gonogo: ${e instanceof Error ? e.message : String(e)}\n`);
-    if (level === 'debug' && e instanceof Error && e.stack) process.stderr.write(e.stack + '\n');
-    exit(1);
-    return;
+  // started by a reload: the old gonogo may still hold the home and the port for a moment
+  const reloaded = env.GONOGO_RELOADED === '1';
+  delete process.env.GONOGO_RELOADED;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      running = await startGonogo({ ...parsed.options, updateCheck: parsed.options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
+      break;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (reloaded && attempt < 20 && /another gonogo is using|EADDRINUSE/.test(message)) {
+        await new Promise((done) => setTimeout(done, 500));
+        continue;
+      }
+      process.stderr.write(`gonogo: ${message}\n`);
+      if (level === 'debug' && e instanceof Error && e.stack) process.stderr.write(e.stack + '\n');
+      exit(1);
+      return;
+    }
   }
-  installProcessHandlers(running, log);
+  installProcessHandlers(running, log, process.argv.slice(2), process.argv[1]);
   process.stdout.write(`gonogo ready: ${running.url}\n`);
 }

@@ -99,6 +99,44 @@ function PhoneApprovals(): ReactElement {
   );
 }
 
+/** Live reload: hands over to the installed gonogo. With --pty-host the agents keep running; without it they stop and resume. */
+function ReloadBlock(): ReactElement {
+  const id = useId();
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <section className="module rules-block" aria-labelledby={`${id}-reload`}>
+      <h2 className="label" id={`${id}-reload`}>
+        RELOAD
+      </h2>
+      <p className="hint">After you updated gonogo, start the new version. Started with --pty-host, the agents keep running and the page reconnects in a moment.</p>
+      <button
+        type="button"
+        className="btn"
+        aria-disabled={busy || undefined}
+        onClick={() => {
+          if (busy) return;
+          setBusy(true);
+          setError(null);
+          api.reloadServer().then(setNote, (e: unknown) => {
+            setBusy(false);
+            setError(e instanceof Error ? e.message : String(e));
+          });
+        }}
+      >
+        Reload gonogo
+      </button>
+      {note !== null && <p className="hint" role="status">{note}</p>}
+      {error !== null && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function FlightRules(): ReactElement {
   const titleId = useId();
   const list = useAgentList();
@@ -133,6 +171,7 @@ export function FlightRules(): ReactElement {
           </button>
         </section>
         <PhoneApprovals />
+        <ReloadBlock />
         <section className="module rules-block" aria-labelledby={`${titleId}-window`}>
           <h2 className="label" id={`${titleId}-window`}>
             LAUNCH WINDOW

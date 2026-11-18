@@ -715,6 +715,7 @@ export function createTerminalHost(options: TerminalHostOptions = {}): TerminalH
     resize,
     rename,
     forget,
+    list: () => [...records.values()].map((rec) => ({ name: rec.name, generation: rec.generation, pid: rec.running ? rec.pid : null, running: rec.running, paste: rec.mirror.modes.bracketedPasteMode })),
     attach,
     screen,
     title: titleOf,
