@@ -135,6 +135,8 @@ export const CLEAN_ROOM_DIR = 'cleanroom';
 export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 /** Worktrees (docs/worktrees-spec.md): a plain worktree lives in <home>/worktrees/<name>, on the same branch name as a Clean Room. */
 export const WORKTREE_DIR = 'worktrees';
+/** The online documentation: the one address every install surface (startup, --help, doctor, the page) links to. The site has one version only, so the link is not versioned. */
+export const DOCS_URL = 'https://gonogo.ulm0.com/';
 export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */

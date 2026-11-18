@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PROTOCOL_VERSION } from '../shared/protocol.js';
+import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
 import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
 import type { DownlinkNotify, Hub, HubIo, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
 import {
@@ -130,6 +130,8 @@ Options:
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
   -v, --version         show the version
+
+Docs: ${DOCS_URL}
 
 Environment:
   GONOGO_MAX_HOPS         hop cap for messages between agents (default ${DEFAULT_MAX_HOPS})
@@ -948,4 +950,6 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   }
   installProcessHandlers(running, log);
   process.stdout.write(`gonogo ready: ${running.url}\n`);
+  // a log line (stderr, GONOGO_LOG_LEVEL): stdout holds the one `gonogo ready:` line that scripts parse
+  log.info(`docs: ${DOCS_URL}`);
 }

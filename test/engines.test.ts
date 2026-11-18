@@ -12,6 +12,7 @@ import { buildArgv, buildChildEnv, createLauncher } from '../src/server/launcher
 import { checkEngines, findOnPath, formatDoctor, versionLine } from '../src/server/providers.js';
 import { cleanRoomEnv, fakeDockerBin, makeRepo } from './clean-room-helpers.js';
 import { parseArgs, USAGE } from '../src/server/cli.js';
+import { DOCS_URL } from '../src/shared/protocol.js';
 
 const SID = '0b2f5c1e-6d3a-4f7e-9a1b-2c3d4e5f6a7b';
 const HUB = 'http://127.0.0.1:7777';
@@ -294,6 +295,12 @@ describe('the command line: doctor, update and the opt-out', () => {
     expect(parseArgs(['--port=1', '--no-update-check', '--seed-claude'])).toEqual({ kind: 'run', options: { port: 1, updateCheck: false, seed: true } });
     expect(parseArgs(['--no-update-check=1'])).toEqual({ kind: 'error', message: 'unknown option --no-update-check=1' });
     expect(parseArgs([])).toEqual({ kind: 'run', options: {} });
+  });
+
+  it('the usage and the doctor name the online docs', () => {
+    expect(DOCS_URL).toBe('https://gonogo.ulm0.com/');
+    expect(USAGE).toContain(`Docs: ${DOCS_URL}`);
+    expect(formatDoctor([], null)).toContain(`docs: ${DOCS_URL}`);
   });
 
   it('the usage names the commands, the flag and the variable', () => {

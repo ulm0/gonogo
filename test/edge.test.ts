@@ -6767,6 +6767,8 @@ describe('cli: main', () => {
     expect(cap.exits).toEqual([]);
     expect(started?.url).toBe(`http://127.0.0.1:${started?.port}/#token=${readFileSync(join(home, 'token'), 'utf8').trim()}`);
     for (const line of cap.err.join('').trimEnd().split('\n')) expect(line).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z (info |warn |error|debug) /);
+    // the docs link is a log line, not a second line of stdout
+    expect(cap.err.join('')).toContain('info  docs: https://gonogo.ulm0.com/\n');
     expect((await api(started?.port ?? 0, 'GET', '/api/state', undefined, started?.token)).status).toBe(200);
     expect(fakes.order).toContain('hub.start');
     cap.handler('SIGTERM')('SIGTERM');
@@ -6798,6 +6800,7 @@ describe('cli: main', () => {
     installFakes();
     const cap = captureProcess();
     const started = await runMain(cap, [`--home=${join(tmpDir(), 'home')}`, '--port=0', '--host=::1'], baseEnv());
+
     expect(started?.url).toBe(`http://[::1]:${started?.port}/#token=${started?.token}`);
     expect(cap.out.join('')).toBe(`gonogo ready: ${started?.url}\n`);
     cap.handler('SIGTERM')('SIGTERM');

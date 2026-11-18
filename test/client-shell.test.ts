@@ -26,6 +26,10 @@ describe('Patch Panel lines', () => {
     expect(ids({ unread: 2 })).toContain('read');
   });
 
+  it('has a Docs line that opens the online docs', () => {
+    expect(commands(input()).find((x) => x.id === 'docs')).toMatchObject({ label: 'Docs', group: 'Action', act: { kind: 'docs' } });
+  });
+
   it('offers a poll only when one can start and somebody can answer it', () => {
     expect(ids({ agents: [flight] })).not.toContain('poll');
     expect(ids({ agents: [flight, agent('ana', { state: 'stopped' })] })).not.toContain('poll');
