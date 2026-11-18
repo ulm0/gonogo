@@ -1,17 +1,18 @@
 # gonogo in Docker, with Clean Room. Once, as root on the Docker host (the image runs as uid 1000):
-#   install -d -o 1000 -g 1000 /srv/gonogo /srv/gonogo/projects
+#   install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects    # next to this file
 # Then, with CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported in your shell:
 #   export DOCKER_GID=$(stat -L -c %g /var/run/docker.sock)    # every compose command reads it
 #   docker compose up -d           # pulls the published image the first time
 #   docker compose logs gonogo     # the `gonogo ready:` line is the URL, token included
 # Update to the latest release: docker compose pull && docker compose up -d
-# A second instance: GONOGO_PORT=7778 GONOGO_DATA=/srv/gonogo-2 docker compose -p gonogo-2 up -d
+# A second instance: GONOGO_PORT=7778 GONOGO_DATA=$PWD/gonogo-data-2 docker compose -p gonogo-2 up -d
 #
 # WARNING: the Docker socket gives this container root over the host, and so does every agent in it, also the ones
 # that do not run in a Clean Room. Hire only agents you would let run as root on this machine.
 #
 # The host's Docker mounts a Clean Room's folders by their host paths, so the data folder is mounted at the same path
-# inside. Another folder: export GONOGO_DATA=/path (it must not contain a colon).
+# inside: ./gonogo-data, by its absolute path ($PWD, so run compose from this folder). Another folder: export
+# GONOGO_DATA=/absolute/path (no colon in it).
 services:
   gonogo:
     image: ghcr.io/ulm0/gonogo:latest
@@ -25,19 +26,19 @@ services:
       # No value: forwarded from your shell, so the secret is not written here.
       CLAUDE_CODE_OAUTH_TOKEN:
       ANTHROPIC_API_KEY:
-      GONOGO_HOME: ${GONOGO_DATA:-/srv/gonogo}/state
-      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:-/srv/gonogo}/claude
+      GONOGO_HOME: ${GONOGO_DATA:-${PWD}/gonogo-data}/state
+      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:-${PWD}/gonogo-data}/claude
       # A Clean Room joins this container's network (self: found by its host name, so no fixed container name).
       GONOGO_CLEANROOM_NETWORK: container:self
     # The Clean Room shares this hosts file: its hook URLs name host.docker.internal, which the server limits to hooks and MCP.
     extra_hosts:
       - host.docker.internal:127.0.0.1
     # The boss's first working directory, where your projects go.
-    working_dir: ${GONOGO_DATA:-/srv/gonogo}/projects
+    working_dir: ${GONOGO_DATA:-${PWD}/gonogo-data}/projects
     group_add:
       - ${DOCKER_GID:?set DOCKER_GID to the group id of the Docker socket, stat -L -c %g /var/run/docker.sock}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${GONOGO_DATA:-./gonogo-data}:${GONOGO_DATA:-/srv/gonogo}
+      - ${GONOGO_DATA:-${PWD}/gonogo-data}:${GONOGO_DATA:-${PWD}/gonogo-data}
     # gonogo stops its agents within 8 seconds and gives up at 12.
     stop_grace_period: 15s
