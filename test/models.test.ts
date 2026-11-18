@@ -104,11 +104,15 @@ describe('the routes', () => {
     expect(badEngine.json).toMatchObject({ field: 'provider' });
   });
 
-  it('answers a bad % escape in the engine with 400, not 500', async () => {
+  it('answers a % in the engine name with 400, not 500, and a bad escape with the router\'s 404', async () => {
     const port = await start(true);
-    const bad = await call(port, 'PUT', '/api/models/%E0%A4%A', { model: 'x' });
-    expect(bad.status).toBe(400);
-    expect(bad.json).toMatchObject({ field: 'provider' });
+    const lone = await call(port, 'PUT', '/api/models/%25', { model: 'x' });
+    expect(lone.status).toBe(400);
+    expect(lone.json).toMatchObject({ field: 'provider' });
+    const twice = await call(port, 'PUT', '/api/models/%2541', { model: 'x' });
+    expect(twice.status).toBe(400);
+    const res = await fetch(`http://127.0.0.1:${port}/api/models/%E0%A4%A`, { method: 'PUT', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }, body: '{}' });
+    expect(res.status).toBe(404);
   });
 
   it('answers 404 without the store', async () => {
