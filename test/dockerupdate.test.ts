@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { agentCounts, updateDialogText } from '../src/client/selfupdate.js';
 import { parseArgs } from '../src/server/cli.js';
-import { checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
+import { followResult, settleResult, viewOfResult, checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
 import type { DockerCall } from '../src/server/dockerupdate.js';
 import { createUpdater, UpdateError } from '../src/server/updater.js';
 import type { UpdateView } from '../src/shared/protocol.js';
@@ -56,7 +56,11 @@ function fake(): Fake {
     const params = new URLSearchParams(query);
     f.log.push(`${method} ${route}${params.get('name') !== null ? `?name=${params.get('name')}` : ''}`);
     if (body !== undefined) f.bodies.push({ route, ...(body as object) } as Record<string, unknown>);
-    if (route === '/containers/json') return { status: 200, text: JSON.stringify([...f.boxes.values()].map((b) => ({ Id: b.id, Names: [`/${b.name}`], State: b.running ? 'running' : 'exited', Labels: b.labels ?? {} }))) };
+    if (route === '/containers/json') {
+      const filters = JSON.parse(params.get('filters') ?? '{}') as { label?: string[]; status?: string[] };
+      const all = [...f.boxes.values()].map((b) => ({ Id: b.id, Names: [`/${b.name}`], State: b.running ? 'running' : 'exited', Labels: b.labels ?? {} }));
+      return { status: 200, text: JSON.stringify(all.filter((c) => (filters.status === undefined || filters.status.includes(c.State)) && (filters.label === undefined || filters.label.every((l) => c.Labels[l.split('=')[0] ?? ''] === l.split('=')[1])))) };
+    }
     const m = /^\/containers\/([^/]+)(?:\/(\w+))?$/.exec(route);
     if (route === '/_ping') return { status: 200, text: 'OK' };
     if (route === '/version') return { status: 200, text: JSON.stringify({ ApiVersion: f.script.apiVersion }) };
@@ -236,7 +240,7 @@ describe('the helper', () => {
     expect(body.Cmd).toEqual(['self-update', '--target', ME, '--expect', '0.4.0', '--home', '/state/room', '--image', NEW_IMG]);
     expect(body.HostConfig).toEqual({ AutoRemove: true, Init: true, NetworkMode: 'none', Binds: ['/var/run/docker.sock:/var/run/docker.sock', '/srv/gonogo:/state'], GroupAdd: ['999'] });
     expect(body.User).toBe('1000:1000');
-    expect(body.Labels).toEqual({ 'gonogo.helper': '1' });
+    expect(body.Labels).toEqual({ 'gonogo.helper': '1', 'gonogo.helper.target': ME });
   });
 
   it('is refused without the socket or the home as a mount, and starts after it is created', async () => {
@@ -371,6 +375,121 @@ describe('the swap', () => {
     const f = fake();
     expect((await swap(f.call, { ...SWAP, target: 'gonogo; rm' })).state).toBe('failed');
     expect(f.log).toEqual([]);
+  });
+});
+
+describe('a helper that is killed half way', () => {
+  it('leaves a started record before anything is stopped, and the final result replaces it', async () => {
+    const f = fake();
+    const seen: string[] = [];
+    const record = async (r: { state: string; previousImage: string; note: string }): Promise<void> => {
+      f.log.push('RECORD ' + r.state);
+      seen.push(r.state + '|' + r.previousImage + '|' + r.note);
+    };
+    const result = await swap(f.call, { ...SWAP, record });
+    const steps = f.log.filter((l) => /create\?|RECORD|stop/.test(l));
+    expect(steps).toEqual(['POST /containers/create?name=gonogo-next-a1b2c3', 'RECORD started', `POST /containers/${ME}/stop`]);
+    expect(seen[0]).toContain('started|' + OLD_IMG);
+    expect(seen[0]).toContain('gonogo-prev-a1b2c3');
+    expect(result.state).toBe('ok');
+  });
+
+  it('writes no started record when the copy cannot be created (nothing was stopped, nothing to find)', async () => {
+    const f = fake();
+    f.script.failCreate = true;
+    const seen: string[] = [];
+    await swap(f.call, { ...SWAP, record: async (r) => void seen.push(r.state) });
+    expect(seen).toEqual([]);
+  });
+
+  const started = { version: 1 as const, at: 1_000_000, state: 'started' as const, from: '0.3.0', to: '0.4.0', previousImage: OLD_IMG, note: 'working', tail: [] };
+
+  it('a new server finding started and no helper marks it interrupted: no UNDO, the recovery text, the leftover -prev- listed, written back once', async () => {
+    const f = fake();
+    f.boxes.set('c'.repeat(64), { id: 'c'.repeat(64), name: 'gonogo-prev-a1b2c3', running: false, image: OLD_IMG, labels: { 'com.docker.compose.project': 'room', 'com.docker.compose.service': 'gonogo' } });
+    await writeResult(dir, started);
+    const settled = await settleResult(f.call, dir, started, ME, 1_000_000 + 60_000);
+    expect(settled).toMatchObject({ state: 'interrupted', previousImage: '' });
+    expect(settled.note).toMatch(/interrupted.*docker compose up -d.*gonogo-prev-a1b2c3.*No UNDO is offered/);
+    expect((await readResult(dir))?.state).toBe('interrupted');
+    // an interrupted record is never undone
+    const updater = createUpdater({ kind: 'docker', cwd: dir, current: '0.4.0', rollout: { view: () => ({ enabled: true, current: '0.4.0', latest: null, checkedAt: 1, newer: false, command: 'x' }), setUpdate: () => undefined }, reload: () => false, keepsAgents: false, hook: null, docker: { call: f.call, hostname: ME, home: dir, ready: true, busy: () => null }, fetch: (() => Promise.reject(new Error('no'))) as typeof fetch });
+    await expect(updater.undo()).rejects.toThrow(/no update to undo/);
+    // settled once: asking again changes nothing
+    expect(await settleResult(f.call, dir, settled, ME, 1_000_000 + 120_000)).toBe(settled);
+  });
+
+  it('with the helper still running it is an update in progress, until 15 minutes pass', async () => {
+    const f = fake();
+    f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1' } });
+    expect(await settleResult(f.call, dir, started, ME, 1_000_000 + 60_000)).toBe(started);
+    expect((await settleResult(f.call, dir, started, ME, 1_000_000 + 16 * 60_000)).state).toBe('interrupted');
+  });
+
+  it("another gonogo's helper on the same host does not count: only the helper of this target does", async () => {
+    const f = fake();
+    f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1', 'gonogo.helper.target': 'f'.repeat(64) } });
+    expect((await settleResult(f.call, dir, { ...started, target: ME }, ME, 1_000_000 + 60_000)).state).toBe('interrupted');
+    f.boxes.get('d'.repeat(64))!.labels = { 'gonogo.helper': '1', 'gonogo.helper.target': ME };
+    expect((await settleResult(f.call, dir, { ...started, target: ME }, ME, 1_000_000 + 60_000)).state).toBe('started');
+  });
+
+  it('a server that boots during the swap follows update.json: the helper writes ok and the view becomes done with UNDO, without a restart', async () => {
+    const f = fake();
+    f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1', 'gonogo.helper.target': ME } });
+    const first = { ...started, target: ME };
+    await writeResult(dir, first);
+    const changes: UpdateView[] = [];
+    let t = first.at + 1000;
+    let tick = 0;
+    await followResult(f.call, dir, ME, first, {
+      onChange: (r) => changes.push(viewOfResult(r)),
+      stopped: () => false,
+      now: () => t,
+      sleep: async () => {
+        t += 5000;
+        tick += 1;
+        if (tick === 3) await writeResult(dir, { ...first, at: t, state: 'ok', note: 'Updated 0.3.0 to 0.4.0.' });
+      },
+    });
+    expect(tick).toBe(3);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ state: 'done', undo: true, version: '0.4.0' });
+  });
+
+  it('follows a rolled-back end, a helper that dies (interrupted), a stop request and the 15 minute limit', async () => {
+    const f = fake();
+    const first = { ...started, target: ME };
+    let t = first.at;
+    const run = async (extra: Partial<Parameters<typeof followResult>[4]>, write?: (t: number) => Promise<void>): Promise<UpdateView[]> => {
+      await writeResult(dir, first);
+      const out: UpdateView[] = [];
+      t = first.at;
+      await followResult(f.call, dir, ME, first, { onChange: (r) => out.push(viewOfResult(r)), stopped: () => false, now: () => t, sleep: async () => { t += 5000; await write?.(t); }, ...extra });
+      return out;
+    };
+    // no helper at all: interrupted on the first look
+    expect((await run({}))[0]).toMatchObject({ state: 'failed' });
+    expect((await readResult(dir))?.state).toBe('interrupted');
+    // rolled back
+    f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1', 'gonogo.helper.target': ME } });
+    const rolled = await run({}, async (at) => writeResult(dir, { ...first, at, state: 'rolled-back', previousImage: '', note: 'unhealthy' }));
+    expect(rolled[0]).toMatchObject({ state: 'failed' });
+    expect(rolled[0]?.note).toContain('did not take');
+    // stopped by the server closing: no change is reported
+    expect(await run({ stopped: () => true })).toEqual([]);
+    // 15 minutes of nothing new: it gives up quietly (the record stays `started` until a restart settles it)
+    let looks = 0;
+    await writeResult(dir, first);
+    t = first.at;
+    await followResult(f.call, dir, ME, first, { onChange: () => undefined, stopped: () => false, now: () => t, sleep: async () => { looks += 1; t += 5 * 60_000; } });
+    expect(looks).toBeLessThanOrEqual(4);
+  });
+
+  it('any other record is left as it is', async () => {
+    const f = fake();
+    const ok = { ...started, state: 'ok' as const };
+    expect(await settleResult(f.call, dir, ok, ME)).toBe(ok);
   });
 });
 

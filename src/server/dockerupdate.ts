@@ -14,6 +14,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join } from 'node:path';
+import type { UpdateView } from '../shared/protocol.js';
 import { FILE_MODE } from './constants.js';
 
 export const SOCKET_PATH = '/var/run/docker.sock';
@@ -171,7 +172,8 @@ export function helperBody(input: { inspect: Json; image: string; /** The image 
     Image: input.helperImage ?? input.image,
     Cmd: ['self-update', '--target', asText(inspect.Id), '--expect', input.expect, '--home', input.home, '--image', input.image],
     User: asText(asRecord(inspect.Config).User),
-    Labels: { 'gonogo.helper': '1' },
+    // the target id lets a new gonogo tell its own helper from another gonogo's on the same host
+    Labels: { 'gonogo.helper': '1', 'gonogo.helper.target': asText(inspect.Id) },
     // no network: it talks to the socket only
     HostConfig: { AutoRemove: true, Init: true, NetworkMode: 'none', Binds: [socket, home], GroupAdd: Array.isArray(host.GroupAdd) ? host.GroupAdd : [] },
   };
@@ -279,9 +281,12 @@ export async function startHelper(call: DockerCall, input: { inspect: Json; imag
 export interface UpdateResult {
   version: 1;
   at: number;
-  state: 'ok' | 'rolled-back' | 'failed';
+  /** `started`: the helper wrote it before it stopped anything and has not finished; `interrupted`: a new server found that and no helper running. */
+  state: 'started' | 'ok' | 'rolled-back' | 'failed' | 'interrupted';
   from: string;
   to: string;
+  /** The id of the container the helper replaces: the helper's label `gonogo.helper.target` carries it. Absent in an older record. */
+  target?: string;
   /** The image that ran before, for UNDO; empty after an UNDO or a failure. */
   previousImage: string;
   note: string;
@@ -300,6 +305,8 @@ export interface SwapOptions {
   sleep?(ms: number): Promise<void>;
   now?(): number;
   healthMs?: number;
+  /** Called with the `started` record before anything is stopped, so a helper that is killed leaves a trace (update.json). Best effort. */
+  record?(result: UpdateResult): Promise<void>;
 }
 
 /** The page's URL in a start-up line carries the browser token (`#token=...`), and a log may show a bearer header: neither is kept in update.json or sent to the page. */
@@ -329,14 +336,14 @@ async function logTail(call: DockerCall, id: string): Promise<string[]> {
 }
 
 /**
- * Stopped leftovers of earlier tries (`<name>-prev-<6 hex>`, `<name>-next-<6 hex>`) with the same compose project and service as the
- * target: one with a restart policy could come back after a daemon restart on the same /state, which is two writers. Best effort,
- * never touches a running container or one with another name or other compose labels.
+ * Stopped containers of earlier tries (`<name>-prev-<6 hex>`, `<name>-next-<6 hex>`) with the same compose project and service as the
+ * target. Never a running one, one with another name or other compose labels, or the target itself.
  */
-export async function removeLeftovers(call: DockerCall, name: string, target: Json): Promise<void> {
+export async function listLeftovers(call: DockerCall, name: string, target: Json): Promise<{ id: string; name: string }[]> {
   const mine = asRecord(asRecord(target.Config).Labels);
   const same = (labels: Json): boolean => ['com.docker.compose.project', 'com.docker.compose.service'].every((k) => (mine[k] ?? '') === (labels[k] ?? ''));
   const pattern = new RegExp(`^/${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(prev|next)-[0-9a-f]{6}$`);
+  const found: { id: string; name: string }[] = [];
   try {
     const res = await call('GET', `/containers/json?all=1&filters=${encodeURIComponent(JSON.stringify({ status: ['exited', 'created', 'dead'] }))}`);
     const list: unknown = JSON.parse(res.text);
@@ -344,19 +351,25 @@ export async function removeLeftovers(call: DockerCall, name: string, target: Js
       const c = asRecord(raw);
       const id = asText(c.Id);
       const stopped = ['exited', 'created', 'dead'].includes(asText(c.State));
-      if (id === '' || id === asText(target.Id) || !stopped || !same(asRecord(c.Labels))) continue;
-      if ((Array.isArray(c.Names) ? c.Names : []).some((n) => typeof n === 'string' && pattern.test(n))) await call('DELETE', `/containers/${id}?force=0`).catch(() => undefined);
+      const hit = (Array.isArray(c.Names) ? c.Names : []).find((n): n is string => typeof n === 'string' && pattern.test(n));
+      if (id !== '' && id !== asText(target.Id) && stopped && same(asRecord(c.Labels)) && hit !== undefined) found.push({ id, name: hit.slice(1) });
     }
   } catch {
-    // a failed clean-up never fails an update that worked
+    // a failed listing is an empty one
   }
+  return found;
+}
+
+/** Removes them after a good update: one with a restart policy could come back after a daemon restart on the same /state, which is two writers. Best effort. */
+export async function removeLeftovers(call: DockerCall, name: string, target: Json): Promise<void> {
+  for (const c of await listLeftovers(call, name, target)) await call('DELETE', `/containers/${c.id}?force=0`).catch(() => undefined);
 }
 
 /** Creates the copy, stops the old one, starts the copy and waits for `healthy`; on failure puts the old one back. Never throws: the result says. */
 export async function swap(call: DockerCall, options: SwapOptions): Promise<UpdateResult> {
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = options.now ?? Date.now;
-  const done = (state: UpdateResult['state'], note: string, from: string, previousImage: string, tail: string[] = []): UpdateResult => ({ version: 1, at: now(), state, from, to: options.expect, previousImage, note, tail });
+  const done = (state: UpdateResult['state'], note: string, from: string, previousImage: string, tail: string[] = []): UpdateResult => ({ version: 1, at: now(), state, from, to: options.expect, target: options.target, previousImage, note, tail });
   if (!CONTAINER_ID.test(options.target)) return done('failed', 'the target is not a container id', '', '');
   let inspect: Json;
   let fresh = '';
@@ -374,6 +387,8 @@ export async function swap(call: DockerCall, options: SwapOptions): Promise<Upda
     const made = await json(call, 'POST', `/containers/create?name=${encodeURIComponent(`${name}-next-${suffix}`)}`, copyBody(inspect, old, options.image));
     fresh = asText(made.Id);
     if (fresh === '') throw new DockerUpdateError('the new container was not created');
+    // a trace before anything is stopped: a helper that is killed from here on is found by the next server (settleResult)
+    await options.record?.(done('started', `The update helper was working: the copy is ${name}-next-${suffix}, the old container becomes ${name}-prev-${suffix}.`, from, previousImage)).catch(() => undefined);
   } catch (error) {
     // nothing was stopped yet
     return done('failed', `${error instanceof Error ? error.message : String(error)}. Nothing was changed.`, from, '');
@@ -443,18 +458,75 @@ export async function writeResult(home: string, result: UpdateResult): Promise<v
 export async function readResult(home: string): Promise<UpdateResult | null> {
   try {
     const raw: unknown = JSON.parse(await readFile(join(home, 'run', RESULT_FILE), 'utf8'));
-    if (!isRecord(raw) || raw.version !== 1 || !['ok', 'rolled-back', 'failed'].includes(asText(raw.state))) return null;
+    if (!isRecord(raw) || raw.version !== 1 || !['started', 'ok', 'rolled-back', 'failed', 'interrupted'].includes(asText(raw.state))) return null;
     return {
       version: 1,
       at: typeof raw.at === 'number' ? raw.at : 0,
       state: raw.state as UpdateResult['state'],
       from: asText(raw.from).slice(0, 40),
       to: asText(raw.to).slice(0, 40),
+      ...(CONTAINER_ID.test(asText(raw.target)) ? { target: asText(raw.target) } : {}),
       previousImage: asText(raw.previousImage).slice(0, 100),
       note: asText(raw.note).slice(0, 400),
       tail: (Array.isArray(raw.tail) ? raw.tail : []).filter((l): l is string => typeof l === 'string').slice(-8).map((l) => l.slice(0, 200)),
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * What a new server makes of update.json. A `started` record with a helper still running is an update in progress; with none (or older
+ * than 15 minutes) the helper was killed: it becomes `interrupted` (written back, so it is settled once), no UNDO is offered, and the
+ * note lists the stopped containers an earlier try left, which may hold the only copy of the old version.
+ */
+export async function settleResult(call: DockerCall, home: string, last: UpdateResult, hostname: string, now: number = Date.now()): Promise<UpdateResult> {
+  if (last.state !== 'started') return last;
+  let running = false;
+  try {
+    const res = await call('GET', `/containers/json?filters=${encodeURIComponent(JSON.stringify({ label: ['gonogo.helper=1', ...(last.target === undefined ? [] : [`gonogo.helper.target=${last.target}`])], status: ['running'] }))}`);
+    const list: unknown = JSON.parse(res.text);
+    running = Array.isArray(list) && list.length > 0;
+  } catch {
+    running = now - last.at < 15 * 60_000;
+  }
+  if (running && now - last.at < 15 * 60_000) return last;
+  let left = '';
+  try {
+    const self = await inspectSelf(call, hostname);
+    const names = (await listLeftovers(call, asText(self.Name).replace(/^\//, ''), self)).map((c) => c.name);
+    left = names.length === 0 ? '' : ` Stopped containers it left: ${names.join(', ')}; a -prev one may hold the old version: \`docker start\` it only after stopping this one, or remove it with \`docker rm\` when you are sure.`;
+  } catch {
+    // no list is told
+  }
+  const result: UpdateResult = { ...last, at: now, state: 'interrupted', previousImage: '', note: `The update to ${last.to} was interrupted: the helper stopped before it finished. Whatever runs now is this gonogo; check \`docker ps -a\`, and run \`docker compose up -d\` if gonogo is not up.${left} No UNDO is offered.`, tail: [] };
+  await writeResult(home, result).catch(() => undefined);
+  return result;
+}
+
+/** The page's view of a result: what the strip shows (and UNDO only after a good update with an image to go back to). */
+export function viewOfResult(r: UpdateResult): UpdateView {
+  if (r.state === 'started') return { state: 'handed-off', version: r.to, note: r.note, tail: [], rollback: null };
+  if (r.state === 'ok') return { state: 'done', version: r.to, note: r.note, tail: [], rollback: null, undo: r.previousImage !== '' };
+  return { state: 'failed', version: r.to, note: r.state === 'rolled-back' ? `The update to ${r.to} did not take: ${r.note}` : r.state === 'interrupted' ? r.note : `The update to ${r.to} failed: ${r.note}`, tail: r.tail, rollback: null };
+}
+
+/**
+ * The server that boots DURING the swap reads `started` once and would never see the end: it looks again every 5 s, for at most 15 minutes,
+ * settles what it finds (a helper that died becomes `interrupted`) and calls `onChange` with each new record until there is an end.
+ */
+export async function followResult(call: DockerCall, home: string, hostname: string, first: UpdateResult, options: { onChange(result: UpdateResult): void; stopped(): boolean; sleep?(ms: number): Promise<void>; now?(): number; stepMs?: number; maxMs?: number }): Promise<void> {
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref()));
+  const now = options.now ?? Date.now;
+  const begin = now();
+  let last = first;
+  while (last.state === 'started' && !options.stopped() && now() - begin < (options.maxMs ?? 15 * 60_000)) {
+    await sleep(options.stepMs ?? 5_000);
+    if (options.stopped()) return;
+    const found = await readResult(home);
+    if (found === null) continue;
+    const settled = await settleResult(call, home, found, hostname, now());
+    if (settled.state !== last.state || settled.at !== last.at) options.onChange(settled);
+    last = settled;
   }
 }
