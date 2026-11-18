@@ -28,6 +28,7 @@ import {
   showLivery,
   showLog,
   showLoop,
+  showParty,
   showRoom,
   showPlan,
   showWindow,
@@ -875,6 +876,12 @@ describe('navigation of the shell', () => {
     openConsole('ana');
     showLog();
     expect(store.getState()).toMatchObject({ view: 'log', consoleOpen: false });
+  });
+
+  it('opens Party Line and leaves a console that was open', () => {
+    openConsole('ana');
+    showParty();
+    expect(store.getState()).toMatchObject({ view: 'party', consoleOpen: false });
   });
 
   it('opens the staffing screen from a seat, from the spare seat and for an edit', () => {

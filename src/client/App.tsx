@@ -12,6 +12,7 @@ import { MissionLog } from './MissionLog.js';
 import { PatchPanel } from './PatchPanel.js';
 import { Commissioning, FlightRules } from './Rules.js';
 import { isPanelKey } from './shell.js';
+import { PartyLine } from './PartyLine.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
@@ -347,6 +348,7 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'log') return <MissionLog />;
   if (view === 'livery') return <Livery />;
   if (view === 'rules') return <FlightRules />;
+  if (view === 'party') return <PartyLine />;
   if (phone) {
     return (
       <main className="room room-phone">
