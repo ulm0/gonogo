@@ -180,6 +180,7 @@ export const SCHEDULES_AUDIT: Table = {
   run: ['config', 'Director ran schedule'],
 };
 export const PERMISSIONS_AUDIT: Table = { set: ['config', "Director changed the room's tool rules"] };
+export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const STARTUP_AUDIT: Table = { set: ['config', 'Director changed the startup policy'] };
 /** Feature toggles: which features were switched, by id (ids are plain words). */
 export const FEATURES_AUDIT: Table = {

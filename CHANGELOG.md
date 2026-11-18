@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Subagents.** gonogo sees the helpers a Claude Code agent starts (a `3 SUBAGENTS` chip, from the new SubagentStart and SubagentStop hooks), counts their tokens and dollars under the agent (Propellant reads their transcripts), keeps Redline's loop and error counters for each helper, and says which helper asked at a permission dialog. Flight Rules can allow them, cap how many run at once, or deny them. It cannot veto a helper, and Claude Code's cap does not apply under ultracode.
+
 - **Fix: colours that were never drawn.** The "older diff" line of a review verdict and the near-budget or over-budget spend line of a mission named custom properties that do not exist, so they showed no colour; they use the amber text token now. Two focus rings and the mono font of one field had the same flaw. A test now checks that every `var()` in the page's style sheets names a defined property.
 
 - **Tab name.** Flight Rules has a TAB NAME field: the title of the browser tab becomes `<name> · gonogo` (the unread count stays in front), to tell several gonogo sessions apart. Kept on the server for every browser; default is the station name when `GONOGO_STATION` is set, else `gonogo`.

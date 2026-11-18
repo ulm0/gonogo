@@ -2827,6 +2827,7 @@ describe('hire (4.9)', () => {
       model: null,
       keys: {},
       doing: null,
+      subagents: { running: 0, started: 0, types: {} },
       history: [{ state: 'starting', at: T0 }],
     });
     expect(h.saves).toHaveLength(saves + 1);
@@ -6708,5 +6709,102 @@ describe('refreshLimits: Max Q switched off releases the mail it held', () => {
     h.hub.refreshLimits();
     await h.advance(DELIVERY_SETTLE_MS * 2);
     expect(h.typed.map((t) => t.name)).toContain('cara');
+  });
+});
+
+describe('Subagents: what the hooks say of the helpers of an agent', () => {
+  const start = (h: Harness, id: string, type = 'Explore'): void => void h.hook('ana', 'SubagentStart', { agent_id: id, agent_type: type });
+  const stop = (h: Harness, id: string): void => void h.hook('ana', 'SubagentStop', { agent_id: id, agent_type: 'Explore' });
+
+  it('keeps the set of running helpers: a start adds (once), a stop removes, a stop with no start is ignored, and the view counts them', async () => {
+    const h = await withAna();
+    expect(h.view('ana').subagents).toEqual({ running: 0, started: 0, types: {} });
+    start(h, 'a1');
+    start(h, 'a1');
+    start(h, 'a2', 'general-purpose');
+    expect(h.view('ana').subagents).toEqual({ running: 2, started: 2, types: { Explore: 1, 'general-purpose': 1 } });
+    stop(h, 'a1');
+    stop(h, 'never-started');
+    expect(h.view('ana').subagents).toEqual({ running: 1, started: 2, types: { 'general-purpose': 1 } });
+    // a helper does not change what the agent is doing
+    expect(h.view('ana').state).toBe('idle');
+  });
+
+  it('drops a helper nobody has heard of for 30 minutes, keeps one a tool event of its own refreshed, and drops all at an exit or a restart', async () => {
+    const h = await withAna();
+    start(h, 'a1');
+    start(h, 'a2');
+    await h.advance(20 * 60_000);
+    h.hook('ana', 'PreToolUse', { tool_name: 'Read', tool_input: { file_path: '/a' }, agent_id: 'a2' });
+    await h.advance(15 * 60_000);
+    expect(h.view('ana').subagents.running).toBe(1);
+    h.exit('ana', { code: 0 });
+    expect(h.view('ana').subagents.running).toBe(0);
+    await h.hub.restart('ana');
+    expect(h.view('ana').subagents).toEqual({ running: 0, started: 0, types: {} });
+  });
+
+  it('a loop is the same call by the same agent: the same call spread over two helpers does not trip, one helper that repeats it does, and a helper cannot hide it', async () => {
+    const h = await withAna();
+    h.work('ana');
+    const call = (id: string, command = 'ls'): void => void h.hook('ana', 'PreToolUse', { tool_name: 'Bash', tool_input: { command }, agent_id: id });
+    // 4 + 4 of the same call, interleaved: more than the limit counted together, less than it for each
+    for (let n = 0; n < 4; n += 1) {
+      call('a1');
+      call('a2');
+    }
+    expect(h.view('ana').needsKind).not.toBe('redline');
+    // a1 repeats its call while a2 keeps doing other things in between: it still trips
+    for (let n = 0; n < 3; n += 1) {
+      call('a1');
+      call('a2', `other ${n}`);
+    }
+    expect(h.view('ana')).toMatchObject({ needsKind: 'redline', needsReason: expect.stringContaining('(a subagent)') });
+  });
+
+  it('an agent\'s own loop still trips, whatever its helpers do between its calls', async () => {
+    const h = await withAna();
+    h.work('ana');
+    for (let n = 0; n < 6; n += 1) {
+      h.hook('ana', 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'make' } });
+      h.hook('ana', 'PreToolUse', { tool_name: 'Read', tool_input: { file_path: '/x' }, agent_id: 'a1' });
+    }
+    expect(h.view('ana').needsKind).toBe('redline');
+  });
+
+  it('failures are counted for each helper: a storm of one trips, the same number spread over several does not', async () => {
+    const h = await withAna();
+    h.work('ana');
+    const fail = (id: string): void => void h.hook('ana', 'PostToolUseFailure', { tool_name: 'Bash', agent_id: id });
+    for (let n = 0; n < 6; n += 1) {
+      fail('a1');
+      fail('a2');
+    }
+    expect(h.view('ana').needsKind).not.toBe('redline');
+    for (let n = 0; n < 8; n += 1) fail('a3');
+    expect(h.view('ana')).toMatchObject({ needsKind: 'redline', needsReason: expect.stringContaining('error storm') });
+  });
+
+  it('the permission a helper asks for says so, and is still the parent\'s to answer', async () => {
+    const h = await withAna();
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'git push' }, agent_id: 'a1', agent_type: 'Explore' });
+    expect(h.view('ana')).toMatchObject({ state: 'needs_you', needsKind: 'permission', needsReason: 'permission request: Bash: git push (subagent Explore)' });
+    expect(h.notices.at(-1)?.[1]).toBe('ana asks: Bash: git push (subagent Explore)');
+  });
+
+  it('a permission of an agent started with --agent has an agent_type but no agent_id: no helper is named', async () => {
+    const h = await withAna();
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' }, agent_type: 'reviewer' });
+    expect(h.view('ana').needsReason).toBe('permission request: Bash: ls');
+  });
+
+  it('a SubagentStop makes Propellant read the session again, and a flood of ids is bounded', async () => {
+    const h = await withAna();
+    h.hook('ana', 'SubagentStop', { agent_id: 'a1', transcript_path: '/p/session.jsonl' });
+    expect(h.metered.at(-1)).toMatchObject({ name: 'ana', transcriptPath: '/p/session.jsonl' });
+    for (let n = 0; n < 200; n += 1) start(h, `id${n}`);
+    expect(h.view('ana').subagents.running).toBeLessThanOrEqual(64);
   });
 });

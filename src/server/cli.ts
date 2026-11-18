@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, FEATURES_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, FEATURES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -71,6 +71,7 @@ import { createModelDefaults } from './models.js';
 import { createPermissionDefaults } from './permissions.js';
 import { createRunState } from './runstate.js';
 import { createStartupStore } from './startup.js';
+import { createSubagentStore } from './subagents.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { createUpdater } from './updater.js';
 import type { Updater } from './updater.js';
@@ -434,6 +435,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await runState.load();
     const startupStore = createStartupStore({ dir: home.dir, log: log.child('startup') });
     await startupStore.load();
+    const subagentStore = createSubagentStore({ dir: home.dir, log: log.child('subagents') });
+    await subagentStore.load();
     const launcher = createLauncher({
       homeDir: home.dir,
       tokensFile: remote ? join(runDir(home.dir), TOKENS_FILE) : null,
@@ -445,6 +448,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
       defaultPermissions: () => permissionDefaults.get(),
+      subagents: () => subagentStore.view(),
       log: log.child('launcher'),
     });
 
@@ -851,6 +855,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       features: audited(features, audit, FEATURES_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
+      subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -947,6 +952,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('models close', () => modelDefaults.close());
       await step('features close', () => features.close());
       await step('permissions close', () => permissionDefaults.close());
+      await step('subagents close', () => subagentStore.close());
       await step('startup close', async () => {
         await startupStore.close();
         await runState.close();

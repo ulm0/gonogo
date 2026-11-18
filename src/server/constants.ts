@@ -29,6 +29,9 @@ export const STARTUP_WAVE_TIMEOUT_MS = 60_000;
 export const RUN_STATE_MAX_AGE_MS = 7 * 24 * 3_600_000;
 export const RUN_STATE_FILE = 'run-state.json';
 export const STARTUP_FILE = 'startup.json';
+export const SUBAGENTS_FILE = 'subagents.json';
+/** The variable Claude Code reads for the most subagents running at once; a Clean Room container gets it by name. */
+export const SUBAGENT_LIMIT_ENV = 'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS';
 export const CARRY_ON_NOTE = 'Server restarted: gonogo was restarted while you were working. Check your last step and carry on.';
 /** start_agent: at most this many starts a minute from the boss. */
 export const START_AGENT_RATE_MAX = 6;
@@ -322,7 +325,7 @@ export const CLEAN_ROOM_HOME_DIR = 'cleanroom-home';
 /** The credentials a container may get from gonogo's environment, by name. GONOGO_API_KEY is how seed mode carries ANTHROPIC_API_KEY. */
 export const CLEAN_ROOM_CREDENTIALS = ['CLAUDE_CODE_OAUTH_TOKEN', 'GONOGO_API_KEY'] as const;
 /** The variables of the child's environment that the container needs as well. */
-export const CLEAN_ROOM_ENV = ['GONOGO_TOKEN', 'TERM', 'COLORTERM', 'IS_DEMO'] as const;
+export const CLEAN_ROOM_ENV = ['GONOGO_TOKEN', 'TERM', 'COLORTERM', 'IS_DEMO', 'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS'] as const;
 /** `docker version`, `git worktree add` and the like must answer within this. */
 export const CLEAN_ROOM_COMMAND_MS = 30_000;
 /** Added to the role of a Clean Room agent: git cannot reach the repository from the container. {branch} is its branch. */

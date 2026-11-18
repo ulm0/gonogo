@@ -67,6 +67,7 @@ import type {
   PermissionDefaults,
   PermissionRules,
   StartupSettings,
+  SubagentSettings,
   HoldAllResult,
   ResumeAllResult,
   Provider,
@@ -411,6 +412,19 @@ export async function holdAll(): Promise<HoldAllResult> {
 /** ALL RESUME: resumes every console that is on hold. */
 export async function resumeAll(): Promise<ResumeAllResult> {
   return (await call('POST', '/resume-all')) as ResumeAllResult;
+}
+
+/** Subagents: what a Claude Code agent may do with its helpers (allow, limit, none). */
+export async function subagentSettings(): Promise<SubagentSettings> {
+  const record = asRecord(await call('GET', '/subagents'));
+  if (record === null || typeof record.mode !== 'string' || typeof record.limit !== 'number') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as SubagentSettings;
+}
+
+export async function setSubagentSettings(patch: Partial<SubagentSettings>): Promise<SubagentSettings> {
+  const record = asRecord(await call('PUT', '/subagents', patch));
+  if (record === null || typeof record.mode !== 'string') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as SubagentSettings;
 }
 
 /** Start again after a restart: the room's policy (boss, running, off) and the carry-on message. */

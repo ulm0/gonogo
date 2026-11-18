@@ -16,6 +16,8 @@ import {
   chipText,
   chipTone,
   cleanRoomPlace,
+  subagentChip,
+  subagentTypes,
   worktreePlace,
   consoleMode,
   consoleSubtitle,
@@ -151,7 +153,11 @@ function Tile({ cell, selected, phone }: { cell: Cell; selected: boolean; phone:
       <span className="tile-foot" aria-hidden="true">
         <span className="tile-state">{stateText(agent, now, !(phone && vote !== null))}</span>
         {vote !== null && <span className="tile-state tile-state-vote">· {vote}</span>}
-        {right === '' && (agent.cleanRoom || agent.worktree) ? (
+        {right === '' && subagentChip(agent) !== '' ? (
+          <span className="chip tile-right tile-chip" data-tone="amber">
+            {subagentChip(agent)}
+          </span>
+        ) : right === '' && (agent.cleanRoom || agent.worktree) ? (
           <span className="chip tile-right tile-chip" data-tone="quiet">
             {agent.cleanRoom ? 'CLEAN ROOM' : 'WORKTREE'}
           </span>
@@ -496,6 +502,19 @@ function CleanRoomLine({ agent }: { agent: AgentView }): ReactElement | null {
   );
 }
 
+/** Subagents: the helpers this console has running now, by kind (docs/features/subagents.md). Nothing when there are none. */
+function SubagentsLine({ agent }: { agent: AgentView }): ReactElement | null {
+  if (subagentChip(agent) === '') return null;
+  return (
+    <p className="panel-clean">
+      <span className="chip" data-tone="amber">
+        {subagentChip(agent)}
+      </span>{' '}
+      {subagentTypes(agent)}. {agent.subagents?.started ?? 0} started since it began.
+    </p>
+  );
+}
+
 /** Worktree: where the console works, and what is in it (uncommitted changes, commits not merged). Nothing for a console without one. */
 function WorktreeLine({ agent }: { agent: AgentView }): ReactElement | null {
   const home = useStore((s) => s.info?.home ?? '');
@@ -560,6 +579,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
       {details.length > 0 && <p className="panel-details">{details.join(' · ')}</p>}
       <CleanRoomLine agent={agent} />
       <WorktreeLine agent={agent} />
+      <SubagentsLine agent={agent} />
       {massOn && <MassBudget agent={agent} />}
       {confirming && (
         <Remove
@@ -702,6 +722,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
       </header>
       <CleanRoomLine agent={agent} />
       <WorktreeLine agent={agent} />
+      <SubagentsLine agent={agent} />
       <div className="phone-sub">
         <span className="panel-sub">{consoleSubtitle(agent, position)}</span>
         <button type="button" className="btn" data-kind="quiet" aria-expanded={more} onClick={() => setMore(!more)}>

@@ -94,6 +94,7 @@ import type { Relief } from './relief.js';
 import type { StartupStore } from './startup.js';
 import type { FeatureStore } from './features.js';
 import { featureOfRoute } from '../shared/features.js';
+import type { SubagentStore } from './subagents.js';
 import type { Rollout } from './rollout.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
@@ -181,6 +182,8 @@ export interface WebOptions {
   startup?: Pick<StartupStore, 'view' | 'set'>;
   /** Feature toggles; absent in tests that do not need it (every feature is then on and the routes answer 404). */
   features?: Pick<FeatureStore, 'view' | 'isOn' | 'label' | 'plan' | 'apply'>;
+  /** The subagent setting; absent in tests that do not need it (the routes answer 404). */
+  subagents?: Pick<SubagentStore, 'view' | 'set'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
   rollout?: Pick<Rollout, 'view'>;
   /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
@@ -1267,6 +1270,18 @@ export function createWebServer(options: WebOptions): WebServer {
     }
     if ((s[1] === 'hold-all' || s[1] === 'resume-all') && s.length === 2) {
       return { allow: ['POST'], run: (_req, res) => sendJson(res, 200, s[1] === 'hold-all' ? hub.holdAll() : hub.resumeAll()) };
+    }
+    if (s[1] === 'subagents' && s.length === 2) {
+      const subagents = options.subagents;
+      if (!subagents) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, subagents.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await subagents.set(body));
+        },
+      };
     }
     if (s[1] === 'startup' && s.length === 2) {
       const startup = options.startup;

@@ -11,7 +11,7 @@
  * shortcut: subagent (Task tool) transcripts are other files and are not counted; read them too if that spend matters.
  * shortcut: the ledger and the limits are keyed by agent name, so a rename starts from zero; key by record id if renames get common.
  */
-import { appendFile, open, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { appendFile, open, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { AGENT_NAME_PATTERN, FUEL_WINDOWS } from '../shared/protocol.js';
@@ -419,6 +419,18 @@ export function createPropellant(options: PropellantOptions): Propellant {
     return real !== null && real.startsWith(projectsReal + sep) ? real : null;
   };
 
+  /**
+   * The files of the subagents of a session (docs/subagents-spec.md): `<session>/subagents/agent-<id>.jsonl` next to `<session>.jsonl`. Their usage
+   * is not in the main file (checked with a real run), so they are counted here, under the parent's name, each with its own cursor.
+   */
+  const subagentFiles = async (transcriptPath: string): Promise<string[]> => {
+    if (!transcriptPath.endsWith('.jsonl')) return [];
+    const dir = join(transcriptPath.slice(0, -'.jsonl'.length), 'subagents');
+    const names = await readdir(dir).catch(() => [] as string[]);
+    return names.filter((name) => /^agent-[A-Za-z0-9_-]{1,64}\.jsonl$/.test(name)).sort().map((name) => join(dir, name));
+  };
+  /** The size of a file when it was last read to its end: a file of the same size has nothing new, so it is not opened again. */
+  const complete = new Map<string, number>();
   const readNew = async (agent: string, transcriptPath: string): Promise<number> => {
     const path = await inside(transcriptPath);
     if (path === null) {
@@ -434,7 +446,10 @@ export function createPropellant(options: PropellantOptions): Propellant {
       let offset = saved.cursors[path] ?? 0;
       if (offset > size) offset = 0; // the file was replaced: count it again from the start
       const length = Math.min(size - offset, METER_READ_MAX_BYTES);
-      if (length <= 0) return 0;
+      if (length <= 0) {
+        complete.set(transcriptPath, size);
+        return 0;
+      }
       const buffer = Buffer.alloc(length);
       const { bytesRead } = await handle.read(buffer, 0, length, offset);
       const end = buffer.subarray(0, bytesRead).lastIndexOf(0x0a);
@@ -468,6 +483,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
         reads += split.cr;
       }
       saved.cursors[path] = offset + end + 1;
+      if (saved.cursors[path] >= size) complete.set(transcriptPath, size);
       const cut = now() - FUEL_KEEP_MS;
       const kept = fresh.filter((e) => e.at >= cut);
       entries.push(...kept);
@@ -567,7 +583,16 @@ export function createPropellant(options: PropellantOptions): Propellant {
       const previous = reading.get(transcriptPath) ?? Promise.resolve(0);
       const run = previous
         .catch(() => 0)
-        .then(() => readNew(agent, transcriptPath))
+        .then(async () => {
+          let total = await readNew(agent, transcriptPath);
+          for (const file of await subagentFiles(transcriptPath)) {
+            // a helper that finished long ago has a file that never changes: one stat tells, no open and no read
+            const size = (await stat(file).catch(() => null))?.size;
+            if (size === undefined || complete.get(file) === size) continue;
+            total += await readNew(agent, file).catch(() => 0);
+          }
+          return total;
+        })
         .catch((error: unknown) => {
           log.warn(`propellant could not read the transcript of ${agent}`, error);
           return 0;

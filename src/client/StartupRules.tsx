@@ -1,8 +1,8 @@
 /** Flight Rules: what gonogo starts again after the server was stopped (docs/features/autostart.md). */
 import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
-import { STARTUP_POLICIES } from '../shared/protocol.js';
-import type { StartupPolicy, StartupSettings } from '../shared/protocol.js';
+import { STARTUP_POLICIES, SUBAGENT_LIMIT_MAX, SUBAGENT_MODES } from '../shared/protocol.js';
+import type { StartupPolicy, StartupSettings, SubagentMode, SubagentSettings } from '../shared/protocol.js';
 import * as api from './api.js';
 
 const TEXT: Record<StartupPolicy, string> = { boss: 'The boss only', running: 'Every console that was running', off: 'Nobody' };
@@ -37,6 +37,55 @@ export function AllStopBlock(): ReactElement {
         </button>
       </div>
       {note !== null && <p className="hint" role="status">{note}</p>}
+    </section>
+  );
+}
+
+const SUB_TEXT: Record<SubagentMode, string> = { allow: 'Allowed', limit: 'At most N at once', none: 'None' };
+
+/** Flight Rules: what a Claude Code console may do with its own helpers (docs/features/subagents.md). */
+export function SubagentsBlock(): ReactElement {
+  const id = useId();
+  const [settings, setSettings] = useState<SubagentSettings | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.subagentSettings().then((found) => live && setSettings(found), (e: unknown) => live && setProblem(e instanceof Error ? e.message : String(e)));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const change = (patch: Partial<SubagentSettings>): void => {
+    setProblem(null);
+    api.setSubagentSettings(patch).then(setSettings, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+  };
+  return (
+    <section className="module rules-block" aria-labelledby={`${id}-title`}>
+      <h2 className="label" id={`${id}-title`}>
+        SUBAGENTS
+      </h2>
+      {settings !== null && (
+        <>
+          <select aria-label="Subagents" value={settings.mode} onChange={(event) => change({ mode: event.target.value as SubagentMode })}>
+            {SUBAGENT_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {SUB_TEXT[mode]}
+              </option>
+            ))}
+          </select>
+          {settings.mode === 'limit' && (
+            <input aria-label="Most subagents at once" type="number" min={1} max={SUBAGENT_LIMIT_MAX} value={settings.limit} onChange={(event) => change({ limit: Number(event.target.value) })} />
+          )}
+          <p className="hint">
+            What a Claude Code console may do with the helpers it starts. A limit is Claude Code's own, and it does not apply while a session runs ultracode. None denies the Agent tool. A helper still uses the console's gonogo tools, as the console. Applies at each console's next start.
+          </p>
+        </>
+      )}
+      {problem !== null && (
+        <p className="error" role="alert">
+          {problem}
+        </p>
+      )}
     </section>
   );
 }

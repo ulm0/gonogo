@@ -209,6 +209,7 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     model: null,
     keys: {},
     doing: null,
+    subagents: { running: 0, started: 0, types: {} },
     history: [{ state: 'idle', at: 1 }],
     ...over,
   };

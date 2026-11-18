@@ -10,7 +10,7 @@ import type { ClientState } from '../src/client/store.js';
 import { defaultView } from '../src/shared/livery.js';
 
 const agent = (name: string, desk: number, patch: Partial<AgentView> = {}): AgentView =>
-  ({ name, desk, boss: desk === 0, role: 'r', dir: '/w', mode: 'default', state: 'idle', stateSince: 1, needsKind: null, needsReason: null, needSeq: null, transition: null, draft: false, held: null, queued: 0, dirty: false, generation: 1, exit: null, position: null, provider: 'claude', command: null, payload: null, cleanRoom: null, worktree: null, model: null, keys: {}, doing: null, history: [], ...patch }) as AgentView;
+  ({ name, desk, boss: desk === 0, role: 'r', dir: '/w', mode: 'default', state: 'idle', stateSince: 1, needsKind: null, needsReason: null, needSeq: null, transition: null, draft: false, held: null, queued: 0, dirty: false, generation: 1, exit: null, position: null, provider: 'claude', command: null, payload: null, cleanRoom: null, worktree: null, model: null, keys: {}, doing: null, subagents: { running: 0, started: 0, types: {} }, history: [], ...patch }) as AgentView;
 
 function load(patch: Partial<ClientState>): void {
   const state = applyServerFrame(emptyState(), { t: 'state', state: { agents: [agent('flight', 0, { position: 'flight' }), agent('ana', 1)], activity: [], info: { cwd: '/', home: '/h' } as never, poll: null, governor: { limit: null, working: 0, holding: 0 }, propellant: NO_PROPELLANT, schedules: [], uplinks: [], tasks: [], downlink: { unread: 0, items: [] }, livery: defaultView() } } as never, 1);

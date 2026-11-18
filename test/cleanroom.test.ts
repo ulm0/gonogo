@@ -357,7 +357,7 @@ describe('the launcher starts a Clean Room agent through docker', () => {
     const base = join(home, 'agents', 'ana');
     const settings = JSON.parse(await readFile(join(base, 'settings.json'), 'utf8')) as { hooks: Record<string, Array<{ hooks: Array<{ url: string }> }>>; apiKeyHelper?: string };
     const urls = Object.values(settings.hooks).map((groups) => groups[0]?.hooks[0]?.url ?? '');
-    expect(urls).toHaveLength(8);
+    expect(urls).toHaveLength(10);
     for (const url of urls) expect(url).toMatch(/^http:\/\/host\.docker\.internal:7777\/hook\/ana\/[A-Za-z]+$/);
     expect(settings.apiKeyHelper).toBe('printenv GONOGO_API_KEY');
     const mcp = JSON.parse(await readFile(join(base, 'mcp.json'), 'utf8')) as { mcpServers: { gonogo: { url: string } } };

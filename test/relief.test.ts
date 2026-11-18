@@ -44,6 +44,7 @@ function agent(name: string, extra: Partial<AgentView> = {}): AgentView {
     model: null,
     keys: {},
     doing: null,
+    subagents: { running: 0, started: 0, types: {} },
     history: [],
     ...extra,
   };
