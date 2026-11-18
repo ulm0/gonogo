@@ -303,6 +303,39 @@ describe('the briefing and the events', () => {
     expect(posted).toEqual([['mission', 'Mission done: Ship (2 of 2 tasks done)']]);
   });
 
+  it('still announces the last open task after a restart, once observe has seen the loaded tasks', async () => {
+    const first = make();
+    const m = await first.missions.create(USER, { name: 'Ship' });
+    await first.tasks.create(USER, { title: 'a', missionId: m.id });
+    await first.tasks.create(USER, { title: 'b', missionId: m.id });
+    await first.missions.update(USER, m.id, { status: 'active' });
+    await first.tasks.close();
+    await first.missions.close();
+    const again = make();
+    await again.tasks.load();
+    await again.missions.load();
+    again.missions.observe(again.tasks.list());
+    posted.length = 0;
+    await again.tasks.update(USER, 't1', { status: 'done' });
+    await again.tasks.update(USER, 't2', { status: 'done' });
+    expect(posted).toEqual([['mission', 'All 2 tasks of Ship are done: close it?']]);
+  });
+
+  it('misses it without that look: the first change after a restart only counts', async () => {
+    const first = make();
+    const m = await first.missions.create(USER, { name: 'Ship' });
+    await first.tasks.create(USER, { title: 'a', missionId: m.id });
+    await first.missions.update(USER, m.id, { status: 'active' });
+    await first.tasks.close();
+    await first.missions.close();
+    const again = make();
+    await again.tasks.load();
+    await again.missions.load();
+    posted.length = 0;
+    await again.tasks.update(USER, 't1', { status: 'done' });
+    expect(posted).toEqual([]);
+  });
+
   it('says nothing for a paused mission, or one with no tasks', async () => {
     const { tasks, missions } = make();
     const m = await missions.create(USER, { name: 'Quiet' });

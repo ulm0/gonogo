@@ -710,6 +710,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // before the hub starts any agent: a task_create that came first would take an id of the file and lose that task
     await tasks.load();
     await missions.load();
+    // the open count of each active mission is seeded here, so the last task done after a restart is announced
+    missions.observe(tasks.list());
     await missionLog.load();
     await board.load();
     await blackBox.load();
