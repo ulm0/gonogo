@@ -34,8 +34,9 @@ import { UNSAFE_IN_NAME } from './schedules.js';
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 const ID_RE = /^t[1-9]\d{0,5}$/;
-const CREATE_FIELDS = ['title', 'detail', 'assignee'];
-const PATCH_FIELDS = ['status', 'assignee', 'note'];
+const MISSION_ID_RE = /^ms[1-9]\d{0,5}$/;
+const CREATE_FIELDS = ['title', 'detail', 'assignee', 'missionId'];
+const PATCH_FIELDS = ['status', 'assignee', 'note', 'missionId'];
 
 /**
  * Who changes the board: the Director, an agent with the generation of its token (the message of an assignment is sent as that
@@ -51,8 +52,12 @@ export interface TasksOptions {
   isAgent(name: string): boolean;
   /** Hub.sendFromUser or Hub.sendFromAgent: the message that tells an agent about its task. May throw a HubError. */
   send(actor: Actor, request: AgentSendRequest): SendResult;
+  /** Missions: does a mission with this id exist? Without it a task takes no `missionId`. */
+  hasMission?(id: string): boolean;
   /** The whole list changed (a task made, changed or removed). */
   emit(tasks: Task[]): void;
+  /** Missions: called with the list after each change, so a mission can tell the Director that its last open task is done. */
+  afterChange?(tasks: Task[]): void;
   /** Downlink: an agent moved a task to blocked or review. */
   notify?: DownlinkNotify;
   log: Logger;
@@ -69,6 +74,8 @@ export interface Tasks {
   /** A change that changes nothing answers with the task as it is and writes nothing. */
   update(actor: Actor, id: string, input: unknown): Promise<Task>;
   remove(id: string): Promise<void>;
+  /** Missions: takes `missionId` off every task of a mission that was removed. The tasks stay on the board. */
+  unlinkMission(missionId: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -86,15 +93,16 @@ interface Fields {
   status?: TaskStatus;
   assignee?: string | null;
   note?: string;
+  missionId?: string | null;
 }
 
 /** The fields a request may carry, checked one by one. A task is made with a title; a change has at least one field. */
-function validate(input: unknown, whole: boolean, isAgent: (name: string) => boolean): Fields {
+function validate(input: unknown, whole: boolean, isAgent: (name: string) => boolean, hasMission: (id: string) => boolean): Fields {
   if (!isRecord(input)) throw bad('request body must be a JSON object');
   const allowed = whole ? CREATE_FIELDS : PATCH_FIELDS;
   for (const key of Object.keys(input)) if (!allowed.includes(key)) throw bad(`unknown field "${key}"`, key);
   if (whole && input.title === undefined) throw bad('title is required', 'title');
-  if (!whole && Object.keys(input).length === 0) throw bad('nothing to change: give a status, an assignee or a note');
+  if (!whole && Object.keys(input).length === 0) throw bad('nothing to change: give a status, an assignee, a mission or a note');
   const out: Fields = {};
   if (input.title !== undefined) {
     const title = typeof input.title === 'string' ? input.title.trim() : '';
@@ -117,6 +125,13 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
     }
     out.assignee = input.assignee;
   }
+  if (input.missionId !== undefined) {
+    if (input.missionId !== null && (typeof input.missionId !== 'string' || !MISSION_ID_RE.test(input.missionId) || !hasMission(input.missionId))) {
+      throw bad('missionId must be the id of a mission, or null', 'missionId');
+    }
+    if (whole && input.missionId === null) throw bad('missionId must be the id of a mission', 'missionId');
+    out.missionId = input.missionId;
+  }
   if (input.note !== undefined) {
     // one line: the history is a list of lines
     const note = typeof input.note === 'string' ? input.note.replace(/\s+/g, ' ').trim() : '';
@@ -129,7 +144,7 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
 /** A saved record read back; one that is not a task throws, and the caller skips it. Unlike a request, it may name an agent that is gone. */
 function fromRecord(raw: unknown, at: number): Task {
   if (!isRecord(raw) || typeof raw.id !== 'string' || !ID_RE.test(raw.id)) throw new Error('no valid id');
-  const { id, title, detail, status, assignee, createdBy, createdAt, updatedAt, notes, handedOff } = raw;
+  const { id, title, detail, status, assignee, createdBy, createdAt, updatedAt, notes, handedOff, missionId } = raw;
   if (typeof title !== 'string' || title === '' || title.length > TASK_TITLE_MAX_CHARS) throw new Error('no valid title');
   if (typeof status !== 'string' || !(TASK_STATUSES as readonly string[]).includes(status)) throw new Error('no valid status');
   return {
@@ -143,6 +158,7 @@ function fromRecord(raw: unknown, at: number): Task {
     updatedAt: typeof updatedAt === 'number' ? updatedAt : at,
     notes: Array.isArray(notes) ? notes.filter((n): n is string => typeof n === 'string').slice(-TASK_NOTES_MAX) : [],
     ...(typeof handedOff === 'string' && STATION_RE.test(handedOff) ? { handedOff } : {}),
+    ...(typeof missionId === 'string' && MISSION_ID_RE.test(missionId) ? { missionId } : {}),
   };
 }
 
@@ -169,10 +185,12 @@ export function createTasks(options: TasksOptions): Tasks {
     });
   };
 
+  const hasMission = (id: string): boolean => options.hasMission?.(id) ?? false;
   const list = (): Task[] => tasks.map(copy);
   /** Tells the browsers and saves. */
   const changed = (): Promise<void> => {
     options.emit(list());
+    options.afterChange?.(list());
     return save();
   };
 
@@ -236,7 +254,7 @@ export function createTasks(options: TasksOptions): Tasks {
     list,
 
     async create(actor, input) {
-      const request = validate(input, true, options.isAgent);
+      const request = validate(input, true, options.isAgent, hasMission);
       if (tasks.filter(isOpen).length >= TASKS_OPEN_MAX) throw full();
       const at = now();
       const task: Task = {
@@ -249,8 +267,9 @@ export function createTasks(options: TasksOptions): Tasks {
         createdAt: at,
         updatedAt: at,
         notes: [],
+        ...(request.missionId === undefined || request.missionId === null ? {} : { missionId: request.missionId }),
       };
-      task.notes.push(line(actor, task.assignee === null ? 'created' : `created; assigned to ${task.assignee}`, at));
+      task.notes.push(line(actor, `${task.assignee === null ? 'created' : `created; assigned to ${task.assignee}`}${task.missionId === undefined ? '' : `; mission ${task.missionId}`}`, at));
       tell(actor, task, at);
       seq += 1;
       tasks.push(task);
@@ -277,7 +296,7 @@ export function createTasks(options: TasksOptions): Tasks {
 
     async update(actor, id, input) {
       const task = find(id);
-      const patch = validate(input, false, options.isAgent);
+      const patch = validate(input, false, options.isAgent, hasMission);
       const at = now();
       const next = copy(task);
       const parts: string[] = [];
@@ -289,6 +308,11 @@ export function createTasks(options: TasksOptions): Tasks {
       if (patch.assignee !== undefined && patch.assignee !== task.assignee) {
         next.assignee = patch.assignee;
         parts.push(patch.assignee === null ? 'unassigned' : `assigned to ${patch.assignee}`);
+      }
+      if (patch.missionId !== undefined && (patch.missionId ?? undefined) !== task.missionId) {
+        if (patch.missionId === null) delete next.missionId;
+        else next.missionId = patch.missionId;
+        parts.push(patch.missionId === null ? 'unlinked from its mission' : `mission ${patch.missionId}`);
       }
       if (patch.note !== undefined) parts.push(patch.note);
       if (parts.length === 0) return copy(task);
@@ -310,6 +334,21 @@ export function createTasks(options: TasksOptions): Tasks {
       const task = find(id);
       tasks = tasks.filter((x) => x !== task);
       await changed();
+    },
+
+    async unlinkMission(missionId) {
+      const at = now();
+      let any = false;
+      tasks = tasks.map((t) => {
+        if (t.missionId !== missionId) return t;
+        any = true;
+        const next = copy(t);
+        delete next.missionId;
+        next.notes.push(line({ kind: 'user' }, `unlinked: mission ${missionId} was removed`, at));
+        next.notes = next.notes.slice(-TASK_NOTES_MAX);
+        return next;
+      });
+      if (any) await changed();
     },
 
     close() {

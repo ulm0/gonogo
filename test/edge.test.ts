@@ -7354,3 +7354,106 @@ describe('conventions', () => {
     expect(sources.find(([name]) => name === 'home')?.[1]).not.toMatch(/from '\.\/(hooks|mcp|web)\.js'/);
   });
 });
+
+describe('missions', () => {
+  const asBoss = { rosterFor: (agent: string) => ({ you: agent, boss: 'ana', agents: [], specialRecipients: ['boss', 'user'] }) };
+  const mission = { id: 'ms1', name: 'Ship', goal: '', status: 'planned', lead: 'ana', createdBy: 'user', createdAt: 1, updatedAt: 1, startedAt: null, endedAt: null, history: [] };
+  /** A missions that records what the routes and the tools ask of it, with the actor it was asked as. */
+  function fakeMissions(): { calls: unknown[][]; missions: NonNullable<WebOptions['missions']> } {
+    const calls: unknown[][] = [];
+    const known = (id: string): void => {
+      if (id !== 'ms1') throw new FakeHubError('not_found', 'unknown mission');
+    };
+    return {
+      calls,
+      missions: {
+        list: () => [mission, { ...mission, id: 'ms2', status: 'active', updatedAt: 9 }] as never,
+        create: async (actor, input) => {
+          calls.push(['create', actor, input]);
+          if ((input as { name?: unknown }).name === 'bad') throw new FakeHubError('bad_request', 'name must be 1 to 80 characters on one line', 'name');
+          return mission as never;
+        },
+        update: async (actor, id, input) => {
+          calls.push(['update', actor, id, input]);
+          known(id);
+          return { ...mission, status: 'active' } as never;
+        },
+        remove: async (id, unlink) => {
+          calls.push(['remove', id, unlink]);
+          known(id);
+          if (!unlink) throw new FakeHubError('conflict', 'the mission has 1 linked task', 'unlink');
+        },
+      },
+    };
+  }
+
+  it('lists, makes, changes and removes missions as the Director, and unlink is a query flag', async () => {
+    const { calls, missions } = fakeMissions();
+    const { port } = await startWeb({ missions });
+    expect((await api(port, 'GET', '/api/missions')).json()).toHaveLength(2);
+    const made = await api(port, 'POST', '/api/missions', { name: 'Ship', createdBy: 'flight' });
+    expect([made.status, made.json()]).toEqual([201, mission]);
+    expect((await api(port, 'POST', '/api/missions', { name: 'bad' })).json()).toEqual({ error: 'name must be 1 to 80 characters on one line', code: 'bad_request', field: 'name' });
+    expect((await api(port, 'PATCH', '/api/missions/ms1', { status: 'active' })).json()).toMatchObject({ status: 'active' });
+    expect((await api(port, 'PATCH', '/api/missions/ms9', { status: 'active' })).status).toBe(404);
+    const refused = await api(port, 'DELETE', '/api/missions/ms1');
+    expect([refused.status, refused.json()]).toEqual([409, { error: 'the mission has 1 linked task', code: 'conflict', field: 'unlink' }]);
+    expect((await api(port, 'DELETE', '/api/missions/ms1?unlink=1')).status).toBe(204);
+    expect(calls).toContainEqual(['create', { kind: 'user' }, { name: 'Ship', createdBy: 'flight' }]);
+    expect(calls).toContainEqual(['remove', 'ms1', true]);
+    expect(calls).toContainEqual(['remove', 'ms1', false]);
+  });
+
+  it('wants a browser token, answers 405 to other methods, shows the list in the first state frame and is 404 without missions', async () => {
+    const { missions } = fakeMissions();
+    const { port } = await startWeb({ missions });
+    expect((await api(port, 'GET', '/api/missions', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await api(port, 'PATCH', '/api/missions', {})).status).toBe(405);
+    expect((await api(port, 'POST', '/api/missions/ms1', {})).status).toBe(405);
+    expect((await openWs(port)).frames[0]).toMatchObject({ t: 'state', state: { missions: [{ id: 'ms1' }, { id: 'ms2' }] } });
+    const none = await startWeb();
+    expect((await api(none.port, 'GET', '/api/missions')).status).toBe(404);
+    expect((await api(none.port, 'DELETE', '/api/missions/ms1')).status).toBe(404);
+  });
+
+  it('lets every agent list the missions with the progress of their tasks, newest change first', async () => {
+    const { missions } = fakeMissions();
+    const { tasks } = (() => {
+      const base = { id: 't1', title: 'a', detail: '', status: 'done', assignee: null, createdBy: 'user', createdAt: 1, updatedAt: 1, notes: [], missionId: 'ms1' };
+      return { tasks: { list: () => [base, { ...base, id: 't2', status: 'doing' }, { ...base, id: 't3', missionId: undefined }] as never, create: async () => base as never, update: async () => base as never, remove: async () => undefined } };
+    })();
+    const { port } = await startWeb({ missions, tasks });
+    const ben = await connectMcp(port, BEN_TOKEN);
+    const out = toolOutcome(await ben.callTool({ name: 'mission_list', arguments: {} }));
+    expect(out).toMatchObject({ isError: false, json: { count: 2, missions: [{ id: 'ms2', tasksTotal: 0 }, { id: 'ms1', tasksDone: 1, tasksTotal: 2 }] } });
+    expect(toolOutcome(await ben.callTool({ name: 'mission_list', arguments: { status: 'active' } })).json).toMatchObject({ count: 1 });
+    expect(toolOutcome(await ben.callTool({ name: 'mission_list', arguments: { status: 'finished' } })).isError).toBe(true);
+  });
+
+  it('lets only the boss make or change a mission, as itself whatever the call says', async () => {
+    const { calls, missions } = fakeMissions();
+    const other = await startWeb({ missions });
+    const ben = await connectMcp(other.port, BEN_TOKEN);
+    expect(toolOutcome(await ben.callTool({ name: 'mission_create', arguments: { name: 'x' } }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"only the boss may change missions"}' });
+    expect(toolOutcome(await ben.callTool({ name: 'mission_update', arguments: { id: 'ms1', status: 'done' } })).isError).toBe(true);
+    expect(calls).toEqual([]);
+    const { port } = await startWeb({ missions }, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const made = toolOutcome(await ana.callTool({ name: 'mission_create', arguments: { name: 'Ship', goal: 'g', lead: 'ben', createdBy: 'user' } }));
+    expect(made).toMatchObject({ isError: false, json: { ok: true, mission } });
+    const moved = toolOutcome(await ana.callTool({ name: 'mission_update', arguments: { id: 'ms1', status: 'active', note: 'go', name: 'renamed' } }));
+    expect(moved).toMatchObject({ isError: false, json: { ok: true } });
+    expect(calls).toEqual([
+      ['create', { kind: 'agent', name: 'ana', generation: 3 }, { name: 'Ship', goal: 'g', lead: 'ben' }],
+      ['update', { kind: 'agent', name: 'ana', generation: 3 }, 'ms1', { status: 'active', note: 'go' }],
+    ]);
+  });
+
+  it('answers that missions are not available without them', async () => {
+    const { port } = await startWeb({}, asBoss);
+    const ana = await connectMcp(port, ANA_TOKEN);
+    for (const [name, args] of [['mission_list', {}], ['mission_create', { name: 'x' }], ['mission_update', { id: 'ms1' }]] as const) {
+      expect(toolOutcome(await ana.callTool({ name, arguments: args }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"Missions are not available"}' });
+    }
+  });
+});

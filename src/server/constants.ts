@@ -366,6 +366,10 @@ export const DOCK_UNDOCK_TIMEOUT_MS = 3000;
 export const DOCK_PULL_MS = 30_000;
 /** Flight Plan (docs/flight-plan-spec.md): the file, the history lines one task keeps, and how many done tasks are kept. */
 export const TASKS_FILE = 'tasks.json';
+/** Missions (docs/missions-spec.md): the file, the history lines one mission keeps, and how many finished missions are kept. */
+export const MISSIONS_FILE = 'missions.json';
+export const MISSION_NOTES_MAX = 100;
+export const MISSIONS_DONE_KEEP = 20;
 export const TASK_NOTES_MAX = 20;
 export const TASKS_DONE_KEEP = 100;
 /**
@@ -454,9 +458,15 @@ export const MCP_DESCRIPTIONS = {
   task_list:
     'List the tasks of the Flight Plan, the team task board, most recently changed first. Optional filters: mine (only the tasks assigned to you) and status (todo, doing, review, done or blocked).',
   task_create:
-    'Add a task to the Flight Plan. It starts as todo. Give a short title, a detail with what done means, and optionally the name of the agent it is assigned to; that agent gets a message.',
+    'Add a task to the Flight Plan. It starts as todo. Give a short title, a detail with what done means, and optionally the name of the agent it is assigned to; that agent gets a message. Optionally missionId, the id of the mission it serves (see mission_list).',
   task_update:
-    'Change a task of the Flight Plan by its id: its status (todo, doing, review, done, blocked), its assignee (an agent name, or null to unassign) and a short note for the history. Assigning it to another agent sends that agent a message.',
+    'Change a task of the Flight Plan by its id: its status (todo, doing, review, done, blocked), its assignee (an agent name, or null to unassign) and a short note for the history. Assigning it to another agent sends that agent a message. missionId links it to a mission (null unlinks it).',
+  mission_list:
+    'List the missions of the room, newest change first: a named goal, its status (planned, active, paused, done, aborted), its lead and the tasks that serve it. Optional filter: status. The current mission is the active one that started last.',
+  mission_create:
+    'Boss only. Make a mission: a short name, an optional goal (what done means) and optionally its lead (an agent name; default you). It starts as planned; the Director starts it. Link tasks to it with the missionId field of task_create and task_update.',
+  mission_update:
+    'Boss only. Change a mission by its id: its status (planned, active, paused, done, aborted) and a short note for the history. Becoming active briefs you with the goal and the open tasks. Only the Director edits a name or a goal or removes a mission.',
   log_write:
     'Write to the Mission Log, the memory shared by every agent: a title, a body in plain markdown and optional tags. Give an id to change an entry you wrote earlier (any of title, body, tags). Keep an entry to one finding.',
   log_search:

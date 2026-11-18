@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -51,6 +51,7 @@ import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
 import { createMassBudget } from './massbudget.js';
 import { createMissionLog } from './missionlog.js';
+import { createMissions } from './missions.js';
 import { createTasks } from './tasks.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
@@ -552,9 +553,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       press: (secret, pressed) => void phone?.press(secret, pressed).catch((error: unknown) => log.warn('phone approvals: a button failed', error instanceof Error ? error.message : String(error))),
       log: log.child('uplink'),
     });
+    // tasks and missions know each other: a task checks its missionId, a mission counts and unlinks its tasks
+    let missionsRef: ReturnType<typeof createMissions> | null = null;
     const tasks = audited(createTasks({
       dir: home.dir,
       now: io.now,
+      hasMission: (id) => missionsRef?.has(id) ?? false,
+      afterChange: (list) => missionsRef?.observe(list),
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
       send: (actor, request) =>
         actor.kind === 'user'
@@ -566,6 +571,19 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('flight plan'),
     }), blackBox.record, TASKS_AUDIT);
+    const missions = audited(createMissions({
+      dir: home.dir,
+      now: io.now,
+      isAgent: (name) => hubInstance.views().some((v) => v.name === name),
+      boss: () => hubInstance.views().find((v) => v.boss)?.name ?? null,
+      tasks: () => tasks.list(),
+      unlink: (id) => tasks.unlinkMission(id),
+      send: (actor, request) => (actor.kind === 'user' ? hubInstance.sendFromUser(request) : hubInstance.sendFromAgent(actor.name, actor.generation, request)),
+      emit: (list) => web?.broadcast({ t: 'missions', missions: list }),
+      notify: tell,
+      log: log.child('missions'),
+    }), blackBox.record, MISSIONS_AUDIT);
+    missionsRef = missions;
     const docking = createDocking({
       dir: home.dir,
       name: stationName(env[STATION_ENV], hostname()),
@@ -650,6 +668,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       schedules: audited(schedules, blackBox.record, SCHEDULES_AUDIT),
       uplinks: audited(uplinks, blackBox.record, UPLINKS_AUDIT),
       tasks,
+      missions,
       downlink,
       missionLog,
       massBudget,
@@ -690,6 +709,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
 
     // before the hub starts any agent: a task_create that came first would take an id of the file and lose that task
     await tasks.load();
+    await missions.load();
     await missionLog.load();
     await board.load();
     await blackBox.load();
@@ -722,6 +742,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('docking close', () => docking.close());
       await step('uplinks close', () => uplinks.close());
       await step('tasks close', () => tasks.close());
+      await step('missions close', () => missions.close());
       await step('mission log close', () => missionLog.close());
       await step('board close', () => board.close());
       blackBox.record('audit', 'gonogo stopped');

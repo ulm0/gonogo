@@ -132,7 +132,7 @@ export const CLEAN_ROOM_DIR = 'cleanroom';
 export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 /** Worktrees (docs/worktrees-spec.md): a plain worktree lives in <home>/worktrees/<name>, on the same branch name as a Clean Room. */
 export const WORKTREE_DIR = 'worktrees';
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -205,6 +205,14 @@ export const TASK_DETAIL_MAX_CHARS = 4000;
 export const TASK_NOTE_MAX_CHARS = 200;
 export const TASKS_OPEN_MAX = 500;
 /** The message an agent gets when a task is assigned to it. */
+/** Missions (docs/missions-spec.md): the statuses a mission moves between (any to any), and the limits of its fields. */
+export const MISSION_STATUSES = ['planned', 'active', 'paused', 'done', 'aborted'] as const;
+export type MissionStatus = (typeof MISSION_STATUSES)[number];
+export const MISSION_NAME_MAX_CHARS = 80;
+export const MISSION_GOAL_MAX_CHARS = 2000;
+export const MISSION_NOTE_MAX_CHARS = 200;
+export const MISSIONS_OPEN_MAX = 50;
+export const missionSubject = (name: string): string => `Mission: ${name}`;
 export const taskSubject = (id: string, title: string): string => `Flight Plan: ${id} assigned to you: ${title}`;
 /** Mission Log limits (docs/mission-log-spec.md). A tag is lowercase; the search never returns more than LOG_SEARCH_MAX hits. */
 export const LOG_TITLE_MAX_CHARS = 200;
@@ -223,7 +231,7 @@ export const AUDIT_TEXT_MAX_CHARS = 200;
 /** How a part of the server tells the Black Box of an event: names, ids and words of the server, never a text somebody wrote. */
 export type AuditRecord = (kind: AuditKind, text: string) => void;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
-export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission'] as const;
+export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
 /** How a part of the server tells the inbox of something the Director should see (`Downlink.post`). */
 /** What a `permission` or `relief` event is about, for the buttons of a phone (docs/phone-approvals-spec.md): the dialog of an agent, or a hire request. */
@@ -733,6 +741,31 @@ export interface Task {
   notes: string[];
   /** Docking: the name of the station this task was handed off to. The task is then done here. */
   handedOff?: string;
+  /** Missions: the one mission this task serves (ms1, ...). The mission's task list is derived from this field. */
+  missionId?: string;
+}
+
+/** Missions: a named goal with a status, a lead and a history; its tasks are the ones whose `missionId` is its id. One entry of missions.json. */
+export interface Mission {
+  /** ms1, ms2, ...: never reused. */
+  id: string;
+  /** At most MISSION_NAME_MAX_CHARS characters on one line. */
+  name: string;
+  /** At most MISSION_GOAL_MAX_CHARS characters; may be empty. */
+  goal: string;
+  status: MissionStatus;
+  /** An agent name (the boss at creation by default), or null. */
+  lead: string | null;
+  /** "user" (the Director) or the name of the agent that made it. */
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  /** When it last became active, or null. The current mission is the active one with the latest start. */
+  startedAt: number | null;
+  /** When it became done or aborted; null otherwise. */
+  endedAt: number | null;
+  /** One line per change, oldest first: "2026-11-18 14:03 UTC user: status active; kicked off". */
+  history: string[];
 }
 
 /** Downlink: a message to the Director, with what the inbox keeps of it. The log keeps the whole body. */
@@ -966,6 +999,8 @@ export interface StateSnapshot {
   schedules: ScheduleView[];
   uplinks: UplinkView[];
   tasks: Task[];
+  /** Absent from an older server: the page then shows no missions. */
+  missions?: Mission[];
   downlink: DownlinkView;
   /** Absent from an older server: the page then shows the Instrument look. */
   livery?: LiveryView;
@@ -1144,11 +1179,30 @@ export interface TaskRequest {
   title: string;
   detail?: string;
   assignee?: string | null;
+  /** Missions: the mission it serves. An unknown id is 400. */
+  missionId?: string;
 }
 /** PATCH /api/tasks/:id: only the fields given change; `note` adds a line to the history. */
 export interface TaskPatch {
   status?: TaskStatus;
   assignee?: string | null;
+  note?: string;
+  /** A mission id, or null to unlink. An unknown id is 400. */
+  missionId?: string | null;
+}
+/** POST /api/missions. */
+export interface MissionRequest {
+  name: string;
+  goal?: string;
+  /** An agent name or null; default the boss. */
+  lead?: string | null;
+}
+/** PATCH /api/missions/:id: only the fields given change; `note` adds a line to the history. */
+export interface MissionPatch {
+  name?: string;
+  goal?: string;
+  status?: MissionStatus;
+  lead?: string | null;
   note?: string;
 }
 /** The Director's answer to a permission prompt, given outside the terminal (POST /api/agents/:name/answer). */
@@ -1291,6 +1345,11 @@ export interface TasksFrame {
   t: 'tasks';
   tasks: Task[];
 }
+/** A mission was made, changed or removed; carries the whole list. Also inside StateSnapshot. */
+export interface MissionsFrame {
+  t: 'missions';
+  missions: Mission[];
+}
 /** The inbox changed (an item came, was read or archived); carries the whole inbox. Also inside StateSnapshot. */
 export interface DownlinkFrame {
   t: 'downlink';
@@ -1324,6 +1383,7 @@ export interface RolloutFrame {
   rollout: RolloutView;
 }
 export type ServerFrame =
+  | MissionsFrame
   | ReliefFrame
   | RolloutFrame
   | DockingFrame
@@ -1344,7 +1404,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
