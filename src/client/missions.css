@@ -149,7 +149,7 @@
   align-items: stretch;
 }
 .mis-spend[data-level='low'] {
-  color: var(--amber-text, inherit);
+  color: var(--you-ink);
 }
 .mis-spend[data-level='over'] {
   color: var(--nogo-text, inherit);

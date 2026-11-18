@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Fix: colours that were never drawn.** The "older diff" line of a review verdict and the near-budget or over-budget spend line of a mission named custom properties that do not exist, so they showed no colour; they use the amber text token now. Two focus rings and the mono font of one field had the same flaw. A test now checks that every `var()` in the page's style sheets names a defined property.
+
 - **Tab name.** Flight Rules has a TAB NAME field: the title of the browser tab becomes `<name> · gonogo` (the unread count stays in front), to tell several gonogo sessions apart. Kept on the server for every browser; default is the station name when `GONOGO_STATION` is set, else `gonogo`.
 
 - **Link to the online docs.** <https://gonogo.ulm0.com/> is in the start-up log (a log line: stdout keeps its one `gonogo ready:` line), `gonogo --help`, `gonogo doctor`, a Docs line in the Patch Panel and the Commissioning checklist. One constant, `DOCS_URL`. The package `homepage` and the README already had it.

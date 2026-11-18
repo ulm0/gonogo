@@ -17,7 +17,7 @@
 }
 
 .rv-verdict[data-stale] {
-  color: var(--amber, inherit);
+  color: var(--you-ink);
 }
 
 .rv-list-head {
@@ -139,15 +139,15 @@
 }
 
 .rv-line:focus-visible {
-  outline: 2px solid var(--focus, currentColor);
+  outline: 2px solid var(--text);
 }
 
 .rv-line[data-kind='add'] {
-  background: color-mix(in srgb, var(--go, #3a3) 14%, transparent);
+  background: color-mix(in srgb, var(--go) 14%, transparent);
 }
 
 .rv-line[data-kind='del'] {
-  background: color-mix(in srgb, var(--nogo, #c33) 14%, transparent);
+  background: color-mix(in srgb, var(--nogo) 14%, transparent);
 }
 
 .rv-num {
@@ -195,11 +195,11 @@
 }
 
 .rv-note[data-tone='warning'] {
-  border-left-color: var(--amber, #c90);
+  border-left-color: var(--you-edge);
 }
 
 .rv-note[data-tone='error'] {
-  border-left-color: var(--nogo, #c33);
+  border-left-color: var(--nogo);
 }
 
 .rv-note[data-nested] {
