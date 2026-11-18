@@ -126,6 +126,10 @@ const SMALL = [
       <div class="lp-hero-copy">
         <img class="lp-logo lp-light" src="/lockup.svg" alt="gonogo" width="180" height="40" />
         <img class="lp-logo lp-dark" src="/lockup-dark.svg" alt="gonogo" width="180" height="40" />
+        <p class="lp-name muted">
+          <dfn>go / no-go</dfn>: in mission control, the roll call before a launch, where each console answers "go" or "no-go".
+          Here the agents work the consoles, and the call is yours.
+        </p>
         <p class="label">Mission control for coding agents</p>
         <h1 class="disp lp-h1">Your agents have the consoles. You have the call.</h1>
         <p class="lp-pitch">
