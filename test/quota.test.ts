@@ -52,14 +52,14 @@ afterEach(async () => {
 
 describe('the reader', () => {
   it('keeps only valid windows: missing, strings, negative, over 1000 and a bad reset are ignored', () => {
-    expect(parseRateLimits(body(27, 41))).toEqual({ sevenDay: { pct: 27, resetsAt: sec(NOW + 24 * HOUR) * 1000 }, fiveHour: { pct: 41, resetsAt: sec(NOW + 2 * HOUR) * 1000 } });
-    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: '5', resets_at: 1e9 } } })).toEqual({});
-    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: -1, resets_at: 1e9 } } })).toEqual({});
-    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: 1001, resets_at: 1e9 } } })).toEqual({});
-    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: 5, resets_at: 'x' } } })).toEqual({});
-    expect(parseRateLimits({ rate_limits: [] })).toEqual({});
-    expect(parseRateLimits({})).toEqual({});
-    expect(parseRateLimits(null)).toEqual({});
+    expect(parseRateLimits(body(27, 41), NOW)).toEqual({ sevenDay: { pct: 27, resetsAt: sec(NOW + 24 * HOUR) * 1000 }, fiveHour: { pct: 41, resetsAt: sec(NOW + 2 * HOUR) * 1000 } });
+    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: '5', resets_at: 1e9 } } }, NOW)).toEqual({});
+    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: -1, resets_at: 1e9 } } }, NOW)).toEqual({});
+    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: 1001, resets_at: 1e9 } } }, NOW)).toEqual({});
+    expect(parseRateLimits({ rate_limits: { five_hour: { used_percentage: 5, resets_at: 'x' } } }, NOW)).toEqual({});
+    expect(parseRateLimits({ rate_limits: [] }, NOW)).toEqual({});
+    expect(parseRateLimits({}, NOW)).toEqual({});
+    expect(parseRateLimits(null, NOW)).toEqual({});
   });
 });
 
@@ -135,13 +135,25 @@ describe('the alerts', () => {
     expect(events).toHaveLength(3);
   });
 
-  it('a percentage that dips under and rises again inside one window is one alert; a drift of seconds in resets_at is not a new window', async () => {
+  it('a percentage that dips under and rises again inside one window is one alert; a bumped resets_at is not a new window', async () => {
     const q = await make();
     q.report('ana', body(82));
     q.report('ana', body(70));
     q.report('ana', body(83));
     q.report('ana', body(85, undefined, NOW + 24 * HOUR + 5_000));
+    q.report('ana', body(86, undefined, NOW + 30 * HOUR));
     expect(events).toHaveLength(1);
+  });
+
+  it('a forged far-off reset neither silences the real alerts nor re-arms at will', async () => {
+    const q = await make();
+    expect(q.report('evil', body(undefined, 96, NOW, NOW + 1e11 * 1000))).toBe(false);
+    expect(events).toEqual([]);
+    q.report('ana', body(undefined, 96));
+    expect(events).toHaveLength(1);
+    for (let i = 1; i <= 5; i++) q.report('evil', body(undefined, 96, NOW, NOW + 2 * HOUR + i * 10 * 60_000));
+    q.report('evil', body(undefined, 96, NOW, NOW + 10 * HOUR));
+    expect(events).toHaveLength(1); // a reset bumped inside the window is not a new window: the told one has not passed
   });
 
   it('tells 95 once when it arrives at once, and nothing after a restart for what was told', async () => {
