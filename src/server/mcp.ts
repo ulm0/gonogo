@@ -17,6 +17,10 @@ import {
   POLL_VOTES,
   ROLE_MAX_CHARS,
   TASK_DETAIL_MAX_CHARS,
+  MISSION_GOAL_MAX_CHARS,
+  MISSION_NAME_MAX_CHARS,
+  MISSION_NOTE_MAX_CHARS,
+  MISSION_STATUSES,
   TASK_NOTE_MAX_CHARS,
   TASK_STATUSES,
   TASK_TITLE_MAX_CHARS,
@@ -29,6 +33,7 @@ import type { Liveries } from './livery.js';
 import type { MissionLog } from './missionlog.js';
 import type { Relief } from './relief.js';
 import type { Tasks } from './tasks.js';
+import type { Missions } from './missions.js';
 
 export interface McpDeps {
   /** Each is called with the generation of the caller's token (contract 3.6, 4.10 rule 7). */
@@ -36,6 +41,8 @@ export interface McpDeps {
   /** The Flight Plan; absent in tests that do not need it (the three task tools then answer that it is not available). */
   tasks?: Pick<Tasks, 'list' | 'create' | 'update'>;
   /** The Mission Log; absent in tests that do not need it (the three log tools then answer that it is not available). */
+  /** Missions; absent in tests that do not need it (the three mission tools then answer that it is not available). */
+  missions?: Pick<Missions, 'list' | 'create' | 'update'>;
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update'>;
   /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
   board?: Pick<Board, 'get' | 'write'>;
@@ -159,7 +166,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
       'task_create',
       {
         description: MCP_DESCRIPTIONS.task_create,
-        inputSchema: { title: z.string().min(1).max(TASK_TITLE_MAX_CHARS), detail: z.string().max(TASK_DETAIL_MAX_CHARS).optional(), assignee: z.string().min(1).max(64).optional() },
+        inputSchema: { title: z.string().min(1).max(TASK_TITLE_MAX_CHARS), detail: z.string().max(TASK_DETAIL_MAX_CHARS).optional(), assignee: z.string().min(1).max(64).optional(), missionId: z.string().min(1).max(16).optional() },
       },
       (args) => guarded('task_create', async () => (tasks ? toolResult({ ok: true, task: await tasks.create(actor, args) }, false) : noBoard())),
     );
@@ -173,9 +180,62 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           status: z.enum(TASK_STATUSES).optional(),
           assignee: z.string().min(1).max(64).nullable().optional(),
           note: z.string().max(TASK_NOTE_MAX_CHARS).optional(),
+          missionId: z.string().min(1).max(16).nullable().optional(),
         },
       },
       ({ id, ...patch }) => guarded('task_update', async () => (tasks ? toolResult({ ok: true, task: await tasks.update(actor, id, patch) }, false) : noBoard())),
+    );
+
+    const { missions } = deps;
+    const noMissions = (): CallToolResult => toolResult({ ok: false, error: 'Missions are not available' }, true);
+    const bossOnly = (): CallToolResult => toolResult({ ok: false, error: 'only the boss may change missions' }, true);
+    const isBoss = (): boolean => hub.rosterFor(agent, generation).boss === agent;
+
+    server.registerTool(
+      'mission_list',
+      { description: MCP_DESCRIPTIONS.mission_list, inputSchema: { status: z.enum(MISSION_STATUSES).optional() } },
+      (args) =>
+        guarded('mission_list', () => {
+          if (!missions) return noMissions();
+          const found = missions
+            .list()
+            .filter((m) => args.status === undefined || m.status === args.status)
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+          const taskList = tasks?.list() ?? [];
+          const shown = found.map((m) => {
+            const mine = taskList.filter((t) => t.missionId === m.id);
+            return { ...m, tasksDone: mine.filter((t) => t.status === 'done').length, tasksTotal: mine.length };
+          });
+          return toolResult({ count: shown.length, missions: shown }, false);
+        }),
+    );
+
+    server.registerTool(
+      'mission_create',
+      {
+        description: MCP_DESCRIPTIONS.mission_create,
+        inputSchema: { name: z.string().min(1).max(MISSION_NAME_MAX_CHARS), goal: z.string().max(MISSION_GOAL_MAX_CHARS).optional(), lead: z.string().min(1).max(64).optional() },
+      },
+      (args) =>
+        guarded('mission_create', async () => {
+          if (!missions) return noMissions();
+          if (!isBoss()) return bossOnly();
+          return toolResult({ ok: true, mission: await missions.create(actor, args) }, false);
+        }),
+    );
+
+    server.registerTool(
+      'mission_update',
+      {
+        description: MCP_DESCRIPTIONS.mission_update,
+        inputSchema: { id: z.string().min(1).max(16), status: z.enum(MISSION_STATUSES).optional(), note: z.string().max(MISSION_NOTE_MAX_CHARS).optional() },
+      },
+      ({ id, ...patch }) =>
+        guarded('mission_update', async () => {
+          if (!missions) return noMissions();
+          if (!isBoss()) return bossOnly();
+          return toolResult({ ok: true, mission: await missions.update(actor, id, patch) }, false);
+        }),
     );
 
     const { missionLog } = deps;

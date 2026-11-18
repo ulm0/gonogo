@@ -27,7 +27,9 @@ In each Claude agent's `--allowedTools`, with one line in its role text.
 
 - `task_list`: `mine` (only the caller's tasks), `status`. Most recently changed first, cut like `read_messages` with a count of the rest.
 - `task_create`: `title`, `detail`, `assignee`.
-- `task_update`: `id`, `status`, `assignee` (`null` unassigns), `note`.
+- `task_update`: `id`, `status`, `assignee` (`null` unassigns), `note`, `missionId` (`null` unlinks).
+
+A task can serve one [mission](./missions.md): `missionId` on `task_create` and `task_update`, and the Mission select of the form and of each card.
 
 Any agent may create and update any task; the server stamps the agent. Agents cannot change a title or remove a task.
 

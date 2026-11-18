@@ -296,6 +296,11 @@
   padding: 0 22px;
 }
 
+/* Missions: the brief's text can become a mission; the key sits quietly after Send. */
+.btn.brief-mission {
+  min-height: 46px;
+}
+
 .brief-note {
   flex-basis: 100%;
 }

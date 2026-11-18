@@ -1,8 +1,10 @@
 import { useId, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
-import { BODY_MAX_CHARS } from '../shared/protocol.js';
+import { BODY_MAX_CHARS, MISSION_NAME_MAX_CHARS } from '../shared/protocol.js';
 import type { AgentView } from '../shared/protocol.js';
 import * as api from './api.js';
+import { draftFromBrief } from './missions.js';
+import { openNewMission } from './store.js';
 import { briefSentText } from './wording.js';
 import './loop.css';
 
@@ -80,6 +82,11 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
       <button type="submit" className="btn brief-send" data-kind="primary" aria-disabled={blocked || body === ''}>
         {busy ? 'Sending…' : 'Send'}
       </button>
+      {body !== '' && (
+        <button type="button" className="btn brief-mission" data-kind="quiet" onClick={() => openNewMission(draftFromBrief(text, MISSION_NAME_MAX_CHARS))}>
+          Make this a mission
+        </button>
+      )}
       <p id={`${id}-note`} className={note?.tone === 'danger' ? 'error brief-note' : 'hint brief-note'} role="status">
         {note?.text}
       </p>

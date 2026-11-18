@@ -91,6 +91,7 @@ import type { Relief } from './relief.js';
 import type { Rollout } from './rollout.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
+import type { Missions } from './missions.js';
 import type { Uplinks } from './uplinks.js';
 
 export interface WebOptions {
@@ -123,6 +124,8 @@ export interface WebOptions {
   uplinks?: Pick<Uplinks, 'list' | 'create' | 'update' | 'remove' | 'rotate' | 'test' | 'deliver'>;
   /** Flight Plan; absent in tests that do not need it (the snapshot then lists none, the routes answer 404 and the task tools say it is not available). It tells the browsers itself. */
   tasks?: Pick<Tasks, 'list' | 'create' | 'update' | 'remove'>;
+  /** Missions; absent in tests that do not need it (the snapshot then lists none, the routes answer 404 and the mission tools say it is not available). It tells the browsers itself. */
+  missions?: Pick<Missions, 'list' | 'create' | 'update' | 'remove'>;
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
@@ -522,6 +525,7 @@ export function createWebServer(options: WebOptions): WebServer {
     hub,
     resolveToken: options.resolveToken,
     tasks: options.tasks,
+    missions: options.missions,
     missionLog: options.missionLog,
     board: options.board,
     liveries: options.liveries,
@@ -605,6 +609,7 @@ export function createWebServer(options: WebOptions): WebServer {
     schedules: options.schedules?.list() ?? [],
     uplinks: options.uplinks?.list() ?? [],
     tasks: options.tasks?.list() ?? [],
+    missions: options.missions?.list() ?? [],
     downlink: options.downlink?.view() ?? { unread: 0, items: [] },
     livery: options.liveries?.view(),
     docking: options.docking?.view(),
@@ -934,6 +939,39 @@ export function createWebServer(options: WebOptions): WebServer {
           }
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await tasks.update(director, id, body));
+        },
+      };
+    }
+    if (s[1] === 'missions' && s.length <= 3) {
+      const missions = options.missions;
+      if (!missions) return null;
+      const director = { kind: 'user' } as const;
+      if (s.length === 2) {
+        return {
+          allow: ['GET', 'POST'],
+          run: async (req, res) => {
+            if (req.method === 'GET') {
+              sendJson(res, 200, missions.list());
+              return;
+            }
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 201, await missions.create(director, body));
+          },
+        };
+      }
+      const id = s[2] ?? '';
+      return {
+        allow: ['PATCH', 'DELETE'],
+        run: async (req, res) => {
+          if (req.method === 'DELETE') {
+            const unlink = new URL(req.url ?? '/', 'http://localhost').searchParams.get('unlink') === '1';
+            await missions.remove(id, unlink);
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await missions.update(director, id, body));
         },
       };
     }

@@ -1,0 +1,138 @@
+/*
+ * Missions, in the Instrument look. The page head and the empty line are those of the comm loop (loop.css); the card of a task and
+ * the history list reuse the Flight Plan's (plan.css). Every key is at least 44 px tall and nothing is wider than the screen at 390 px.
+ */
+
+.mis {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 20px;
+}
+
+.mis-heading:focus-visible {
+  outline: none;
+}
+
+.mis-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mis-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mis-row-name {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.mis-progress {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+.mis-detail,
+.mis-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+  padding: 14px;
+}
+
+.mis-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mis-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.mis-id {
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+
+.mis-name {
+  margin: 0;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.mis-goal {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mis-keys,
+.mis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mis-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mis-task {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.plan-mission {
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+.wall-missions-key {
+  margin-left: auto;
+}
+
+@media (max-width: 480px) {
+  .mis {
+    padding: 12px 16px 16px;
+  }
+
+  .mis-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .mis-row-lead {
+    display: none;
+  }
+}

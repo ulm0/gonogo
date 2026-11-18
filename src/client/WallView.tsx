@@ -3,14 +3,14 @@ import type { CSSProperties, ReactElement, RefObject } from 'react';
 import { MAX_AGENTS, SUBJECT_MAX_CHARS } from '../shared/protocol.js';
 import * as api from './api.js';
 import { legendsOf, seat } from './room.js';
-import { useNow, useStore } from './store.js';
+import { selectMission, showMissions, useNow, useStore } from './store.js';
 import {
   briefedText,
   clockText,
   fireTargets,
   gaugeSegments,
   legendOf,
-  missionOf,
+  currentMission,
   noteLine,
   pollButtons,
   pollHeading,
@@ -83,21 +83,27 @@ function Heading({ letter, children }: { letter: string; children: string }): Re
 
 function Mission(): ReactElement {
   const activity = useStore((s) => s.activity);
+  const missions = useStore((s) => s.missions);
   const agents = useStore((s) => s.agents);
   const order = useStore((s) => s.order);
   const now = useNow();
   const bossName = order.find((name) => Object.hasOwn(agents, name) && agents[name].boss) ?? null;
-  const mission = useMemo(() => missionOf(activity, bossName), [activity, bossName]);
+  const mission = useMemo(() => currentMission(missions, activity, bossName), [missions, activity, bossName]);
   return (
     <div className="wall-block wall-mission module">
-      <Heading letter="A">MISSION</Heading>
+      <div className="wall-head">
+        <Heading letter="A">MISSION</Heading>
+        <button type="button" className="btn wall-missions-key" data-kind="quiet" onClick={() => (mission?.id === undefined ? showMissions() : (selectMission(mission.id), showMissions()))}>
+          Missions
+        </button>
+      </div>
       <div className="wall-lcd lcd">
         <p className="wall-mission-text">{mission === null ? 'Brief FLIGHT to start the clock.' : mission.text}</p>
         <span className="lcd-num wall-clock" data-ghost={mission === null} role="timer" aria-label="Mission elapsed">
           {clockText(mission === null ? 0 : now - mission.at)}
         </span>
       </div>
-      <span className="label wall-clock-label">{mission === null ? 'NO MISSION YET' : `ELAPSED SINCE THE BRIEF · ${briefedText(mission.at)}`}</span>
+      <span className="label wall-clock-label">{mission === null ? 'NO MISSION YET' : `${mission.id === undefined ? 'ELAPSED SINCE THE BRIEF' : 'ELAPSED SINCE THE START'} · ${briefedText(mission.at)}`}</span>
     </div>
   );
 }

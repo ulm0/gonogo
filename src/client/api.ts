@@ -57,6 +57,9 @@ import type {
   UplinkPatch,
   UplinkRequest,
   UplinkView,
+  Mission,
+  MissionPatch,
+  MissionRequest,
   ModelDefaults,
   Provider,
   UserMessageRequest,
@@ -483,6 +486,26 @@ export async function runSchedule(id: string): Promise<ScheduleView> {
   return toScheduleView(await call('POST', `/schedules/${encodeURIComponent(id)}/run`));
 }
 
+/** Missions: named goals that tasks serve. The list comes in the state and in `missions` frames. */
+export async function createMission(request: MissionRequest): Promise<Mission> {
+  return toMission(await call('POST', '/missions', request));
+}
+
+export async function updateMission(id: string, patch: MissionPatch): Promise<Mission> {
+  return toMission(await call('PATCH', `/missions/${encodeURIComponent(id)}`, patch));
+}
+
+/** A mission with tasks needs `unlink`: its tasks then stay on the board without it. */
+export async function deleteMission(id: string, unlink = false): Promise<void> {
+  await call('DELETE', `/missions/${encodeURIComponent(id)}${unlink ? '?unlink=1' : ''}`);
+}
+
+function toMission(value: unknown): Mission {
+  const record = asRecord(value);
+  if (record === null || typeof record.id !== 'string' || typeof record.status !== 'string' || !Array.isArray(record.history)) throw failure('The server sent an answer gonogo does not understand.');
+  return value as Mission;
+}
+
 /** Flight Plan: the task board. The list comes in the state and in `tasks` frames. */
 export async function createTask(request: TaskRequest): Promise<Task> {
   return toTask(await call('POST', '/tasks', request));
@@ -747,6 +770,7 @@ function parseFrame(text: string): ServerFrame | null {
   else if (frame.t === 'schedules') valid = Array.isArray(frame.schedules);
   else if (frame.t === 'uplinks') valid = Array.isArray(frame.uplinks);
   else if (frame.t === 'tasks') valid = Array.isArray(frame.tasks);
+  else if (frame.t === 'missions') valid = Array.isArray(frame.missions);
   else if (frame.t === 'livery') valid = asRecord(frame.livery) !== null && Array.isArray(asRecord(frame.livery)?.liveries) && typeof asRecord(frame.livery)?.current === 'string';
   else if (frame.t === 'relief') valid = isReliefView(frame.relief);
   else if (frame.t === 'docking') valid = typeof asRecord(frame.docking)?.station === 'string' && Array.isArray(asRecord(frame.docking)?.docks);

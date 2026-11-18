@@ -8,7 +8,7 @@
  * title, a note, a schedule's text, a secret or a path, so that the record holds nothing a reader of the repository should not see.
  */
 import type { AuditKind, AuditRecord } from '../shared/protocol.js';
-import { TASK_STATUSES } from '../shared/protocol.js';
+import { MISSION_STATUSES, TASK_STATUSES } from '../shared/protocol.js';
 import { isRecord } from './hooks.js';
 
 /** A name or an id: letters, digits, dots, dashes, underscores and an at sign, at most 64. */
@@ -81,6 +81,21 @@ export const HUB_AUDIT: Table = {
 /** Relief: the Director's go or no-go to a hire request, by the request's id (never the name, role, directory or text of the request). */
 export const RELIEF_AUDIT: Table = {
   decide: ['answer', (args) => `Director answered hire request ${plain(args[0]) ?? '?'}: ${args[1] === 'go' ? 'go' : 'no-go'}`],
+};
+
+/** Missions: who made or changed a mission, and what kind of change (the status, never a name, goal or note). */
+export const MISSIONS_AUDIT: Table = {
+  create: ['plan', (args, result) => `${actorName(args[0])} created mission ${isRecord(result) ? (plain(result.id) ?? '?') : '?'}`],
+  update: [
+    'plan',
+    (args) => {
+      const input = isRecord(args[2]) ? args[2] : {};
+      const status = (MISSION_STATUSES as readonly unknown[]).includes(input.status) ? ` status ${String(input.status)}` : '';
+      const other = ['name', 'goal', 'lead', 'note'].filter((k) => input[k] !== undefined).join(' ');
+      return `${actorName(args[0])} updated mission ${plain(args[1]) ?? '?'}:${status}${other === '' ? '' : ` ${other}`}`;
+    },
+  ],
+  remove: ['plan', (args) => `Director removed mission ${plain(args[0]) ?? '?'}${args[1] === true ? ' and unlinked its tasks' : ''}`],
 };
 
 /** Flight Plan: who made or changed a task, and what kind of change (the status and the assignee, never a title, detail or note). */

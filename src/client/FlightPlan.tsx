@@ -9,11 +9,12 @@ import { TASK_DETAIL_MAX_CHARS, TASK_TITLE_MAX_CHARS, TASKS_OPEN_MAX } from '../
 import type { Task, TaskStatus } from '../shared/protocol.js';
 import * as api from './api.js';
 import { HandOff } from './DockingPanel.js';
+import { missionOptions, nameOf } from './missions.js';
 import { canHandOff } from './docking.js';
 import { assigneeText, assignees, cardId, columnsOf, COLUMNS, emptyValues, FIELDS, labelOf, ledKindOf, requestOf, validate } from './plan.js';
 import type { Field, Problems, Values } from './plan.js';
 import { useAgentList } from './RoomView.js';
-import { showRoom, useStore } from './store.js';
+import { selectMission, showMissions, showRoom, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './loop.css';
 import './plan.css';
@@ -33,6 +34,8 @@ function TaskForm({ onDone }: { onDone(): void }): ReactElement {
   const first = useRef<HTMLInputElement | null>(null);
   useEffect(() => first.current?.focus(), []);
   const options = useMemo(() => assignees(list, agents, null), [list, agents]);
+  const missions = useStore((s) => s.missions);
+  const missionChoices = useMemo(() => missionOptions(missions, null), [missions]);
 
   const change = (patch: Partial<Values>, field: Field): void => {
     setValues((v) => ({ ...v, ...patch }));
@@ -124,6 +127,19 @@ function TaskForm({ onDone }: { onDone(): void }): ReactElement {
           </select>
           {error('assignee')}
         </div>
+        {missions.length > 0 && (
+          <div className="field">
+            <label htmlFor={`${id}-missionId`}>Mission</label>
+            <select id={`${id}-missionId`} className="input" value={values.missionId} aria-describedby={describedBy('missionId')} onChange={(e) => change({ missionId: e.target.value }, 'missionId')}>
+              {missionChoices.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            {error('missionId')}
+          </div>
+        )}
       </fieldset>
       {topError !== null && (
         <p className="error" role="alert">
@@ -174,6 +190,8 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
     handAsked.current = handing;
   }, [handing]);
   const options = useMemo(() => assignees(list, agents, task.assignee), [list, agents, task.assignee]);
+  const missions = useStore((s) => s.missions);
+  const missionChoices = useMemo(() => missionOptions(missions, task.missionId ?? null), [missions, task.missionId]);
   const led = ledKindOf(task, agents);
   const who = assigneeText(task, agents);
 
@@ -202,6 +220,11 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
         <h3 className="plan-title" id={`${id}-title`}>
           {task.title}
         </h3>
+        {task.missionId !== undefined && (
+          <button type="button" className="chip plan-mission" data-tone="quiet" aria-label={`Mission ${nameOf(missions, task.missionId)}: open it`} onClick={() => { selectMission(task.missionId ?? null); showMissions(); }}>
+            {nameOf(missions, task.missionId)}
+          </button>
+        )}
         {task.handedOff !== undefined && (
           <span className="chip dk-handed" data-tone="quiet">
             HANDED OFF · {task.handedOff}
@@ -249,6 +272,31 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
             ))}
           </select>
         </div>
+        {(missions.length > 0 || task.missionId !== undefined) && (
+          <div className="field plan-assign">
+            <label htmlFor={`${id}-mission`}>Mission</label>
+            <select
+              id={`${id}-mission`}
+              className="input"
+              aria-label={`Mission (${task.id})`}
+              value={task.missionId ?? ''}
+              aria-disabled={busy || undefined}
+              onChange={(e) => {
+                const missionId = e.target.value === '' ? null : e.target.value;
+                run(async () => {
+                  await api.updateTask(task.id, { missionId });
+                  onNotice(`${task.id} ${missionId === null ? 'is not in a mission' : `is in mission ${nameOf(missions, missionId)}`}`);
+                });
+              }}
+            >
+              {missionChoices.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {canHandOff(task, docks) &&
           (handing ? (
             <HandOff task={task} willMove={willMove} onNotice={onNotice} onClose={() => setHanding(false)} />

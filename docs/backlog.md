@@ -51,7 +51,7 @@ Plan:
 
 - [x] Blackboard: a shared plan (`board.md`) with the boss as its only writer. Built 2026-11-18 as the **Plot Board**.
 - [x] Task ledger with a kanban board. Built 2026-11-17 as the Flight Plan.
-- [ ] Missions *(inferred)*.
+- [x] Missions *(inferred)*. Built 2026-11-18: a named goal with a status, a lead, a history and linked Flight Plan tasks (`docs/missions-spec.md`, `docs/features/missions.md`).
 - [x] Threads panel: messages grouped by conversation *(inferred)*. Built 2026-11-18 as **Party Line**.
 - [x] Git-committed audit log of the room, with the server as the only committer. Built 2026-11-18 as the **Black Box**.
 
