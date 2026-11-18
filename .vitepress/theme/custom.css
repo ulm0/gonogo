@@ -138,10 +138,10 @@
   --vp-home-hero-image-background-image: none;
 }
 
-/* The app's focus ring, on everything the site can focus. */
+/* The focus ring: a thin ink line clear of the element, visible on every livery without shouting. */
 :focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+  outline: 1px solid var(--text);
+  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -193,10 +193,35 @@
   border-color: var(--edge-2);
 }
 
-/* The page you are on: the key's edge is ink, as the chosen key in the app. */
-.VPNavBar .VPNavBarMenuLink.active {
-  border-color: var(--text);
+/* The section you are in: a green status light on its key, as the sidebar marks the page. */
+.VPNavBar .VPNavBarMenuLink.active::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--go);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--go) 22%, transparent);
+}
+
+/* GitHub is a key of the row too, square like the phone bar's round keys, with the row's gap on both sides. */
+.VPNavBar .VPNavBarSocialLinks {
+  margin-right: 0;
+}
+
+.VPNavBar .VPSocialLink {
+  width: 44px;
+  height: 44px;
+  margin: 0 4px;
+  border: 1px solid var(--edge);
+  border-bottom-width: 3px;
+  border-radius: var(--radius-key);
+  background: var(--key);
   color: var(--text);
+}
+
+.VPNavBar .VPSocialLink:hover {
+  border-color: var(--edge-2);
 }
 
 .VPNavBar .VPNavBarMenuLink:active,
@@ -247,6 +272,8 @@
 
 .livery-key select {
   appearance: none;
+  /* As wide as the livery shown, not the longest one. */
+  field-sizing: content;
   padding-inline-start: 36px;
   cursor: pointer;
 }
