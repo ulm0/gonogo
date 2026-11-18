@@ -241,6 +241,7 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
     shutdown: async () => rec('shutdown'),
     release: () => rec('release'),
     adopt: () => ({ adopted: [], unknown: [] }),
+    saveHoldsNow: () => undefined,
     views: () => [agentView('flight'), agentView('ana'), agentView('ben')],
     activity: () => [],
     hire: async (req) => {

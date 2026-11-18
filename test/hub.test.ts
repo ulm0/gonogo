@@ -6310,6 +6310,41 @@ describe('live reload: a new hub takes over the agents that kept running', () =>
     expect(saved.at(-1)).toEqual({});
   });
 
+  it('a hold stays in the saved file when its process ends without being asked to (a pty host that stalled)', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const h = await withAna({ saveHolds: (holds) => void saved.push({ ...holds }) });
+    h.hub.hold('ana');
+    expect(saved.at(-1)).toHaveProperty('ana');
+    h.exit('ana', { requested: false, signal: 9 });
+    expect(h.view('ana').state).toBe('stopped');
+    expect(saved.at(-1), 'the agent may still run in the host: the next hub must find it held').toHaveProperty('ana');
+    // the Director starting it again is the release
+    await h.hub.restart('ana');
+    expect(saved.at(-1)).toEqual({});
+  });
+
+  it('a hold ends with a stop the Director asked for', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const h = await withAna({ saveHolds: (holds) => void saved.push({ ...holds }) });
+    h.hub.hold('ana');
+    await h.hub.stop('ana');
+    expect(saved.at(-1)).toEqual({});
+  });
+
+  it('refuses a reload while the holds cannot be saved, and allows it again once they can', async () => {
+    let fail = false;
+    const h = await withAna({
+      saveHolds: () => {
+        if (fail) throw new Error('disk full');
+      },
+    });
+    h.hub.hold('ana');
+    fail = true;
+    expect(() => h.hub.saveHoldsNow()).toThrow(/not reloading/);
+    fail = false;
+    expect(() => h.hub.saveHoldsNow()).not.toThrow();
+  });
+
   it('stops an agent that runs in the host but is not in the roster', async () => {
     const h = makeHarness({ roster, adoptable: async () => ({ running: [{ name: 'flight', generation: 1 }, { name: 'ghost', generation: 4 }], holds: {} }) });
     await h.hub.start();

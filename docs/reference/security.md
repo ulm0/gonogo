@@ -67,6 +67,7 @@ No route, file or setting of its own: the page groups the messages it already ho
 
 ## Engine checks and the update check
 
+- **Live reload** (`--pty-host`) puts the agents' terminals in a separate process reached over a unix socket in `<home>/run` (folder 0700, socket and key 0600, key checked in constant time). The socket and the key belong to your user, so **any agent that does not run in a Clean Room can read the key and connect**: it could type into other agents. That fits "agents run as you", but it is a reason to keep the option off when you do not need it. A hold or trip is saved in `run/hub-state.json` and a reload is refused when it cannot be saved ([Live reload](../features/live-reload.md)).
 - **Pad Check** (`gonogo doctor`, `GET /api/engines`, the hire form) runs `<program> --version` for each engine found on the `PATH`: no shell, 5 seconds, an environment of `PATH`, `HOME`, `LANG` and `NO_COLOR` only. It is the same program gonogo would start for an agent. It never runs an installer; the install commands are text from each vendor's page.
 - **Rollout** makes one GET a day to `registry.npmjs.org` for the `latest` version of `@ulm0/gonogo`. It sends an `Accept` header and nothing about you or the machine, reads at most 256 KiB, accepts only a stable `x.y.z`, and installs nothing. Off with `GONOGO_UPDATE_CHECK=0` or `--no-update-check` ([Rollout](../features/rollout.md)).
 

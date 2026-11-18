@@ -485,15 +485,30 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
 
   /** Engine Bay: working, idle and needs_you come from hooks (Claude Code, Gemini CLI); the rest are read from output activity. */
   /** Live reload: the hold or redline text of each agent, saved after every change so that a restart of the hub never releases one. */
+  // A hold whose process ended without the Director asking (a pty host that stalled, a crash) stays in the file: the process may
+  // still be alive in the host, and the next hub that adopts it must find it held. A start, a resume or a requested stop clears it.
+  const lostHolds = new Map<string, string>();
+  let holdsSaved = true;
+
   function saveHolds(): void {
     if (!io.saveHolds) return;
     const holds: Record<string, string> = {};
+    for (const [name, reason] of lostHolds) if (agents.has(name)) holds[name] = reason;
     for (const [name, rt] of agents) if (rt.redline !== null) holds[name] = rt.redline;
     try {
       io.saveHolds(holds);
+      holdsSaved = true;
     } catch (error) {
-      log.warn('could not save the holds', error);
+      holdsSaved = false;
+      log.error('could not save the holds: a reload is refused until they are saved', error);
     }
+  }
+
+  /** Live reload fails closed: with the holds not on disk, a new hub would release held agents. Saves again and throws when it cannot. */
+  function saveHoldsNow(): void {
+    if (!io.saveHolds) return;
+    saveHolds();
+    if (!holdsSaved) throw new HubError('conflict', 'the holds could not be saved, so a reload would release held agents: not reloading');
   }
 
   function hooked(rt: Rt): boolean {
@@ -1086,7 +1101,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   /* ---- Redline ---- */
 
   function clearRedline(rt: Rt): void {
-    const had = rt.redline !== null;
+    const had = rt.redline !== null || lostHolds.delete(rt.record.name);
     rt.redline = null;
     if (had) saveHolds();
     rt.repeat = null;
@@ -1662,6 +1677,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       return;
     }
 
+    // an exit nobody asked for keeps the hold in the file (see lostHolds)
+    if (!info.requested && rt.redline !== null) lostHolds.set(rt.record.name, rt.redline);
     setState(rt, 'stopped');
     pollEntryStopped(name);
     rt.exit = { code: info.code, signal: info.signal, at: io.now(), requested: info.requested, text: exitText(info) };
@@ -2976,6 +2993,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     onTerminalEvent,
     adopt,
     release,
+    saveHoldsNow,
     startPoll,
     holdPoll,
     abortPoll,

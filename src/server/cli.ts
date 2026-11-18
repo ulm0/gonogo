@@ -872,7 +872,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       return stopping;
     };
     const stop = (): Promise<void> => stopWith(false);
-    const release = (): Promise<void> => stopWith(remote !== null);
+    const release = async (): Promise<void> => {
+      // fails closed: a hold that is not on disk would be released by the new server
+      if (remote !== null) hubInstance.saveHoldsNow();
+      await stopWith(remote !== null);
+    };
 
     log.info(`listening on ${addr.host.includes(':') ? `[${addr.host}]` : addr.host}:${addr.port}, home ${home.dir}`);
     running = {
@@ -956,11 +960,17 @@ function installProcessHandlers(running: Running, log: Logger, argv: string[] = 
     log.info('reloading: handing over to a new gonogo');
     void running
       .release()
-      .catch((e: unknown) => log.error('release failed', e))
-      .finally(() => {
-        relaunch(argv, entry);
-        exit(0);
-      });
+      .then(
+        () => {
+          relaunch(argv, entry);
+          exit(0);
+        },
+        (e: unknown) => {
+          // nothing was let go of: this server goes on
+          reloading = false;
+          log.error('reload refused', e);
+        },
+      );
   });
 
   // the last resort, not the policy: every agent dies with the server

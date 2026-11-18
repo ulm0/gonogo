@@ -1916,6 +1916,8 @@ export interface Hub {
    */
   /** Live reload: the hub ends without stopping any agent (a hold stays in the saved file). */
   release(): void;
+  /** Live reload: writes the holds now; throws HubError conflict when they cannot be saved (the reload is then refused). */
+  saveHoldsNow(): void;
   adopt(running: Array<{ name: string; generation: number }>, holds: Record<string, string>): { adopted: string[]; unknown: string[] };
   /**
    * T-minus. Throws HubError: conflict when a poll is open or on hold ("clear it first"); bad_request for an unknown or stopped
