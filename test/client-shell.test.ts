@@ -27,6 +27,11 @@ describe('Patch Panel lines', () => {
     expect(ids({ unread: 2 })).toContain('read');
   });
 
+  it('has a Rooms line only in a room behind the rooms supervisor', () => {
+    expect(ids()).not.toContain('rooms');
+    expect(commands(input({ inRoom: true })).find((x) => x.id === 'rooms')).toMatchObject({ label: 'Rooms', group: 'Action', act: { kind: 'rooms' } });
+  });
+
   it('has a Docs line that opens the online docs', () => {
     expect(commands(input()).find((x) => x.id === 'docs')).toMatchObject({ label: 'Docs', group: 'Action', act: { kind: 'docs' } });
   });

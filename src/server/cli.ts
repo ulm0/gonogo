@@ -75,6 +75,8 @@ import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { createUpdater } from './updater.js';
+import { addRoom, loadRooms, removeRoom, roomHome } from './rooms.js';
+import { startSupervisor } from './supervisor.js';
 import type { Updater } from './updater.js';
 import type { WebServer } from './web.js';
 
@@ -115,6 +117,8 @@ export interface StartOptions {
   ptyHost?: boolean;
   /** [node, entry] that starts the pty host, default the entry this process was started with. A test hands in its own. */
   ptyHostCommand?: string[];
+  /** A room of the rooms supervisor: shut down gracefully when stdin ends, so a supervisor that is killed leaves no room running. */
+  exitWithStdin?: boolean;
 }
 
 export interface Running {
@@ -137,11 +141,13 @@ export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
        gonogo reload
+       gonogo rooms [add <id> [--name <text>] | list | remove <id>] [--home <dir>]
 
 Run a mission-control room of Claude Code agents from a browser tab.
 
 Commands:
   doctor                list the agent CLIs on the PATH with their versions, and the install command of each missing one
+  rooms                 several rooms behind one port, one gonogo process each (see the Rooms page of the docs); plain gonogo is one room
   reload                hand over to the installed gonogo without stopping the agents (needs --pty-host on the running one)
   update                print the command that updates gonogo the way it was installed (it never runs it)
 
@@ -152,6 +158,7 @@ Options:
   --pty-host            keep the agents in a separate process so that gonogo reload does not stop them (env GONOGO_PTY_HOST=1)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list)
+  --exit-with-stdin     stop gracefully when stdin ends (for a room started by gonogo rooms)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
   -v, --version         show the version
@@ -176,6 +183,8 @@ export type ParsedArgs =
   | { kind: 'update' }
   | { kind: 'reload'; home?: string }
   | { kind: 'ptyhost'; home: string }
+  | { kind: 'rooms'; action: 'serve'; options: StartOptions }
+  | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
   | { kind: 'run'; options: StartOptions }
   | { kind: 'error'; message: string };
 
@@ -192,6 +201,29 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (argv.includes('--help') || argv.includes('-h')) return { kind: 'help' };
   if (argv.includes('--version') || argv.includes('-v')) return { kind: 'version' };
   if (argv[0] === 'doctor' || argv[0] === 'update') return argv.length === 1 ? { kind: argv[0] } : { kind: 'error', message: `${argv[0]} takes no arguments` };
+  if (argv[0] === 'rooms') {
+    const action = argv[1];
+    if (action !== 'add' && action !== 'list' && action !== 'remove') {
+      const served = parseArgs(argv.slice(1));
+      return served.kind === 'run' ? { kind: 'rooms', action: 'serve', options: served.options } : served;
+    }
+    const rest = argv.slice(2);
+    const out: { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string } = { kind: 'rooms', action };
+    for (let i = 0; i < rest.length; i += 1) {
+      const arg = rest[i] ?? '';
+      if ((arg === '--home' || arg === '--name') && rest[i + 1] !== undefined && rest[i + 1] !== '') {
+        if (arg === '--home') out.home = rest[i + 1];
+        else out.name = rest[i + 1];
+        i += 1;
+      } else if (!arg.startsWith('-') && out.id === undefined && action !== 'list') {
+        out.id = arg;
+      } else {
+        return { kind: 'error', message: `rooms ${action}: unexpected ${arg}` };
+      }
+    }
+    if (action !== 'list' && out.id === undefined) return { kind: 'error', message: `rooms ${action} needs a room id` };
+    return out;
+  }
   if (argv[0] === 'reload' || argv[0] === 'ptyhost') {
     const rest = argv.slice(1);
     let home: string | undefined;
@@ -210,6 +242,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     }
     if (arg === '--pty-host') {
       options.ptyHost = true;
+      continue;
+    }
+    if (arg === '--exit-with-stdin') {
+      options.exitWithStdin = true;
       continue;
     }
     if (arg === '--no-update-check') {
@@ -1052,6 +1088,41 @@ function logLevel(value: string | undefined): LogLevel {
   return value === 'debug' || value === 'info' || value === 'warn' || value === 'error' ? value : 'info';
 }
 
+/** `gonogo rooms ...`: edits rooms.json, or serves all the rooms behind one port. */
+async function runRooms(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, env: Env): Promise<void> {
+  if (parsed.action !== 'serve') {
+    const root = parsed.home === undefined ? homeOf(env) : resolve(parsed.home);
+    if (parsed.action === 'add') {
+      const room = addRoom(root, parsed.id, parsed.name);
+      process.stdout.write(`added room ${room.id} (${room.name}). A running \`gonogo rooms\` starts it within 2 seconds; its files will be in ${roomHome(root, room.id)}\n`);
+    } else if (parsed.action === 'remove') {
+      removeRoom(root, parsed.id);
+      process.stdout.write(`took room ${parsed.id} off the list. Its folder ${roomHome(root, parsed.id as string)} stays; delete it yourself if you want it gone.\n`);
+    } else {
+      for (const room of loadRooms(root)) process.stdout.write(`${room.id}\t${room.name}\t${roomHome(root, room.id)}\n`);
+    }
+    exit(0);
+    return;
+  }
+  const settings = resolveSettings(parsed.options);
+  const log = createLogger({ level: logLevel(env.GONOGO_LOG_LEVEL) });
+  const supervisor = await startSupervisor({
+    home: settings.home,
+    host: settings.host,
+    port: settings.port,
+    allowedHosts: settings.allowedHosts,
+    command: [process.execPath, process.argv[1] ?? 'gonogo'],
+    staticDir: settings.staticDir,
+    env,
+    log,
+  });
+  const stop = (): void => {
+    void supervisor.stop().finally(() => exit(0));
+  };
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.once(signal, stop);
+  process.stdout.write(`gonogo rooms ready: ${supervisor.url}\n`);
+}
+
 function installProcessHandlers(running: Running, log: Logger, argv: string[] = [], entry?: string): void {
   let signalled = false;
   const onSignal = (signal: NodeJS.Signals): void => {
@@ -1141,6 +1212,15 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     exit(0);
     return;
   }
+  if (parsed.kind === 'rooms') {
+    try {
+      await runRooms(parsed, env);
+    } catch (e) {
+      process.stderr.write(`gonogo rooms: ${e instanceof Error ? e.message : String(e)}\n`);
+      exit(1);
+    }
+    return;
+  }
   if (parsed.kind === 'ptyhost') {
     try {
       await runPtyHost(resolve(parsed.home), createLogger({ level: logLevel(env.GONOGO_LOG_LEVEL) }));
@@ -1190,6 +1270,12 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     }
   }
   installProcessHandlers(running, log, process.argv.slice(2), process.argv[1]);
+  if (parsed.options.exitWithStdin === true) {
+    // the supervisor holds the other end of this pipe: when it dies, for any reason, this ends and the room stops as for SIGTERM
+    process.stdin.on('end', () => process.kill(process.pid, 'SIGTERM'));
+    process.stdin.on('error', () => process.kill(process.pid, 'SIGTERM'));
+    process.stdin.resume();
+  }
   process.stdout.write(`gonogo ready: ${running.url}\n`);
   // a log line (stderr, GONOGO_LOG_LEVEL): stdout holds the one `gonogo ready:` line that scripts parse
   log.info(`docs: ${DOCS_URL}`);

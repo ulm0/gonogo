@@ -21,6 +21,7 @@ export type Act =
   | { kind: 'hire' }
   | { kind: 'new-mission' }
   | { kind: 'docs' }
+  | { kind: 'rooms' }
   | { kind: 'edit-room' }
   | { kind: 'reset-room' }
   | { kind: 'show-block'; block: BlockId }
@@ -79,10 +80,12 @@ export interface CommandInput {
   room?: RoomView;
   /** The features that are off: their views and actions are not offered. */
   off?: readonly string[];
+  /** The page is a room behind the rooms supervisor (served at /r/<id>/): a line goes back to the list of rooms. */
+  inRoom?: boolean;
 }
 
 /** Every line the panel may show now: only actions the page has, and only when they can run (a poll needs somebody to poll). */
-export function commands({ agents, legends, poll, unread, livery, room, off = [] }: CommandInput): Command[] {
+export function commands({ agents, legends, poll, unread, livery, room, off = [], inRoom = false }: CommandInput): Command[] {
   const out: Command[] = [];
   const on = (id: string | undefined): boolean => id === undefined || !off.includes(id);
   for (const a of agents) {
@@ -100,6 +103,7 @@ export function commands({ agents, legends, poll, unread, livery, room, off = []
   out.push({ id: 'propellant:prices', label: 'Propellant: prices', group: 'Action', also: 'cost model dollars', act: { kind: 'propellant', part: 'prices' } });
   out.push({ id: 'propellant:budget', label: 'Propellant: budget', group: 'Action', also: 'cost dollars limit spend', act: { kind: 'propellant', part: 'budget' } });
   out.push({ id: 'docs', label: 'Docs', group: 'Action', also: 'documentation help manual website online', act: { kind: 'docs' } });
+  if (inRoom) out.push({ id: 'rooms', label: 'Rooms', group: 'Action', also: 'switch list other room supervisor', act: { kind: 'rooms' } });
   out.push({ id: 'edit-room', label: 'Edit room', group: 'Action', also: 'layout blocks move resize arrange desks', act: { kind: 'edit-room' } });
   if (room?.layout !== null && room?.layout !== undefined) {
     out.push({ id: 'reset-room', label: 'Reset the room layout', group: 'Action', also: 'default blocks', act: { kind: 'reset-room' } });

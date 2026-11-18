@@ -4,6 +4,7 @@
  * The secret is shown once, in a panel that only holds it in this component's state: leaving the page loses it.
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { roomOrigin } from './base.js';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { UPLINK_NAME_MAX_CHARS, UPLINKS_MAX, uplinkSubject } from '../shared/protocol.js';
 import type { UplinkKind, UplinkView } from '../shared/protocol.js';
@@ -232,7 +233,7 @@ function Row({ uplink, now, onEdit, onNotice, onSecret }: { uplink: UplinkView; 
   }, [confirming]);
   const { name } = uplink;
   const off = !uplink.enabled;
-  const url = endpointOf(location.origin, uplink.id);
+  const url = endpointOf(roomOrigin(), uplink.id);
   return (
     <li className="up-row" data-off={off ? '' : undefined}>
       <div className="win-main">

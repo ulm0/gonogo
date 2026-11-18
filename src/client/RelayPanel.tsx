@@ -6,6 +6,7 @@
  * the view again after each change (no frame), and the view has no token.
  */
 import { useEffect, useId, useRef, useState } from 'react';
+import { roomOrigin } from './base.js';
 import type { FormEvent, ReactElement } from 'react';
 import { RELAY_FORWARD_KINDS } from '../shared/protocol.js';
 import type { RelayService, RelayTargetView, RelayView } from '../shared/protocol.js';
@@ -240,7 +241,7 @@ function Card({ info, ...shared }: Shared & { info: ServiceInfo }): ReactElement
       {uplinks.length > 0 && (
         <ul className="rl-uplinks" aria-label={`${info.label} uplinks`}>
           {uplinks.map((u) => {
-            const url = endpointOf(location.origin, u.id);
+            const url = endpointOf(roomOrigin(), u.id);
             return (
               <li key={u.id}>
                 <h4 className="win-name">{u.name}</h4>

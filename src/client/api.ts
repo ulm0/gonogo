@@ -84,6 +84,7 @@ import type {
   UserMessageRequest,
   WorktreeStatus,
 } from '../shared/protocol.js';
+import { withBase } from './base.js';
 import {
   API_PREFIX,
   RECONNECT_DELAYS_MS,
@@ -166,7 +167,7 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let response: Response;
   try {
-    response = await fetch(API_PREFIX + path, {
+    response = await fetch(withBase(API_PREFIX + path), {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -999,7 +1000,7 @@ function lost(wasOpen: boolean): void {
 
 function openSocket(): void {
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${scheme}//${location.host}${WS_PATH}`, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + (token ?? '')]);
+  const ws = new WebSocket(`${scheme}//${location.host}${withBase(WS_PATH)}`, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + (token ?? '')]);
   ws.binaryType = 'arraybuffer';
   socket = ws;
   let opened = false;
@@ -1032,7 +1033,7 @@ async function connect(): Promise<void> {
   attempting = true;
   clearTimeout(retryTimer);
   try {
-    const response = await fetch(`${API_PREFIX}/state`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    const response = await fetch(withBase(`${API_PREFIX}/state`), { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
     if (response.status === 401) {
       attempting = false;
       token = null;
