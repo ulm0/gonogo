@@ -393,6 +393,7 @@ describe('what an agent and the terminal must not keep', () => {
 
   it('turns off bracketed paste, the mouse, focus reports and application keys when a console is left or the terminal is given back', () => {
     for (const code of ['2004', '1000', '1002', '1003', '1006', '1004', '1']) expect(RESET_MODES).toContain(`\x1b[?${code}l`);
+    expect(RESET_MODES).toContain('\x1b[<u');
     expect(LEAVE_SCREEN).toContain(RESET_MODES);
     expect(LEAVE_SCREEN.endsWith('\x1b[?25h\x1b[?1049l')).toBe(true);
   });

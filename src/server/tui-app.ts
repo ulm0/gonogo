@@ -46,7 +46,7 @@ export interface TuiOptions {
 
 export const ENTER_SCREEN = '\x1b[?1049h\x1b[?25l';
 /** Modes a console may switch on (bracketed paste, mouse, focus reports, application keys): off again when the terminal is given back. */
-export const RESET_MODES = '\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?1l\x1b>';
+export const RESET_MODES = '\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?1l\x1b>\x1b[<u';
 export const LEAVE_SCREEN = `\x1b[0m${RESET_MODES}\x1b[?25h\x1b[?1049l`;
 const CLEAR = '\x1b[2J\x1b[H';
 
