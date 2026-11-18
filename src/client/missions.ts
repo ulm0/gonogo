@@ -2,7 +2,9 @@
  * Missions (docs/missions-spec.md): the words and the small logic of the page, with no React. Progress is derived from the tasks
  * (a mission stores none), the keys a status offers, and the select a task uses to name its mission.
  */
-import type { Mission, MissionStatus, Task } from '../shared/protocol.js';
+import { tokenText } from '../shared/fuel.js';
+import { moneyText } from '../shared/prices.js';
+import type { Mission, MissionStatus, SpendOf, Task } from '../shared/protocol.js';
 
 export const STATUS_LABELS: Readonly<Record<MissionStatus, string>> = { planned: 'PLANNED', active: 'ACTIVE', paused: 'PAUSED', done: 'DONE', aborted: 'ABORTED' };
 /** The chip tone of a status: an active mission is lit, a finished one is quiet. */
@@ -72,3 +74,15 @@ export function draftFromBrief(text: string, nameMax: number): { name: string; g
   const name = first.length > nameMax ? `${first.slice(0, nameMax - 1)}…` : first;
   return { name, goal: text.trim() };
 }
+
+/** What a mission or a task has cost, in words: "$1.20", "$1.20 of $10.00", with the tokens that have no price. Empty when nothing was spent and there is no budget. */
+export function spendText(spend: SpendOf | undefined): string {
+  if (spend === undefined) return '';
+  const parts: string[] = [];
+  if (spend.usd > 0 || spend.budget !== undefined) parts.push(spend.budget === undefined ? moneyText(spend.usd) : `${moneyText(spend.usd)} of ${moneyText(spend.budget)}`);
+  if (spend.unpriced > 0) parts.push(`${tokenText(spend.unpriced)} tokens unpriced`);
+  return parts.join(' · ');
+}
+
+/** The share of a mission's budget spent, 0 to 1 and over; null with no budget. */
+export const budgetShare = (spend: SpendOf | undefined): number | null => (spend?.budget === undefined ? null : spend.usd / spend.budget);

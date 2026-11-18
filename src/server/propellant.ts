@@ -16,6 +16,7 @@ import { join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { AGENT_NAME_PATTERN, FUEL_WINDOWS } from '../shared/protocol.js';
 import type {
+  SpendOf,
   Budget,
   CostGauge,
   CostView,
@@ -48,7 +49,12 @@ export interface FuelEntry {
   cw?: number;
   o?: number;
   cr?: number;
+  /** The mission and the task the agent was on when the reply was counted (its `doing` task in the Flight Plan), when it had one. */
+  mission?: string;
+  task?: string;
 }
+const MISSION_ID_RE = /^ms[1-9]\d{0,5}$/;
+const TASK_ID_RE = /^t[1-9]\d{0,5}$/;
 
 /** Dollar budgets per window, and the share of a budget at which Downlink is told. */
 const WARN_AT = 0.8;
@@ -59,7 +65,7 @@ const WINDOW_NAME: Record<FuelWindow, string> = { '5h': '5-hour', day: 'day', we
 interface Saved {
   room: FuelLimits;
   agents: Record<string, FuelLimits>;
-  budget: { room: Budget; agents: Record<string, Budget> };
+  budget: { room: Budget; agents: Record<string, Budget>; /** Mission id to dollars in all. */ missions: Record<string, number> };
   /** Transcript path to the byte offset already counted, so a restart of gonogo does not count a turn twice. */
   cursors: Record<string, number>;
 }
@@ -105,6 +111,14 @@ export function parseBudget(value: unknown, what: string): Budget | string {
   return budget;
 }
 
+/** One mission's budget from untrusted JSON: dollars in whole cents from 0.01 to BUDGET_MAX_USD; null (clear) is the caller's. */
+export function parseMissionBudget(v: unknown, what: string): number | string {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0.01 || v > BUDGET_MAX_USD || Math.abs(v * 100 - Math.round(v * 100)) > 1e-6) {
+    return `${what} must be dollars in whole cents from 0.01 to ${BUDGET_MAX_USD}, or null`;
+  }
+  return Math.round(v * 100) / 100;
+}
+
 /** Limits from untrusted JSON: whole numbers from 1 to FUEL_LIMIT_MAX per known window; anything else is refused. */
 export function parseLimits(value: unknown, what: string): FuelLimits | string {
   if (!isRecord(value)) return `${what} must be an object of windows (${FUEL_WINDOWS.join(', ')})`;
@@ -143,7 +157,7 @@ export function parsePropellantRequest(body: Record<string, unknown>): { ok: tru
   if (body.budget !== undefined) {
     if (!isRecord(body.budget)) return { ok: false, error: 'budget must be an object with room and agents', field: 'budget' };
     for (const key of Object.keys(body.budget)) {
-      if (key !== 'room' && key !== 'agents') return { ok: false, error: `budget: unknown field "${key}"`, field: 'budget' };
+      if (key !== 'room' && key !== 'agents' && key !== 'missions') return { ok: false, error: `budget: unknown field "${key}"`, field: 'budget' };
     }
     const budget: NonNullable<PropellantRequest['budget']> = {};
     if (body.budget.room !== undefined) {
@@ -159,6 +173,19 @@ export function parsePropellantRequest(body: Record<string, unknown>): { ok: tru
         const b = parseBudget(raw, `budget.agents.${name}`);
         if (typeof b === 'string') return { ok: false, error: b, field: 'budget' };
         budget.agents[name] = b;
+      }
+    }
+    if (body.budget.missions !== undefined) {
+      if (!isRecord(body.budget.missions)) return { ok: false, error: 'budget.missions must be an object of mission ids', field: 'budget' };
+      budget.missions = {};
+      for (const [id, raw] of Object.entries(body.budget.missions)) {
+        if (!MISSION_ID_RE.test(id)) return { ok: false, error: `budget.missions: invalid mission id "${id}"`, field: 'budget' };
+        if (raw === null) budget.missions[id] = null;
+        else {
+          const usd = parseMissionBudget(raw, `budget.missions.${id}`);
+          if (typeof usd === 'string') return { ok: false, error: usd, field: 'budget' };
+          budget.missions[id] = usd;
+        }
       }
     }
     value.budget = budget;
@@ -177,6 +204,8 @@ export interface PropellantOptions {
   prices?: () => Record<string, ModelPrice>;
   /** Downlink: a budget has reached 80 %. */
   notify?: DownlinkNotify;
+  /** The mission and task an agent is on now (its `doing` task). Read when its replies are counted and when a mission budget is checked. */
+  attribute?: (agent: string) => { mission?: string; task?: string };
 }
 
 export interface Propellant {
@@ -190,7 +219,7 @@ export interface Propellant {
   /** Replaces the dollar budget of each scope given ({} clears it); posts the 80 % warning when a new budget is already past it. */
   setBudget(budget: NonNullable<PropellantRequest['budget']>): Promise<PropellantView>;
   /** Why this agent must stop, or null: its own limit first, then the room's. */
-  over(agent: string): { scope: 'agent' | 'room'; reason: string } | null;
+  over(agent: string): { scope: 'agent' | 'room' | 'mission'; reason: string; /** For scope 'mission': its id. */ mission?: string } | null;
   close(): Promise<void>;
 }
 
@@ -201,7 +230,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
   const ledgerPath = join(dir, LEDGER_FILE);
   const limitsPath = join(dir, LIMITS_FILE);
   let entries: FuelEntry[] = [];
-  const saved: Saved = { room: {}, agents: {}, budget: { room: {}, agents: {} }, cursors: {} };
+  const saved: Saved = { room: {}, agents: {}, budget: { room: {}, agents: {}, missions: {} }, cursors: {} };
   const priceTable = options.prices ?? ((): Record<string, ModelPrice> => mergePrices());
   /** Scopes (agent or room, and window) that already told Downlink they are at 80 %; cleared when the window drops below it. */
   const warned = new Set<string>();
@@ -292,15 +321,37 @@ export function createPropellant(options: PropellantOptions): Propellant {
     return [...out.values()];
   };
 
+  /** Dollars and unpriced tokens of every ledger line that carries this mission (all lines kept), or this task. */
+  const spentOn = (by: 'mission' | 'task', id: string, table: Record<string, ModelPrice>): SpendOf => {
+    let usd = 0;
+    let unpriced = 0;
+    for (const e of entries) {
+      if (e[by] !== id) continue;
+      const p = priced(e, table);
+      usd += p.usd;
+      unpriced += p.unpriced;
+    }
+    return { usd, unpriced };
+  };
+
   const costView = (): CostView => {
     const table = priceTable();
     const agents: Record<string, CostGauge> = {};
     const names = new Set([...entries.map((e) => e.agent), ...Object.keys(saved.agents), ...Object.keys(saved.budget.agents)]);
     for (const name of [...names].sort()) agents[name] = costGauge(name, saved.budget.agents[name] ?? {}, table);
     const modelled = entries.filter((e) => e.model !== undefined).map((e) => e.at);
+    const missions: Record<string, SpendOf> = {};
+    const tasks: Record<string, SpendOf> = {};
+    for (const id of new Set([...entries.flatMap((e) => (e.mission === undefined ? [] : [e.mission])), ...Object.keys(saved.budget.missions)])) {
+      const budget = saved.budget.missions[id];
+      missions[id] = { ...spentOn('mission', id, table), ...(budget === undefined ? {} : { budget }) };
+    }
+    for (const id of new Set(entries.flatMap((e) => (e.task === undefined ? [] : [e.task])))) tasks[id] = spentOn('task', id, table);
     return {
       room: costGauge(null, saved.budget.room, table),
       agents,
+      missions,
+      tasks,
       days: days(table),
       pricedSince: modelled.length === 0 ? null : Math.min(...modelled),
     };
@@ -316,16 +367,19 @@ export function createPropellant(options: PropellantOptions): Propellant {
   };
 
   /** Every scope with a budget and its share spent per window. */
-  const shares = (): { key: string; who: string; window: FuelWindow; share: number }[] => {
+  const shares = (): { key: string; text: string; share: number }[] => {
     const table = priceTable();
-    const out: { key: string; who: string; window: FuelWindow; share: number }[] = [];
+    const out: { key: string; text: string; share: number }[] = [];
     const scopes: [string, string, CostGauge][] = [['room', 'the room', costGauge(null, saved.budget.room, table)]];
     for (const name of Object.keys(saved.budget.agents)) scopes.push([`agent:${name}`, name, costGauge(name, saved.budget.agents[name] ?? {}, table)]);
     for (const [scope, who, g] of scopes) {
       for (const w of FUEL_WINDOWS) {
         const limit = g.budget[w];
-        if (limit !== undefined) out.push({ key: `${scope}|${w}`, who, window: w, share: g.usd[w] / limit });
+        if (limit !== undefined) out.push({ key: `${scope}|${w}`, text: `${who} is at {pct} % of its ${WINDOW_NAME[w]} budget`, share: g.usd[w] / limit });
       }
+    }
+    for (const [id, limit] of Object.entries(saved.budget.missions)) {
+      out.push({ key: `mission:${id}`, text: `mission ${id} is at {pct} % of its budget`, share: spentOn('mission', id, table).usd / limit });
     }
     return out;
   };
@@ -343,7 +397,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
     for (const x of shares()) {
       if (x.share < WARN_AT || warned.has(x.key)) continue;
       warned.add(x.key);
-      if (!quiet) options.notify?.('redline', `${x.who} is at ${Math.floor(x.share * 100)} % of its ${WINDOW_NAME[x.window]} budget`);
+      if (!quiet) options.notify?.('redline', x.text.replace('{pct}', String(Math.floor(x.share * 100))));
     }
   };
 
@@ -368,6 +422,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
       log.debug(`propellant ignored a transcript outside ${options.projectsRoot}`);
       return 0;
     }
+    const on = options.attribute?.(agent) ?? {};
     const handle = await open(path, 'r');
     let tokens = 0;
     let reads = 0;
@@ -401,6 +456,8 @@ export function createPropellant(options: PropellantOptions): Propellant {
           last.cr = (last.cr ?? 0) + split.cr;
         } else {
           const entry: FuelEntry = usage.model === null ? { at, agent, tokens: usage.tokens } : { at, agent, model: usage.model, i: split.i, cw: split.cw, o: split.o, cr: split.cr, tokens: usage.tokens };
+          if (on.mission !== undefined && MISSION_ID_RE.test(on.mission)) entry.mission = on.mission;
+          if (on.task !== undefined && TASK_ID_RE.test(on.task)) entry.task = on.task;
           byKey.set(key, entry);
           fresh.push(entry);
         }
@@ -454,6 +511,12 @@ export function createPropellant(options: PropellantOptions): Propellant {
                 if (NAME_RE.test(name) && typeof b !== 'string') saved.budget.agents[name] = b;
               }
             }
+            if (isRecord(data.budget.missions)) {
+              for (const [id, raw] of Object.entries(data.budget.missions)) {
+                const usd = parseMissionBudget(raw, id);
+                if (MISSION_ID_RE.test(id) && typeof usd === 'number') saved.budget.missions[id] = usd;
+              }
+            }
           }
           if (isRecord(data.cursors)) {
             for (const [path, n] of Object.entries(data.cursors)) {
@@ -478,6 +541,8 @@ export function createPropellant(options: PropellantOptions): Propellant {
           const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
           if (typeof e.model === 'string' && e.model !== '') {
             const entry: FuelEntry = { at: e.at, agent: e.agent, tokens: count(e.tokens), model: e.model, i: count(e.i), cw: count(e.cw), o: count(e.o), cr: count(e.cr) };
+            if (typeof e.mission === 'string' && MISSION_ID_RE.test(e.mission)) entry.mission = e.mission;
+            if (typeof e.task === 'string' && TASK_ID_RE.test(e.task)) entry.task = e.task;
             if (entry.tokens > 0 || (entry.cr ?? 0) > 0) entries.push(entry);
           } else if (e.tokens > 0) {
             entries.push({ at: e.at, agent: e.agent, tokens: e.tokens });
@@ -532,6 +597,10 @@ export function createPropellant(options: PropellantOptions): Propellant {
         if (Object.keys(b).length === 0) delete saved.budget.agents[name];
         else saved.budget.agents[name] = { ...b };
       }
+      for (const [id, usd] of Object.entries(budget.missions ?? {})) {
+        if (usd === null) delete saved.budget.missions[id];
+        else saved.budget.missions[id] = usd;
+      }
       await saveLimits();
       warn(false);
       return view();
@@ -548,6 +617,12 @@ export function createPropellant(options: PropellantOptions): Propellant {
       const ownCost = budgetOver(costGauge(agent, saved.budget.agents[agent] ?? {}, table));
       if (ownCost !== null) {
         return { scope: 'agent', reason: `out of propellant: ${agent} spent ${moneyText(ownCost.spent)} of ${moneyText(ownCost.limit)} in ${WINDOW_LABEL[ownCost.window]}` };
+      }
+      const on = options.attribute?.(agent).mission;
+      const missionLimit = on === undefined ? undefined : saved.budget.missions[on];
+      if (on !== undefined && missionLimit !== undefined) {
+        const spent = spentOn('mission', on, table).usd;
+        if (spent >= missionLimit) return { scope: 'mission', mission: on, reason: `out of propellant: mission ${on} spent ${moneyText(spent)} of ${moneyText(missionLimit)}` };
       }
       const room = gauge(null, saved.room);
       const roomWindow = firstOver(room);

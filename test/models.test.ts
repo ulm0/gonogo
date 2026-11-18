@@ -28,15 +28,15 @@ describe('the store', () => {
   it('starts empty, sets and clears a model per engine, and keeps it across a reload', async () => {
     const store = createModelDefaults({ dir: tmp });
     await store.load();
-    expect(store.view()).toEqual({ models: {} });
-    expect(await store.set('claude', ' sonnet ')).toEqual({ models: { claude: 'sonnet' } });
-    expect(await store.set('gemini', 'flash')).toEqual({ models: { claude: 'sonnet', gemini: 'flash' } });
+    expect(store.view()).toEqual({ models: {}, positions: {} });
+    expect(await store.set('claude', ' sonnet ')).toEqual({ models: { claude: 'sonnet' }, positions: {} });
+    expect(await store.set('gemini', 'flash')).toEqual({ models: { claude: 'sonnet', gemini: 'flash' }, positions: {} });
     const again = createModelDefaults({ dir: tmp });
     await again.load();
     expect(again.get('claude')).toBe('sonnet');
-    expect(await again.set('claude', null)).toEqual({ models: { gemini: 'flash' } });
-    expect(await again.set('gemini', '')).toEqual({ models: {} });
-    expect(JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'))).toEqual({ version: 1, models: {} });
+    expect(await again.set('claude', null)).toEqual({ models: { gemini: 'flash' }, positions: {} });
+    expect(await again.set('gemini', '')).toEqual({ models: {}, positions: {} });
+    expect(JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'))).toEqual({ version: 1, models: {}, positions: {} });
   });
 
   it('refuses an engine with no model field, an unknown one and a bad name, and writes nothing', async () => {
@@ -46,19 +46,19 @@ describe('the store', () => {
     await expect(store.set('nope', 'x')).rejects.toMatchObject({ field: 'provider' });
     await expect(store.set('claude', '-rf')).rejects.toMatchObject({ field: 'model' });
     await expect(store.set('claude', 3)).rejects.toMatchObject({ field: 'model' });
-    expect(store.view()).toEqual({ models: {} });
+    expect(store.view()).toEqual({ models: {}, positions: {} });
   });
 
   it('keeps a damaged file aside and starts empty; drops entries it cannot use', async () => {
     await writeFile(join(tmp, 'models.json'), '{ not json');
     const broken = createModelDefaults({ dir: tmp });
     await broken.load();
-    expect(broken.view()).toEqual({ models: {} });
+    expect(broken.view()).toEqual({ models: {}, positions: {} });
     expect(await readFile(join(tmp, 'models.json.bad'), 'utf8')).toBe('{ not json');
     await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: { claude: 'opus', opencode: 'x', gemini: '--bad' } }));
     const mixed = createModelDefaults({ dir: tmp });
     await mixed.load();
-    expect(mixed.view()).toEqual({ models: { claude: 'opus' } });
+    expect(mixed.view()).toEqual({ models: { claude: 'opus' }, positions: {} });
   });
 });
 
@@ -93,9 +93,9 @@ describe('the routes', () => {
 
   it('GET answers the defaults, PUT sets and clears one, and a bad one is 400 with its field', async () => {
     const port = await start(true);
-    expect(await call(port, 'GET', '/api/models')).toEqual({ status: 200, json: { models: {} } });
-    expect(await call(port, 'PUT', '/api/models/claude', { model: 'haiku' })).toEqual({ status: 200, json: { models: { claude: 'haiku' } } });
-    expect(await call(port, 'PUT', '/api/models/claude', { model: null })).toEqual({ status: 200, json: { models: {} } });
+    expect(await call(port, 'GET', '/api/models')).toEqual({ status: 200, json: { models: {}, positions: {} } });
+    expect(await call(port, 'PUT', '/api/models/claude', { model: 'haiku' })).toEqual({ status: 200, json: { models: { claude: 'haiku' }, positions: {} } });
+    expect(await call(port, 'PUT', '/api/models/claude', { model: null })).toEqual({ status: 200, json: { models: {}, positions: {} } });
     const badName = await call(port, 'PUT', '/api/models/claude', { model: '-x' });
     expect(badName.status).toBe(400);
     expect(badName.json).toMatchObject({ field: 'model' });
@@ -113,6 +113,17 @@ describe('the routes', () => {
     expect(twice.status).toBe(400);
     const res = await fetch(`http://127.0.0.1:${port}/api/models/%E0%A4%A`, { method: 'PUT', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }, body: '{}' });
     expect(res.status).toBe(404);
+  });
+
+  it('PUT /api/models/positions/<id> sets and clears a position\'s model, and a bad one is 400 with its field', async () => {
+    const port = await start(true);
+    expect(await call(port, 'PUT', '/api/models/positions/guido', { model: 'opus' })).toEqual({ status: 200, json: { models: {}, positions: { guido: 'opus' } } });
+    expect(await call(port, 'PUT', '/api/models/positions/guido', { model: null })).toEqual({ status: 200, json: { models: {}, positions: {} } });
+    const unknown = await call(port, 'PUT', '/api/models/positions/nobody', { model: 'x' });
+    expect(unknown.status).toBe(400);
+    expect(unknown.json).toMatchObject({ field: 'position' });
+    expect((await call(port, 'PUT', '/api/models/positions/guido', { model: '-x' })).json).toMatchObject({ field: 'model' });
+    expect((await call(port, 'PUT', '/api/models/other/guido', { model: 'x' })).status).toBe(404);
   });
 
   it('answers 404 without the store', async () => {
@@ -136,5 +147,56 @@ describe('the launcher', () => {
     expect(flag((await l.prepareStart(agent('claude', { model: 'opus' }), { generation: 2, flag: null })).spec.args)).toBe('opus');
     expect(flag((await l.prepareStart(agent('gemini'), { generation: 1, flag: null })).spec.args)).toBe('flash');
     expect(flag((await l.prepareStart(agent('pi'), { generation: 1, flag: null })).spec.args)).toBeUndefined();
+  });
+});
+
+describe('a model per position', () => {
+  it('stores, clears and validates one, and keeps it across a reload', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    expect(await store.setPosition('guido', ' opus ')).toEqual({ models: {}, positions: { guido: 'opus' } });
+    expect(store.getPosition('guido')).toBe('opus');
+    await expect(store.setPosition('nobody', 'x')).rejects.toMatchObject({ field: 'position' });
+    await expect(store.setPosition('guido', '-x')).rejects.toMatchObject({ field: 'model' });
+    expect(store.getPosition('guido')).toBe('opus');
+    const again = createModelDefaults({ dir: tmp });
+    await again.load();
+    expect(again.view().positions).toEqual({ guido: 'opus' });
+    expect(await again.setPosition('guido', null)).toEqual({ models: {}, positions: {} });
+    expect(JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'))).toEqual({ version: 1, models: {}, positions: {} });
+  });
+
+  it('drops a position it does not know and a file from before positions reads as none', async () => {
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: { claude: 'sonnet' }, positions: { guido: 'opus', nobody: 'x', fido: '--bad' } }));
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    expect(store.view()).toEqual({ models: { claude: 'sonnet' }, positions: { guido: 'opus' } });
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: { claude: 'sonnet' } }));
+    const old = createModelDefaults({ dir: tmp });
+    await old.load();
+    expect(old.view().positions).toEqual({});
+  });
+});
+
+describe('the launcher and a position', () => {
+  const agent = (over: Partial<AgentRecord> = {}): AgentRecord => ({ name: 'ana', role: 'r', dir: join(tmp, 'work'), mode: 'default', sessionId: SID, desk: 1, boss: false, createdAt: 1, ...over });
+  const make = async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    await store.set('claude', 'sonnet');
+    await store.set('gemini', 'flash');
+    await store.setPosition('guido', 'opus');
+    return createLauncher({ homeDir: join(tmp, 'home'), hubUrl: () => 'http://127.0.0.1:1', seed: false, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') }, defaultModel: (p, position) => store.resolve(p, position) });
+  };
+  const flag = (args: string[]): string | undefined => (args.includes('--model') ? args[args.indexOf('--model') + 1] : undefined);
+
+  it('asks for the model with the agent\'s position: position, then engine, and the agent\'s own model wins', async () => {
+    await mkdir(join(tmp, 'work'), { recursive: true });
+    const l = await make();
+    expect(flag((await l.prepareStart(agent({ position: 'guido' }), { generation: 1, flag: null })).spec.args)).toBe('opus');
+    expect(flag((await l.prepareStart(agent({ position: 'fido' }), { generation: 2, flag: null })).spec.args)).toBe('sonnet');
+    expect(flag((await l.prepareStart(agent(), { generation: 3, flag: null })).spec.args)).toBe('sonnet');
+    expect(flag((await l.prepareStart(agent({ position: 'guido', model: 'haiku' }), { generation: 4, flag: null })).spec.args)).toBe('haiku');
+    expect(flag((await l.prepareStart(agent({ position: 'guido', provider: 'gemini' }), { generation: 5, flag: null })).spec.args)).toBe('flash');
   });
 });

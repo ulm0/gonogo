@@ -4,7 +4,8 @@
  */
 import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ModelDefaults, Provider } from '../shared/protocol.js';
+import type { ModelDefaults } from '../shared/protocol.js';
+import { POSITIONS } from '../shared/positions.js';
 import { MODEL_PATTERN, providerInfo } from '../shared/protocol.js';
 import * as api from './api.js';
 import { MODEL_PROVIDERS } from './models.js';
@@ -12,20 +13,20 @@ import { useRun } from './WallView.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
 
-function Row({ provider, saved, onSaved }: { provider: Provider; saved: string; onSaved(next: ModelDefaults): void }): ReactElement {
+/** One line: a label, the model it holds and the call that changes it (an engine's line, or a position's). */
+function Row({ label, names, saved, set, onSaved }: { label: string; names: readonly string[]; saved: string; set(model: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void }): ReactElement {
   const id = useId();
-  const info = providerInfo(provider);
   const [text, setText] = useState(saved);
   const { busy, error, run } = useRun();
   useEffect(() => setText(saved), [saved]);
   const value = text.trim();
   const bad = value !== '' && !MODEL_RE.test(value);
   const changed = value !== saved;
-  const save = (next: string | null): void => run(async () => onSaved(await api.setModelDefault(provider, next)));
+  const save = (next: string | null): void => run(async () => onSaved(await set(next)));
   return (
     <li className="rules-model">
       <label htmlFor={id} className="rules-call">
-        {info.label}
+        {label}
       </label>
       <input
         id={id}
@@ -45,7 +46,7 @@ function Row({ provider, saved, onSaved }: { provider: Provider; saved: string; 
         }}
       />
       <datalist id={`${id}-names`}>
-        {(info.model ?? []).map((name) => (
+        {names.map((name) => (
           <option key={name} value={name} />
         ))}
       </datalist>
@@ -96,9 +97,22 @@ export function ModelDefaultsBlock(): ReactElement {
       {defaults !== null && (
         <ul className="rules-model-list">
           {MODEL_PROVIDERS.map((provider) => (
-            <Row key={provider} provider={provider} saved={defaults.models[provider] ?? ''} onSaved={setDefaults} />
+            <Row key={provider} label={providerInfo(provider).label} names={providerInfo(provider).model ?? []} saved={defaults.models[provider] ?? ''} set={(model) => api.setModelDefault(provider, model)} onSaved={setDefaults} />
           ))}
         </ul>
+      )}
+      {defaults !== null && (
+        <>
+          <h3 className="label">BY POSITION</h3>
+          <p className="hint">
+            A Claude Code console in a position starts with this model before the engine's line above. Its own model still wins. Other engines use their own line, because model names do not carry from one engine to another.
+          </p>
+          <ul className="rules-model-list">
+            {POSITIONS.map((p) => (
+              <Row key={p.id} label={p.callSign} names={providerInfo('claude').model ?? []} saved={defaults.positions?.[p.id] ?? ''} set={(model) => api.setPositionModel(p.id, model)} onSaved={setDefaults} />
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );

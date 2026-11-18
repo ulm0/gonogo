@@ -11,7 +11,7 @@ settings you can change in the room on one screen. COMMISSIONING is the checklis
 - **MAX Q** and **PROPELLANT** for the room: the wall's own modules, so a limit set here is the one on the wall (see the
   [load governor](../guide/the-room.md#positions-t-minus-max-q-and-custom-agents) and [Propellant](./propellant.md)). On a phone
   the wall shows no Propellant module: this screen is where a phone sets it.
-- **DEFAULT MODELS**: the model each engine starts with when a console has none of its own (see [Engine Bay](./engine-bay.md#model)).
+- **DEFAULT MODELS**: the model each engine, and each position (Claude Code), starts with when a console has none of its own (see [Engine Bay](./engine-bay.md#model)).
 - **LIVERY**: the name of the one in use and a key to the [Livery](./livery.md) view.
 - **LAUNCH WINDOW**: a key to the view that holds schedules, [Uplink](./uplink.md), [Relay](./relay.md) and
   [Docking](./docking.md).

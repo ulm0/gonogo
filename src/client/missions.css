@@ -136,3 +136,24 @@
     display: none;
   }
 }
+
+.mis-cost,
+.mis-budget {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mis-cost {
+  flex-direction: column;
+  align-items: stretch;
+}
+.mis-spend[data-level='low'] {
+  color: var(--amber-text, inherit);
+}
+.mis-spend[data-level='over'] {
+  color: var(--nogo-text, inherit);
+}
+.mis-row-cost {
+  grid-column: 2 / -1;
+}
