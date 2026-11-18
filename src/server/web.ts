@@ -159,6 +159,8 @@ export interface WebOptions {
   /** Live reload (Flight Rules): asks this server to hand over to a new one. Returns what the page shows, or a reason it cannot. Absent: the route says so. */
   /** Update from the page (Flight Rules): installs the named newer version, then reloads. Throws UpdateError with a reason the page shows. */
   update?: (version: unknown) => UpdateView;
+  /** Docker self-update: put the previous image back. */
+  undoUpdate?: () => Promise<UpdateView>;
   reload?: () => { ok: true; note: string } | { ok: false; reason: string };
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'setPhone' | 'test'>;
   /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
@@ -849,6 +851,20 @@ export function createWebServer(options: WebOptions): WebServer {
           const parsed = parseUserMessage(body);
           if (!parsed.ok) sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
           else sendJson(res, 201, hub.sendFromUser(parsed.value));
+        },
+      };
+    }
+    if (s.length === 3 && s[1] === 'update' && s[2] === 'undo') {
+      return {
+        allow: ['POST'],
+        run: async (_req, res) => {
+          if (!options.undoUpdate) return sendApiError(res, 409, 'undo is not available here', 'conflict');
+          try {
+            sendJson(res, 202, await options.undoUpdate());
+          } catch (error) {
+            if (error instanceof UpdateError) sendApiError(res, 409, error.message, error.code);
+            else throw error;
+          }
         },
       };
     }

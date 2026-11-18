@@ -1160,7 +1160,7 @@ export type InstallKind = (typeof INSTALL_KINDS)[number];
 
 /** The update the Director started from the page: install the new version, then reload. */
 export interface UpdateView {
-  state: 'idle' | 'running' | 'installed' | 'reloading' | 'hook-sent' | 'failed';
+  state: 'idle' | 'running' | 'installed' | 'reloading' | 'hook-sent' | 'handed-off' | 'done' | 'failed';
   /** The version being installed, or null. */
   version: string | null;
   /** One line for the page. */
@@ -1169,6 +1169,8 @@ export interface UpdateView {
   tail: string[];
   /** The command that goes back to the version that was running, shown after an install. */
   rollback: string | null;
+  /** Docker self-update: the last update went well and the old image is still there, so UNDO can put it back. */
+  undo?: boolean;
 }
 
 /** Rollout (docs/rollout-spec.md): the newest @ulm0/gonogo the daily check saw. */
@@ -1191,6 +1193,8 @@ export interface RolloutView {
   installNote?: string;
   /** The page may offer an Update button: npm or pnpm global, or a container with an update hook (GONOGO_UPDATE_HOOK). */
   canUpdate?: boolean;
+  /** Update recreates this container itself (the Docker socket is mounted), so the page asks before it stops the agents. */
+  selfUpdate?: boolean;
   /** The update in progress or the last one. */
   update?: UpdateView;
 }

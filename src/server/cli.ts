@@ -6,7 +6,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
 import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
-import type { AuditRecord, DownlinkNotify, Hub, HubIo, InstallKind, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
+import type { AuditRecord, DownlinkNotify, Hub, HubIo, InstallKind, Logger, ServerInfo, Task, TerminalHost, UpdateView } from '../shared/protocol.js';
 import {
   CLAUDE_BIN,
   DEFAULT_HOME_DIRNAME,
@@ -77,6 +77,8 @@ import { cachedLatest, createRollout, installKind, installNote, isNewer, updateC
 import { createUpdater } from './updater.js';
 import { addRoom, loadRooms, removeRoom, roomHome } from './rooms.js';
 import { startSupervisor } from './supervisor.js';
+import type { UpdateResult } from './dockerupdate.js';
+import { dockerUpdateStatus, readResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
 import type { Updater } from './updater.js';
 import type { WebServer } from './web.js';
 
@@ -185,6 +187,7 @@ export type ParsedArgs =
   | { kind: 'ptyhost'; home: string }
   | { kind: 'rooms'; action: 'serve'; options: StartOptions }
   | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
+  | { kind: 'selfupdate'; target: string; expect: string; home: string; image: string }
   | { kind: 'run'; options: StartOptions }
   | { kind: 'error'; message: string };
 
@@ -223,6 +226,20 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     }
     if (action !== 'list' && out.id === undefined) return { kind: 'error', message: `rooms ${action} needs a room id` };
     return out;
+  }
+  if (argv[0] === 'self-update') {
+    // the helper container's command (docs/self-update-spec.md): exactly these five options, nothing else
+    const rest = argv.slice(1);
+    const got: Record<string, string> = {};
+    for (let i = 0; i < rest.length; i += 2) {
+      const flag = rest[i] ?? '';
+      if (!['--target', '--expect', '--home', '--image'].includes(flag) || rest[i + 1] === undefined || flag in got) return { kind: 'error', message: `self-update takes --target, --expect, --home and --image once each` };
+      got[flag] = rest[i + 1] ?? '';
+    }
+    const { '--target': target, '--expect': expect, '--home': home, '--image': image } = got;
+    if (target === undefined || expect === undefined || home === undefined || image === undefined) return { kind: 'error', message: 'self-update needs --target, --expect, --home and --image' };
+    if (!/^[0-9a-f]{12,64}$/.test(target) || !STABLE_VERSION.test(expect) || image === '') return { kind: 'error', message: 'self-update: the target must be a container id and the version a release number' };
+    return { kind: 'selfupdate', target, expect, home, image };
   }
   if (argv[0] === 'reload' || argv[0] === 'ptyhost') {
     const rest = argv.slice(1);
@@ -366,6 +383,13 @@ export function resolveSettings(options: StartOptions, log: Logger = nullLogger)
     checkClaude: options.checkClaude ?? true,
     ptyHost: options.ptyHost ?? (env.GONOGO_PTY_HOST === '1' || env.GONOGO_PTY_HOST?.toLowerCase() === 'true'),
   };
+}
+
+
+/** The page's view of what the last Docker self-update left. */
+function updateOfResult(r: UpdateResult): UpdateView {
+  if (r.state === 'ok') return { state: 'done', version: r.to, note: r.note, tail: [], rollback: null, undo: r.previousImage !== '' };
+  return { state: 'failed', version: r.to, note: r.state === 'rolled-back' ? `The update to ${r.to} did not take: ${r.note}` : `The update to ${r.to} failed: ${r.note}`, tail: r.tail, rollback: null };
 }
 
 function packageVersion(): string {
@@ -825,7 +849,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // Update from the page: npm or pnpm global installs, or a container with an update hook (GONOGO_UPDATE_HOOK, optional GONOGO_UPDATE_HOOK_TOKEN)
     const installed = installInfo(env);
     const hookUrl = (env.GONOGO_UPDATE_HOOK ?? '').trim();
-    const canUpdate = installed.kind === 'npm' || installed.kind === 'pnpm' || (installed.kind === 'docker' && /^https?:\/\//.test(hookUrl));
+    // Docker self-update: the socket is there and this container can find itself and has a moving tag (docs/self-update-spec.md)
+    const socketPath = env.GONOGO_DOCKER_SOCKET || SOCKET_PATH;
+    const dockerCall = installed.kind === 'docker' && existsSync(socketPath) ? socketCall(socketPath) : null;
+    // a room started by `gonogo rooms` is one process of a supervisor: recreating the container would stop every room, and this page counts only its own agents
+    const supervised = options.exitWithStdin === true;
+    const dockerStatus = dockerCall === null ? undefined : supervised ? { ready: false, text: 'this room runs under gonogo rooms: update the container from the host (docker compose pull && docker compose up -d); self-update does not know the other rooms' } : await dockerUpdateStatus(dockerCall, hostname());
+    const canUpdate = installed.kind === 'npm' || installed.kind === 'pnpm' || (installed.kind === 'docker' && (dockerStatus?.ready === true || /^https?:\/\//.test(hookUrl)));
+    // what the last self-update left: shown until the Director goes on
+    const lastResult = dockerCall === null ? null : await readResult(home.dir);
     const rollout = createRollout({
       dir: home.dir,
       now: io.now,
@@ -834,8 +866,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       current: version,
       command: installed.command,
       install: installed.kind,
-      installNote: installNote(installed.kind, canUpdate),
+      installNote: installNote(installed.kind, canUpdate, dockerStatus),
       canUpdate,
+      selfUpdate: dockerStatus?.ready === true,
+      ...(lastResult === null || Date.now() - lastResult.at > 24 * 3_600_000 ? {} : { update: updateOfResult(lastResult) }),
       emit: (view) => web?.broadcast({ t: 'rollout', rollout: view }),
       log: log.child('rollout'),
     });
@@ -853,6 +887,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       reload: triggerReload,
       keepsAgents: remote !== null,
+      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, busy: () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : null) } }),
       hook: /^https?:\/\//.test(hookUrl) ? { url: hookUrl, token: (env.GONOGO_UPDATE_HOOK_TOKEN ?? '').trim() || null } : null,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       log: log.child('update'),
@@ -904,6 +939,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       // only a gonogo started from the command line has the signal handler that does the hand-over; a test or an embedder has not
       update: (version) => updater.start(version),
+      undoUpdate: () => updater.undo(),
       reload: () => {
         if (!triggerReload()) return { ok: false, reason: 'reload is only available in a gonogo started from the command line' };
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
@@ -1201,6 +1237,12 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     const checks = await checkEngines(env);
     const { kind } = installInfo(env);
     process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null, kind === 'brew' ? `gonogo itself: ${installNote(kind, false)}` : null).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\ndoctor never runs`));
+    // Docker self-update: only in a container
+    if (installInfo(env).kind === 'docker') {
+      const socket = env.GONOGO_DOCKER_SOCKET || SOCKET_PATH;
+      const status = existsSync(socket) ? await dockerUpdateStatus(socketCall(socket), hostname()) : { ready: false, text: 'needs the Docker socket (mount /var/run/docker.sock)' };
+      process.stdout.write(`${status.ready ? 'ok' : '--'}  Docker self-update  ${status.text}\n`);
+    }
     // the same refusal as the start: no claude and nothing in its place
     exit(checks.find((c) => c.provider === 'claude')?.path === null && !env.GONOGO_AGENT_CMD?.trim() ? 1 : 0);
     return;
@@ -1220,6 +1262,15 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
       process.stderr.write(`gonogo rooms: ${e instanceof Error ? e.message : String(e)}\n`);
       exit(1);
     }
+    return;
+  }
+  if (parsed.kind === 'selfupdate') {
+    // runs in the helper container: recreates the target from the new image, rolls back when it is not healthy, leaves the result for the new gonogo
+    const home = resolve(parsed.home);
+    const result = await swap(socketCall(env.GONOGO_DOCKER_SOCKET || SOCKET_PATH), { target: parsed.target, image: parsed.image, expect: parsed.expect, home });
+    await writeResult(home, result).catch((e: unknown) => process.stderr.write(`gonogo self-update: could not write the result: ${e instanceof Error ? e.message : String(e)}\n`));
+    process.stdout.write(`gonogo self-update: ${result.state}: ${result.note}\n`);
+    exit(result.state === 'ok' ? 0 : 1);
     return;
   }
   if (parsed.kind === 'ptyhost') {
