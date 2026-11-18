@@ -2597,6 +2597,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
 
   function holdPoll(): PollView {
     assertOpen();
+    if (pollState !== null && pollState.status === 'hold') throw new HubError('conflict', 'the poll is already on hold');
     if (pollState === null || pollState.status !== 'open') throw new HubError('conflict', 'no poll is open');
     pollState.status = 'hold';
     holdBy = 'director';

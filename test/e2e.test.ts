@@ -1603,6 +1603,8 @@ describe('end to end with the stand-in agent', () => {
     await api(h, 'POST', '/api/poll', { agents: ['ben'] });
     const held = await api<PollView>(h, 'POST', '/api/poll/hold');
     expect(held).toMatchObject({ status: 200, body: { status: 'hold', note: 'held by the Director' } });
+    // a second hold says so, instead of "no poll is open"
+    expect(await api<ApiError>(h, 'POST', '/api/poll/hold')).toMatchObject({ status: 409, body: { code: 'conflict', error: 'the poll is already on hold' } });
     await waitQuiet(h);
 
     // a polled agent that stops becomes no-go with the reason "stopped"
