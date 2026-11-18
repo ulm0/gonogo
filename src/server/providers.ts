@@ -91,6 +91,7 @@ export function buildGeminiSettings(ctx: Pick<StartContext, 'hubUrl' | 'name' | 
   };
 }
 
+// unused until a per-agent hooks.json location is verified (docs/facts/antigravity.md)
 /**
  * Antigravity CLI (agy) hook event to the hub's own. Written from the vendor's hook page (docs/facts/antigravity.md), not from a run.
  * PreInvocation is the nearest of agy's events to a submitted prompt; its stdin carries `lastUserInput`.
