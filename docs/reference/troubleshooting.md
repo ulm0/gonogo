@@ -2,12 +2,12 @@
 
 <HeldMock class="doc-mock" />
 
-- **An agent is "needs you".** Its reason is on the agent bar and in the activity strip. Open its terminal. `startup dialog: answer it in the terminal` is a question Claude Code asks once per folder (usually whether you trust it): read it, answer it, and the agent goes on. A permission request is answered in the terminal too.
-- **`held: text in <name>'s input`** means the agent's input box still holds text you typed. Submit it, or clear it with Ctrl-C (or Esc twice) in that terminal; gonogo notices within about two seconds and the mail goes in.
-- **`held: no hook has reached gonogo from <name>; is its folder trusted?`** means Claude Code's hooks are silent for that agent. The usual cause is a folder Claude Code does not trust, because it holds hooks back until it does: outside seed mode answer the trust dialog in the agent's terminal; in seed mode restart the agent, which records the trust again. The other cause is something that blocks the hook URL.
-- **`held: pointer not confirmed within 2 s`** means gonogo typed the pointer and Claude Code did not report a submitted prompt. gonogo does not try again by itself. The pointer may still sit in the input box: press Enter in that terminal to send it, or Ctrl-C to clear it.
-- **`not read: <name> did not read it after two pointers`** on a message means gonogo pointed the agent at its mail twice (the second time after a turn that ended without reading) and the agent never called `read_messages`. Open its terminal and ask it to call `read_messages`.
-- **An agent stays "starting".** Open its terminal and look; a dialog that gonogo does not recognise shows up there.
-- **A rename says the name is taken by a notes folder left over from a removed agent.** The folder `agents/<name>/` of the removed agent is still in the home directory (see [State on disk](./configuration.md#state-on-disk)). Choose another name, or delete that folder if you do not need its `memory.md`. A hire under that name is not refused: the new agent starts with the old notes.
-- **`<file> was saved by a newer gonogo (format version N; ...)`.** The home was used by a newer gonogo that upgraded this file. Start that one, or move the file away to start without it, or put its `.bak-v<n>` copy back (see [Versions of the saved state](./configuration.md#versions-of-the-saved-state)).
+- **An agent is "needs you".** The reason is on the agent bar and in the activity strip. Answer it in the agent's terminal: `startup dialog: answer it in the terminal` is usually Claude Code's once-per-folder trust question; permission requests are answered there too.
+- **`held: text in <name>'s input`**: the input box holds text you typed. Submit it, or clear it with Ctrl-C (or Esc twice); the mail goes in within about two seconds.
+- **`held: no hook has reached gonogo from <name>; is its folder trusted?`**: Claude Code holds hooks back in an untrusted folder. Outside seed mode, answer the trust dialog in the terminal; in seed mode, restart the agent. Otherwise something blocks the hook URL.
+- **`held: pointer not confirmed within 2 s`**: Claude Code did not report the typed pointer as submitted, and gonogo does not retry. Press Enter in that terminal to send it, or Ctrl-C to clear it.
+- **`not read: <name> did not read it after two pointers`**: the agent never called `read_messages`. Ask it to in its terminal.
+- **An agent stays "starting".** Open its terminal; an unrecognised dialog shows there.
+- **A rename says the name is taken by a notes folder left over from a removed agent.** `agents/<name>/` is still in the home ([State on disk](./configuration.md#state-on-disk)). Pick another name, or delete the folder if you do not need its `memory.md`. Hiring under that name works and reuses the old notes.
+- **`<file> was saved by a newer gonogo (format version N; ...)`.** Start the newer gonogo, move the file away, or restore its `.bak-v<n>` copy ([Versions of the saved state](./configuration.md#versions-of-the-saved-state)).
 - **`another gonogo is using <dir>`.** Stop the other one, or delete `server.lock` in that directory if none is running.

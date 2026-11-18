@@ -21,9 +21,8 @@ const lowest = (tokens) => Math.min(...CONTRAST_PAIRS.flatMap(([text, on]) => on
 
 # Design system
 
-gonogo looks like a piece of hardware: a warm grey body, lighter modules with thin edges, keys with a thick bottom edge, and small
-dark LCD screens for numbers and terminals. Colour is a small light, or a tint on the one module that needs you; it never floods the
-page. This page is drawn with the app's own stylesheets, so what you see here is what the app draws.
+gonogo looks like hardware: a warm grey body, lighter modules with thin edges, keys with a thick bottom edge, and small dark LCD
+screens. Colour is a small light, or a tint on the one module that needs you. This page uses the app's own stylesheets.
 
 <HardwareMock class="doc-mock" />
 
@@ -41,14 +40,12 @@ page. This page is drawn with the app's own stylesheets, so what you see here is
 | `docs/brand/` | The logo, as SVG. |
 | `docs/design/instrument/*.dc.html` | The mockups the sizes come from. |
 
-The livery attribute is `data-livery`. In the app it is on `<html>`; here it can go on any element, and everything inside takes that
-livery: `<div data-livery="night-shift">`.
+In the app `data-livery` is on `<html>`; on any element it applies to everything inside: `<div data-livery="night-shift">`.
 
 ## Liveries
 
-Four ship ([Livery](./features/livery.md) has the feature). A livery changes colour only: shapes, sizes and fonts are the same in
-every one. Each swatch below is painted with `var(--token)` inside a `data-livery` box; the value under it is the one in
-`livery.ts`.
+Four ship (see [Livery](./features/livery.md)). A livery changes colour only. Each swatch is `var(--token)` in a `data-livery` box,
+with its `livery.ts` value.
 
 <div class="ds-liveries">
 <section v-for="l in BUILTIN_LIVERIES" :key="l.slug" class="ds-frame" :data-livery="l.slug">
@@ -71,8 +68,8 @@ Hover a swatch for its role. The roles, in short:
 | Signals | `--work`, `--you*`, `--go*`, `--nogo*` | the four signals, each with a tint, an edge or an ink where it needs one |
 | Tracks | `--track`, `--seq-base` | an empty ring or bar; the empty line of a sequence track |
 
-The rule every livery passes (the app refuses one that does not): each text token reaches **4.5:1** (WCAG 2) on every surface it
-sits on, and `--lcd` stays dark, because the terminal draws its own colours for a dark screen. High Contrast reaches 7:1 everywhere.
+Every livery must pass (the app refuses one that does not): each text token reaches **4.5:1** (WCAG 2) on every surface it sits
+on, and `--lcd` stays dark (the terminal draws for a dark screen). High Contrast reaches 7:1 everywhere.
 
 ## Signals
 
@@ -88,8 +85,7 @@ One colour per meaning, the same in every view.
 | Stopped | `--edge-2` | `--well` | a stopped console |
 | Open | none | none, dashed `--edge-2` | an empty seat |
 
-Fuel (Propellant and its limits) uses the same three: under the warning share it is go, past it needs-you, over the limit no-go
-(and its light blinks). Its bar runs on `--track`.
+Fuel (Propellant): go under the warning share, needs-you past it, no-go (blinking) over the limit. Its bar runs on `--track`.
 
 ## Live components
 
@@ -112,10 +108,9 @@ Pick a livery for the previews:
 </div>
 </div>
 
-Three families, all bundled from `@fontsource` (the app loads nothing from another host): **Geist** for reading, **Geist Mono** for
-every name printed on the hardware (labels, legends, keys, chips, states), and **Doto**, a dot-matrix face, for the numbers on an
-LCD. The logo's lettering is the same dot matrix, drawn as dots in the SVG. Small text on the hardware is in capitals with open
-letter-spacing (0.04em to 0.08em); reading text is in sentence case.
+Three families, bundled from `@fontsource`: **Geist** for reading, **Geist Mono** for names on the hardware (labels, legends,
+keys, chips, states), **Doto** (dot matrix) for numbers on an LCD and the logo. Hardware text is capitals with 0.04em to 0.08em
+spacing; reading text is sentence case.
 
 ### Keys
 
@@ -133,10 +128,9 @@ letter-spacing (0.04em to 0.08em); reading text is in sentence case.
 </div>
 </div>
 
-`.btn` is a key: 44 px tall at least, a 1 px edge with a 3 px bottom edge, Geist Mono capitals. Pressed, the bottom edge drops to
-1 px and the key moves down 2 px. `data-kind` is `primary` (dark face, one per view), `quiet` or `danger`; `data-size="big"` is the
-56 px key of a form; `data-shape="round"` is a 44 px disc. A disabled key (`disabled`, or `aria-disabled="true"` for one that is
-busy and keeps focus) is dashed and flat.
+`.btn`: at least 44 px tall, 1 px edge with a 3 px bottom edge, Geist Mono capitals; pressed, it moves down 2 px. `data-kind`:
+`primary` (dark face, one per view), `quiet`, `danger`. `data-size="big"`: 56 px form key. `data-shape="round"`: 44 px disc.
+Disabled (`disabled`, or `aria-disabled="true"` to keep focus while busy) is dashed and flat.
 
 ### Lights
 
@@ -155,9 +149,8 @@ busy and keeps focus) is dashed and flat.
 </div>
 </div>
 
-`.led` is an 8 px light in `--led`. `data-kind` sets the colour from the state of a console; anything else sets `--led` itself.
-`data-on="true"` adds a soft ring (`0 0 0 3px`, the light at 22%); `data-blink="true"` breathes (1.5 s), and stops when the reader
-asks for reduced motion. `.lamp` is a light with a word, as in the top bar.
+`.led`: an 8 px light in `--led`, coloured by `data-kind` (console state) or by setting `--led`. `data-on="true"` adds a ring
+(`0 0 0 3px`, 22%); `data-blink="true"` breathes (1.5 s, off under reduced motion). `.lamp`: a light with a word.
 
 ### Chips
 
@@ -172,7 +165,7 @@ asks for reduced motion. `.lamp` is a light with a word, as in the top bar.
 </div>
 </div>
 
-A status in a few letters: Geist Mono 500, 10 px, capitals, a pill. `data-tone` is `lit`, `amber`, `go`, `nogo`, `quiet` or `ink`.
+Geist Mono 500, 10 px, capitals, a pill. `data-tone`: `lit`, `amber`, `go`, `nogo`, `quiet`, `ink`.
 
 ### Modules, floods and the LCD
 
@@ -185,10 +178,9 @@ A status in a few letters: Geist Mono 500, 10 px, capitals, a pill. `data-tone` 
 </div>
 </div>
 
-`.module` is a panel: `--panel`, a 1 px `--edge`, 12 px corners; its name is a `.label` ("A · MISSION": a letter, a middle dot,
-the name). `.flood` is the same frame tinted by `data-tone` (`amber`, `go`, `nogo`, or `lit` for a raised one); a label on a tint
-turns `--text-2`. `.lcd` is a sunk dark screen (`--lcd`, `inset 0 2px 6px` shadow, 8 px corners) for clocks, counts and the
-terminal; its text is `--lcd-text`, `--lcd-dim` when quiet. A wall module is a `.module` with a `.label` and, often, an `.lcd`.
+`.module`: `--panel`, 1 px `--edge`, 12 px corners, named by a `.label` ("A · MISSION"). `.flood`: the same, tinted by
+`data-tone` (`amber`, `go`, `nogo`, `lit`); its label turns `--text-2`. `.lcd`: a sunk dark screen (`--lcd`, `inset 0 2px 6px`,
+8 px corners), text `--lcd-text` or `--lcd-dim`.
 
 ### Tiles and consoles
 
@@ -202,10 +194,9 @@ terminal; its text is `--lcd-text`, `--lcd-dim` when quiet. A wall module is a `
 </div>
 </div>
 
-`.tile` is a key that holds a console, a position or an option; `data-kind` (`working`, `needs`, `starting`, `stopped`, `open`, or
-none for idle) sets its light and its surface, and `aria-pressed="true"` rings the chosen one. `.room-tile` is the console of the
-room: a head (`.tile-head`: light, `.tile-legend`, `.tile-num`), a small screen of two lines (`.tile-lcd`) that lights while it
-works and turns warm when it needs you, and a foot (`.tile-foot`, `.tile-state`).
+`.tile`: a key holding a console, position or option. `data-kind` (`working`, `needs`, `starting`, `stopped`, `open`, none for
+idle) sets light and surface; `aria-pressed="true"` rings the chosen one. `.room-tile`: `.tile-head` (light, `.tile-legend`,
+`.tile-num`), a two-line `.tile-lcd` (lit while working, warm when it needs you), `.tile-foot` with `.tile-state`.
 
 ### Fields
 
@@ -218,8 +209,8 @@ works and turns warm when it needs you, and a foot (`.tile-foot`, `.tile-state`)
 </div>
 </div>
 
-`.field` stacks a mono capital label, the control and a `.hint`. `.input` is 46 px tall on `--key`; read-only turns `--well`;
-`aria-invalid="true"` draws a 2 px `--nogo` edge, and the reason goes in an `.error` under it. `.textarea` is mono.
+`.field`: label, control, `.hint`. `.input`: 46 px on `--key`, `--well` when read-only; `aria-invalid="true"` draws a 2 px
+`--nogo` edge, reason in an `.error` below. `.textarea` is mono.
 
 ## Shape, depth and motion
 
@@ -234,15 +225,13 @@ works and turns warm when it needs you, and a foot (`.tile-foot`, `.tile-state`)
 | Spacing | 4, 6, 8, 10, 12, 14, 16 px; the page has 24 px sides, 12 px under 700 px | gaps inside and between modules |
 | Motion | a key press (2 px down, no transition); `ins-led` breathing 1.5 s; `ins-step` and `ins-blink` | nothing moves under `prefers-reduced-motion: reduce` |
 
-The phone layout starts under 700 px: the wall folds into one module, the room into three columns, and a bar of seven keys sits at
-the foot of the screen.
+Under 700 px the wall folds into one module, the room into three columns, and a seven-key bar sits at the foot.
 
 ## This site
 
-The docs site is built on the same two files. `.vitepress/theme/custom.css` points every VitePress colour variable (`--vp-c-*`)
-at a token and declares no colour of its own; the livery key in the top bar (`LiverySwitch.vue`) puts one of the four on
-`<html>`, keeps it in the browser, and follows the system's light or dark until you pick one. The top bar is a row of keys, each
-sidebar group a lettered module, a code block an LCD in a console's frame, and the containers are the status lights:
+The docs use the same two files. `.vitepress/theme/custom.css` maps every `--vp-c-*` variable to a token; `LiverySwitch.vue` in
+the top bar sets a livery on `<html>`, remembers it, and follows system light or dark until you pick one. Containers are the
+status lights:
 
 ::: info
 A plain module with the indigo light: something to know.
@@ -277,26 +266,24 @@ GONOGO_REDLINE=off gonogo --port 7890
 <figure class="ds-frame" data-livery="instrument"><img src="/mark.svg" alt="gonogo mark" width="64" /><figcaption class="label">mark.svg</figcaption></figure>
 </div>
 
-One key twice: GO pressed down (dark face, sage light) and NO-GO standing up (light face, raspberry light), then the word in dots,
-the voice of the LCD. The files are in `docs/brand/`, every shape a circle, rect or path, with no font. On a dark livery the app
-turns the light lockup (`filter: invert(1) hue-rotate(180deg)`), so the hues stay.
+GO pressed (dark face, sage light), NO-GO up (light face, raspberry light), then the word in dots. Files in `docs/brand/`, shapes
+only, no font. On a dark livery the app inverts the light lockup (`filter: invert(1) hue-rotate(180deg)`), keeping the hues.
 
 ## Rules
 
 **Do**
 
-- Take every colour from a token: `var(--panel)`, `var(--go)`. A new view declares layout only.
-- Keep colour small: a light, a chip, or the tint of the one module that needs the Director.
-- Put numbers that count on an `.lcd` in `.lcd-num`; put names of things in Geist Mono capitals (`.label`, `.legend`).
-- Make every key at least 44 px tall, and say a state in words too (a chip, a state line), never only in colour.
-- Check a new pair of text and surface against 4.5:1 in all four liveries, and add it to `CONTRAST_PAIRS` in `livery.ts`.
+- Take every colour from a token (`var(--panel)`); a new view declares layout only.
+- Keep colour small: a light, a chip, or the tint of the one module that needs you.
+- Counting numbers go in `.lcd-num` on an `.lcd`; names in Geist Mono capitals (`.label`, `.legend`).
+- Keys at least 44 px tall; every state also in words, never colour alone.
+- Check a new text/surface pair at 4.5:1 in all four liveries and add it to `CONTRAST_PAIRS` in `livery.ts`.
 
 **Don't**
 
-- Don't write a hex value outside `tokens.css` (a test fails if a stylesheet declares a colour token; a shadow's black is the
-  one exception).
-- Don't flood a page or a module with a signal colour, and don't use a signal colour for decoration: indigo always means working.
-- Don't add a drop shadow, a gradient or a second radius scale; depth is the edge, the bottom edge and the sunk LCD.
-- Don't use Doto for words or a sentence; it is for numbers on a screen (and the logo).
-- Don't animate anything that is not a state, and nothing at all under reduced motion.
-- Don't make `--lcd` light in a livery: the terminal draws for a dark screen.
+- No hex values outside `tokens.css` (a test fails if a stylesheet declares a colour token; a shadow's black is the exception).
+- No signal-colour floods or decoration: indigo always means working.
+- No drop shadows, gradients or second radius scale.
+- No Doto for words.
+- Animate only states, and nothing under reduced motion.
+- Never a light `--lcd`.

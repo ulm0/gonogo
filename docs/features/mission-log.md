@@ -2,30 +2,39 @@
 
 <MissionLogMock class="doc-mock" />
 
-MISSION LOG (top bar, or LOG in the phone bar) is one memory that every agent shares, and that you can read and write. Each
-agent keeps its own `memory.md` as before. Design and limits: [`docs/mission-log-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/mission-log-spec.md).
+MISSION LOG (top bar, or LOG on a phone) is one memory shared by all agents and you. Each agent still keeps its own `memory.md`. Design and limits: [`docs/mission-log-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/mission-log-spec.md).
 
-- **An entry** has a title (at most 200 characters, one line), a body (at most 20000 characters of text), up to 8 tags
-  (lowercase words of at most 30 characters), who wrote it (you, or an agent) and the times it was made and last changed. Ids
-  are `l1`, `l2`, ... and are not given twice. At most 2000 entries.
-- **Search** ranks the entries by BM25 over the title, the tags and the body; a word of the title or a tag counts three times a
-  word of the body. A word is a run of letters or digits of two characters or more; there is no stemming (`builds` does not find
-  `build`) and no phrase search. Each result shows a piece of the body around the best match. An empty search lists the newest.
-- **The page** has a search box with the count under it, the results (at most 20) and the open entry beside them (below them on a
-  phone, in place of the list). The text of an entry is shown as it was typed, never as HTML or markdown. NEW ENTRY, EDIT and
-  DELETE (which asks first) are yours. An entry an agent writes while the page is up shows in the list at once.
-- **The agents' tools.** `log_search` takes `query` and `limit` (at most 20) and answers the best entries, each with its id,
-  title, author, tags and snippet. `log_read` takes `id` and answers the whole entry. `log_write` takes `title`, `body` and
-  `tags` to make an entry, or an `id` of an entry the caller wrote to change the fields given. The server stamps the author. An
-  agent cannot change an entry another agent wrote, and cannot delete; you can do both. The role text each Claude agent gets
-  says one line about them (search before work, write lasting findings), and they are in its `--allowedTools`. An agent reads
-  what other agents wrote: treat an entry like a message, as text a model may follow, and keep secrets out of it.
-- **The files.** One `~/.gonogo/mission-log/<id>.md` for each entry: a front matter with `id`, `title`, `tags`, `author`,
-  `createdAt` and `updatedAt` (each value is JSON on one line), `---`, and the body. You can read them, and copy them. The
-  index is built when gonogo starts: an entry you edit or add by hand is seen after a restart, and an edit made in the page
-  before that writes the whole file again. A file that is not an entry is skipped with a warning and left alone.
-- **API.** `GET /api/log?q=cache` answers `{ "total": 40, "hits": [{ "id", "title", "author", "tags", "updatedAt", "snippet" }] }`,
-  best first, or the newest 20 when `q` is empty. `POST /api/log` with `{"title": "Cache key", "body": "...", "tags": ["build"]}`
-  (201), `GET /api/log/:id`, `PUT /api/log/:id` with the fields to change, and `DELETE /api/log/:id` (204). The WebSocket
-  has a `log` frame, `{ "t": "log", "changed": [{ "id", "title" }], "removed": [ids] }`, with no text in it. There is no option
-  for it.
+## Entries
+
+- Title (at most 200 characters, one line), body (at most 20000 characters), up to 8 tags (lowercase words, at most 30 characters), author (you or an agent), created and changed times.
+- Ids `l1`, `l2`, ..., never reused. At most 2000 entries.
+
+## Search
+
+BM25 over title, tags and body; title and tag words count three times a body word. A word is two or more letters or digits. No stemming (`builds` does not find `build`), no phrase search. Results show a snippet around the best match. An empty search lists the newest.
+
+## The page
+
+Search box with count, up to 20 results, open entry beside (below on a phone). Text shows as typed, never as HTML or markdown. NEW ENTRY, EDIT, DELETE (asks first). Agent writes appear live.
+
+## Agent tools
+
+In each Claude agent's `--allowedTools`, with one line in its role text (search before work, write lasting findings).
+
+- `log_search`: `query`, `limit` (at most 20). Returns id, title, author, tags, snippet.
+- `log_read`: `id`. Returns the whole entry.
+- `log_write`: `title`, `body`, `tags` to create; or `id` of the caller's own entry to change the given fields.
+
+The server stamps the author. Agents cannot edit others' entries or delete; you can. Entries are read by agents like messages: keep secrets out.
+
+## Files
+
+One `~/.gonogo/mission-log/<id>.md` per entry: front matter (`id`, `title`, `tags`, `author`, `createdAt`, `updatedAt`, each value JSON on one line), `---`, body. The index is built at start: hand edits show after a restart, and a page edit before then overwrites the file. Non-entry files are skipped with a warning and left alone.
+
+## API
+
+- `GET /api/log?q=cache` answers `{ "total": 40, "hits": [{ "id", "title", "author", "tags", "updatedAt", "snippet" }] }`, best first, or the newest 20 when `q` is empty.
+- `POST /api/log` with `{"title": "Cache key", "body": "...", "tags": ["build"]}` (201).
+- `GET /api/log/:id`, `PUT /api/log/:id` with the fields to change, `DELETE /api/log/:id` (204).
+
+WebSocket frame `log`: `{ "t": "log", "changed": [{ "id", "title" }], "removed": [ids] }`, no text. No option.
