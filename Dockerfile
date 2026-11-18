@@ -164,6 +164,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:7777/').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
 
 # -s: tini acts as a subreaper, so reaping also works under Docker's own --init, where tini is not PID 1.
-ENTRYPOINT ["tini", "-s", "--", "gonogo"]
+# mkdir -p: a /state volume made by an older image has no /state/config/git yet, and a named volume is seeded only once.
+ENTRYPOINT ["tini", "-s", "--", "sh", "-c", "mkdir -p /state/config/git; exec gonogo \"$@\"", "gonogo"]
 # Inside the container the server must listen on all interfaces; the home comes from GONOGO_HOME.
 CMD ["--host", "0.0.0.0", "--port", "7777"]
