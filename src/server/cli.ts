@@ -165,7 +165,6 @@ Options:
   --pty-host            keep the agents in a separate process so that gonogo reload does not stop them (env GONOGO_PTY_HOST=1)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list)
-  --exit-with-stdin     stop gracefully when stdin ends (for a room started by gonogo rooms)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
   -v, --version         show the version
@@ -1258,6 +1257,8 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
         exit(0);
       });
   });
+  // announced when main answers (or after 30 s): scripts that read this line and call /api at once must find the room there
+  await running.whenReady(30_000);
   process.stdout.write(`gonogo ready: ${running.url}\n`);
   log.info(`docs: ${DOCS_URL}`);
 }

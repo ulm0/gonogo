@@ -158,6 +158,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       // /r and /r/ name no room
       return (fail(404, 'no such room'), null);
     }
+    // nothing but slashes names nothing: a plain 404, as a room gives (an empty segment before a name is the 400 below)
+    if (prefixed === null && /^\/{2,}$/.test(rest)) return (fail(404, 'not found'), null);
     // one decode, then the same text goes to both checks
     if (suspicious(rest)) return (fail(400, 'bad path'), null);
     if (prefixed === null && reservedPath(rest)) return (fail(404, 'not found'), null);

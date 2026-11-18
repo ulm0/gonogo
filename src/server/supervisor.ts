@@ -82,6 +82,8 @@ export interface Supervisor {
   directorToken: string;
   url: string;
   rooms(): RoomView[];
+  /** Resolves once room main has been ready, or after `ms` (a main that does not start must not keep the front port from being announced). */
+  whenReady(ms: number): Promise<void>;
   /** Reload (SIGUSR2 to every room, which hands its agents to its pty host and exits 75); resolves when they are gone. The caller then stops and re-executes. */
   reload(): Promise<void>;
   /** Graceful: every room gets SIGTERM and its own shutdown; resolves when they are gone (or after 12 s, then SIGKILL). */
@@ -137,6 +139,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   }
   let reloading = false;
   let mainReadyOnce = false;
+  let markMainReady: () => void = () => undefined;
+  const mainReady = new Promise<void>((resolve) => (markMainReady = resolve));
   // `gonogo token rotate` writes a new `token` file: it is taken up the next time anything asks, with no restart
   const tokenPath = join(options.home, DIRECTOR_TOKEN_FILE);
   let tokenStamp = '';
@@ -202,7 +206,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
           child.token = ready[2] ?? null;
           child.state = 'running';
           child.lastError = null;
-          if (child.entry.id === MAIN_ROOM) mainReadyOnce = true;
+          if (child.entry.id === MAIN_ROOM) {
+            mainReadyOnce = true;
+            markMainReady();
+          }
           log.info(`room ${child.entry.id} is up on 127.0.0.1:${child.port}`);
         } else if (line.trim() !== '') {
           // the ready line holds the room's token: if a later version words it so that READY misses it, the token is still not logged
@@ -495,6 +502,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     },
     url: `http://${shownHost}:${port}/#token=${directorToken}`,
     rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.lastError, ...NO_COUNTS })),
+    whenReady: (ms) => Promise.race([mainReady, new Promise<void>((resolve) => setTimeout(resolve, ms).unref())]),
     async reload() {
       if (reloading || stopping) return;
       reloading = true;
