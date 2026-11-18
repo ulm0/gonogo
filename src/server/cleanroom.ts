@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { lstat, mkdir, realpath, stat } from 'node:fs/promises';
+import { hostname } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { CLEAN_ROOM_DIR, cleanRoomBranch } from '../shared/protocol.js';
 import type { AgentRecord, CleanRoom, Provider } from '../shared/protocol.js';
@@ -19,6 +20,7 @@ import {
   CLEAN_ROOM_IMAGE_PATTERN,
   CLEAN_ROOM_NETWORK_ENV,
   CLEAN_ROOM_NETWORK_PATTERN,
+  CLEAN_ROOM_NETWORK_SELF,
   DIR_MODE,
   DOCKER_BIN,
   GIT_BIN,
@@ -54,12 +56,14 @@ export function cleanRoomImage(cleanRoom: CleanRoom, env: Env): string {
 /**
  * GONOGO_CLEANROOM_NETWORK, or null when unset. Only `container:<name>`: the container shares gonogo's network and its
  * hosts file, where host.docker.internal must name 127.0.0.1. Another network would need a private address, and Claude
- * Code blocks HTTP hooks to those.
+ * Code blocks HTTP hooks to those. `container:self` is gonogo's own container by its host name, which Docker sets to the
+ * container's short id unless `hostname` is set, so compose needs no fixed container name.
  */
-export function cleanRoomNetwork(env: Env): string | null {
-  const value = env[CLEAN_ROOM_NETWORK_ENV]?.trim();
-  if (!value) return null;
-  if (!NETWORK_RE.test(value)) throw new Error(`${CLEAN_ROOM_NETWORK_ENV} must be container:<name of gonogo's own container>, not ${JSON.stringify(value)}`);
+export function cleanRoomNetwork(env: Env, host: string = hostname()): string | null {
+  const raw = env[CLEAN_ROOM_NETWORK_ENV]?.trim();
+  if (!raw) return null;
+  const value = raw === CLEAN_ROOM_NETWORK_SELF ? `container:${host}` : raw;
+  if (!NETWORK_RE.test(value)) throw new Error(`${CLEAN_ROOM_NETWORK_ENV} must be ${CLEAN_ROOM_NETWORK_SELF} or container:<name of gonogo's own container>, not ${JSON.stringify(raw)}`);
   return value;
 }
 

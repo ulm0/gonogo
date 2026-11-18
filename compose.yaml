@@ -5,6 +5,7 @@
 #   docker compose up -d           # pulls the published image the first time
 #   docker compose logs gonogo     # the `gonogo ready:` line is the URL, token included
 # Update to the latest release: docker compose pull && docker compose up -d
+# A second instance: GONOGO_PORT=7778 GONOGO_DATA=/srv/gonogo-2 docker compose -p gonogo-2 up -d
 #
 # WARNING: the Docker socket gives this container root over the host, and so does every agent in it, also the ones
 # that do not run in a Clean Room. Hire only agents you would let run as root on this machine.
@@ -14,21 +15,20 @@
 services:
   gonogo:
     image: ghcr.io/ulm0/gonogo:latest
-    container_name: gonogo
     init: true
     # Back after a crash or a reboot of the host. A running Clean Room console loses gonogo's network when this
     # container restarts: restart that console.
     restart: always
     ports:
-      - 127.0.0.1:7777:7777
+      - 127.0.0.1:${GONOGO_PORT:-7777}:7777   # another instance: another GONOGO_PORT and GONOGO_DATA
     environment:
       # No value: forwarded from your shell, so the secret is not written here.
       CLAUDE_CODE_OAUTH_TOKEN:
       ANTHROPIC_API_KEY:
       GONOGO_HOME: ${GONOGO_DATA:-/srv/gonogo}/state
       CLAUDE_CONFIG_DIR: ${GONOGO_DATA:-/srv/gonogo}/claude
-      # A Clean Room joins this container's network and reaches gonogo on 127.0.0.1. Keep it equal to container_name.
-      GONOGO_CLEANROOM_NETWORK: container:gonogo
+      # A Clean Room joins this container's network (self: found by its host name, so no fixed container name).
+      GONOGO_CLEANROOM_NETWORK: container:self
     # The Clean Room shares this hosts file: its hook URLs name host.docker.internal, which the server limits to hooks and MCP.
     extra_hosts:
       - host.docker.internal:127.0.0.1

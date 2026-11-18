@@ -113,8 +113,13 @@ describe('cleanRoomNetwork', () => {
     expect(cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: ' ' })).toBeNull();
     expect(cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: ' container:gonogo ' })).toBe('container:gonogo');
     for (const bad of ['host', 'bridge', 'mynet', 'container:', 'container:-x', 'container:a b']) {
-      expect(() => cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: bad })).toThrow(/GONOGO_CLEANROOM_NETWORK must be container:<name/);
+      expect(() => cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: bad })).toThrow(/GONOGO_CLEANROOM_NETWORK must be container:self or container:<name/);
     }
+  });
+
+  it('reads container:self as gonogo own container, by its host name', () => {
+    expect(cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: 'container:self' }, '3f2a9c1b7e04')).toBe('container:3f2a9c1b7e04');
+    expect(() => cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: 'container:self' }, 'bad host')).toThrow(/"container:self"/);
   });
 });
 
@@ -276,7 +281,7 @@ describe('prepareCleanRoom', () => {
       /names the container gonogo, and "docker inspect" failed: fake-docker: unknown command inspect/,
     );
     expect(await exists(join(home, 'cleanroom'))).toBe(false);
-    expect(await checkCleanRoom(repo, { ...env, GONOGO_CLEANROOM_NETWORK: 'bridge' })).toMatch(/must be container:<name/);
+    expect(await checkCleanRoom(repo, { ...env, GONOGO_CLEANROOM_NETWORK: 'bridge' })).toMatch(/must be container:self or container:<name/);
   });
 
   it('checks Docker before it touches the repository', async () => {

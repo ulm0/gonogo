@@ -290,6 +290,8 @@ export const CLEAN_ROOM_DEFAULT_IMAGE = 'ghcr.io/ulm0/gonogo';
 /** Set when gonogo itself runs in a container: `container:<its name>`, the network a Clean Room joins instead of reaching the host. */
 export const CLEAN_ROOM_NETWORK_ENV = 'GONOGO_CLEANROOM_NETWORK';
 export const CLEAN_ROOM_NETWORK_PATTERN = '^container:[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$';
+/** GONOGO_CLEANROOM_NETWORK value meaning gonogo's own container, found by its host name. */
+export const CLEAN_ROOM_NETWORK_SELF = 'container:self';
 export const DOCKER_BIN = 'docker';
 export const GIT_BIN = 'git';
 /** An image name or id: a leading dash would be read as a docker option. */
