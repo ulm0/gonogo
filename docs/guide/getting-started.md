@@ -66,6 +66,6 @@ Open that URL. The token after `#` is never sent to a server; the page stores it
 - **Working directory:** an existing absolute path on the gonogo machine; `~` is not expanded.
 - **Permission mode:** `default` (asks before a tool runs), `acceptEdits` (edits files without asking), `auto` (Claude asks only about calls it judges unsafe; passed as `--permission-mode auto`, availability depends on your account and model) or `bypassPermissions` (runs every tool without asking; needs a ticked box).
 
-The room holds at most 24 agents; a 25th hire is refused. Edits apply at the next restart. The PAYLOAD fold adds MCP servers and skills ([Payload](../features/payload.md)); the Clean Room box runs the agent in a container ([Clean Room](../features/clean-room.md)).
+The room holds at most 24 agents; a 25th hire is refused. Edits apply at the next restart. The PAYLOAD fold adds MCP servers and skills ([Payload](../features/payload.md)); the Clean Room box runs the agent in a container ([Clean Room](../features/clean-room.md)). The MODEL field and the CLEARANCE fold (API keys for this console only) are in [Engine Bay](../features/engine-bay.md#model); `gonogo doctor` lists the agent CLIs on your `PATH`, and [Rollout](../features/rollout.md) tells you when a newer gonogo is out.
 
 </div>

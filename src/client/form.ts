@@ -1,5 +1,5 @@
-import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, CleanRoom, EditRequest, HireRequest, McpServer, Payload, PermissionMode, Provider } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider } from '../shared/protocol.js';
 import { positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 
@@ -8,8 +8,14 @@ import type { Position } from '../shared/positions.js';
 /** The server's COMMAND_MAX_CHARS (src/server/constants.ts, which the client build does not include). */
 export const COMMAND_MAX_CHARS = 1000;
 
-export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'payload.mcpServers' | 'payload.skills';
+export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'keys';
 export type Problems = Partial<Record<Field, string>>;
+
+/** One key typed in the form: a name and its value, which only ever travels from here to the server. */
+export interface KeyRow {
+  name: string;
+  value: string;
+}
 
 export interface Values {
   provider: Provider;
@@ -27,9 +33,14 @@ export interface Values {
   skills: string;
   /** Clean Room: run the agent in a container on its own worktree. Claude Code only. */
   cleanRoom: boolean;
+  /** Engine Bay: the model for `--model`; '' is the CLI's default. */
+  model: string;
+  /** Clearance: keys typed now (a name that is already set replaces its value), and the names of set keys to remove. */
+  keys: KeyRow[];
+  keysRemoved: string[];
 }
 
-export const FIELDS: readonly string[] = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'cleanRoom', 'payload.mcpServers', 'payload.skills'];
+export const FIELDS: readonly string[] = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'cleanRoom', 'payload.mcpServers', 'payload.skills', 'model', 'keys'];
 
 const NAME_PATTERN = new RegExp(AGENT_NAME_PATTERN);
 
@@ -84,12 +95,29 @@ export function choosePosition(
 
 /** The custom command tile: no position, no permissions, and a fixed role (the form shows none for it). */
 export function chooseCustom(values: Values, agents: Readonly<Record<string, AgentView>>): Values {
-  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, name: untouched(values, agents).name ? '' : values.name };
+  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, model: '', name: untouched(values, agents).name ? '' : values.name };
 }
 
-/** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. */
+/** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
 export function chooseEngine(values: Values, provider: Provider): Values {
-  return { ...values, provider, mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom };
+  return { ...values, provider, model: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom };
+}
+
+/** What the form says under the engine select about the program: found (and where, which version) or not, with the vendor's install command. The command is shown, never run. */
+export interface EngineNote {
+  found: boolean;
+  text: string;
+  install: string | null;
+  docs: string;
+}
+
+/** `installed` is what the server saw on its PATH at start; `check` (Pad Check, GET /api/engines) adds the path and the version when it has come. */
+export function engineNote(provider: Provider, installed: readonly Provider[], check: EngineCheck | undefined): EngineNote {
+  const { label, bin, install, docs } = providerInfo(provider);
+  const found = installed.includes(provider) || (check?.path ?? null) !== null;
+  const where = check?.path != null ? ` at ${check.path}` : '';
+  const version = check?.version != null ? `, ${check.version}` : '';
+  return { found, text: found ? `${label} found${where}${version}.` : `${bin} is not on the PATH of the machine gonogo runs on.`, install: found ? null : install, docs };
 }
 
 export interface EngineOption {
@@ -135,6 +163,9 @@ export function initialValues(
     servers: current?.payload?.mcpServers === undefined ? '' : JSON.stringify(current.payload.mcpServers, null, 2),
     skills: (current?.payload?.skills ?? []).join('\n'),
     cleanRoom: Boolean(current?.cleanRoom),
+    model: current?.model ?? '',
+    keys: [],
+    keysRemoved: [],
     name: current?.name ?? '',
     role: current?.role ?? '',
     dir: current?.dir ?? cwd,
@@ -175,6 +206,8 @@ const FIX_WORDS: ReadonlyArray<readonly [Field, string]> = [
   ['mode', 'PERMISSIONS'],
   ['payload.mcpServers', 'PAYLOAD'],
   ['payload.skills', 'PAYLOAD'],
+  ['model', 'MODEL'],
+  ['keys', 'KEYS'],
 ];
 
 /** What the big button says: the action, or, while the form is invalid, the first thing to fix. */
@@ -230,6 +263,43 @@ export function cleanRoomOf(values: Values, original: AgentView | null): CleanRo
   return original?.cleanRoom ?? {};
 }
 
+const MODEL_RE = new RegExp(MODEL_PATTERN);
+const KEY_NAME_RE = new RegExp(KEY_NAME_PATTERN);
+const KEY_VALUE_RE = new RegExp(KEY_VALUE_PATTERN);
+
+/** The rows that were filled in, trimmed (a row with neither a name nor a value is an empty line and counts for nothing). */
+const typedKeys = (values: Values): KeyRow[] =>
+  values.keys.map((row) => ({ name: row.name.trim(), value: row.value.trim() })).filter((row) => row.name !== '' || row.value !== '');
+
+/** The Engine Bay model: only for an engine that takes one, trimmed, '' for none. */
+export const modelOf = (values: Values): string => (providerInfo(values.provider).model === null ? '' : values.model.trim());
+
+/**
+ * What is wrong with the keys, or null. Names and values are looked at here and never quoted back: the text of a problem is
+ * about the row, so a secret typed in the wrong box does not come up in an error. `stored` is the names already set.
+ */
+export function keysProblem(values: Values, stored: readonly string[]): string | null {
+  const rows = typedKeys(values);
+  const names = new Set<string>();
+  for (const [i, row] of rows.entries()) {
+    const { name } = row;
+    if (!KEY_NAME_RE.test(name)) return `Key ${i + 1}: use a name of capital letters, digits and _, starting with a letter, such as OPENAI_API_KEY.`;
+    if (!KEY_VALUE_RE.test(row.value)) return `Key ${i + 1}: the value must be 1 to 4096 printable characters without a space.`;
+    if (names.has(name)) return `Key ${i + 1}: the name is used twice.`;
+    names.add(name);
+  }
+  const kept = stored.filter((name) => !values.keysRemoved.includes(name) && !names.has(name));
+  return kept.length + names.size > KEYS_MAX ? `At most ${KEYS_MAX} keys.` : null;
+}
+
+/** The keys of a request: name to value for a typed row, name to null for a set key marked for removal; undefined when nothing is asked. */
+function keysOf(values: Values, stored: readonly string[]): Record<string, string | null> | undefined {
+  const patch: Record<string, string | null> = {};
+  for (const name of values.keysRemoved) if (stored.includes(name)) patch[name] = null;
+  for (const row of typedKeys(values)) patch[row.name] = row.value;
+  return Object.keys(patch).length === 0 ? undefined : patch;
+}
+
 /** The rules of contract 8.6. `original` is the agent being edited, `nameLocked` is true while it runs. */
 export function validate(
   values: Values,
@@ -264,17 +334,24 @@ export function validate(
   const kind = providerInfo(values.provider).payload;
   if (kind !== null && readServers(values.servers) === undefined) problems['payload.mcpServers'] = 'Not a JSON object of servers.';
   if (kind === 'all' && readSkills(values.skills).some((path) => !path.startsWith('/'))) problems['payload.skills'] = 'Use absolute paths: each starts with /.';
+  const model = modelOf(values);
+  if (model !== '' && !MODEL_RE.test(model)) problems.model = 'Use letters, digits and . _ : / @ + -, starting with a letter or digit (at most 100 characters).';
+  const keys = keysProblem(values, Object.keys(original?.keys ?? {}));
+  if (keys !== null) problems.keys = keys;
   return problems;
 }
 
 /** The body of POST /api/agents. A custom agent has no permission mode (the server stores `default`) and no position. */
 export function hireRequest(values: Values): HireRequest {
   const base = { name: values.name, role: values.role.trim(), dir: values.dir.trim() };
+  const keys = keysOf(values, []) as Record<string, string> | undefined;
   if (values.provider === 'custom') {
-    return { ...base, mode: 'default', provider: 'custom', command: values.command.trim() };
+    return { ...base, mode: 'default', provider: 'custom', command: values.command.trim(), ...(keys && { keys }) };
   }
   const modes = providerInfo(values.provider).modes;
   const request: HireRequest = { ...base, mode: modes ? values.mode : 'default', provider: values.provider };
+  if (modelOf(values) !== '') request.model = modelOf(values);
+  if (keys) request.keys = keys;
   if (modes && values.mode === 'bypassPermissions' && values.confirm) request.confirmBypass = true;
   if (values.position !== '') request.position = values.position;
   const payload = payloadOf(values);
@@ -305,7 +382,11 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     if (JSON.stringify(payload) !== JSON.stringify(original.payload ?? null)) changes.payload = payload;
     const cleanRoom = cleanRoomOf(values, original);
     if (JSON.stringify(cleanRoom) !== JSON.stringify(original.cleanRoom ?? null)) changes.cleanRoom = cleanRoom;
+    const model = modelOf(values);
+    if (model !== (original.model ?? '')) changes.model = model === '' ? null : model;
   }
+  const keys = keysOf(values, Object.keys(original.keys ?? {}));
+  if (keys) changes.keys = keys;
   if (Object.keys(changes).length === 0) return null;
   if (needsBypassConfirm(values, original) && values.confirm && original.provider !== 'custom') changes.confirmBypass = true;
   return changes;

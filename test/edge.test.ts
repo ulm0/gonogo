@@ -201,6 +201,8 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     command: null,
     payload: null,
     cleanRoom: null,
+    model: null,
+    keys: {},
     doing: null,
     history: [{ state: 'idle', at: 1 }],
     ...over,
@@ -887,6 +889,49 @@ describe('home', () => {
     await home.saveRoster(file);
     expect(home.loadRoster()).toEqual(file);
     expect(home.loadRoster().agents[2]).not.toHaveProperty('cleanRoom');
+  });
+
+  it('round-trips a model and the names of keys, and the file holds no value', async () => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    const id = '123e4567-e89b-42d3-a456-426614174000';
+    const base = { dir: '/w', mode: 'default' as const, sessionId: id, createdAt: 1, boss: false };
+    const file: RosterFile = {
+      version: 1,
+      agents: [
+        { ...base, name: 'ana', role: 'dev', desk: 1, model: 'sonnet', keys: { OPENAI_API_KEY: 5, GEMINI_API_KEY: 6 } },
+        { ...base, name: 'gem', role: 'dev', desk: 2, provider: 'gemini', model: 'flash' },
+        { ...base, name: 'old', role: 'dev', desk: 3 },
+      ],
+    };
+    await home.saveRoster(file);
+    expect(home.loadRoster()).toEqual(file);
+    expect(home.loadRoster().agents[2]).not.toHaveProperty('model');
+    expect(home.loadRoster().agents[2]).not.toHaveProperty('keys');
+  });
+
+  it.each([
+    ['a model that is not text', { model: 5 }],
+    ['a model that looks like a flag', { model: '--yolo' }],
+    ['a model on an opencode agent', { provider: 'opencode', model: 'x' }],
+    ['a model on a custom agent', { provider: 'custom', command: 'ls', model: 'x' }],
+    ['keys that are a list', { keys: ['A_KEY'] }],
+    ['a key with a lower case name', { keys: { openai: 5 } }],
+    ['a key of a reserved name', { keys: { PATH: 5 } }],
+    ['a key whose time is not a number', { keys: { A_KEY: 'now' } }],
+    ['17 keys', { keys: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`K${i}`, 1])) }],
+  ])('refuses a roster with %s, and the message holds no key name or value', (_what, over) => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [agentRecord('ana', over)] }));
+    let message = '';
+    try {
+      home.loadRoster();
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toMatch(/fix or delete this file/);
+    expect(message).not.toMatch(/PATH|openai|OPENAI|A_KEY/);
   });
 
   it('serialises saves: the last call wins even when they overlap, and the object is copied at call time', async () => {
@@ -2028,6 +2073,25 @@ describe('livery', () => {
     expect((await api(none.port, 'POST', '/api/liveries/design', { brief: 'x' })).status).toBe(404);
   });
 
+  it('Pad Check: GET /api/engines answers the engines, wants the browser token, allows only GET, and is 404 without it', async () => {
+    const checks = [{ provider: 'claude', label: 'Claude Code', bin: 'claude', path: '/bin/claude', version: '2.1.325', install: 'curl x | bash', docs: 'https://a.example' }];
+    const { port } = await startWeb({ engines: async () => checks as never });
+    const res = await api(port, 'GET', '/api/engines');
+    expect([res.status, res.json()]).toEqual([200, checks]);
+    expect((await api(port, 'GET', '/api/engines', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await send(port, { path: '/api/engines' })).status).toBe(401);
+    expect((await api(port, 'POST', '/api/engines', {})).status).toBe(405);
+    expect((await api(port, 'GET', '/api/engines/claude')).status).toBe(404);
+    expect((await api((await startWeb()).port, 'GET', '/api/engines')).status).toBe(404);
+  });
+
+  it('Rollout: the state carries the view when there is one, and nothing when there is not', async () => {
+    const view = { enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: 5, newer: true, command: 'pnpm add -g @ulm0/gonogo@latest' };
+    const { port } = await startWeb({ rollout: { view: () => view } });
+    expect(((await api(port, 'GET', '/api/state')).json() as { rollout: unknown }).rollout).toEqual(view);
+    expect('rollout' in ((await api((await startWeb()).port, 'GET', '/api/state')).json() as object)).toBe(false);
+  });
+
   it('gives the agents livery_submit, and the author is the agent of the token', async () => {
     const { calls, liveries } = fakeLiveries();
     const { port } = await startWeb({ liveries });
@@ -2814,6 +2878,49 @@ describe('web: REST', () => {
       const res = await api(port, 'PATCH', '/api/agents/ana', { cleanRoom: {} });
       expect(res.status).toBe(400);
       expect(res.json()).toMatchObject({ code: 'bad_request', field: 'cleanRoom', error: expect.stringContaining('docker version') });
+    });
+
+    it('passes a model and keys to the hub as they are: a string or null for the model, an object of keys', async () => {
+      const { port, hubCalls } = await startWeb();
+      await api(port, 'PATCH', '/api/agents/ana', { model: 'sonnet', keys: { OPENAI_API_KEY: 'sk-test-1', OLD_KEY: null } });
+      await api(port, 'PATCH', '/api/agents/ana', { model: null });
+      await api(port, 'POST', '/api/agents', { name: 'zed', role: 'r', dir: '/w', mode: 'default', model: 'flash', keys: { GEMINI_API_KEY: 'g-1' } });
+      expect(hubCalls.filter((c) => c.fn === 'edit').map((c) => c.args)).toStrictEqual([['ana', { model: 'sonnet', keys: { OPENAI_API_KEY: 'sk-test-1', OLD_KEY: null } }], ['ana', { model: null }]]);
+      expect(hubCalls.filter((c) => c.fn === 'hire').map((c) => c.args[0])).toStrictEqual([{ name: 'zed', role: 'r', dir: '/w', mode: 'default', model: 'flash', keys: { GEMINI_API_KEY: 'g-1' } }]);
+    });
+
+    it.each([
+      ['a model that is a number', { model: 5 }, 'model'],
+      ['a model that is a list', { model: [] }, 'model'],
+      ['keys that are a list', { keys: [] }, 'keys'],
+      ['keys that are text', { keys: 'OPENAI_API_KEY=x' }, 'keys'],
+      ['keys that are null on a hire', { keys: null }, 'keys'],
+    ])('answers 400 with the field %s names for %s, on hire; the edit says the same unless it takes null', async (_what, body, field) => {
+      const { port, hubCalls } = await startWeb();
+      const hire = await api(port, 'POST', '/api/agents', { name: 'zed', role: 'r', dir: '/w', mode: 'default', ...body });
+      expect(hire.status).toBe(400);
+      expect(hire.json()).toMatchObject({ code: 'bad_request', field });
+      if (field === 'keys' || !('model' in body && body.model === null)) {
+        const edit = await api(port, 'PATCH', '/api/agents/ana', body);
+        expect(edit.status).toBe(400);
+        expect(edit.json()).toMatchObject({ code: 'bad_request', field });
+      }
+      expect(hubCalls.filter((c) => c.fn === 'edit' || c.fn === 'hire')).toEqual([]);
+    });
+
+    it('answers 400 with the field keys for keys the hub refuses, and the answer never holds the value', async () => {
+      const secret = 'sk-test-the-secret-value';
+      const { port } = await startWeb({}, { edit: async () => { throw new FakeHubError('bad_request', 'a key name uses capital letters, digits and _, starting with a letter (at most 64 characters)', 'keys'); } });
+      const res = await api(port, 'PATCH', '/api/agents/ana', { keys: { [secret]: 'x', OTHER: secret } });
+      expect(res.status).toBe(400);
+      expect(res.json()).toMatchObject({ code: 'bad_request', field: 'keys' });
+      expect(res.body).not.toContain(secret);
+    });
+
+    it('keys and the model need the browser token like every other route', async () => {
+      const { port } = await startWeb();
+      expect((await api(port, 'PATCH', '/api/agents/ana', { keys: { A_KEY: 'x' } }, ANA_TOKEN)).status).toBe(401);
+      expect((await send(port, { method: 'PATCH', path: '/api/agents/ana', headers: JSON_HEADERS, body: JSON.stringify({ model: 'x' }) })).status).toBe(401);
     });
 
     it('passes position (a string or null to clear it) and command to the hub', async () => {

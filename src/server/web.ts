@@ -16,6 +16,7 @@ import type {
   ApiErrorCode,
   Attachment,
   EditRequest,
+  EngineCheck,
   ErrorFrame,
   GovernorRequest,
   HireRequest,
@@ -75,6 +76,7 @@ import type { Propellant } from './propellant.js';
 import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { Relief } from './relief.js';
+import type { Rollout } from './rollout.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
 import type { Uplinks } from './uplinks.js';
@@ -119,6 +121,10 @@ export interface WebOptions {
   docking?: Pick<Docking, 'view' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
   /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
+  /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
+  rollout?: Pick<Rollout, 'view'>;
+  /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
+  engines?: () => Promise<EngineCheck[]>;
   log: Logger;
 }
 
@@ -315,7 +321,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, model, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -345,6 +351,15 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
   if (cleanRoom !== undefined) {
     if (typeof cleanRoom !== 'object' || cleanRoom === null || Array.isArray(cleanRoom)) return fieldError('cleanRoom', 'an object');
     value.cleanRoom = cleanRoom;
+  }
+  // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
+  if (model !== undefined) {
+    if (typeof model !== 'string') return fieldError('model', 'a string');
+    value.model = model;
+  }
+  if (keys !== undefined) {
+    if (!isRecord(keys)) return fieldError('keys', 'an object');
+    value.keys = keys as Record<string, string>;
   }
   return { ok: true, value };
 }
@@ -406,6 +421,14 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.cleanRoom !== undefined) {
     if (o.cleanRoom !== null && (typeof o.cleanRoom !== 'object' || Array.isArray(o.cleanRoom))) return fieldError('cleanRoom', 'an object or null');
     value.cleanRoom = o.cleanRoom;
+  }
+  if (o.model !== undefined) {
+    if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');
+    value.model = o.model;
+  }
+  if (o.keys !== undefined) {
+    if (!isRecord(o.keys)) return fieldError('keys', 'an object');
+    value.keys = o.keys as Record<string, string | null>;
   }
   return { ok: true, value };
 }
@@ -539,6 +562,7 @@ export function createWebServer(options: WebOptions): WebServer {
     livery: options.liveries?.view(),
     docking: options.docking?.view(),
     relief: options.relief?.view(),
+    rollout: options.rollout?.view(),
   });
 
   const sendHubError = (res: ServerResponse, e: unknown): void => {
@@ -587,6 +611,11 @@ export function createWebServer(options: WebOptions): WebServer {
   const matchApi = (s: string[]): ApiRoute | null => {
     if (s.length === 2 && s[1] === 'state') {
       return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, snapshot()) };
+    }
+    if (s.length === 2 && s[1] === 'engines') {
+      const engines = options.engines;
+      if (!engines) return null;
+      return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, await engines()) };
     }
     if (s.length === 2 && s[1] === 'agents') {
       return {

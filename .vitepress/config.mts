@@ -85,6 +85,7 @@ export default defineConfig({
           { text: 'Patch Panel', link: '/features/patch-panel' },
           { text: 'Flight Rules', link: '/features/flight-rules' },
           { text: 'Relief', link: '/features/relief' },
+          { text: 'Rollout', link: '/features/rollout' },
         ],
       },
       {

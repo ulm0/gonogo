@@ -288,6 +288,112 @@
   height: 90px;
 }
 
+/* ---- engine note (Pad Check) and keys (Clearance) ---- */
+
+.staff-engine-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -6px;
+}
+
+.staff-engine-state,
+.staff-engine-note .hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.staff-engine-note .hint {
+  display: block;
+}
+
+.staff-engine-state .led {
+  flex: none;
+  margin-top: 4px;
+}
+
+.staff-engine-note a {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* The command is a field you can select; the 44 px of the key and of the field make the row a touch target. */
+.staff-install {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.staff-install .label {
+  flex: 1 1 100%;
+}
+
+.staff-install .input {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+/* A read-only field would be greyed; this one is the thing to copy. */
+.staff .staff-install .input:read-only {
+  background: var(--key);
+  color: var(--text);
+}
+
+.staff-install .btn,
+.staff-keys .btn,
+.staff-key-row .btn {
+  min-height: 44px;
+}
+
+.staff-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-keys li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.staff-keys code {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.staff-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+}
+
+.staff-key-row .field {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.staff-key-row .input {
+  min-height: 44px;
+}
+
 /* ---- clean room ---- */
 
 .staff-clean {

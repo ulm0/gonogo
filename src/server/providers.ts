@@ -4,11 +4,12 @@
  * needs in the agent's own folder; what the hub does with the CLI (hooks or output activity, mail or none) is
  * PROVIDER_INFO in protocol.ts. Nothing here touches the owner's project or the CLI's own home folder.
  */
+import { execFile } from 'node:child_process';
 import { accessSync, constants as fsConstants, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { MCP_SERVER_NAME, PROVIDER_INFO, PROVIDERS } from '../shared/protocol.js';
-import type { HookEvent, McpServer, PermissionMode, Provider } from '../shared/protocol.js';
-import { HOOK_PATH_PREFIX, HOOK_TIMEOUT_S, MCP_PATH } from './constants.js';
+import type { EngineCheck, HookEvent, McpServer, PermissionMode, Provider } from '../shared/protocol.js';
+import { ENGINE_VERSION_CHARS, ENGINE_VERSION_MS, HOOK_PATH_PREFIX, HOOK_TIMEOUT_S, MCP_PATH } from './constants.js';
 
 export type OtherProvider = Exclude<Provider, 'claude' | 'custom'>;
 
@@ -25,6 +26,8 @@ export interface StartContext {
   tokenFile: string;
   token: string;
   seed: boolean;
+  /** Engine Bay: the model of the agent, passed as `--model`; none leaves the CLI's default. */
+  model?: string;
   /** The agent's Payload servers, for the CLIs that read Claude's mcp.json shape (Gemini, Kimi). */
   servers?: Record<string, McpServer>;
 }
@@ -100,11 +103,13 @@ function mcpJson(ctx: StartContext, extra: Record<string, unknown> = {}): string
  */
 export function buildProviderStart(provider: OtherProvider, ctx: StartContext): ProviderStart {
   const file = (name: string): string => join(ctx.agentDir, name);
+  // Every engine with a model setting takes `--model <name>` (PROVIDER_INFO.model); the name is one argument, never a shell word.
+  const model = ctx.model ? ['--model', ctx.model] : [];
   switch (provider) {
     case 'gemini':
       // GEMINI_CLI_SYSTEM_SETTINGS_PATH is read before the owner's ~/.gemini settings and wins over them; their login stays.
       return {
-        args: ['--approval-mode', GEMINI_MODES[ctx.mode], ...(ctx.seed ? ['--skip-trust'] : []), '--prompt-interactive', ctx.roleText],
+        args: ['--approval-mode', GEMINI_MODES[ctx.mode], ...(ctx.seed ? ['--skip-trust'] : []), ...model, '--prompt-interactive', ctx.roleText],
         env: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: file(GEMINI_SETTINGS_FILE) },
         files: { [GEMINI_SETTINGS_FILE]: JSON.stringify(buildGeminiSettings(ctx), null, 2) },
       };
@@ -117,6 +122,7 @@ export function buildProviderStart(provider: OtherProvider, ctx: StartContext): 
           '-c',
           `mcp_servers.${MCP_SERVER_NAME}.bearer_token_env_var="GONOGO_TOKEN"`,
           ...CODEX_MODES[ctx.mode],
+          ...model,
           ctx.roleText,
         ],
         env: {},
@@ -136,34 +142,96 @@ export function buildProviderStart(provider: OtherProvider, ctx: StartContext): 
         },
       };
     case 'kimi':
-      return { args: ['--mcp-config-file', file('kimi-mcp.json')], env: {}, files: { 'kimi-mcp.json': mcpJson(ctx) } };
+      return { args: ['--mcp-config-file', file('kimi-mcp.json'), ...model], env: {}, files: { 'kimi-mcp.json': mcpJson(ctx) } };
     case 'copilot':
       return { args: ['--additional-mcp-config', `@${file('copilot-mcp.json')}`], env: {}, files: { 'copilot-mcp.json': mcpJson(ctx, { tools: ['*'] }) } };
     case 'pi':
       // pi reads MCP servers only from its own files, so it gets no gonogo tools: the role alone, without the preamble about them.
-      return { args: ['--append-system-prompt', ctx.role], env: {}, files: {} };
+      return { args: ['--append-system-prompt', ctx.role, ...model], env: {}, files: {} };
+    case 'cursor':
+      return { args: model, env: {}, files: {} };
     case 'qwen':
     case 'grok':
     case 'crush':
-    case 'cursor':
       // No documented per-session MCP config and no checked way to pass a role: a terminal with a lamp, started by name.
       return { args: [], env: {}, files: {} };
   }
 }
 
-/** Whether `name` is an executable file in one of the PATH directories (moved here from cli.ts). */
-export function onPath(name: string, pathVar: string | undefined): boolean {
+/** The path of `name` when it is an executable file in one of the PATH directories, else null. */
+export function findOnPath(name: string, pathVar: string | undefined): string | null {
+  if (name === '') return null;
   for (const dir of (pathVar ?? '').split(delimiter)) {
     if (dir === '') continue;
     try {
       const file = join(dir, name);
       accessSync(file, fsConstants.X_OK);
-      if (statSync(file).isFile()) return true;
+      if (statSync(file).isFile()) return file;
     } catch {
       // not in this directory
     }
   }
-  return false;
+  return null;
+}
+
+/** Whether `name` is an executable file in one of the PATH directories (moved here from cli.ts). */
+export const onPath = (name: string, pathVar: string | undefined): boolean => findOnPath(name, pathVar) !== null;
+
+// A terminal sequence (colour, title) whole, then what is left of control, C1 and text-direction characters: the line goes to a terminal and a web page.
+const TERMINAL_SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)?)/g;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** Pad Check: the first line a program prints for `--version`, with terminal sequences and control characters taken out and cut short. */
+export const versionLine = (output: string): string | null => {
+  const line = output.split('\n').map((l) => l.replace(TERMINAL_SEQUENCE, '').replace(CONTROL, '').trim()).find((l) => l !== '');
+  return line === undefined ? null : line.slice(0, ENGINE_VERSION_CHARS);
+};
+
+/** Versions already read, by path and modification time: a program that was updated is asked again, one that failed is asked every time. */
+const versionCache = new Map<string, string>();
+
+/**
+ * `<file> --version`, no shell, a few seconds at most, and an environment of PATH, HOME and LANG only, so that no key or token of
+ * gonogo's environment reaches a program that is merely asked its version. null when it did not answer or printed nothing.
+ */
+async function versionOf(file: string, env: Record<string, string | undefined>): Promise<string | null> {
+  const key = `${file}\0${statSync(file).mtimeMs}`;
+  const known = versionCache.get(key);
+  if (known !== undefined) return known;
+  const output = await new Promise<string>((done) => {
+    execFile(file, ['--version'], { timeout: ENGINE_VERSION_MS, maxBuffer: 64 * 1024, env: { PATH: env.PATH, HOME: env.HOME, LANG: env.LANG, NO_COLOR: '1' } }, (error, stdout) => done(error === null ? stdout : ''));
+  });
+  const line = versionLine(output);
+  if (line !== null) versionCache.set(key, line);
+  return line;
+}
+
+/** Pad Check: every engine but the custom command, where it was found and what it calls itself. Runs nothing but `--version`; never installs. */
+export function checkEngines(env: Record<string, string | undefined>): Promise<EngineCheck[]> {
+  return Promise.all(
+    PROVIDERS.filter((provider) => provider !== 'custom').map(async (provider): Promise<EngineCheck> => {
+      const { label, bin, install, docs } = PROVIDER_INFO[provider];
+      const path = findOnPath(bin, env.PATH);
+      return { provider, label, bin, path, version: path === null ? null : await versionOf(path, env).catch(() => null), install, docs };
+    }),
+  );
+}
+
+/** What `gonogo doctor` prints: one line per engine, and under a missing one the vendor's install command to copy. */
+export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | null): string {
+  const lines = ['gonogo doctor: which agent CLIs are on the PATH', ''];
+  for (const check of checks) {
+    if (check.path !== null) {
+      lines.push(`ok  ${check.label} (${check.bin})  ${check.version ?? 'no version printed'}  ${check.path}`);
+      continue;
+    }
+    lines.push(`--  ${check.label} (${check.bin})  not found`);
+    lines.push(check.install === null ? `    no install command was checked; see ${check.docs}` : `    install: ${check.install}`);
+    if (check.install !== null) lines.push(`    docs: ${check.docs}`);
+  }
+  if (agentCmd !== null) lines.push('', `GONOGO_AGENT_CMD is set (${agentCmd}): it replaces claude.`);
+  lines.push('', 'gonogo never runs an install command: copy the one you want.');
+  return lines.join('\n') + '\n';
 }
 
 /** ServerInfo.installed: what the hire form lists first. GONOGO_AGENT_CMD stands in for claude. */

@@ -68,6 +68,7 @@ import {
   HISTORY_WINDOW_MS,
   HOLD_REASON,
   HOOK_EVENTS,
+  MODEL_PATTERN,
   PERMISSION_MODES,
   POLL_VOTES,
   PROVIDERS,
@@ -131,6 +132,7 @@ import {
   TITLE_WORKING_CONFIRM_MS,
 } from './constants.js';
 import { parseCleanRoom } from './cleanroom.js';
+import { checkKeys } from './clearance.js';
 import { parsePayload, payloadRefusal } from './payload.js';
 
 export type { InputEffect };
@@ -158,6 +160,9 @@ const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 const payloadKey = (record: AgentRecord): string | null => (record.payload === undefined ? null : JSON.stringify(record.payload));
 /** The Clean Room setting of a record as text, for comparing: null when the agent runs on the host. */
 const cleanRoomKey = (record: AgentRecord): string | null => (record.cleanRoom === undefined ? null : JSON.stringify(record.cleanRoom));
+/** The model and the keys (names and times) of a record as text, for comparing: a key set again has a new time, so a changed value shows as dirty too. */
+const engineKey = (record: AgentRecord): string => JSON.stringify([record.model ?? null, record.keys ?? null]);
+const MODEL_RE = new RegExp(MODEL_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REPLY_ID_RE = /^m\d+$/;
 const REPLY_ID_MAX_CHARS = 40;
@@ -377,7 +382,7 @@ interface Rt {
   /** When a Stop block was last answered: R1 waits for the title to catch up (contract 4.7). */
   lastBlockAt: number | null;
   /** role, dir, mode, command and payload (as JSON text) as of the last spawn, for the `dirty` flag. */
-  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null } | null;
+  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; engine: string } | null;
   /** Custom provider only: the output counter at the last sweep, when it last grew, and when the process was spawned. */
   custom: { bytes: number; activeAt: number | null; since: number };
   /** The flag the last start used, null until the launcher answered. */
@@ -622,7 +627,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           running.mode !== record.mode ||
           running.command !== (record.command ?? null) ||
           running.payload !== payloadKey(record) ||
-          running.cleanRoom !== cleanRoomKey(record)),
+          running.cleanRoom !== cleanRoomKey(record) ||
+          running.engine !== engineKey(record)),
       generation: rt.generation,
       exit: rt.exit ? { ...rt.exit } : null,
       position: record.position ?? null,
@@ -630,6 +636,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       command: record.command ?? null,
       payload: record.payload ?? null,
       cleanRoom: record.cleanRoom ?? null,
+      model: record.model ?? null,
+      keys: { ...record.keys },
       doing: rt.doing,
       history: trimHistory(rt.history, io.now()),
     };
@@ -1646,7 +1654,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.pointed.clear();
     rt.screenClearSince = null;
     rt.lastBlockAt = null;
-    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record) };
+    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), engine: engineKey(rt.record) };
     rt.flag = flag;
     // The browser reacts to a new generation by attaching, so the frame waits until the process exists in the terminal host.
     rt.frameHold = true;
@@ -1757,6 +1765,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       else settlePoll();
       publishPoll();
     }
+    try {
+      await io.keys?.remove(rt.record.name);
+    } catch (error) {
+      log.warn(`could not remove the keys of ${rt.record.name}`, error);
+    }
     // The process is gone (stopped above, or never ran): the terminal's mirror and scrollback can go too.
     try {
       io.forget?.(rt.record.name);
@@ -1851,6 +1864,33 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.payload = from.payload;
     if (from.cleanRoom === undefined) delete target.cleanRoom;
     else target.cleanRoom = from.cleanRoom;
+    if (from.model === undefined) delete target.model;
+    else target.model = from.model;
+    if (from.keys === undefined) delete target.keys;
+    else target.keys = from.keys;
+  }
+
+  /** The model for `--model`: empty text is none. Only an engine that takes one (PROVIDER_INFO.model). A bad value is 400, field model. */
+  function checkModel(provider: Provider, value: unknown): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== 'string') throw new HubError('bad_request', 'model must be text', 'model');
+    const model = value.trim();
+    if (model === '') return undefined;
+    if (providerInfo(provider).model === null) {
+      throw new HubError('bad_request', `${providerInfo(provider).label} takes no model setting`, 'model');
+    }
+    if (!MODEL_RE.test(model)) {
+      throw new HubError('bad_request', 'model must be 1 to 100 letters, digits or . _ : / @ + -, starting with a letter or digit', 'model');
+    }
+    return model;
+  }
+
+  /** The keys of a request: their values to the key store and their names with times for the record. A bad one is 400, field keys. */
+  function checkKeysOf(value: unknown, current: AgentRecord['keys'], hireRequest: boolean): { patch: Record<string, string | null>; names: Record<string, number> | undefined } {
+    const checked = checkKeys(value, current, io.now(), hireRequest);
+    if (!checked.ok) throw new HubError('bad_request', checked.error, 'keys');
+    if (io.keys === undefined && Object.keys(checked.patch).length > 0) throw new HubError('bad_request', 'this server cannot keep keys', 'keys');
+    return { patch: checked.patch, names: Object.keys(checked.names).length === 0 ? undefined : checked.names };
   }
 
   /** The shape of a payload and whether the engine takes it (no disk). A bad value is 400 with the field it names. */
@@ -1936,6 +1976,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     const command = custom ? checkCommand(req.command) : undefined;
     const payload = checkPayload(provider, req.payload);
+    const model = checkModel(provider, req.model);
+    const kept = req.keys === undefined ? undefined : checkKeysOf(req.keys, undefined, true);
     // A CLI without permission modes (a custom command among them): the mode and confirmBypass of the request are ignored.
     const mode = providerInfo(provider).modes ? checkMode(req.mode) : 'default';
     // The name is claimed while the checks and the save await, so two hires cannot take the same name or the same desk.
@@ -1965,8 +2007,17 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       setOptional(record, 'command', command);
       if (payload) record.payload = payload;
       if (cleanRoom) record.cleanRoom = cleanRoom;
+      if (model) record.model = model;
+      if (kept?.names) record.keys = kept.names;
       hiring.set(name, record);
-      await saveRecords(rosterRecords());
+      // The values first, from none (a removed agent of this name may have left some), then the roster; a roster that cannot be saved takes them back.
+      await io.keys?.apply(name, kept?.patch ?? {}, true);
+      try {
+        await saveRecords(rosterRecords());
+      } catch (error) {
+        await io.keys?.remove(name).catch(() => undefined);
+        throw error;
+      }
       hired = makeRt(record);
       agents.set(name, hired);
     } finally {
@@ -1984,13 +2035,14 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'model', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, model, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
     let newName: string | null = null;
+    let keyPatch: Record<string, string | null> | null = null;
     try {
       if (req.name !== undefined) {
         const name = checkName(req.name);
@@ -2025,6 +2077,17 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         if (req.cleanRoom === null) delete next.cleanRoom;
         else next.cleanRoom = await checkCleanRoom(current.provider ?? 'claude', req.cleanRoom, next.dir);
       }
+      if (req.model !== undefined) {
+        const model = checkModel(current.provider ?? 'claude', req.model);
+        if (model) next.model = model;
+        else delete next.model;
+      }
+      if (req.keys !== undefined) {
+        const kept = checkKeysOf(req.keys, current.keys, false);
+        keyPatch = kept.patch;
+        if (kept.names) next.keys = kept.names;
+        else delete next.keys;
+      }
       if (next.mode === 'bypassPermissions' && next.mode !== current.mode && req.confirmBypass !== true) {
         throw new HubError('bad_request', 'bypassPermissions needs confirmBypass: true', 'confirmBypass');
       }
@@ -2043,7 +2106,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         next.position !== current.position ||
         next.command !== current.command ||
         payloadKey(next) !== payloadKey(current) ||
-        cleanRoomKey(next) !== cleanRoomKey(current);
+        cleanRoomKey(next) !== cleanRoomKey(current) ||
+        engineKey(next) !== engineKey(current);
       if (!changed) return buildView(rt);
 
       const oldName = current.name;
@@ -2063,9 +2127,16 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         agents.set(newName, rt);
         renamePollEntry(oldName, newName);
       }
+      // What the keys the edit touches hold now, as a patch that puts them back: a key that was not there goes again (null).
+      const held = io.keys?.values(next.name) ?? {};
+      const putBack = Object.fromEntries(Object.keys(keyPatch ?? {}).map((key) => [key, held[key] ?? null]));
       try {
+        if (keyPatch !== null && Object.keys(keyPatch).length > 0) await io.keys?.apply(next.name, keyPatch);
         await saveRecords(rosterRecords());
       } catch (error) {
+        // The values were written before the roster; they go back first, while the keys are still under the new name.
+        // shortcut: when this write fails as well, the new values stay and the log says so; upgrade if disk errors matter.
+        if (Object.keys(putBack).length > 0) await io.keys?.apply(next.name, putBack).catch((undo: unknown) => log.error('could not put the keys back', undo));
         assignFields(current, previous);
         if (newName !== null) {
           agents.delete(newName);

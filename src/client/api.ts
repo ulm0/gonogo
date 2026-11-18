@@ -8,6 +8,7 @@ import type {
   DockView,
   DownlinkView,
   EditRequest,
+  EngineCheck,
   ErrorFrame,
   GovernorRequest,
   GovernorView,
@@ -313,6 +314,13 @@ export async function edit(name: string, request: EditRequest): Promise<AgentVie
   return toAgentView(await call('PATCH', agentPath(name), request));
 }
 
+/** Pad Check: where each engine is on the server's PATH and what its `--version` says. */
+export async function engines(): Promise<EngineCheck[]> {
+  const list = await call('GET', '/engines');
+  if (!Array.isArray(list) || !list.every((e) => typeof asRecord(e)?.provider === 'string')) throw failure('The server sent an answer gonogo does not understand.');
+  return list as EngineCheck[];
+}
+
 /** Also starts a stopped agent. */
 export async function restart(name: string): Promise<AgentView> {
   return toAgentView(await call('POST', `${agentPath(name)}/restart`));
@@ -605,6 +613,7 @@ function parseFrame(text: string): ServerFrame | null {
   else if (frame.t === 'livery') valid = asRecord(frame.livery) !== null && Array.isArray(asRecord(frame.livery)?.liveries) && typeof asRecord(frame.livery)?.current === 'string';
   else if (frame.t === 'relief') valid = isReliefView(frame.relief);
   else if (frame.t === 'docking') valid = typeof asRecord(frame.docking)?.station === 'string' && Array.isArray(asRecord(frame.docking)?.docks);
+  else if (frame.t === 'rollout') valid = typeof asRecord(frame.rollout)?.current === 'string';
   else if (frame.t === 'log') valid = Array.isArray(frame.changed) && Array.isArray(frame.removed);
   else if (frame.t === 'downlink') valid = Array.isArray(asRecord(frame.downlink)?.items) && typeof asRecord(frame.downlink)?.unread === 'number';
   else if (frame.t === 'activity') {

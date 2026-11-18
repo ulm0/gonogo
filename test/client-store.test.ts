@@ -87,6 +87,8 @@ function agent(name: string, desk: number, extra: Partial<AgentView> = {}): Agen
     command: null,
     payload: null,
     cleanRoom: null,
+    model: null,
+    keys: {},
     doing: null,
     history: [],
     ...extra,
@@ -347,6 +349,25 @@ describe('frames the store does not handle', () => {
       { t: 'something-new' },
     ] as unknown as ServerFrame[];
     for (const frame of frames) expect(applyServerFrame(s, frame, 9_999)).toBe(s);
+  });
+});
+
+describe('rollout (the update note)', () => {
+  const view = (over = {}) => ({ enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: 5, newer: true, command: 'pnpm add -g @ulm0/gonogo@latest', ...over });
+
+  it('starts with none, takes the view of the state, and replaces it with each rollout frame', () => {
+    expect(emptyState().rollout).toBeNull();
+    const first = run([{ t: 'state', state: { ...snapshot([agent('flight', 0)]), rollout: view() } }]);
+    expect(first.rollout).toEqual(view());
+    const later = run([{ t: 'rollout', rollout: view({ latest: '0.3.0' }) }], first);
+    expect(later.rollout?.latest).toBe('0.3.0');
+  });
+
+  it('an older server sends none, and a state that has none drops the old view', () => {
+    const { rollout: _none, ...older } = snapshot([agent('flight', 0)]);
+    expect(run([{ t: 'state', state: older as StateSnapshot }]).rollout).toBeNull();
+    const had = run([{ t: 'rollout', rollout: view() }]);
+    expect(run([{ t: 'state', state: older as StateSnapshot }], had).rollout).toBeNull();
   });
 });
 
@@ -649,6 +670,9 @@ const VALUES: Values = {
   servers: '',
   skills: '',
   cleanRoom: false,
+  model: '',
+  keys: [],
+  keysRemoved: [],
 };
 
 describe('choosePosition keeps what was typed', () => {

@@ -18,6 +18,7 @@
   - Uplink secrets and Slack/Linear signing secrets: `uplinks.json`.
   - Relay bot tokens: `relay.json`. Never logged or sent to the browser.
   - Docking secrets: `docking.json`.
+  - Per-agent keys (Clearance, for example `OPENAI_API_KEY`): `keys.json`. Write-only in the page, which gets the names and the time they were set. Never logged, never in a message, Downlink item, Relay post, answer or error, and never in `agents.json`. Each agent's process gets only its own keys; in a Clean Room they pass by name (`docker run -e NAME`), never on a command line. The agent itself can read its keys (`env`).
   - Payload env and header values (tokens, API keys): `agents.json` and the agent's `mcp.json`; the page receives them so Edit can show them. To keep one out, write `${NAME}` and Claude Code expands it from the agent's environment (gonogo's minus the scrubbed variables; from Claude Code's docs, not tried).
 - A payload server is code or a service you chose; its tools run with the agent's permission mode.
 
@@ -49,6 +50,11 @@ REFLECT reads and copies one agent's `memory.md`; gonogo never writes that file.
 - **Seed mode trusts the folders you hire agents into**, so a repository's own `.claude/settings.json` hooks and permission rules run with your credential before any model turn. Add only repositories you trust.
   - Trust covers subfolders that are not git repositories (per Claude Code's docs), so gonogo refuses to record trust for `/` and for any folder that is or holds your home, gonogo's home or Claude Code's configuration folder: `cannot record folder trust for <folder>: ...` (the boss too).
   - Entries stay after an agent is removed. They are the `hasTrustDialogAccepted` keys under `projects` in `<CLAUDE_CONFIG_DIR>/.claude.json` (`~/.claude.json` if unset, `/state/claude/.claude.json` in the image); delete one to revoke it.
+
+## Engine checks and the update check
+
+- **Pad Check** (`gonogo doctor`, `GET /api/engines`, the hire form) runs `<program> --version` for each engine found on the `PATH`: no shell, 5 seconds, an environment of `PATH`, `HOME`, `LANG` and `NO_COLOR` only. It is the same program gonogo would start for an agent. It never runs an installer; the install commands are text from each vendor's page.
+- **Rollout** makes one GET a day to `registry.npmjs.org` for the `latest` version of `@ulm0/gonogo`. It sends an `Accept` header and nothing about you or the machine, reads at most 256 KiB, accepts only a stable `x.y.z`, and installs nothing. Off with `GONOGO_UPDATE_CHECK=0` or `--no-update-check` ([Rollout](../features/rollout.md)).
 
 ## Dependencies
 
