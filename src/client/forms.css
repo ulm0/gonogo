@@ -768,7 +768,7 @@
 }
 
 .perm-text {
-  font-family: var(--mono, monospace);
+  font-family: var(--font-mono);
   width: 100%;
   box-sizing: border-box;
 }

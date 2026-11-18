@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Fix: colours that were never drawn.** The "older diff" line of a review verdict and the near-budget or over-budget spend line of a mission named custom properties that do not exist, so they showed no colour; they use the amber text token now. Two focus rings and the mono font of one field had the same flaw. A test now checks that every `var()` in the page's style sheets names a defined property.
+
 - **Tab name.** Flight Rules has a TAB NAME field: the title of the browser tab becomes `<name> · gonogo` (the unread count stays in front), to tell several gonogo sessions apart. Kept on the server for every browser; default is the station name when `GONOGO_STATION` is set, else `gonogo`.
 - **`gonogo tui`: a console cannot write your clipboard or title.** The OSC 52 (clipboard) and OSC 0, 1, 2 (title) sequences in a console's output are cut before they reach your terminal, across the pieces the output arrives in.
 
