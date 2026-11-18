@@ -1,99 +1,130 @@
-# Spec: Post-Flight Review (interactive diff review in the Recorder)
+# Spec: Post-Flight Review (draft)
 
-Built 2026-11-18 for issue #37. Status: built; this file is the design and its limits.
+Design by FIDO, 2026-11-18, for issue #37 and task t29. Extends Recorder (`docs/recorder-spec.md`). Status: draft, not built.
 
-## Intent
+## 1. How Hunk works (read from its source and docs; never run or installed)
 
-An agent finishes and its changes sit uncommitted in its folder. The Director wants to read them as a review, not as a wall of
-text: comment on a line, have the agent answer, have the agent walk through its own changes first, or have another agent look.
-The issue asked for an external diff viewer with a loopback broker. This is native instead: the Recorder already runs git for
-one agent's folder, gonogo already has mail and tools, so a review needs one note store, one parser, two tools and one page. No
-external program, no new listening port, no new top-bar key.
+Hunk (`modem-dev/hunk`, **MIT**, Modem Labs) is a terminal diff viewer with a browser twin. We take ideas and behaviour only and copy no code
+(MIT would allow it with the notice; we do not need it).
 
-## Design
+- **Session model.** Each open review registers with a local loopback daemon (a "session broker"). An agent runs `hunk session ...`,
+  which finds the live window by repo path, so the agent steers the human's viewer: `review` (file and hunk structure as JSON, the
+  raw patch only on request), `navigate` (to a file and hunk, a line on the old or new side, a comment, or next/prev comment),
+  `reload`, `comment add|apply|list|rm|clear`, and `highlight` (a colored character range on one line, tones match/info/warning/
+  error/dim). The caller needs an owner-private credential; responses are signed.
+- **Note model.** A live comment is `{ id, parentId?, author?, createdAt, filePath, hunkIndex, side: old|new, line, summary,
+  rationale? }`. The anchor is the file path plus one line on one side of the diff; the hunk index is derived from the line. A reply
+  names `replyTo` and inherits the parent's anchor. A batch (`comment apply`) is validated whole before anything changes. User notes
+  (typed with `c`) and agent notes are separate kinds: an agent can list and remove the user's notes but never create or edit them.
+  Agent notes start hidden (`a` shows them) so they do not crowd the reader.
+- **Survival.** Notes live in the review's in-memory store, keyed by file identity, so they survive a reload that leaves the file's
+  content alone; a stored note can carry `resolution: stale`. Highlights are dropped when the file's content changes. **Nothing is
+  saved across runs** (viewed state across runs is listed as deferred in its own plan).
+- **Agent skill.** `hunk-review` (a `SKILL.md`): inspect structure first, patch only if needed, navigate before you comment, batch
+  notes, comment on intent, risks and follow-ups, not every hunk. The agent narrates; the human reads.
+- **Not in scope for us:** extensions, VCS back ends other than git, GitHub PR loading, STML rich notes, themes, the OpenTUI
+  component, update/feedback commands.
 
-- **The diff.** `Recorder.reviewDiff(name)`: `git diff HEAD` (staged and unstaged against the last commit; with no commit yet,
-  what is staged), read-only, through the Recorder's `git()` (argument list, no shell, hooks off, 15 s, 256 KiB cap). Untracked
-  files have no diff until they are staged, as in the Recorder. `src/shared/diff.ts` (`parseDiff`, `textAt`) reads it into files,
-  hunks and lines with their old and new numbers; the server and the page use the same code.
-- **A note** is `{ id, file, side, line, summary, rationale?, author, tone, status, replyTo, at, sentAt, outdated }`
-  (`ReviewNote`). `side` is `old` (a removed or unchanged line, by its old number) or `new`. `summary` is one line (200),
-  `rationale` at most 1000 characters, `tone` is `info`, `warning` or `error`, `status` is `open` or `resolved`, `author` is
-  `user` or an agent name. A reply (`replyTo`) sits on the line of its parent and takes no line of its own. At most 300 notes
-  for one diff; ids `n1`, `n2`, ... are never reused.
-- **Stored** in `<home>/agents/<name>/review.json` `{ version: 1, seq, reviewers, notes }` (mode 0600, a temporary file and a
-  rename, one write at a time for each agent; a damaged file is kept as `.bad`). The agent's folder moves with a rename of the
-  agent, so its notes do. Each note keeps `anchor`, the text of its line when it was made. A note is only made on a line the diff
-  shows now (400 with the field `line` otherwise), so a note always names a real line.
-- **Outdated.** At every read the note's line is looked up in the current diff: the same text means current; a different text,
-  a line that is gone or a file that left the diff means `outdated: true`. The note is kept, shown in the list with an OUTDATED
-  chip, and not drawn on a line; it is current again when the line comes back. A diff cut at the 256 KiB cap does not reach
-  every line: a line that is not found in a cut diff is unknown, not outdated.
-- **Who may do what.** The Director: everything, over the browser routes. An agent may read the diff and the notes of its own
-  folder and add notes to it (its walkthrough, its answers). Another agent may do both only after the Director pressed PEER
-  REVIEW for it on that diff (`reviewers` in the file, at most 8); before that the tool says `forbidden`. A message that cannot
-  be delivered grants nothing. The author of a note is the caller's token, never a field. An agent cannot resolve or remove a
-  note: closing a discussion is the Director's. Only agents that read mail (an engine with the gonogo tools) can be asked.
-- **Tools** (`review_read`, `review_note`; in `MCP_TOOL_NAMES`). `review_read { agent }` answers the changed files as
-  `{ path, status, hunks: [{ h, l: [[sign, old, new, text]] }] }` (cut at the size of `read_messages`, with `remaining` and
-  a note), the notes with `outdated`, and `reviewers`. `review_note { agent, notes: [...] }` adds up to 20 notes: each good one
-  is kept, each bad one is listed with its index and the reason (a line that is not in the diff, a bad tone, a summary that is
-  too long). A note carries `file`, `side`, `line`, `summary`, optional `rationale` and `tone`, or `replyTo` instead of the three
-  place fields; a field it does not have is refused by the schema. The tools never change a file.
-- **The three actions** (browser token; each is one message from the Director through `Hub.sendFromUser`, so the send limit,
-  Redline, held mail and the hop limit apply):
-  - `POST /api/agents/<name>/review/send`: the open notes of the Director not sent yet, as one message to the author:
-    `Review: N notes on your diff`, then one line per note `- n7 src/a.ts:12 (old) [warning] summary` with `  Why: ...` under
-    it, and how to answer. They get `sentAt`, so a second press sends only newer ones (409 `no open note of yours is waiting to
-    be sent` when there is none). A message that is refused leaves them unsent. A body over the limit is cut with "...and N
-    more: read them with review_read".
-  - `POST /api/agents/<name>/review/walkthrough`: asks the author to annotate its own diff with `review_note`.
-  - `POST /api/agents/<name>/review/peer { reviewer }`: asks another agent to review the author's diff with `review_read` and
-    `review_note`, and gives it the right to. An agent cannot review itself.
-- **Routes** (browser token): `GET /api/agents/<name>/review` (`ReviewView`: `repo`, `reason?`, `files`, `truncated`, `notes`,
-  `reviewers`), `POST .../review/notes` (201), `PATCH .../review/notes/<id>` (`{ status }`), `DELETE .../review/notes/<id>`
-  (the replies go with it), and the three above. Without the `review` option the routes are 404 and the tools say it is not
-  available. No frame: the page asks again every few seconds, like the Plot Board.
-- **The page.** A section "Post-Flight Review" in the Recorder under the diff text: the files and hunks as rows of two numbers
-  and the text, a `+` key on each line (a removed line is the old side, any other the new), the form (one line, a reason, a
-  tone), the notes under their line with a tone chip and an edge mark, Reply, Resolve or Reopen, Remove, a list of all notes with
-  Jump (which scrolls to the line and focuses the note), and the three actions. A form being written is never replaced when the
-  page asks again. Every key is a button or a select that the keyboard and a screen reader reach.
-- **Black Box.** `REVIEW_AUDIT` (kind `plan`): `Director added a review note on ana`, `ben added 2 review notes on ana`,
-  `Director set review note n1 of ana to resolved`, `Director sent 3 review notes to ana`, `Director asked ana for a walkthrough
-  of its diff`, `Director asked ben to review the diff of ana`. Names, ids and counts; never a summary, a reason, a path or a line.
+## 2. What to take
 
-## Options
+| Hunk idea | In gonogo |
+|---|---|
+| Anchor = file + side (old/new) + line | Same. Hunk number is derived, never stored. |
+| Replies inherit the parent's anchor | Same (`replyTo`). |
+| Validate a whole batch first | Same: `review_note` takes an array, all or nothing. |
+| Agent reads structure first, patch only on request | `review_read` returns files, hunk ranges and notes; the patch only with `patch: true`. |
+| Author kept on each note; agents cannot forge the Director | The author comes from the token (as for tasks), never from the body. |
+| Agents narrate their own diff; peers add notes | `review_note` on your own diff (walkthrough) and, when asked, on a peer's. |
+| Next/previous note, jump to a note | A notes list in the page with jump-to and `n` / `p` keys. |
+| Notes hidden by default for agents | Not taken: the Director asked for them, so they show, with a filter (all / mine / agents / open). |
 
-1. **Native (pick).** The Recorder, the mail and the tools that exist; about 450 lines of server code and one page; no new
-   process or port, so nothing for the Director to install or to keep running, and the same permissions model as the rest.
-2. An external diff viewer driven over a loopback broker (the issue's proposal). A second program, a second port, and a
-   protocol to keep in step with a tool gonogo does not ship. Rejected.
+## 3. Where gonogo does better
 
-## Order of changes
+- **Notes reach the author as mail.** Hunk's notes are only for the human reading. Here REQUEST CHANGES sends the open notes to the agent
+  as one message (`file:line` plus text), through the normal path, so Max Q, Redline and held mail apply.
+- **A verdict.** APPROVE or REQUEST CHANGES per agent, stored with a hash of the diff it judged. If the diff changes after, the page says
+  "approved an older diff".
+- **A soft gate.** COMMIT in Recorder asks "N notes are still open: commit anyway?" when notes are open or the last verdict was not an
+  approval of this diff. A hard block would only cover commits made from the page; an agent on the host commits by itself, so a block
+  would suggest a safety that is not there. Said so in the page text.
+- **Survives restart** (saved in gonogo's home) and a changed diff (re-anchoring below).
+- **Rooms.** Peer review is a message from the Director to another agent; the notes are authored by whoever wrote them (token). The
+  Black Box records the actions by ids and names only, never note text. The Downlink gets an event when an agent adds a note or replies.
+- **Worktrees and Clean Room.** The reviewed agent's diff is Recorder's own (the worktree or the Clean Room checkout), so a worktree
+  agent's branch is reviewed before the Director merges it.
+- **Left out on purpose (later):** a link from a note to a Flight Plan task or a Mission (the verdict mail is the hand-off today);
+  moving the agent's `review` task back to `doing` on REQUEST CHANGES.
 
-1. `shared/diff.ts` and the types; `Recorder.reviewDiff`; `review.ts` (store, anchor, outdated, messages).
-2. Routes, the two tools, the Black Box table, `cli.ts`.
-3. The page: `review.ts`, `Review.tsx`, `review.css`, wired into `Recorder.tsx`.
-4. Docs, changelog.
+## 4. Scope of the one PR
 
-## Test plan
+### Data
+`~/.gonogo/reviews.json` (mode 0600, same atomic writer as `tasks.json`; unreadable file renamed `.bad`; **outside `agents/<name>/`**, because a Clean
+Room mounts that folder writable and could forge the Director's notes). `{ version: 1, seq, notes: Note[], verdicts: Record<agent, Verdict> }`.
 
-Parser (add, modify, delete, rename, binary, no-newline marker, two hunks, a diff cut short, a content line that looks like a
-header); the store with a fake diff (anchor, refusals by field, reply, resolve, remove with replies, ids, `.bad`, the cap);
-outdated (same, changed, gone, cut diff); permissions (author, stranger, peer after the ask, peer after a refused message);
-the batch (good and bad in one call); the three messages (exact format, once only, refused message, over-long body, agents that
-cannot read mail); the Recorder diff with real git (staged and unstaged, untracked left out, no commit, no repository); the
-routes and the tools (compact read, the cut, the author from the token, a forbidden field, 401, 405, 404); the Black Box lines
-with no text in them; the page's logic (threads, lines, counts, actions, form).
+```ts
+Note    = { id: 'rn1'..; agent; path; side: 'old'|'new'; line; text /* the anchored line, ≤ 300 chars */;
+            body /* 1-2000 */; tone: 'info'|'warning'|'error'; author: 'user'|agentName; replyTo?: id;
+            status: 'open'|'addressed'|'resolved'; createdAt; updatedAt }
+Verdict = { verdict: 'approved'|'changes'; at; diffHash; by: 'user' }
+```
+`agent` is the reviewed console (by name, as fuel and tasks are). Caps: 200 notes per agent (resolved ones trimmed first), 2000 chars,
+tone and status from the lists. A note's `path` is relative to Recorder's root and follows Hangar's path rules (no `..`, no `.git`).
+A reply has no anchor of its own (it uses its parent's) and no tone.
 
-## Known limits
+### Anchoring and "outdated" (pure, `src/shared/diff.ts`, tested)
+`parseDiff(text)` gives files, hunks and lines `{ kind: add|del|ctx, oldNo?, newNo?, text }`; the client and the server use the same
+function. A note can only be made on a line that is in the current diff (400 `line is not in the diff`); the server copies `text` from
+there (the client never sends it). On every load `locate(note, lines)` answers: **exact** (same side and number, same text);
+**moved** (that text appears once on that side: use its number; several: the nearest); **outdated** (not found). Outdated notes stay,
+are shown in their own group with the old `path:line` and text, and can be resolved or deleted. Nothing is stored for this: it is
+computed at read time, so it needs no migration and cannot go stale itself.
 
-- Notes are on the diff against the last commit. When the agent commits, the diff empties and the notes go outdated; they stay
-  in the list until removed. There is no history of earlier commits.
-- Untracked files are not in the diff until they are staged.
-- A diff over 256 KiB is cut; later files and lines cannot be noted until it is smaller.
-- One review for each agent folder; a Clean Room or worktree agent is reviewed in its worktree.
-- A reviewer's right lasts until the file is removed; there is no key to take it back (remove the notes and edit the file).
-- Not seen in a browser at the time of writing (no browser on the build host): the logic, the server and the tools are tested,
-  the page is not.
+### Routes (browser token; Director only)
+`GET /api/agents/:name/review` (notes + verdict, diff hash), `POST .../review/notes` `{ path, side, line, body, tone?, replyTo? }`,
+`PATCH .../review/notes/:id` `{ status?, body? }`, `DELETE .../review/notes/:id`, `POST .../review/verdict` `{ verdict, summary? }`
+(approve, or changes: sends the mail), `POST .../review/ask` `{ kind: 'walkthrough' }` or `{ kind: 'peer', reviewer }`
+(a message from the Director). The diff itself is Recorder's existing route. No frame; the page asks again after each action and
+every 10 s while open.
+
+### MCP tools (`mcp.ts`, strict schemas, author from the token)
+- `review_read { agent?, patch?, path? }`: files, hunk line ranges, notes (open first), verdict. `agent` defaults to the caller; another
+  agent's diff only when a **peer request** to the caller is pending (set by ASK / PEER REVIEW, cleared after 24 h or when the caller
+  sends a note), else `forbidden`. The patch is cut at 100 KiB.
+- `review_note { agent?, notes: [{ path, side, line, body, tone?, replyTo? }] }`: up to 20, all or nothing. Same permission as above.
+  A reply by the reviewed agent sets the parent `addressed`; only the Director resolves, reopens or deletes.
+- No tool changes a verdict, resolves or deletes. An agent cannot read or write notes of a diff it was not asked to look at.
+
+### Mail and events
+- REQUEST CHANGES: `Review: changes requested (N open notes)` from the Director to the author: each open note as
+  `path:line [tone] text`, cut at 4000 characters with "and K more: call review_read". APPROVE: `Review: approved`.
+- ASK WALKTHROUGH: asks the author to explain its own diff with `review_note`. PEER REVIEW: asks the reviewer to do the same on the
+  author's diff. Both are plain messages; the permission above is set by them.
+- Downlink event kind `review`: an agent added notes or replied (`ana added 3 review notes on ben`). Black Box: verdict, note made
+  / resolved / deleted, ask: ids and names only.
+
+### Page (inside Recorder, no new top-bar key)
+The diff gets line numbers and a `+` on each line's gutter (and a click on the line) that opens a note form under it (tone, text);
+notes show under their line (author chip, tone, replies, RESOLVE / REOPEN, DELETE); a left list of notes with filter and jump-to;
+an OUTDATED group; at the top APPROVE, REQUEST CHANGES, ASK WALKTHROUGH, PEER REVIEW (pick an agent), and the verdict line. The
+page keeps working from the keyboard (`n`, `p`, `c` to note). COMMIT shows the soft gate. A phone shows the list and notes, and
+adds a note with a line picker; no line-range selection.
+
+### Order of changes
+1. `shared/diff.ts` (`parseDiff`, `locate`) with tests. 2. `reviews.ts` store, routes, audit, Black Box, limits. 3. MCP tools, the
+peer-request permission, mail and events. 4. The page. 5. `docs/features/review.md`, backlog line, changelog.
+
+### Tests
+`parseDiff` (renames, new/deleted files, binary, `\ No newline`, CRLF); `locate` (exact, moved once, moved twice, outdated, whitespace
+only change); store (damaged file, atomic write, id never reused, caps, trim order); routes (400 for a line not in the diff, a bad
+tone, an unknown `replyTo`, another agent's id); tools (forbidden without a request, batch all-or-nothing, author from the token, a body
+that claims `author: user`, reply sets `addressed`); mail text and cut; the soft gate; Black Box lines hold no note text; Clean Room
+agent cannot reach `reviews.json`.
+
+### Deliberately left out
+Highlights of character ranges, steering the Director's viewer from an agent, a broker or daemon, line-range notes, side-by-side
+layout, saved "viewed" state, GitHub PRs and other VCS, rich note markup, a hard commit or merge block, task and Mission links,
+notes on commits other than the working diff.
+
+### Open questions for the Director
+(1) Is the soft gate enough, or should REQUEST CHANGES also move the agent's `review` tasks to `doing`? (2) Is the peer-request
+permission acceptable, or should any agent be allowed to read any diff? (3) Keep `addressed` as a status, or only open/resolved?
