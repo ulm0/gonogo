@@ -6,15 +6,9 @@ name: Release
 # name that is not @<repository owner>/gonogo, then publishes. A version with a pre-release suffix (1.2.0-rc.1) gets the
 # npm dist-tag `next` and a GitHub pre-release; any other gets `latest`.
 #
-# Auth today: the repository secret NPM_TOKEN, an npm granular access token with read and write on the package (or its
-# scope). setup-node writes an .npmrc that reads it from NODE_AUTH_TOKEN, set on the publish step only.
-# To move to npm trusted publishing (OIDC, no long-lived token) once the package exists on npm:
-#   1. npmjs.com > the package > Settings > Trusted publishing > GitHub Actions: this repository, workflow file
-#      release.yml, no environment.
-#   2. Delete the NODE_AUTH_TOKEN line below, then the NPM_TOKEN secret, then revoke the token on npmjs.com.
-#   3. Optionally set the package's publishing access to "require two-factor authentication and disallow tokens".
-#   The npm CLI that pnpm publish hands the tarball to needs 11.5.1 or newer (Node 24 ships npm 11), and the job keeps
-#   `id-token: write`, which both provenance and trusted publishing use.
+# Auth: npm trusted publishing (OIDC). npmjs.com trusts this repository's release.yml for @ulm0/gonogo, so the publish
+# job's `id-token: write` is the whole credential: no token lives in the repository. pnpm hands the tarball to the npm
+# CLI of Node 24, which must be 11.5.1 or newer for OIDC (checked below).
 on:
   push:
     tags: ['v*']
@@ -41,7 +35,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      id-token: write # provenance (and trusted publishing later)
+      id-token: write # trusted publishing (OIDC) and provenance
     steps:
       - name: Check the tag name
         run: |
@@ -79,9 +73,14 @@ jobs:
       - run: pnpm exec vitest run
       - run: pnpm build
       - run: pnpm check:pack
+      - name: Check the npm CLI supports trusted publishing
+        run: |
+          v=$(npm --version)
+          if [ "$(printf '%s\n' 11.5.1 "$v" | sort -V | head -1)" != 11.5.1 ]; then
+            echo "::error::npm $v is older than 11.5.1, which trusted publishing (OIDC) needs"
+            exit 1
+          fi
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           name=$(node -p 'require("./package.json").name')
           # A re-run for a version npm already has skips the publish, so the release below can still be updated.

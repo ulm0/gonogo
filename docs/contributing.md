@@ -28,12 +28,6 @@ The npm package is `@ulm0/gonogo` (the unscoped `gonogo` on npm is another proje
 
 To release: put the new `version` in `package.json` and an entry in `CHANGELOG.md`, merge to `main`, then tag that commit and push the tag (`git tag v<version> && git push origin v<version>`).
 
-One-time setup, by the owner, before the first publish:
-
-1. On npmjs.com, sign in as the account that owns the scope of `@ulm0/gonogo` and create a granular access token (Access Tokens > Generate New Token > Granular Access Token): read and write on packages, limited to the package `@ulm0/gonogo` once it exists (for the first publish, to its scope), with a short expiry.
-2. Add it as the repository secret `NPM_TOKEN` (Settings > Secrets and variables > Actions).
-3. Push the next tag, or run the workflow by hand for a tag that already exists. Not `v0.1.0`: that tag is on a commit whose `package.json` still says `gonogo`, so the run stops at the name check.
-
-After the first publish, switch to npm trusted publishing (OIDC), so no token lives in the repository: on npmjs.com, the package's Settings > Trusted Publisher > GitHub Actions, with this repository and the workflow file `release.yml`. Then remove the `NODE_AUTH_TOKEN` line from the publish step, delete the `NPM_TOKEN` secret and revoke the token. The comment at the top of `release.yml` lists the same steps.
+Publishing uses npm trusted publishing (OIDC): on npmjs.com, `@ulm0/gonogo` > Settings > Trusted Publisher trusts this repository's workflow `release.yml`, so the publish job needs only `id-token: write` and no token lives in the repository. The first release, 0.1.1, went out with a short-lived granular token; it is no longer used. A tag whose `package.json` is not `@ulm0/gonogo` (such as `v0.1.0`) stops at the name check.
 
 The tarball carries no lock file (pnpm reads none from a package): gonogo's own dependencies are pinned exactly in `package.json`, and theirs resolve at install time. The Docker image installs from `pnpm-lock.yaml` instead.

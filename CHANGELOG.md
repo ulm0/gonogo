@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Releases.** npm publishing uses trusted publishing (OIDC); the repository holds no npm token.
+
 ## 0.1.1 (2026-11-18)
 
 - **npm.** The package is published as `@ulm0/gonogo` (the unscoped `gonogo` on npm is another project); the command stays `gonogo`. `.github/workflows/release.yml` publishes it with provenance for each `v*` tag and creates or updates its GitHub Release from this changelog.
