@@ -83,6 +83,12 @@ export const RELIEF_AUDIT: Table = {
   decide: ['answer', (args) => `Director answered hire request ${plain(args[0]) ?? '?'}: ${args[1] === 'go' ? 'go' : 'no-go'}`],
 };
 
+/** Room editor: that the layout was saved or reset, and which part; never a number of it. */
+export const ROOM_AUDIT: Table = {
+  save: ['config', 'Director saved the room layout'],
+  reset: ['config', (args) => (args[0] === 'desks' ? 'Director reset the order of the desks' : 'Director reset the room layout')],
+};
+
 /** Missions: who made or changed a mission, and what kind of change (the status, never a name, goal or note). */
 export const MISSIONS_AUDIT: Table = {
   create: ['plan', (args, result) => `${actorName(args[0])} created mission ${isRecord(result) ? (plain(result.id) ?? '?') : '?'}`],
