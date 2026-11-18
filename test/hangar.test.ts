@@ -143,6 +143,22 @@ describe('gonogo\'s own folder', () => {
     expect((await fails(hangar.read('ana', 'state'))).code).toBe('forbidden');
   });
 
+  it('opens the worktree of an agent with its own worktree, not its folder, and keeps the rest of the home out', async () => {
+    await mkdir(join(home, 'worktrees', 'ana'), { recursive: true });
+    await writeFile(join(home, 'worktrees', 'ana', 'a.txt'), 'in the worktree');
+    await writeFile(join(dir, 'a.txt'), 'in the main folder');
+    await writeFile(join(home, 'agents.json'), '{}');
+    await symlink(join(home, 'agents.json'), join(home, 'worktrees', 'ana', 'state'));
+    places.ana = { dir, cleanRoom: false, worktree: true };
+    expect((await hangar.read('ana', 'a.txt')).text).toBe('in the worktree');
+    expect((await fails(hangar.read('ana', 'state'))).code).toBe('forbidden');
+  });
+
+  it('says to start the agent when its worktree is not made yet', async () => {
+    places.ana = { dir, cleanRoom: false, worktree: true };
+    expect(await fails(hangar.list('ana', ''))).toMatchObject({ code: 'not_found', message: expect.stringContaining('start the agent') });
+  });
+
   it('says to start the agent when the Clean Room has no worktree yet', async () => {
     places.ana = { dir, cleanRoom: true };
     expect(await fails(hangar.list('ana', ''))).toMatchObject({ code: 'not_found', message: expect.stringContaining('start the agent') });

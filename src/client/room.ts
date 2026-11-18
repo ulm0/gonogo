@@ -1,5 +1,5 @@
 import type { AgentState, AgentView, PollView } from '../shared/protocol.js';
-import { CLEAN_ROOM_DIR, cleanRoomBranch, HOLD_REASON, MAX_AGENTS, providerInfo, STATE_LABELS } from '../shared/protocol.js';
+import { CLEAN_ROOM_DIR, cleanRoomBranch, WORKTREE_DIR, HOLD_REASON, MAX_AGENTS, providerInfo, STATE_LABELS } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import { reliefAnnouncement } from './relief.js';
@@ -143,6 +143,7 @@ export function tileLabel(cell: Cell, vote: Vote | null): string {
   const reason = reasonText(agent);
   if (reason !== null) label += `: ${reason}`;
   if (agent.cleanRoom) label += ', clean room';
+  else if (agent.worktree) label += ', own worktree';
   if (agent.queued > 0) label += `, ${agent.queued} ${agent.queued === 1 ? 'message' : 'messages'} waiting`;
   if (agent.held !== null) label += `, ${agent.held.text}`;
   if (vote !== null) label += `, vote ${vote.toLowerCase()}`;
@@ -225,6 +226,11 @@ export function panelDetails(agent: AgentView): string[] {
 /** Where a Clean Room console works: its branch and its worktree (the server's home holds the worktrees), or null when it runs on the host. */
 export function cleanRoomPlace(agent: Pick<AgentView, 'name' | 'cleanRoom'>, home: string): { branch: string; worktree: string } | null {
   return !agent.cleanRoom ? null : { branch: cleanRoomBranch(agent.name), worktree: `${home.replace(/\/+$/, '')}/${CLEAN_ROOM_DIR}/${agent.name}` };
+}
+
+/** Where a console with its own git worktree works (same branch name as a Clean Room), or null. */
+export function worktreePlace(agent: Pick<AgentView, 'name' | 'worktree'>, home: string): { branch: string; worktree: string } | null {
+  return !agent.worktree ? null : { branch: cleanRoomBranch(agent.name), worktree: `${home.replace(/\/+$/, '')}/${WORKTREE_DIR}/${agent.name}` };
 }
 
 /** `guido · Guidance officer · /projects/app`; a custom command has no position title. */

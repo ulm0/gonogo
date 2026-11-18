@@ -674,6 +674,7 @@ const VALUES: Values = {
   servers: '',
   skills: '',
   cleanRoom: false,
+  worktree: false,
   model: '',
   keys: [],
   keysRemoved: [],

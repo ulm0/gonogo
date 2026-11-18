@@ -7,9 +7,10 @@ import { execFile } from 'node:child_process';
 import { mkdir, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { cleanRoomBranch, WORKTREE_DIR } from '../shared/protocol.js';
-import type { AgentRecord, Worktree } from '../shared/protocol.js';
+import type { AgentRecord, Worktree, WorktreeStatus } from '../shared/protocol.js';
 import { CLEAN_ROOM_COMMAND_MS, DIR_MODE, GIT_BIN } from './constants.js';
 
+export type { WorktreeStatus };
 export type Env = Record<string, string | undefined>;
 export type WorktreeCheck = { ok: true; worktree: Worktree } | { ok: false; error: string };
 
@@ -103,4 +104,52 @@ export async function prepareWorktree(agent: Pick<AgentRecord, 'name' | 'dir'>, 
   const branch = worktreeBranch(agent.name);
   await ensureWorktree(top, worktree, branch, env);
   return { worktree, branch, cwd: await cwdInWorktree(top, worktree, agent.dir) };
+}
+
+/** The folder of the repository that a worktree belongs to (the one that holds its `.git`), or null when there is none. */
+async function mainRepoOf(path: string, env: Env): Promise<string | null> {
+  try {
+    const common = (await run(GIT_BIN, ['-C', path, 'rev-parse', '--path-format=absolute', '--git-common-dir'], env)).trim();
+    return dirname(common);
+  } catch {
+    return null;
+  }
+}
+
+/** What the Director wants to know before he deletes a worktree. Never throws for a missing folder. */
+export async function worktreeStatus(path: string, branch: string, env: Env): Promise<WorktreeStatus> {
+  const empty: WorktreeStatus = { path, branch, exists: false, dirty: false, ahead: 0, merged: false };
+  if (!(await stat(path).then((info) => info.isDirectory(), () => false))) return empty;
+  const repo = await mainRepoOf(path, env);
+  if (repo === null) return { ...empty, exists: true };
+  const git = (...args: string[]): Promise<string> => run(GIT_BIN, ['-C', repo, ...args], env);
+  const dirty = (await run(GIT_BIN, ['-C', path, 'status', '--porcelain'], env).catch(() => '')).trim() !== '';
+  const ahead = Number((await git('rev-list', '--count', `HEAD..${branch}`).catch(() => '0')).trim()) || 0;
+  const merged = (await git('branch', '--merged', 'HEAD', '--list', branch).catch(() => '')).trim() !== '';
+  return { path, branch, exists: true, dirty, ahead, merged };
+}
+
+export interface WorktreeRemoval {
+  removed: boolean;
+  branchDeleted: boolean;
+  /** Why something stayed: git's own refusal. */
+  reason?: string;
+}
+
+/** `git worktree remove` without --force, then `git branch -d`: git refuses a dirty folder and an unmerged branch, and so does gonogo. */
+export async function removeWorktree(path: string, branch: string, env: Env): Promise<WorktreeRemoval> {
+  const repo = await mainRepoOf(path, env);
+  if (repo === null) return { removed: false, branchDeleted: false, reason: `${path} is not a worktree of a repository` };
+  const git = (...args: string[]): Promise<string> => run(GIT_BIN, ['-C', repo, ...args], env);
+  try {
+    await git('worktree', 'remove', path);
+  } catch (error) {
+    return { removed: false, branchDeleted: false, reason: messageOf(error) };
+  }
+  try {
+    await git('branch', '-d', branch);
+  } catch (error) {
+    return { removed: true, branchDeleted: false, reason: messageOf(error) };
+  }
+  return { removed: true, branchDeleted: true };
 }

@@ -330,6 +330,19 @@ export interface CleanRoom {
 }
 /** Worktree: the agent starts in its own git worktree and branch of the repository of `dir`, on the host. No fields yet (an object so one can come later without a migration). */
 export type Worktree = Record<string, never>;
+export interface WorktreeStatus {
+  path: string;
+  branch: string;
+  /** The folder is made (an agent that never started has none). */
+  exists: boolean;
+  /** Uncommitted changes in it. */
+  dirty: boolean;
+  /** Commits on the branch that the repository's checked-out branch does not have. */
+  ahead: number;
+  /** The branch is in the checked-out branch already. */
+  merged: boolean;
+}
+
 /** One agent as stored in <home>/agents.json (inside RosterFile). */
 export interface AgentRecord {
   name: string;

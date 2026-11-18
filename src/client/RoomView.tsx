@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, ReactElement, RefObject } from 'react';
-import type { AgentView, ReliefRequest } from '../shared/protocol.js';
+import type { AgentView, ReliefRequest, WorktreeStatus } from '../shared/protocol.js';
 import { MAX_AGENTS } from '../shared/protocol.js';
 import type { Position } from '../shared/positions.js';
 import { ConsoleTraffic } from './Activity.js';
@@ -16,6 +16,7 @@ import {
   chipText,
   chipTone,
   cleanRoomPlace,
+  worktreePlace,
   consoleMode,
   consoleSubtitle,
   holdable,
@@ -148,9 +149,9 @@ function Tile({ cell, selected, phone }: { cell: Cell; selected: boolean; phone:
       <span className="tile-foot" aria-hidden="true">
         <span className="tile-state">{stateText(agent, now, !(phone && vote !== null))}</span>
         {vote !== null && <span className="tile-state tile-state-vote">· {vote}</span>}
-        {right === '' && agent.cleanRoom ? (
+        {right === '' && (agent.cleanRoom || agent.worktree) ? (
           <span className="chip tile-right tile-chip" data-tone="quiet">
-            CLEAN ROOM
+            {agent.cleanRoom ? 'CLEAN ROOM' : 'WORKTREE'}
           </span>
         ) : (
           <span className="tile-state tile-right">{right}</span>
@@ -445,17 +446,25 @@ function Foot({ agent, run, locked }: { agent: AgentView; run(action: () => Prom
   return null;
 }
 
-function Remove({ agent, legend, onKeep, onRemove, busy }: { agent: AgentView; legend: string; onKeep(): void; onRemove(): void; busy: boolean }): ReactElement {
+function Remove({ agent, legend, onKeep, onRemove, busy }: { agent: AgentView; legend: string; onKeep(): void; onRemove(deleteWorktree: boolean): void; busy: boolean }): ReactElement {
+  const [deleteTree, setDeleteTree] = useState(false);
   return (
     <section className="flood remove" data-tone="nogo" role="alertdialog" aria-label={`Remove ${legend}`} aria-describedby={`remove-${agent.name}`}>
       <h3 className="disp">REMOVE {legend}?</h3>
       <p id={`remove-${agent.name}`}>The console and its session go. Its notes stay on disk until you delete them.</p>
+      {agent.worktree && (
+        <div className="staff-check">
+          <input id={`remove-tree-${agent.name}`} type="checkbox" checked={deleteTree} onChange={(event) => setDeleteTree(event.target.checked)} />
+          <label htmlFor={`remove-tree-${agent.name}`}>Also delete its worktree and branch (git keeps them when they hold unsaved or unmerged work)</label>
+          {deleteTree && <p className="hint">Files that git ignores (.env, node_modules, build output) are deleted with the worktree.</p>}
+        </div>
+      )}
       <div className="remove-buttons">
         {/* autoFocus: the safe answer has the keyboard. */}
         <button type="button" className="btn" data-size="big" autoFocus onClick={onKeep}>
           KEEP {legend}
         </button>
-        <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={busy || undefined} onClick={onRemove}>
+        <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={busy || undefined} onClick={() => onRemove(deleteTree)}>
           REMOVE
         </button>
       </div>
@@ -474,6 +483,31 @@ function CleanRoomLine({ agent }: { agent: AgentView }): ReactElement | null {
         CLEAN ROOM
       </span>{' '}
       Branch <code>{place.branch}</code>, worktree <code>{place.worktree}</code>. Commit in the worktree, then merge the branch.
+    </p>
+  );
+}
+
+/** Worktree: where the console works, and what is in it (uncommitted changes, commits not merged). Nothing for a console without one. */
+function WorktreeLine({ agent }: { agent: AgentView }): ReactElement | null {
+  const home = useStore((s) => s.info?.home ?? '');
+  const place = worktreePlace(agent, home);
+  const [status, setStatus] = useState<WorktreeStatus | null>(null);
+  useEffect(() => {
+    if (place === null) return;
+    let live = true;
+    api.worktreeStatus(agent.name).then((found) => live && setStatus(found), () => live && setStatus(null));
+    return () => {
+      live = false;
+    };
+  }, [agent.name, place === null, agent.stateSince]);
+  if (place === null) return null;
+  const facts = status === null || !status.exists ? 'Not made yet: it is made when the console starts.' : `${status.dirty ? 'Unsaved changes' : 'Clean'}, ${status.ahead} ${status.ahead === 1 ? 'commit' : 'commits'} ahead${status.merged ? ', merged' : ''}.`;
+  return (
+    <p className="panel-clean">
+      <span className="chip" data-tone="quiet">
+        WORKTREE
+      </span>{' '}
+      Branch <code>{place.branch}</code>, worktree <code>{place.worktree}</code>. {facts}
     </p>
   );
 }
@@ -514,6 +548,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
       )}
       {details.length > 0 && <p className="panel-details">{details.join(' · ')}</p>}
       <CleanRoomLine agent={agent} />
+      <WorktreeLine agent={agent} />
       <MassBudget agent={agent} />
       {confirming && (
         <Remove
@@ -521,8 +556,8 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
           legend={legend}
           busy={busy}
           onKeep={keep}
-          onRemove={() => {
-            run(() => api.remove(agent.name));
+          onRemove={(deleteWorktree) => {
+            run(() => api.remove(agent.name, deleteWorktree));
             setConfirming(false);
           }}
         />
@@ -653,6 +688,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
         </span>
       </header>
       <CleanRoomLine agent={agent} />
+      <WorktreeLine agent={agent} />
       <div className="phone-sub">
         <span className="panel-sub">{consoleSubtitle(agent, position)}</span>
         <button type="button" className="btn" data-kind="quiet" aria-expanded={more} onClick={() => setMore(!more)}>
@@ -675,8 +711,8 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
             setConfirming(false);
             removeRef.current?.focus();
           }}
-          onRemove={() => {
-            run(() => api.remove(agent.name).then(closeConsole));
+          onRemove={(deleteWorktree) => {
+            run(() => api.remove(agent.name, deleteWorktree).then(closeConsole));
             setConfirming(false);
           }}
         />

@@ -71,6 +71,7 @@ import type { Downlink } from './downlink.js';
 import { DOCK_ROUTES } from './docking.js';
 import { HANGAR_BODY_MAX_BYTES } from './hangar.js';
 import type { Hangar } from './hangar.js';
+import type { WorktreeRemoval, WorktreeStatus } from './worktree.js';
 import type { Docking } from './docking.js';
 import { createMcpHandler } from './mcp.js';
 import { parsePropellantRequest } from './propellant.js';
@@ -138,6 +139,8 @@ export interface WebOptions {
   docking?: Pick<Docking, 'view' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
+  /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
+  worktrees?: { has(name: string): boolean; status(name: string): Promise<WorktreeStatus>; discard(name: string): Promise<WorktreeRemoval> };
   recorder?: Recorder;
   /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
@@ -1082,9 +1085,15 @@ export function createWebServer(options: WebOptions): WebServer {
           const name = agentName(res, s[2]);
           if (name === null) return;
           if (req.method === 'DELETE') {
+            const choice = new URL(req.url ?? '/', 'http://localhost').searchParams.get('worktree');
+            if (choice !== null && choice !== 'keep' && choice !== 'delete') return sendApiError(res, 400, 'worktree is keep or delete', 'bad_request', 'worktree');
+            const discard = choice === 'delete' && options.worktrees?.has(name) === true ? options.worktrees : null;
             await hub.remove(name);
-            res.writeHead(204);
-            res.end();
+            // the console is gone either way: a refusal of git is an answer, not an error
+            if (discard === null) {
+              res.writeHead(204);
+              res.end();
+            } else sendJson(res, 200, { worktree: await discard.discard(name) });
             return;
           }
           const body = await jsonObject(req, res);
@@ -1121,6 +1130,18 @@ export function createWebServer(options: WebOptions): WebServer {
         run: (_req, res) => {
           const name = agentName(res, s[2]);
           if (name !== null) sendJson(res, 200, s[3] === 'hold' ? hub.hold(name) : hub.resume(name));
+        },
+      };
+    }
+    if (s.length === 4 && s[3] === 'worktree' && options.worktrees) {
+      const worktrees = options.worktrees;
+      return {
+        allow: ['GET'],
+        run: async (_req, res) => {
+          const name = agentName(res, s[2]);
+          if (name === null) return;
+          if (!worktrees.has(name)) return sendNotFound(res, 'that agent has no worktree');
+          sendJson(res, 200, await worktrees.status(name));
         },
       };
     }

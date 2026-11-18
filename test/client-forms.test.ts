@@ -70,7 +70,7 @@ function item(id: string, from: string, to: string, extra: Partial<ActivityItem>
   };
 }
 
-const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, model: '', keys: [], keysRemoved: [] };
+const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, worktree: false, model: '', keys: [], keysRemoved: [] };
 
 describe('staffing a seat, no position or a custom command', () => {
   it('picking a position after a custom command makes the agent a Claude one and replaces the placeholder role', () => {
@@ -543,5 +543,29 @@ describe('the confirmation under the brief box', () => {
     expect(briefSentText('waiting: flight is working', 'flight')).toBe('Sent. flight is working and will see it when its turn ends.');
     expect(briefSentText(null, 'flight', 'FLIGHT')).toBe('Sent.');
     expect(briefSentText('something new', 'flight', 'FLIGHT')).toBe('Sent. FLIGHT will see it as soon as it can.');
+  });
+});
+
+describe('the worktree box', () => {
+  const base: Values = { ...EMPTY, name: 'ana', role: 'does things' };
+
+  it('is in the hire request as {} when ticked, for any engine, and nowhere when not', () => {
+    expect(hireRequest({ ...base, worktree: true })).toMatchObject({ worktree: {} });
+    expect(hireRequest({ ...base, provider: 'gemini', worktree: true })).toMatchObject({ worktree: {} });
+    expect(hireRequest(base)).not.toHaveProperty('worktree');
+  });
+
+  it('is off while Clean Room is ticked, which has a worktree of its own', () => {
+    expect(hireRequest({ ...base, cleanRoom: true, worktree: true })).not.toHaveProperty('worktree');
+    expect(chooseEngine({ ...base, cleanRoom: true, worktree: true }, 'claude').worktree).toBe(false);
+  });
+
+  it('is an edit when it changes, and null turns it off', () => {
+    const off = agent('ana', 1, { role: 'does things', dir: '/work', worktree: null });
+    const values: Values = { ...EMPTY, name: 'ana', role: 'does things', dir: '/work', mode: off.mode };
+    expect(editRequest({ ...values, worktree: true }, off, false)).toEqual({ worktree: {} });
+    const on = agent('ana', 1, { role: 'does things', dir: '/work', worktree: {} });
+    expect(editRequest({ ...values, worktree: false }, on, false)).toEqual({ worktree: null });
+    expect(editRequest({ ...values, worktree: true }, on, false)).toBeNull();
   });
 });

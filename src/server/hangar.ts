@@ -12,7 +12,7 @@ import type { Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { access, lstat, open, opendir, realpath, rename, unlink } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
-import { CLEAN_ROOM_DIR, HANGAR_FILE_MAX_BYTES } from '../shared/protocol.js';
+import { CLEAN_ROOM_DIR, HANGAR_FILE_MAX_BYTES, WORKTREE_DIR } from '../shared/protocol.js';
 import type { HangarEntry, HangarFile, HangarListing, HangarSaved } from '../shared/protocol.js';
 import { HubError } from './hub.js';
 
@@ -29,6 +29,8 @@ export interface Place {
   dir: string;
   /** The agent runs in a Clean Room: its files are the worktree under gonogo's home. */
   cleanRoom: boolean;
+  /** The agent has its own git worktree (not a Clean Room's): its files are the worktree under gonogo's home. */
+  worktree?: boolean;
 }
 
 export interface HangarDeps {
@@ -138,12 +140,12 @@ export function createRoots(deps: HangarDeps): Roots {
   return async (name) => {
     const place = deps.agent(name);
     if (place === null) throw new HubError('not_found', 'unknown agent');
-    const wanted = place.cleanRoom ? join(deps.home, CLEAN_ROOM_DIR, name) : place.dir;
+    const wanted = place.cleanRoom ? join(deps.home, CLEAN_ROOM_DIR, name) : place.worktree === true ? join(deps.home, WORKTREE_DIR, name) : place.dir;
     try {
       return { root: await realpath(wanted), home: await realpath(deps.home) };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new HubError('not_found', place.cleanRoom ? 'the Clean Room has no worktree yet: start the agent once' : 'the agent\'s folder is gone');
+        throw new HubError('not_found', place.cleanRoom ? 'the Clean Room has no worktree yet: start the agent once' : place.worktree === true ? 'the worktree is not made yet: start the agent once' : 'the agent\'s folder is gone');
       }
       throw e;
     }
@@ -165,7 +167,7 @@ export function createHangar(roots: Roots): Hangar {
   }
 
   /** gonogo's home is out of reach, except the Clean Room worktrees below it (an agent's own files). */
-  const ownState = (at: Root, real: string): boolean => inside(at.home, real) && !inside(join(at.home, CLEAN_ROOM_DIR), real);
+  const ownState = (at: Root, real: string): boolean => inside(at.home, real) && !inside(join(at.home, CLEAN_ROOM_DIR), real) && !inside(join(at.home, WORKTREE_DIR), real);
   const guard = (at: Root, real: string): void => {
     if (!inside(at.root, real)) throw forbidden('that path leads outside the agent\'s folder');
     if (relative(at.root, real).split(sep).some(isGitName)) throw forbidden('.git is not reachable');

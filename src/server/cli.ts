@@ -35,7 +35,7 @@ import { createHub } from './hub.js';
 import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
 import { checkCleanRoom } from './cleanroom.js';
-import { checkWorktree } from './worktree.js';
+import { checkWorktree, removeWorktree, worktreeBranch, worktreePath, worktreeStatus } from './worktree.js';
 import { openHome } from './home.js';
 import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
@@ -593,7 +593,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       home: home.dir,
       agent: (name) => {
         const view = hubInstance.views().find((v) => v.name === name);
-        return view === undefined ? null : { dir: view.dir, cleanRoom: view.cleanRoom !== null };
+        return view === undefined ? null : { dir: view.dir, cleanRoom: view.cleanRoom !== null, worktree: view.worktree !== null };
       },
     });
     const relief = createRelief({
@@ -652,6 +652,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       engines: () => checkEngines(env),
       hangar: createHangar(roots),
+      worktrees: {
+        has: (name) => hubInstance.views().some((v) => v.name === name && v.worktree !== null),
+        status: (name) => worktreeStatus(worktreePath(home.dir, name), worktreeBranch(name), env),
+        discard: async (name) => {
+          const done = await removeWorktree(worktreePath(home.dir, name), worktreeBranch(name), env);
+          if (done.reason !== undefined) log.warn(`worktree of ${name} kept: ${done.reason}`);
+          return done;
+        },
+      },
       recorder: createRecorder(roots, env),
       log: log.child('web'),
     });

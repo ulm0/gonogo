@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRecord } from '../src/shared/protocol.js';
 import { WORKTREE_NOTE } from '../src/server/constants.js';
 import { createLauncher } from '../src/server/launcher.js';
-import { checkWorktree, parseWorktree, prepareWorktree, worktreeBranch, worktreePath } from '../src/server/worktree.js';
+import { checkWorktree, parseWorktree, prepareWorktree, removeWorktree, worktreeBranch, worktreePath, worktreeStatus } from '../src/server/worktree.js';
 import { cleanRoomEnv, fakeDockerBin, makeRepo } from './clean-room-helpers.js';
 
 const SID = '0b2f5c1e-6d3a-4f7e-9a1b-2c3d4e5f6a7b';
@@ -142,5 +142,59 @@ describe('the launcher starts a worktree agent in its worktree', () => {
     const outside = join(tmp, 'plain');
     await mkdir(outside);
     await expect(launcher().prepareStart(record({ dir: outside }), { generation: 1, flag: null })).rejects.toThrow(/inside a git repository/);
+  });
+});
+
+describe('worktreeStatus and removeWorktree', () => {
+  const commit = (cwd: string, message: string): void => {
+    git(cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.test', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', message);
+  };
+
+  it('says nothing is there before the first start', async () => {
+    const path = worktreePath(home, 'ana');
+    expect(await worktreeStatus(path, 'gonogo/ana', env)).toEqual({ path, branch: 'gonogo/ana', exists: false, dirty: false, ahead: 0, merged: false });
+  });
+
+  it('counts unsaved changes and commits ahead, and sees a merged branch', async () => {
+    const place = await prepareWorktree(record(), home, env);
+    expect(await worktreeStatus(place.worktree, place.branch, env)).toMatchObject({ exists: true, dirty: false, ahead: 0, merged: true });
+    await writeFile(join(place.worktree, 'new.txt'), 'x\n');
+    expect(await worktreeStatus(place.worktree, place.branch, env)).toMatchObject({ dirty: true });
+    git(place.worktree, 'add', 'new.txt');
+    commit(place.worktree, 'work');
+    expect(await worktreeStatus(place.worktree, place.branch, env)).toMatchObject({ dirty: false, ahead: 1, merged: false });
+  });
+
+  it('removes a clean merged worktree and its branch', async () => {
+    const place = await prepareWorktree(record(), home, env);
+    expect(await removeWorktree(place.worktree, place.branch, env)).toEqual({ removed: true, branchDeleted: true });
+    expect(await exists(place.worktree)).toBe(false);
+    expect(git(repo, 'branch', '--list', 'gonogo/*')).toBe('');
+  });
+
+  it('refuses a dirty folder and keeps the work', async () => {
+    const place = await prepareWorktree(record(), home, env);
+    await writeFile(join(place.worktree, 'a.txt'), 'changed\n');
+    const done = await removeWorktree(place.worktree, place.branch, env);
+    expect(done).toMatchObject({ removed: false, branchDeleted: false });
+    expect(done.reason).toBeTruthy();
+    expect(await readFile(join(place.worktree, 'a.txt'), 'utf8')).toBe('changed\n');
+  });
+
+  it('removes the folder but keeps a branch that is not merged', async () => {
+    const place = await prepareWorktree(record(), home, env);
+    await writeFile(join(place.worktree, 'new.txt'), 'x\n');
+    git(place.worktree, 'add', 'new.txt');
+    commit(place.worktree, 'work');
+    const done = await removeWorktree(place.worktree, place.branch, env);
+    expect(done).toMatchObject({ removed: true, branchDeleted: false });
+    expect(done.reason).toMatch(/not fully merged/);
+    expect(git(repo, 'branch', '--list', 'gonogo/ana')).toContain('gonogo/ana');
+  });
+
+  it('says so for a folder that is no worktree', async () => {
+    const plain = join(tmp, 'plain');
+    await mkdir(plain);
+    expect(await removeWorktree(plain, 'gonogo/ana', env)).toMatchObject({ removed: false, branchDeleted: false });
   });
 });

@@ -370,6 +370,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const serversError = shown('payload.mcpServers');
   const skillsError = shown('payload.skills');
   const cleanError = shown('cleanRoom');
+  const worktreeError = shown('worktree');
   const modelError = shown('model');
   const keysError = shown('keys');
   const modelHints = providerInfo(values.provider).model;
@@ -610,6 +611,30 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
+  // a Clean Room has a worktree already
+  const worktreeBox = !(values.provider === 'claude' && values.cleanRoom) && (
+    <div className="staff-clean" data-invalid={worktreeError !== undefined ? '' : undefined}>
+      <div className="staff-check">
+        <input
+          id={`${id}-worktree`}
+          type="checkbox"
+          checked={values.worktree}
+          aria-invalid={worktreeError !== undefined}
+          aria-describedby={describedBy(`${id}-worktree`, true, worktreeError !== undefined)}
+          onChange={(event) => change({ worktree: event.target.checked }, 'worktree')}
+        />
+        <label htmlFor={`${id}-worktree`}>Own git worktree</label>
+      </div>
+      {worktreeError !== undefined && (
+        <p className="error" id={`${id}-worktree-error`}>
+          {worktreeError}
+        </p>
+      )}
+      <p className="hint" id={`${id}-worktree-hint`}>
+        Starts in its own copy of the project on the branch gonogo/{values.name === '' ? 'name' : values.name}, so it does not step on other consoles. The folder must be inside a git repository. Commit in the worktree, then merge the branch.
+      </p>
+    </div>
+  );
   const payloadFold = payloadKind !== null && (
     <details className="staff-fold" open={foldOpen} onToggle={(event) => setFoldOpen(event.currentTarget.open)}>
       <summary className="label">PAYLOAD</summary>
@@ -769,6 +794,8 @@ function Staff({ form }: { form: Target }): ReactElement {
               {modelField}
               {dirField}
               {cleanRoomBox}
+            {worktreeBox}
+              {worktreeBox}
               {modes}
               {confirmPanel}
               {payloadFold}
