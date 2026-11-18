@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -59,6 +59,23 @@ describe('Propellant counts the subagents of a session (a real run, test/fixture
     // agent-b2 has the same message ids as agent-a1…: ids are per file, so its two replies count again
     expect(more).toBeGreaterThan(0);
     expect(more).toBeLessThan(99999);
+    await p.close();
+  });
+
+  it('does not open a finished helper file again: many files, one stat each, and only a file that grew is read', async () => {
+    const { p, dir, transcript } = await setup();
+    const folder = join(dir, 'session', 'subagents');
+    for (let n = 0; n < 40; n += 1) await copyFile(join(FIX, 'agent.jsonl'), join(folder, `agent-m${n}.jsonl`));
+    const first = await p.record('ana', transcript);
+    expect(first).toBeGreaterThan(0);
+    expect(await p.record('ana', transcript)).toBe(0);
+    // a file with the same size is not read: this one holds new replies of the same length, and the size says nothing changed
+    const text = await readFile(join(folder, 'agent-m3.jsonl'), 'utf8');
+    await writeFile(join(folder, 'agent-m3.jsonl'), text.replace(/msg_[A-Za-z0-9]+/g, (id) => `msg_${'Z'.repeat(id.length - 4)}`));
+    expect(await p.record('ana', transcript), 'unchanged size: not opened').toBe(0);
+    // one that grew is read, from its cursor
+    await appendFile(join(folder, 'agent-m5.jsonl'), `${JSON.stringify({ type: 'assistant', isSidechain: true, agentId: 'm5', timestamp: '2026-11-18T18:05:00.000Z', message: { id: 'msg_new', model: 'claude-haiku-5-5', usage: { input_tokens: 1, output_tokens: 9 } } })}\n`);
+    expect(await p.record('ana', transcript)).toBe(10);
     await p.close();
   });
 

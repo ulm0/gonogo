@@ -1430,7 +1430,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         break;
       case 'PermissionRequest': {
         // a dialog a subagent opened is the parent's to answer: the reason says who asked
-        const asker = typeof payload.agent_type === 'string' && payload.agent_type !== '' ? ` (subagent ${cutText(collapseWhitespace(payload.agent_type), 40)})` : '';
+        // agent_type also comes on a main session started with --agent: only a hook with an agent_id is a helper's
+        const asker = whoOf(payload) !== 'main' && typeof payload.agent_type === 'string' && payload.agent_type !== '' ? ` (subagent ${cutText(collapseWhitespace(payload.agent_type), 40)})` : '';
         const reason = describePermission(payload.tool_name, payload.tool_input) + asker;
         // the same dialog twice (a repeated hook) is one dialog: no new number, no new event
         const repeated = rt.state === 'needs_you' && rt.needsKind === 'permission' && rt.needsReason === reason;

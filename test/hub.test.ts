@@ -6791,6 +6791,13 @@ describe('Subagents: what the hooks say of the helpers of an agent', () => {
     expect(h.notices.at(-1)?.[1]).toBe('ana asks: Bash: git push (subagent Explore)');
   });
 
+  it('a permission of an agent started with --agent has an agent_type but no agent_id: no helper is named', async () => {
+    const h = await withAna();
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' }, agent_type: 'reviewer' });
+    expect(h.view('ana').needsReason).toBe('permission request: Bash: ls');
+  });
+
   it('a SubagentStop makes Propellant read the session again, and a flood of ids is bounded', async () => {
     const h = await withAna();
     h.hook('ana', 'SubagentStop', { agent_id: 'a1', transcript_path: '/p/session.jsonl' });
