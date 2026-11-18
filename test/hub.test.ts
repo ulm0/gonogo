@@ -6455,6 +6455,22 @@ describe('Autostart: the agents that were running start again after a server res
     expect(marks).toContainEqual(['ghost', false, false]);
   });
 
+  it('an agent taken over from the pty host is running: autostart does not start it again and sends it no carry-on', async () => {
+    const roster = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 }), rosterRecord('ben', { desk: 2 })];
+    const set: RunEntry[] = [{ name: 'flight', working: true }, { name: 'ana', working: true }, { name: 'ben', working: false }];
+    const marks: Array<[string, boolean, boolean]> = [];
+    const h = makeHarness({ roster, marks, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: set, adoptable: async () => ({ running: [{ name: 'flight', generation: 3 }, { name: 'ana', generation: 4 }], holds: {} }) });
+    h.setScreen('ana', { cols: 80, rows: 24, promptBox: true, dialog: null, promptText: '' });
+    h.setScreen('flight', { cols: 80, rows: 24, promptBox: true, dialog: null, promptText: '' });
+    await h.hub.start();
+    await settle();
+    await h.advance(2000);
+    expect(spawned(h)).toEqual(['ben']);
+    expect(h.hub.activity().filter((item) => item.subject === 'Server restarted')).toEqual([]);
+    // the adopted agents stay in the saved set
+    expect(marks.filter((m) => !m[1]).map((m) => m[0])).not.toContain('flight');
+  });
+
   it('one start that fails does not stop the rest, and the reason is in the event', async () => {
     const h = makeHarness({ roster: ROSTER, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: entries('flight', 'ana', 'ben') });
     h.script.spawnError = 'the folder is gone';
