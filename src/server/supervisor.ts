@@ -143,7 +143,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }
     });
     proc.stderr?.on('data', (chunk: Buffer) => {
-      for (const line of chunk.toString('utf8').split('\n')) if (line.trim() !== '') log.warn(`[${child.entry.id}] ${line}`);
+      for (const line of chunk.toString('utf8').split('\n')) if (line.trim() !== '') log.info(`[${child.entry.id}] ${line}`);
     });
     child.exited = new Promise<void>((done) => {
       proc.once('exit', (code, signal) => {
