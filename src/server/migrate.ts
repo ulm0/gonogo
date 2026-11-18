@@ -24,10 +24,12 @@ import {
   DOCKING_FILE,
   DOWNLINK_FILE,
   FILE_MODE,
+  KEYS_FILE,
   LIVERY_DIR,
   LIVERY_FILE,
   PROPELLANT_FILE,
   RELAY_FILE,
+  ROLLOUT_FILE,
   SCHEDULES_FILE,
   STATION_FILE,
   TASKS_FILE,
@@ -59,6 +61,8 @@ export const FORMATS: Format[] = [
   STATION_FILE,
   LIVERY_FILE,
   PROPELLANT_FILE,
+  KEYS_FILE,
+  ROLLOUT_FILE,
   LIVERY_DIR + ALL_JSON,
 ].map((file): Format => (file === PROPELLANT_FILE ? { file, steps: [], unversionedIs1: true } : { file, steps: [] }));
 

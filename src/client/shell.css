@@ -99,6 +99,29 @@
   font-size: 12px;
 }
 
+/* Rollout: a quiet note, not an alert; it takes a line under the top bar only while a newer gonogo is out. */
+.rollout-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 12px 24px 0;
+  padding: 2px 8px 2px 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--well);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.rollout-strip code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 /* ---- the wall: five modules ---- */
 
 .wall {
@@ -1511,6 +1534,10 @@
 
   .gone-strip {
     margin: 6px 12px 0;
+  }
+
+  .rollout-strip {
+    margin: 6px 12px;
   }
 
   /* One module for the whole wall; the sequence is a desktop block. */

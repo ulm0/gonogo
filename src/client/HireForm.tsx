@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, ReactNode } from 'react';
-import { MAX_AGENTS, providerInfo, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, PermissionMode, Provider } from '../shared/protocol.js';
+import { KEY_SUGGESTIONS, KEYS_MAX, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS } from '../shared/protocol.js';
+import type { AgentView, EngineCheck, PermissionMode, Provider } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
@@ -13,6 +13,7 @@ import {
   choosePosition,
   editRequest,
   engineHint,
+  engineNote,
   engineOptions,
   FIELDS,
   hireRequest,
@@ -23,7 +24,7 @@ import {
   submitLabel,
   validate,
 } from './form.js';
-import type { Field, Problems, Values } from './form.js';
+import type { EngineNote, Field, Problems, Values } from './form.js';
 import { legendOf } from './loop.js';
 import { store, useStore } from './store.js';
 import type { ClientState } from './store.js';
@@ -37,7 +38,7 @@ const MODES: ReadonlyArray<{ value: PermissionMode; label: string; hint: string 
 ];
 const SEED_NOTE =
   'Folders added here are trusted automatically: repository hooks and settings run with your credential. Add only repositories you trust.';
-const ALL_TOUCHED: Partial<Record<Field, boolean>> = { name: true, role: true, dir: true, mode: true, confirmBypass: true, command: true, 'payload.mcpServers': true, 'payload.skills': true };
+const ALL_TOUCHED: Partial<Record<Field, boolean>> = { name: true, role: true, dir: true, mode: true, confirmBypass: true, command: true, 'payload.mcpServers': true, 'payload.skills': true, model: true, keys: true };
 const SERVERS_EXAMPLE = '{"files": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]}}';
 
 type Target = NonNullable<ClientState['form']>;
@@ -123,6 +124,48 @@ function PositionTile({
   );
 }
 
+/** Pad Check under the engine select: whether its program is there and, when it is not, the vendor's install command to copy. gonogo never runs it. */
+function EngineNoteView({ note, id }: { note: EngineNote; id: string }): ReactElement {
+  const [copied, setCopied] = useState(false);
+  const install = note.install;
+  const copy = (): void => {
+    if (install === null) return;
+    // Over plain http from another machine the clipboard is not offered: the command stays selectable in its field.
+    navigator.clipboard.writeText(install).then(
+      () => setCopied(true),
+      () => undefined,
+    );
+  };
+  return (
+    <div className="staff-engine-note">
+      <p className="staff-engine-state" id={id} role="status">
+        <span className="led" data-on={note.found ? 'true' : undefined} aria-hidden="true" />
+        {note.text}
+      </p>
+      {install !== null && (
+        <div className="staff-install">
+          <label htmlFor={`${id}-cmd`} className="label">
+            Install command
+          </label>
+          <input id={`${id}-cmd`} className="input" type="text" readOnly value={install} spellCheck={false} onFocus={(event) => event.currentTarget.select()} />
+          <button type="button" className="btn" onClick={copy}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      )}
+      {!note.found && (
+        <p className="hint">
+          {install === null ? 'No install command was checked for it. ' : 'The vendor documents it here: '}
+          <a href={note.docs} target="_blank" rel="noreferrer">
+            install page
+          </a>
+          . gonogo never runs an installer.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RoomFull(): ReactElement {
   return (
     <section className="staff-full module" aria-labelledby="staff-full-title">
@@ -182,6 +225,8 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [serverProblems, setServerProblems] = useState<Problems>({});
   const [attempts, setAttempts] = useState(0);
   const [foldOpen, setFoldOpen] = useState(() => values.servers !== '' || values.skills !== '');
+  const [keysOpen, setKeysOpen] = useState(false);
+  const [checks, setChecks] = useState<EngineCheck[]>([]);
   const formRef = useRef<HTMLFormElement | null>(null);
   const bypassTile = useRef<HTMLButtonElement | null>(null);
   const confirmBox = useRef<HTMLInputElement | null>(null);
@@ -204,6 +249,19 @@ function Staff({ form }: { form: Target }): ReactElement {
   useEffect(() => {
     if (attempts > 0) formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [attempts]);
+
+  // Pad Check: where each engine's program is, asked once when a hire opens. Without an answer the note falls back to what the server saw at start.
+  useEffect(() => {
+    if (editing) return;
+    let live = true;
+    api.engines().then(
+      (list) => live && setChecks(list),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [editing]);
 
   // BYPASS opens the confirmation: the keyboard goes to its checkbox.
   useEffect(() => {
@@ -257,6 +315,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       setTouched(ALL_TOUCHED);
       setAttempts((n) => n + 1);
       if (problems['payload.mcpServers'] !== undefined || problems['payload.skills'] !== undefined) setFoldOpen(true);
+      if (problems.keys !== undefined) setKeysOpen(true);
       return;
     }
     setBusy(true);
@@ -291,6 +350,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       setTopError(messageOf(e));
       if (field !== undefined && FIELDS.includes(field)) setServerProblems({ [field]: messageOf(e) });
       if (field?.startsWith('payload')) setFoldOpen(true);
+      if (field === 'keys') setKeysOpen(true);
       setBusy(false);
     }
   }
@@ -308,6 +368,13 @@ function Staff({ form }: { form: Target }): ReactElement {
   const serversError = shown('payload.mcpServers');
   const skillsError = shown('payload.skills');
   const cleanError = shown('cleanRoom');
+  const modelError = shown('model');
+  const keysError = shown('keys');
+  const modelHints = providerInfo(values.provider).model;
+  const storedKeys = Object.keys(original?.keys ?? {}).sort();
+  const setRows = (keys: Values['keys']): void => change({ keys }, 'keys');
+  const toggleRemoved = (name: string): void =>
+    change({ keysRemoved: values.keysRemoved.includes(name) ? values.keysRemoved.filter((n) => n !== name) : [...values.keysRemoved, name] }, 'keys');
   const payloadKind = providerInfo(values.provider).payload;
   const roleLength = values.role.trim().length;
   const title = editing ? `EDIT ${legendOf(original?.name ?? '', agents)}` : 'STAFF A CONSOLE';
@@ -341,7 +408,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       label="Working directory"
       hint={
         custom ? (
-          'The command is saved in plain text. Keep secrets out of it.'
+          'The command is saved in plain text. Keep secrets out of it: set them as keys below.'
         ) : (
           <>
             A path on the machine where gonogo runs.
@@ -390,20 +457,52 @@ function Staff({ form }: { form: Target }): ReactElement {
     </Control>
   );
   const engineField = !custom && !editing && (
-    <Control id={`${id}-engine`} label="Engine" hint={engineHint(values.provider)}>
-      <select
-        id={`${id}-engine`}
-        className="input staff-engine"
-        value={values.provider}
-        aria-describedby={`${id}-engine-hint`}
-        onChange={(event) => pick((v) => chooseEngine(v, event.target.value as Provider))}
-      >
-        {engineOptions(info?.installed ?? []).map((option) => (
-          <option key={option.provider} value={option.provider}>
-            {option.text}
-          </option>
+    <>
+      <Control id={`${id}-engine`} label="Engine" hint={engineHint(values.provider)}>
+        <select
+          id={`${id}-engine`}
+          className="input staff-engine"
+          value={values.provider}
+          aria-describedby={`${id}-engine-hint ${id}-engine-note`}
+          onChange={(event) => pick((v) => chooseEngine(v, event.target.value as Provider))}
+        >
+          {engineOptions(info?.installed ?? []).map((option) => (
+            <option key={option.provider} value={option.provider}>
+              {option.text}
+            </option>
+          ))}
+        </select>
+      </Control>
+      <EngineNoteView key={values.provider} id={`${id}-engine-note`} note={engineNote(values.provider, info?.installed ?? [], checks.find((c) => c.provider === values.provider))} />
+    </>
+  );
+  const modelField = modelHints !== null && (
+    <Control
+      id={`${id}-model`}
+      label="Model"
+      hint={`Passed to ${providerInfo(values.provider).label} as --model. Empty uses its own default.${modelHints.length > 0 ? ` Names it knows: ${modelHints.join(', ')}.` : ''} Any name it accepts works.`}
+      error={modelError}
+    >
+      <input
+        id={`${id}-model`}
+        className="input"
+        type="text"
+        list={`${id}-models`}
+        value={values.model}
+        placeholder="its default"
+        autoComplete="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        aria-invalid={modelError !== undefined}
+        aria-describedby={describedBy(`${id}-model`, true, modelError !== undefined)}
+        onChange={(event) => change({ model: event.target.value }, 'model')}
+        onBlur={touch('model')}
+      />
+      <datalist id={`${id}-models`}>
+        {modelHints.map((name) => (
+          <option key={name} value={name} />
         ))}
-      </select>
+      </datalist>
     </Control>
   );
   const roleField = !custom && (
@@ -558,6 +657,90 @@ function Staff({ form }: { form: Target }): ReactElement {
       </div>
     </details>
   );
+  const keysFold = (
+    <details className="staff-fold" open={keysOpen} onToggle={(event) => setKeysOpen(event.currentTarget.open)}>
+      <summary className="label">CLEARANCE · KEYS{storedKeys.length > 0 ? ` · ${storedKeys.length} SET` : ''}</summary>
+      <div className="staff-fold-body">
+        <p className="hint" id={`${id}-keys-hint`}>
+          Environment variables for this console only, such as an API key. They are saved on the gonogo machine (keys.json, mode 0600), given only to this console's process and never shown again: a saved key says SET. A name typed again
+          replaces its value; the console picks changes up at its next start. At most {KEYS_MAX}.
+        </p>
+        {storedKeys.length > 0 && (
+          <ul className="staff-keys" aria-label="Keys that are set">
+            {storedKeys.map((name) => {
+              const removed = values.keysRemoved.includes(name);
+              return (
+                <li key={name}>
+                  <code>{name}</code>
+                  <span className="chip" data-tone={removed ? 'amber' : 'go'}>
+                    {removed ? 'REMOVED ON SAVE' : 'SET'}
+                  </span>
+                  <button type="button" className="btn" data-kind="quiet" aria-pressed={removed} aria-label={`${removed ? 'Keep' : 'Remove'} ${name}`} onClick={() => toggleRemoved(name)}>
+                    {removed ? 'Keep' : 'Remove'}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {values.keys.map((row, i) => (
+          <div className="staff-key-row" key={i}>
+            <div className="field">
+              <label htmlFor={`${id}-key-name-${i}`}>Key name</label>
+              <input
+                id={`${id}-key-name-${i}`}
+                className="input"
+                type="text"
+                list={`${id}-key-names`}
+                value={row.name}
+                placeholder="OPENAI_API_KEY"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                aria-invalid={keysError !== undefined}
+                aria-describedby={`${id}-keys-hint`}
+                onChange={(event) => setRows(values.keys.map((r, j) => (j === i ? { ...r, name: event.target.value } : r)))}
+                onBlur={touch('keys')}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`${id}-key-value-${i}`}>Value</label>
+              <input
+                id={`${id}-key-value-${i}`}
+                className="input"
+                type="password"
+                value={row.value}
+                autoComplete="new-password"
+                spellCheck={false}
+                aria-invalid={keysError !== undefined}
+                aria-describedby={`${id}-keys-hint`}
+                onChange={(event) => setRows(values.keys.map((r, j) => (j === i ? { ...r, value: event.target.value } : r)))}
+                onBlur={touch('keys')}
+              />
+            </div>
+            <button type="button" className="btn" data-kind="quiet" aria-label={`Drop key row ${i + 1}`} onClick={() => setRows(values.keys.filter((_, j) => j !== i))}>
+              Drop
+            </button>
+          </div>
+        ))}
+        <datalist id={`${id}-key-names`}>
+          {KEY_SUGGESTIONS.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+        {keysError !== undefined && (
+          <p className="error" id={`${id}-keys-error`} role="alert">
+            {keysError}
+          </p>
+        )}
+        <div>
+          <button type="button" className="btn" onClick={() => setRows([...values.keys, { name: '', value: '' }])}>
+            Add a key
+          </button>
+        </div>
+      </div>
+    </details>
+  );
   const alert = topError !== null && (
     <p className="error staff-alert" role="alert" tabIndex={-1}>
       {topError}
@@ -581,11 +764,13 @@ function Staff({ form }: { form: Target }): ReactElement {
               {nameField}
               {commandField}
               {roleField}
+              {modelField}
               {dirField}
               {cleanRoomBox}
               {modes}
               {confirmPanel}
               {payloadFold}
+              {keysFold}
             </fieldset>
             {alert}
             <div className="staff-foot">
@@ -673,11 +858,13 @@ function Staff({ form }: { form: Target }): ReactElement {
             {nameField}
             {commandField}
             {roleField}
+            {modelField}
             {dirField}
             {cleanRoomBox}
             {modes}
             {confirmPanel}
             {payloadFold}
+            {keysFold}
           </fieldset>
           {alert}
           <div className="staff-foot">

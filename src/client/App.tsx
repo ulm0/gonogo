@@ -16,7 +16,7 @@ import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { openConsole, openHire, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { openConsole, openHire, readStored, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import logo from '../../docs/brand/lockup.svg';
@@ -259,6 +259,44 @@ function GoneStrip(): ReactElement | null {
   );
 }
 
+const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
+
+/** Rollout: a quiet note when a newer gonogo is out, with the command that updates this one (shown, never run). Dismissed for that version, in this browser only. */
+function RolloutStrip(): ReactElement | null {
+  const rollout = useStore((s) => s.rollout);
+  const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
+  const [copied, setCopied] = useState(false);
+  if (rollout === null || !rollout.newer || rollout.latest === null || dismissed === rollout.latest) return null;
+  const { latest, command } = rollout;
+  return (
+    <aside className="rollout-strip" aria-label="Update">
+      <span>
+        gonogo {latest} is out (this is {rollout.current}). To update, run:
+      </span>
+      <code>{command}</code>
+      <button
+        type="button"
+        className="btn"
+        data-kind="quiet"
+        onClick={() => navigator.clipboard.writeText(command).then(() => setCopied(true), () => undefined)}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      <button
+        type="button"
+        className="btn"
+        data-kind="quiet"
+        onClick={() => {
+          writeStored(ROLLOUT_DISMISSED_KEY, latest);
+          setDismissed(latest);
+        }}
+      >
+        Dismiss
+      </button>
+    </aside>
+  );
+}
+
 /* ---- the live region ---- */
 
 /** `n` changes with every write, so the same words twice in a row are read twice. */
@@ -356,6 +394,7 @@ function Office(): ReactElement {
     <>
       <TopBar phone={phone} onPanel={() => setPanel(true)} />
       <GoneStrip />
+      <RolloutStrip />
       <Screen phone={phone} />
       {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
       <LiveRegion />

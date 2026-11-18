@@ -10,6 +10,7 @@ import type {
   PollView,
   PropellantView,
   ReliefRequest,
+  RolloutView,
   ScheduleView,
   ServerFrame,
   ServerInfo,
@@ -64,6 +65,8 @@ export interface ClientState {
   docking: DockingView;
   /** Relief: the hire requests of the boss that wait for the Director's GO. */
   relief: ReliefRequest[];
+  /** Rollout: what the daily update check saw, or null from an older server. */
+  rollout: RolloutView | null;
 }
 
 export interface Store {
@@ -160,6 +163,7 @@ export function emptyState(): ClientState {
     livery: defaultView(),
     docking: NO_DOCKING,
     relief: [],
+    rollout: null,
   };
 }
 
@@ -314,6 +318,7 @@ function applyState(s: ClientState, snapshot: StateSnapshot, now: number): Clien
     docking: snapshot.docking ?? NO_DOCKING,
     // an older server, or one without Relief, sends none
     relief: snapshot.relief?.requests ?? [],
+    rollout: snapshot.rollout ?? null,
     // a state is a connect or a reconnect: frames may have been missed, so the view asks again
     log: { rev: s.log.rev + 1, changed: [], removed: [] },
   };
@@ -405,6 +410,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, docking: frame.docking };
     case 'relief':
       return { ...s, relief: frame.relief.requests };
+    case 'rollout':
+      return { ...s, rollout: frame.rollout };
     case 'log':
       return { ...s, log: { rev: s.log.rev + 1, changed: frame.changed, removed: frame.removed } };
     default:

@@ -126,8 +126,10 @@ interface ServerOptions {
   sessionDir?: boolean;
   maxHops?: number;
   staticDir?: string | null;
-  /** What Relay posts with (scenario 28): a fake, so that nothing leaves the machine. */
+  /** What Relay posts with (scenario 28), and what Rollout asks the registry with (scenario 32): a fake, so that nothing leaves the machine. */
   relayFetch?: typeof fetch;
+  /** Rollout on (scenario 32). Off by default, as in startGonogo. */
+  updateCheck?: boolean;
 }
 
 const harnesses: Harness[] = [];
@@ -154,6 +156,7 @@ async function startServer(options: ServerOptions = {}): Promise<Harness> {
       agentCmd: [process.execPath, FAKE],
       staticDir: options.staticDir ?? null,
       fetch: options.relayFetch,
+      updateCheck: options.updateCheck,
       env: {
         ...process.env,
         CLAUDE_CONFIG_DIR: configDir,
@@ -345,6 +348,9 @@ interface StartEvent extends FakeEvent {
   tokenLength: number;
   cwd: string;
   pid: number;
+  /** Engine Bay: the --model the stand-in was given, and the OPENAI_API_KEY of its environment (a made-up value). */
+  model: string | null;
+  openaiKey: string | null;
 }
 interface PromptEvent extends FakeEvent {
   e: 'prompt';
@@ -423,7 +429,7 @@ const pidAlive = (pid: number): boolean => {
 };
 
 /** The first-start argv of 7.2, written from the contract: the launcher's own builders are not used to judge the launcher. */
-function expectedArgv(h: Harness, name: string, role: string, flag: 'session-id' | 'resume', pluginDir?: string): string[] {
+function expectedArgv(h: Harness, name: string, role: string, flag: 'session-id' | 'resume', pluginDir?: string, model?: string): string[] {
   const entry = rosterEntry(h, name);
   const dir = join(h.home, 'agents', name);
   return [
@@ -437,6 +443,7 @@ function expectedArgv(h: Harness, name: string, role: string, flag: 'session-id'
     '--mcp-config',
     join(dir, 'mcp.json'),
     ...(pluginDir === undefined ? [] : ['--plugin-dir', pluginDir]),
+    ...(model === undefined ? [] : ['--model', model]),
     '--append-system-prompt',
     buildRoleText(name, role, join(dir, 'memory.md')),
     '--system-prompt-snapshot',
@@ -2338,6 +2345,105 @@ describe('end to end with the stand-in agent', () => {
     const events = ((await api<DownlinkView>(h, 'GET', '/api/downlink')).body.items.filter((item) => item.type === 'event' && item.kind === 'relief') as Array<{ text: string }>).map((item) => item.text);
     expect(events).toEqual(expect.arrayContaining(['guido-1 hired (asked by flight)', 'hire of fido-1 refused']));
   }, 120_000);
+
+  it('32. Engine Bay: a model and keys reach one agent only, no page, file or log but keys.json holds a value, and rename and remove take the keys along', async () => {
+    const SECRET = 'sk-e2e-secret-0001';
+    const NEW_SECRET = 'sk-e2e-secret-0002';
+    // the server's own environment has a value of that name too: an agent's key beats it, and one without a key still gets it
+    const h = await startServer({ env: { OPENAI_API_KEY: 'host-value' } });
+    await waitState(h, 'flight', 'idle');
+    const valid = { name: 'ana', role: 'Reviews', dir: h.work, mode: 'default' };
+    const refuse = async (changes: Record<string, unknown>, field: string): Promise<void> => {
+      const response = await api<ApiError>(h, 'POST', '/api/agents', { ...valid, ...changes });
+      expect(response.status, JSON.stringify(changes)).toBe(400);
+      expect(response.body.field).toBe(field);
+      expect(JSON.stringify(response.body)).not.toContain(SECRET);
+    };
+    await refuse({ model: '--dangerously' }, 'model');
+    await refuse({ model: 'x', provider: 'opencode' }, 'model');
+    await refuse({ keys: { PATH: SECRET } }, 'keys');
+    await refuse({ keys: { OPENAI_API_KEY: `${SECRET} with a space` } }, 'keys');
+    await refuse({ keys: { [SECRET]: 'x' } }, 'keys');
+    expect(existsSync(join(h.home, 'keys.json')), 'a refused hire writes no key').toBe(false);
+
+    await hire(h, 'ana', { role: valid.role, model: 'haiku', keys: { OPENAI_API_KEY: SECRET } });
+    await hire(h, 'ben', { role: 'Other' });
+    const [first] = starts(h, 'ana');
+    expect(first?.argv).toEqual(expectedArgv(h, 'ana', valid.role, 'session-id', undefined, 'haiku'));
+    expect(first).toMatchObject({ model: 'haiku', openaiKey: SECRET });
+    expect(starts(h, 'ben')[0]).toMatchObject({ model: null, openaiKey: 'host-value' });
+    expect((await view(h, 'ana'))).toMatchObject({ model: 'haiku', keys: { OPENAI_API_KEY: expect.any(Number) } });
+
+    // the value is in keys.json (0600) and nowhere else of the home, and the roster and the state hold the name only
+    const keysFile = join(h.home, 'keys.json');
+    expect(statSync(keysFile).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(keysFile, 'utf8'))).toEqual({ version: 1, agents: { ana: { OPENAI_API_KEY: SECRET } } });
+    expect(rosterEntry(h, 'ana')).toMatchObject({ model: 'haiku', keys: { OPENAI_API_KEY: expect.any(Number) } });
+    const holders = (readdirSync(h.home, { recursive: true }) as string[]).filter((entry) => {
+      const path = join(h.home, entry);
+      return statSync(path).isFile() && readFileSync(path, 'utf8').includes(SECRET);
+    });
+    expect(holders).toEqual(['keys.json']);
+    expect(JSON.stringify(await getState(h))).not.toContain(SECRET);
+    const agentDir = join(h.home, 'agents', 'ana');
+    for (const file of ['settings.json', 'mcp.json']) expect(readFileSync(join(agentDir, file), 'utf8')).not.toContain(SECRET);
+
+    // an edit: the key replaced, then removed; the agent is dirty until the restart, and then sees what is left
+    const changed = await api<AgentView>(h, 'PATCH', '/api/agents/ana', { keys: { OPENAI_API_KEY: NEW_SECRET } });
+    expect(changed).toMatchObject({ status: 200, body: { dirty: true } });
+    expect(JSON.stringify(changed.body)).not.toContain(NEW_SECRET);
+    await api(h, 'POST', '/api/agents/ana/restart');
+    await waitView(h, 'ana', (agent) => agent.state === 'idle' && starts(h, 'ana').length === 2, 15_000, 'ana to restart');
+    expect(starts(h, 'ana')[1]).toMatchObject({ model: 'haiku', openaiKey: NEW_SECRET });
+    const removedKey = await api<AgentView>(h, 'PATCH', '/api/agents/ana', { keys: { OPENAI_API_KEY: null }, model: null });
+    expect(removedKey.body).toMatchObject({ model: null, keys: {}, dirty: true });
+    expect('keys' in rosterEntry(h, 'ana') && 'model' in rosterEntry(h, 'ana')).toBe(false);
+    await api(h, 'POST', '/api/agents/ana/restart');
+    await waitView(h, 'ana', (agent) => agent.state === 'idle' && starts(h, 'ana').length === 3, 15_000, 'ana to restart again');
+    expect(starts(h, 'ana')[2]).toMatchObject({ model: null, openaiKey: 'host-value' });
+
+    // a rename moves the keys with the folder, and a remove drops them
+    await api<AgentView>(h, 'PATCH', '/api/agents/ana', { keys: { OPENAI_API_KEY: SECRET } });
+    await api(h, 'POST', '/api/agents/ana/stop');
+    expect((await api<AgentView>(h, 'PATCH', '/api/agents/ana', { name: 'cat' })).status).toBe(200);
+    expect(JSON.parse(readFileSync(keysFile, 'utf8')).agents).toEqual({ cat: { OPENAI_API_KEY: SECRET } });
+    await api(h, 'POST', '/api/agents/cat/restart');
+    await waitState(h, 'cat', 'idle');
+    expect(starts(h, 'cat')[0]).toMatchObject({ openaiKey: SECRET });
+    expect((await api(h, 'DELETE', '/api/agents/cat')).status).toBe(204);
+    expect(JSON.parse(readFileSync(keysFile, 'utf8')).agents).toEqual({});
+    // a new agent of that name starts with no key
+    await hire(h, 'cat', { role: 'again' });
+    expect(starts(h, 'cat').at(-1)).toMatchObject({ openaiKey: 'host-value' });
+  }, 120_000);
+
+  it('33. Rollout: the daily check asks the registry once with a plain GET, the state says a newer gonogo is out, the file is private, and off asks nothing', async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const fake = ((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return Promise.resolve(new Response(JSON.stringify({ name: '@ulm0/gonogo', version: '99.1.0' })));
+    }) as typeof fetch;
+    const on = await startServer({ relayFetch: fake, updateCheck: true });
+    const seen = await waitFor(async () => (await getState(on)).rollout?.latest, 5000, 'the registry answer in the state');
+    expect(seen).toBe('99.1.0');
+    expect((await getState(on)).rollout).toMatchObject({ enabled: true, latest: '99.1.0', newer: true, checkedAt: expect.any(Number) });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('https://registry.npmjs.org/@ulm0%2Fgonogo/latest');
+    expect(calls[0]?.init?.headers).toEqual({ accept: 'application/json' });
+    expect(JSON.parse(readFileSync(join(on.home, 'rollout.json'), 'utf8'))).toMatchObject({ version: 1, latest: '99.1.0' });
+    expect(statSync(join(on.home, 'rollout.json')).mode & 0o777).toBe(0o600);
+    // the page is told when a client is connected while the check ends: the frame carries the view
+    const c = await Client.open(on);
+    const state = c.frames.find((f) => f.t === 'state');
+    expect(state?.t === 'state' && state.state.rollout?.newer).toBe(true);
+
+    const off = await startServer({ relayFetch: fake, updateCheck: false });
+    await waitState(off, 'flight', 'idle');
+    await sleep(300);
+    expect(calls).toHaveLength(1);
+    expect((await getState(off)).rollout).toMatchObject({ enabled: false, latest: null, newer: false });
+    expect(existsSync(join(off.home, 'rollout.json'))).toBe(false);
+  }, 60_000);
 
   it('Clean Room: a console runs through docker on its own worktree and reaches the hub by the name containers use for the host', async () => {
     const aux = await mkdtemp(join(tmpdir(), 'gonogo-'));

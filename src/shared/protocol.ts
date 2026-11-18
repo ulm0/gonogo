@@ -65,21 +65,39 @@ export interface ProviderInfo {
    */
   payload: 'all' | 'servers' | null;
   check: ProviderCheck;
+  /** The CLI takes `--model <name>` (docs/engine-bay-spec.md says where each was checked): the names it suggests, possibly none. null: no model field. Hints only, never a list to keep up to date. */
+  model: readonly string[] | null;
+  /** The vendor's documented install command, copied from its page `docs`; null when none was checked. gonogo never runs it. */
+  install: string | null;
+  /** The vendor's page that says how to install it; '' for the custom command. */
+  docs: string;
 }
 export const PROVIDER_INFO: Readonly<Record<Provider, ProviderInfo>> = {
-  claude: { label: 'Claude Code', bin: 'claude', hooks: true, mcp: true, modes: true, payload: 'all', check: 'run' },
-  gemini: { label: 'Gemini CLI', bin: 'gemini', hooks: true, mcp: true, modes: true, payload: 'servers', check: 'local' },
-  codex: { label: 'Codex', bin: 'codex', hooks: false, mcp: true, modes: true, payload: null, check: 'docs' },
-  opencode: { label: 'opencode', bin: 'opencode', hooks: false, mcp: true, modes: false, payload: null, check: 'docs' },
-  qwen: { label: 'Qwen Code', bin: 'qwen', hooks: false, mcp: false, modes: false, payload: null, check: 'docs' },
-  grok: { label: 'Grok CLI', bin: 'grok', hooks: false, mcp: false, modes: false, payload: null, check: 'docs' },
-  kimi: { label: 'Kimi CLI', bin: 'kimi', hooks: false, mcp: true, modes: false, payload: 'servers', check: 'docs' },
-  crush: { label: 'Crush', bin: 'crush', hooks: false, mcp: false, modes: false, payload: null, check: 'docs' },
-  pi: { label: 'pi', bin: 'pi', hooks: false, mcp: false, modes: false, payload: null, check: 'local' },
-  copilot: { label: 'Copilot CLI', bin: 'copilot', hooks: false, mcp: true, modes: false, payload: null, check: 'docs' },
-  cursor: { label: 'Cursor Agent', bin: 'cursor-agent', hooks: false, mcp: false, modes: false, payload: null, check: 'docs' },
-  custom: { label: 'Custom command', bin: '', hooks: false, mcp: false, modes: false, payload: null, check: 'run' },
+  claude: { label: 'Claude Code', bin: 'claude', hooks: true, mcp: true, modes: true, payload: 'all', check: 'run', model: ['sonnet', 'opus', 'haiku'], install: 'npm install -g @anthropic-ai/claude-code@latest', docs: 'https://code.claude.com/docs/en/setup' },
+  gemini: { label: 'Gemini CLI', bin: 'gemini', hooks: true, mcp: true, modes: true, payload: 'servers', check: 'local', model: ['auto', 'pro', 'flash', 'flash-lite'], install: 'npm install -g @google/gemini-cli', docs: 'https://github.com/google-gemini/gemini-cli' },
+  codex: { label: 'Codex', bin: 'codex', hooks: false, mcp: true, modes: true, payload: null, check: 'docs', model: [], install: 'npm install -g @openai/codex', docs: 'https://github.com/openai/codex' },
+  opencode: { label: 'opencode', bin: 'opencode', hooks: false, mcp: true, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://opencode.ai/v2/install | bash', docs: 'https://opencode.ai/docs/' },
+  qwen: { label: 'Qwen Code', bin: 'qwen', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | bash', docs: 'https://github.com/QwenLM/qwen-code' },
+  grok: { label: 'Grok CLI', bin: 'grok', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/main/install.sh | bash', docs: 'https://github.com/superagent-ai/grok-cli' },
+  kimi: { label: 'Kimi CLI', bin: 'kimi', hooks: false, mcp: true, modes: false, payload: 'servers', check: 'docs', model: [], install: null, docs: 'https://moonshotai.github.io/kimi-cli/' },
+  crush: { label: 'Crush', bin: 'crush', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: null, install: 'brew install charmbracelet/tap/crush', docs: 'https://github.com/charmbracelet/crush' },
+  pi: { label: 'pi', bin: 'pi', hooks: false, mcp: false, modes: false, payload: null, check: 'local', model: ['sonnet', 'haiku'], install: 'curl -fsSL https://pi.dev/install.sh | sh', docs: 'https://pi.dev/' },
+  copilot: { label: 'Copilot CLI', bin: 'copilot', hooks: false, mcp: true, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://gh.io/copilot-install | bash', docs: 'https://github.com/github/copilot-cli' },
+  cursor: { label: 'Cursor Agent', bin: 'cursor-agent', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: [], install: 'curl https://cursor.com/install -fsS | bash', docs: 'https://cursor.com/docs/cli/overview' },
+  custom: { label: 'Custom command', bin: '', hooks: false, mcp: false, modes: false, payload: null, check: 'run', model: null, install: null, docs: '' },
 };
+
+/** Model field of the hire form and the roster: a CLI model name or alias, passed as `--model <name>`. A leading dash would be read as a flag. */
+export const MODEL_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$';
+/**
+ * Clearance (docs/engine-bay-spec.md): environment variables the Director sets for one agent, usually API keys. Upper case
+ * names; a value is printable ASCII without a space. At most KEYS_MAX per agent. The values never leave the server.
+ */
+export const KEY_NAME_PATTERN = '^[A-Z][A-Z0-9_]{0,63}$';
+export const KEY_VALUE_PATTERN = '^[\\x21-\\x7e]{1,4096}$';
+export const KEYS_MAX = 16;
+/** Names the form suggests for a key: the variables `pi --help` (1.5.2) lists. Hints, not a list. */
+export const KEY_SUGGESTIONS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY'] as const;
 /** Absent in an old roster record means 'claude'. */
 export const providerInfo = (provider: Provider | undefined): ProviderInfo => PROVIDER_INFO[provider ?? 'claude'];
 
@@ -321,6 +339,10 @@ export interface AgentRecord {
   payload?: Payload;
   /** Absent means the agent runs on the host. Claude Code agents only. */
   cleanRoom?: CleanRoom;
+  /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
+  model?: string;
+  /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
+  keys?: Record<string, number>;
 }
 export interface RosterFile {
   version: 1;
@@ -407,6 +429,10 @@ export interface AgentView {
   payload: Payload | null;
   /** The Clean Room as stored, or null: the branch and the worktree path follow from the name (cleanRoomBranch, CLEAN_ROOM_DIR). */
   cleanRoom: CleanRoom | null;
+  /** The model as stored, or null for the CLI's default. */
+  model: string | null;
+  /** Clearance: key name to when it was set. Names only: a value is never sent to a browser. */
+  keys: Record<string, number>;
   /**
    * What the agent last did, one line for its console tile: the tool call of the latest PreToolUse hook, formatted like
    * the permission reason without its prefix ("Bash: npm test -- export"), at most DOING_MAX_CHARS. null before the
@@ -836,6 +862,39 @@ export interface StateSnapshot {
   docking?: DockingView;
   /** Absent from an older server and from one that runs without Relief: the page then shows no hire requests. */
   relief?: ReliefView;
+  /** Absent from an older server: the page then shows no update note. */
+  rollout?: RolloutView;
+}
+
+/** Rollout (docs/rollout-spec.md): the newest @ulm0/gonogo the daily check saw. */
+export interface RolloutView {
+  /** The check is on (GONOGO_UPDATE_CHECK, --no-update-check). When off, `latest` stays what was saved before, or null. */
+  enabled: boolean;
+  /** This server's version. */
+  current: string;
+  /** The newest stable version the registry named, or null when none was read yet. */
+  latest: string | null;
+  /** ms epoch of the last try, or null. */
+  checkedAt: number | null;
+  /** `latest` is newer than `current`. */
+  newer: boolean;
+  /** The command that updates the way this gonogo was installed (what `gonogo update` prints). Never run by gonogo. */
+  command: string;
+}
+
+/** One engine as `gonogo doctor` and GET /api/engines report it (Pad Check, docs/engine-bay-spec.md). */
+export interface EngineCheck {
+  provider: Provider;
+  label: string;
+  /** The program name looked up on PATH. */
+  bin: string;
+  /** Where it was found, or null. */
+  path: string | null;
+  /** First line of `<bin> --version`, or null (not found, no answer in time, nothing printed). */
+  version: string | null;
+  /** The vendor's documented install command, or null when none was checked. Shown, never run. */
+  install: string | null;
+  docs: string;
 }
 
 /**
@@ -896,6 +955,10 @@ export interface HireRequest {
   payload?: Payload;
   /** Run the agent in a container on its own worktree. Refused (400, field 'cleanRoom') for another engine, a bad image, no Docker or a directory outside a git repository. */
   cleanRoom?: CleanRoom;
+  /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
+  model?: string;
+  /** Clearance: key name to value, set for this agent only. Bad name or value: 400, field 'keys'. */
+  keys?: Record<string, string>;
 }
 export interface EditRequest {
   /** Rename only while the agent is stopped (409 otherwise). */
@@ -912,6 +975,10 @@ export interface EditRequest {
   payload?: Payload | null;
   /** Replaces the Clean Room setting; null turns it off. */
   cleanRoom?: CleanRoom | null;
+  /** A model name, or null or empty text for the CLI's default. */
+  model?: string | null;
+  /** Key name to a new value, or to null to remove that key. Keys not named stay as they are. */
+  keys?: Record<string, string | null>;
 }
 /** POST /api/poll. Default agents: every running agent except the boss. With `subject` it is a Static fire: SIMSUP and RETRO are asked, `agents` is refused. */
 export interface PollRequest {
@@ -1127,8 +1194,15 @@ export interface ReliefFrame {
   t: 'relief';
   relief: ReliefView;
 }
+
+/** The daily update check finished; carries the whole view. Also inside StateSnapshot. */
+export interface RolloutFrame {
+  t: 'rollout';
+  rollout: RolloutView;
+}
 export type ServerFrame =
   | ReliefFrame
+  | RolloutFrame
   | DockingFrame
   | LiveryFrame
   | LogFrame
@@ -1147,7 +1221,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
@@ -1323,6 +1397,8 @@ export interface LauncherOptions {
   agentCmd?: string[] | null;
   /** Default CLAUDE_BIN. */
   claudeBin?: string;
+  /** Clearance: the values of an agent's keys, put in that agent's environment only. Default none. */
+  keys?: (name: string) => Record<string, string>;
   log?: Logger;
 }
 
@@ -1424,8 +1500,10 @@ export interface HubIo {
   loadHistory(limit: number): Promise<MessageRecord[]>;
   /** Append a record (every creation and every status change). */
   logMessage(record: MessageRecord): void;
-  /** The launcher renames agents/<old>; the glue in cli.ts also moves the terminal host's finished record (TerminalHost.rename). */
+  /** The launcher renames agents/<old>; the glue in cli.ts also moves the terminal host's finished record (TerminalHost.rename) and the agent's keys. */
   renameAgentFiles(oldName: string, newName: string): Promise<void>;
+  /** Clearance: where the values of an agent's keys are kept. The hub holds names only. Optional for fakes: without it keys are refused. */
+  keys?: KeyStore;
   /**
    * Prepare files and spawn. Rejects when it cannot. The exit and ready events come back through Hub.onTerminalEvent.
    * Resolves only after the terminal host holds the new process, so a browser that attaches after the hub's AgentFrame
@@ -1454,6 +1532,16 @@ export interface HubIo {
   /** Docking: the stations this one is docked with. Optional: without it "name@station" is not an address. */
   dock?: DockLink;
   log: Logger;
+}
+
+/** What the hub needs of Clearance: the secret values of an agent's keys (keys.json, mode 0600). */
+export interface KeyStore {
+  /** Sets (string) or removes (null) keys of that agent; `fresh` starts from none (a hire). Rejects when the file cannot be written. */
+  apply(name: string, patch: Record<string, string | null>, fresh?: boolean): Promise<void>;
+  /** Moves the keys of a renamed agent. */
+  rename(oldName: string, newName: string): Promise<void>;
+  /** The agent was removed: its keys go. */
+  remove(name: string): Promise<void>;
 }
 
 /** What the hub needs of Docking. */

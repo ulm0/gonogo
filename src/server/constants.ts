@@ -406,6 +406,19 @@ export const RELIEF_RATE_WINDOW_MS = 10 * 60_000;
 export const RELIEF_TTL_MS = 30 * 60_000;
 /** Propellant (docs/redline-propellant-spec.md): the limits and cursors file; the ledger fuel.jsonl is a log and has no version. */
 export const PROPELLANT_FILE = 'propellant.json';
+/** Clearance (docs/engine-bay-spec.md): the values of the keys set for each agent, mode 0600. The roster keeps their names only. */
+export const KEYS_FILE = 'keys.json';
+/** Pad Check: `<bin> --version` gets this long, and its first line is cut to this many characters. */
+export const ENGINE_VERSION_MS = 5_000;
+export const ENGINE_VERSION_CHARS = 80;
+/** Rollout (docs/rollout-spec.md): the cache of the last check, the one address asked, how often, how long it may take and how much of the answer is read. */
+export const ROLLOUT_FILE = 'rollout.json';
+export const ROLLOUT_URL = 'https://registry.npmjs.org/@ulm0%2Fgonogo/latest';
+export const ROLLOUT_EVERY_MS = 24 * 60 * 60 * 1000;
+export const ROLLOUT_TIMEOUT_MS = 5_000;
+export const ROLLOUT_MAX_BYTES = 256 * 1024;
+/** Rollout is off for a value in this list (GONOGO_UPDATE_CHECK). */
+export const ROLLOUT_OFF_WORDS = ['0', 'off', 'false', 'no'] as const;
 /** Mission Log (docs/mission-log-spec.md): the folder under the home, and how long a snippet of a search result is and how much of the text before the match it shows. */
 export const LOG_DIR = 'mission-log';
 export const LOG_SNIPPET_CHARS = 200;
