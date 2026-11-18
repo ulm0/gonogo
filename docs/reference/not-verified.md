@@ -1,19 +1,36 @@
 # What was not verified
 
-Update this list when these are run. Most features were tested with unit tests, a fake clock and a real server driving the stand-in agent (`test/fake-claude.mjs`); a real `claude` ran only the smoke test (`scripts/smoke-real.mjs`, claude 2.1.325 and 2.1.326, haiku, macOS arm64; numbers in [`docs/contract.md`](https://github.com/ulm0/gonogo/blob/main/docs/contract.md) section 15).
+Update this list when these are run. gonogo is built in a room of its own: on 2026-11-18 (0.1.2, then 0.2.0 and 0.3.0) 15 Claude Code agents (2.1.325, all in `auto` mode) worked on it in a Docker container on linux/amd64, and what that exercised is under **Verified in this room**. Everything else was tested with unit tests, a fake clock and a real server driving the stand-in agent (`test/fake-claude.mjs`), and is under **Not run**. Earlier real runs: `scripts/smoke-real.mjs` (claude 2.1.325 and 2.1.326, haiku, macOS arm64; numbers in [`docs/contract.md`](https://github.com/ulm0/gonogo/blob/main/docs/contract.md) section 15).
 
 <UnverifiedMock class="doc-mock" />
+
+## Verified in this room
+
+Evidence is this room's own records (the Black Box, the Mission Log, the task board, the message log, the state folder and `gh`), read after the fact. The Black Box starts at 13:29 UTC on 2026-11-18, so "used" below means about one working day, not weeks. A browser view of these was not looked at unless it says so.
+
+- **Linux, amd64 and the Docker image.** The room runs in a Docker container on x86_64 with Claude Code 2.1.325 (that it is the published gonogo image was not checked).
+- **Real `claude` with gonogo's tools.** The Flight Plan (56 tasks; 158 create and update events), the Mission Log (more than 19 entries), mail between agents and to the Director (more than 2,600 messages, 212 of them with `in_reply_to`, so Party Line has real threads: the data, not the view), the Downlink, and `start_agent` (FLIGHT started four consoles, 19:07 to 19:09 UTC). Hop counts are recorded on every message.
+- **Costs and quota.** Propellant counted real replies (2,140 ledger lines) and the plan quota came from a real Claude Code status line (`quota.json`).
+- **T-minus and Static fire with a real `claude`.** CONTROL's run (Mission Log "real-claude verification 2026-11": no-go to hold, the Director's hold, abort, a Static fire that went and one that broke) and the Director's polls in the Black Box: no-go holds (RETRO, EECOM), a Static fire, a Director hold, and two all-go.
+- **Max Q** was set on the wall (4, 3, 2, no limit) with agents working. **Startup policy**, **the room layout reset** and **a livery choice** were used from the page.
+- **Clean Room with a real `claude`.** RSO and SIMSUP are Clean Room consoles on real Docker. RSO wrote security reviews to the Mission Log and SIMSUP answered the Director's Static fire from there. Whether their containers were recreated across the server's four restarts that day was not recorded.
+- **`auto` permission mode.** All 15 consoles ran in `auto` for the whole day.
+- **Saved-state upgrade.** One home went 0.1.2, 0.2.0, 0.3.0; every format is still version 1, so no migration ran.
+- **Release.** The release workflow ran for v0.1.1, v0.1.2, v0.2.0 and v0.3.0 (all succeeded; GitHub Releases exist). It is set to publish to npm with provenance; the npm page was not checked.
+- **Docker self-update.** EECOM ran it in docker-in-docker on a real daemon (Mission Log "self-update manual run 0.4.0"): good update, undo, three failing images rolled back, leftovers removed, a private image refused. Killing the helper left a stale result on the page in one case, and a daemon older than API 1.44 was not run.
+
+Used by nobody in this room, so still **not run**: Hold on a console and ALL STOP, a hire request through Relief (every hire was the Director's), Relay (no target is set), a docked station (a code was made, nothing was paired), the Plot Board, a model designing a livery, Payload, Launch Window and Uplink with a real model.
 
 ## Not run
 
 - **Browsers:** every view was driven by script in Chrome (1440, 1280, 1024 px, a 500 px window, 390 px phone emulation); never by hand, on a real phone, in Firefox or Safari, or with a screen reader.
-- **Linux and amd64:** Linux only inside the arm64 container; not as a host, not on amd64, no real `claude` on Linux.
-- **Docker image:** built and run in a Lima VM (Docker 29.9, arm64) with the stand-in agent. Not run: linux/amd64, a real `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` (seed mode with a real `claude`, `apiKeyHelper` with a real key and its environment), a bind-mounted `/projects` and its ownership, the `safe.directory` entries.
+- **Linux as a host, Windows and macOS on amd64:** Linux only inside a container; a host install of the npm package on Linux, Windows forced-colours mode and macOS amd64 were not run.
+- **Docker image:** a real `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` and seed mode on a fresh install (this room signs in by hand), `apiKeyHelper` with a real key and its environment, a bind-mounted `/projects` and its ownership, the `safe.directory` entries.
 - **Real `claude`:** whether `permissions.deny` and `crossSessionInbound` take effect, whether the role text applies on a first start, startup dialogs other than trust and bypass, Esc twice clearing the input box (from Claude Code's docs).
-- **Real `claude` with newer features:** no model has used an Engine Bay engine, a payload, a Clean Room, a schedule, an uplink, the Flight Plan, Downlink, Mission Log, Livery or Relay tools, or a docked station. Whether a model calls these tools when it should is unknown.
-- **T-minus and Max Q:** a real `claude` answered one poll with go; no-go, hold, abort and Max Q not run with one.
+- **Real `claude` with newer features:** no model has used an Engine Bay engine, a payload, a schedule, an uplink, Livery design, Relay, Relief, Hold or a docked station. Whether a model calls these tools when it should is unknown. Telegram phone approvals, Remote Control and Bedrock were never run. `agy` was only read from its help. A quota reading from an account that is not a subscription was never seen.
+- **T-minus and Max Q:** a plain T-minus poll with a subject-less brief (real agents with no evidence vote no-go; go was seen through Static fire and the Director's polls). Max Q was set with agents working but nobody checked that it held a message as the docs say.
 - **Custom agents:** no full-screen program (`htop`, an editor) tried.
-- **`auto` permission mode:** a turn in `auto` through gonogo; behaviour on an account or model that cannot use it.
+- **`auto` permission mode:** an account or model that cannot use it.
 - **Engine Bay:** no engine other than Claude Code run against a model. Gemini CLI 0.59.0 installed but not signed in (hooks reaching gonogo, mail handover, pointer confirmation, its dialogs, its first hook within the 5 s startup timer). pi checked by `--help` only. Codex, opencode, Kimi, Copilot, Qwen, Grok, Crush and Cursor Agent never installed (flags from their docs). Whether each engine turns on bracketed paste (without it, no mail).
 - **Model, keys, Pad Check and Rollout:** `--model` was run only for Claude Code (`haiku`); for Gemini CLI and pi it comes from their `--help`, for Codex, Kimi and Cursor Agent from their docs. No engine was run with a key from Clearance; a Clean Room with a key ran only against the fake docker. The install commands were read from each vendor's page on 2026-11-18 and never run; Kimi CLI has none, and whether the Grok CLI of that page is the `grok` the adapter means is not known. Rollout was never run against a newer release: tests use a fake `fetch`, and the address was fetched once by hand; the hourly look across a real day change, `gonogo update` from a real pnpm, npm or Docker install, and the note on a real phone are not tried.
 - **Payload:** a model using a payload tool or skill, its permission prompt, the skill name as Claude Code shows it, remote (http or sse) servers, `${NAME}` expansion, Gemini and Kimi file shapes against the real CLIs.
@@ -30,9 +47,9 @@ Update this list when these are run. Most features were tested with unit tests, 
 - **Plot Board, Black Box:** a real `claude` reading the board at its start or writing it as the boss, Gemini or another engine calling its tools; git older than 2.56 (the one used here), a git that is slow or blocked for the 10 second limit, Windows, a repository on a network drive; hundreds of events a minute in a real room.
 - **Docking:** between two machines, over HTTPS or a real proxy, a real `claude` reading a message from another station, the 30 s roster pull outside a fake timer.
 - **Proxy recipes:** none of the Caddy, nginx or `tailscale serve` configs in [Exposing gonogo safely](../https.md) and [Security](./security.md#reverse-proxy) was run; ruling out basic auth comes from reading `src/client/api.ts`.
-- **Saved-state upgrades:** every format is still version 1, so no real upgrade has run. Not tested: two gonogos on one home at once, a disk filling between the copy and the write.
-- **Release:** `.github/workflows/release.yml` checked with actionlint only before the first publish.
-- **Flaky tests:** end-to-end scenarios 4 and 6 (pointer timing) on a loaded machine, and the Uplink 256 KiB body route test (`write EPIPE`). They pass on rerun.
+- **Saved-state upgrades:** no format has changed version, so no real migration ran. Not tested: two gonogos on one home at once, a disk filling between the copy and the write.
+- **Release:** the npm page and its provenance, the published image, and the docs deploy were not checked by this page's author.
+- **Flaky tests:** end-to-end scenarios 4 and 6 (pointer timing) on a loaded machine, and the Uplink 256 KiB body route test (`write EPIPE`). They pass on rerun. #31 fixed scenarios 4 and 8 and #55 the Mission Log order; whether 6 and the Uplink test still flake was not re-checked.
 
 ## Known limits
 

@@ -16,7 +16,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## 0.3.0 (2026-11-18)
 
-Since 0.2.0: subagents, plan quota, feature toggles, tool permissions, mission cost and budget, a room editor, restart recovery, live reload (opt-in), an Update button, Bedrock notes and more. Tried with the stand-in agent only, for most features without a real `claude`; not in a browser; not with a real Telegram, a Docker updater or an AWS run (Bedrock is checked against docs only); `agy` is checked against its help only.
+Since 0.2.0: subagents, plan quota, feature toggles, tool permissions, mission cost and budget, a room editor, restart recovery, live reload (opt-in), an Update button, Bedrock notes and more. Built with, and used daily in, a room of 15 Claude Code 2.1.325 agents (in Docker, linux/amd64). Not exercised for real: a browser view of most of it, Telegram, Remote Control, an AWS run (Bedrock is checked against docs only), `agy` (its help only) and Windows. The full list is in [What was not verified](https://gonogo.ulm0.com/reference/not-verified).
 
 - **`gonogo tui`: a console cannot write your clipboard or title.** The OSC 52 (clipboard) and OSC 0, 1, 2 (title) sequences in a console's output are cut before they reach your terminal, across the pieces the output arrives in.
 - **Subagents.** gonogo sees the helpers a Claude Code agent starts (a `3 SUBAGENTS` chip, from the new SubagentStart and SubagentStop hooks), counts their tokens and dollars under the agent (Propellant reads their transcripts), keeps Redline's loop and error counters for each helper, and says which helper asked at a permission dialog. Flight Rules can allow them, cap how many run at once, or deny them. It cannot veto a helper, and Claude Code's cap does not apply under ultracode.
@@ -38,7 +38,7 @@ Since 0.2.0: subagents, plan quota, feature toggles, tool permissions, mission c
 
 ## 0.2.0 (2026-11-18)
 
-Features and fixes since 0.1.2. Each was tried with the stand-in agent only: not verified with a real `claude`, `agy`, Telegram or remote control, and not in a browser.
+Features and fixes since 0.1.2. Used with a real `claude` from this release on (see [What was not verified](https://gonogo.ulm0.com/reference/not-verified)); not verified with `agy`, Telegram or remote control, and not in a browser.
 
 - **Post-Flight Review** (issue #37). The Recorder shows an agent's changes against its last commit as files and hunks with line numbers. You add notes on lines (tone, replies, resolve), give a verdict (APPROVE, or REQUEST CHANGES, which mails the open notes to the agent), ask the agent for a WALKTHROUGH of its own diff, or ask another agent for a PEER REVIEW. Agents use two new tools, `review_read` and `review_note`; a peer may read and note a diff only while your request is pending. A note follows its line when it moves and goes to an Outdated group when the line is gone. COMMIT asks once more when notes are open. Native: no external viewer, no extra port, no top-bar key; the notes are in `reviews.json`, out of the reach of a Clean Room.
 
@@ -53,7 +53,7 @@ Features and fixes since 0.1.2. Each was tried with the stand-in agent only: not
 
 ## 0.1.2 (2026-11-18)
 
-Features from the backlog. Each was tried with the stand-in agent and in Chrome, none yet with a real `claude` or another real CLI.
+Features from the backlog. Each was tried with the stand-in agent and in Chrome; a real `claude` came into use after this release.
 
 - **Releases.** npm publishing uses trusted publishing (OIDC); the repository holds no npm token.
 - **Static fire.** A T-minus poll with a subject: running SIMSUP agents try to break it, RETRO agents write the rollback. A second agent in a position takes the next free name (`guido-2`).

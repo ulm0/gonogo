@@ -3,7 +3,7 @@
 import '../landing/landing.css';
 
 const AREAS = [
-  'Docker', 'Linux', 'Sign-in in a container', 'A real claude, end to end', 'Positions, T-minus, Max Q, custom agents, the room and the wall',
+  'Verified in this room', 'Docker', 'Linux', 'Sign-in in a container', 'A real claude, end to end', 'Positions, T-minus, Max Q, custom agents, the room and the wall',
   'The auto permission mode', 'Engine Bay', 'Payload', 'Clean Room', 'Launch Window', 'Uplink', 'Flight Plan', 'Downlink', 'Mission Log',
   'Relay', 'Livery', 'Docking', 'The proxy recipe', 'Versions of the saved state', 'Release', 'Tests', 'The browser, overall',
 ];

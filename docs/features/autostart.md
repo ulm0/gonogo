@@ -3,7 +3,7 @@
 After the server stops (Ctrl-C, a reboot, the container recreated, a crash) only the boss starts again, as it always has.
 The Flight Rules block **Start again after a restart** can start more. Design and limits:
 [`docs/autostart-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/autostart-spec.md). It was tried with the stand-in
-agent only, never with a real `claude` ([What was not verified](../reference/not-verified.md)).
+agent; the room that builds gonogo changed its policy once with real Claude Code agents running ([What was not verified](../reference/not-verified.md)).
 
 - **The policy.** *The boss only* (the default), *Every console that was running*, or *Nobody* (the boss too). No top-bar key.
 - **What "was running" means.** gonogo keeps `~/.gonogo/run-state.json`: the consoles whose process is up and that are not on
