@@ -62,6 +62,25 @@ describe('PROVIDER_INFO: model, install and docs', () => {
   });
 });
 
+describe('the effort on the command line', () => {
+  const base = { flag: 'session-id', sessionId: SID, mode: 'default', settingsPath: '/s', mcpPath: '/m', roleText: 'r' } as const;
+  it('claude: --effort before the variadic --allowedTools, and never when none is set', () => {
+    const args = buildArgv({ ...base, effort: 'xhigh' });
+    expect(args.slice(args.indexOf('--effort'), args.indexOf('--effort') + 2)).toEqual(['--effort', 'xhigh']);
+    expect(args.indexOf('--effort')).toBeLessThan(args.indexOf('--allowedTools'));
+    expect(buildArgv(base)).not.toContain('--effort');
+    expect(buildArgv({ ...base, effort: '' })).not.toContain('--effort');
+  });
+
+  it('through the launcher, a restart keeps it, and an agent with none gets none', async () => {
+    const l = launcher();
+    expect((await l.prepareStart(agent('claude', { effort: 'high' }), START)).spec.args).toContain('--effort');
+    const again = (await l.prepareStart(agent('claude', { effort: 'high' }), { generation: 2, flag: 'resume' })).spec.args;
+    expect(again[again.indexOf('--effort') + 1]).toBe('high');
+    expect((await l.prepareStart(agent('claude'), { generation: 3, flag: null })).spec.args).not.toContain('--effort');
+  });
+});
+
 describe('the model on the command line', () => {
   it('claude: --model before the variadic --allowedTools, never when none is set', () => {
     const base = { flag: 'session-id', sessionId: SID, mode: 'default', settingsPath: '/s', mcpPath: '/m', roleText: 'r' } as const;

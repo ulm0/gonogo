@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import * as api from './api.js';
 import { DOCS_URL } from '../shared/protocol.js';
+import { DetailChips } from './DetailChips.js';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { FeaturesBlock } from './Features.js';
@@ -204,6 +205,7 @@ export function FlightRules(): ReactElement {
             <li key={a.name}>
               <span className="rules-call">{legendOf(legends, a.name)}</span>
               <span className="hint rules-name">{a.name}</span>
+              <DetailChips agent={a} />
               <button type="button" className="btn" data-kind="quiet" aria-label={`Edit ${legendOf(legends, a.name)}`} onClick={() => openEdit(a.name)}>
                 Edit
               </button>

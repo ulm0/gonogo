@@ -1,5 +1,5 @@
-import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, CleanRoom, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, Effort, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { parseRulesText, rulesOf, rulesToText } from './permissions.js';
 import { positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -9,7 +9,7 @@ import type { Position } from '../shared/positions.js';
 /** The server's COMMAND_MAX_CHARS (src/server/constants.ts, which the client build does not include). */
 export const COMMAND_MAX_CHARS = 1000;
 
-export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'remoteControl' | 'autostart' | 'permissions' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'keys';
+export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'remoteControl' | 'autostart' | 'permissions' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'effort' | 'keys';
 export type Problems = Partial<Record<Field, string>>;
 
 /** One key typed in the form: a name and its value, which only ever travels from here to the server. */
@@ -44,12 +44,14 @@ export interface Values {
   autostart: boolean;
   /** Engine Bay: the model for `--model`; '' is the CLI's default. */
   model: string;
+  /** Claude Code only: a level of EFFORTS for `--effort`; '' is the CLI's own. */
+  effort: string;
   /** Clearance: keys typed now (a name that is already set replaces its value), and the names of set keys to remove. */
   keys: KeyRow[];
   keysRemoved: string[];
 }
 
-export const FIELDS: readonly string[] = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'payload.mcpServers', 'payload.skills', 'model', 'keys'];
+export const FIELDS: readonly string[] = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'payload.mcpServers', 'payload.skills', 'model', 'effort', 'keys'];
 
 const NAME_PATTERN = new RegExp(AGENT_NAME_PATTERN);
 
@@ -104,12 +106,12 @@ export function choosePosition(
 
 /** The custom command tile: no position, no permissions, and a fixed role (the form shows none for it). */
 export function chooseCustom(values: Values, agents: Readonly<Record<string, AgentView>>): Values {
-  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, autostart: values.autostart, rules: '', model: '', name: untouched(values, agents).name ? '' : values.name };
+  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, autostart: values.autostart, rules: '', model: '', effort: '', name: untouched(values, agents).name ? '' : values.name };
 }
 
 /** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
 export function chooseEngine(values: Values, provider: Provider): Values {
-  return { ...values, provider, model: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom, worktree: values.worktree && !(provider === 'claude' && values.cleanRoom), remoteControl: provider === 'claude' && values.remoteControl, rules: provider === 'claude' ? values.rules : '' };
+  return { ...values, provider, model: '', effort: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom, worktree: values.worktree && !(provider === 'claude' && values.cleanRoom), remoteControl: provider === 'claude' && values.remoteControl, rules: provider === 'claude' ? values.rules : '' };
 }
 
 /** What the form says under the engine select about the program: found (and where, which version) or not, with the vendor's install command. The command is shown, never run. */
@@ -177,6 +179,7 @@ export function initialValues(
     rules: rulesToText(current?.permissions),
     autostart: current?.autostart !== false,
     model: current?.model ?? '',
+    effort: current?.effort ?? '',
     keys: [],
     keysRemoved: [],
     name: current?.name ?? '',
@@ -220,6 +223,7 @@ const FIX_WORDS: ReadonlyArray<readonly [Field, string]> = [
   ['payload.mcpServers', 'PAYLOAD'],
   ['payload.skills', 'PAYLOAD'],
   ['model', 'MODEL'],
+  ['effort', 'EFFORT'],
   ['keys', 'KEYS'],
 ];
 
@@ -293,6 +297,9 @@ const KEY_VALUE_RE = new RegExp(KEY_VALUE_PATTERN);
 /** The rows that were filled in, trimmed (a row with neither a name nor a value is an empty line and counts for nothing). */
 const typedKeys = (values: Values): KeyRow[] =>
   values.keys.map((row) => ({ name: row.name.trim(), value: row.value.trim() })).filter((row) => row.name !== '' || row.value !== '');
+
+/** The effort: only for an engine that takes one, a level of EFFORTS or null. */
+export const effortOf = (values: Values): Effort | null => (takesEffort(values.provider) && (EFFORTS as readonly string[]).includes(values.effort) ? (values.effort as Effort) : null);
 
 /** The Engine Bay model: only for an engine that takes one, trimmed, '' for none. */
 export const modelOf = (values: Values): string => (providerInfo(values.provider).model === null ? '' : values.model.trim());
@@ -378,6 +385,8 @@ export function hireRequest(values: Values): HireRequest {
   const modes = providerInfo(values.provider).modes;
   const request: HireRequest = { ...base, mode: modes ? values.mode : 'default', provider: values.provider };
   if (modelOf(values) !== '') request.model = modelOf(values);
+  const effort = effortOf(values);
+  if (effort !== null) request.effort = effort;
   if (keys) request.keys = keys;
   if (modes && values.mode === 'bypassPermissions' && values.confirm) request.confirmBypass = true;
   if (values.position !== '') request.position = values.position;
@@ -416,6 +425,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     if (JSON.stringify(cleanRoom) !== JSON.stringify(original.cleanRoom ?? null)) changes.cleanRoom = cleanRoom;
     const model = modelOf(values);
     if (model !== (original.model ?? '')) changes.model = model === '' ? null : model;
+    if (effortOf(values) !== (original.effort ?? null)) changes.effort = effortOf(values);
   }
   if (values.provider === 'claude') {
     const rules = rulesOf(values.rules);

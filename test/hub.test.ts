@@ -2825,6 +2825,7 @@ describe('hire (4.9)', () => {
       permissions: null,
       autostart: true,
       model: null,
+      effort: null,
       keys: {},
       doing: null,
       subagents: { running: 0, started: 0, types: {} },
@@ -6061,6 +6062,38 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     const cleared = await h.hub.edit('ana', { model: null });
     expect(cleared).toMatchObject({ model: null, dirty: true });
     expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('model');
+  });
+
+  it('hire stores the effort of a Claude Code agent and hands it to the launcher; none is null in the view and no key in the record', async () => {
+    const h = await started();
+    const view = await hireWith(h, { effort: 'xhigh' });
+    expect(view.effort).toBe('xhigh');
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')?.effort).toBe('xhigh');
+    expect(h.spawns.at(-1)?.agent.effort).toBe('xhigh');
+    const plain = await hireWith(h, { name: 'ben', dir: '/work/ben' });
+    expect(plain.effort).toBeNull();
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ben')).not.toHaveProperty('effort');
+  });
+
+  it('refuses a level that is not one, a number, and an effort for an engine that takes none', async () => {
+    const h = await started();
+    await expectHubReject(hireWith(h, { effort: 'ultra' }), 'bad_request', /effort must be one of: low, medium, high, xhigh, max/, 'effort');
+    await expectHubReject(hireWith(h, { effort: 5 }), 'bad_request', /effort must be one of/, 'effort');
+    await expectHubReject(hireWith(h, { effort: 'high', provider: 'gemini' }), 'bad_request', 'Gemini CLI takes no effort setting', 'effort');
+    await expectHubReject(hireWith(h, { effort: 'high', provider: 'custom', command: 'htop' }), 'bad_request', 'Custom command takes no effort setting', 'effort');
+    expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
+  });
+
+  it('edit changes and clears the effort, and either is dirty until the restart', async () => {
+    const h = await withAna();
+    expect(await h.hub.edit('ana', { effort: 'max' })).toMatchObject({ effort: 'max', dirty: true });
+    await h.hub.restart('ana');
+    expect(h.spawns.at(-1)?.agent.effort).toBe('max');
+    expect(h.view('ana').dirty).toBe(false);
+    expect(await h.hub.edit('ana', { effort: 'max' })).toMatchObject({ dirty: false });
+    expect(await h.hub.edit('ana', { effort: null })).toMatchObject({ effort: null, dirty: true });
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('effort');
+    await expectHubReject(h.hub.edit('ana', { effort: 'warp' } as never), 'bad_request', /effort must be one of/, 'effort');
   });
 
   it('hire keeps the values in the key store and only their names and times in the record, the view and the roster file', async () => {

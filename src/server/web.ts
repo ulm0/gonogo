@@ -16,6 +16,7 @@ import type {
   AnswerRequest,
   ApiErrorCode,
   Attachment,
+  Effort,
   EditRequest,
   EngineCheck,
   ErrorFrame,
@@ -386,7 +387,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, keys } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, effort, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -433,6 +434,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
   if (autostart !== undefined) {
     if (typeof autostart !== 'boolean') return fieldError('autostart', 'true or false');
     value.autostart = autostart;
+  }
+  if (effort !== undefined) {
+    if (typeof effort !== 'string') return fieldError('effort', 'a string');
+    value.effort = effort as Effort;
   }
   // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
   if (model !== undefined) {
@@ -521,6 +526,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.autostart !== undefined) {
     if (typeof o.autostart !== 'boolean') return fieldError('autostart', 'true or false');
     value.autostart = o.autostart;
+  }
+  if (o.effort !== undefined) {
+    if (o.effort !== null && typeof o.effort !== 'string') return fieldError('effort', 'a string or null');
+    value.effort = o.effort as Effort | null;
   }
   if (o.model !== undefined) {
     if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');

@@ -81,6 +81,7 @@ function fakeClient(calls: Calls): { factory: NonNullable<TuiOptions['client']>;
     markRead: record('markRead'),
     archive: record('archive'),
     startPoll: record('startPoll'),
+    modelDefaults: () => Promise.resolve(null),
     get seq() {
       return attached;
     },

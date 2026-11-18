@@ -4,6 +4,7 @@
  * a glyph and a word, so the colour is never the only mark, and a log of the session still reads. Every text of the server goes
  * through `clean` first: an agent wrote it, and the terminal acts on what it is given.
  */
+import { detailsLine, detailsOf } from '../shared/details.js';
 import { DOCS_URL, STATE_LABELS, tabTitle } from '../shared/protocol.js';
 import type { AgentView, DownlinkItem } from '../shared/protocol.js';
 import { lengths } from './tui-keys.js';
@@ -96,6 +97,8 @@ function roomPane(state: TuiState, ui: Ui, width: number, height: number, active
       [clean(a.name, 16).padEnd(width >= 70 ? 14 : 10), here ? 'bold' : undefined],
       [stateWord(a).padEnd(10), isOnHold(a) ? 'warn' : STATE_STYLE[a.state]],
       ...(width >= 70 ? ([[(a.position === null ? '' : clean(a.position, 12)).padEnd(10), 'dim']] as Seg[]) : []),
+      // the engine, the model it starts with and the effort: the same three facts as the chips of the page
+      ...(width >= 76 ? ([[`${clean(detailsLine(detailsOf(a, state.models), true), 40)}  `, 'dim']] as Seg[]) : []),
       [extra, a.state === 'needs_you' ? 'warn' : 'dim'],
     ];
     out.push(fit(width, here ? [['', undefined], ...segs.map(([t]) => [t, 'inverse'] as Seg)] : segs, color));

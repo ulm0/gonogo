@@ -1,0 +1,14 @@
+/* Engine, model and effort chips: one row that wraps, so a phone shows them under the name instead of squeezing the state chip. */
+.detail-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.detail-chips .chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

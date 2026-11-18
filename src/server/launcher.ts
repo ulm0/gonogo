@@ -193,6 +193,8 @@ export function buildArgv(input: {
   pluginDir?: string | null;
   /** Engine Bay: the model of the agent; none leaves the CLI's own default. */
   model?: string;
+  /** Claude Code's `--effort`; none leaves its own. */
+  effort?: string;
   /** Remote Control: the session name the Claude app shows; none is off. */
   remoteControl?: string;
   /** Feature toggles: tool names (`mcp__gonogo__hire_agent`) of features that are off, left out of `--allowedTools`. */
@@ -210,6 +212,7 @@ export function buildArgv(input: {
     input.mcpPath,
     ...(input.pluginDir ? ['--plugin-dir', input.pluginDir] : []),
     ...(input.model ? ['--model', input.model] : []),
+    ...(input.effort ? ['--effort', input.effort] : []),
     ...(input.remoteControl ? ['--remote-control', input.remoteControl] : []),
     '--append-system-prompt',
     input.roleText,
@@ -658,7 +661,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort: agent.effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);

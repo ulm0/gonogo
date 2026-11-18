@@ -89,6 +89,14 @@ export const PROVIDER_INFO: Readonly<Record<Provider, ProviderInfo>> = {
   custom: { label: 'Custom command', bin: '', hooks: false, mcp: false, modes: false, payload: null, check: 'run', model: null, install: null, docs: '' },
 };
 
+/**
+ * Effort (`claude --effort <level>`, checked in `claude --help` 2.1.325): how hard a Claude Code agent thinks. The one engine with a per-agent
+ * mechanism that was checked: agy lists `--effort` in its help but the levels it takes were not read, so it has none here.
+ */
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof EFFORTS)[number];
+export const takesEffort = (provider: Provider): boolean => provider === 'claude';
+
 /** Model field of the hire form and the roster: a CLI model name or alias, passed as `--model <name>`. A leading dash would be read as a flag. */
 export const MODEL_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$';
 /**
@@ -462,6 +470,8 @@ export interface AgentRecord {
   stoppedBy?: 'director';
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
   model?: string;
+  /** Claude Code only: `--effort` at every start; absent means the CLI's own. */
+  effort?: Effort;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
   keys?: Record<string, number>;
 }
@@ -562,6 +572,8 @@ export interface AgentView {
   autostart: boolean;
   /** The model as stored, or null for the CLI's default. */
   model: string | null;
+  /** The effort as stored, or null for the CLI's own. Only Claude Code takes one. */
+  effort: Effort | null;
   /** Clearance: key name to when it was set. Names only: a value is never sent to a browser. */
   keys: Record<string, number>;
   /**
@@ -1252,6 +1264,8 @@ export interface HireRequest {
   permissions?: PermissionRules;
   /** false keeps the room's startup policy from starting this agent again; true (the default) follows it. */
   autostart?: boolean;
+  /** Claude Code only: passed as `--effort`. Refused (400, field 'effort') for another engine or a level that is not in EFFORTS. */
+  effort?: Effort;
   /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
   model?: string;
   /** Clearance: key name to value, set for this agent only. Bad name or value: 400, field 'keys'. */
@@ -1280,6 +1294,8 @@ export interface EditRequest {
   permissions?: PermissionRules | null;
   /** false: the startup policy does not start this agent again; true follows the room's. */
   autostart?: boolean;
+  /** A level of EFFORTS, or null for the CLI's own. */
+  effort?: Effort | null;
   /** A model name, or null or empty text for the CLI's default. */
   model?: string | null;
   /** Key name to a new value, or to null to remove that key. Keys not named stay as they are. */

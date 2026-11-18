@@ -7,7 +7,7 @@
  * sequences, control and bidi characters) before it is drawn.
  */
 import { HOLD_REASON } from '../shared/protocol.js';
-import type { AgentView, DownlinkItem, DownlinkView, PollView, ReliefRequest, ServerFrame, ServerInfo, TabNameView } from '../shared/protocol.js';
+import type { AgentView, DownlinkItem, DownlinkView, ModelDefaults, PollView, ReliefRequest, ServerFrame, ServerInfo, TabNameView } from '../shared/protocol.js';
 
 export type Link = 'connecting' | 'open' | 'reconnecting' | 'unauthorized';
 
@@ -23,9 +23,11 @@ export interface TuiState {
   info: ServerInfo | null;
   /** The name of this room in the title of the browser tab: the header shows it too. */
   tabName: TabNameView;
+  /** The room's default models, for the model each console starts with: null until the server answered. */
+  models: ModelDefaults | null;
 }
 
-export const initialState = (): TuiState => ({ link: 'connecting', loaded: false, agents: [], downlink: { unread: 0, items: [] }, relief: [], poll: null, info: null, tabName: { name: null, fallback: null } });
+export const initialState = (): TuiState => ({ link: 'connecting', loaded: false, agents: [], downlink: { unread: 0, items: [] }, relief: [], poll: null, info: null, tabName: { name: null, fallback: null }, models: null });
 
 const byDesk = (a: AgentView, b: AgentView): number => a.desk - b.desk || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 

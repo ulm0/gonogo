@@ -87,6 +87,8 @@ export async function runTui(options: TuiOptions): Promise<number> {
     },
     onLink: (link) => {
       state = { ...state, link };
+      // the default models are not in a frame: asked at every connect, they decide which model a console shows
+      if (link === 'open') void client.modelDefaults().then((models) => ((state = { ...state, models: models ?? state.models }), (dirty = true)));
       // the page's rule: a console re-attaches itself after a reconnect
       if (link === 'open' && mode.kind === 'console') {
         const { cols, rows } = size();
