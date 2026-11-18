@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentView, DownlinkItem, PollView, ReliefRequest, ServerFrame } from '../src/shared/protocol.js';
 import { HOLD_REASON } from '../src/shared/protocol.js';
+import { buildChildEnv } from '../src/server/launcher.js';
+import { LEAVE_SCREEN, RESET_MODES } from '../src/server/tui-app.js';
 import { CONSOLE_HELP, consoleInput, initialConsoleInput } from '../src/server/tui-console.js';
 import { initialUi, parseKeys, step } from '../src/server/tui-keys.js';
 import type { Ui } from '../src/server/tui-keys.js';
@@ -378,5 +380,20 @@ describe('the command line', () => {
     expect(await tuiMain([], { GONOGO_HOME: '/nowhere/at/all' }, io(true))).toBe(1);
     expect(err.join('')).toContain('no browser token');
     expect(err.join('')).not.toMatch(/token: [0-9a-f]{20}/);
+  });
+});
+
+describe('what an agent and the terminal must not keep', () => {
+  it('keeps the Director\'s token out of the environment of an agent, however gonogo was started', () => {
+    const env = buildChildEnv({ base: { PATH: '/usr/bin', GONOGO_BROWSER_TOKEN: 'director-secret', GONOGO_TOKEN: 'old' }, token: 'agent-token', seed: false });
+    expect(env).not.toHaveProperty('GONOGO_BROWSER_TOKEN');
+    expect(Object.values(env)).not.toContain('director-secret');
+    expect(env.GONOGO_TOKEN).toBe('agent-token');
+  });
+
+  it('turns off bracketed paste, the mouse, focus reports and application keys when a console is left or the terminal is given back', () => {
+    for (const code of ['2004', '1000', '1002', '1003', '1006', '1004', '1']) expect(RESET_MODES).toContain(`\x1b[?${code}l`);
+    expect(LEAVE_SCREEN).toContain(RESET_MODES);
+    expect(LEAVE_SCREEN.endsWith('\x1b[?25h\x1b[?1049l')).toBe(true);
   });
 });

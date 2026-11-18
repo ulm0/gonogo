@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import xtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentView, DownlinkItem, ReliefRequest, ServerFrame } from '../src/shared/protocol.js';
-import { ENTER_SCREEN, LEAVE_SCREEN, runTui } from '../src/server/tui-app.js';
+import { ENTER_SCREEN, LEAVE_SCREEN, RESET_MODES, runTui } from '../src/server/tui-app.js';
 import type { TuiOptions } from '../src/server/tui-app.js';
 import type { TuiClient, TuiClientOptions } from '../src/server/tui-client.js';
 import type { Link } from '../src/server/tui-state.js';
@@ -324,6 +324,7 @@ describe('a console', () => {
     expect(r.calls.list).toContainEqual(['input', 'ana', 'qh3']);
     r.stdin.type('\x1dq');
     expect(r.calls.list.at(-1)).toEqual(['detach']);
+    expect(r.stdout.chunks.join('')).toContain(RESET_MODES);
     await sleep(30);
     expect(await r.text()).toMatch(/\. ana\s+idle/);
     expect(await r.text()).not.toContain('claude is ready');
