@@ -8,6 +8,7 @@ import { CONSOLE_HELP, consoleInput, initialConsoleInput } from '../src/server/t
 import { initialUi, parseKeys, step } from '../src/server/tui-keys.js';
 import type { Ui } from '../src/server/tui-keys.js';
 import { parseTuiArgs, resolveToken, resolveUrl, tuiMain } from '../src/server/tui-cli.js';
+import { wsUrl } from '../src/server/tui-client.js';
 import { render } from '../src/server/tui-render.js';
 import { applyFrame, clean, inboxOf, initialState, isOnHold, itemLine, needsOf } from '../src/server/tui-state.js';
 import type { TuiState } from '../src/server/tui-state.js';
@@ -415,5 +416,19 @@ describe('what an agent and the terminal must not keep', () => {
     expect(RESET_MODES).toContain('\x1b[<u');
     expect(LEAVE_SCREEN).toContain(RESET_MODES);
     expect(LEAVE_SCREEN.endsWith('\x1b[?25h\x1b[?1049l')).toBe(true);
+  });
+});
+
+describe('tui --room (rooms as the only mode)', () => {
+  it('takes a room id, and refuses what is not one', () => {
+    expect(parseTuiArgs(['--room', 'team'])).toEqual({ kind: 'run', room: 'team' });
+    expect(parseTuiArgs(['--room=main', '--home', '/h'])).toEqual({ kind: 'run', room: 'main', home: '/h' });
+    for (const bad of ['Team', '../x', 'a/b', '1a', '']) expect(parseTuiArgs(['--room', bad]), bad).toMatchObject({ kind: 'error' });
+  });
+
+  it('the WebSocket of a room is under its prefix', () => {
+    expect(wsUrl('http://127.0.0.1:7777')).toBe('ws://127.0.0.1:7777/ws');
+    expect(wsUrl('https://h.example/r/team')).toBe('wss://h.example/r/team/ws');
+    expect(wsUrl('http://h/r/team/')).toBe('ws://h/r/team/ws');
   });
 });

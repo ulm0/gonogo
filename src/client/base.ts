@@ -9,6 +9,9 @@ export const baseOf = (pathname: string): string => ROOM_PATH.exec(pathname)?.[1
 
 export const BASE = baseOf(typeof location === 'undefined' ? '/' : location.pathname);
 
+/** The list of rooms, a page of the supervisor (src/server/supervisor.ts ROOMS_PATH). */
+export const ROOMS_PATH = '/rooms';
+
 export const withBase = (path: string): string => BASE + path;
 
 /** The address other machines use to reach this room: its origin and its prefix (webhooks and docking calls go there). */

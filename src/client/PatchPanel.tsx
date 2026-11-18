@@ -4,7 +4,7 @@
  * keyboard inside it and the rest of the page out of reach of a screen reader while it is open.
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { BASE } from './base.js';
+import { ROOMS_PATH } from './base.js';
 import type { KeyboardEvent, ReactElement } from 'react';
 import { DOCS_URL } from '../shared/protocol.js';
 import * as api from './api.js';
@@ -52,8 +52,8 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
       window.open(DOCS_URL, '_blank', 'noopener,noreferrer');
       return null;
     case 'rooms':
-      // the list of rooms is the supervisor's own page, at the root of this address
-      location.assign('/');
+      // the list of rooms is the supervisor's own page
+      location.assign(ROOMS_PATH);
       return null;
     case 'new-mission':
       openNewMission();
@@ -115,7 +115,7 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
   const { busy, error, run } = useRun();
   const room = useStore((s) => s.room);
   const off = useStore((s) => s.features);
-  const all = useMemo(() => commands({ agents: list, legends, poll, unread, livery, room, off, inRoom: BASE !== '' }), [list, legends, poll, unread, livery, room, off]);
+  const all = useMemo(() => commands({ agents: list, legends, poll, unread, livery, room, off, inRoom: true }), [list, legends, poll, unread, livery, room, off]);
   const shown = useMemo(() => matchCommands(all, query), [all, query]);
   const at = Math.min(active, shown.length - 1);
 

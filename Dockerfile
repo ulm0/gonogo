@@ -159,10 +159,12 @@ RUN claude --version \
 VOLUME ["/state", "/projects"]
 EXPOSE 7777
 
-# The page at / needs no token and answers 200 once the server listens. It probes the port of CMD below: with another
-# --port, give `docker run` a matching --health-cmd.
+# /rooms/health is the supervisor's own path (no token, never proxied): 503 until room main has been ready once, then 200 for as
+# long as the supervisor runs, also while main restarts, so a crash loop of main does not flap the container and a main that never
+# starts keeps it unhealthy (the self-update swap then rolls back). It probes the port of CMD below: with another --port, give
+# `docker run` a matching --health-cmd.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:7777/').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:7777/rooms/health').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
 
 # -s: tini acts as a subreaper, so reaping also works under Docker's own --init, where tini is not PID 1.
 # mkdir -p: a /state volume made by an older image has no /state/config/git yet, and a named volume is seeded only once.

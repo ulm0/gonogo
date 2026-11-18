@@ -11,7 +11,7 @@
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
@@ -19,11 +19,13 @@ import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { bearerToken, sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
+import { acquireSupervisorLock } from './home.js';
 import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { hostName } from './web.js';
 
-const DIRECTOR_TOKEN_FILE = 'rooms-token';
+const DIRECTOR_TOKEN_FILE = 'token';
+const RELOAD_EXIT = 75;
 const READY = /gonogo ready: http:\/\/[^\s/:]+:(\d{1,5})\/#token=([0-9a-f]{64})/;
 const POLL_MS = 2000;
 const STATUS_TTL_MS = 3000;
@@ -80,6 +82,10 @@ export interface Supervisor {
   directorToken: string;
   url: string;
   rooms(): RoomView[];
+  /** Resolves once room main has been ready, or after `ms` (a main that does not start must not keep the front port from being announced). */
+  whenReady(ms: number): Promise<void>;
+  /** Reload (SIGUSR2 to every room, which hands its agents to its pty host and exits 75); resolves when they are gone. The caller then stops and re-executes. */
+  reload(): Promise<void>;
   /** Graceful: every room gets SIGTERM and its own shutdown; resolves when they are gone (or after 12 s, then SIGKILL). */
   stop(): Promise<void>;
 }
@@ -99,9 +105,15 @@ interface Child {
   exited: Promise<void> | null;
 }
 
-/** The Director token: its own file, so that it is never a room's token. 0600. */
-export function directorTokenOf(home: string): string {
+/**
+ * The Director token is `<home>/token`, 0600: for an existing home the value its owner already has, so every old link works. A room never
+ * holds it (its own token is `run/room-token`, new at every start). The `rooms-token` of 0.4 and the `token` of a non-main room are removed.
+ */
+export function directorTokenOf(home: string, otherRooms: readonly string[] = []): string {
   mkdirSync(home, { recursive: true, mode: 0o700 });
+  rmSync(join(home, 'rooms-token'), { force: true });
+  // a room's own token of 0.4 must not open anything now (it was never the Director's)
+  for (const id of otherRooms) rmSync(join(roomHome(home, id), 'token'), { force: true });
   const path = join(home, DIRECTOR_TOKEN_FILE);
   try {
     const existing = readFileSync(path, 'utf8').trim();
@@ -116,7 +128,49 @@ export function directorTokenOf(home: string): string {
 
 export async function startSupervisor(options: SupervisorOptions): Promise<Supervisor> {
   const log = options.log ?? nullLogger;
-  const directorToken = directorTokenOf(options.home);
+  // one supervisor per home; the lock is released by stop() (and by the process ending, for the stale-pid rule)
+  const releaseLock = acquireSupervisorLock(options.home);
+  let directorToken: string;
+  try {
+    directorToken = directorTokenOf(options.home, loadRooms(options.home).filter((r) => r.id !== MAIN_ROOM).map((r) => r.id));
+  } catch (error) {
+    releaseLock();
+    throw error;
+  }
+  let reloading = false;
+  let mainReadyOnce = false;
+  let markMainReady: () => void = () => undefined;
+  const mainReady = new Promise<void>((resolve) => (markMainReady = resolve));
+  // `gonogo token rotate` writes a new `token` file: it is taken up the next time anything asks, with no restart
+  const tokenPath = join(options.home, DIRECTOR_TOKEN_FILE);
+  let tokenStamp = '';
+  let closeDirectorSockets: () => void = () => undefined;
+  const stampOf = (): string => {
+    try {
+      const st = statSync(tokenPath);
+      return `${st.mtimeMs}:${st.size}:${st.ino}`;
+    } catch {
+      return '';
+    }
+  };
+  tokenStamp = stampOf();
+  const currentToken = (): string => {
+    const now = stampOf();
+    if (now !== tokenStamp) {
+      tokenStamp = now;
+      try {
+        const fresh = readFileSync(tokenPath, 'utf8').trim();
+        if (/^[0-9a-f]{64}$/.test(fresh) && fresh !== directorToken) {
+          directorToken = fresh;
+          // a socket opened with the old token must not outlive it: the page reconnects with the new one
+          closeDirectorSockets();
+        }
+      } catch {
+        // the old value stays until a readable one is there
+      }
+    }
+    return directorToken;
+  };
   const children = new Map<string, Child>();
   let stopping = false;
   const statusCache = new Map<string, { at: number; value: Counts }>();
@@ -127,15 +181,17 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   /* ---------------------------------------------------------------- the children */
 
   function launch(child: Child): void {
-    if (stopping || !child.wanted) return;
+    if (stopping || reloading || !child.wanted) return;
     const home = roomHome(options.home, child.entry.id);
     mkdirSync(home, { recursive: true, mode: 0o700 });
     const env = { ...options.env };
     // the flags below win over these, but a room must not see the supervisor's own settings by mistake
-    for (const name of ['GONOGO_PORT', 'GONOGO_HOST', 'GONOGO_TOKEN']) delete env[name];
+    for (const name of ['GONOGO_PORT', 'GONOGO_HOST', 'GONOGO_TOKEN', 'GONOGO_BROWSER_TOKEN']) delete env[name];
     env.GONOGO_HOME = home;
+    // a room that is told to reload signals this process, and only this one
+    env.GONOGO_SUPERVISOR_PID = String(process.pid);
     const [file, ...head] = options.command;
-    const args = [...head, '--home', home, '--port', '0', '--host', '127.0.0.1', '--exit-with-stdin', ...(child.entry.id === MAIN_ROOM ? [] : ['--no-update-check']), ...(options.roomArgs ?? [])];
+    const args = [...head, '__room', '--home', home, '--port', '0', '--host', '127.0.0.1', '--exit-with-stdin', ...(child.entry.id === MAIN_ROOM ? [] : ['--no-update-check']), ...(options.roomArgs ?? [])];
     child.state = 'starting';
     child.port = null;
     child.token = null;
@@ -155,6 +211,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
           child.token = ready[2] ?? null;
           child.state = 'running';
           child.lastError = null;
+          if (child.entry.id === MAIN_ROOM) {
+            mainReadyOnce = true;
+            markMainReady();
+          }
           log.info(`room ${child.entry.id} is up on 127.0.0.1:${child.port}`);
         } else if (line.trim() !== '') {
           // the ready line holds the room's token: if a later version words it so that READY misses it, the token is still not logged
@@ -177,6 +237,9 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         child.port = null;
         child.token = null;
         if (stopping || !child.wanted) {
+          child.state = 'stopped';
+        } else if (reloading && code === RELOAD_EXIT) {
+          // asked for: it handed its agents to its pty host and left; the supervisor re-executes itself next (S6: an unasked 75 is a crash)
           child.state = 'stopped';
         } else {
           // a room that ran for a minute starts over from the shortest wait
@@ -282,10 +345,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const TYPES: Record<string, string> = { css: 'text/css', woff: 'font/woff', woff2: 'font/woff2', svg: 'image/svg+xml' };
 
   const proxy = createRoomProxy({
-    directorToken,
+    directorToken: currentToken,
     allowedNames,
     rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, port: c.state === 'running' ? c.port : null, token: c.token })),
   });
+
+  closeDirectorSockets = () => proxy.closeSockets();
 
   const hostOk = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
@@ -373,18 +438,26 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const server = http.createServer((req, res) => {
     if (proxy.handle(req, res)) return;
     if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
-    const path = (req.url ?? '').split('?')[0];
-    if (path === ROOMS_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
+    const path = (req.url ?? '').split('?')[0] ?? '';
+    const get = req.method === 'GET' || req.method === 'HEAD';
+    // the Docker healthcheck: no token, never proxied; 503 until main has been ready once, then 200 for as long as this process runs
+    if (path === `${ROOMS_PATH}/health` && get) {
+      const up = mainReadyOnce;
+      res.writeHead(up ? 200 : 503, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+      res.end(req.method === 'HEAD' ? undefined : up ? 'ok' : 'main is not ready yet');
+      return;
+    }
+    if ((path === ROOMS_PATH || path === `${ROOMS_PATH}/`) && get) {
       res.writeHead(200, roomsPageHeaders());
       res.end(req.method === 'HEAD' ? undefined : roomsPage(stylesheet, options.version ?? null));
       return;
     }
-    // the stylesheet and fonts of the built client, and the logo (public/lockup.svg), for the list page: a plain file name, only css, fonts and that one svg
-    const asset = /^\/(?:assets\/([\w.-]+\.(css|woff2?))|(lockup)\.(svg))$/.exec(path ?? '');
+    // the stylesheet and fonts of the built client, and the logo (public/lockup.svg), for the list page, under /rooms/: a plain file name, only css, fonts and that one svg (room main keeps /assets/)
+    const asset = new RegExp(`^${ROOMS_PATH}/(?:assets/([\\w.-]+\\.(css|woff2?))|(lockup)\\.(svg))$`).exec(path);
     const [file0, ext0] = asset?.[3] === undefined ? [join(assetsDir ?? '', asset?.[1] ?? ''), asset?.[2]] : [join(options.staticDir ?? '', 'lockup.svg'), 'svg'];
     if (asset !== null && assetsDir !== null && req.method === 'GET' && !file0.includes('..')) {
       try {
-        // a regular file only: a symlink in a writable install folder must not turn this route into a read of rooms-token
+        // a regular file only: a symlink in a writable install folder must not turn this route into a read of the token
         const file = file0;
         if (!lstatSync(file).isFile()) throw new Error('not a regular file');
         const body = readFileSync(file);
@@ -395,9 +468,9 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }
       return;
     }
-    const rooms = /^\/api\/rooms(?:\/([^/]+))?$/.exec(path ?? '');
+    const rooms = /^\/api\/rooms(?:\/([^/]+))?$/.exec(path);
     if (rooms !== null) {
-      if (!sameToken(bearerToken(req.headers.authorization), directorToken)) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
+      if (!sameToken(bearerToken(req.headers.authorization), currentToken())) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
       void roomsApi(req, res, rooms[1]);
       return;
     }
@@ -407,12 +480,24 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     if (!proxy.upgrade(req, socket, head)) socket.destroy();
   });
 
-  reconcile();
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(options.port, options.host, () => resolve());
-  });
-  const poll = setInterval(reconcile, POLL_MS);
+  try {
+    reconcile();
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(options.port, options.host, () => resolve());
+    });
+  } catch (error) {
+    // a start that fails leaves no lock and no child behind
+    stopping = true;
+    await Promise.all([...children.values()].map((c) => halt(c)));
+    releaseLock();
+    throw error;
+  }
+  // the token file is looked at on this beat too, so a rotated token closes the old sockets within seconds whatever the traffic
+  const poll = setInterval(() => {
+    currentToken();
+    reconcile();
+  }, POLL_MS);
   // `gonogo rooms add` looks for this file to tell whether anything will act on a change
   writeSupervisorFile(options.home, options.host, (server.address() as { port: number }).port);
   poll.unref();
@@ -423,9 +508,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   return {
     host: options.host,
     port,
-    directorToken,
+    get directorToken() {
+      return currentToken();
+    },
     url: `http://${shownHost}:${port}/#token=${directorToken}`,
     rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.lastError, ...NO_COUNTS })),
+    whenReady: (ms) => Promise.race([mainReady, new Promise<void>((resolve) => setTimeout(resolve, ms).unref())]),
+    async reload() {
+      if (reloading || stopping) return;
+      reloading = true;
+      for (const child of children.values()) {
+        if (child.timer !== null) clearTimeout(child.timer);
+        const proc = child.proc;
+        if (proc === null) continue;
+        proc.kill('SIGUSR2');
+        const kill = setTimeout(() => proc.kill('SIGKILL'), STOP_WAIT_MS);
+        void (child.exited ?? Promise.resolve()).finally(() => clearTimeout(kill));
+      }
+      await Promise.all([...children.values()].map((c) => c.exited ?? Promise.resolve()));
+    },
     async stop() {
       if (stopping) return;
       stopping = true;
@@ -434,6 +535,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       server.closeAllConnections?.();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await Promise.all([...children.values()].map((c) => halt(c)));
+      releaseLock();
     },
   };
 }
