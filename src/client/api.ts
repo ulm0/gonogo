@@ -62,6 +62,12 @@ import type {
   MissionRequest,
   ModelDefaults,
   Provider,
+  ReviewNote,
+  ReviewNoteRequest,
+  ReviewSent,
+  ReviewStatus,
+  ReviewVerdictKind,
+  ReviewView,
   UserMessageRequest,
   WorktreeStatus,
 } from '../shared/protocol.js';
@@ -627,6 +633,38 @@ export async function gitLog(agent: string): Promise<RecorderCommit[]> {
 export async function gitCommit(agent: string, request: RecorderCommitRequest): Promise<RecorderCommit> {
   const value = asRecord(await call('POST', `${agentPath(agent)}/git/commit`, request));
   return understood(asRecord(value?.commit) !== null, value?.commit) as RecorderCommit;
+}
+
+/** Post-Flight Review: the diff of a console's folder against its last commit, and the notes on it. */
+export async function reviewView(agent: string): Promise<ReviewView> {
+  const value = await call('GET', `${agentPath(agent)}/review`);
+  return understood(typeof asRecord(value)?.repo === 'boolean' && Array.isArray(asRecord(value)?.files) && Array.isArray(asRecord(value)?.notes), value) as ReviewView;
+}
+
+export async function reviewAddNote(agent: string, request: ReviewNoteRequest): Promise<ReviewNote> {
+  const value = await call('POST', `${agentPath(agent)}/review/notes`, request);
+  return understood(typeof asRecord(value)?.id === 'string', value) as ReviewNote;
+}
+
+export async function reviewSetStatus(agent: string, id: string, status: ReviewStatus): Promise<ReviewNote> {
+  const value = await call('PATCH', `${agentPath(agent)}/review/notes/${encodeURIComponent(id)}`, { status });
+  return understood(typeof asRecord(value)?.id === 'string', value) as ReviewNote;
+}
+
+export async function reviewRemoveNote(agent: string, id: string): Promise<void> {
+  await call('DELETE', `${agentPath(agent)}/review/notes/${encodeURIComponent(id)}`);
+}
+
+/** APPROVE, or REQUEST CHANGES: the open notes go to the agent as one message. */
+export async function reviewVerdict(agent: string, verdict: ReviewVerdictKind): Promise<ReviewSent> {
+  const value = await call('POST', `${agentPath(agent)}/review/verdict`, { verdict });
+  return understood(typeof asRecord(value)?.message === 'string', value) as ReviewSent;
+}
+
+/** ASK WALKTHROUGH (the author explains its diff) or PEER REVIEW (`reviewer` is asked to review it). */
+export async function reviewAsk(agent: string, request: { kind: 'walkthrough' } | { kind: 'peer'; reviewer: string }): Promise<ReviewSent> {
+  const value = await call('POST', `${agentPath(agent)}/review/ask`, request);
+  return understood(typeof asRecord(value)?.message === 'string', value) as ReviewSent;
 }
 
 /** Plot Board: the plan. The page asks again every few seconds; a write names the revision it was made from. */

@@ -18,6 +18,10 @@ import {
   ROLE_MAX_CHARS,
   TASK_DETAIL_MAX_CHARS,
   MISSION_GOAL_MAX_CHARS,
+  REVIEW_BATCH_MAX,
+  REVIEW_BODY_MAX_CHARS,
+  REVIEW_SIDES,
+  REVIEW_TONES,
   MISSION_NAME_MAX_CHARS,
   MISSION_NOTE_MAX_CHARS,
   MISSION_STATUSES,
@@ -34,6 +38,7 @@ import type { MissionLog } from './missionlog.js';
 import type { Relief } from './relief.js';
 import type { Tasks } from './tasks.js';
 import type { Missions } from './missions.js';
+import type { Review } from './review.js';
 
 export interface McpDeps {
   /** Each is called with the generation of the caller's token (contract 3.6, 4.10 rule 7). */
@@ -43,6 +48,8 @@ export interface McpDeps {
   /** The Mission Log; absent in tests that do not need it (the three log tools then answer that it is not available). */
   /** Missions; absent in tests that do not need it (the three mission tools then answer that it is not available). */
   missions?: Pick<Missions, 'list' | 'create' | 'update'>;
+  /** Post-Flight Review; absent in tests that do not need it (the two review tools then answer that it is not available). */
+  review?: Pick<Review, 'read' | 'addNotes'>;
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update'>;
   /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
   board?: Pick<Board, 'get' | 'write'>;
@@ -235,6 +242,76 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           if (!missions) return noMissions();
           if (!isBoss()) return bossOnly();
           return toolResult({ ok: true, mission: await missions.update(actor, id, patch) }, false);
+        }),
+    );
+
+    const { review } = deps;
+    const noReview = (): CallToolResult => toolResult({ ok: false, error: 'Post-Flight Review is not available' }, true);
+    const asAgent = { kind: 'agent', name: agent } as const;
+
+    server.registerTool(
+      'review_read',
+      {
+        description: MCP_DESCRIPTIONS.review_read,
+        inputSchema: { agent: z.string().min(1).max(AGENT_NAME_MAX).optional(), patch: z.boolean().optional(), path: z.string().min(1).max(1000).optional() },
+      },
+      (args) =>
+        guarded('review_read', async () => {
+          if (!review) return noReview();
+          // the agent is the caller's own when it is left out
+          const name = args.agent ?? agent;
+          const out = await review.read(name, asAgent, { patch: args.patch === true, path: args.path });
+          const view = out.view;
+          const files = view.files.map((f) => ({
+            path: f.path,
+            status: f.status,
+            ...(f.oldPath === undefined ? {} : { from: f.oldPath }),
+            ...(f.binary ? { binary: true } : {}),
+            hunks: f.hunks.map((h) => ({ h: h.header, old: [h.oldStart, h.oldCount], new: [h.newStart, h.newCount] })),
+          }));
+          return toolResult(
+            {
+              agent: name,
+              repo: view.repo,
+              ...(view.reason === undefined ? {} : { reason: view.reason }),
+              truncated: view.truncated,
+              files,
+              notes: view.notes.map((n) => ({ id: n.id, path: n.path, side: n.side, line: n.place.line, place: n.place.state, ...(n.tone === undefined ? {} : { tone: n.tone }), author: n.author, status: n.status, ...(n.replyTo === undefined ? {} : { replyTo: n.replyTo }), text: n.text, body: n.body })),
+              verdict: view.verdict === null ? null : { verdict: view.verdict.verdict, at: view.verdict.at, current: !view.stale },
+              ...(out.patch === undefined ? {} : { patch: out.patch, ...(out.patchTruncated === true ? { patchTruncated: true } : {}) }),
+            },
+            false,
+          );
+        }),
+    );
+
+    server.registerTool(
+      'review_note',
+      {
+        description: MCP_DESCRIPTIONS.review_note,
+        inputSchema: {
+          agent: z.string().min(1).max(AGENT_NAME_MAX).optional(),
+          notes: z
+            .array(
+              z.strictObject({
+                path: z.string().max(1000).optional(),
+                side: z.enum(REVIEW_SIDES).optional(),
+                line: z.number().int().min(1).optional(),
+                body: z.string().min(1).max(REVIEW_BODY_MAX_CHARS),
+                tone: z.enum(REVIEW_TONES).optional(),
+                replyTo: z.string().max(16).optional(),
+              }),
+            )
+            .min(1)
+            .max(REVIEW_BATCH_MAX),
+        },
+      },
+      (args) =>
+        guarded('review_note', async () => {
+          if (!review) return noReview();
+          // the author of a note is the caller's own name, never a field of the call; the agent is the caller's own when it is left out
+          const added = await review.addNotes(asAgent, args.agent ?? agent, args.notes);
+          return toolResult({ ok: true, added: added.map((n) => n.id) }, false);
         }),
     );
 

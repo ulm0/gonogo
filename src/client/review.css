@@ -1,0 +1,284 @@
+/*
+ * Post-Flight Review, in the Instrument look: the diff as rows of two numbers, the sign and the text, a key on each line, and the
+ * notes under their line. A tone is a word on a chip and a mark on the left edge, never only a colour. Every key is at least
+ * 44 px tall, long lines wrap, and nothing is wider than the screen at 390 px.
+ */
+
+.rv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-verdict {
+  margin: 0;
+  font-weight: 600;
+}
+
+.rv-verdict[data-stale] {
+  color: var(--amber, inherit);
+}
+
+.rv-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-list-head .label {
+  flex: 1 1 100px;
+  margin: 0;
+}
+
+.rv-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rv-list li[data-current] {
+  outline: 1px solid var(--edge);
+  outline-offset: 2px;
+}
+
+.rv-lost {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px dashed var(--edge);
+  border-radius: 4px;
+}
+
+.rv-lost .label,
+.rv-lost .hint {
+  margin: 0;
+}
+
+.rv-lost-place {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.rv-lost .rv-thread {
+  margin-left: 0;
+}
+
+.rv-line {
+  cursor: pointer;
+}
+
+.rv-peer {
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
+.rv-list ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.rv-list li {
+  overflow-wrap: anywhere;
+}
+
+.rv-list code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.rv-jump {
+  margin-left: 8px;
+}
+
+.rv-file {
+  border-top: 1px solid var(--edge);
+  padding-top: 8px;
+}
+
+.rv-file > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.rv-path {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.rv-hunk {
+  margin-top: 6px;
+  overflow-x: auto;
+}
+
+.rv-hunk-head {
+  margin: 0;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.rv-line {
+  display: grid;
+  grid-template-columns: 4ch 4ch minmax(0, 1fr) 44px;
+  align-items: start;
+  gap: 8px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rv-line:focus-visible {
+  outline: 2px solid var(--focus, currentColor);
+}
+
+.rv-line[data-kind='add'] {
+  background: color-mix(in srgb, var(--go, #3a3) 14%, transparent);
+}
+
+.rv-line[data-kind='del'] {
+  background: color-mix(in srgb, var(--nogo, #c33) 14%, transparent);
+}
+
+.rv-num {
+  color: var(--text-2);
+  text-align: right;
+  user-select: none;
+}
+
+.rv-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
+.rv-add {
+  min-width: 44px;
+  min-height: 24px;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.rv-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px 8ch;
+}
+
+.rv-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-left: 4px solid var(--edge);
+  border-radius: 4px;
+  background: var(--well, transparent);
+}
+
+.rv-note[data-tone='warning'] {
+  border-left-color: var(--amber, #c90);
+}
+
+.rv-note[data-tone='error'] {
+  border-left-color: var(--nogo, #c33);
+}
+
+.rv-note[data-nested] {
+  margin-left: 16px;
+}
+
+.rv-note[data-status='resolved'] {
+  opacity: 0.7;
+}
+
+.rv-note[data-status='addressed'] {
+  border-left-style: dashed;
+}
+
+.rv-note-top,
+.rv-note-keys,
+.rv-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-summary,
+.rv-why {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.rv-why {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.rv-author {
+  font-weight: 600;
+}
+
+.rv-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 8px 8ch;
+  padding: 8px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+}
+
+.rv-reply {
+  align-self: flex-start;
+  margin-left: 16px;
+}
+
+@media (max-width: 480px) {
+  .rv-thread,
+  .rv-form {
+    margin-left: 0;
+  }
+
+  .rv-line {
+    grid-template-columns: 3ch 3ch minmax(0, 1fr) 44px;
+  }
+}
+
+/* the soft gate of COMMIT */
+.rc-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+
+.rc-gate p {
+  margin: 0;
+}
+
+.rc-gate-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
