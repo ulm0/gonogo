@@ -145,7 +145,7 @@
   bottom: 4px;
   z-index: 1;
   padding: 0 4px;
-  color: var(--text-3, var(--text-2));
+  color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.4;

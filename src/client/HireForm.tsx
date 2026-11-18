@@ -382,6 +382,15 @@ function Staff({ form }: { form: Target }): ReactElement {
       live = false;
     };
   }, []);
+  // the box is shown when the room starts the consoles that were running again
+  const [startsAgain, setStartsAgain] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.startupSettings().then((found) => live && setStartsAgain(found.policy === 'running'), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const remoteError = shown('remoteControl');
   // offered only when Flight Rules chose a phone path that uses the Claude app (or the agent has it on already)
   const [phoneMode, setPhoneMode] = useState<PhoneMode>('off');
@@ -657,6 +666,17 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
+  const autostartBox = (startsAgain || !values.autostart) && (
+    <div className="staff-clean">
+      <div className="staff-check">
+        <input id={`${id}-autostart`} type="checkbox" checked={values.autostart} onChange={(event) => change({ autostart: event.target.checked }, 'autostart')} aria-describedby={`${id}-autostart-hint`} />
+        <label htmlFor={`${id}-autostart`}>Start with gonogo</label>
+      </div>
+      <p className="hint" id={`${id}-autostart-hint`}>
+        After a restart of gonogo, start this console again if it was running (Flight Rules sets the policy). Unticked: it stays stopped.
+      </p>
+    </div>
+  );
   const remoteBox = values.provider === 'claude' && !values.cleanRoom && (values.remoteControl || phoneMode === 'remote-control' || phoneMode === 'both') && (
     <div className="staff-clean" data-invalid={remoteError !== undefined ? '' : undefined}>
       <div className="staff-check">
@@ -852,6 +872,7 @@ function Staff({ form }: { form: Target }): ReactElement {
               {cleanRoomBox}
               {worktreeBox}
               {remoteBox}
+              {autostartBox}
               {modes}
               {confirmPanel}
               {payloadFold}

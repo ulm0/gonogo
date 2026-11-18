@@ -192,6 +192,7 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     needSeq: null,
     remoteControl: null,
     permissions: null,
+    autostart: true,
     transition: null,
     draft: false,
     held: null,
@@ -252,6 +253,18 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       rec('edit', name, req);
       if (Object.keys(req).length === 0) throw new FakeHubError('bad_request', 'nothing to change');
       return agentView(req.name ?? name);
+    },
+    holdAll: () => {
+      rec('holdAll');
+      return { held: ['ana'], skipped: [] };
+    },
+    resumeAll: () => {
+      rec('resumeAll');
+      return { resumed: ['ana'] };
+    },
+    startAgent: async (name, by) => {
+      rec('startAgent', name, by);
+      return agentView(name);
     },
     restart: async (name) => {
       rec('restart', name);
@@ -1047,6 +1060,7 @@ describe('home', () => {
     ['tool rules that are not an object', JSON.stringify({ version: 1, agents: [agentRecord('ana', { permissions: ['Bash'] })] })],
     ['a tool rule that is not a rule', JSON.stringify({ version: 1, agents: [agentRecord('ana', { permissions: { allow: ['rm -rf /'] } })] })],
     ['tool rules on a gemini agent', JSON.stringify({ version: 1, agents: [agentRecord('ana', { provider: 'gemini', permissions: { allow: ['Bash'] } })] })],
+    ['autostart that is not false', JSON.stringify({ version: 1, agents: [agentRecord('ana', { autostart: true })] })],
     ['a payload on a custom agent', JSON.stringify({ version: 1, agents: [agentRecord('ana', { provider: 'custom', command: 'ls', payload: { mcpServers: { f: { command: 'x' } } } })] })],
   ])('refuses a roster with %s, naming the path and never resetting the file', (_what, text) => {
     const dir = tmpDir();

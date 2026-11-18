@@ -44,6 +44,7 @@ const ALLOWED_TOOLS = [
   'mcp__gonogo__board_write',
   'mcp__gonogo__livery_submit',
   'mcp__gonogo__hire_agent',
+  'mcp__gonogo__start_agent',
 ];
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'bypassPermissions'];
 const POINTER_RE = /^gonogo: (\d+) new messages? from (.+)\. Call read_messages\.$/;

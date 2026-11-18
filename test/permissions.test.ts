@@ -154,7 +154,7 @@ describe('the launcher writes the rules of the agent, else the room\'s, into its
 });
 
 describe('the rules in the forms', () => {
-  const EMPTY = { provider: 'claude', position: '', name: 'ana', role: 'does things', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, worktree: false, remoteControl: false, rules: '', model: '', keys: [], keysRemoved: [] } as unknown as Values;
+  const EMPTY = { provider: 'claude', position: '', name: 'ana', role: 'does things', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, worktree: false, remoteControl: false, autostart: true, rules: '', model: '', keys: [], keysRemoved: [] } as unknown as Values;
 
   it('read and write a rule on each line, in the order allow, ask, deny', () => {
     const text = 'deny WebFetch(domain:example.com)\nallow Bash(git:*)\n\nallow Read\nask Write';

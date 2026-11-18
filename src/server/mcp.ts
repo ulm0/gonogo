@@ -30,7 +30,7 @@ import {
   TASK_TITLE_MAX_CHARS,
 } from '../shared/protocol.js';
 import type { AgentIdentity, AgentSendRequest, Hub, Logger, Task } from '../shared/protocol.js';
-import { BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
+import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
 import type { Board } from './board.js';
 import type { Liveries } from './livery.js';
@@ -42,7 +42,7 @@ import type { Review } from './review.js';
 
 export interface McpDeps {
   /** Each is called with the generation of the caller's token (contract 3.6, 4.10 rule 7). */
-  hub: Pick<Hub, 'sendFromAgent' | 'readMessages' | 'rosterFor' | 'vote'>;
+  hub: Pick<Hub, 'sendFromAgent' | 'readMessages' | 'rosterFor' | 'vote' | 'startAgent'>;
   /** The Flight Plan; absent in tests that do not need it (the three task tools then answer that it is not available). */
   tasks?: Pick<Tasks, 'list' | 'create' | 'update'>;
   /** The Mission Log; absent in tests that do not need it (the three log tools then answer that it is not available). */
@@ -81,6 +81,8 @@ function toolResult(object: unknown, isError: boolean): CallToolResult {
 
 export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { hub, log } = deps;
+  /** When each boss started agents in the last minute (start_agent's rate limit). Memory only. */
+  const starts = new Map<string, number[]>();
   const logClose = (e: unknown): void => log.debug('mcp close failed', e);
 
   /** A HubError tells the agent why; anything else is a bug, logged here and reported without its text. */
@@ -395,6 +397,22 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
     );
 
     const { relief } = deps;
+    server.registerTool(
+      'start_agent',
+      { description: MCP_DESCRIPTIONS.start_agent, inputSchema: z.strictObject({ name: z.string().min(1).max(AGENT_NAME_MAX) }) },
+      ({ name }) =>
+        guarded('start_agent', async () => {
+          if (!isBoss()) return toolResult({ ok: false, error: 'only the boss may start an agent' }, true);
+          const at = Date.now();
+          const mine = (starts.get(agent) ?? []).filter((t) => at - t < 60_000);
+          if (mine.length >= START_AGENT_RATE_MAX) return toolResult({ ok: false, error: `at most ${START_AGENT_RATE_MAX} starts a minute` }, true);
+          // the caller is the agent of the token, never a field of the call; the hub refuses a running agent and one on hold
+          // counted before the await: parallel calls must not all pass the limit
+          starts.set(agent, [...mine, at]);
+          const view = await hub.startAgent(name, agent);
+          return toolResult({ ok: true, name: view.name, state: view.state }, false);
+        }),
+    );
     server.registerTool(
       'hire_agent',
       {

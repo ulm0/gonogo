@@ -184,7 +184,7 @@ function parseAgent(a: unknown): AgentRecord | string {
   if (typeof boss !== 'boolean') return `${name}: boss must be true or false`;
   if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) return `${name}: createdAt must be a number`;
   const record: AgentRecord = { name, role, dir, mode, sessionId, desk, boss, createdAt };
-  const { position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions } = a;
+  const { position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart } = a;
   if (position !== undefined) {
     if (typeof position !== 'string' || !POSITION_IDS.includes(position)) return `${name}: unknown position`;
     record.position = position;
@@ -223,6 +223,14 @@ function parseAgent(a: unknown): AgentRecord | string {
     if (!checked.ok) return `${name}: ${checked.error}`;
     if (cleanRoom !== undefined) return `${name}: a Clean Room agent has a worktree already`;
     record.worktree = checked.worktree;
+  }
+  if (a.stoppedBy !== undefined) {
+    if (a.stoppedBy !== 'director') return `${name}: stoppedBy is director or absent`;
+    record.stoppedBy = 'director';
+  }
+  if (autostart !== undefined) {
+    if (autostart !== false) return `${name}: autostart is false or absent`;
+    record.autostart = false;
   }
   if (remoteControl !== undefined) {
     const checked = parseRemoteControl(remoteControl, record.provider, record.cleanRoom !== undefined);

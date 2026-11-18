@@ -22,7 +22,7 @@ Lights: indigo working, green idle, grey stopped, dashed open seat. Saffron: nee
 4. Hold rules. Unsubmitted text you typed in an agent's terminal holds its mail (`held: text in ana's input`) until you press Enter or Ctrl-C there, the box has been empty for a second, or 30 minutes pass. A pointer Claude Code does not confirm within 2 seconds is held, and not typed again until you press Enter or Ctrl-C in that terminal.
 5. Loop guard. Your message is hop 0; a message an agent sends while working on mail is one more than that mail's highest hop (1 otherwise). Past the cap, 8 by default, it goes to you instead.
 
-Queues are in memory: after a restart every agent is stopped except the boss, which is started again, and unread mail shows as undelivered.
+Queues are in memory: after a restart every agent is stopped except the boss, which is started again, and unread mail shows as undelivered. A Flight Rules setting can start the consoles that were running again too ([Start again after a restart](../features/autostart.md)).
 
 ## FLIGHT, the boss
 

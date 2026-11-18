@@ -65,6 +65,9 @@ import type {
   ModelDefaults,
   PermissionDefaults,
   PermissionRules,
+  StartupSettings,
+  HoldAllResult,
+  ResumeAllResult,
   Provider,
   ReviewNote,
   ReviewNoteRequest,
@@ -397,6 +400,31 @@ export async function setPermissionDefaults(permissions: PermissionRules): Promi
 function toPermissionDefaults(value: unknown): PermissionDefaults {
   if (asRecord(asRecord(value)?.permissions) === null) throw failure('The server sent an answer gonogo does not understand.');
   return value as PermissionDefaults;
+}
+
+/** ALL STOP: holds every console that can be held; the answer names who was and was not. */
+export async function holdAll(): Promise<HoldAllResult> {
+  return (await call('POST', '/hold-all')) as HoldAllResult;
+}
+
+/** ALL RESUME: resumes every console that is on hold. */
+export async function resumeAll(): Promise<ResumeAllResult> {
+  return (await call('POST', '/resume-all')) as ResumeAllResult;
+}
+
+/** Start again after a restart: the room's policy (boss, running, off) and the carry-on message. */
+export async function startupSettings(): Promise<StartupSettings> {
+  return toStartupSettings(await call('GET', '/startup'));
+}
+
+export async function setStartupSettings(patch: Partial<StartupSettings>): Promise<StartupSettings> {
+  return toStartupSettings(await call('PUT', '/startup', patch));
+}
+
+function toStartupSettings(value: unknown): StartupSettings {
+  const record = asRecord(value);
+  if (record === null || typeof record.policy !== 'string' || typeof record.carryOn !== 'boolean' || typeof record.bossMayStart !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return value as StartupSettings;
 }
 
 export async function engines(): Promise<EngineCheck[]> {

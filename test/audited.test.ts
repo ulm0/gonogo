@@ -79,6 +79,9 @@ describe('what the Director does through the hub', () => {
   const hub = {
     hire: async (request: { name: string }) => view(request.name),
     restart: async (name: string) => view(name),
+    startAgent: async (name: string, _by: string) => view(name),
+    holdAll: () => ({ held: ['ana', 'ben'], skipped: ['cy'] }),
+    resumeAll: () => ({ resumed: ['ana'] }),
     stop: async (name: string) => view(name),
     remove: async (name: string): Promise<void> => void name,
     edit: async (name: string, _request: unknown) => view(name),
@@ -99,11 +102,13 @@ describe('what the Director does through the hub', () => {
     await store.stop('ana');
     await store.restart('ana');
     await store.remove('ana');
+    await store.startAgent('ana', 'flight');
     expect(told).toEqual([
       ['crew', 'Director hired ana'],
       ['crew', 'Director stopped ana'],
       ['crew', 'Director restarted ana'],
       ['crew', 'Director removed ana'],
+      ['crew', 'flight started ana'],
     ]);
     expect(JSON.stringify(told)).not.toContain(SECRET);
     expect(JSON.stringify(told)).not.toContain('secret role');
@@ -151,6 +156,16 @@ describe('what the Director does through the hub', () => {
     store.hold('ana');
     expect(() => store.hold('bad')).toThrow();
     expect(told).toEqual([['redline', 'Director put ana on hold']]);
+  });
+
+  it('records ALL STOP and ALL RESUME with the number only, never a name', () => {
+    const { store, told } = wrapped(hub, HUB_AUDIT);
+    store.holdAll();
+    store.resumeAll();
+    expect(told).toEqual([
+      ['redline', 'Director pressed ALL STOP: 2 held'],
+      ['redline', 'Director pressed ALL RESUME: 1 resumed'],
+    ]);
   });
 
   it('leaves the other methods of the hub as they are', () => {

@@ -72,6 +72,8 @@ import type {
   Provider,
   ReadMessagesResult,
   RosterFile,
+  RunEntry,
+  StartupSettings,
   ScreenProbe,
   SendResult,
   SessionFlag,
@@ -194,6 +196,10 @@ interface HarnessOptions {
   /** Live reload: what kept running in the pty host. */
   adoptable?: HubIo['adoptable'];
   saveHolds?: HubIo['saveHolds'];
+  /** Autostart: the room's policy, the set the last run left, and where the hub writes the set (the fakes of runstate.ts). */
+  startup?: StartupSettings;
+  runSet?: RunEntry[] | null;
+  marks?: Array<[string, boolean, boolean]>;
 }
 
 function makeHarness(options: HarnessOptions = {}): Harness {
@@ -353,6 +359,9 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   if (options.saveHolds) io.saveHolds = options.saveHolds;
   io.meter = (name, generation, transcriptPath) => void metered.push({ name, generation, transcriptPath });
   io.notify = (kind, text) => void notices.push([kind, text]);
+  if (options.startup) io.startup = () => options.startup as StartupSettings;
+  if (options.runSet !== undefined) io.runSet = () => options.runSet ?? null;
+  if (options.marks) io.markRun = (name, running, working) => void options.marks?.push([name, running, working]);
   hub = createHub(io, { maxHops: options.maxHops ?? 8, bossDir: '/work/boss', maxWorking: options.maxWorking, redline: options.redline });
 
   const view = (name: string): AgentView => {
@@ -2814,6 +2823,7 @@ describe('hire (4.9)', () => {
       needSeq: null,
       remoteControl: null,
       permissions: null,
+      autostart: true,
       model: null,
       keys: {},
       doing: null,
@@ -6357,5 +6367,294 @@ describe('live reload: a new hub takes over the agents that kept running', () =>
     h.hub.release();
     expect(h.stops).toEqual([]);
     expect(() => h.hub.hold('ana')).toThrow();
+  });
+});
+
+describe('Autostart: the agents that were running start again after a server restart', () => {
+  const ROSTER = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 }), rosterRecord('ben', { desk: 2 }), rosterRecord('cy', { desk: 3 }), rosterRecord('dee', { desk: 4 }), rosterRecord('eli', { desk: 5 })];
+  const entries = (...names: string[]): RunEntry[] => names.map((name) => ({ name, working: false }));
+  const states = (h: Harness): Record<string, string> => Object.fromEntries(h.hub.views().map((v) => [v.name, v.state]));
+  const spawned = (h: Harness): string[] => h.spawns.map((s) => s.agent.name);
+
+  it('the policy boss, and a hub without settings, start the boss only, as always', async () => {
+    const plain = makeHarness({ roster: ROSTER, runSet: entries('flight', 'ana') });
+    await plain.hub.start();
+    await settle();
+    expect(spawned(plain)).toEqual(['flight']);
+    const boss = makeHarness({ roster: ROSTER, startup: { policy: 'boss', carryOn: true, bossMayStart: true }, runSet: entries('flight', 'ana') });
+    await boss.hub.start();
+    await settle();
+    expect(spawned(boss)).toEqual(['flight']);
+  });
+
+  it('the policy off starts nobody, the boss too', async () => {
+    const h = makeHarness({ roster: ROSTER, startup: { policy: 'off', carryOn: true, bossMayStart: true }, runSet: entries('flight', 'ana') });
+    await h.hub.start();
+    await settle();
+    expect(spawned(h)).toEqual([]);
+  });
+
+  it('running with no saved set is the boss only', async () => {
+    const h = makeHarness({ roster: ROSTER, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: null });
+    await h.hub.start();
+    await settle();
+    expect(spawned(h)).toEqual(['flight']);
+  });
+
+  it('running starts the set, the boss first and then three at a time, each wave when the last one is out of starting', async () => {
+    const h = makeHarness({ roster: ROSTER, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: entries('ben', 'flight', 'ana', 'cy', 'dee', 'eli') });
+    await h.hub.start();
+    await settle();
+    // the boss is up, and the first wave of three is started at once
+    expect(spawned(h).slice(0, 1)).toEqual(['flight']);
+    await settle();
+    expect(spawned(h)).toEqual(['flight', 'ben', 'ana', 'cy']);
+    // the second wave waits until the first one is out of starting
+    await h.advance(2000);
+    expect(spawned(h)).toHaveLength(4);
+    for (const name of ['flight', 'ben', 'ana', 'cy']) h.ready(name);
+    await h.advance(1000);
+    await settle();
+    expect(spawned(h)).toEqual(['flight', 'ben', 'ana', 'cy', 'dee', 'eli']);
+    expect(states(h).dee).toBe('starting');
+  });
+
+  it('the next wave starts anyway after the timeout when an agent stays in starting', async () => {
+    const h = makeHarness({ roster: ROSTER, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: entries('flight', 'ana', 'ben', 'cy', 'dee') });
+    await h.hub.start();
+    await settle();
+    await h.advance(59_000);
+    expect(spawned(h)).toHaveLength(4);
+    await h.advance(2000);
+    await settle();
+    expect(spawned(h)).toEqual(['flight', 'ana', 'ben', 'cy', 'dee']);
+  });
+
+  it('a wave is never bigger than Max Q', async () => {
+    const h = makeHarness({ roster: ROSTER, maxWorking: 1, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: entries('flight', 'ana', 'ben') });
+    await h.hub.start();
+    await settle();
+    expect(spawned(h)).toEqual(['flight', 'ana']);
+    h.ready('ana');
+    h.ready('flight');
+    await h.advance(1000);
+    await settle();
+    expect(spawned(h)).toEqual(['flight', 'ana', 'ben']);
+  });
+
+  it('leaves an opted-out agent, one that is not in the set and one that was removed stopped, and says which', async () => {
+    const roster = [...ROSTER.slice(0, 3), rosterRecord('cy', { desk: 3, autostart: false })];
+    const marks: Array<[string, boolean, boolean]> = [];
+    const h = makeHarness({ roster, marks, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: entries('flight', 'cy', 'ghost') });
+    await h.hub.start();
+    await settle();
+    expect(spawned(h)).toEqual(['flight']);
+    expect(h.notices.at(-1)).toEqual(['startup', 'Restarted 1 agent after the server start; not started: cy (opted out)']);
+    // the set drops what this start leaves stopped, so the next start does not bring it back
+    expect(marks).toContainEqual(['cy', false, false]);
+    expect(marks).toContainEqual(['ghost', false, false]);
+  });
+
+  it('an agent taken over from the pty host is running: autostart does not start it again and sends it no carry-on', async () => {
+    const roster = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 }), rosterRecord('ben', { desk: 2 })];
+    const set: RunEntry[] = [{ name: 'flight', working: true }, { name: 'ana', working: true }, { name: 'ben', working: false }];
+    const marks: Array<[string, boolean, boolean]> = [];
+    const h = makeHarness({ roster, marks, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: set, adoptable: async () => ({ running: [{ name: 'flight', generation: 3 }, { name: 'ana', generation: 4 }], holds: {} }) });
+    h.setScreen('ana', { cols: 80, rows: 24, promptBox: true, dialog: null, promptText: '' });
+    h.setScreen('flight', { cols: 80, rows: 24, promptBox: true, dialog: null, promptText: '' });
+    await h.hub.start();
+    await settle();
+    await h.advance(2000);
+    expect(spawned(h)).toEqual(['ben']);
+    expect(h.hub.activity().filter((item) => item.subject === 'Server restarted')).toEqual([]);
+    // the adopted agents stay in the saved set
+    expect(marks.filter((m) => !m[1]).map((m) => m[0])).not.toContain('flight');
+  });
+
+  it('one start that fails does not stop the rest, and the reason is in the event', async () => {
+    const h = makeHarness({ roster: ROSTER, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: entries('flight', 'ana', 'ben') });
+    h.script.spawnError = 'the folder is gone';
+    await h.hub.start();
+    await settle();
+    await h.advance(2000);
+    expect(spawned(h)).toContain('ben');
+    expect(h.notices.at(-1)?.[0]).toBe('startup');
+  });
+
+  it('tells an agent that was in a turn to carry on, once, and an idle one nothing', async () => {
+    const set: RunEntry[] = [{ name: 'flight', working: true }, { name: 'ana', working: true }, { name: 'ben', working: false }];
+    const h = makeHarness({ roster: ROSTER, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: set });
+    await h.hub.start();
+    await settle();
+    await h.advance(1000);
+    const told = h.hub.activity().filter((item) => item.from === 'user' && item.subject === 'Server restarted');
+    expect(told.map((item) => item.to).sort()).toEqual(['ana', 'flight']);
+    expect(told[0]?.body).toContain('carry on');
+    const off = makeHarness({ roster: ROSTER, startup: { policy: 'running', carryOn: false, bossMayStart: true }, runSet: set });
+    await off.hub.start();
+    await settle();
+    await off.advance(1000);
+    expect(off.hub.activity().filter((item) => item.subject === 'Server restarted')).toEqual([]);
+  });
+
+  it('writes the set at starts and stops, takes out a stop, a hold, a trip and a remove, and puts a resume back', async () => {
+    const marks: Array<[string, boolean, boolean]> = [];
+    const h = makeHarness({ marks });
+    await h.boot();
+    await h.hire('ana');
+    await h.hire('ben');
+    const last = (name: string) => marks.filter((m) => m[0] === name).at(-1);
+    expect(last('ana')).toEqual(['ana', true, false]);
+    h.work('ana');
+    expect(last('ana')).toEqual(['ana', true, true]);
+    h.hook('ana', 'Stop');
+    await h.hub.stop('ana');
+    expect(last('ana')).toEqual(['ana', false, false]);
+    await h.hub.restart('ana');
+    expect(last('ana')?.[1]).toBe(true);
+    h.ready('ana');
+    h.hub.hold('ben');
+    expect(last('ben')).toEqual(['ben', false, false]);
+    h.hub.resume('ben');
+    expect(last('ben')?.[1]).toBe(true);
+    h.hub.trip('ben', 'loop');
+    expect(last('ben')).toEqual(['ben', false, false]);
+    h.hub.resume('ben');
+    await h.hub.remove('ben');
+    expect(last('ben')).toEqual(['ben', false, false]);
+  });
+
+  it('writes nothing during a shutdown: the set stays as it was', async () => {
+    const marks: Array<[string, boolean, boolean]> = [];
+    const h = makeHarness({ marks });
+    await h.boot();
+    await h.hire('ana');
+    const before = marks.length;
+    await h.hub.shutdown();
+    expect(marks.length).toBe(before);
+  });
+
+  it('an agent that exits by itself leaves the set', async () => {
+    const marks: Array<[string, boolean, boolean]> = [];
+    const h = makeHarness({ marks });
+    await h.boot();
+    await h.hire('ana');
+    h.exit('ana', { code: 0 });
+    expect(marks.filter((m) => m[0] === 'ana').at(-1)).toEqual(['ana', false, false]);
+  });
+
+  it('the opt-out is a record field, in the view, set by hire and edit', async () => {
+    const h = await started();
+    expect((await h.hub.hire({ name: 'ana', role: 'x', dir: '/work/ana', mode: 'default', autostart: false })).autostart).toBe(false);
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.autostart).toBe(false);
+    expect((await h.hub.hire({ name: 'ben', role: 'x', dir: '/work/ben', mode: 'default' })).autostart).toBe(true);
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ben')).not.toHaveProperty('autostart');
+    expect(await h.hub.edit('ana', { autostart: true })).toMatchObject({ autostart: true, dirty: false });
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')).not.toHaveProperty('autostart');
+    await expectHubReject(h.hub.edit('ana', { autostart: 'no' } as never), 'bad_request', 'autostart must be true or false', 'autostart');
+    await expectHubReject(h.hub.hire({ name: 'cy', role: 'x', dir: '/work/cy', mode: 'default', autostart: 1 } as never), 'bad_request', 'autostart must be true or false', 'autostart');
+  });
+});
+
+describe('Hub.startAgent: the boss starts a stopped agent', () => {
+  it('starts a stopped agent, and refuses a running one and one on hold', async () => {
+    const h = await withAna();
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', 'ana is already running');
+    h.hub.hold('ana');
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', /ana is on hold/);
+    h.exit('ana', { code: 0 });
+    const before = h.spawns.length;
+    expect((await h.hub.startAgent('ana', 'flight')).state).toBe('starting');
+    expect(h.spawns.length).toBe(before + 1);
+    await expectHubReject(h.hub.startAgent('ghost', 'flight'), 'not_found', 'unknown agent');
+  });
+});
+
+describe('ALL STOP and ALL RESUME, and the switch of start_agent', () => {
+  it('holds every agent that can be held, names the others, and resumes only the held ones', async () => {
+    const h = await started();
+    await h.hire('ana');
+    await h.hire('ben');
+    await h.hire('cy');
+    h.work('ana');
+    await h.hub.stop('cy');
+    const result = h.hub.holdAll();
+    expect(result.held.sort()).toEqual(['ana', 'ben', 'flight']);
+    expect(result.skipped).toEqual([]);
+    expect(h.view('ana')).toMatchObject({ state: 'needs_you', needsReason: 'on hold' });
+    expect(h.view('cy').state).toBe('stopped');
+    // mail waits for a held agent, as with Hold
+    h.send('user', 'ben', 'hello');
+    expect(h.typed.filter((t) => t.name === 'ben')).toEqual([]);
+    // a second press holds nobody new, and does not name the held ones as skipped
+    expect(h.hub.holdAll()).toEqual({ held: [], skipped: [] });
+    // a tripped one is not resumed by ALL RESUME
+    h.hub.resume('ben');
+    h.hub.trip('ben', 'loop');
+    expect(h.hub.resumeAll().resumed.sort()).toEqual(['ana', 'flight']);
+    expect(h.view('ben').state).toBe('needs_you');
+    expect(h.view('ana').state).not.toBe('needs_you');
+  });
+
+  it('names an agent at a dialog, which it cannot hold, as left alone', async () => {
+    const h = await started();
+    await h.hire('ana');
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+    const result = h.hub.holdAll();
+    expect(result.skipped).toEqual(['ana']);
+    expect(result.held).toContain('flight');
+  });
+
+  it('start_agent is refused when the Director switched "FLIGHT may start agents" off, and the room keeps working', async () => {
+    const h = makeHarness({ startup: { policy: 'boss', carryOn: true, bossMayStart: false } });
+    await h.boot();
+    await h.hire('ana');
+    h.exit('ana', { code: 0 });
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'forbidden', /FLIGHT may start agents/);
+    expect(h.view('ana').state).toBe('stopped');
+    expect((await h.hub.restart('ana')).state).toBe('starting');
+  });
+});
+
+describe('start_agent and the Director\'s stop, and a boss that cannot start', () => {
+  it('refuses an agent the Director stopped until a start clears it, and the flag is in the roster', async () => {
+    const h = await withAna();
+    await h.hub.stop('ana');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.stoppedBy).toBe('director');
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'forbidden', /the Director stopped ana/);
+    expect(h.view('ana').state).toBe('stopped');
+    await h.hub.restart('ana');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')).not.toHaveProperty('stoppedBy');
+    await h.hub.stop('ana');
+    await h.hub.restart('ana');
+    h.ready('ana');
+    // stopped some other way (it exited by itself): FLIGHT may bring it back
+    h.exit('ana', { code: 0 });
+    expect((await h.hub.startAgent('ana', 'flight')).state).toBe('starting');
+  });
+
+  it('a STOP of an agent that already crashed sticks too: FLIGHT may not start it', async () => {
+    const h = await withAna();
+    h.exit('ana', { code: 1 });
+    expect(h.view('ana').state).toBe('stopped');
+    await h.hub.stop('ana');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.stoppedBy).toBe('director');
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'forbidden', /the Director stopped ana/);
+  });
+
+  it('a boss that cannot start does not keep the others from starting, and the notice names it', async () => {
+    const roster = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 })];
+    const h = makeHarness({ roster, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: [{ name: 'flight', working: false }, { name: 'ana', working: false }] });
+    const real = h.io.spawn;
+    h.io.spawn = async (req) => {
+      if (req.agent.name === 'flight') throw new Error('the folder is gone');
+      return real(req);
+    };
+    await h.hub.start();
+    await settle();
+    await h.advance(2000);
+    expect(h.spawns.map((s) => s.agent.name)).toContain('ana');
+    expect(h.notices.at(-1)?.[1]).toMatch(/not started: flight \(.*the folder is gone/);
   });
 });
