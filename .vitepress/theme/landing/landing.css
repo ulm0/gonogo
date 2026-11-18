@@ -104,6 +104,19 @@
   margin-bottom: 24px;
 }
 
+/* What the name means, right under the logo. */
+.lp .lp-name {
+  margin: -12px 0 24px;
+  max-width: 52ch;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.lp .lp-name dfn {
+  font-style: normal;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
 .lp-dark,
 .dark .lp-light {
   display: none;
