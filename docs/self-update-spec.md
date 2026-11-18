@@ -1,0 +1,73 @@
+# Spec: Docker self-update and opt-in auto-update (draft)
+
+Design by FIDO, 2026-11-18, task t53. Status: draft, target 0.4.0, not built. Read from `src/server/updater.ts`, `rollout.ts`, `docs/features/update.md`, `compose.yaml`, the `Dockerfile` and the image workflow on `origin/main` (after #47 and #46); Watchtower facts from its docs site and repository page. Nothing was run.
+
+## Where we are
+
+- **Rollout** says a newer version exists. **Update** (`updater.ts`) installs an exact version with `npm install -g` or `pnpm add -g`, then live-reloads when `--pty-host` is on. In a container it can only call `GONOGO_UPDATE_HOOK` (Watchtower's `/v1/update`, optional bearer token), or show `docker compose pull && docker compose up -d`.
+- **Autostart** (#46) restarts the agents that were running after a cold start.
+- The compose file already mounts the Docker socket for Clean Room: root on the host for the container and every agent in it. The image already has the docker CLI, a `HEALTHCHECK` (30 s interval, 20 s start period, 3 retries) and publishes the tags `x.y.z`, `x.y` and `latest` (`image.yml`).
+
+## Finding that changes option A
+
+**Watchtower is archived.** Its repository page says: "This repository was archived by the owner on Dec 17, 2025. It is now read-only" and "This project is no longer maintained"; the releases list is empty and no fork is named (the linked discussion #2135 was not readable to me). Its HTTP API page documents `--http-api-update`, `WATCHTOWER_HTTP_API_TOKEN` and `GET /v1/update`, and says the endpoint updates "all of the containers monitored by this Watchtower instance"; how to scope it to one container is **not documented on that page** (it shows the `com.centurylinklabs.watchtower.enable` label without explaining its effect on the API). So A means shipping a root-on-host service (it needs the socket too) that nobody maintains and whose scoping is unverified.
+
+## Options
+
+### A. Ship Watchtower in compose
+A `watchtower` service, label-scoped to gonogo, `--http-api-update`, a token, wired to `GONOGO_UPDATE_HOOK`. Near-zero code.
+- For: nothing to write.
+- Against: an unmaintained image with the Docker socket, a second privileged container, scoping unverified, and no rollback or health check (it recreates and stops there). It also updates from `:latest`, so the Director cannot say "this exact version". The hook stays supported for anyone who runs their own updater, but the docs stop recommending Watchtower.
+
+### B. Built in (pick)
+When the socket is mounted and gonogo knows its own container, **Update** recreates the container itself through a short-lived helper, with a health check and a rollback.
+- For: gonogo knows the version it wants and can verify it; one privileged container, not two; rollback is possible; it works the same for compose and `docker run`.
+- Against: about 400 lines of Docker-API code that only run on update (the part most likely to rot); the socket is already there, so no new privilege, but a new path that uses it.
+
+**Pick B.** Keep `GONOGO_UPDATE_HOOK` as the way out for anyone who wants an external updater.
+
+## Design (B)
+
+- **When it applies.** The socket answers (`GET /_ping` on `/var/run/docker.sock`), `GONOGO_INSTALL=docker`, and the container finds itself: its id is the hostname (the Clean Room code already does this lookup for `container:self`). Otherwise the strip shows today's commands.
+- **Which image.** It reads its own `Config.Image`. If that is a **fixed version tag** (`:0.3.0`), it refuses: "this container is pinned to 0.3.0: change the tag in your compose file". If it is a moving tag (`:latest`, `:0`, `:0.3`), it pulls **that same reference**. After the pull it reads the image's `org.opencontainers.image.version` label (set by the image workflow's metadata action) and **refuses to go on unless it equals the version Rollout named and the click repeated** (the rule `updater.ts` already uses for npm). So the click picks an exact version even though the tag moves, and a mismatch (a registry that moved on, or a lagging tag) stops before anything is stopped.
+- **The helper.** gonogo starts a container from the **new image**, `--rm`, with the socket mounted and the command `gonogo self-update --target <container id> --expect <x.y.z>`; a label `gonogo.helper=1`. It is a separate container because the old one stops while the work is still running. It runs the steps below using the Docker Engine API over the socket (Node `fetch` on the unix socket, no CLI parsing): the create call takes the shape `GET /containers/<id>/json` returns.
+  1. Inspect the target; copy `Config`, `HostConfig` (ports, binds, `Init`, `ExtraHosts`, `GroupAdd`, restart policy, stop timeout) and the network settings; **keep every label, the compose ones included**, so `docker compose ps` and later `up -d` still know the container.
+  2. Create the new container from the pulled image under the name `<name>-next`.
+  3. **Stop the old one** (its own graceful shutdown: gonogo stops its agents within 8 s, `stop_grace_period` 15 s is honoured), rename it `<name>-prev`. Two gonogos never share `/state`.
+  4. Rename `-next` to `<name>`, start it.
+  5. **Health check:** wait for Docker's `healthy` (the image's `HEALTHCHECK`), at most 3 minutes.
+  6. Healthy: write `<home>/run/update.json`, remove `-prev`, exit. **Not healthy, or it did not start: roll back**: stop and remove the new one, rename `-prev` back, start it, write the failure and its log tail to `update.json`. The old image is never removed by gonogo.
+  The helper never runs anything but these calls, on the one target id, with the one image: no input reaches it except the version, which must be `^\d{1,6}\.\d{1,6}\.\d{1,6}$`.
+- **Compose and `docker run`.** Recreating from `inspect` works for both, because it copies the container as it is. Limits, stated in the page: a compose file edited since the container was created is **not** re-read (only `docker compose up -d` does that), and the container is no longer exactly what compose would build (its `config-hash` label is the old one), so the next `docker compose up -d` recreates it once more, harmlessly, to the same image. The page says so.
+- **Security.** The socket is root on the host, and a container that has it can already do everything this does; B adds no privilege, only a new use of it. The risks to name: (1) the update runs **new code with the socket** immediately, so trusting an update is trusting the publisher (the same trust as `compose pull`); the version check above and the exact-version click are the only guard; (2) the endpoint is the browser token's (`POST /api/update`) like the rest of the page, an agent's token cannot call it, and an agent in the container could still use the socket itself, as today; (3) the helper accepts a **target id that equals the container it was started for** and refuses to touch any other container or to create anything that is not a copy of the target; (4) no registry credentials are handled: a private image needs the host's docker login, which the container does not have, and the page says "this install needs `docker compose pull`". A Docker socket proxy that allows only the calls above is an option for the security-minded and is documented, not built.
+- **What happens to the agents.** The old container stops: **all pty hosts end**, the live reload does not cross containers. Agents stop gracefully; Claude agents `--resume` at the next start. With `startup: running` (autostart, #46) the new container starts them again in waves; with `boss` or `off` they stay stopped. So the **Update dialog says it**: "N agents are working, M are idle. They will stop and (autostart on: start again by themselves) (autostart off: wait for you)". An agent that is mid-turn gets the autostart "carry on" message. The click is refused while a **Static fire or a T-minus poll** is running (the same rule as the npm path) and offers WAIT UNTIL IDLE.
+- **Rollback by the Director.** After a good update the strip says "Updated 0.3.0 to 0.4.0. UNDO". UNDO runs the same helper with the **previous image id** recorded in `update.json` (the old image stays on the host until the Director prunes; the page says that) and the same health check. Beyond one step back, the Director uses compose with a pinned tag.
+- **The Pad Check line.** `gonogo doctor` and the Flight Rules block say: "Docker self-update: ready / needs the socket / pinned tag / not in a container", and what to do.
+
+## Auto-update (opt-in, default off)
+
+A Flight Rules block **AUTO-UPDATE** (a room setting, `<home>/autoupdate.json`, damaged file means off). It applies to **npm/pnpm installs** (with `--pty-host`, so live reload keeps the agents; without it only when autostart is `running`) and to **Docker with B**. It never exists for a git checkout, `pnpm dlx` or a container without the socket.
+
+- **Which versions.** `patch` (default when on) or `minor`. **A major version never installs by itself, and while gonogo is 0.x a minor bump counts as a major** (a 0.x minor may break), so auto means patch-only until 1.0, and says so in the block. A pre-release is never taken.
+- **Cooling off.** Only a version Rollout has seen for **at least 24 hours** (`firstSeenAt` is stored beside `latest` in `rollout.json`; the registry's latest document has no publish time). A yanked or re-tagged version falls out by itself.
+- **When.** Inside a window the Director sets (default 02:00 to 05:00 local, one or more), once per version, and only when **nothing is working, nothing waits for the Director (needs you, Relief, an open poll) and no mail is queued**, for 10 minutes running. If the window ends first, the next window tries again. A **drain** switch (off by default) lets it hold new work first (the Hold machinery, then update), because an always-busy room would otherwise never update.
+- **Telling the Director.** Downlink event kind `update` **before** ("Updating to 0.3.1 at 03:10; CANCEL in the page; nothing is working") with a 10-minute lead, **after** ("Updated 0.3.0 to 0.3.1; 3 agents resumed" or "rolled back: <reason>") and a page strip with CANCEL, SKIP THIS VERSION and UNDO. Relay forwards it as a `redline`-class text like the other events when the Director chose that.
+- **Rollback and the breaker.** A failed health check rolls back (Docker) or reinstalls the previous exact version and reloads (npm); in both cases the version is **marked bad** in `update.json`, auto-update turns itself **off** and says why: it will not try the same version again, and not a newer one until the Director turns it on after reading the note.
+  "The last N versions": Docker keeps the **previous image** (never removed by gonogo, N = 1 on the host and the Director's `docker image` list beyond that); npm needs no local copy since the registry keeps every exact version, so `update.json` keeps the **last 3 versions installed** with times and the way back for each.
+- **Trust, in one sentence on the page:** turning this on lets the publisher's next patch run on your machine, with the Docker socket in a container, without you reading it; the 24 h delay and the patch-only rule are the only checks.
+
+## Scope
+
+**First PR (0.4.0): manual Docker self-update only.** `src/server/dockerupdate.ts` (Engine API client over the socket, inspect-to-create copy, the steps and the rollback), `gonogo self-update` helper subcommand, the version-label check, the pinned-tag refusal, `update.json`, UNDO, the Update dialog with the agent summary, the Pad Check line, docs (`docs/features/update.md`, `docker.md`; Watchtower marked unmaintained, the hook kept), a fake Docker API server for tests. About 700 lines with tests.
+**Second PR (0.4.x): auto-update**, patch-only, npm and Docker, with the window, the idle rule, the 24 h cooling, the Downlink events and the breaker. About 500 lines. **Left out of both:** minor or major by itself, a git checkout, registry credentials, a socket proxy, updating Clean Room images, a remote host, multiple rooms (`docs/rooms-spec.md`: the supervisor is the update unit then).
+
+## Tests
+
+A fake Engine API (a unix socket server) with scripted answers: inspect-to-create copies ports, binds, `Init`, extra hosts, group add, labels (compose ones kept), networks and restart policy; pinned tag refused; label mismatch aborts **before** anything is stopped; step order (create, stop old, rename, start, health); health timeout and a failed start roll back and leave the old container running under its old name; a rollback that itself fails says so loudly and leaves both names for the Director; the helper refuses another target id; the version regex; the refusal during a poll or Static fire; `update.json` content; UNDO runs the same path with the old image. Auto: window arithmetic with a fake clock and time zones; the idle rule (10 minutes, any activity resets it); patch-only and the 0.x rule; the 24 h `firstSeenAt` rule; CANCEL in the lead time; the breaker turns auto off and does not retry; a damaged `autoupdate.json` is off. Not testable here: a real Docker daemon and a real image pull (by hand in a Lima VM, like the Clean Room checks), and a healthy new image booting.
+
+## Risks
+
+- The create-from-inspect copy can miss a field a future Docker adds: the test compares a full inspect fixture, and the page names the compose-edit limit.
+- A new image that starts but is broken after the health check passes is not caught; UNDO is the answer.
+- Rollback needs the old image still present: a `docker image prune -a` between update and undo removes it (said in the page).
+- The helper is the one place gonogo drives the socket on purpose; it needs a second reviewer who reads the Docker calls one by one.
