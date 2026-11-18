@@ -6256,6 +6256,8 @@ describe('Tool permissions: the rules of an agent (hire and edit)', () => {
     expect(await h.hub.edit('ana', { permissions: null })).toMatchObject({ permissions: null });
     expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('permissions');
     await expectHubReject(h.hub.edit('ana', { permissions: { allow: ['bad rule'] } }), 'bad_request', /is not a rule/, 'permissions');
+  });
+});
 
 describe('live reload: a new hub takes over the agents that kept running', () => {
   const roster = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 })];

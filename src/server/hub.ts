@@ -1577,7 +1577,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         rt.ready = true;
         rt.hooksSeen = false;
         rt.flag = null;
-        rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), engine: engineKey(rt.record) };
+        rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), permissions: rulesKey(rt.record), engine: engineKey(rt.record) };
         const saved = holds[item.name];
         const probe = screenOf(rt);
         // errs toward needs_you, never toward idle by guess: a saved hold or trip, then a dialog, then a screen that cannot be read yet
