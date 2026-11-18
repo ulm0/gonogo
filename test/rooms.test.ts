@@ -174,6 +174,31 @@ describe('the supervisor', () => {
     expect((await api(s, '/r/late/api/state')).status).toBe(404);
   }, 40_000);
 
+  it('the list page wears the stylesheet of the built client, served from /assets/ for css and fonts only', async () => {
+    const client = join(home, 'client');
+    mkdirSync(join(client, 'assets'), { recursive: true });
+    writeFileSync(join(client, 'index.html'), '<html><head><link rel="stylesheet" crossorigin href="./assets/index-abc123.css"></head></html>');
+    writeFileSync(join(client, 'assets', 'index-abc123.css'), '.tile{color:red}');
+    writeFileSync(join(client, 'assets', 'secret.txt'), 'no');
+    sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '' }, staticDir: client });
+    const s = sup;
+    const html = await (await api(s, '/', null)).text();
+    expect(html).toContain('<link rel="stylesheet" href="/assets/index-abc123.css">');
+    expect(html).toMatch(/class="module"/);
+    const css = await api(s, '/assets/index-abc123.css', null);
+    expect([css.status, css.headers.get('content-type')]).toEqual([200, 'text/css']);
+    expect(await css.text()).toBe('.tile{color:red}');
+    for (const path of ['/assets/secret.txt', '/assets/nope.css', '/assets/..%2findex.html', '/assets/../index.html', '/assets/']) expect((await api(s, path, null)).status, path).toBe(404);
+    expect((await api(s, '/', null)).headers.get('content-security-policy')).toMatch(/style-src 'self' 'sha256-/);
+  });
+
+  it('without a built client the list page still works, with plain styles', async () => {
+    const s = await supervise();
+    const html = await (await api(s, '/', null)).text();
+    expect(html).not.toContain('rel="stylesheet"');
+    expect((await api(s, '/assets/x.css', null)).status).toBe(404);
+  });
+
   it('a damaged rooms.json stops nothing: every room keeps running, and the list is read again when the file is fixed', async () => {
     addRoom(home, 'team');
     const s = await supervise();

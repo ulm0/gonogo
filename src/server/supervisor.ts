@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { bearerToken, sendJson, sendText } from './hooks.js';
-import { roomsPage, ROOMS_PAGE_HEADERS } from './roomspage.js';
+import { clientStylesheet, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
 import { loadRooms, MAIN_ROOM, roomHome } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
@@ -57,6 +57,8 @@ export interface SupervisorOptions {
   env: NodeJS.ProcessEnv;
   /** Extra arguments for every room (for a test's stand-in agent no flag is needed: the environment carries it). */
   roomArgs?: string[];
+  /** The built client (dist/client): its stylesheet dresses the list page, served from /assets/. Absent or without a build: plain styles. */
+  staticDir?: string | null;
   log?: Logger;
 }
 
@@ -254,6 +256,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   /* ---------------------------------------------------------------- the front port */
 
+  const stylesheet = clientStylesheet(options.staticDir ?? null);
+  const assetsDir = options.staticDir === null || options.staticDir === undefined ? null : join(options.staticDir, 'assets');
+  const TYPES: Record<string, string> = { css: 'text/css', woff: 'font/woff', woff2: 'font/woff2' };
+
   const proxy = createRoomProxy({
     directorToken,
     allowedNames,
@@ -270,8 +276,20 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
     const path = (req.url ?? '').split('?')[0];
     if (path === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
-      res.writeHead(200, ROOMS_PAGE_HEADERS);
-      res.end(req.method === 'HEAD' ? undefined : roomsPage());
+      res.writeHead(200, roomsPageHeaders());
+      res.end(req.method === 'HEAD' ? undefined : roomsPage(stylesheet));
+      return;
+    }
+    // the stylesheet and fonts of the built client, for the list page: a plain file name, only css and fonts
+    const asset = /^\/assets\/([\w.-]+\.(css|woff2?))$/.exec(path ?? '');
+    if (asset !== null && assetsDir !== null && req.method === 'GET' && !(asset[1] as string).includes('..')) {
+      try {
+        const body = readFileSync(join(assetsDir, asset[1] as string));
+        res.writeHead(200, { 'Content-Type': TYPES[asset[2] as string] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+        res.end(body);
+      } catch {
+        sendText(res, 404, 'not found');
+      }
       return;
     }
     if (path === '/api/rooms' && req.method === 'GET') {

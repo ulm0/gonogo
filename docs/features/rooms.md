@@ -38,7 +38,7 @@ one (a graceful stop: SIGTERM, then SIGKILL after 12 s). `gonogo rooms` takes `-
 **If the supervisor is killed** (`kill -9`, the machine's out-of-memory killer), each room sees the pipe it was started with close and shuts down gracefully, so no room is left running on a port nobody knows, and the next `gonogo rooms` starts clean. A plain `gonogo` that was left running on the same home still holds its lock: stop it first. At most 12 rooms: each is a Node process (and a
 pty host with `--pty-host`), so count tens of megabytes each.
 
-Open the printed address: the list shows each room with its agents and how many need you, and OPEN goes to `/r/<id>/`. In a room,
+Open the printed address (the list page wears the app's own styles, taken from the built client): the list shows each room with its agents and how many need you, and OPEN goes to `/r/<id>/`. In a room,
 **Rooms** in the Patch Panel (Cmd+K) goes back to the list.
 
 ## Tokens
