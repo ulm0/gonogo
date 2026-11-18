@@ -117,14 +117,26 @@ export const SUPERVISOR_FILE = 'rooms-supervisor.json';
 /** The supervisor says it runs: its pid and the port it listens on (0600). */
 export function writeSupervisorFile(root: string, host: string, port: number): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  writeFileSync(join(root, SUPERVISOR_FILE), JSON.stringify({ pid: process.pid, host: ['0.0.0.0', '::', ''].includes(host) ? '127.0.0.1' : host, port }), { mode: 0o600 });
+  // a temporary file and a rename, as saveRooms does: a symlink planted under the final name is replaced, never written through
+  const path = join(root, SUPERVISOR_FILE);
+  const temp = `${path}.${process.pid}.tmp`;
+  try {
+    unlinkSync(temp); // a stale or planted name is removed itself (a symlink is not followed), then created fresh
+  } catch {
+    // none
+  }
+  writeFileSync(temp, JSON.stringify({ pid: process.pid, host: ['0.0.0.0', '::', ''].includes(host) ? '127.0.0.1' : host, port }), { mode: 0o600, flag: 'wx' });
+  renameSync(temp, path);
 }
 
+/** Removes the file only when it names this process: a supervisor that started later owns the file it wrote. */
 export function removeSupervisorFile(root: string): void {
+  const path = join(root, SUPERVISOR_FILE);
   try {
-    unlinkSync(join(root, SUPERVISOR_FILE));
+    if ((JSON.parse(readFileSync(path, 'utf8')) as { pid?: unknown }).pid !== process.pid) return;
+    unlinkSync(path);
   } catch {
-    // already gone
+    // already gone, or not ours to read
   }
 }
 

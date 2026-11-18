@@ -1,6 +1,6 @@
 // Rooms (docs/rooms-spec.md): the list of rooms, the commands, and the supervisor with stand-in rooms (test/fake-room.mjs).
 // The real thing (built gonogo as the rooms) was tried by hand: docs/features/rooms.md, "What was seen".
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -381,6 +381,21 @@ describe('the supervisor', () => {
       sup = null;
       expect(existsSync(join(home, SUPERVISOR_FILE))).toBe(false);
       expect(await supervisorRunning(home)).toBe(false);
+    }, 40_000);
+
+    it('writes the file through a rename (a planted symlink is not followed) and removes only its own', async () => {
+      const target = join(home, 'victim.txt');
+      writeFileSync(target, 'keep');
+      symlinkSync(target, join(home, SUPERVISOR_FILE));
+      const s = await supervise();
+      expect(readFileSync(target, 'utf8')).toBe('keep');
+      expect(lstatSync(join(home, SUPERVISOR_FILE)).isSymbolicLink()).toBe(false);
+      // another supervisor took the file over: this one's stop must leave it
+      writeFileSync(join(home, SUPERVISOR_FILE), JSON.stringify({ pid: process.pid + 1, host: '127.0.0.1', port: 1 }));
+      await s.stop();
+      sup = null;
+      expect(existsSync(join(home, SUPERVISOR_FILE))).toBe(true);
+      expect(JSON.parse(readFileSync(join(home, SUPERVISOR_FILE), 'utf8'))).toMatchObject({ pid: process.pid + 1 });
     }, 40_000);
 
     const run = async (...args: string[]): Promise<string> => {
