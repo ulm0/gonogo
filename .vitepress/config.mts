@@ -89,6 +89,8 @@ export default defineConfig({
           { text: 'Flight Rules', link: '/features/flight-rules' },
           { text: 'Relief', link: '/features/relief' },
           { text: 'Rollout', link: '/features/rollout' },
+          { text: 'Hangar', link: '/features/hangar' },
+          { text: 'Recorder', link: '/features/recorder' },
         ],
       },
       {

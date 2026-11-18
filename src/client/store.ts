@@ -37,8 +37,8 @@ export interface ClientState {
   selected: string | null;
   /** The staffing screen. A hire may start from an open seat (its position) or as a custom command. */
   form: null | { mode: 'hire'; position?: string | null; custom?: boolean } | { mode: 'edit'; name: string };
-  /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log, the Livery, the Flight Rules, Party Line, the Plot Board or the Black Box. */
-  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules' | 'party' | 'board' | 'blackbox';
+  /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log, the Livery, the Flight Rules, Party Line, the Plot Board, the Black Box, the Hangar or the Recorder. */
+  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules' | 'party' | 'board' | 'blackbox' | 'hangar' | 'recorder';
   /** Phone only: a console is open full screen over the room. A wide page ignores it (the selected console is always in its side panel). */
   consoleOpen: boolean;
   /** Transient message animations (Envelope lives in protocol.ts so that this file needs no .tsx). */
@@ -198,6 +198,12 @@ export const showRules = (): void => store.setState((s) => ({ ...s, view: 'rules
 export const showParty = (): void => store.setState((s) => ({ ...s, view: 'party', consoleOpen: false }));
 export const showBoard = (): void => store.setState((s) => ({ ...s, view: 'board', consoleOpen: false }));
 export const showBlackBox = (): void => store.setState((s) => ({ ...s, view: 'blackbox', consoleOpen: false }));
+/** Hangar and Recorder work on the selected console; opened from it, they follow `selected`. */
+export const showHangar = (): void => store.setState((s) => ({ ...s, view: 'hangar', consoleOpen: false }));
+export const showRecorder = (): void => store.setState((s) => ({ ...s, view: 'recorder', consoleOpen: false }));
+export const openHangar = (name: string): void => store.setState((s) => ({ ...s, selected: name, view: 'hangar', consoleOpen: false }));
+export const openRecorder = (name: string): void => store.setState((s) => ({ ...s, selected: name, view: 'recorder', consoleOpen: false }));
+export const selectConsole = (name: string): void => store.setState((s) => (s.selected === name ? s : { ...s, selected: name }));
 /** An open seat passes its position; the spare seat passes none. */
 export const openHire = (position: string | null = null): void => store.setState((s) => ({ ...s, form: { mode: 'hire', position } }));
 export const openEdit = (name: string): void => store.setState((s) => ({ ...s, form: { mode: 'edit', name } }));

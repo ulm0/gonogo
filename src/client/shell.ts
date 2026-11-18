@@ -35,6 +35,8 @@ export const VIEW_NAMES: Record<View, string> = {
   party: 'Party Line',
   board: 'Plot Board',
   blackbox: 'Black Box',
+  hangar: 'Hangar',
+  recorder: 'Recorder',
   downlink: 'Downlink',
   window: 'Launch Window',
   plan: 'Flight Plan',

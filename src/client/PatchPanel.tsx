@@ -9,7 +9,7 @@ import * as api from './api.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commands, matchCommands, stepIndex } from './shell.js';
 import type { Act, View } from './shell.js';
-import { openConsole, openHire, showDownlink, showBlackBox, showBoard, showLivery, showLog, showLoop, showParty, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { openConsole, openHire, showDownlink, showBlackBox, showBoard, showHangar, showLivery, showLog, showLoop, showParty, showPlan, showRecorder, showRoom, showRules, showWindow, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './patch.css';
 
@@ -19,6 +19,8 @@ const SHOW: Record<View, () => void> = {
   party: showParty,
   board: showBoard,
   blackbox: showBlackBox,
+  hangar: showHangar,
+  recorder: showRecorder,
   downlink: showDownlink,
   window: showWindow,
   plan: showPlan,

@@ -32,6 +32,8 @@ import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
 import { createDownlink } from './downlink.js';
 import { createHub } from './hub.js';
+import { createHangar, createRoots } from './hangar.js';
+import { createRecorder } from './recorder.js';
 import { checkCleanRoom } from './cleanroom.js';
 import { openHome } from './home.js';
 import { createLauncher, parseAgentCmd } from './launcher.js';
@@ -572,6 +574,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('livery'),
     });
+    const roots = createRoots({
+      home: home.dir,
+      agent: (name) => {
+        const view = hubInstance.views().find((v) => v.name === name);
+        return view === undefined ? null : { dir: view.dir, cleanRoom: view.cleanRoom !== null };
+      },
+    });
     const relief = createRelief({
       hub: hubInstance,
       checkDirectory: io.checkDirectory,
@@ -621,6 +630,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relief,
       rollout,
       engines: () => checkEngines(env),
+      hangar: createHangar(roots),
+      recorder: createRecorder(roots, env),
       log: log.child('web'),
     });
     web = webServer;

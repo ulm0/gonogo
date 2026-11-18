@@ -52,6 +52,11 @@ No route, file or setting of its own: the page groups the messages it already ho
 - gonogo encrypts nothing: use HTTPS or a private network, or messages and roster cross as plain text.
 - A docking code works once, for 15 minutes. It holds an address your server posts to when you pair, so pair only with a code you got from the person. Undock at once if a station you do not know appears.
 
+## Hangar and Recorder
+
+- Only the browser token opens them. Hangar resolves every path with `realpath` and refuses `..`, an absolute path, a link that leads out, `.git` and gonogo's own folder; it writes only a text file you saved (1 MiB, refused if the file changed on disk) or a new one, and never deletes. An agent outside a Clean Room runs as you and can write these files itself: the checks guard the browser's requests, not the agent.
+- Recorder runs git with an argument list, no prompt, hooks off, a time limit and an output cap, and commits only with the author of your own git config. The agent can write the repository's `.git/config`, which git reads: hooks, the file system monitor, the external diff and text conversion are off, a `filter` driver is not, nor the `gpg.program` of a repository that signs its commits. Read the status before you commit.
+
 ## Clean Room and Docker
 
 - **A Docker socket mounted into gonogo's container is root on the host** (`compose.yaml` does this for Clean Room). Every agent in that container can use it; see [Clean Room in the container](../guide/docker.md#clean-room-in-the-container).

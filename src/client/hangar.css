@@ -1,0 +1,276 @@
+/*
+ * Hangar (the files of a console's folder) and the head it shares with Recorder, in the Instrument look. The page head is the
+ * comm loop's (loop.css); everything else is hg-. The tree is on the left and the editor on the right; under 900 px they stack.
+ * Only colours of the livery are used, in the pairs the livery check already holds to 4.5:1 (text, text-2 and muted on body,
+ * panel, key and well). Every key and field is at least 44 px tall.
+ */
+
+.hg {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 20px;
+}
+
+/* Focus lands on the title when the page opens, for a screen reader; a ring around the title is noise. */
+.hg-title:focus-visible {
+  outline: none;
+}
+
+.hg-agent {
+  flex: 0 1 220px;
+  min-width: 160px;
+}
+
+.hg-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.hg-empty {
+  margin: 0;
+  padding: 12px 2px;
+}
+
+.hg-cols {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+/* ---- the tree ---- */
+
+.hg-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.hg-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hg-new {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hg-new .field {
+  align-self: stretch;
+}
+
+.hg-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hg-root {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.hg-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding-right: 10px;
+  border: 0;
+  border-radius: var(--radius-key);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hg-item:hover {
+  background: var(--well);
+}
+
+.hg-item[aria-current='true'] {
+  background: var(--well);
+  box-shadow: inset 3px 0 0 var(--work);
+  font-weight: 600;
+}
+
+.hg-link {
+  color: var(--muted);
+  cursor: default;
+}
+
+.hg-link:hover {
+  background: transparent;
+}
+
+.hg-mark {
+  flex: none;
+  width: 12px;
+  color: var(--muted);
+}
+
+.hg-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hg-size {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.hg-note {
+  margin: 0;
+  padding: 8px 10px;
+  list-style: none;
+}
+
+/* ---- the editor ---- */
+
+.hg-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.hg-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.hg-path {
+  flex: 1 1 200px;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.hg-ask,
+.hg-problem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.hg-ask p,
+.hg-problem p {
+  margin: 0;
+}
+
+.hg-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The textarea and the numbers beside it share one font and one line height, so that a number sits on its line. */
+.hg-ed {
+  display: flex;
+  height: min(70vh, 640px);
+  min-height: 320px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  overflow: hidden;
+}
+
+.hg-gutter {
+  flex: none;
+  box-sizing: content-box;
+  width: calc(var(--digits) * 1ch + 8px);
+  margin: 0;
+  /* room at the foot for the scroll bar of the textarea, so that the two can scroll to the same end */
+  padding: 10px 8px 30px 0;
+  overflow: hidden;
+  background: var(--well);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: right;
+  user-select: none;
+}
+
+.hg-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  overflow: auto;
+  resize: none;
+  tab-size: 4;
+  white-space: pre;
+}
+
+.hg-text:read-only {
+  background: var(--well);
+}
+
+/* The ring goes round the whole box: the textarea's own would be cut by the box's overflow. */
+.hg-text:focus-visible {
+  outline: none;
+}
+
+.hg-ed:has(.hg-text:focus-visible) {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+@media (max-width: 899px) {
+  .hg {
+    padding: 12px 16px 20px;
+  }
+
+  .hg-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hg-root {
+    max-height: 260px;
+  }
+
+  .hg-ed {
+    height: 60vh;
+    min-height: 260px;
+  }
+}
+
+/* A phone zooms into a field whose text is under 16 px, so the editor's is 16 px there, with its numbers. */
+@media (max-width: 699px) {
+  .hg-gutter,
+  .hg-text {
+    font-size: 16px;
+    line-height: 24px;
+  }
+}
