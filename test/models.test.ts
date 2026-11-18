@@ -104,6 +104,13 @@ describe('the routes', () => {
     expect(badEngine.json).toMatchObject({ field: 'provider' });
   });
 
+  it('answers a bad % escape in the engine with 400, not 500', async () => {
+    const port = await start(true);
+    const bad = await call(port, 'PUT', '/api/models/%E0%A4%A', { model: 'x' });
+    expect(bad.status).toBe(400);
+    expect(bad.json).toMatchObject({ field: 'provider' });
+  });
+
   it('answers 404 without the store', async () => {
     const port = await start(false);
     expect((await call(port, 'GET', '/api/models')).status).toBe(404);

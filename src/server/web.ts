@@ -1015,7 +1015,15 @@ export function createWebServer(options: WebOptions): WebServer {
         allow: ['PUT'],
         run: async (req, res) => {
           const body = await jsonObject(req, res);
-          if (body) sendJson(res, 200, await models.set(decodeURIComponent(s[2] ?? ''), body.model));
+          if (!body) return;
+          let provider: string;
+          try {
+            provider = decodeURIComponent(s[2] ?? '');
+          } catch {
+            // a bad % escape is the caller's mistake, not the server's
+            return sendApiError(res, 400, 'unknown engine', 'bad_request', 'provider');
+          }
+          sendJson(res, 200, await models.set(provider, body.model));
         },
       };
     }
