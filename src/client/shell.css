@@ -60,16 +60,20 @@
   filter: invert(1) hue-rotate(180deg);
 }
 
-/* Seven keys (Livery is the seventh) and the long name of the unit do not fit on one line below 1400 px: the name gives way, GN-1 stays. */
-@media (min-width: 700px) and (max-width: 1399px) {
+/* Seven keys, the Livery key and the two round keys of the Plot Board and the Black Box and the long name of the unit do not fit on one line below 1500 px: the name gives way, GN-1 stays, and the gap is 6 px. */
+@media (min-width: 700px) and (max-width: 1499px) {
   .mark-unit-long {
     display: none;
   }
+
+  .topbar {
+    column-gap: 6px;
+  }
 }
 
-/* It starts small and grows into the room that is left, up to 24 characters: a top bar with seven keys must stay on one line at 1280 px (its gap is 10 px for that). */
+/* It starts at nothing and grows into the room that is left, up to 24 characters: a top bar with seven keys and two round ones must stay on one line at 1280 px, so the folder gives way first (its gap is 10 px, 6 px below 1500 px, for that). */
 .topbar-dir {
-  flex: 1 1 6ch;
+  flex: 1 1 0;
   min-width: 0;
   max-width: 24ch;
   overflow: hidden;
@@ -1331,7 +1335,7 @@
 
   .topbar {
     flex-wrap: nowrap;
-    gap: 10px;
+    gap: 6px;
     min-height: 52px;
     padding: 4px 8px 4px 14px;
   }
@@ -1340,8 +1344,14 @@
     height: 22px;
   }
 
+  /* Four round keys (Plot Board, Black Box, Livery, Staff) of 44 px must fit in 390 px: the name of the unit goes, and the link lamp is its light alone (its words stay for a screen reader, and a lost link has a strip with words under the bar). */
   .mark-unit {
-    font-size: 9.5px;
+    display: none;
+  }
+
+  .lamp {
+    gap: 0;
+    font-size: 0;
   }
 
   .mark-unit-long,

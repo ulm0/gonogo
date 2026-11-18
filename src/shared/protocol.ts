@@ -110,7 +110,7 @@ export const MCP_SERVER_NAME = 'gonogo';
 /** Clean Room (docs/clean-room-spec.md): the worktrees live in <home>/cleanroom/<name> on the branch gonogo/<name>. */
 export const CLEAN_ROOM_DIR = 'cleanroom';
 export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'log_write', 'log_search', 'log_read', 'livery_submit'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -192,6 +192,14 @@ export const LOG_TAGS_MAX = 8;
 export const LOG_TAG_PATTERN = '^[a-z0-9][a-z0-9._-]{0,29}$';
 export const LOG_QUERY_MAX_CHARS = 200;
 export const LOG_SEARCH_MAX = 20;
+/** Plot Board (docs/plot-board-spec.md): the one plan of the room, `board.md`. At most this many characters. */
+export const BOARD_MAX_CHARS = 10_000;
+/** Black Box (docs/black-box-spec.md): what an event records, and how long its line is. `audit` is the Black Box's own note. */
+export const AUDIT_KINDS = ['crew', 'redline', 'poll', 'answer', 'plan', 'uplink', 'config', 'audit'] as const;
+export type AuditKind = (typeof AUDIT_KINDS)[number];
+export const AUDIT_TEXT_MAX_CHARS = 200;
+/** How a part of the server tells the Black Box of an event: names, ids and words of the server, never a text somebody wrote. */
+export type AuditRecord = (kind: AuditKind, text: string) => void;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
 export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
@@ -683,6 +691,39 @@ export interface LogRequest {
   title?: string;
   body?: string;
   tags?: string[];
+}
+
+/** Plot Board: the plan as it is now. `author` is "user" (the Director) or the boss; null and `updatedAt` null while it was never written. */
+export interface BoardView {
+  text: string;
+  /** Counts the writes; a write must name the revision it read. */
+  revision: number;
+  author: string | null;
+  updatedAt: number | null;
+}
+/** PUT /api/board: the whole text, and the revision it was written from. */
+export interface BoardRequest {
+  text: string;
+  revision: number;
+}
+
+/** Black Box: one recorded event. */
+export interface AuditEvent {
+  at: number;
+  kind: AuditKind;
+  text: string;
+}
+/** `ok`: events are committed to the repository; `missing`: no git program was found; `error`: git failed (`note` says how). */
+export type AuditGitState = 'ok' | 'missing' | 'error';
+/** GET /api/black-box: the newest events first, and what the Director needs to read the repository with git. */
+export interface AuditView {
+  git: AuditGitState;
+  note: string;
+  /** The repository folder. */
+  dir: string;
+  /** A command to paste in a terminal. */
+  command: string;
+  events: AuditEvent[];
 }
 
 /** Livery (docs/livery-spec.md): one look. `tokens` holds every token of src/shared/livery.ts. `author` is the agent that submitted it. */

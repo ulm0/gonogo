@@ -5,6 +5,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { LIVERY_DESCRIPTION_MAX_CHARS, LIVERY_NAME_MAX_CHARS } from '../shared/livery.js';
 import {
+  BOARD_MAX_CHARS,
   LOG_BODY_MAX_CHARS,
   LOG_QUERY_MAX_CHARS,
   LOG_SEARCH_MAX,
@@ -20,6 +21,7 @@ import {
 import type { AgentIdentity, AgentSendRequest, Hub, Logger, Task } from '../shared/protocol.js';
 import { BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
+import type { Board } from './board.js';
 import type { Liveries } from './livery.js';
 import type { MissionLog } from './missionlog.js';
 import type { Tasks } from './tasks.js';
@@ -31,6 +33,8 @@ export interface McpDeps {
   tasks?: Pick<Tasks, 'list' | 'create' | 'update'>;
   /** The Mission Log; absent in tests that do not need it (the three log tools then answer that it is not available). */
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update'>;
+  /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
+  board?: Pick<Board, 'get' | 'write'>;
   /** Livery; absent in tests that do not need it (the tool then answers that it is not available). */
   liveries?: Pick<Liveries, 'submit'>;
   resolveToken(token: string): AgentIdentity | null;
@@ -207,6 +211,28 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
 
     server.registerTool('log_read', { description: MCP_DESCRIPTIONS.log_read, inputSchema: { id: z.string().min(1).max(16) } }, ({ id }) =>
       guarded('log_read', () => (missionLog ? toolResult({ ok: true, entry: missionLog.get(id) }, false) : noLog())),
+    );
+
+    const { board } = deps;
+    const noPlot = (): CallToolResult => toolResult({ ok: false, error: 'the Plot Board is not available' }, true);
+    // the boss is the one the hub says it is, asked at each call: a rename or a new boss takes effect at once
+    const bossName = (): string | null => hub.rosterFor(agent, generation).boss;
+
+    server.registerTool('board_read', { description: MCP_DESCRIPTIONS.board_read }, () =>
+      guarded('board_read', () => (board ? toolResult({ ok: true, ...board.get(), canWrite: bossName() === agent }, false) : noPlot())),
+    );
+
+    server.registerTool(
+      'board_write',
+      { description: MCP_DESCRIPTIONS.board_write, inputSchema: { text: z.string().max(BOARD_MAX_CHARS), revision: z.number().int().min(0) } },
+      (args) =>
+        guarded('board_write', async () => {
+          if (!board) return noPlot();
+          if (bossName() !== agent) return toolResult({ ok: false, error: 'only the boss may write the Plot Board' }, true);
+          // the author is the caller's own name, never a field of the call
+          const view = await board.write(agent, args);
+          return toolResult({ ok: true, revision: view.revision, updatedAt: view.updatedAt }, false);
+        }),
     );
 
     const { liveries } = deps;

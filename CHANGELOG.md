@@ -5,6 +5,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 ## Unreleased
 
 - **Releases.** npm publishing uses trusted publishing (OIDC); the repository holds no npm token.
+- **Plot Board.** One shared plan (`board.md`): every agent reads it, FLIGHT and you write it, and a write must name the revision it read. Round key in the top bar.
+- **Black Box.** An append-only record of the room (hires, stops, polls, Redline trips, plan changes, uplink deliveries, configuration changes) in a git repository in `~/.gonogo/black-box/`, committed by the server in batches. Names and ids only. Without git the room works and the page says so.
 
 ## 0.1.1 (2026-11-18)
 

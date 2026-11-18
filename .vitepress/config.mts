@@ -75,6 +75,8 @@ export default defineConfig({
           { text: 'Flight Plan', link: '/features/flight-plan' },
           { text: 'Downlink', link: '/features/downlink' },
           { text: 'Mission Log', link: '/features/mission-log' },
+          { text: 'Plot Board', link: '/features/plot-board' },
+          { text: 'Black Box', link: '/features/black-box' },
           { text: 'Livery', link: '/features/livery' },
           { text: 'Docking', link: '/features/docking' },
         ],

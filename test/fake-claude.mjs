@@ -40,6 +40,8 @@ const ALLOWED_TOOLS = [
   'mcp__gonogo__log_write',
   'mcp__gonogo__log_search',
   'mcp__gonogo__log_read',
+  'mcp__gonogo__board_read',
+  'mcp__gonogo__board_write',
   'mcp__gonogo__livery_submit',
 ];
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'bypassPermissions'];
@@ -810,9 +812,10 @@ async function directive(name, rest) {
       await mcpTool('go_nogo', { vote, reason: reason.join(' ') });
       return 'ok';
     }
-    // `@fake task task_list|task_create|task_update <json>` or `@fake log log_write|log_search|log_read <json>` or `@fake livery livery_submit <json>`: a Flight Plan, Mission Log or Livery tool, the JSON being its arguments
+    // `@fake task task_list|task_create|task_update <json>` or `@fake log log_write|log_search|log_read <json>` or `@fake board board_read|board_write <json>` or `@fake livery livery_submit <json>`: a Flight Plan, Mission Log, Plot Board or Livery tool, the JSON being its arguments
     case 'task':
     case 'log':
+    case 'board':
     case 'livery': {
       const [tool = '', ...json] = rest.split(/\s+/);
       await mcpTool(tool, json.length === 0 ? {} : JSON.parse(json.join(' ')));

@@ -43,6 +43,8 @@ import type {
   AgentState,
   AgentView,
   ApiError,
+  AuditView,
+  BoardView,
   ClientFrame,
   DockCode,
   DockingView,
@@ -124,6 +126,8 @@ interface ServerOptions {
   staticDir?: string | null;
   /** What Relay posts with (scenario 28): a fake, so that nothing leaves the machine. */
   relayFetch?: typeof fetch;
+  /** A home that an earlier server used (scenario 32): this one goes on from it. */
+  home?: string;
 }
 
 const harnesses: Harness[] = [];
@@ -131,7 +135,7 @@ const clients: Client[] = [];
 
 async function startServer(options: ServerOptions = {}): Promise<Harness> {
   const tmp = await mkdtemp(join(tmpdir(), 'gonogo-'));
-  const home = join(tmp, 'home');
+  const home = options.home ?? join(tmp, 'home');
   const logDir = join(tmp, 'log');
   const configDir = join(tmp, 'claude');
   const work = join(tmp, 'work');
@@ -2335,6 +2339,139 @@ describe('end to end with the stand-in agent', () => {
       expect(JSON.parse(readFileSync(dockerLog, 'utf8').trim().split('\n')[2] ?? '{}')).toEqual({ verb: 'rm', argv: ['-f', run?.name] });
     } finally {
       await rm(aux, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('31. Plot Board: every agent reads one plan, only the boss and the Director write it, a write names the revision it read, and the file is private', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    await waitState(h, 'flight', 'idle');
+    const tell = async (name: string, line: string): Promise<void> => {
+      const sent = await send(h, name, `@fake board ${line}`, 'board');
+      await itemRead(h, sent.body.id);
+      await waitState(h, name, 'idle');
+    };
+
+    // an agent that is not the boss reads it and is refused when it writes
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body).toEqual({ text: '', revision: 0, author: null, updatedAt: null });
+    await tell('ana', 'board_read {}');
+    expect(tools(h, 'ana', 'board_read').at(-1)).toMatchObject({ isError: false, result: { ok: true, text: '', revision: 0, canWrite: false } });
+    await tell('ana', 'board_write {"text":"ana takes over","revision":0}');
+    expect(tools(h, 'ana', 'board_write').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: 'only the boss may write the Plot Board' } });
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body.revision).toBe(0);
+
+    // the boss writes it, and the author is its own name
+    await tell('flight', 'board_read {}');
+    expect(tools(h, 'flight', 'board_read').at(-1)).toMatchObject({ result: { canWrite: true } });
+    await tell('flight', 'board_write {"text":"# Plan\\n\\n1. ship the audit log","revision":0,"author":"user"}');
+    expect(tools(h, 'flight', 'board_write').at(-1)).toMatchObject({ isError: false, result: { ok: true, revision: 1 } });
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body).toMatchObject({ text: '# Plan\n\n1. ship the audit log', revision: 1, author: 'flight' });
+
+    // every agent sees it
+    await tell('ana', 'board_read {}');
+    expect(tools(h, 'ana', 'board_read').at(-1)).toMatchObject({ result: { text: '# Plan\n\n1. ship the audit log', revision: 1, author: 'flight', canWrite: false } });
+
+    // the Director edits it from the page: a stale revision is a 409 and changes nothing
+    expect(await api<ApiError>(h, 'PUT', '/api/board', { text: 'late', revision: 0 })).toMatchObject({ status: 409, body: { code: 'conflict', field: 'revision' } });
+    expect(await api<ApiError>(h, 'PUT', '/api/board', { text: 'x'.repeat(10_001), revision: 1 })).toMatchObject({ status: 400, body: { field: 'text' } });
+    expect(await api<BoardView>(h, 'PUT', '/api/board', { text: '# Plan\n\n1. ship the audit log\n2. then the board', revision: 1 })).toMatchObject({ status: 200, body: { revision: 2, author: 'user' } });
+
+    // the boss that wrote from the revision it read before the Director's edit is refused, and told to read again
+    await tell('flight', 'board_write {"text":"overwrite","revision":1}');
+    expect(tools(h, 'flight', 'board_write').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: expect.stringMatching(/revision 2, not 1: read it again/) } });
+    expect((await api<BoardView>(h, 'GET', '/api/board')).body.text).toBe('# Plan\n\n1. ship the audit log\n2. then the board');
+
+    // the browser token is the only key to the route, and the file is private with a version
+    expect((await rawRequest(h, '/api/board', { Authorization: 'Bearer nope' })).status).toBe(401);
+    expect(statSync(join(h.home, 'board.md')).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(h.home, 'board.md'), 'utf8')).toMatch(/^---\nversion: 1\nrevision: 2\nauthor: "user"\nupdatedAt: "[^"]+"\n---\n# Plan\n\n1\. ship the audit log\n2\. then the board\n$/);
+  }, 90_000);
+
+  it('32. Black Box: what happens in the room is recorded as names and ids, the server commits it to a git repository of its own, and a restart goes on from it', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    await waitState(h, 'flight', 'idle');
+    const secret = 'topsecret-value-1234567890';
+    const events = async (): Promise<AuditView> => (await api<AuditView>(h, 'GET', '/api/black-box')).body;
+
+    // the Director's calls, an agent's task, a poll that is held, an uplink with a secret, the boss's plan
+    expect((await api(h, 'POST', '/api/agents', { name: 'ben', role: `ben keeps ${secret} to himself`, dir: h.work, mode: 'default', command: undefined })).status).toBe(201);
+    await waitState(h, 'ben', 'idle');
+    await api(h, 'PATCH', '/api/agents/ben', { role: `ben keeps ${secret} still` });
+    const tell = async (name: string, line: string): Promise<void> => {
+      const sent = await send(h, name, line, 'audit');
+      await itemRead(h, sent.body.id);
+      await waitState(h, name, 'idle');
+    };
+    await tell('ana', `@fake task task_create {"title":"Write ${secret}","detail":"${secret}"}`);
+    await tell('flight', `@fake board board_write {"text":"plan ${secret}","revision":0}`);
+    expect((await api(h, 'POST', '/api/poll')).status).toBe(201);
+    expect((await api(h, 'POST', '/api/poll/hold')).status).toBe(200);
+    const made = await api<UplinkCreated>(h, 'POST', '/api/uplinks', { name: 'GitHub', to: 'ana' });
+    const delivery = await fetch(`${h.base}/uplink/u1`, { method: 'POST', headers: { authorization: `Bearer ${made.body.secret}` }, body: `{"text":"${secret}"}` });
+    expect(delivery.status).toBe(202);
+    expect((await api(h, 'POST', '/api/agents/ben/stop')).status).toBe(200);
+
+    const seen = (await events()).events.map((e) => `${e.kind}: ${e.text}`);
+    const wanted = [
+      /^audit: gonogo \S+ started$/,
+      /^crew: Director hired ana$/,
+      /^crew: Director hired ben$/,
+      /^config: Director edited ben: role$/,
+      /^plan: ana created task t1$/,
+      /^plan: flight wrote the Plot Board: revision 1, \d+ characters$/,
+      /^poll: Director started a T-minus poll$/,
+      /^poll: Director held the poll$/,
+      /^poll: T-minus poll HOLD: held by the Director$/,
+      /^config: Director made an uplink u1$/,
+      /^uplink: Uplink u1 delivered message m\d+$/,
+      /^crew: Director stopped ben$/,
+    ];
+    for (const pattern of wanted) expect(seen.some((line) => pattern.test(line)), `${pattern} in ${JSON.stringify(seen)}`).toBe(true);
+    // no text of a task, a role, a plan, a message or an uplink, and no secret of any
+    expect(JSON.stringify(await events())).not.toContain(secret);
+    expect(JSON.stringify(await events())).not.toContain(made.body.secret);
+    expect((await events())).toMatchObject({ git: 'ok', note: '', dir: join(h.home, 'black-box') });
+    expect((await events()).command).toBe(`git -C '${join(h.home, 'black-box')}' log -p`);
+    expect((await rawRequest(h, '/api/black-box', { Authorization: 'Bearer nope' })).status).toBe(401);
+
+    // after a stop the repository holds the events, committed by gonogo and by nobody else, and the files are private
+    await h.run.stop();
+    const repo = join(h.home, 'black-box');
+    expect(statSync(repo).mode & 0o777).toBe(0o700);
+    const day = readdirSync(repo).find((name) => name.endsWith('.jsonl')) ?? '';
+    expect(statSync(join(repo, day)).mode & 0o777).toBe(0o600);
+    const git = (...args: string[]): string => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
+    expect(git('status', '--porcelain')).toBe('');
+    expect(git('log', '--format=%an <%ae>').split('\n').every((line) => line === 'gonogo <gonogo@localhost>')).toBe(true);
+    const committed = git('show', `HEAD:${day}`).split('\n').map((line) => JSON.parse(line) as { text: string });
+    expect(committed.map((e) => e.text)).toContain('gonogo stopped');
+    expect(committed.map((e) => e.text)).toContain('Director hired ana');
+    expect(git('log', '-p')).not.toContain(secret);
+
+    // a second start on the same home goes on with the same repository, and lists what the first one wrote
+    const again = await startServer({ home: h.home });
+    const list = (await api<AuditView>(again, 'GET', '/api/black-box')).body;
+    expect(list.git).toBe('ok');
+    expect(list.events.map((e) => e.text)).toContain('Director hired ana');
+    expect(list.events[0]?.text).toMatch(/^gonogo \S+ started$/);
+    await again.run.stop();
+  }, 120_000);
+
+  it('33. Black Box without git: the room works, the page says git was not found, and the events are still written', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'gonogo-nogit-'));
+    try {
+      const h = await startServer({ env: { PATH: empty } });
+      await hire(h, 'ana');
+      const list = (await api<AuditView>(h, 'GET', '/api/black-box')).body;
+      expect(list).toMatchObject({ git: 'missing', note: 'git was not found on the PATH' });
+      expect(list.events.map((e) => e.text)).toContain('Director hired ana');
+      expect(existsSync(join(h.home, 'black-box', '.git'))).toBe(false);
+      await h.run.stop();
+      const day = readdirSync(join(h.home, 'black-box')).find((name) => name.endsWith('.jsonl')) ?? '';
+      expect(readFileSync(join(h.home, 'black-box', day), 'utf8')).toContain('Director hired ana');
+    } finally {
+      await rm(empty, { recursive: true, force: true });
     }
   }, 60_000);
 });

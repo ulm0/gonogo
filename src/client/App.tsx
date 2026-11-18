@@ -3,17 +3,19 @@ import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
 import { Loop } from './Activity.js';
 import * as api from './api.js';
+import { BlackBox } from './BlackBox.js';
 import { Downlink } from './Downlink.js';
 import { FlightPlan } from './FlightPlan.js';
 import { HireForm } from './HireForm.js';
 import { LaunchWindow } from './LaunchWindow.js';
 import { Livery } from './Livery.js';
 import { MissionLog } from './MissionLog.js';
+import { PlotBoard } from './PlotBoard.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { openConsole, openHire, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showWindow, useStore } from './store.js';
+import { openConsole, openHire, showBlackBox, showBoard, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showWindow, useStore } from './store.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import logo from '../../docs/brand/lockup.svg';
@@ -105,7 +107,19 @@ function TopBar({ phone }: { phone: boolean }): ReactElement {
           Mission Log
         </button>
       )}
-      {/* a round key on every width: a seventh word in the bar would not fit on one line at 1280 px */}
+      {/* round keys on every width: another word in the bar would not fit on one line at 1280 px */}
+      <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Plot Board" title="Plot Board" aria-current={view === 'board' ? 'page' : undefined} onClick={showBoard}>
+        <svg className="topbar-glyph" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+          <path d="M4.5 6h7M4.5 8.5h7M4.5 11h4" />
+        </svg>
+      </button>
+      <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Black Box" title="Black Box" aria-current={view === 'blackbox' ? 'page' : undefined} onClick={showBlackBox}>
+        <svg className="topbar-glyph" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2" y="3" width="12" height="10" rx="1.5" />
+          <circle cx="8" cy="8" r="2.2" />
+        </svg>
+      </button>
       <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Livery" title="Livery" aria-current={view === 'livery' ? 'page' : undefined} onClick={showLivery}>
         <span className="livery-mark" aria-hidden="true" />
       </button>
@@ -283,6 +297,8 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'downlink') return <Downlink />;
   if (view === 'log') return <MissionLog />;
   if (view === 'livery') return <Livery />;
+  if (view === 'board') return <PlotBoard />;
+  if (view === 'blackbox') return <BlackBox />;
   if (phone) {
     return (
       <main className="room room-phone">

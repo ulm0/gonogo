@@ -48,6 +48,8 @@ Everything lives under the home (`~/.gonogo` by default). Files are mode 0600 an
 | `livery.json` | Chosen livery: `{ "version": 1, "current": "<slug>" }`. Unknown or unreadable means Instrument. |
 | `liveries/<slug>.json` | Custom liveries (name, description, author, 28 tokens). One that is incomplete or fails the contrast rule is skipped with a warning and kept. |
 | `mission-log/<id>.md` | Mission Log entries: front matter (`version`, id, title, tags, author, times) and body. Unreadable or newer-version entries are skipped with a warning and kept. `mission-log/.seq` holds the highest id so ids are never reused. |
+| `board.md` | Plot Board: front matter (`version`, `revision`, `author`, `updatedAt`, each value JSON on one line), `---`, the plan as plain text (at most 10000 characters). A file without that front matter is read as the plan. Read at start. |
+| `black-box/` | Black Box: a git repository the server makes at start (folder 0700). One `<YYYY-MM-DD>.jsonl` for each UTC day, a line for each event (`at`, `kind`, `text`: names and ids only), files 0600. The server commits in batches (30 seconds after the first event, and at shutdown) as `gonogo <gonogo@localhost>`; git is needed only for the commits. |
 | `<file>.bak-v<n>` | Copy made before upgrading a file from version `n` (e.g. `agents.json.bak-v1`). Never read or removed by gonogo. Copies of `uplinks.json`, `relay.json` or `docking.json` keep their old secrets. |
 | `server.lock` | The running gonogo's pid. A second gonogo on the same home refuses to start. Delete it if you are told one is running and none is. |
 | `token` | The browser token. |
@@ -56,10 +58,11 @@ Everything lives under the home (`~/.gonogo` by default). Files are mode 0600 an
 
 ### Versions of the saved state
 
-Every JSON file above with a format, and each Mission Log entry's front matter, holds `"version": <n>`. All are at version 1 today. Design: [`docs/release-readiness-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/release-readiness-spec.md).
+Every JSON file above with a format, and each Mission Log entry's front matter and the front matter of `board.md`, holds `"version": <n>`. All are at version 1 today. Design: [`docs/release-readiness-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/release-readiness-spec.md).
 
 - **Older file**: at start, before anything reads it, it is upgraded one version at a time. gonogo first copies it to `<file>.bak-v<old>`, writes the new file atomically and logs one line. If a step fails, the file is left as it was and the start stops, naming the file and the copy.
 - **Newer file** stops the start: `<path> was saved by a newer gonogo (format version 2; this one reads up to 1). Start the gonogo that saved it, or move the file away to start without it.` To go back to an older gonogo, put the `.bak-v<n>` copy back (you lose later changes).
 - **Missing, not JSON or no version**: handled as described in the table. `propellant.json` without a version counts as version 1.
 - **Mission Log entries** are not upgraded; a newer one is skipped with a warning and kept.
-- **Not versioned**: `messages.jsonl` and `fuel.jsonl` (an unreadable line is skipped), `mission-log/.seq`, `token`, `server.lock`, and files under `agents/<name>/` rewritten every start.
+- **`board.md`** is not upgraded; a newer one stops the start with the message above.
+- **Not versioned**: `messages.jsonl`, `fuel.jsonl` and the day files of `black-box/` (an unreadable line is skipped), `mission-log/.seq`, `token`, `server.lock`, and files under `agents/<name>/` rewritten every start.

@@ -25,6 +25,11 @@
 
 **`POST /uplink/<id>` takes no browser token.** It needs that uplink's secret (a body signature, or the secret as a bearer token). At most 256 KiB and 30 a minute per uplink. Unknown and disabled uplinks both answer 404. The Host check applies; a request with an `Origin` header is refused. An agent reads a delivery as a message from you.
 
+## Plot Board and Black Box
+
+- **Plot Board:** `PUT /api/board` takes the browser token; `board_write` takes the boss's agent token and the server asks the hub who the boss is at each call, so any other agent is refused. Every agent reads the plan like mail, and `board.md` is plain text (mode 0600): keep secrets out.
+- **Black Box:** records names, ids and counts, never a message body, a title or a secret. git runs without a shell, with a 10 second limit, an environment made from nothing (the server's `PATH`, no `GIT_*` variable, none of your git config) and hooks, signing and fsmonitor off even when the repository's config asks for them. A `black-box` folder that is a link is refused. The record shows an edit, it cannot prevent one: an agent in `bypassPermissions` runs as you and can change the files or the history.
+
 ## Docking
 
 **Dock only with people you trust: their agents can reach yours.**
