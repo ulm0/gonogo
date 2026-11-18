@@ -73,6 +73,7 @@ import type {
   ReviewVerdictKind,
   ReviewView,
   RoomView,
+  TabNameView,
   UserMessageRequest,
   WorktreeStatus,
 } from '../shared/protocol.js';
@@ -516,6 +517,13 @@ export async function runSchedule(id: string): Promise<ScheduleView> {
   return toScheduleView(await call('POST', `/schedules/${encodeURIComponent(id)}/run`));
 }
 
+/** Tab name: the name of this room in the title of the tab; null or empty goes back to the default. */
+export async function setTabName(name: string | null): Promise<TabNameView> {
+  const value = await call('PUT', '/tab-name', { name });
+  if (asRecord(value) === null) throw failure('The server sent an answer gonogo does not understand.');
+  return value as TabNameView;
+}
+
 /** Room editor: save the layout from the revision it was made from, or go back to today's page (all of it, or only the order of the desks). */
 export async function saveRoom(request: { rev: number; blocks: Block[]; desks: DeskOrder }): Promise<RoomView> {
   return toRoomView(await call('PUT', '/room', request));
@@ -853,6 +861,7 @@ function parseFrame(text: string): ServerFrame | null {
   else if (frame.t === 'uplinks') valid = Array.isArray(frame.uplinks);
   else if (frame.t === 'tasks') valid = Array.isArray(frame.tasks);
   else if (frame.t === 'missions') valid = Array.isArray(frame.missions);
+  else if (frame.t === 'tabname') valid = typeof asRecord(frame.tabName) === 'object' && asRecord(frame.tabName) !== null;
   else if (frame.t === 'room') valid = typeof asRecord(frame.room)?.rev === 'number';
   else if (frame.t === 'livery') valid = asRecord(frame.livery) !== null && Array.isArray(asRecord(frame.livery)?.liveries) && typeof asRecord(frame.livery)?.current === 'string';
   else if (frame.t === 'relief') valid = isReliefView(frame.relief);

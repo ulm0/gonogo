@@ -3,6 +3,7 @@
  * Permission is asked only from `enableNotifications`, which the key in Flight Rules calls: never on page load.
  */
 import { useSyncExternalStore } from 'react';
+import { tabTitle } from '../shared/protocol.js';
 import { isAway, noticesFor, notifyStatus, seenIn, titleWith, waitingFor } from './notify.js';
 import type { Notice, NotifyStatus, Seen } from './notify.js';
 import { readStored, showDownlink, showRoom, store, writeStored } from './store.js';
@@ -67,12 +68,13 @@ function show(notice: Notice): void {
 
 /** Joins the logic to the page: once, at start. It does nothing before the first state (the inbox then is history). */
 export function startNotifications(): () => void {
-  const base = document.title;
+  const original = document.title;
   let seen: Seen | null = null;
   let last: { downlink: unknown; poll: unknown; relief: unknown } | null = null;
   const apply = (): void => {
     const s = store.getState();
     if (s.info === null) return;
+    const base = tabTitle(s.tabName);
     const away = isAway(document);
     // the title counts what waits while the tab is not in front, and goes back when the Director is there
     document.title = away ? titleWith(base, waitingFor(s)) : base;
@@ -96,6 +98,6 @@ export function startNotifications(): () => void {
     document.removeEventListener('visibilitychange', apply);
     window.removeEventListener('focus', apply);
     window.removeEventListener('blur', apply);
-    document.title = base;
+    document.title = original;
   };
 }

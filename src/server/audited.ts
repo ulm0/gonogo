@@ -89,6 +89,11 @@ export const ROOM_AUDIT: Table = {
   reset: ['config', (args) => (args[0] === 'desks' ? 'Director reset the order of the desks' : 'Director reset the room layout')],
 };
 
+/** Tab name: that it was set or cleared, never the name. */
+export const TABNAME_AUDIT: Table = {
+  set: ['config', (args) => (args[0] === null || args[0] === '' || args[0] === undefined ? 'Director cleared the tab name' : 'Director set the tab name')],
+};
+
 /** Missions: who made or changed a mission, and what kind of change (the status, never a name, goal or note). */
 export const MISSIONS_AUDIT: Table = {
   create: ['plan', (args, result) => `${actorName(args[0])} created mission ${isRecord(result) ? (plain(result.id) ?? '?') : '?'}`],

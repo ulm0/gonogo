@@ -355,6 +355,8 @@ export const UPLINK_NOTE_MAX_CHARS = 300;
 export const DOCKING_FILE = 'docking.json';
 export const STATION_FILE = 'station.json';
 export const STATION_ENV = 'GONOGO_STATION';
+/** Tab name: the name of this room in the title of the browser tab. */
+export const TABNAME_FILE = 'tabname.json';
 export const DOCK_CODE_TTL_MS = 15 * 60_000;
 export const DOCK_CODES_MAX = 5;
 export const DOCK_SKEW_MS = 5 * 60_000;

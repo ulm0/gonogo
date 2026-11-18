@@ -12,6 +12,7 @@ settings you can change in the room on one screen. COMMISSIONING is the checklis
   [load governor](../guide/the-room.md#positions-t-minus-max-q-and-custom-agents) and [Propellant](./propellant.md)). On a phone
   the wall shows no Propellant module: this screen is where a phone sets it.
 - **DEFAULT MODELS**: the model each engine, and each position (Claude Code), starts with when a console has none of its own (see [Engine Bay](./engine-bay.md#model)).
+- **TAB NAME**: a name for this room in the title of the browser tab (`<name> · gonogo`, `(3) <name> · gonogo` with unread items), to tell several gonogo sessions apart. Kept on the server, so every browser shows it; at most 40 characters, control characters removed. Empty goes back to the default: the station name when `GONOGO_STATION` is set, else `gonogo`. `GET` and `PUT /api/tab-name` (`{ "name": "..." | null }`), file `<home>/tabname.json`.
 - **LIVERY**: the name of the one in use and a key to the [Livery](./livery.md) view.
 - **LAUNCH WINDOW**: a key to the view that holds schedules, [Uplink](./uplink.md), [Relay](./relay.md) and
   [Docking](./docking.md).

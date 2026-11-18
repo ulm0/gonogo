@@ -10,7 +10,7 @@ It finds the browser token in the file `token` of gonogo's home (`~/.gonogo`, `-
 
 ## Screens
 
-The top line names them and the link (`connected`, `reconnecting…`, `token refused`); the second line is always the first thing that waits for you: `NEEDS 2: ana: permission request: Bash: git push (press 3)`. From 100 columns the room is on the left and the inbox, needs or poll on the right; below that one screen at a time. A state is a glyph and a word, so a log of the session still reads: `* working`, `. idle`, `! needs you`, `- stopped`, `on hold`.
+The top line starts with the name of the room as the browser tab says it (`gonogo`, or the station, or the [tab name](./flight-rules.md)), then names the screens and the link (`connected`, `reconnecting…`, `token refused`); the second line is always the first thing that waits for you: `NEEDS 2: ana: permission request: Bash: git push (press 3)`. From 100 columns the room is on the left and the inbox, needs or poll on the right; below that one screen at a time. A state is a glyph and a word, so a log of the session still reads: `* working`, `. idle`, `! needs you`, `- stopped`, `on hold`.
 
 | Key | ROOM (1) | INBOX (2) | NEEDS (3) | POLL (4) |
 |---|---|---|---|---|

@@ -1042,6 +1042,8 @@ export interface StateSnapshot {
   missions?: Mission[];
   /** Absent from an older server: the page then shows today's layout. */
   room?: RoomView;
+  /** Absent from an older server: the page then titles the tab `gonogo`. */
+  tabName?: TabNameView;
   downlink: DownlinkView;
   /** Absent from an older server: the page then shows the Instrument look. */
   livery?: LiveryView;
@@ -1411,6 +1413,24 @@ export interface DeskOrder {
   /** Cell keys: `p:<position id>` for the cell of a position, `a:<name>` for an agent that has none. Used by `manual`. */
   order: string[];
 }
+/** Tab name: the title of the browser tab is `<name> · gonogo`. */
+export const TAB_NAME_MAX_CHARS = 40;
+export interface TabNameView {
+  /** What the Director typed, or null. */
+  name: string | null;
+  /** The station name when GONOGO_STATION is set, else null: used while `name` is null. */
+  fallback: string | null;
+}
+/** The tab name changed; carries the whole view. Also inside StateSnapshot. */
+export interface TabNameFrame {
+  t: 'tabname';
+  tabName: TabNameView;
+}
+/** The title of the tab without a count: `<name> · gonogo` with the Director's name or the station's, plain `gonogo` with neither. The page and the terminal client use it. */
+export function tabTitle(view: TabNameView): string {
+  const name = view.name ?? view.fallback;
+  return name === null || name === '' ? 'gonogo' : `${name} · gonogo`;
+}
 /** The saved layout of the Room view: absent (`layout: null`) is today's page. `rev` grows with every save and every reset. */
 export interface RoomView {
   rev: number;
@@ -1459,6 +1479,7 @@ export interface RolloutFrame {
   rollout: RolloutView;
 }
 export type ServerFrame =
+  | TabNameFrame
   | RoomFrame
   | MissionsFrame
   | ReliefFrame
@@ -1481,7 +1502,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts

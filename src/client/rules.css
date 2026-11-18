@@ -238,3 +238,15 @@
 .commission-extra {
   margin: 8px 0 0;
 }
+
+/* Tab name: the field and its key on one line. */
+.rules-tabname {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.rules-tabname .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

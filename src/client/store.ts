@@ -17,6 +17,7 @@ import type {
   StateSnapshot,
   Mission,
   RoomView,
+  TabNameView,
   Task,
   UplinkView,
 } from '../shared/protocol.js';
@@ -61,6 +62,8 @@ export interface ClientState {
   missions: Mission[];
   /** Room editor: the saved layout of the Room view (`layout: null` is today's page) and its revision. */
   room: RoomView;
+  /** Tab name: what the title of the tab says of this room. */
+  tabName: TabNameView;
   /** Room editor: the Director is editing a draft of the layout. */
   editingRoom: boolean;
   /** The mission whose detail the Missions view shows, or null for the list. */
@@ -179,6 +182,7 @@ export function emptyState(): ClientState {
     tasks: [],
     missions: [],
     room: NO_ROOM,
+    tabName: { name: null, fallback: null },
     editingRoom: false,
     selectedMission: null,
     missionDraft: null,
@@ -355,6 +359,7 @@ function applyState(s: ClientState, snapshot: StateSnapshot, now: number): Clien
     missions: snapshot.missions ?? [],
     // an older server sends no room
     room: snapshot.room ?? NO_ROOM,
+    tabName: snapshot.tabName ?? { name: null, fallback: null },
     downlink: snapshot.downlink ?? NO_DOWNLINK,
     // an older server sends no livery: the page then shows the default look
     livery: snapshot.livery ?? defaultView(),
@@ -450,6 +455,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, missions: frame.missions };
     case 'room':
       return { ...s, room: frame.room };
+    case 'tabname':
+      return { ...s, tabName: frame.tabName };
     case 'downlink':
       return { ...s, downlink: frame.downlink };
     case 'livery':

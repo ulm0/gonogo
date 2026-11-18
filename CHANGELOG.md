@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Tab name.** Flight Rules has a TAB NAME field: the title of the browser tab becomes `<name> · gonogo` (the unread count stays in front), to tell several gonogo sessions apart. Kept on the server for every browser; default is the station name when `GONOGO_STATION` is set, else `gonogo`.
+
 - **Link to the online docs.** <https://gonogo.ulm0.com/> is in the start-up log (a log line: stdout keeps its one `gonogo ready:` line), `gonogo --help`, `gonogo doctor`, a Docs line in the Patch Panel and the Commissioning checklist. One constant, `DOCS_URL`. The package `homepage` and the README already had it.
 
 - **Amazon Bedrock.** Checked against the vendors' docs and gonogo's code, not run against AWS: Claude Code is expected to work with the AWS variables as Clearance keys or in the shell (a Clean Room needs keys; it has no `~/.aws`), Bedrock ids fit the model field and show as unpriced until you add a price row. The hire form suggests the Bedrock key names. A Bedrock section in the Engine Bay page and `docs/facts/bedrock.md`.

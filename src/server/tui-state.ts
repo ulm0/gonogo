@@ -7,7 +7,7 @@
  * sequences, control and bidi characters) before it is drawn.
  */
 import { HOLD_REASON } from '../shared/protocol.js';
-import type { AgentView, DownlinkItem, DownlinkView, PollView, ReliefRequest, ServerFrame, ServerInfo } from '../shared/protocol.js';
+import type { AgentView, DownlinkItem, DownlinkView, PollView, ReliefRequest, ServerFrame, ServerInfo, TabNameView } from '../shared/protocol.js';
 
 export type Link = 'connecting' | 'open' | 'reconnecting' | 'unauthorized';
 
@@ -21,9 +21,11 @@ export interface TuiState {
   relief: ReliefRequest[];
   poll: PollView | null;
   info: ServerInfo | null;
+  /** The name of this room in the title of the browser tab: the header shows it too. */
+  tabName: TabNameView;
 }
 
-export const initialState = (): TuiState => ({ link: 'connecting', loaded: false, agents: [], downlink: { unread: 0, items: [] }, relief: [], poll: null, info: null });
+export const initialState = (): TuiState => ({ link: 'connecting', loaded: false, agents: [], downlink: { unread: 0, items: [] }, relief: [], poll: null, info: null, tabName: { name: null, fallback: null } });
 
 const byDesk = (a: AgentView, b: AgentView): number => a.desk - b.desk || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
@@ -45,6 +47,7 @@ export function applyFrame(s: TuiState, frame: ServerFrame): TuiState {
         downlink: frame.state.downlink ?? s.downlink,
         relief: frame.state.relief?.requests ?? [],
         poll: frame.state.poll,
+        tabName: frame.state.tabName ?? s.tabName,
       };
     case 'agent':
       return { ...s, agents: [...s.agents.filter((a) => a.name !== frame.agent.name), frame.agent].sort(byDesk) };
@@ -56,6 +59,8 @@ export function applyFrame(s: TuiState, frame: ServerFrame): TuiState {
       return { ...s, relief: frame.relief.requests };
     case 'poll':
       return { ...s, poll: frame.poll };
+    case 'tabname':
+      return { ...s, tabName: frame.tabName };
     default:
       return s;
   }
