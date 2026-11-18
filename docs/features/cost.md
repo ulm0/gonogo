@@ -16,6 +16,9 @@ A **mission budget** is dollars in all (not per window), set in the COST block o
 
 ## Limits
 
+- A mission's spend is what the ledger still holds (31 days): a longer mission quietly loses its oldest spend against its "in all" budget.
+- Spend of an agent with no `doing` task is counted to no mission. A model with no price adds to the mission's unpriced tokens, not its dollars, so it does not move the budget.
+- A reply is attributed by the agent's `doing` task when the transcript is read, so a reply finished just after a switch of task goes to the new task.
 - Counted like tokens: Claude Code agents only, not Clean Room agents, not subagent (Task tool) transcripts.
 - Cache writes use the 5-minute price; the 1-hour price, batch discounts, long-context surcharges and per-call fees are not modelled.
 - Ledger lines written before this feature have no model: they count for tokens and show as unpriced (the fold says "priced since" and a date). They are not rewritten.
