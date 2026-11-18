@@ -1,17 +1,21 @@
 // The rooms proxy (docs/rooms-spec.md): what it passes, what it swaps, and what it must never carry from one room to another.
 // Two fake rooms (an HTTP server and a WebSocket server each) stand behind a real proxy on a real port.
+import { mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRoomProxy } from '../src/server/roomproxy.js';
 import { validRoomId } from '../src/server/rooms.js';
 import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
 
 const DIRECTOR = 'd'.repeat(64);
+// a room has no token any more: it is reached by its own unix socket (docs/login-spec.md R8). These stand in for the secrets the old model swapped in.
 const TOKEN_A = 'a'.repeat(64);
-const TOKEN_B = 'b'.repeat(64);
 const TOKEN_MAIN = 'c'.repeat(64);
+const sockets = mkdtempSync(join(tmpdir(), 'gonogo-proxy-'));
 
 interface Seen {
   method: string;
@@ -21,6 +25,7 @@ interface Seen {
 }
 interface Fake {
   port: number;
+  sock: string;
   seen: Seen[];
   protocols: string[][];
   close(): Promise<void>;
@@ -34,6 +39,10 @@ async function fakeRoom(name: string): Promise<Fake> {
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
       seen.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers, body: Buffer.concat(chunks).toString('utf8') });
+      if (req.url === '/page') {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': 'default-src *', connection: 'close' });
+        return res.end('<p>room</p>');
+      }
       if (req.url === '/redirect') {
         res.writeHead(302, { Location: '/elsewhere' });
         return res.end();
@@ -51,9 +60,12 @@ async function fakeRoom(name: string): Promise<Fake> {
       ws.on('message', (data, isBinary) => ws.send(isBinary ? data : `${name}:${String(data)}`, { binary: isBinary }));
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const sock = join(sockets, `${name}.sock`);
+  await new Promise<void>((resolve) => server.listen(sock, resolve));
   return {
-    port: (server.address() as AddressInfo).port,
+    // the port the room says it has: only the Host the proxy puts on a request
+    port: 41000 + name.length * 100 + (name.codePointAt(0) ?? 0),
+    sock,
     seen,
     protocols,
     close: async () => {
@@ -71,20 +83,45 @@ let front: http.Server;
 let base: string;
 let stoppedRoom = false;
 let proxyUnderTest: ReturnType<typeof createRoomProxy>;
+let aliveSessions = new Set<string>();
+const touched: string[] = [];
+
+/** What the login says about a request: the old Director token is a `token` grant, a cookie `gonogo-session=<id>` a session, `gnk_*` a key. */
+const fakeAuth = {
+  grant(req: http.IncomingMessage) {
+    const bearer = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
+    if (bearer === DIRECTOR) return { kind: 'token' as const };
+    if (bearer === 'gnk_read') return { kind: 'key' as const, scope: 'read' as const };
+    if (bearer === 'gnk_full') return { kind: 'key' as const, scope: 'full' as const };
+    const cookie = /gonogo-session=(\w+)/.exec(req.headers.cookie ?? '')?.[1];
+    return cookie !== undefined && aliveSessions.has(cookie) ? { kind: 'session' as const, sessionId: cookie } : null;
+  },
+  grantUpgrade(req: http.IncomingMessage) {
+    const protocols = String(req.headers['sec-websocket-protocol'] ?? '');
+    if (protocols.includes(WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR)) return { kind: 'token' as const };
+    return fakeAuth.grant(req);
+  },
+  csrfOk: (req: http.IncomingMessage) => req.method === 'GET' || req.headers.origin !== undefined,
+  pageHeaders: () => ({ 'content-security-policy': "default-src 'self'" }),
+  alive: (id: string) => aliveSessions.has(id),
+  touchSession: (id: string) => void touched.push(id),
+};
 
 beforeEach(async () => {
   a = await fakeRoom('a');
   b = await fakeRoom('b');
   main = await fakeRoom('main');
   stoppedRoom = false;
+  aliveSessions = new Set(['s1', 's2']);
+  touched.length = 0;
   const proxy = (proxyUnderTest = createRoomProxy({
-    directorToken: DIRECTOR,
+    auth: fakeAuth,
     allowedNames: new Set(['rooms.example']),
     rooms: () => [
-      { id: 'a', port: a.port, token: TOKEN_A },
-      { id: 'b', port: b.port, token: TOKEN_B },
-      { id: 'main', port: main.port, token: TOKEN_MAIN },
-      { id: 'down', port: stoppedRoom ? null : null, token: null },
+      { id: 'a', port: a.port, socket: a.sock },
+      { id: 'b', port: b.port, socket: b.sock },
+      { id: 'main', port: main.port, socket: main.sock },
+      { id: 'down', port: stoppedRoom ? null : null, socket: join(sockets, 'down.sock') },
     ],
   }));
   front = http.createServer((req, res) => {
@@ -100,12 +137,14 @@ beforeEach(async () => {
   base = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 });
 afterEach(async () => {
+  proxyUnderTest.close();
   front.closeAllConnections();
   await new Promise<void>((resolve) => front.close(() => resolve()));
   await a.close();
   await b.close();
   await main.close();
 });
+afterAll(() => rmSync(sockets, { recursive: true, force: true }));
 
 const get = (path: string, headers: Record<string, string> = {}, method = 'GET', body?: string) => fetch(base + path, { method, headers, body });
 const director = { authorization: `Bearer ${DIRECTOR}` };
@@ -134,12 +173,12 @@ describe('rooms proxy: HTTP', () => {
     expect(await (await get('/api/state', director)).text()).toBe('room main GET /api/state');
   });
 
-  it('main answers the same at / and at /r/main/, with its own token swapped in at both', async () => {
+  it('main answers the same at / and at /r/main/, and the room sees no Authorization at either', async () => {
     const one = await (await get('/api/state', director)).text();
     const two = await (await get('/r/main/api/state', director)).text();
     expect(one.replace('GET /api', 'GET /api')).toBe('room main GET /api/state');
     expect(two).toBe('room main GET /api/state');
-    for (const seen of main.seen) expect(seen.headers.authorization).toBe(`Bearer ${TOKEN_MAIN}`);
+    for (const seen of main.seen) expect(seen.headers.authorization).toBeUndefined();
     expect(JSON.stringify(main.seen)).not.toContain(DIRECTOR);
     expect((await get('/api/state')).status).toBe(401);
     expect((await get('/api/state', { authorization: `Bearer ${TOKEN_MAIN}` })).status).toBe(401);
@@ -191,15 +230,13 @@ describe('rooms proxy: HTTP', () => {
     expect(b.seen).toEqual([]);
   });
 
-  it('swaps the Director token for the room\'s own, and never forwards the Director token', async () => {
+  it('never forwards a credential of the browser: the room is reached by its socket and sees no Authorization', async () => {
     await get('/r/a/api/state', director);
     await get('/r/b/api/state', director);
-    expect(a.seen[0]?.headers.authorization).toBe(`Bearer ${TOKEN_A}`);
-    expect(b.seen[0]?.headers.authorization).toBe(`Bearer ${TOKEN_B}`);
-    for (const seen of [...a.seen, ...b.seen]) expect(JSON.stringify(seen)).not.toContain(DIRECTOR);
-    // a room's token is never in what the other room saw
-    expect(JSON.stringify(a.seen)).not.toContain(TOKEN_B);
-    expect(JSON.stringify(b.seen)).not.toContain(TOKEN_A);
+    for (const seen of [...a.seen, ...b.seen]) {
+      expect(JSON.stringify(seen)).not.toContain(DIRECTOR);
+      expect(seen.headers.authorization).toBeUndefined();
+    }
   });
 
   it('refuses an API call without the Director token, and with a room\'s own token or a wrong one', async () => {
@@ -281,7 +318,7 @@ describe('rooms proxy: WebSocket', () => {
       ws.once('unexpected-response', (_req, res) => reject(new Error(`status ${res.statusCode}`)));
     });
 
-  it('relays text and binary frames both ways, and swaps the token in the subprotocol', async () => {
+  it('relays text and binary frames both ways, and the room is offered no token in the subprotocol', async () => {
     const ws = await open('/r/a/ws', [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR]);
     expect(ws.protocol).toBe(WS_SUBPROTOCOL);
     const got: Array<string | Buffer> = [];
@@ -291,7 +328,7 @@ describe('rooms proxy: WebSocket', () => {
     await vi_waitFor(() => got.length === 2);
     expect(got[0]).toBe('a:hello');
     expect([...(got[1] as Buffer)]).toEqual([0, 1, 2, 255]);
-    expect(a.protocols[0]).toEqual([WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + TOKEN_A]);
+    expect(a.protocols[0]).toEqual([WS_SUBPROTOCOL]);
     expect(JSON.stringify(a.seen)).not.toContain(DIRECTOR);
     expect(b.seen).toEqual([]);
     ws.close();
@@ -307,10 +344,8 @@ describe('rooms proxy: WebSocket', () => {
     two.send('y');
     await vi_waitFor(() => got.length === 2);
     expect(got.sort()).toEqual(['a:x', 'b:y']);
-    expect(a.protocols[0]?.join()).toContain(TOKEN_A);
-    expect(b.protocols[0]?.join()).toContain(TOKEN_B);
-    expect(a.protocols[0]?.join()).not.toContain(TOKEN_B);
-    expect(b.protocols[0]?.join()).not.toContain(TOKEN_A);
+    expect(a.protocols[0]?.join()).not.toContain(DIRECTOR);
+    expect(b.protocols[0]?.join()).not.toContain(DIRECTOR);
     one.close();
     two.close();
   });
@@ -340,6 +375,87 @@ describe('rooms proxy: WebSocket', () => {
     const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()));
     await a.close();
     await closed;
+  });
+});
+
+describe('rooms proxy: the login', () => {
+  const session = { cookie: 'gonogo-session=s1' };
+  const origin = { origin: 'http://127.0.0.1' };
+  const withOrigin = (): Record<string, string> => ({ ...session, origin: base, host: new URL(base).host });
+
+  it('a session cookie opens the API; a change needs an Origin that is this server (CSRF), a read does not', async () => {
+    expect((await get('/api/state', session)).status).toBe(200);
+    expect((await get('/api/messages', session, 'POST', '{}')).status).toBe(403);
+    expect((await get('/api/messages', { ...session, ...origin }, 'POST', '{}')).status, 'a foreign Origin').toBe(403);
+    expect((await get('/api/messages', withOrigin(), 'POST', '{}')).status).toBe(200);
+    // an unknown or revoked session is nobody
+    aliveSessions.delete('s1');
+    expect((await get('/api/state', session)).status).toBe(401);
+  });
+
+  it('the page and its assets need no login and no cookie reaches the room', async () => {
+    expect((await get('/assets/app.js', session)).status).toBe(200);
+    expect(main.seen.at(-1)?.headers.cookie).toBeUndefined();
+    expect(main.seen.at(-1)?.headers.authorization).toBeUndefined();
+  });
+
+  it('holds a key to its scope: read reads, full does the rest, neither reaches /api/auth', async () => {
+    expect((await get('/api/state', { authorization: 'Bearer gnk_read' })).status).toBe(200);
+    expect((await get('/api/messages', { authorization: 'Bearer gnk_read' }, 'POST', '{}')).status).toBe(403);
+    expect((await get('/api/messages', { authorization: 'Bearer gnk_full' }, 'POST', '{}')).status).toBe(200);
+    expect((await get('/api/terminal/x', { authorization: 'Bearer gnk_read' })).status).toBe(403);
+    // a key is not a cookie: no Origin is asked of it
+    expect((await get('/api/agents/ana/hold', { authorization: 'Bearer gnk_full' }, 'POST', '{}')).status).toBe(200);
+  });
+
+  it('puts its own CSP on a page of a room, whatever the room said', async () => {
+    const res = await get('/page');
+    expect(res.headers.get('content-security-policy')).toBe("default-src 'self'");
+    expect(await res.text()).toBe('<p>room</p>');
+    // not on an answer that is not a page
+    expect((await get('/api/state', director)).headers.get('content-security-policy')).toBeNull();
+  });
+
+  const openAs = (path: string, headers: Record<string, string>, protocols: string[] = [WS_SUBPROTOCOL]): Promise<WebSocket> =>
+    new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${new URL(base).port}${path}`, protocols, { headers });
+      ws.once('open', () => resolve(ws));
+      ws.once('error', reject);
+      ws.once('unexpected-response', (_req, res) => reject(new Error(`status ${res.statusCode}`)));
+    });
+
+  it('a cookie opens a socket only from a page (Origin), and the socket is bound to its session', async () => {
+    await expect(openAs('/ws', session)).rejects.toThrow(/403/);
+    await expect(openAs('/ws', {})).rejects.toThrow(/401/);
+    const ws = await openAs('/ws', { ...session, origin: base });
+    const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()));
+    // another session's end leaves it alone; its own ends it
+    proxyUnderTest.closeSessions(['s2']);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    proxyUnderTest.closeSessions(['s1']);
+    await closed;
+  });
+
+  it('input to a socket counts as use of the session, a pong does not', async () => {
+    const ws = await openAs('/ws', { ...session, origin: base });
+    ws.send('type');
+    await vi_waitFor(() => touched.length > 0);
+    expect(touched).toContain('s1');
+    touched.length = 0;
+    ws.pong();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(touched).toEqual([]);
+    ws.close();
+  });
+
+  it('a key opens a socket by the subprotocol, with no Origin asked and no session to bind', async () => {
+    aliveSessions.clear();
+    const ws = await openAs('/ws', {}, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + DIRECTOR]);
+    proxyUnderTest.closeSessions(['s1']);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    ws.close();
   });
 });
 

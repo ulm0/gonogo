@@ -3,6 +3,7 @@
  * the page, with the browser token: nothing else is asked of the server. It reconnects with the page's delays, and a refused token
  * is not retried. A console's bytes arrive as binary frames tagged with the seq of the attach they belong to; an older seq is dropped.
  */
+import http from 'node:http';
 import WebSocket from 'ws';
 import { RECONNECT_DELAYS_MS, WS_BINARY_OUTPUT, WS_INPUT_CHUNK_CHARS, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type { ClientFrame, ModelDefaults, ServerFrame, UserMessageRequest } from '../shared/protocol.js';
@@ -11,7 +12,10 @@ import type { Link } from './tui-state.js';
 export interface TuiClientOptions {
   /** http://host:port or https://host:port: the server's address. */
   url: string;
+  /** The browser token (a server elsewhere, or a fresh install); not needed with `socketPath`. */
   token: string;
+  /** The supervisor's local socket (`<home>/run/api.sock`): the file permissions are the credential and no token is sent (docs/login-spec.md R2). */
+  socketPath?: string;
   onFrame(frame: ServerFrame): void;
   /** Terminal bytes of the attached console (already checked against the current attach seq). */
   onOutput(bytes: Buffer): void;
@@ -91,7 +95,10 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
   function connect(): void {
     timer = null;
     if (stopped) return;
-    const ws = new WebSocket(wsUrl(options.url), [WS_SUBPROTOCOL, `${WS_TOKEN_PROTOCOL_PREFIX}${options.token}`]);
+    const ws =
+      options.socketPath === undefined
+        ? new WebSocket(wsUrl(options.url), [WS_SUBPROTOCOL, `${WS_TOKEN_PROTOCOL_PREFIX}${options.token}`])
+        : new WebSocket(`ws+unix://${options.socketPath}:${new URL(wsUrl(options.url)).pathname}`, [WS_SUBPROTOCOL]);
     socket = ws;
     let refused = false;
     ws.on('open', () => {
@@ -132,6 +139,7 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
 
   /** One REST call: the answer's JSON (null for a 204 or text), or an Error with the server's own message. */
   async function request(method: string, path: string, body?: unknown): Promise<unknown> {
+    if (options.socketPath !== undefined) return requestSocket(options.socketPath, new URL(options.url).pathname.replace(/\/+$/, '') + path, method, body);
     let response: Response;
     try {
       response = await fetch(`${options.url.replace(/\/+$/, '')}${path}`, {
@@ -199,4 +207,30 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
       return attached;
     },
   };
+}
+
+/** One REST call over a unix socket: the answer's JSON (null for a 204), or an Error with the server's own message. */
+function requestSocket(socketPath: string, path: string, method: string, body?: unknown): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? undefined : JSON.stringify(body);
+    const req = http.request({ socketPath, path, method, headers: { host: 'localhost', ...(data === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) }) } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let parsed: unknown = null;
+        try {
+          if (text !== '') parsed = JSON.parse(text);
+        } catch {
+          // not JSON: the status is the message
+        }
+        if ((res.statusCode ?? 500) < 300) return resolve(res.statusCode === 204 ? null : parsed);
+        const message = typeof (parsed as { error?: unknown } | null)?.error === 'string' ? ((parsed as { error: string }).error) : `the server answered ${String(res.statusCode)}`;
+        reject(new Error(message));
+      });
+    });
+    req.on('error', () => reject(new Error('could not reach the server')));
+    if (data !== undefined) req.write(data);
+    req.end();
+  });
 }

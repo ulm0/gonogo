@@ -3,6 +3,7 @@
  * and the start of the next gonogo.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import { authStateOf } from './auth.js';
 import { randomBytes } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -100,6 +101,8 @@ export function requestReload(homeDir: string, docker: boolean): string {
  * A running supervisor looks at the file on every request and takes the new value at once; nothing needs a restart. The token is not printed.
  */
 export function rotateDirectorToken(homeDir: string): string {
+  // once an account has existed the browser token is gone for good (docs/login-spec.md R1); a new one must not bring it back
+  if (authStateOf(homeDir) !== 'fresh') throw new Error('this home has a login account, so there is no browser token to rotate. Change the password in Flight Rules, or reset the account with `gonogo auth reset`.');
   mkdirSync(homeDir, { recursive: true, mode: 0o700 });
   const path = join(homeDir, 'token');
   const temp = `${path}.${process.pid}.tmp`;

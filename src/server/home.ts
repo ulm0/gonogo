@@ -393,8 +393,10 @@ function readTailLines(path: string, maxBytes: number): string[] | null {
 }
 
 /**
- * `roomToken`: this home is a room of the rooms supervisor. Its browser token is NOT `<home>/token` (that file is the Director's, held by the
- * supervisor and never read here) but `<home>/run/room-token`, made new at every start, so the Director token never reaches a room.
+ * `roomToken`: this home is a room of the rooms supervisor. It has NO browser token on disk: `<home>/token` is the Director's, held by the
+ * supervisor and never read here, and the room's page is reached by its own unix socket (docs/login-spec.md R8). `browserToken` is a value made
+ * new at every start and kept in memory only; the web server, given a `localSocket`, accepts no token on TCP at all.
+ * A `run/room-token` left by gonogo 0.5.0 is removed.
  */
 export interface OpenHomeOptions {
   roomToken?: boolean;
@@ -447,7 +449,6 @@ export function openHome(dir: string, log: Logger = nullLogger, options: OpenHom
   let browserToken: string;
   try {
     if (options.roomToken === true) {
-      // always new: a room's token is never kept, copied from `token`, or reused after a restart
       mkdirSync(join(root, 'run'), { recursive: true, mode: DIR_MODE });
       requirePrivate(join(root, 'run'), DIR_MODE, 'directory');
       try {
@@ -455,23 +456,25 @@ export function openHome(dir: string, log: Logger = nullLogger, options: OpenHom
       } catch (e) {
         if (errCode(e) !== 'ENOENT') throw e;
       }
-    }
-    requirePrivate(tokenPath, FILE_MODE, 'file');
-    let existing = '';
-    try {
-      existing = readFileSync(tokenPath, 'utf8').trim();
-    } catch (e) {
-      if (errCode(e) !== 'ENOENT') throw e;
-    }
-    if (TOKEN_RE.test(existing)) {
-      browserToken = existing;
-    } else {
-      if (existing !== '') logger.warn(`${tokenPath} did not hold a 64 character hex token; replacing it`);
       browserToken = randomBytes(TOKEN_BYTES).toString('hex');
-      // only this process writes it (it holds the lock), and a torn write is replaced at the next start by the check above
-      writeFileSync(tokenPath, browserToken + '\n', { mode: FILE_MODE });
+    } else {
+      requirePrivate(tokenPath, FILE_MODE, 'file');
+      let existing = '';
+      try {
+        existing = readFileSync(tokenPath, 'utf8').trim();
+      } catch (e) {
+        if (errCode(e) !== 'ENOENT') throw e;
+      }
+      if (TOKEN_RE.test(existing)) {
+        browserToken = existing;
+      } else {
+        if (existing !== '') logger.warn(`${tokenPath} did not hold a 64 character hex token; replacing it`);
+        browserToken = randomBytes(TOKEN_BYTES).toString('hex');
+        // only this process writes it (it holds the lock), and a torn write is replaced at the next start by the check above
+        writeFileSync(tokenPath, browserToken + '\n', { mode: FILE_MODE });
+      }
+      chmodSync(tokenPath, FILE_MODE);
     }
-    chmodSync(tokenPath, FILE_MODE);
 
     // under the lock, before any store reads a file: an upgrade is written once, and a file of a newer gonogo stops the start
     migrateHome(root, logger);

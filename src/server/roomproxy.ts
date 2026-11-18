@@ -1,15 +1,15 @@
 /**
  * The proxy of the rooms supervisor (docs/rooms-spec.md, docs/single-mode-spec.md): `/r/<id>/...` on the front port reaches the gonogo process
  * of that room, and any path that is not reserved reaches room `main`, so a user with one room keeps every address he had.
- * Reserved (the supervisor's own, never proxied): `/rooms` and under it, `/api/rooms` and under it, `/internal` and under it, and `/r`.
+ * Reserved (the supervisor's own, never proxied): `/rooms` and under it, `/api/rooms` and `/api/auth` and under them, `/login`, `/setup`, `/internal` and under it, and `/r`.
  *
  * It is on the security path, so it is small and says no by default:
- * - The browser holds one secret, the Director token. The proxy checks it and swaps in the room's own browser token on the way
- *   (the Authorization header, or the `token.` entry of the WebSocket subprotocols). Every other Authorization header, every
- *   cookie and every X-Forwarded header of the request is dropped, so the Director token never reaches a room, and a room's token
- *   never leaves the supervisor.
- * - Without the Director token only a plain GET or HEAD outside `/api` and `/ws` goes through (the page and its assets, which a
- *   room serves without a token anyway), with no Authorization at all.
+ * - The browser is let in by the login (docs/login-spec.md): a session cookie, an API key, or, on a fresh install with no account, the old
+ *   Director token; the local unix socket needs none. The proxy asks `auth` who a request is, then reaches the room over the room's own
+ *   `run/api.sock`, which has no token: no secret of the browser, no cookie and no X-Forwarded header of the request goes to a room.
+ * - Without a grant only a plain GET or HEAD outside `/api` and `/ws` goes through (the page and its assets, which a room serves without
+ *   a token anyway), with no Authorization at all. A cookie-authenticated change needs a matching Origin (CSRF), a key is held to its scope,
+ *   and a WebSocket is bound to its session: it closes when the session ends.
  * - `/uplink/` and `/dock/` (webhooks and other stations, which prove themselves with a signature) go through with no
  *   Authorization either. `/hook/` and `/mcp/` are for the agents of a room, who use that room's own loopback port: here they are 404.
  * - A room id is `[a-z][a-z0-9-]{0,23}`; a path with `..`, an encoded slash or dot, a backslash, a NUL or an empty segment is 400. The path is
@@ -18,11 +18,13 @@
  * - Host and Origin are checked as a room checks them, then rewritten to the room's loopback address (the room checks them again).
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
+import type { Grant } from './authhttp.js';
+import { keyMayDo } from './auth.js';
 import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
-import { bearerToken, sendText } from './hooks.js';
+import { sendText } from './hooks.js';
 import { validRoomId } from './rooms.js';
 import { hostName } from './web.js';
 
@@ -30,13 +32,23 @@ export interface ProxyRoom {
   id: string;
   /** The loopback port of the room's gonogo, or null while it is not running. */
   port: number | null;
-  /** The room's own browser token, or null while it is not known. */
-  token: string | null;
+  /** The room's own unix socket (`<room home>/run/api.sock`): the only way in, and it takes no token. */
+  socket: string;
+}
+
+/** What the proxy asks of the login. */
+export interface ProxyAuth {
+  grant(req: IncomingMessage, touch?: 'api' | 'input' | 'none'): Grant | null;
+  grantUpgrade(req: IncomingMessage): Grant | null;
+  csrfOk(req: IncomingMessage): boolean;
+  /** The headers of a page (CSP and friends). */
+  pageHeaders(): Record<string, string>;
+  alive(sessionId: string): boolean;
+  touchSession(sessionId: string): void;
 }
 
 export interface RoomProxyOptions {
-  /** The one secret of the browser; a function so that a token rotated on disk is used at once. */
-  directorToken: string | (() => string);
+  auth: ProxyAuth;
   rooms(): ProxyRoom[];
   /** Host names this server may be reached by (besides loopback). */
   allowedNames: ReadonlySet<string>;
@@ -49,6 +61,10 @@ export interface RoomProxy {
   upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean;
   /** Ends every WebSocket that is open through the proxy (the Director token changed: the page reconnects with the new one). */
   closeSockets(): void;
+  /** Ends the WebSockets bound to these sessions (revoked, logged out, expired, password changed). */
+  closeSessions(ids: readonly string[]): void;
+  /** Stops the once-a-minute check of the sockets' sessions. */
+  close(): void;
 }
 
 const PREFIX = /^\/r\/([^/?#]*)(\/[^?#]*)?(\?[^#]*)?$/;
@@ -90,17 +106,8 @@ function suspicious(rest: string): boolean {
 function reservedPath(rest: string): boolean {
   const segments = rest.split('/').map((segment) => decodeURIComponent(segment));
   const first = segments[1] ?? '';
-  return first === 'rooms' || first === 'internal' || (first === 'api' && segments[2] === 'rooms');
+  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth'));
 }
-
-const directorFromSubprotocols = (header: string | string[] | undefined): string | null => {
-  if (typeof header !== 'string') return null;
-  for (const entry of header.split(',')) {
-    const protocol = entry.trim();
-    if (protocol.startsWith(WS_TOKEN_PROTOCOL_PREFIX)) return protocol.slice(WS_TOKEN_PROTOCOL_PREFIX.length);
-  }
-  return null;
-};
 
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   const hostAllowed = (header: string | undefined): boolean => {
@@ -170,12 +177,12 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     if (kind === 'closed') return (fail(404, 'not found'), null);
     const room = options.rooms().find((r) => r.id === id);
     if (room === undefined) return (fail(404, 'no such room'), null);
-    if (room.port === null || room.token === null) return (fail(503, 'the room is not running'), null);
+    if (room.port === null) return (fail(503, 'the room is not running'), null);
     return { room: { ...room, port: room.port }, path: rest + (prefixed === null ? parts.query : (prefixed[3] ?? '')), kind, id, prefixed: prefixed !== null };
   }
 
-  /** The headers for the room: no secret of the browser, the room's own token only when the Director proved himself. */
-  function forwardHeaders(req: IncomingMessage, target: Target, withRoomToken: boolean, upgrade: boolean): http.OutgoingHttpHeaders {
+  /** The headers for the room: no secret of the browser; the socket is the credential. */
+  function forwardHeaders(req: IncomingMessage, target: Target, upgrade: boolean): http.OutgoingHttpHeaders {
     const out: http.OutgoingHttpHeaders = {};
     for (const [name, value] of Object.entries(req.headers)) {
       const lower = name.toLowerCase();
@@ -186,7 +193,6 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     out.host = `127.0.0.1:${target.room.port}`;
     // a browser's Origin was checked above and now names the room; another sender's is kept, so the room refuses it as it would
     if (req.headers.origin !== undefined) out.origin = target.kind === 'browser' ? `http://127.0.0.1:${target.room.port}` : req.headers.origin;
-    if (withRoomToken && !upgrade) out.authorization = `Bearer ${target.room.token}`;
     if (upgrade) {
       out.connection = 'Upgrade';
       out.upgrade = 'websocket';
@@ -194,14 +200,24 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     return out;
   }
 
-  /** The browser sockets that are open through the proxy. */
-  const open = new Set<Duplex>();
-
-  const directorOk = (token: string | null): boolean => sameToken(token, typeof options.directorToken === 'string' ? options.directorToken : options.directorToken());
+  /** The browser sockets that are open through the proxy, with the session each is bound to (none for a key, the token or the local socket). */
+  const open = new Map<Duplex, string | null>();
+  /** A session that ended must not leave a socket open: every minute each bound socket asks whether its session is alive. */
+  const recheck = setInterval(() => {
+    for (const [socket, session] of [...open]) if (session !== null && !options.auth.alive(session)) socket.destroy();
+  }, 60_000);
+  recheck.unref();
 
   return {
     closeSockets() {
-      for (const socket of [...open]) socket.destroy();
+      for (const socket of [...open.keys()]) socket.destroy();
+    },
+    closeSessions(ids) {
+      const set = new Set(ids);
+      for (const [socket, session] of [...open]) if (session !== null && set.has(session)) socket.destroy();
+    },
+    close() {
+      clearInterval(recheck);
     },
     handle(req, res) {
       if (isReserved(req.url ?? '')) return false;
@@ -219,20 +235,30 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         return true;
       }
       const first = target.path.split('/')[1]?.split('?')[0] ?? '';
-      let withRoomToken = false;
-      if (target.kind === 'browser') {
-        if (directorOk(bearerToken(req.headers.authorization))) withRoomToken = true;
-        else if (!((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
+      if (target.kind === 'browser' && !((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
+        const grant = options.auth.grant(req, 'api');
+        if (grant === null) {
           sendText(res, 401, 'unauthorized');
+          return true;
+        }
+        // a cookie authenticates the request: the change must come from this very page (Origin required, SameSite is the second wall)
+        if (grant.kind === 'session' && !options.auth.csrfOk(req)) {
+          sendText(res, 403, 'forbidden origin');
+          return true;
+        }
+        if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', target.path.split('?')[0] ?? '')) {
+          sendText(res, 403, 'this key may not do that');
           return true;
         }
       }
       const upstream = http.request(
-        { host: '127.0.0.1', port: target.room.port, method: req.method, path: target.path, headers: forwardHeaders(req, target, withRoomToken, false) },
+        { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false) },
         (answer) => {
           const headers: http.OutgoingHttpHeaders = {};
           // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2)
           for (const [name, value] of Object.entries(answer.headers)) if (!HOP.has(name) && name !== 'set-cookie') headers[name] = value;
+          // the CSP of the room's pages is the supervisor's, not the room's (threat model 3)
+          if (target.kind === 'browser' && String(headers['content-type'] ?? '').startsWith('text/html')) Object.assign(headers, options.auth.pageHeaders());
           // a redirect to a path of the room stays inside its prefix; room main at / has none
           if (target.prefixed && typeof headers.location === 'string' && headers.location.startsWith('/') && !headers.location.startsWith('//')) headers.location = `/r/${target.id}${headers.location}`;
           res.writeHead(answer.statusCode ?? 502, headers);
@@ -255,15 +281,18 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       const first = target.path.split('/')[1]?.split('?')[0] ?? '';
       if (target.kind !== 'browser' || first !== 'ws') return (refuse(404, 'not found'), true);
       if (!originOk(req)) return (refuse(403, 'forbidden origin'), true);
-      if (!directorOk(directorFromSubprotocols(req.headers['sec-websocket-protocol']))) return (refuse(401, 'unauthorized'), true);
+      const grant = options.auth.grantUpgrade(req);
+      if (grant === null) return (refuse(401, 'unauthorized'), true);
+      // a cookie opens the socket only from a page: an upgrade with no Origin is refused (cross-site WebSocket hijack)
+      if (grant.kind === 'session' && req.headers.origin === undefined) return (refuse(403, 'forbidden origin'), true);
+      // no token entry goes on: the room's socket takes none
       const offered = String(req.headers['sec-websocket-protocol'] ?? '')
         .split(',')
         .map((entry) => entry.trim())
-        .filter((entry) => entry !== '')
-        .map((entry) => (entry.startsWith(WS_TOKEN_PROTOCOL_PREFIX) ? `${WS_TOKEN_PROTOCOL_PREFIX}${target.room.token}` : entry));
-      const headers = forwardHeaders(req, target, false, true);
+        .filter((entry) => entry !== '' && !entry.startsWith(WS_TOKEN_PROTOCOL_PREFIX));
+      const headers = forwardHeaders(req, target, true);
       headers['sec-websocket-protocol'] = offered.join(', ');
-      const upstream = http.request({ host: '127.0.0.1', port: target.room.port, method: 'GET', path: target.path, headers });
+      const upstream = http.request({ socketPath: target.room.socket, method: 'GET', path: target.path, headers });
       upstream.on('upgrade', (answer: IncomingMessage, roomSocket: Duplex, roomHead: Buffer) => {
         const lines = [`HTTP/1.1 101 Switching Protocols`];
         for (const [name, value] of Object.entries(answer.headers as IncomingHttpHeaders)) {
@@ -274,8 +303,16 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         if (head.length > 0) roomSocket.write(head);
         roomSocket.pipe(socket);
         socket.pipe(roomSocket);
-        open.add(socket);
+        const bound = grant.kind === 'session' ? (grant.sessionId ?? null) : null;
+        open.set(socket, bound);
         socket.once('close', () => open.delete(socket));
+        // input to a console is use of the session; output is not, and a pong (the browser's reply to our ping) is neither: only text and binary frames count
+        if (bound !== null) {
+          socket.on('data', (chunk: Buffer) => {
+            const opcode = (chunk[0] ?? 0) & 0x0f;
+            if (opcode === 1 || opcode === 2) options.auth.touchSession(bound);
+          });
+        }
         const end = (): void => {
           roomSocket.destroy();
           socket.destroy();

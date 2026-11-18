@@ -1,9 +1,10 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { chmodSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
-import { extname, join, resolve as resolvePath, sep } from 'node:path';
+import { dirname, extname, join, resolve as resolvePath, sep } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -113,6 +114,11 @@ export interface WebOptions {
   /** 0 = any free port. */
   port: number;
   browserToken: string;
+  /**
+   * The local door (docs/login-spec.md R2, R8): a unix socket that answers the browser routes with no token, its file permissions being the credential.
+   * When it is set the browser token is not accepted on TCP at all (a room has no TCP credential for its page); agents' `/hook` and `/mcp` keep theirs.
+   */
+  localSocket?: string;
   /** Extra Host header names (contract 3.2); loopback names are always allowed. */
   allowedHosts: string[];
   /** Built client; null = serve no static files. */
@@ -627,12 +633,20 @@ export function createWebServer(options: WebOptions): WebServer {
 
   const tokenMatches = (candidate: string): boolean => timingSafeEqual(sha256(candidate), tokenDigest);
 
+  /** Requests that came in on the local socket. */
+  const viaSocket = new WeakSet<IncomingMessage>();
+  const tcpToken = options.localSocket === undefined;
+
   const restAuthorized = (req: IncomingMessage): boolean => {
+    if (viaSocket.has(req)) return true;
+    if (!tcpToken) return false;
     const token = bearerToken(req.headers.authorization);
     return token !== null && tokenMatches(token);
   };
 
   const wsAuthorized = (req: IncomingMessage): boolean => {
+    if (viaSocket.has(req)) return true;
+    if (!tcpToken) return false;
     const offered = req.headers['sec-websocket-protocol'];
     if (typeof offered !== 'string') return false;
     for (const entry of offered.split(',')) {
@@ -2020,10 +2034,39 @@ export function createWebServer(options: WebOptions): WebServer {
 
   /* ---------------------------------------------------------------- lifecycle */
 
-  const createHttpServer = (): Server => {
-    const server = createServer(onRequest);
-    server.on('upgrade', onUpgrade);
+  const createHttpServer = (onSocket = false): Server => {
+    const server = createServer((req, res) => {
+      if (onSocket) viaSocket.add(req);
+      onRequest(req, res);
+    });
+    server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      if (onSocket) viaSocket.add(req);
+      onUpgrade(req, socket, head);
+    });
     return server;
+  };
+
+  /** The unix socket: its directory 0700 and the socket 0600; a stale file from a crashed run is replaced (the home lock says nobody else is here). */
+  const listenSocket = async (path: string): Promise<void> => {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    chmodSync(dirname(path), 0o700);
+    try {
+      // a socket from a crashed run, or any file in its place (never a directory, and a symlink is removed, not followed)
+      if (!lstatSync(path).isDirectory()) rmSync(path, { force: true });
+    } catch {
+      // none there
+    }
+    const server = createHttpServer(true);
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen({ path }, () => {
+        server.removeListener('error', reject);
+        server.on('error', (e) => log.error('http socket error', e));
+        resolve();
+      });
+    });
+    chmodSync(path, 0o600);
   };
 
   const listenOn = (server: Server, port: number, host: string): Promise<void> =>
@@ -2060,6 +2103,14 @@ export function createWebServer(options: WebOptions): WebServer {
       } catch (e) {
         await closeHttp(primary);
         throw e;
+      }
+    }
+    if (options.localSocket !== undefined) {
+      try {
+        await listenSocket(options.localSocket);
+      } catch (e) {
+        await Promise.all(servers.map(closeHttp));
+        throw new Error(`the local socket ${options.localSocket} could not be made (${e instanceof Error ? e.message : String(e)}); a unix socket path is limited to about 100 characters`);
       }
     }
     pingTimer = setInterval(() => {

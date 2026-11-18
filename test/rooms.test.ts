@@ -127,9 +127,9 @@ describe('the supervisor', () => {
     expect(main.args).not.toContain('--no-update-check');
     const team = JSON.parse(readFileSync(join(home, 'rooms', 'team', 'started-with'), 'utf8')) as { args: string[] };
     expect(team.args).toContain('--no-update-check');
-    // three tokens: the Director's (<home>/token) and one per room (run/room-token), all different, and no room has a token file of its own besides
-    const tokens = [readFileSync(join(home, 'run', 'room-token'), 'utf8').trim(), readFileSync(join(home, 'rooms', 'team', 'run', 'room-token'), 'utf8').trim()];
-    expect(new Set([...tokens, s.directorToken]).size).toBe(3);
+    // one browser token (a fresh install with no account), the Director's <home>/token; a room has none, only its own socket (docs/login-spec.md R8)
+    for (const folder of [home, join(home, 'rooms', 'team')]) expect(lstatSync(join(folder, 'run', 'api.sock')).isSocket()).toBe(true);
+    expect(existsSync(join(home, 'run', 'room-token'))).toBe(false);
     expect(readFileSync(join(home, 'token'), 'utf8').trim()).toBe(s.directorToken);
     expect(statSync(join(home, 'token')).mode & 0o777).toBe(0o600);
     expect(existsSync(join(home, 'rooms', 'team', 'token'))).toBe(false);
@@ -142,7 +142,7 @@ describe('the supervisor', () => {
     const s = await supervise();
     await until(async () => (await listed(s)).every((r) => r.state === 'running'));
     expect((await api(s, '/api/rooms', null)).status).toBe(401);
-    expect((await api(s, '/api/rooms', readFileSync(join(home, 'run', 'room-token'), 'utf8').trim())).status).toBe(401);
+    expect((await api(s, '/api/rooms', 'f'.repeat(64))).status).toBe(401);
     const page = await api(s, '/rooms', null);
     expect(page.status).toBe(200);
     const html = await page.text();
@@ -160,10 +160,8 @@ describe('the supervisor', () => {
       expect((await res.json()) as { agents: unknown[] }).toMatchObject({ agents: [{ name: 'ana' }, { name: 'ben' }] });
       expect(await (await api(s, `/r/${id}/`, null)).text()).toContain(roomHome(home, id));
     }
-    // the token of main does not open team, and the Director token is never a room's
-    const mainToken = readFileSync(join(home, 'run', 'room-token'), 'utf8').trim();
-    expect((await api(s, '/r/team/api/state', mainToken)).status).toBe(401);
-    // the Director token is main's token file; main's room never accepted it
+    // a token that is not the Director's opens nothing
+    expect((await api(s, '/r/team/api/state', 'e'.repeat(64))).status).toBe(401);
     expect((await api(s, '/api/state', readFileSync(join(home, 'token'), 'utf8').trim())).status).toBe(200);
     expect((await api(s, '/r/main/api/state', null)).status).toBe(401);
   });
@@ -189,7 +187,7 @@ describe('the supervisor', () => {
     removeRoom(home, 'late');
     await until(async () => !(await listed(s)).some((r) => r.id === 'late'), 15_000, 'the room to leave the list');
     await until(() => existsSync(join(folder, 'stopped')), 15_000, 'its graceful stop');
-    expect(existsSync(join(folder, 'run', 'room-token'))).toBe(true);
+    expect(existsSync(join(folder, 'starts'))).toBe(true);
     expect((await api(s, '/r/late/api/state')).status).toBe(404);
   }, 40_000);
 
@@ -277,7 +275,7 @@ describe('the supervisor', () => {
     it('needs the Director token for every method: none, a room\'s own, and a wrong one are 401, and nothing is written', async () => {
       const s = await supervise();
       await until(() => running(s, 'main'));
-      const roomToken = readFileSync(join(home, 'run', 'room-token'), 'utf8').trim();
+      const roomToken = 'f'.repeat(64);
       for (const token of [null, roomToken, 'f'.repeat(64)]) {
         for (const [method, path, body] of [['GET', '/api/rooms'], ['POST', '/api/rooms', { id: 'x' }], ['PATCH', '/api/rooms/x', { name: 'n' }], ['DELETE', '/api/rooms/x']] as const) {
           expect((await send(s, method, path, body, token)).status, `${method} ${path} ${String(token).slice(0, 4)}`).toBe(401);
@@ -294,7 +292,7 @@ describe('the supervisor', () => {
       expect(await made.json()).toMatchObject({ id: 'team-a', name: 'Team A' });
       await until(() => running(s, 'team-a'), 15_000, 'the new room');
       expect(statSync(join(home, ROOMS_FILE)).mode & 0o777).toBe(0o600);
-      expect(existsSync(join(home, 'rooms', 'team-a', 'run', 'room-token'))).toBe(true);
+      expect(existsSync(join(home, 'rooms', 'team-a', 'run', 'api.sock'))).toBe(true);
       const again = await send(s, 'POST', '/api/rooms', { id: 'team-a' });
       expect(again.status).toBe(409);
       expect(await (await send(s, 'GET', '/api/rooms')).json()).toMatchObject({ rooms: [{ id: 'main' }, { id: 'team-a', name: 'Team A' }] });
@@ -349,7 +347,7 @@ describe('the supervisor', () => {
       expect(((await gone.json()) as { note: string }).note).toMatch(/folder stays/);
       await until(() => existsSync(join(folder, 'stopped')), 15_000, 'its graceful stop');
       expect(readFileSync(join(folder, 'stopped'), 'utf8')).toBe('graceful');
-      expect(existsSync(join(folder, 'run', 'room-token'))).toBe(true);
+      expect(existsSync(join(folder, 'starts'))).toBe(true);
       expect((await listed(s)).map((r) => r.id)).toEqual(['main']);
       expect((await api(s, '/r/gone/api/state')).status).toBe(404);
     }, 40_000);
