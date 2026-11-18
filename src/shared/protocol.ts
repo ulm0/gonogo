@@ -327,6 +327,24 @@ export interface RosterFile {
   agents: AgentRecord[];
 }
 
+/** Hold: the needsReason of an agent the Director put on hold (a Redline trip by hand, cleared by resume). */
+export const HOLD_REASON = 'on hold';
+
+/** Telemetry: one tool call of an agent, from its PreToolUse and PostToolUse (or PostToolUseFailure) hooks. */
+export interface ToolCall {
+  /** ms epoch of the PreToolUse hook. */
+  at: number;
+  /** null while no Post hook came (still running, or interrupted). */
+  ms: number | null;
+  tool: string;
+  /** One line, like AgentView.doing ("Bash: npm test"). */
+  summary: string;
+  failed: boolean;
+}
+
+/** Telemetry keeps this many calls per agent, in memory and in telemetry.jsonl. */
+export const TELEMETRY_PER_AGENT = 200;
+
 export interface HeldInfo {
   kind: HeldKind;
   /**
@@ -1339,6 +1357,8 @@ export interface HubIo {
   press?(name: string, generation: number, data: string): boolean;
   /** Propellant: count the tokens of that agent's transcript since the last call (a Stop, or a tool call at most every METER_INTERVAL_MS). */
   meter?(name: string, generation: number, transcriptPath: string): void;
+  /** Telemetry: a PreToolUse, PostToolUse or PostToolUseFailure hook of that agent's current process. Optional for fakes. */
+  toolHook?(name: string, event: HookEvent, payload: Record<string, unknown>): void;
   screen(name: string): ScreenProbe | null;
   title(name: string): TitleInfo | null;
   outputBytes(name: string): number;
@@ -1510,6 +1530,12 @@ export interface Hub {
    * until the Director resumes it. No-op for a stopped, custom or already tripped agent. not_found for an unknown name.
    */
   trip(name: string, reason: string): void;
+  /**
+   * Hold: the Director's own Redline trip, reason HOLD_REASON, no Downlink notice. conflict unless the agent is idle or
+   * working with no transition (needs_you, held or tripped, starting, stopped), or when it has no hooks (custom, Codex and
+   * the other output-only engines).
+   */
+  hold(name: string): AgentView;
   /** Clears a Redline trip; conflict when the agent is not tripped. */
   resume(name: string): AgentView;
 }

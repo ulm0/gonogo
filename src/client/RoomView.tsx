@@ -17,9 +17,11 @@ import {
   cleanRoomPlace,
   consoleMode,
   consoleSubtitle,
+  holdable,
   ledOf,
   legendsOf,
   needingYou,
+  onHold,
   panelDetails,
   reasonText,
   seat,
@@ -38,6 +40,7 @@ import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
+import { AgentTelemetry } from './TelemetryPanel.js';
 
 /* ---- helpers ---- */
 
@@ -118,7 +121,7 @@ function Tile({ cell, selected, phone }: { cell: Cell; selected: boolean; phone:
   const { agent, position } = cell;
   const vote = voteOf(poll, agent.name);
   const [first, second] = tileLines(agent, position);
-  const right = vote ?? (agent.provider === 'custom' ? 'CUSTOM' : agent.held !== null ? `${agent.queued} HELD` : '');
+  const right = vote ?? (agent.provider === 'custom' ? 'CUSTOM' : agent.held !== null ? `${agent.queued} HELD` : onHold(agent) ? 'ON HOLD' : '');
   return (
     <button
       type="button"
@@ -288,6 +291,11 @@ function Actions({ agent, onRemove, removeRef, locked, run }: { agent: AgentView
   const mode = consoleMode(agent);
   return (
     <div className="panel-actions">
+      {holdable(agent) && (
+        <button type="button" className="btn" data-kind="quiet" aria-disabled={locked || undefined} onClick={() => !locked && run(() => api.hold(agent.name))}>
+          Hold
+        </button>
+      )}
       {mode !== 'stopped' && (
         <button type="button" className="btn" data-kind="quiet" aria-disabled={locked || undefined} onClick={() => !locked && run(() => api.restart(agent.name))}>
           Restart
@@ -332,10 +340,10 @@ function Foot({ agent, run, locked }: { agent: AgentView; run(action: () => Prom
       <div className="flood foot-ask" data-tone="amber">
         <h3 className="disp">
           <span className="led" data-on="true" data-blink="true" aria-hidden="true" />
-          NEEDS YOU
+          {onHold(agent) ? 'ON HOLD' : tripped(agent) ? 'HIT THE REDLINE' : 'NEEDS YOU'}
         </h3>
         <p className="need-detail">{askDetail(agent, now)}</p>
-        <p className="need-detail">Answer it in the terminal above.</p>
+        {tripped(agent) ? <RedlineButtons agent={agent} size="row" /> : <p className="need-detail">Answer it in the terminal above.</p>}
       </div>
     );
   }
@@ -465,6 +473,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
           <AgentFuel name={agent.name} />
         </details>
       )}
+      <AgentTelemetry name={agent.name} />
       <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
     </aside>
   );
@@ -612,6 +621,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
       <TerminalPane agent={agent} />
       <Foot agent={agent} run={run} locked={locked} />
       <div className="phone-traffic">
+        <AgentTelemetry name={agent.name} />
         <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
       </div>
       <div className="phone-keys" role="group" aria-label="Terminal keys">

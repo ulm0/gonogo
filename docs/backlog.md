@@ -64,7 +64,9 @@ Plan:
 - [ ] A boss that hires agents by itself.
 - [ ] Waking idle workers that hold unread mail. gonogo already types a pointer into an idle agent; check what
       more the reference does.
-- [ ] Hold button for an agent *(inferred)*.
+- [x] Hold button for an agent *(inferred)*. Built (2026-11-18) as **Hold**: a key in the console panel puts a Claude Code
+      or Gemini CLI agent on hold through Redline's machinery (Escape if working, mail held) until RESUME
+      (`docs/telemetry-spec.md`). Tested with the stand-in agent only.
 - [ ] Workers in git worktrees *(inferred)*.
 - [ ] Phone approvals through Claude Code's `/remote-control`.
 
@@ -87,7 +89,9 @@ Plan:
 - [ ] Cost and usage tracking with pricing.
 - [ ] Telemetry.
 - [ ] Circuit breaker *(what trips it is not known: check the reference)*.
-- [ ] Tool-call waterfall: a timeline of what an agent did *(inferred)*.
+- [x] Tool-call waterfall: a timeline of what an agent did *(inferred)*. Built (2026-11-18) as **Telemetry**: a fold in
+      the console panel with each tool call's start, duration, tool and one line, newest first, from the hooks (Claude Code;
+      Gemini CLI without failures). 200 calls per agent in memory and in `telemetry.jsonl`. Tested with the stand-in agent only.
 
 ## 8. Workspace tools
 

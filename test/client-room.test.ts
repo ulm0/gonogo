@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActivityItem, AgentView, PollView, StateChange } from '../src/shared/protocol.js';
-import { HISTORY_WINDOW_MS, MAX_AGENTS } from '../src/shared/protocol.js';
+import { HISTORY_WINDOW_MS, HOLD_REASON, MAX_AGENTS } from '../src/shared/protocol.js';
 import { POSITIONS } from '../src/shared/positions.js';
 import {
   ANNOUNCE_GAP_MS,
@@ -12,9 +12,11 @@ import {
   cleanRoomPlace,
   consoleMode,
   createAnnouncer,
+  holdable,
   ledOf,
   legendsOf,
   needingYou,
+  onHold,
   panelDetails,
   reasonText,
   seat,
@@ -283,6 +285,24 @@ describe('the console panel', () => {
     expect(chipText(agent('a', 1, { provider: 'custom', state: 'working' }), 1)).toBe('PRINTING · CUSTOM COMMAND');
     expect(chipText(agent('a', 1, { provider: 'gemini', state: 'working', stateSince: 0 }), 1000)).toBe('WORKING 1 S · GEMINI CLI');
     expect(chipText(agent('a', 1, { state: 'working', stateSince: 0 }), 38_000)).toBe('WORKING 38 S');
+  });
+
+  it('Hold: offered to a running agent with hooks; a held one reads ON HOLD, not the redline', () => {
+    const base = agent('a', 1, { state: 'working', stateSince: 0 });
+    expect(holdable(base)).toBe(true);
+    expect(holdable({ ...base, state: 'idle', provider: 'gemini' })).toBe(true);
+    expect(holdable({ ...base, provider: 'codex' })).toBe(false);
+    expect(holdable({ ...base, provider: 'custom' })).toBe(false);
+    expect(holdable({ ...base, state: 'stopped' })).toBe(false);
+    expect(holdable({ ...base, transition: 'restarting' })).toBe(false);
+    const held = { ...base, state: 'needs_you' as const, needsKind: 'redline' as const, needsReason: HOLD_REASON };
+    expect(holdable(held)).toBe(false);
+    expect(onHold(held)).toBe(true);
+    expect(onHold({ ...held, needsReason: 'redline: loop: Bash: ls 5 times in a row' })).toBe(false);
+    expect(askTitle(held, 'FIDO')).toBe('FIDO IS ON HOLD');
+    expect(askTitle({ ...held, needsReason: 'redline: loop' }, 'FIDO')).toBe('FIDO HIT THE REDLINE');
+    expect(chipText(held, 60_000)).toBe('NEEDS YOU 1 M · HOLD');
+    expect(chipText({ ...held, needsReason: 'redline: loop' }, 60_000)).toBe('NEEDS YOU 1 M · REDLINE');
   });
 
   it('tells about waiting mail and edits that need a restart', () => {

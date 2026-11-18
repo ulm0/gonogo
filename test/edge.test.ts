@@ -255,6 +255,12 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       return agentView(name, { state: 'stopped' });
     },
     trip: (name, reason) => rec('trip', name, reason),
+    hold: (name) => {
+      rec('hold', name);
+      if (name === 'ghost') throw new FakeHubError('not_found', 'unknown agent');
+      if (name === 'ben') throw new FakeHubError('conflict', 'ben is already on hold');
+      return agentView(name, { state: 'needs_you', needsKind: 'redline', needsReason: 'on hold' });
+    },
     resume: (name) => {
       rec('resume', name);
       if (name === 'ghost') throw new FakeHubError('not_found', 'unknown agent');
@@ -2787,6 +2793,27 @@ describe('web: REST', () => {
       expect((await api(port, 'POST', '/api/agents/ben/resume')).json()).toEqual({ error: 'ben has not tripped the redline', code: 'conflict' });
       expect((await api(port, 'GET', '/api/agents/ana/resume')).status).toBe(405);
       expect(hubCalls.map((c) => [c.fn, ...c.args])).toStrictEqual([['resume', 'ana'], ['resume', 'ghost'], ['resume', 'ben']]);
+    });
+
+    it('POST /api/agents/:name/hold answers with the view, 404 and 409 from the name and the hub', async () => {
+      const { port, hubCalls } = await startWeb();
+      const ok = await api(port, 'POST', '/api/agents/ana/hold');
+      expect(ok.status).toBe(200);
+      expect(ok.json()).toMatchObject({ name: 'ana', needsReason: 'on hold' });
+      expect((await api(port, 'POST', '/api/agents/ghost/hold')).status).toBe(404);
+      expect((await api(port, 'POST', '/api/agents/ben/hold')).json()).toEqual({ error: 'ben is already on hold', code: 'conflict' });
+      expect((await api(port, 'GET', '/api/agents/ana/hold')).status).toBe(405);
+      expect(hubCalls.map((c) => [c.fn, ...c.args])).toStrictEqual([['hold', 'ana'], ['hold', 'ghost'], ['hold', 'ben']]);
+    });
+
+    it('GET /api/agents/:name/telemetry lists the calls, empty without a recorder', async () => {
+      const call = { at: 1, ms: 20, tool: 'Bash', summary: 'Bash: ls', failed: false };
+      const { port } = await startWeb({ telemetry: { calls: (name) => (name === 'ana' ? [call] : []) } });
+      expect((await api(port, 'GET', '/api/agents/ana/telemetry')).json()).toEqual({ calls: [call] });
+      expect((await api(port, 'GET', '/api/agents/ben/telemetry')).json()).toEqual({ calls: [] });
+      expect((await api(port, 'POST', '/api/agents/ana/telemetry')).status).toBe(405);
+      const bare = await startWeb();
+      expect((await api(bare.port, 'GET', '/api/agents/ana/telemetry')).json()).toEqual({ calls: [] });
     });
 
     it('PUT /api/propellant checks the body, saves the limits and tells every browser', async () => {
