@@ -37,7 +37,7 @@
 ## Hangar and Recorder
 
 - Only the browser token opens them. Hangar resolves every path with `realpath` and refuses `..`, an absolute path, a link that leads out, `.git` and gonogo's own folder; it writes only a text file you saved (1 MiB, refused if the file changed on disk) or a new one, and never deletes. An agent outside a Clean Room runs as you and can write these files itself: the checks guard the browser's requests, not the agent.
-- Recorder runs git with an argument list, no prompt, hooks off, a time limit and an output cap, and commits only with the author of your own git config. The agent can write the repository's `.git/config`, which git reads: hooks, the file system monitor, the external diff and text conversion are off, a `filter` driver is not. Read the status before you commit.
+- Recorder runs git with an argument list, no prompt, hooks off, a time limit and an output cap, and commits only with the author of your own git config. The agent can write the repository's `.git/config`, which git reads: hooks, the file system monitor, the external diff and text conversion are off, a `filter` driver is not, nor the `gpg.program` of a repository that signs its commits. Read the status before you commit.
 
 ## Clean Room and Docker
 

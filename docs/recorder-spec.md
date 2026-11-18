@@ -21,7 +21,7 @@ pull, checkout, reset, branch, stash or merge, and no way to run any other comma
   shell, in the folder, with these arguments first: `--literal-pathspecs -c core.hooksPath=/dev/null -c core.fsmonitor=false -c
   core.quotepath=false`. The environment is built, not inherited: `PATH`, `HOME`, `USER`, `LOGNAME`, `XDG_CONFIG_HOME`, `TMPDIR`,
   plus `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0` and `LC_ALL=C`. A `GIT_DIR`, `GIT_WORK_TREE` or `GIT_EXTERNAL_DIFF` of
-  gonogo's own never reaches git. Time limits: 15 s for a read, 30 s for a write (then SIGKILL, answered 503). Output caps: 1 MiB
+  gonogo's own never reaches git. Time limits: 15 s for a read, 30 s for a write (then SIGTERM, so that git removes its own `index.lock`, answered 503). Output caps: 1 MiB
   for status and log, 256 KiB for a diff, cut with `truncated`. A diff runs with `--no-ext-diff --no-textconv`. A path is a
   pathspec only as a literal name, after the checks of Hangar (no `..`, no absolute path, no `.git`).
 - **Hooks are off for every call, the commit too.** A hook is a program in the repository, and the agent can write it. The
@@ -45,7 +45,7 @@ pull, checkout, reset, branch, stash or merge, and no way to run any other comma
   256 KiB body limit. No frame goes out; the page asks again (after a commit, and on REFRESH).
 - **What this does not stop.** An agent that is not in a Clean Room runs as you and can write the repository's `.git/config`,
   which git reads. Hooks, the file system monitor, the external diff and text conversion are off, but a `filter` driver in that
-  config would still run on `git add`. Read the status before you commit.
+  config would still run on `git add`, and the `gpg.program` of a repository that signs its commits on `git commit`. Read the status before you commit.
 
 ## The page
 

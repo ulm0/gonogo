@@ -49,10 +49,10 @@ export function createRecorder(roots: Roots, env: Env): Recorder {
     if (value !== undefined) gitEnv[key] = value;
   }
 
-  /** Runs git in the root. Output over `cap` is cut and `truncated` says so; a failure is a GitFailure with the first line git printed on stderr. */
+  /** Runs git in the root. A call over its time is stopped with SIGTERM, not SIGKILL: git then removes its own index.lock, which a kill would leave to block every later add and commit. Output over `cap` is cut and `truncated` says so; a failure is a GitFailure with the first line git printed on stderr. */
   function git(at: Root, args: string[], cap: number, timeout: number): Promise<{ out: string; truncated: boolean }> {
     return new Promise((resolve, reject) => {
-      execFile(GIT_BIN, [...BASE_ARGS, ...args], { cwd: at.root, env: gitEnv, timeout, killSignal: 'SIGKILL', maxBuffer: cap + 1, encoding: 'utf8' }, (error, stdout, stderr) => {
+      execFile(GIT_BIN, [...BASE_ARGS, ...args], { cwd: at.root, env: gitEnv, timeout, killSignal: 'SIGTERM', maxBuffer: cap + 1, encoding: 'utf8' }, (error, stdout, stderr) => {
         if (error === null) return resolve({ out: stdout.slice(0, cap), truncated: stdout.length > cap });
         const code = (error as NodeJS.ErrnoException).code;
         if (code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve({ out: String(stdout).slice(0, cap), truncated: true });
