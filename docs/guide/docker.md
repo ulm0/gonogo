@@ -47,6 +47,19 @@ Set one credential, not both: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-toke
 - **Stopping**: gonogo stops its agents within 8 s and gives up at 12, past Docker's default 10. Use `docker stop -t 15` or more.
 - **Docker CLI**: the client binary only (from `docker:<version>-cli`; `--build-arg DOCKER_CLI_IMAGE=...` changes it), for Clean Room. No daemon.
 
+## Several rooms in the container
+
+The image runs plain `gonogo`, which is **one room**: it never reads `rooms.json`, so `docker compose exec gonogo gonogo rooms add team` saves the room but nothing starts it (the command says so, and the server logs a line at start when the file lists rooms). To run rooms, give the service the rooms command in `compose.yaml`:
+
+```yaml
+services:
+  gonogo:
+    command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]
+    stop_grace_period: 60s   # each room stops its agents within 12 s; the supervisor waits 17
+```
+
+then add rooms from the list page at `/`, or with `docker compose exec gonogo gonogo rooms add <id>`. The container's healthcheck, the update button and the Clean Room all work on the container, not per room: the update dialog is not offered under rooms (see [Rooms](../features/rooms.md)).
+
 ## Clean Room in the container
 
 `compose.yaml` at the repository root runs gonogo with the host's Docker socket mounted, so a Clean Room console starts its container on the host's Docker, next to gonogo's (not Docker in Docker).

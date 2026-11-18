@@ -1,11 +1,14 @@
 // Rooms (docs/rooms-spec.md): the list of rooms, the commands, and the supervisor with stand-in rooms (test/fake-room.mjs).
 // The real thing (built gonogo as the rooms) was tried by hand: docs/features/rooms.md, "What was seen".
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import vm from 'node:vm';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome } from '../src/server/rooms.js';
+import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
+import { startGonogo } from '../src/server/cli.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
@@ -246,6 +249,204 @@ describe('the supervisor', () => {
     await until(async () => (await listed(s)).every((r) => r.state === 'running'));
     const main = JSON.parse(readFileSync(join(home, 'started-with'), 'utf8')) as { args: string[] };
     expect(main.args).toContain('--exit-with-stdin');
+  });
+
+  describe('create, rename and remove through the supervisor', () => {
+    const json = { 'content-type': 'application/json' };
+    const send = (s: Supervisor, method: string, path: string, body?: unknown, token: string | null = s.directorToken, headers: Record<string, string> = json): Promise<Response> =>
+      api(s, path, token, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const running = (s: Supervisor, id: string): Promise<boolean> => listed(s).then((rooms) => rooms.some((r) => r.id === id && r.state === 'running'));
+
+    it('needs the Director token for every method: none, a room\'s own, and a wrong one are 401, and nothing is written', async () => {
+      const s = await supervise();
+      await until(() => running(s, 'main'));
+      const roomToken = readFileSync(join(home, 'token'), 'utf8').trim();
+      for (const token of [null, roomToken, 'f'.repeat(64)]) {
+        for (const [method, path, body] of [['GET', '/api/rooms'], ['POST', '/api/rooms', { id: 'x' }], ['PATCH', '/api/rooms/x', { name: 'n' }], ['DELETE', '/api/rooms/x']] as const) {
+          expect((await send(s, method, path, body, token)).status, `${method} ${path} ${String(token).slice(0, 4)}`).toBe(401);
+        }
+      }
+      expect(existsSync(join(home, ROOMS_FILE))).toBe(false);
+    });
+
+    it('adds a room: it starts, shows in the list, and rooms.json is 0600; the same id again is 409', async () => {
+      const s = await supervise();
+      await until(() => running(s, 'main'));
+      const made = await send(s, 'POST', '/api/rooms', { id: 'team-a', name: ' Team\tA ' });
+      expect(made.status).toBe(201);
+      expect(await made.json()).toMatchObject({ id: 'team-a', name: 'Team A' });
+      await until(() => running(s, 'team-a'), 15_000, 'the new room');
+      expect(statSync(join(home, ROOMS_FILE)).mode & 0o777).toBe(0o600);
+      expect(existsSync(join(home, 'rooms', 'team-a', 'token'))).toBe(true);
+      const again = await send(s, 'POST', '/api/rooms', { id: 'team-a' });
+      expect(again.status).toBe(409);
+      expect(await (await send(s, 'GET', '/api/rooms')).json()).toMatchObject({ rooms: [{ id: 'main' }, { id: 'team-a', name: 'Team A' }] });
+    }, 40_000);
+
+    it('refuses a bad id, main, a bad body and a body that is not JSON, with the reason', async () => {
+      const s = await supervise();
+      await until(() => running(s, 'main'));
+      for (const id of ['Team', '1a', 'a/b', '..', 'x'.repeat(25), '', 5, null, undefined]) expect((await send(s, 'POST', '/api/rooms', { id })).status, String(id)).toBe(400);
+      const main = await send(s, 'POST', '/api/rooms', { id: 'main' });
+      expect(main.status).toBe(400);
+      expect(((await main.json()) as { error: string }).error).toMatch(/home itself/);
+      expect((await send(s, 'POST', '/api/rooms', [1])).status).toBe(400);
+      expect((await send(s, 'POST', '/api/rooms', { id: 'ok' }, s.directorToken, { 'content-type': 'text/plain' })).status).toBe(400);
+      expect((await api(s, '/api/rooms', s.directorToken, { method: 'POST', headers: json, body: '{nope' })).status).toBe(400);
+      expect((await api(s, '/api/rooms', s.directorToken, { method: 'POST', headers: json, body: JSON.stringify({ id: 'ok', name: 'x'.repeat(6000) }) })).status).toBe(400);
+      expect((await send(s, 'PUT', '/api/rooms', { id: 'ok' })).status).toBe(405);
+      expect((await send(s, 'POST', '/api/rooms/ok', { id: 'ok' })).status).toBe(405);
+      expect(existsSync(join(home, ROOMS_FILE))).toBe(false);
+    });
+
+    it('refuses a browser page of another address (Origin), and a path id that is not an id', async () => {
+      const s = await supervise();
+      await until(() => running(s, 'main'));
+      expect((await send(s, 'POST', '/api/rooms', { id: 'evil' }, s.directorToken, { ...json, origin: 'http://evil.example' })).status).toBe(403);
+      for (const id of ['..', 'A', 'a%2fb', '%2e%2e']) expect([400, 404], id).toContain((await send(s, 'DELETE', `/api/rooms/${id}`)).status);
+      expect(existsSync(join(home, ROOMS_FILE))).toBe(false);
+    });
+
+    it('renames a room (its id and folder stay) and refuses main, an empty name and an unknown room', async () => {
+      addRoom(home, 'team');
+      const s = await supervise();
+      await until(() => running(s, 'team'));
+      const renamed = await send(s, 'PATCH', '/api/rooms/team', { name: 'The Team' });
+      expect(renamed.status).toBe(200);
+      expect(await renamed.json()).toMatchObject({ id: 'team', name: 'The Team', state: 'running' });
+      expect(loadRooms(home).find((r) => r.id === 'team')?.name).toBe('The Team');
+      expect((await send(s, 'PATCH', '/api/rooms/main', { name: 'Home' })).status).toBe(400);
+      for (const name of ['', '   ', 5, undefined]) expect((await send(s, 'PATCH', '/api/rooms/team', { name })).status, String(name)).toBe(400);
+      expect((await send(s, 'PATCH', '/api/rooms/ghost', { name: 'x' })).status).toBe(404);
+    }, 40_000);
+
+    it('removes a room: it stops gracefully, its folder and files stay, main cannot be removed, an unknown room is 404', async () => {
+      addRoom(home, 'gone');
+      const s = await supervise();
+      await until(() => running(s, 'gone'));
+      const folder = roomHome(home, 'gone');
+      expect((await send(s, 'DELETE', '/api/rooms/main')).status).toBe(400);
+      expect((await send(s, 'DELETE', '/api/rooms/ghost')).status).toBe(404);
+      const gone = await send(s, 'DELETE', '/api/rooms/gone');
+      expect(gone.status).toBe(200);
+      expect(((await gone.json()) as { note: string }).note).toMatch(/folder stays/);
+      await until(() => existsSync(join(folder, 'stopped')), 15_000, 'its graceful stop');
+      expect(readFileSync(join(folder, 'stopped'), 'utf8')).toBe('graceful');
+      expect(existsSync(join(folder, 'token'))).toBe(true);
+      expect((await listed(s)).map((r) => r.id)).toEqual(['main']);
+      expect((await api(s, '/r/gone/api/state')).status).toBe(404);
+    }, 40_000);
+
+    it('a damaged rooms.json refuses every write and is left as it is; the rooms keep running', async () => {
+      addRoom(home, 'team');
+      const s = await supervise();
+      await until(() => running(s, 'team'));
+      writeFileSync(join(home, ROOMS_FILE), '{"rooms": [{');
+      for (const [method, path, body] of [['POST', '/api/rooms', { id: 'more' }], ['PATCH', '/api/rooms/team', { name: 'n' }], ['DELETE', '/api/rooms/team']] as const) {
+        const res = await send(s, method, path, body);
+        expect(res.status, method).toBe(409);
+        expect(((await res.json()) as { error: string }).error).toMatch(/damaged/);
+      }
+      expect(readFileSync(join(home, ROOMS_FILE), 'utf8')).toBe('{"rooms": [{');
+      expect(await running(s, 'team')).toBe(true);
+    }, 40_000);
+
+    it('the list page has the forms, and its script is valid JavaScript that the CSP hash covers', async () => {
+      const s = await supervise();
+      const res = await api(s, '/', null);
+      const html = await res.text();
+      expect(html).toContain('NEW ROOM');
+      expect(html).toMatch(/<input class="input" name="id"/);
+      const script = /<script>([^]*)<\/script>/.exec(html)?.[1] ?? '';
+      expect(() => new vm.Script(script)).not.toThrow();
+      const hash = `'sha256-${createHash('sha256').update(script, 'utf8').digest('base64')}'`;
+      expect(res.headers.get('content-security-policy')).toContain(`script-src ${hash}`);
+    });
+  });
+
+  describe('is a supervisor running?', () => {
+    it('is no without a file, with a dead pid, with a port nobody listens on, and yes while the supervisor runs; the file goes with it', async () => {
+      expect(await supervisorRunning(home)).toBe(false);
+      writeFileSync(join(home, SUPERVISOR_FILE), JSON.stringify({ pid: 2 ** 22 - 1, host: '127.0.0.1', port: 9 }));
+      expect(await supervisorRunning(home)).toBe(false);
+      writeFileSync(join(home, SUPERVISOR_FILE), JSON.stringify({ pid: process.pid, host: '127.0.0.1', port: 1 }));
+      expect(await supervisorRunning(home)).toBe(false);
+      writeFileSync(join(home, SUPERVISOR_FILE), 'nope');
+      expect(await supervisorRunning(home)).toBe(false);
+      rmSync(join(home, SUPERVISOR_FILE));
+      const s = await supervise();
+      expect(await supervisorRunning(home)).toBe(true);
+      expect(statSync(join(home, SUPERVISOR_FILE)).mode & 0o777).toBe(0o600);
+      await s.stop();
+      sup = null;
+      expect(existsSync(join(home, SUPERVISOR_FILE))).toBe(false);
+      expect(await supervisorRunning(home)).toBe(false);
+    }, 40_000);
+
+    it('writes the file through a rename (a planted symlink is not followed) and removes only its own', async () => {
+      const target = join(home, 'victim.txt');
+      writeFileSync(target, 'keep');
+      symlinkSync(target, join(home, SUPERVISOR_FILE));
+      const s = await supervise();
+      expect(readFileSync(target, 'utf8')).toBe('keep');
+      expect(lstatSync(join(home, SUPERVISOR_FILE)).isSymbolicLink()).toBe(false);
+      // another supervisor took the file over: this one's stop must leave it
+      writeFileSync(join(home, SUPERVISOR_FILE), JSON.stringify({ pid: process.pid + 1, host: '127.0.0.1', port: 1 }));
+      await s.stop();
+      sup = null;
+      expect(existsSync(join(home, SUPERVISOR_FILE))).toBe(true);
+      expect(JSON.parse(readFileSync(join(home, SUPERVISOR_FILE), 'utf8'))).toMatchObject({ pid: process.pid + 1 });
+    }, 40_000);
+
+    const run = async (...args: string[]): Promise<string> => {
+      const { main } = await import('../src/server/cli.js');
+      let out = '';
+      const write = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => ((out += String(chunk)), true));
+      const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+      try {
+        await main(args, { PATH: process.env.PATH });
+      } finally {
+        write.mockRestore();
+        exit.mockRestore();
+      }
+      return out;
+    };
+
+    it('rooms add and remove say when no supervisor will act on the change, and stay quiet when one runs; list never says it', async () => {
+      const without = await run('rooms', 'add', 'ninah', '--home', home);
+      expect(without).toContain('added room ninah');
+      expect(without).toContain('no `gonogo rooms` supervisor is running');
+      expect(without).toContain('"rooms", "--host", "0.0.0.0"');
+      expect(await run('rooms', 'remove', 'ninah', '--home', home)).toContain('no `gonogo rooms` supervisor is running');
+      expect(await run('rooms', 'list', '--home', home)).not.toContain('supervisor');
+      await supervise();
+      expect(await run('rooms', 'add', 'ninah', '--home', home)).not.toContain('supervisor is running');
+      expect(await run('rooms', 'remove', 'ninah', '--home', home)).not.toContain('supervisor is running');
+    }, 40_000);
+
+    it('plain gonogo logs one line at start when rooms.json lists rooms, none when it lists none, and none for a room of a supervisor', async () => {
+      const lines: string[] = [];
+      const log = { debug() {}, info() {}, warn: (m: string) => void lines.push(m), error() {}, child: () => log };
+      const start = async (extra: Record<string, unknown> = {}): Promise<void> => {
+        const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, new URL('./fake-claude.mjs', import.meta.url).pathname], staticDir: null, checkClaude: false, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home }, log, ...extra });
+        await running.stop();
+      };
+      await start();
+      expect(lines.filter((l) => l.includes('rooms.json'))).toEqual([]);
+      addRoom(home, 'ninah');
+      addRoom(home, 'team');
+      await start();
+      const found = lines.filter((l) => l.includes('rooms.json'));
+      expect(found).toHaveLength(1);
+      expect(found[0]).toContain('2 other rooms (ninah, team)');
+      expect(found[0]).toContain('plain gonogo, one room');
+      lines.length = 0;
+      await start({ exitWithStdin: true });
+      expect(lines.filter((l) => l.includes('rooms.json'))).toEqual([]);
+      writeFileSync(join(home, ROOMS_FILE), '{nope');
+      await start();
+      expect(lines.filter((l) => l.includes('rooms.json'))).toEqual([]);
+    }, 60_000);
   });
 
   it('stops every room gracefully (SIGTERM) and closes the port', async () => {

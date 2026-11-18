@@ -41,6 +41,20 @@ pty host with `--pty-host`), so count tens of megabytes each.
 Open the printed address (the list page wears the app's own styles, taken from the built client): the list shows each room with its agents and how many need you, and OPEN goes to `/r/<id>/`. In a room,
 **Rooms** in the Patch Panel (Cmd+K) goes back to the list.
 
+## Plain gonogo is one room
+
+`gonogo` without `rooms` is a single room and never reads `rooms.json`. If you run `gonogo rooms add team` while only plain `gonogo` runs (a container started with the image's default command, for example), the room is saved and nothing starts it: the command tells you so (it looks for a running supervisor), and plain `gonogo` logs one line at start when the file lists rooms. Start gonogo as `gonogo rooms` (in Docker: `command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]`).
+
+## Add, rename and remove from the page
+
+The list page has a **NEW ROOM** form (an id, and a name if you want one) and, on every room but main, **RENAME** and **REMOVE**. REMOVE
+asks first, and says that the room's folder stays: it only takes the room off the list and stops it (its agents stop gracefully, as in
+`gonogo rooms remove`). The same calls are on the supervisor's own port, for scripts: `GET /api/rooms`, `POST /api/rooms` `{ "id", "name"? }`,
+`PATCH /api/rooms/<id>` `{ "name" }` and `DELETE /api/rooms/<id>`, with the Director token as a Bearer header (a room's own token is 401), a JSON
+body of at most 4 KB, and an Origin that is this server's own when there is one. A bad id or name is 400, main is refused (400), a
+room that exists or too many rooms is 409, an unknown room is 404, and a damaged `rooms.json` is 409 and is left untouched. The file is
+written the way the command line writes it (0600, atomically), and the supervisor starts or stops the room at once.
+
 ## Tokens
 
 The browser holds **one** secret, the Director token (`<home>/rooms-token`, its own file, 0600). The proxy checks it and **swaps in

@@ -75,7 +75,7 @@ import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { createUpdater } from './updater.js';
-import { addRoom, loadRooms, removeRoom, roomHome } from './rooms.js';
+import { addRoom, loadRooms, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { startSupervisor } from './supervisor.js';
 import { dockerUpdateStatus, followResult, readResult, settleResult, viewOfResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
 import type { Updater } from './updater.js';
@@ -433,6 +433,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
   }
 
   const home = openHome(settings.home, log);
+  // plain gonogo is one room and never reads rooms.json: say so once when the file lists rooms, instead of leaving them silently unstarted
+  if (options.exitWithStdin !== true) {
+    try {
+      const others = loadRooms(settings.home).filter((r) => r.id !== 'main');
+      if (others.length > 0) log.warn(`rooms.json lists ${others.length} other room${others.length === 1 ? '' : 's'} (${others.map((r) => r.id).join(', ')}) but this is plain gonogo, one room: they are not started. Run \`gonogo rooms\` for all of them (Docker: command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]).`);
+    } catch {
+      // a damaged rooms.json is the supervisor's business; plain gonogo does not use it
+    }
+  }
   let hub: Hub | undefined;
   let hubStarting = false;
   let web: WebServer | undefined;
@@ -1137,6 +1146,8 @@ async function runRooms(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, env: Env
     } else {
       for (const room of loadRooms(root)) process.stdout.write(`${room.id}\t${room.name}\t${roomHome(root, room.id)}\n`);
     }
+    // a change that nothing reads is the commonest mistake: plain gonogo is one room and never looks at rooms.json
+    if (parsed.action !== 'list' && !(await supervisorRunning(root))) process.stdout.write(`${NO_SUPERVISOR_HINT}\n`);
     exit(0);
     return;
   }

@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Rooms from the page.** The list of rooms has a NEW ROOM form and RENAME and REMOVE on each room (REMOVE keeps the folder). The same calls are `POST /api/rooms`, `PATCH /api/rooms/<id>` and `DELETE /api/rooms/<id>` on the supervisor, with the Director token.
+
 ## 0.4.0 (2026-11-18)
 
 Since 0.3.0: COMMS, a design-system pass, the co-author line, rooms, Docker self-update, a Homebrew formula and the docs version in the navbar. No security fix in this release. Verified in a real run: Docker self-update, in docker-in-docker on a real daemon (a daemon older than API 1.44 was not run). Not verified: the Homebrew formula and its release job (never run with a real `brew`); COMMS, rooms and the co-author line only by tests, the stand-in agent and the runs above, with no browser view looked at by hand. The rest is as `docs/reference/not-verified.md` says.
