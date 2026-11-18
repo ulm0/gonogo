@@ -3,16 +3,17 @@
  * setting, checks Docker and the repository, makes the worktree once and builds the `docker run` arguments. The launcher
  * puts them together with the files and the environment of a Claude Code start.
  */
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
-import { lstat, mkdir, realpath, stat } from 'node:fs/promises';
+import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { hostname } from 'node:os';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, join } from 'node:path';
 import { CLEAN_ROOM_DIR, cleanRoomBranch } from '../shared/protocol.js';
 import type { AgentRecord, CleanRoom, Provider } from '../shared/protocol.js';
+import { cwdInWorktree, ensureWorktree, messageOf, run, topOf } from './worktree.js';
+export { ensureWorktree };
+import type { Env } from './worktree.js';
 import {
-  CLEAN_ROOM_COMMAND_MS,
   CLEAN_ROOM_DEFAULT_IMAGE,
   CLEAN_ROOM_HOME_DIR,
   CLEAN_ROOM_HOST,
@@ -23,16 +24,13 @@ import {
   CLEAN_ROOM_NETWORK_SELF,
   DIR_MODE,
   DOCKER_BIN,
-  GIT_BIN,
 } from './constants.js';
 
 export type CleanRoomCheck = { ok: true; cleanRoom: CleanRoom } | { ok: false; error: string };
-type Env = Record<string, string | undefined>;
 
 const IMAGE_RE = new RegExp(CLEAN_ROOM_IMAGE_PATTERN);
 const NETWORK_RE = new RegExp(CLEAN_ROOM_NETWORK_PATTERN);
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** The one reader of a Clean Room setting: the hub uses it for hire and edit, home.ts for the roster file. `{}` is the default image. */
 export function parseCleanRoom(value: unknown, provider: Provider | undefined): CleanRoomCheck {
@@ -81,18 +79,6 @@ export function sameMountError(mounts: unknown, homeDir: string, container: stri
   return `gonogo's home ${homeDir} is not mounted into the container ${container} from the same path of the host: the host's Docker mounts a Clean Room's folders by their host paths, so mount it as -v ${homeDir}:${homeDir}`;
 }
 
-/** Runs a program without a shell and answers its output. A failure is an Error whose text is the first line the program printed on stderr. */
-function run(file: string, args: string[], env: Env): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(file, args, { env: env as NodeJS.ProcessEnv, timeout: CLEAN_ROOM_COMMAND_MS, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error === null) return resolve(stdout);
-      const code = (error as NodeJS.ErrnoException).code;
-      const line = stderr.split('\n').find((l) => l.trim() !== '')?.trim() ?? error.message.split('\n')[0] ?? '';
-      reject(new Error(code === 'ENOENT' ? `${file} was not found on PATH` : line.slice(0, 300)));
-    });
-  });
-}
-
 /** Docker is there and its daemon answers: `docker version` exits 0 only then. */
 export async function checkDocker(env: Env): Promise<void> {
   try {
@@ -103,13 +89,7 @@ export async function checkDocker(env: Env): Promise<void> {
 }
 
 /** The top folder of the git repository that holds `dir`. */
-export async function repoRoot(dir: string, env: Env): Promise<string> {
-  try {
-    return (await run(GIT_BIN, ['-C', dir, 'rev-parse', '--show-toplevel'], env)).trim();
-  } catch (error) {
-    throw new Error(`Clean Room needs the directory to be inside a git repository: ${messageOf(error)}`);
-  }
-}
+export const repoRoot = (dir: string, env: Env): Promise<string> => topOf(dir, env, 'Clean Room needs');
 
 /** What the hub asks at hire and edit: null when Docker works and `dir` is in a repository, else why not. */
 export async function checkCleanRoom(dir: string, env: Env): Promise<string | null> {
@@ -120,27 +100,6 @@ export async function checkCleanRoom(dir: string, env: Env): Promise<string | nu
     return null;
   } catch (error) {
     return messageOf(error);
-  }
-}
-
-/** Makes the worktree on its branch the first time and finds it again after that. A folder in its place that git does not know is an error, never reused. */
-export async function ensureWorktree(repo: string, path: string, branch: string, env: Env): Promise<void> {
-  const git = (...args: string[]): Promise<string> => run(GIT_BIN, ['-C', repo, ...args], env);
-  const real = await realpath(path).catch(() => null);
-  if (real !== null) {
-    const listed = (await git('worktree', 'list', '--porcelain')).split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9));
-    if (!(await Promise.all(listed.map((p) => realpath(p).catch(() => p)))).includes(real)) {
-      throw new Error(`${path} exists but is not a worktree of ${repo}; move it away or give the agent a folder of the repository it was made for`);
-    }
-    return;
-  }
-  await mkdir(dirname(path), { recursive: true, mode: DIR_MODE });
-  try {
-    await git('worktree', 'prune'); // a worktree whose folder was deleted still holds its branch
-    const known = await git('show-ref', '--verify', '--quiet', `refs/heads/${branch}`).then(() => true, () => false);
-    await git('worktree', 'add', ...(known ? [path, branch] : ['-b', branch, path]));
-  } catch (error) {
-    throw new Error(`could not make the worktree ${path} on ${branch}: ${messageOf(error)}`);
   }
 }
 
@@ -190,11 +149,7 @@ export async function prepareCleanRoom(agent: AgentRecord, homeDir: string, base
   const top = await realpath(await repoRoot(agent.dir, env));
   const worktree = join(homeDir, CLEAN_ROOM_DIR, agent.name);
   await ensureWorktree(top, worktree, cleanRoomBranch(agent.name), env);
-  const inside = relative(top, await realpath(agent.dir));
-  const cwd = join(worktree, inside);
-  if (!(await stat(cwd).then((info) => info.isDirectory(), () => false))) {
-    throw new Error(`${inside} is not in the worktree ${worktree}: the worktree is a copy of the last commit, and that folder is not committed`);
-  }
+  const cwd = await cwdInWorktree(top, worktree, agent.dir);
   const container = containerName(worktree);
   await removeContainer(container, env);
   const home = join(base, CLEAN_ROOM_HOME_DIR);

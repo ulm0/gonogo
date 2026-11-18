@@ -36,6 +36,7 @@ function agent(name: string, extra: Partial<AgentView> = {}): AgentView {
     command: null,
     payload: null,
     cleanRoom: null,
+    worktree: null,
     model: null,
     keys: {},
     doing: null,

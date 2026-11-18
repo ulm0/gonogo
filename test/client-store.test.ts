@@ -90,6 +90,7 @@ function agent(name: string, desk: number, extra: Partial<AgentView> = {}): Agen
     command: null,
     payload: null,
     cleanRoom: null,
+    worktree: null,
     model: null,
     keys: {},
     doing: null,

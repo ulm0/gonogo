@@ -35,6 +35,7 @@ import { createHub } from './hub.js';
 import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
 import { checkCleanRoom } from './cleanroom.js';
+import { checkWorktree } from './worktree.js';
 import { openHome } from './home.js';
 import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
@@ -447,6 +448,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return { ok: true, path: resolve(p) };
       },
       checkCleanRoom: (dir) => checkCleanRoom(dir, env),
+      checkWorktree: (dir) => checkWorktree(dir, env),
       loadRoster: async () => home.loadRoster(),
       saveRoster: (r) => home.saveRoster(r),
       loadHistory: async (n) => home.loadRecentMessages(n),

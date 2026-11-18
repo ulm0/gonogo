@@ -29,6 +29,7 @@ import {
   CLEAN_ROOM_CREDENTIALS,
   CLEAN_ROOM_ENV,
   CLEAN_ROOM_NOTE,
+  WORKTREE_NOTE,
   COLORTERM_VALUE,
   DENIED_TOOLS,
   DIR_MODE,
@@ -51,6 +52,8 @@ import {
   TRUST_VERIFY_ATTEMPTS,
   TRUST_VERIFY_DELAY_MS,
 } from './constants.js';
+import { prepareWorktree, worktreeBranch } from './worktree.js';
+import type { WorktreePlace } from './worktree.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { buildProviderStart } from './providers.js';
@@ -466,10 +469,13 @@ export function createLauncher(options: LauncherOptions): Launcher {
     if (!file) throw new Error(`the command of ${name} is empty`);
     const dirInfo = await stat(agent.dir).catch(() => null);
     if (!dirInfo?.isDirectory()) throw new Error(`working directory does not exist: ${agent.dir}`);
-    return { spec: { file, args, env: buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name) }), cwd: agent.dir }, flag: 'session-id', token: '' };
+    return { spec: { file, args, env: buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name) }), cwd: (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir }, flag: 'session-id', token: '' };
   };
 
   /** Engine Bay: another agent CLI, started by its program name with the files and flags of its adapter (providers.ts). */
+  /** A plain worktree (not a Clean Room's): made or found, and the folder the agent starts in; null when the agent starts in its own folder. */
+  const plainWorktree = async (agent: AgentRecord, from: Record<string, string | undefined>): Promise<WorktreePlace | null> => (agent.worktree === undefined || agent.cleanRoom !== undefined ? null : prepareWorktree(agent, homeDir, from));
+
   const prepareOther = async (agent: AgentRecord, provider: OtherProvider, base: string, hubUrl: string, memoryPath: string, token: string): Promise<PreparedStart> => {
     const ctx = {
       name: agent.name,
@@ -488,7 +494,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
     const env = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: options.keys?.(agent.name) }), ...start.env };
     log.debug(`prepared ${agent.name} to run ${provider}`);
-    return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: agent.dir }, flag: 'session-id', token };
+    return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir }, flag: 'session-id', token };
   };
 
   const prepareStart = async (
@@ -531,6 +537,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       if (agent.cleanRoom !== undefined) await removals.get(name);
       const clean = agent.cleanRoom === undefined ? null : await prepareCleanRoom(agent, homeDir, base, env);
       // A fresh container home has no folder trust and no login, so its dialogs are skipped as in seed mode.
+      const plain = await plainWorktree(agent, env);
       const seed = options.seed || clean !== null;
       const agentUrl = clean === null ? hubUrl : containerUrl(hubUrl);
       const settingsPath = join(base, SETTINGS_FILE);
@@ -543,8 +550,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const pluginDir = await writeSkillsPlugin(base, agent.payload?.skills);
 
       const configDir = hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : null;
-      const realDir = await realpath(dir).catch(() => dir);
-      const trustDirs = clean === null ? [...new Set([realDir, dir])] : [clean.cwd];
+      const startDir = plain?.cwd ?? dir;
+      const realDir = await realpath(startDir).catch(() => startDir);
+      const trustDirs = clean === null ? [...new Set([realDir, startDir])] : [clean.cwd];
       // the folder of the config that claude reads: the owner's, or the container's own home
       const claudeRoot = clean === null ? configDir ?? homedir() : clean.home;
       const claudeJson = join(claudeRoot, CLAUDE_JSON);
@@ -567,14 +575,14 @@ export function createLauncher(options: LauncherOptions): Launcher {
 
       const projectsRoot = join(clean === null ? configDir ?? join(homedir(), '.claude') : clean.home, 'projects');
       const flag: SessionFlag =
-        opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [dir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
-      const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`);
+        opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
+      const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
       const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       let spec: PreparedStart['spec'];
       if (clean === null) {
-        spec = { file, args: [...leading, ...claudeArgs], env: childEnv, cwd: agent.dir };
+        spec = { file, args: [...leading, ...claudeArgs], env: childEnv, cwd: startDir };
       } else {
         const uid = process.getuid?.();
         const gid = process.getgid?.();

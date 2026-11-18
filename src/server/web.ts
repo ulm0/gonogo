@@ -20,6 +20,7 @@ import type {
   ErrorFrame,
   GovernorRequest,
   HireRequest,
+  Worktree,
   HubEvent,
   Hub,
   InputEffect,
@@ -341,7 +342,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, model, keys } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, model, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -371,6 +372,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
   if (cleanRoom !== undefined) {
     if (typeof cleanRoom !== 'object' || cleanRoom === null || Array.isArray(cleanRoom)) return fieldError('cleanRoom', 'an object');
     value.cleanRoom = cleanRoom;
+  }
+  if (worktree !== undefined) {
+    if (typeof worktree !== 'object' || worktree === null || Array.isArray(worktree)) return fieldError('worktree', 'an object');
+    value.worktree = worktree as Worktree;
   }
   // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
   if (model !== undefined) {
@@ -441,6 +446,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.cleanRoom !== undefined) {
     if (o.cleanRoom !== null && (typeof o.cleanRoom !== 'object' || Array.isArray(o.cleanRoom))) return fieldError('cleanRoom', 'an object or null');
     value.cleanRoom = o.cleanRoom;
+  }
+  if (o.worktree !== undefined) {
+    if (o.worktree !== null && (typeof o.worktree !== 'object' || Array.isArray(o.worktree))) return fieldError('worktree', 'an object or null');
+    value.worktree = o.worktree as Worktree | null;
   }
   if (o.model !== undefined) {
     if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');
