@@ -22,6 +22,9 @@ export interface ReliefRow {
 /** `FLIGHT ASKS TO HIRE guido-1`: the legend is the call sign of the boss that asked. */
 export const reliefTitle = (request: Pick<ReliefRequest, 'name'>, legend: string): string => `${legend} ASKS TO HIRE ${request.name}`;
 
+/** The label over the role text: its length says how much there is to read, since the box scrolls. */
+export const roleLabel = (request: Pick<ReliefRequest, 'role'>): string => `Role text (${request.role.length} ${request.role.length === 1 ? 'character' : 'characters'})`;
+
 /** How long the request still waits, in whole minutes rounded up. */
 export function expiresText(request: Pick<ReliefRequest, 'expiresAt'>, now: number): string {
   const left = request.expiresAt - now;
@@ -38,7 +41,8 @@ export function reliefRows(request: ReliefRequest, now: number): ReliefRow[] {
     { label: 'Name', value: request.name },
     { label: 'Position', value: position === null ? 'none: a role of its own' : `${position.callSign} · ${position.title}` },
     { label: 'Engine', value: providerInfo(request.provider).label },
-    { label: 'Mode', value: MODE_TEXT[request.mode] },
+    // an engine without permission modes runs on its own rules whatever the hub passes: 'ASK' would promise what it does not do
+    { label: 'Mode', value: providerInfo(request.provider).modes ? MODE_TEXT[request.mode] : 'none: this engine has no permission modes in gonogo, its own rules apply' },
     { label: 'Folder', value: request.dir },
   ];
   if (request.cleanRoom !== null) rows.push({ label: 'Clean Room', value: request.cleanRoom.image === undefined ? 'yes: its own container and branch' : `yes: its own container and branch, image ${request.cleanRoom.image}` });

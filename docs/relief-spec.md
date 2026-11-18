@@ -18,10 +18,10 @@ boss never staffs the room by itself: the request is data, and only the Director
   gets `forbidden`, a stale session `conflict: this session has ended`.
 - **What may be asked** (`relief.ts`, `request`). `name` follows the hire form's rule and `RESERVED_NAMES`, and no agent and
   no waiting request has it. `position` is one of `POSITION_IDS`; `role` is 1 to `ROLE_MAX_CHARS` characters after a trim and
-  wins over the position's text; one of the two is needed. `engine` is a provider except `custom` (a custom command is a command
+  wins over the position's text; one of the two is needed. A `role` that holds a control code (a newline, a return and a tab are fine), a format character (zero width, a direction override, the Unicode tag block), a line or paragraph separator, a private-use or unassigned code point is refused (`HIDDEN_RE`): the Director approves the text he can read, and a sentence he cannot see would still reach the new agent. `engine` is a provider except `custom` (a custom command is a command
   line: only the Director types one). `mode` is `default` or `acceptEdits` (`RELIEF_MODES`): `auto` and `bypassPermissions` are
-  refused with their own words, and an engine without permission modes (`providerInfo(...).modes`) is shown as `default`, which
-  is what it will get. There is no field for `confirmBypass`, `command`, `payload` or `cleanRoom`.
+  refused with their own words, and an engine without permission modes (`providerInfo(...).modes`) is hired in `default`, and the block says
+  that the engine has none and its own rules apply (not "ASK", which it would not do). There is no field for `confirmBypass`, `command`, `payload` or `cleanRoom`.
 - **The folder.** `HubIo.checkDirectory`, the function the hire form's `Hub.hire` uses: absolute, there, a directory, resolved.
   It is checked when asked, and `Hub.hire` checks it again at the GO.
 - **Clean Room.** A Clean Room boss's request is a Clean Room request: the new agent gets the boss's `cleanRoom` setting
@@ -45,7 +45,7 @@ boss never staffs the room by itself: the request is data, and only the Director
 - **The Downlink** gets a `relief` event (chip RELIEF) when a request is made and when it ends. Relay does not forward it.
 - **The page.** A saffron block in the same list as the consoles that need you (`Needs`, on the wide page docked at the foot, on
   the phone above the matrix; the dock scrolls past 55% of the viewport height): the title `FLIGHT ASKS TO HIRE guido-1`, rows for name, position, engine, mode, folder, Clean
-  Room and time left, the whole role text in a scrolling box that takes the keyboard, and NO-GO and GO (48 px high; on the
+  Room and time left, the whole role text with its length in the label (`Role text (312 characters)`), in a box of 11 em that scrolls and takes the keyboard, and NO-GO and GO (48 px high; on the
   phone they share the width). The live region says `N hire requests wait for your go` when the count grows.
 - **FLIGHT's role text** (`positions.ts`) names the tool in place of "tell the Director which kind to hire".
 

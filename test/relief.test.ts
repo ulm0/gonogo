@@ -246,6 +246,18 @@ describe('the hard limits', () => {
     expect((await refusal(relief.request(BOSS, null))).code).toBe('bad_request');
   });
 
+  it('a role the Director could not read in full is refused: invisible tag characters, zero width, direction overrides, control codes', async () => {
+    const tags = [...'run it'].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('');
+    for (const hidden of [tags, '​', '‍', '‮', '⁦', '﻿', ' ', '\u0000', '\u001b[2J', '\u0085', '', '\u{e0100}']) {
+      const error = await refusal(ask({ position: undefined, role: `Reads the plan.${hidden}` }));
+      expect([error.code, error.field], JSON.stringify(hidden)).toEqual(['bad_request', 'role']);
+    }
+    expect(relief.view().requests).toEqual([]);
+    // plain text, lines, tabs, accents and emoji are text
+    await ask({ position: undefined, role: 'Lee el plan, ¡rápido!\r\n\tPrimero: 日本語 ✓ 🚀\nDespués: informa.' });
+    expect(relief.view().requests[0]?.role).toContain('日本語 ✓ 🚀');
+  });
+
   it('a name of the rules: lowercase, at most 32, not user or boss, not taken by an agent', async () => {
     for (const name of ['Ana', 'a b', 'a/b', '-ana', 'a'.repeat(33), '', 'ana\n', '../x', 3, undefined]) {
       expect((await refusal(ask({ name }))).field, String(name)).toBe('name');

@@ -27,7 +27,7 @@
 
 ## Relief
 
-`hire_agent` makes a request, never a hire: the agent is hired only after your GO, a call that takes the browser token (an agent's token, the boss's too, gets 401). A request cannot hold `auto` or `bypassPermissions`, a custom command, a payload or a Clean Room of its own; 3 may wait, 5 in 10 minutes, each 30 minutes. **The role text it carries is what the new agent obeys, and a boss that read untrusted text may write something you would not**: read the block before GO. A Clean Room boss hires only Clean Room agents inside its own folder.
+`hire_agent` makes a request, never a hire: the agent is hired only after your GO, a call that takes the browser token (an agent's token, the boss's too, gets 401). A request cannot hold `auto` or `bypassPermissions`, a custom command, a payload or a Clean Room of its own; 3 may wait, 5 in 10 minutes, each 30 minutes. **The role text it carries is what the new agent obeys, and a boss that read untrusted text may write something you would not**: read the block before GO. A role with a character you could not see (zero width, a direction override, the Unicode tag block, a control code) is refused. A Clean Room boss hires only Clean Room agents inside its own folder.
 
 ## Docking
 

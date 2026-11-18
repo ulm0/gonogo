@@ -35,7 +35,7 @@ import {
   voteOf,
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
-import { reliefRows, reliefTitle } from './relief.js';
+import { reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHire, showLoop, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
@@ -275,7 +275,7 @@ function ReliefNeed({ request, legend }: { request: ReliefRequest; legend: strin
           ))}
         </dl>
         <p className="relief-role-label" id={`relief-role-${request.id}`}>
-          Role text
+          {roleLabel(request)}
         </p>
         {/* the whole text, in a box that scrolls: the Director decides on what he can read */}
         <p className="relief-role" role="group" tabIndex={0} aria-labelledby={`relief-role-${request.id}`}>

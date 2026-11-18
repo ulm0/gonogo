@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentView, ReliefRequest, ServerInfo, StateSnapshot } from '../src/shared/protocol.js';
 import { applyServerFrame, emptyState } from '../src/client/store.js';
-import { expiresText, reliefAnnouncement, reliefRows, reliefTitle } from '../src/client/relief.js';
+import { expiresText, reliefAnnouncement, reliefRows, reliefTitle, roleLabel } from '../src/client/relief.js';
 import { ANNOUNCE_GAP_MS, createAnnouncer } from '../src/client/room.js';
 import { missionOf } from '../src/client/wall.js';
 
@@ -50,7 +50,14 @@ describe('what the Director reads', () => {
   it('says so when there is no position, another engine, a default mode or a Clean Room', () => {
     const rows = reliefRows(request({ position: null, provider: 'gemini', mode: 'default', cleanRoom: { image: 'img:1' } }), 1_000);
     expect(rows.map((r) => r.value)).toEqual(['guido-1', 'none: a role of its own', 'Gemini CLI', 'ASK: asks you for a go before a tool runs', '/work/app', 'yes: its own container and branch, image img:1', '30 minutes left']);
+    // an engine without permission modes is not shown as asking before each tool
+    expect(reliefRows(request({ provider: 'opencode', mode: 'default' }), 1_000).find((r) => r.label === 'Mode')?.value).toMatch(/^none: this engine has no permission modes/);
     expect(reliefRows(request({ cleanRoom: {} }), 1_000).find((r) => r.label === 'Clean Room')?.value).toBe('yes: its own container and branch');
+  });
+
+  it('says how long the role text is, so that a box that scrolls is not taken for the whole of it', () => {
+    expect(roleLabel(request({ role: 'x'.repeat(4000) }))).toBe('Role text (4000 characters)');
+    expect(roleLabel(request({ role: 'x' }))).toBe('Role text (1 character)');
   });
 
   it('does not run text of the request as markup: the rows are plain strings', () => {

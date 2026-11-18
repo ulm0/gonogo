@@ -10,16 +10,16 @@ FLIGHT can call `hire_agent`. It only makes a request: a saffron block in your c
 |---|---|
 | `name` | Required. 1 to 32 lowercase letters, digits or hyphens; not `user` or `boss`; no agent or waiting request has it. |
 | `position` | One of the 15 call signs. Gives the role text. |
-| `role` | 1 to 4000 characters. Replaces the position's text. Give `position`, `role` or both. |
+| `role` | 1 to 4000 characters, with no control, invisible or direction-changing character (you could not read it). Replaces the position's text. Give `position`, `role` or both. |
 | `dir` | An absolute folder that exists (the hire form's check). Required, except for a Clean Room boss. |
 | `engine` | `claude` (default) or any other engine except `custom`. |
 | `mode` | `default` (default) or `acceptEdits`. `auto` and `bypassPermissions` are refused. |
 
-Any other field (`confirmBypass`, `command`, `payload`, `cleanRoom`) is refused. An engine without permission modes starts in `default`, and the block says so.
+Any other field (`confirmBypass`, `command`, `payload`, `cleanRoom`) is refused. An engine without permission modes in gonogo (opencode, Kimi, pi and the others) is hired in `default` and runs on its own rules; the block says it has none, not that it asks.
 
 ## What you see
 
-**FLIGHT ASKS TO HIRE guido-1**: name, position, engine, mode, folder, minutes left, and the whole role text in a box that scrolls. Keys: **NO-GO**, **GO**. The Downlink gets a `RELIEF` line when it is asked and when it is answered or expires, and the live region says how many wait.
+**FLIGHT ASKS TO HIRE guido-1**: name, position, engine, mode, folder, minutes left, and the whole role text in a box that scrolls, with its length in the label. Keys: **NO-GO**, **GO**. The Downlink gets a `RELIEF` line when it is asked and when it is answered or expires, and the live region says how many wait.
 
 FLIGHT hears every answer as a message from the Director: `Relief: guido-1 is staffed`, `request for guido-1 refused`, `request for guido-1 expired`, or `guido-1 could not be hired` with the reason.
 

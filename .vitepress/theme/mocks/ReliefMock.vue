@@ -38,7 +38,7 @@ const said = computed(() =>
           <dd>{{ row.value }}</dd>
         </div>
       </dl>
-      <p class="mk-role-label" id="relief-mock-role">Role text</p>
+      <p class="mk-role-label" id="relief-mock-role">Role text ({{ request.role.length }} characters)</p>
       <p class="mk-role" role="group" tabindex="0" aria-labelledby="relief-mock-role">{{ request.role }}</p>
       <div class="mk-keys">
         <button type="button" class="btn" data-kind="danger" aria-label="NO-GO: do not hire guido-1" @click="answer = 'no-go'">NO-GO</button>
@@ -114,7 +114,7 @@ const said = computed(() =>
 }
 
 .mk-role {
-  max-height: 5.6em;
+  max-height: 11em;
   margin: 0;
   padding: 4px 8px;
   overflow: auto;

@@ -24,6 +24,12 @@ import { HubError } from './hub.js';
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const ID_RE = /^h[1-9]\d{0,9}$/;
 const FIELDS = new Set(['name', 'position', 'role', 'dir', 'engine', 'mode']);
+/**
+ * What a person cannot see in the block but the new agent reads: control codes (a newline, a return and a tab are fine), format
+ * characters (zero width, direction overrides, the Unicode tag block that hides a whole sentence), line and paragraph
+ * separators, private-use and unassigned code points, and the variation selectors of the supplement.
+ */
+const HIDDEN_RE = /[^\P{Cc}\n\r\t]|[\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cn}\u{E0100}-\u{E01EF}]/u;
 const MINUTES = (ms: number): number => Math.round(ms / 60_000);
 
 export type ReliefVerdict = 'go' | 'no-go';
@@ -171,6 +177,8 @@ export function createRelief(options: ReliefOptions): Relief {
       const { position, role } = input;
       if (position !== undefined && (typeof position !== 'string' || !POSITION_IDS.includes(position))) throw bad(`position must be one of ${POSITION_IDS.join(', ')}`, 'position');
       if (role !== undefined && (typeof role !== 'string' || role.trim().length === 0 || role.trim().length > ROLE_MAX_CHARS)) throw bad(`role must be 1 to ${ROLE_MAX_CHARS} characters`, 'role');
+      // the Director approves the text he reads: nothing in it may be hidden from him
+      if (typeof role === 'string' && HIDDEN_RE.test(role)) throw bad('role must not hold control, invisible or direction-changing characters: the Director reads all of it', 'role');
       const roleText = typeof role === 'string' ? role.trim() : typeof position === 'string' ? (positionById(position)?.role ?? '') : '';
       if (roleText === '') throw bad('give a position or a role', 'role');
 
