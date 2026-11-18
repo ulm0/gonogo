@@ -4,7 +4,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
-- **A design-system pass.** Selects, checkboxes, radios and switches are no longer the browser's own: `select.input`, `.check`, `.radio` and `.switch` draw them in the instrument's look (native inputs, so keyboard and screen reader are unchanged; 4.5:1, 7:1 in High Contrast), in Flight Rules (FEATURES, DEFAULTS, startup, subagents, phone approvals, permissions), the hire and edit forms, Launch Window, Uplink, Relay, the Recorder and the docs mocks. The lock emoji and the text arrows of the Hangar tree are gone: `.icon` draws lock, chevrons and the livery half-circle in the colour of the text. A livery must now also hold 4.5:1 between `--go-ink` and `--key` (a checked box).
+- **A design-system pass.** Selects, checkboxes, radios and switches are no longer the browser's own: `select.input`, `.check`, `.radio` and `.switch` draw them in the instrument's look (native inputs, so keyboard and screen reader are unchanged; 4.5:1, 7:1 in High Contrast), in Flight Rules (FEATURES, DEFAULTS, startup, subagents, phone approvals, permissions), the hire and edit forms, Launch Window, Uplink, Relay, the Recorder and the docs mocks. The lock emoji and the text arrows of the Hangar tree are gone: `.icon` draws lock, chevrons and the livery half-circle in the colour of the text. A new livery must now also hold 4.5:1 between `--go-ink` and `--key` (a checked box); one made earlier still loads.
 
 ## 0.3.0 (2026-11-18)
 

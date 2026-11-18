@@ -7,6 +7,7 @@ import {
   BUILTIN_LIVERIES,
   checkLivery,
   CONTRAST_PAIRS,
+  CONTROL_PAIRS,
   contrast,
   contrastRules,
   DEFAULT_LIVERY,
@@ -87,8 +88,8 @@ describe('the token list and the rule', () => {
   it('names each token once, with a role, and the contrast pairs name only tokens of the list', () => {
     expect(new Set(LIVERY_NAMES).size).toBe(LIVERY_NAMES.length);
     for (const t of LIVERY_TOKENS) expect(t.role.length, t.name).toBeGreaterThan(5);
-    for (const [text, surfaces] of CONTRAST_PAIRS) for (const name of [text, ...surfaces]) expect(LIVERY_NAMES, name).toContain(name);
-    expect(contrastRules()).toHaveLength(CONTRAST_PAIRS.length + 1);
+    for (const [text, surfaces] of [...CONTRAST_PAIRS, ...CONTROL_PAIRS]) for (const name of [text, ...surfaces]) expect(LIVERY_NAMES, name).toContain(name);
+    expect(contrastRules()).toHaveLength(CONTRAST_PAIRS.length + CONTROL_PAIRS.length + 1);
   });
 
   it('keeps every livery that ships equal to its block of tokens.css, every token of it', () => {
@@ -119,6 +120,7 @@ describe('the token list and the rule', () => {
     expect(BUILTIN_LIVERIES.map((l) => l.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'high-contrast']);
     for (const l of BUILTIN_LIVERIES) {
       expect(checkLivery(l.tokens), l.slug).toEqual([]);
+      expect(checkLivery(l.tokens, true), l.slug).toEqual([]);
       expect(slugOf(l.name), l.slug).toBe(l.slug);
       expect(new Set(Object.keys(l.tokens)), l.slug).toEqual(new Set(LIVERY_NAMES));
     }
@@ -132,6 +134,10 @@ describe('the token list and the rule', () => {
   });
 
   it('rejects a livery whose text falls under 4.5:1, and says which pair and by how much', () => {
+    // a livery made before the checked-box pair existed still loads; a new one must hold it
+    const old = good({ '--go-ink': instrument.tokens['--key']! });
+    expect(checkLivery(old).join(' ')).not.toMatch(/--go-ink on --key/);
+    expect(checkLivery(old, true).join(' ')).toMatch(/--go-ink on --key/);
     const found = checkLivery(good({ '--muted': '#8a8780' }));
     expect(found.some((p) => p.startsWith('--muted on --body is ') && p.endsWith(`, it needs ${MIN_CONTRAST}:1`))).toBe(true);
     expect(checkLivery(good({ '--text': '#f1f0ec' })).length).toBeGreaterThan(3);

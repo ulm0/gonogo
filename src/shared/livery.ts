@@ -66,12 +66,18 @@ export const CONTRAST_PAIRS: ReadonlyArray<readonly [string, readonly string[]]>
   ['--work', ['--panel', '--key']],
   ['--nogo-text', ['--body', '--panel', '--key', '--nogo-tint']],
   ['--you-ink', ['--you-tint']],
-  ['--go-ink', ['--go-tint', '--key']], // a checked box or switch: the dark of the box, the mark in the key's colour
+  ['--go-ink', ['--go-tint']],
   ['--panel', ['--text']],
   ['--lcd-text', ['--lcd']],
   ['--lcd-dim', ['--lcd']],
   ['--lcd-warm', ['--lcd']],
 ];
+
+/**
+ * Pairs added after liveries were already made (a checked box or switch: the dark of the box, the mark in the key's colour). They are asked of a
+ * NEW livery only (`checkLivery(tokens, true)`, the submit): a livery the Director made before is still loaded, not dropped for a rule it never had.
+ */
+export const CONTROL_PAIRS: ReadonlyArray<readonly [string, readonly string[]]> = [['--go-ink', ['--key']]];
 
 /** The slug of a name: lowercase words joined by dashes, at most 40 characters; '' when no letter or digit is left. */
 export const slugOf = (name: string): string =>
@@ -186,7 +192,7 @@ export function contrast(a: string, b: string): number | null {
 export const schemeOf = (tokens: LiveryTokens): 'light' | 'dark' => ((luminance(tokens['--body'] ?? '') ?? 1) < 0.18 ? 'dark' : 'light');
 
 /** One line per fault; an empty list means the livery is whole, made of colours, and readable. Unknown names are faults too. */
-export function checkLivery(tokens: unknown): string[] {
+export function checkLivery(tokens: unknown, forNew = false): string[] {
   if (typeof tokens !== 'object' || tokens === null || Array.isArray(tokens)) return ['tokens must be an object of token names and colours'];
   const record = tokens as Record<string, unknown>;
   const problems: string[] = [];
@@ -198,7 +204,7 @@ export function checkLivery(tokens: unknown): string[] {
   }
   if (problems.length > 0) return problems;
   const value = record as Record<string, string>;
-  for (const [text, surfaces] of CONTRAST_PAIRS) {
+  for (const [text, surfaces] of forNew ? [...CONTRAST_PAIRS, ...CONTROL_PAIRS] : CONTRAST_PAIRS) {
     for (const surface of surfaces) {
       const ratio = contrast(value[text] ?? '', value[surface] ?? '') ?? 0;
       if (ratio < MIN_CONTRAST) problems.push(`${text} on ${surface} is ${ratio.toFixed(2)}:1, it needs ${MIN_CONTRAST}:1`);
@@ -210,7 +216,7 @@ export function checkLivery(tokens: unknown): string[] {
 
 /** The contrast rule in words, one line per text token, from CONTRAST_PAIRS. */
 export const contrastRules = (): string[] => [
-  ...CONTRAST_PAIRS.map(([text, surfaces]) => `${text} on ${surfaces.join(', ')}: at least ${MIN_CONTRAST}:1`),
+  ...[...CONTRAST_PAIRS, ...CONTROL_PAIRS].map(([text, surfaces]) => `${text} on ${surfaces.join(', ')}: at least ${MIN_CONTRAST}:1`),
   `--lcd: dark, relative luminance under ${LCD_MAX_LUMINANCE}`,
 ];
 

@@ -135,7 +135,7 @@ export function createLiveries(options: LiveriesOptions): Liveries {
     if (description === null || description.length > LIVERY_DESCRIPTION_MAX_CHARS || UNSAFE_IN_NAME.test(description)) {
       throw bad(`description must be at most ${LIVERY_DESCRIPTION_MAX_CHARS} characters on one line`, 'description');
     }
-    const problems = checkLivery(input.tokens);
+    const problems = checkLivery(input.tokens, true);
     if (problems.length > 0) {
       const shown = problems.slice(0, PROBLEMS_SHOWN).join('; ');
       throw bad(problems.length > PROBLEMS_SHOWN ? `${shown}; and ${problems.length - PROBLEMS_SHOWN} more` : shown, 'tokens');
