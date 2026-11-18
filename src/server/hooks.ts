@@ -15,6 +15,10 @@ import { AGENT_NAME_PATTERN, MAX_HOOK_BODY_BYTES } from './constants.js';
 export interface HookDeps {
   hub: Pick<Hub, 'onHook'>;
   resolveToken(token: string): AgentIdentity | null;
+  /** Plan quota: the body of a status-line post (docs/quota-spec.md). Not a hook event, so the hub never sees it. */
+  statusLine?(agent: string, body: unknown): void;
+  /** The clock of the status-line rate limit; default Date.now. */
+  now?(): number;
   log: Logger;
 }
 
@@ -138,6 +142,10 @@ export function readBody(req: IncomingMessage, limit: number): Promise<BodyResul
 
 /* ---- the hook endpoint ---- */
 
+/** The name of the status-line post beside the hook events. */
+const STATUS_LINE = 'StatusLine';
+const STATUS_LINE_MIN_MS = 10_000;
+
 function isHookEvent(event: string): event is HookEvent {
   return (HOOK_EVENTS as readonly string[]).includes(event);
 }
@@ -155,6 +163,9 @@ export function createHookHandler(
 ): (req: IncomingMessage, res: ServerResponse, agentName: string, event: string) => Promise<void> {
   const { hub, log } = deps;
   const nameRe = new RegExp(AGENT_NAME_PATTERN);
+  /** Plan quota: the time of the last status-line post taken from each agent; a faster one is answered and dropped. */
+  const lastStatusLine = new Map<string, number>();
+  const clock = deps.now ?? Date.now;
 
   return async (req, res, agentName, event) => {
     const token = bearerToken(req.headers.authorization);
@@ -167,7 +178,7 @@ export function createHookHandler(
       sendMethodNotAllowed(res, 'POST');
       return;
     }
-    if (!nameRe.test(agentName) || !isHookEvent(event)) {
+    if (!nameRe.test(agentName) || !(isHookEvent(event) || event === STATUS_LINE)) {
       sendNotFound(res);
       return;
     }
@@ -176,6 +187,16 @@ export function createHookHandler(
       return;
     }
 
+    if (event === STATUS_LINE) {
+      // one post per agent every 10 s: a loop in the script, or a stolen token, cannot flood the hub
+      const t = clock();
+      const last = lastStatusLine.get(agentName);
+      if (last !== undefined && t - last < STATUS_LINE_MIN_MS) {
+        req.resume();
+        sendJson(res, 200, {});
+        return;
+      }
+    }
     const body = await readBody(req, MAX_HOOK_BODY_BYTES);
     if (!body.ok) {
       if (body.reason === 'too_large') sendApiError(res, 413, 'hook body too large', 'too_large');
@@ -193,6 +214,13 @@ export function createHookHandler(
       return;
     }
 
+    if (event === STATUS_LINE) {
+      // the slot is taken by a good post only, so a malformed one does not shut out the next
+      lastStatusLine.set(agentName, clock());
+      deps.statusLine?.(agentName, payload);
+      sendJson(res, 200, {});
+      return;
+    }
     let reply: HookReply;
     try {
       // the hub reads every field defensively (protocol.ts), so the unchecked shape is what it expects

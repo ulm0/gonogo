@@ -225,6 +225,8 @@ Each is built from the keys, chips, lights, modules and fields above, so it foll
 <span class="label">Mission: tasks and cost</span>
 <div style="display: grid; gap: 4px"><span class="label">Tasks</span><span class="lcd-num">3 / 7</span></div>
 <div style="display: grid; gap: 6px"><span class="label">Cost</span><span>$1.20 of $10.00</span><span style="display: flex; gap: 8px; align-items: center"><span class="hint">Budget in dollars</span><span class="input" style="flex: 1; padding: 6px 8px">$10.00</span><span class="btn">Set</span></span></div>
+<span class="label">Plan quota block</span>
+<div style="display: grid; gap: 6px"><span style="display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center"><span class="legend">WEEK</span><span style="height: 8px; border-radius: 4px; background: var(--key); overflow: hidden"><i style="display: block; width: 82%; height: 100%; background: var(--you)"></i></span></span><span class="lcd-num">82 %, resets in 28 h 0 min</span><span class="hint">from Claude Code: your plan's own number.</span></div>
 <span class="label">Worktree line</span>
 <span style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><span class="chip" data-tone="quiet">WORKTREE</span><span class="hint">Branch <code>gonogo/ana</code>, clean, merged into main.</span></span>
 <span class="label">Room editor: card, grip and tray</span>

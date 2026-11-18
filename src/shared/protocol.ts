@@ -595,10 +595,28 @@ export interface FuelGauge {
   used: Record<FuelWindow, number>;
   limits: FuelLimits;
 }
+/** One window of the Claude plan, as Claude Code's status line reports it (docs/quota-spec.md). */
+export interface PlanWindow {
+  /** Percent of the window used, 0 to 1000 (over 100 is possible). */
+  pct: number;
+  /** Epoch ms when the window resets. */
+  resetsAt: number;
+}
+/** The plan's own number: the windows still open, when the newest report came and from which agent. Absent without a source. */
+export interface PlanQuota {
+  fiveHour?: PlanWindow;
+  sevenDay?: PlanWindow;
+  at: number;
+  source: string;
+  /** The report is older than 15 minutes. */
+  stale: boolean;
+}
 /** Token use of the room and of each agent that used any or has a limit. */
 export interface PropellantView {
   room: FuelGauge;
   agents: Record<string, FuelGauge>;
+  /** The plan quota from the status line; absent for an API-key or Bedrock room, or before the first report. */
+  plan?: PlanQuota;
   /** The same use in dollars at list prices (docs/cost-spec.md). */
   cost: CostView;
 }
