@@ -124,7 +124,6 @@ const SMALL = [
     <!-- hero -->
     <section class="lp-hero lp-wrap">
       <div class="lp-hero-copy">
-        <img class="lp-logo" src="/lockup.svg" alt="gonogo" width="180" height="40" />
         <p class="label">Mission control for coding agents</p>
         <h1 class="disp lp-h1">Your agents have the consoles. You have the call.</h1>
         <p class="lp-pitch">

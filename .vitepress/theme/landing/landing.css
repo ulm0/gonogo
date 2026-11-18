@@ -98,22 +98,11 @@
   }
 }
 
-.lp-logo {
-  height: 40px;
-  width: auto;
-  margin-bottom: 24px;
-}
-
 /* What the name means, in the pitch. */
 .lp .lp-pitch dfn {
   font-style: normal;
   font-family: var(--font-mono);
   color: var(--text);
-}
-
-/* As in the app (shell.css .mark-name): on a dark livery the lockup is turned, light and dark swap, same size. */
-.dark .lp-logo {
-  filter: invert(1) hue-rotate(180deg);
 }
 
 .lp-h1 {
