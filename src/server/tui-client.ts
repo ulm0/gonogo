@@ -47,7 +47,7 @@ export function wsUrl(url: string): string {
   const u = new URL(url);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   // the address may carry a room prefix (/r/<id>): the WebSocket of that room is under it
-  u.pathname = `${u.pathname.replace(/\/+$/, '')}/ws`;
+  u.pathname = `${/^(\/r\/[a-z][a-z0-9-]{0,23})(?:\/|$)/.exec(u.pathname)?.[1] ?? ''}/ws`;
   u.search = '';
   u.hash = '';
   return u.toString();

@@ -5,6 +5,7 @@
  */
 import { createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
+import { existsSync } from 'node:fs';
 import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { basename, join } from 'node:path';
@@ -128,9 +129,22 @@ export async function removeContainer(name: string, env: Env): Promise<void> {
   await run(DOCKER_BIN, ['rm', '-f', name], env).catch(() => undefined);
 }
 
+/**
+ * Why a Clean Room cannot start here, or null. Rooms of the supervisor listen on loopback only, which the Docker bridge cannot reach from a
+ * host on Linux (it only worked when gonogo ran with --host 0.0.0.0): outside a container, on Linux, without GONOGO_CLEANROOM_NETWORK, it is
+ * refused (docs/single-mode-spec.md, 8). Docker Desktop forwards host.docker.internal to the host's loopback (not tried), and gonogo in Docker
+ * joins its own network. Only a room under the supervisor (GONOGO_SUPERVISOR_PID) is refused.
+ */
+export function cleanRoomHostProblem(env: Env, platform: string, inContainer: boolean, network: string | null): string | null {
+  if (env.GONOGO_SUPERVISOR_PID === undefined || network !== null || inContainer || platform !== 'linux') return null;
+  return 'Clean Room needs gonogo in Docker (it joins gonogo\'s network), or Docker Desktop: a room listens on loopback only, which the Docker bridge on Linux cannot reach';
+}
+
 /** Everything a start needs on disk: Docker checked, the worktree there, the container's home made. `base` is agents/<name>. */
 export async function prepareCleanRoom(agent: AgentRecord, homeDir: string, base: string, env: Env): Promise<CleanRoomPlace> {
   const network = cleanRoomNetwork(env);
+  const refused = cleanRoomHostProblem(env, process.platform, existsSync('/.dockerenv') || existsSync('/run/.containerenv'), network);
+  if (refused !== null) throw new Error(refused);
   await checkDocker(env);
   if (network !== null) {
     const self = network.slice('container:'.length);
