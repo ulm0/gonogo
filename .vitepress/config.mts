@@ -77,6 +77,8 @@ export default defineConfig({
           { text: 'Mission Log', link: '/features/mission-log' },
           { text: 'Livery', link: '/features/livery' },
           { text: 'Docking', link: '/features/docking' },
+          { text: 'Hangar', link: '/features/hangar' },
+          { text: 'Recorder', link: '/features/recorder' },
         ],
       },
       {

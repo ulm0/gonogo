@@ -11,6 +11,11 @@ import type {
   ErrorFrame,
   GovernorRequest,
   GovernorView,
+  HangarCreateRequest,
+  HangarFile,
+  HangarListing,
+  HangarSaved,
+  HangarSaveRequest,
   HireRequest,
   LiveryDesignRequest,
   LiveryView,
@@ -24,6 +29,10 @@ import type {
   RelayForwardRequest,
   RelayService,
   RelayTargetRequest,
+  RecorderCommit,
+  RecorderCommitRequest,
+  RecorderDiff,
+  RecorderStatus,
   RelayView,
   ScheduleRequest,
   ScheduleView,
@@ -412,6 +421,52 @@ export async function updateLogEntry(id: string, request: LogRequest): Promise<L
 
 export async function deleteLogEntry(id: string): Promise<void> {
   await call('DELETE', `/log/${encodeURIComponent(id)}`);
+}
+
+/** Hangar and Recorder: the files and the git of one agent's folder. Nothing here comes in a frame: the page asks again. */
+const understood = (ok: boolean, value: unknown): unknown => {
+  if (!ok) throw failure('The server sent an answer gonogo does not understand.');
+  return value;
+};
+
+export async function listFiles(agent: string, path: string): Promise<HangarListing> {
+  const value = await call('GET', `${agentPath(agent)}/files?path=${encodeURIComponent(path)}`);
+  return understood(Array.isArray(asRecord(value)?.entries), value) as HangarListing;
+}
+
+export async function readFile(agent: string, path: string): Promise<HangarFile> {
+  const value = await call('GET', `${agentPath(agent)}/file?path=${encodeURIComponent(path)}`);
+  return understood(typeof asRecord(value)?.text === 'string' && typeof asRecord(value)?.etag === 'string', value) as HangarFile;
+}
+
+export async function saveFile(agent: string, request: HangarSaveRequest): Promise<HangarSaved> {
+  const value = await call('PUT', `${agentPath(agent)}/file`, request);
+  return understood(typeof asRecord(value)?.etag === 'string', value) as HangarSaved;
+}
+
+export async function createFile(agent: string, request: HangarCreateRequest): Promise<HangarSaved> {
+  const value = await call('POST', `${agentPath(agent)}/file`, request);
+  return understood(typeof asRecord(value)?.etag === 'string', value) as HangarSaved;
+}
+
+export async function gitStatus(agent: string): Promise<RecorderStatus> {
+  const value = await call('GET', `${agentPath(agent)}/git`);
+  return understood(typeof asRecord(value)?.repo === 'boolean', value) as RecorderStatus;
+}
+
+export async function gitDiff(agent: string, path: string, staged: boolean): Promise<RecorderDiff> {
+  const value = await call('GET', `${agentPath(agent)}/git/diff?path=${encodeURIComponent(path)}&staged=${staged ? 1 : 0}`);
+  return understood(typeof asRecord(value)?.diff === 'string', value) as RecorderDiff;
+}
+
+export async function gitLog(agent: string): Promise<RecorderCommit[]> {
+  const value = await call('GET', `${agentPath(agent)}/git/log`);
+  return understood(Array.isArray(value), value) as RecorderCommit[];
+}
+
+export async function gitCommit(agent: string, request: RecorderCommitRequest): Promise<RecorderCommit> {
+  const value = asRecord(await call('POST', `${agentPath(agent)}/git/commit`, request));
+  return understood(asRecord(value?.commit) !== null, value?.commit) as RecorderCommit;
 }
 
 /** Downlink: the inbox. It comes in the state and in `downlink` frames; each call answers with it as it is now. */

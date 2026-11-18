@@ -65,12 +65,15 @@ import {
 import { readCustomCommand } from './command.js';
 import type { Downlink } from './downlink.js';
 import { DOCK_ROUTES } from './docking.js';
+import { HANGAR_BODY_MAX_BYTES } from './hangar.js';
+import type { Hangar } from './hangar.js';
 import type { Docking } from './docking.js';
 import { createMcpHandler } from './mcp.js';
 import { parsePropellantRequest } from './propellant.js';
 import type { Liveries } from './livery.js';
 import type { MissionLog } from './missionlog.js';
 import type { Propellant } from './propellant.js';
+import type { Recorder } from './recorder.js';
 import type { Relay } from './relay.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
@@ -110,6 +113,9 @@ export interface WebOptions {
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'test'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
   docking?: Pick<Docking, 'view' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
+  /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
+  hangar?: Hangar;
+  recorder?: Recorder;
   log: Logger;
 }
 
@@ -543,8 +549,8 @@ export function createWebServer(options: WebOptions): WebServer {
     (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase() === 'application/json';
 
   /** The JSON object in the body, or null after the error answer went out. */
-  const jsonObject = async (req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown> | null> => {
-    const body = await readBody(req, MAX_REST_BODY_BYTES);
+  const jsonObject = async (req: IncomingMessage, res: ServerResponse, limit = MAX_REST_BODY_BYTES): Promise<Record<string, unknown> | null> => {
+    const body = await readBody(req, limit);
     if (!body.ok) {
       if (body.reason === 'too_large') sendApiError(res, 413, 'request body too large', 'too_large');
       else res.destroy();
@@ -566,6 +572,44 @@ export function createWebServer(options: WebOptions): WebServer {
   const agentName = (res: ServerResponse, raw: string | undefined): string | null => {
     if (raw !== undefined && nameRe.test(raw)) return raw;
     sendNotFound(res, 'unknown agent');
+    return null;
+  };
+
+  /** /api/agents/<name>/files, file and git: Hangar and Recorder. The query is read here; the checks of the path are theirs. */
+  const matchWorkspace = (s: string[]): ApiRoute | null => {
+    const { hangar, recorder } = options;
+    const query = (req: IncomingMessage): URLSearchParams => new URL(req.url ?? '/', 'http://localhost').searchParams;
+    const run = (res: ServerResponse, work: (name: string) => Promise<unknown>): Promise<void> | void => {
+      const name = agentName(res, s[2]);
+      if (name !== null) return work(name).then((answer) => sendJson(res, 200, answer));
+    };
+    if (hangar && s.length === 4 && s[3] === 'files') {
+      return { allow: ['GET'], run: (req, res) => run(res, (name) => hangar.list(name, query(req).get('path') ?? '')) };
+    }
+    if (hangar && s.length === 4 && s[3] === 'file') {
+      return {
+        allow: ['GET', 'PUT', 'POST'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return run(res, (name) => hangar.read(name, query(req).get('path') ?? ''));
+          const body = await jsonObject(req, res, HANGAR_BODY_MAX_BYTES);
+          if (body) await run(res, (name) => (req.method === 'PUT' ? hangar.save(name, body) : hangar.create(name, body)));
+        },
+      };
+    }
+    if (recorder && s[3] === 'git' && s.length === 4) return { allow: ['GET'], run: (_req, res) => run(res, (name) => recorder.status(name)) };
+    if (recorder && s[3] === 'git' && s.length === 5 && s[4] === 'log') return { allow: ['GET'], run: (_req, res) => run(res, (name) => recorder.log(name)) };
+    if (recorder && s[3] === 'git' && s.length === 5 && s[4] === 'diff') {
+      return { allow: ['GET'], run: (req, res) => run(res, (name) => recorder.diff(name, query(req).get('path') ?? '', query(req).get('staged') === '1')) };
+    }
+    if (recorder && s[3] === 'git' && s.length === 5 && s[4] === 'commit') {
+      return {
+        allow: ['POST'],
+        run: async (req, res) => {
+          const body = await jsonObject(req, res);
+          if (body) await run(res, (name) => recorder.commit(name, body));
+        },
+      };
+    }
     return null;
   };
 
@@ -881,6 +925,8 @@ export function createWebServer(options: WebOptions): WebServer {
       return null;
     }
     if (s[1] !== 'agents') return null;
+    const workspace = s.length >= 4 ? matchWorkspace(s) : null;
+    if (workspace) return workspace;
     if (s.length === 3) {
       return {
         allow: ['PATCH', 'DELETE'],

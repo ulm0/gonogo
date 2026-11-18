@@ -1508,3 +1508,80 @@ export interface Hub {
   /** Clears a Redline trip; conflict when the agent is not tripped. */
   resume(name: string): AgentView;
 }
+
+/* ---- Hangar and Recorder (docs/hangar-spec.md, docs/recorder-spec.md): the files and the git of one agent's folder ---- */
+
+/** The editor opens and saves a file of at most this many bytes. */
+export const HANGAR_FILE_MAX_BYTES = 1024 * 1024;
+export interface HangarEntry {
+  name: string;
+  kind: 'file' | 'dir' | 'link';
+  /** Bytes of a file; 0 for the others. */
+  size: number;
+}
+export interface HangarListing {
+  /** The folder, relative to the agent's folder, with `/` between names; '' is the folder itself. */
+  path: string;
+  entries: HangarEntry[];
+  /** The folder has more entries than the list holds. */
+  truncated: boolean;
+}
+export interface HangarFile {
+  path: string;
+  text: string;
+  size: number;
+  /** A hash of the content: a save sends it back, and the server refuses when the file no longer has it. */
+  etag: string;
+}
+export interface HangarSaved {
+  path: string;
+  size: number;
+  etag: string;
+}
+/** A save carries the etag of the text it was opened from. */
+export interface HangarSaveRequest {
+  path: string;
+  text: string;
+  etag: string;
+}
+export interface HangarCreateRequest {
+  path: string;
+  text?: string;
+}
+
+export const RECORDER_MESSAGE_MAX_CHARS = 10_000;
+export const RECORDER_LOG_MAX = 50;
+export const RECORDER_SCOPES = ['all', 'staged'] as const;
+export type RecorderScope = (typeof RECORDER_SCOPES)[number];
+export interface RecorderFile {
+  path: string;
+  /** Letter of the index (`M`, `A`, `D`, `R`, `C`, `U`), a space when the index is as the last commit, `?` for an untracked file. */
+  index: string;
+  /** Letter of the working tree, a space, or `?` for an untracked file. */
+  tree: string;
+  /** The old path of a rename or a copy. */
+  from?: string;
+}
+export interface RecorderAuthor {
+  name: string;
+  email: string;
+}
+/** `repo: false` is an answer, not an error: the folder is not what the Recorder can work on, and `reason` says why. */
+export type RecorderStatus =
+  | { repo: false; reason: string }
+  | { repo: true; branch: string; files: RecorderFile[]; more: number; author: RecorderAuthor | null };
+export interface RecorderDiff {
+  diff: string;
+  truncated: boolean;
+}
+export interface RecorderCommit {
+  hash: string;
+  author: string;
+  /** ms epoch. */
+  at: number;
+  subject: string;
+}
+export interface RecorderCommitRequest {
+  message: string;
+  scope: RecorderScope;
+}

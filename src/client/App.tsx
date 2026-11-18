@@ -5,10 +5,12 @@ import { Loop } from './Activity.js';
 import * as api from './api.js';
 import { Downlink } from './Downlink.js';
 import { FlightPlan } from './FlightPlan.js';
+import { Hangar } from './Hangar.js';
 import { HireForm } from './HireForm.js';
 import { LaunchWindow } from './LaunchWindow.js';
 import { Livery } from './Livery.js';
 import { MissionLog } from './MissionLog.js';
+import { Recorder } from './Recorder.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
@@ -283,6 +285,8 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'downlink') return <Downlink />;
   if (view === 'log') return <MissionLog />;
   if (view === 'livery') return <Livery />;
+  if (view === 'hangar') return <Hangar />;
+  if (view === 'recorder') return <Recorder />;
   if (phone) {
     return (
       <main className="room room-phone">

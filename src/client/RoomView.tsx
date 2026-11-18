@@ -33,7 +33,7 @@ import {
   voteOf,
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
-import { closeConsole, openConsole, openEdit, openHire, showLoop, useNow, useStore } from './store.js';
+import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showLoop, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { legendOf, sinceText } from './wall.js';
@@ -300,6 +300,12 @@ function Actions({ agent, onRemove, removeRef, locked, run }: { agent: AgentView
       )}
       <button type="button" className="btn" data-kind="quiet" aria-disabled={locked || undefined} onClick={() => !locked && openEdit(agent.name)}>
         Edit
+      </button>
+      <button type="button" className="btn" data-kind="quiet" onClick={() => openHangar(agent.name)}>
+        Open files
+      </button>
+      <button type="button" className="btn" data-kind="quiet" onClick={() => openRecorder(agent.name)}>
+        Open git
       </button>
       {!agent.boss && (
         <button type="button" className="btn" data-kind="danger" ref={removeRef} aria-disabled={locked || undefined} onClick={() => !locked && onRemove()}>
