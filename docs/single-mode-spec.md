@@ -35,9 +35,12 @@ Design by FIDO, 2026-11-18, task t58. Status: draft, not built. Read from `origi
 - **Clean Room on Linux without Docker around gonogo is refused** (see item 8); Docker and Docker Desktop are the supported places.
 - Docker: `stop_grace_period` 60 s in `compose.yaml` (people who copied the compose file keep 15 s: rooms may be killed mid-shutdown; said in the notes); healthcheck path changes with the image.
 
-## Rolling back to 0.4.x
+## Rolling back to 0.4.x (RETRO's steps)
 
-1. Stop gonogo (SIGTERM; with `--pty-host`, stop or finish the agents first: agents started by 0.5 hold hook URLs of their room's loopback port, and a 0.4 server picks its own port). 2. Install 0.4.x (`npm i -g @ulm0/gonogo@0.4.x`, `brew` pin, or the 0.4 image tag; with Docker, the self-update UNDO does it and the old image's healthcheck on `/` is its own). 3. Start `gonogo`. Main works unchanged: `<home>/token` is the same value, nothing in the root was moved. Leftovers are harmless: `run/room-token`, `run/port`, `run/supervisor.lock`, `rooms.json`, `rooms/<id>/`. Other rooms are reachable with 0.4's `gonogo rooms` (its `rooms-token` is made again, new value), or alone with `gonogo --home <dir>`. 4. Compose: keep `stop_grace_period` 60 s; no change needed.
+1. Stop the 0.5 supervisor. With `--pty-host`, also stop the agents (or stop the pty host): a 0.4 server adopts pty hosts at the hub URL they started with, which is the 0.5 child port, so **restart the agents after the downgrade**.
+2. Install 0.4.x and run `gonogo` as before. `<home>/token` is the same value, so main's links work. `run/room-token`, `run/port` and `run/supervisor.lock` are ignored and can be deleted.
+3. Other rooms: 0.4.x `gonogo rooms` makes a **new** `rooms-token` (0.5 deleted it), so the rooms bookmarks change once. The rooms' data stays in `rooms/<id>`.
+4. Docker: pin the 0.4.x tag (self-update cannot go back across the supervisor change unless the UNDO image is still on the host), and set `stop_grace_period` back as you like.
 
 ## Scope: two PRs, release together (a build between them refuses Docker update for everyone)
 
