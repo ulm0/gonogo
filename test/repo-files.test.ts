@@ -99,7 +99,7 @@ describe('Dockerfile', () => {
   });
 
   it('has a healthcheck on the port of CMD, and scopes git\'s safe.directory to /projects', () => {
-    expect(text).toMatch(/^HEALTHCHECK .*\\\n\s+CMD \["node", "-e", "fetch\('http:\/\/127\.0\.0\.1:7777\/'\)/m);
+    expect(text).toMatch(/^HEALTHCHECK .*\\\n\s+CMD \["node", "-e", "fetch\('http:\/\/127\.0\.0\.1:7777\/rooms\/health'\)/m);
     expect(text).toMatch(/^CMD \["--host", "0\.0\.0\.0", "--port", "7777"\]$/m);
     expect(text).not.toMatch(/safe\.directory\s+'\*'/);
     expect(text).toMatch(/safe\.directory '\/projects\/\*'/);
