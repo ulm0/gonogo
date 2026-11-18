@@ -8,7 +8,7 @@ Documentation: <https://gonogo.ulm0.com/>
 
 ## Install
 
-Needs Node 24+, macOS or Linux (glibc), and `claude` on your `PATH`, signed in. The npm package is `@ulm0/gonogo` (the unscoped `gonogo` is another project).
+Needs Node 24+, macOS or Linux (glibc), and one agent CLI on your `PATH`, signed in (`claude` by default; Codex, Gemini CLI and others also work). The npm package is `@ulm0/gonogo` (the unscoped `gonogo` is another project).
 
 ```
 pnpm dlx @ulm0/gonogo                      # or: pnpm add -g @ulm0/gonogo && gonogo
