@@ -8,7 +8,8 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 | Engine | Program | State from | Mail and votes | Role | Permission modes | Checked |
 |---|---|---|---|---|---|---|
 | Claude Code | `claude` | hooks, title, screen | yes | system prompt | yes | real runs |
-| Gemini CLI | `gemini` | hooks | yes | first prompt | `default`, `auto_edit`, `yolo` | its help and source (0.59.0), not run with a model |
+| Gemini CLI (legacy) | `gemini` | hooks | yes | first prompt | `default`, `auto_edit`, `yolo` | its help and source (0.59.0), not run with a model |
+| Antigravity CLI | `agy` | output | no | first prompt | `accept-edits`, `auto`, `--dangerously-skip-permissions` | its help (1.5.11), not run against a signed-in agy |
 | Codex | `codex` | output | yes | first prompt | default, `--full-auto`, `--dangerously-bypass-approvals-and-sandbox` | docs only |
 | opencode | `opencode` | output | yes | first prompt | no | docs only |
 | Kimi CLI | `kimi` | output | yes | no | no | docs only |
@@ -39,7 +40,8 @@ The MODEL field of the hire and edit form is free text with suggestions; empty m
 | Engine | Suggestions | Flag checked in |
 |---|---|---|
 | Claude Code | `sonnet`, `opus`, `haiku` | real runs (only `haiku`) |
-| Gemini CLI | `auto`, `pro`, `flash`, `flash-lite` | `--help` of 0.59.0 |
+| Gemini CLI (legacy) | `auto`, `pro`, `flash`, `flash-lite` | `--help` of 0.59.0 |
+| Antigravity CLI | none | `--help` of 1.5.11 |
 | pi | `sonnet`, `haiku` | `--help` of 1.5.2 |
 | Codex, Kimi CLI, Cursor Agent | none | their docs, not installed |
 

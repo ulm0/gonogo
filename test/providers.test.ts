@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRecord, Launcher, Provider } from '../src/shared/protocol.js';
 import { buildRoleText, createLauncher } from '../src/server/launcher.js';
-import { buildGeminiSettings, GEMINI_HOOKS, GEMINI_SETTINGS_FILE, HOOK_SHIM, installedProviders, shellQuote } from '../src/server/providers.js';
+import { AGY_HOOK_SHIM, AGY_MODES, buildAgyHooks, buildGeminiSettings, GEMINI_HOOKS, GEMINI_SETTINGS_FILE, HOOK_SHIM, installedProviders, shellQuote } from '../src/server/providers.js';
 
 const SID = '0b2f5c1e-6d3a-4f7e-9a1b-2c3d4e5f6a7b';
 const HUB = 'http://127.0.0.1:7777';
@@ -233,5 +233,97 @@ describe('installedProviders', () => {
     expect(installedProviders(bin, false)).toStrictEqual(['gemini', 'custom']);
     expect(installedProviders(`/nowhere:${bin}`, true)).toStrictEqual(['claude', 'gemini', 'custom']);
     expect(installedProviders(undefined, false)).toStrictEqual(['custom']);
+  });
+});
+
+describe('the Antigravity (agy) hook shim and hooks.json', () => {
+  const runShim = (url: string, tokenFile: string, input: string): Promise<string> =>
+    new Promise((done, fail) => {
+      const child = spawn(process.execPath, ['-e', AGY_HOOK_SHIM, url, tokenFile], { stdio: ['pipe', 'pipe', 'inherit'] });
+      let out = '';
+      child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
+      child.on('error', fail);
+      child.on('close', () => done(out));
+      child.stdin.end(input);
+    });
+  const hub = async (answer: string): Promise<{ port: number; seen: Array<{ url?: string; auth?: string; body: unknown }>; close(): void }> => {
+    const seen: Array<{ url?: string; auth?: string; body: unknown }> = [];
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk: Buffer) => (body += chunk.toString()));
+      req.on('end', () => {
+        seen.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(body) });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(answer);
+      });
+    });
+    await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
+    return { port: (server.address() as AddressInfo).port, seen, close: () => server.close() };
+  };
+
+  it('maps camelCase input to the hub fields, and the hub block to agy continue', async () => {
+    const h = await hub('{"decision":"block","reason":"gonogo: 1 new message from user. Call read_messages."}');
+    try {
+      const tokenFile = join(tmp, 'token');
+      await writeFile(tokenFile, 'abc123\n');
+      const input = JSON.stringify({ conversationId: 'c1', lastUserInput: 'hello', toolCall: { name: 'run_command', args: { cmd: 'ls' } }, fullyIdle: true });
+      const out = await runShim(`http://127.0.0.1:${h.port}/hook/ana/Stop`, tokenFile, input);
+      expect(JSON.parse(out)).toStrictEqual({ decision: 'continue', reason: 'gonogo: 1 new message from user. Call read_messages.' });
+      expect(h.seen).toStrictEqual([{ url: '/hook/ana/Stop', auth: 'Bearer abc123', body: { prompt: 'hello', tool_name: 'run_command', tool_input: { cmd: 'ls' } } }]);
+    } finally {
+      h.close();
+    }
+  });
+
+  it('sends a PostToolUse with an error to PostToolUseFailure, and answers a PreToolUse with a decision', async () => {
+    const h = await hub('{}');
+    try {
+      const tokenFile = join(tmp, 'token');
+      await writeFile(tokenFile, 'abc123\n');
+      expect(await runShim(`http://127.0.0.1:${h.port}/hook/ana/PostToolUse`, tokenFile, '{"toolCall":{"name":"x"},"error":"boom"}')).toBe('{}');
+      expect(await runShim(`http://127.0.0.1:${h.port}/hook/ana/PostToolUse`, tokenFile, '{"toolCall":{"name":"x"}}')).toBe('{}');
+      expect(JSON.parse(await runShim(`http://127.0.0.1:${h.port}/hook/ana/PreToolUse`, tokenFile, '{"toolCall":{"name":"x"}}'))).toStrictEqual({ decision: 'allow' });
+      expect(h.seen.map((s) => s.url)).toStrictEqual(['/hook/ana/PostToolUseFailure', '/hook/ana/PostToolUse', '/hook/ana/PreToolUse']);
+    } finally {
+      h.close();
+    }
+  });
+
+  it('fails open: {} for a Stop, allow for a PreToolUse, when the hub cannot be reached or says nothing', async () => {
+    const tokenFile = join(tmp, 'token');
+    await writeFile(tokenFile, 'abc123\n');
+    expect(await runShim('http://127.0.0.1:9/hook/ana/Stop', tokenFile, '{}')).toBe('{}');
+    expect(JSON.parse(await runShim('http://127.0.0.1:9/hook/ana/PreToolUse', tokenFile, '{}'))).toStrictEqual({ decision: 'allow' });
+    expect(await runShim('http://127.0.0.1:9/hook/ana/Stop', tokenFile, 'not json')).toBe('{}');
+  });
+
+  it('writes hooks.json in agy shape: a matcher wrapper for the tool events, a plain list for the others, timeouts in seconds', () => {
+    const hooks = buildAgyHooks({ hubUrl: 'http://127.0.0.1:7777', name: 'ana', tokenFile: '/h/agents/ana/token' }) as Record<string, unknown[]>;
+    expect(Object.keys(hooks)).toStrictEqual(['PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop']);
+    const wrapped = hooks.PreToolUse[0] as { matcher: string; hooks: Array<{ type: string; command: string; timeout: number }> };
+    expect(wrapped.matcher).toBe('*');
+    expect(wrapped.hooks[0]).toMatchObject({ type: 'command', timeout: 11 });
+    expect(wrapped.hooks[0].command).toContain("'http://127.0.0.1:7777/hook/ana/PreToolUse'");
+    const plain = hooks.PreInvocation[0] as { type: string; command: string };
+    expect(plain.type).toBe('command');
+    expect(plain.command).toContain('/hook/ana/UserPromptSubmit');
+  });
+
+  it('maps the permission modes onto agy flags', () => {
+    expect(AGY_MODES).toStrictEqual({ default: [], acceptEdits: ['--mode', 'accept-edits'], auto: ['--mode', 'auto'], bypassPermissions: ['--dangerously-skip-permissions'] });
+  });
+});
+
+describe('antigravity (agy) start', () => {
+  it('passes the mode, the model and the bare role as -i; no hooks, no MCP, no files in the agent folder', async () => {
+    const l = launcher();
+    const accept = (await l.prepareStart(agent('antigravity', { mode: 'acceptEdits', model: 'some-model' }), START)).spec;
+    expect(accept.file).toBe('agy');
+    expect(accept.args.slice(0, 4)).toStrictEqual(['--mode', 'accept-edits', '--model', 'some-model']);
+    expect(accept.args.slice(-2, -1)).toStrictEqual(['-i']);
+    expect(accept.args.at(-1)).not.toContain('read_messages');
+    const bypass = (await l.prepareStart(agent('antigravity', { mode: 'bypassPermissions' }), START)).spec;
+    expect(bypass.args[0]).toBe('--dangerously-skip-permissions');
+    expect(bypass.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBeUndefined();
   });
 });

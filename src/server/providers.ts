@@ -91,6 +91,57 @@ export function buildGeminiSettings(ctx: Pick<StartContext, 'hubUrl' | 'name' | 
   };
 }
 
+// unused until a per-agent hooks.json location is verified (docs/facts/antigravity.md)
+/**
+ * Antigravity CLI (agy) hook event to the hub's own. Written from the vendor's hook page (docs/facts/antigravity.md), not from a run.
+ * PreInvocation is the nearest of agy's events to a submitted prompt; its stdin carries `lastUserInput`.
+ */
+export const AGY_HOOKS: Readonly<Record<string, HookEvent>> = {
+  PreInvocation: 'UserPromptSubmit',
+  PreToolUse: 'PreToolUse',
+  PostToolUse: 'PostToolUse',
+  Stop: 'Stop',
+};
+export const AGY_HOOKS_FILE = 'agy-hooks.json';
+export const AGY_MODES: Record<PermissionMode, string[]> = {
+  default: [],
+  acceptEdits: ['--mode', 'accept-edits'],
+  auto: ['--mode', 'auto'],
+  bypassPermissions: ['--dangerously-skip-permissions'],
+};
+
+/**
+ * agy runs command hooks too: JSON on stdin in camelCase, JSON on stdout. This is HOOK_SHIM for it: it maps lastUserInput to
+ * prompt and toolCall.name and args to tool_name and tool_input, sends a PostToolUse that has an `error` to PostToolUseFailure,
+ * and turns the hub's Stop block into agy's Stop continue (the only decision that keeps agy going). A PreToolUse must answer
+ * with a decision, so it says allow; any failure prints {} (a Stop or PostToolUse then lets agy go on).
+ * No single quote inside: it is passed in single quotes.
+ */
+export const AGY_HOOK_SHIM = [
+  'let d="";process.stdin.on("data",c=>d+=c).on("end",async()=>{let u=process.argv[1];const pre=u.endsWith("/PreToolUse");try{',
+  'const i=JSON.parse(d||"{}"),b={},c=i.toolCall&&typeof i.toolCall==="object"?i.toolCall:{};',
+  'if(i.lastUserInput!==undefined)b.prompt=i.lastUserInput;',
+  'if(c.name!==undefined)b.tool_name=c.name;if(c.args!==undefined)b.tool_input=c.args;',
+  'if(i.error&&u.endsWith("/PostToolUse"))u+="Failure";',
+  'const t=require("fs").readFileSync(process.argv[2],"utf8").trim();',
+  'const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},',
+  `body:JSON.stringify(b),signal:AbortSignal.timeout(${HOOK_TIMEOUT_S * 1000})});`,
+  'const a=r.ok?JSON.parse(await r.text()):{};',
+  'process.stdout.write(JSON.stringify(a.decision==="block"?{decision:"continue",reason:a.reason}:pre?{decision:"allow"}:{}))',
+  '}catch{process.stdout.write(pre?"{\\"decision\\":\\"allow\\"}":"{}")}})',
+].join('');
+
+/** hooks.json for agy: the tool events take a matcher wrapper (every tool), the others a plain handler list. Its timeout is in seconds. */
+export function buildAgyHooks(ctx: Pick<StartContext, 'hubUrl' | 'name' | 'tokenFile'>, node = process.execPath): Record<string, unknown> {
+  const hooks: Record<string, unknown> = {};
+  for (const [event, ours] of Object.entries(AGY_HOOKS)) {
+    const url = `${ctx.hubUrl}${HOOK_PATH_PREFIX}${ctx.name}/${ours}`;
+    const handler = { type: 'command', command: [node, '-e', AGY_HOOK_SHIM, url, ctx.tokenFile].map(shellQuote).join(' '), timeout: HOOK_TIMEOUT_S + 1 };
+    hooks[event] = event === 'PreToolUse' || event === 'PostToolUse' ? [{ matcher: '*', hooks: [handler] }] : [handler];
+  }
+  return hooks;
+}
+
 /** The MCP entry for a CLI that reads Claude's mcp.json shape but may not expand variables: the token is written in. */
 function mcpJson(ctx: StartContext, extra: Record<string, unknown> = {}): string {
   const server = { type: 'http', url: `${ctx.hubUrl}${MCP_PATH}`, headers: { Authorization: `Bearer ${ctx.token}` }, ...extra };
@@ -113,6 +164,10 @@ export function buildProviderStart(provider: OtherProvider, ctx: StartContext): 
         env: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: file(GEMINI_SETTINGS_FILE) },
         files: { [GEMINI_SETTINGS_FILE]: JSON.stringify(buildGeminiSettings(ctx), null, 2) },
       };
+    case 'antigravity':
+      // No hooks and no gonogo tools yet (see PROVIDER_INFO): a terminal with a lamp that knows the mode, the model and its role.
+      // The role alone, without the preamble about tools it does not have. -i runs it as the first prompt and stays interactive.
+      return { args: [...AGY_MODES[ctx.mode], ...model, '-i', ctx.role], env: {}, files: {} };
     case 'codex':
       // -c overrides config.toml for this run only, so CODEX_HOME (and the owner's login in it) stays as it is.
       return {

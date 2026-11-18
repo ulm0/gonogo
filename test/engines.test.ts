@@ -48,7 +48,7 @@ const launcher = (extra: { env?: Record<string, string>; keys?: (name: string) =
 
 describe('PROVIDER_INFO: model, install and docs', () => {
   it('the engines with a model setting are the ones whose `--model` was checked, and custom has none', () => {
-    expect(PROVIDERS.filter((p) => PROVIDER_INFO[p].model !== null).sort()).toEqual(['claude', 'codex', 'cursor', 'gemini', 'kimi', 'pi']);
+    expect(PROVIDERS.filter((p) => PROVIDER_INFO[p].model !== null).sort()).toEqual(['antigravity', 'claude', 'codex', 'cursor', 'gemini', 'kimi', 'pi']);
     expect(PROVIDER_INFO.custom).toMatchObject({ model: null, install: null, docs: '' });
   });
 
