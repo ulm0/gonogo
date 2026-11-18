@@ -403,7 +403,7 @@ export const LOG_SNIPPET_CHARS = 200;
 export const LOG_SNIPPET_LEAD_CHARS = 40;
 export const MCP_DESCRIPTIONS = {
   go_nogo:
-    'Answer a T-minus poll from the Director: vote "go" when you are ready to proceed, or "no-go" with a one-sentence reason. Call it when a message asks for a go/no-go. The result says whether the vote counted.',
+    'Answer a T-minus poll or a Static fire from the Director: vote "go" when you are ready to proceed, or "no-go" with a one-sentence reason. Call it when a message asks for a go/no-go. The result says whether the vote counted.',
   send_message:
     'Send a message to another agent (by name), to the boss ("boss") or to the human owner ("user"). An agent of a docked station is addressed as "name@station". The recipient gets a one-line pointer and reads the text with read_messages. The result tells you at once whether the message was queued or could not be delivered.',
   list_roster: 'List every agent in the operations room with its name, role and current state, and say which one is the boss. Agents of docked stations are listed too, under docked.',

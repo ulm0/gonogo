@@ -1,17 +1,19 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, RefObject } from 'react';
-import { MAX_AGENTS } from '../shared/protocol.js';
+import { MAX_AGENTS, SUBJECT_MAX_CHARS } from '../shared/protocol.js';
 import * as api from './api.js';
 import { legendsOf, seat } from './room.js';
 import { useNow, useStore } from './store.js';
 import {
   briefedText,
   clockText,
+  fireTargets,
   gaugeSegments,
   legendOf,
   missionOf,
   noteLine,
   pollButtons,
+  pollHeading,
   pollTargets,
   pollWord,
   sequenceLabel,
@@ -148,6 +150,8 @@ function TMinus(): ReactElement {
   const list = useMemo(() => order.flatMap((name) => (Object.hasOwn(agents, name) ? [agents[name]] : [])), [order, agents]);
   const legends = useMemo(() => legendsOf(seat(list)), [list]);
   const targets = useMemo(() => pollTargets(list), [list]);
+  const crew = useMemo(() => fireTargets(list), [list]);
+  const [subject, setSubject] = useState('');
   const { busy, error, run } = useRun();
   const actions = useRef<HTMLDivElement>(null);
   const keep = useKeepFocus(actions);
@@ -165,7 +169,7 @@ function TMinus(): ReactElement {
   return (
     // A finished poll tints this module, not the whole wall.
     <div className={word.tone === 'none' ? 'wall-block wall-tminus module' : 'wall-block wall-tminus module flood'} data-tone={word.tone === 'none' ? undefined : word.tone}>
-      <Heading letter="C">T-MINUS</Heading>
+      <Heading letter="C">{pollHeading(poll)}</Heading>
       <p className="wall-word">
         <span className="disp" data-ghost={word.ghost}>
           {word.word}
@@ -207,6 +211,42 @@ function TMinus(): ReactElement {
           </button>
         ))}
       </div>
+      {poll === null && (
+        // Static fire: the same poll, asking SIMSUP to break the subject and RETRO to write its rollback.
+        <form
+          className="wall-fire"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (crew.length > 0 && subject.trim() !== '') run(() => api.startPoll({ subject }).then(() => setSubject('')));
+          }}
+        >
+          <input
+            className="input"
+            type="text"
+            value={subject}
+            maxLength={SUBJECT_MAX_CHARS - 'Static fire: '.length}
+            autoComplete="off"
+            aria-label="What to static fire"
+            aria-describedby={crew.length === 0 ? 'wall-fire-why' : undefined}
+            placeholder="What to test"
+            onChange={(event) => setSubject(event.target.value)}
+          />
+          <button
+            type="submit"
+            className="btn"
+            disabled={crew.length === 0}
+            aria-disabled={busy || subject.trim() === '' || undefined}
+            title={crew.length === 0 ? undefined : `Ask ${crew.map((a) => legend(a.name)).join(' and ')} to break it and plan the rollback`}
+          >
+            Static fire
+          </button>
+          {crew.length === 0 && (
+            <p id="wall-fire-why" className="hint">
+              Static fire needs a running SIMSUP or RETRO.
+            </p>
+          )}
+        </form>
+      )}
     </div>
   );
 }

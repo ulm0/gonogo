@@ -9,7 +9,7 @@ DOWNLINK (top bar, or DOWN on a phone) is your inbox. Design and limits: [`docs/
 - Every message an agent sends to `user`.
 - One line for each:
   - Redline trip (agent and reason, including Propellant trips)
-  - T-minus result (GO, HOLD or ABORTED, with the poll's note)
+  - T-minus result (GO, HOLD or ABORTED, with the poll's note; a [Static fire](./static-fire.md) adds every answer)
   - failed Launch Window fire (hub refused it, or it could not be sent)
   - Uplink refused for bad signature more than 3 times in 10 minutes (one line per uplink per 10 minutes, never the secret)
   - task an agent moved to blocked or review (not your own moves)

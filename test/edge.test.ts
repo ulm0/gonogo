@@ -3442,6 +3442,15 @@ describe('web: REST', () => {
       expect(hubCalls.filter((c) => c.fn === 'startPoll').map((c) => c.args[0])).toStrictEqual([{ agents: ['ana', 'ben'] }, {}]);
     });
 
+    it('POST /api/poll passes a static fire subject to the hub, and refuses one that is not text', async () => {
+      const { port, hubCalls } = await startWeb();
+      expect((await api(port, 'POST', '/api/poll', { subject: 'the login form' })).status).toBe(201);
+      expect(hubCalls.filter((c) => c.fn === 'startPoll').map((c) => c.args[0])).toStrictEqual([{ subject: 'the login form' }]);
+      const bad = await api(port, 'POST', '/api/poll', { subject: 3 });
+      expect(bad.status).toBe(400);
+      expect(bad.json()).toMatchObject({ code: 'bad_request', field: 'subject' });
+    });
+
     it.each([
       ['agents that is a string', { agents: 'ana' }],
       ['agents with a number in it', { agents: ['ana', 3] }],

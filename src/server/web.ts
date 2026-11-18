@@ -346,6 +346,10 @@ function parsePoll(o: Record<string, unknown>): Parsed<PollRequest> {
     if (!Array.isArray(o.agents) || !o.agents.every((a) => typeof a === 'string')) return fieldError('agents', 'a list of names');
     value.agents = o.agents as string[];
   }
+  if (o.subject !== undefined) {
+    if (typeof o.subject !== 'string') return fieldError('subject', 'text');
+    value.subject = o.subject;
+  }
   return { ok: true, value };
 }
 

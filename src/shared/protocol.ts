@@ -419,6 +419,8 @@ export interface PollView {
   entries: PollEntry[];
   /** One line for the wall display, for example "waiting for guido, fido" or "no-go: simsup". */
   note: string;
+  /** Static fire: what is under test. Absent on a T-minus poll. */
+  subject?: string;
 }
 /** Max Q: a limit on how many agents work at once. limit null = off. */
 export interface GovernorView {
@@ -816,10 +818,13 @@ export interface EditRequest {
   /** Replaces the Clean Room setting; null turns it off. */
   cleanRoom?: CleanRoom | null;
 }
-/** POST /api/poll. Default agents: every running agent except the boss. */
+/** POST /api/poll. Default agents: every running agent except the boss. With `subject` it is a Static fire: SIMSUP and RETRO are asked, `agents` is refused. */
 export interface PollRequest {
   agents?: string[];
+  subject?: string;
 }
+/** Static fire: the positions it briefs. */
+export const STATIC_FIRE_POSITIONS = ['simsup', 'retro'] as const;
 /** PUT /api/governor. */
 export interface GovernorRequest {
   limit: number | null;

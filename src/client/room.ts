@@ -252,15 +252,16 @@ const pollKey = (poll: PollView | null): string => (poll === null ? 'none' : `${
 
 function pollAnnouncement(poll: PollView | null): string | null {
   if (poll === null) return null;
+  const what = poll.subject === undefined ? 'T-minus' : 'Static fire';
   switch (poll.status) {
     case 'open':
-      return 'T-minus: poll started';
+      return poll.subject === undefined ? 'T-minus: poll started' : `Static fire started: ${poll.subject}`;
     case 'go':
-      return 'T-minus: GO';
+      return `${what}: GO`;
     case 'hold':
-      return poll.entries.some((e) => e.vote === 'no-go') ? `T-minus: NO-GO. ${poll.note}` : 'T-minus: HOLD';
+      return poll.entries.some((e) => e.vote === 'no-go') ? `${what}: NO-GO. ${poll.note}` : `${what}: HOLD`;
     case 'aborted':
-      return 'T-minus: poll aborted';
+      return poll.subject === undefined ? 'T-minus: poll aborted' : 'Static fire: aborted';
   }
 }
 

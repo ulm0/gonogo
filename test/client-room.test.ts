@@ -30,8 +30,10 @@ import type { Cell } from '../src/client/room.js';
 import {
   briefedText,
   clockText,
+  fireTargets,
   missionOf,
   noteLine,
+  pollHeading,
   pollTargets,
   pollWord,
   sequenceLabel,
@@ -398,6 +400,23 @@ describe('T-minus', () => {
     expect(noteLine(null, [agent('a', 1), agent('b', 2)], legends)).toBe('No poll. 2 consoles can be asked.');
     expect(noteLine(null, [], legends)).toMatch(/Nobody to ask/);
   });
+
+  it('static fire: SIMSUP and RETRO are the crew, the heading and the note name it', () => {
+    const list = [
+      agent('flight', 0, { boss: true }),
+      agent('sim', 1, { position: 'simsup' }),
+      agent('ret', 2, { position: 'retro', state: 'stopped' }),
+      agent('ret-2', 3, { position: 'retro' }),
+      agent('g', 4, { position: 'guido' }),
+    ];
+    expect(fireTargets(list).map((a) => a.name)).toEqual(['sim', 'ret-2']);
+    expect(fireTargets([agent('g', 1, { position: 'guido' })])).toEqual([]);
+    expect(pollHeading(null)).toBe('T-MINUS');
+    expect(pollHeading(poll())).toBe('T-MINUS');
+    expect(pollHeading(poll({ subject: 'login' }))).toBe('STATIC FIRE');
+    const legends = legendsOf(seat([agent('f', 1, { position: 'fido' })]));
+    expect(noteLine(poll({ subject: 'login', entries: [{ agent: 'f', vote: 'no-go', reason: 'broke', at: 1 }] }), [], legends)).toBe('login · waiting for ana · FIDO: broke');
+  });
 });
 
 describe('live region announcer', () => {
@@ -448,6 +467,16 @@ describe('live region announcer', () => {
     announcer.update(facts([agent('a', 1, { state: 'stopped' })], { unread: 2, poll: poll({ status: 'go' }), limit: 3 }), {});
     vi.advanceTimersByTime(ANNOUNCE_GAP_MS);
     expect(writes).toEqual(['A stopped. 2 unread in the Downlink. T-minus: GO. Max Q limit 3']);
+  });
+
+  it('names a static fire: its start with the subject, its result', () => {
+    const { writes, announcer } = setup();
+    announcer.update(facts([agent('a', 1)]), {});
+    announcer.update(facts([agent('a', 1)], { poll: poll({ subject: 'login' }) }), {});
+    vi.advanceTimersByTime(ANNOUNCE_GAP_MS);
+    announcer.update(facts([agent('a', 1)], { poll: poll({ subject: 'login', status: 'go' }) }), {});
+    vi.advanceTimersByTime(ANNOUNCE_GAP_MS);
+    expect(writes).toEqual(['Static fire started: login', 'Static fire: GO']);
   });
 
   it('waits the gap since the last write before the next one', () => {

@@ -13,7 +13,7 @@ import type {
   ServerInfo,
   StateSnapshot,
 } from '../src/shared/protocol.js';
-import { ACTIVITY_CLIENT_MAX, ENVELOPE_KEEP_MS } from '../src/shared/protocol.js';
+import { ACTIVITY_CLIENT_MAX, AGENT_NAME_PATTERN, ENVELOPE_KEEP_MS } from '../src/shared/protocol.js';
 import {
   applyServerFrame,
   createStore,
@@ -39,7 +39,7 @@ import type { ClientState } from '../src/client/store.js';
 import { briefSentText, displayName, plainActivityNote, stoppedCardDetail } from '../src/client/wording.js';
 import { choosePosition, editRequest, hireRequest, suggestName, validate } from '../src/client/form.js';
 import type { Values } from '../src/client/form.js';
-import { positionById } from '../src/shared/positions.js';
+import { POSITION_IDS, positionById } from '../src/shared/positions.js';
 import {
   gaugeSegments,
   governorSummary,
@@ -622,6 +622,14 @@ describe('position to name', () => {
     expect(suggestName('fido', {})).toBe('fido');
     expect(suggestName('fido', { fido: 1 })).toBe('fido-2');
     expect(suggestName('fido', { fido: 1, 'fido-2': 1 })).toBe('fido-3');
+  });
+
+  it('keeps every suggestion within the name rules (positions are presets, not seats)', () => {
+    for (const id of POSITION_IDS) {
+      const taken = Object.fromEntries([id, ...Array.from({ length: 98 }, (_, i) => `${id}-${i + 2}`)].map((n) => [n, 1]));
+      expect(suggestName(id, taken)).toBe(`${id}-100`);
+      expect(suggestName(id, taken)).toMatch(new RegExp(AGENT_NAME_PATTERN));
+    }
   });
 
   it('is not fooled by a taken name that is a property of Object.prototype', () => {

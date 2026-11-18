@@ -38,6 +38,7 @@ import {
   SCREEN_DIALOG_REASON,
   SEND_RATE_MAX,
   SEND_RATE_WINDOW_MS,
+  SUBJECT_MAX_CHARS,
   SESSION_FLIP_WINDOW_MS,
   SESSION_IN_USE_TEXT,
   SESSION_MISSING_TEXT,
@@ -4707,6 +4708,35 @@ describe('T-minus', () => {
     expect(h.hub.vote('ana', h.gen('ana') + 1, 'go', 'x')).toEqual({ ok: false, note: 'this session has ended' });
     expect(h.hub.vote('ana', h.gen('ana'), 'maybe' as unknown as 'go', 'x').ok).toBe(false);
     expect(h.hub.poll()?.entries[0]?.vote).toBeNull();
+  });
+
+  it('static fire: briefs the running SIMSUP and RETRO, waits for every answer, tells the inbox with the answers, not the boss', async () => {
+    const h = await threeAgents();
+    expectHubError(() => h.hub.startPoll({ subject: 'login' }), 'bad_request', 'no SIMSUP or RETRO is running');
+    for (const [name, position] of [['sim', 'simsup'], ['ret', 'retro'], ['sim-2', 'simsup']] as const) {
+      await h.hub.hire({ name, role: 'x', dir: `/work/${name}`, mode: 'default', position });
+      h.ready(name);
+    }
+    await h.hub.stop('sim-2');
+    expectHubError(() => h.hub.startPoll({ subject: '  ' }), 'bad_request', /subject must be text/, 'subject');
+    expectHubError(() => h.hub.startPoll({ subject: 'x'.repeat(SUBJECT_MAX_CHARS) }), 'bad_request', /subject must be text/, 'subject');
+    expectHubError(() => h.hub.startPoll({ subject: 'login', agents: ['ana'] }), 'bad_request', /picks SIMSUP and RETRO/, 'agents');
+    const view = h.hub.startPoll({ subject: ' the\nlogin  form ' });
+    expect(view).toMatchObject({ subject: 'the login form', status: 'open', note: 'waiting for sim, ret' });
+    expect(messagesTo(h, 'sim')).toMatchObject([{ from: 'user', subject: 'Static fire: the login form', body: expect.stringContaining('try to break it') }]);
+    expect(messagesTo(h, 'ret')).toMatchObject([{ from: 'user', subject: 'Static fire: the login form', body: expect.stringContaining('rollback plan') }]);
+    expect(messagesTo(h, 'ana')).toHaveLength(0);
+    vote(h, 'sim', 'no-go', 'empty password accepted');
+    expect(h.hub.poll()).toMatchObject({ status: 'open', note: 'waiting for ret' });
+    expect(h.notices).toEqual([]);
+    vote(h, 'ret', 'go', 'revert the merge');
+    expect(h.hub.poll()).toMatchObject({ status: 'hold', note: 'no-go: sim' });
+    expect(h.notices).toEqual([['tminus', 'Static fire on the login form: HOLD: no-go: sim · sim: empty password accepted · ret: revert the merge']]);
+    vote(h, 'sim', 'go', 'fixed now');
+    expect(h.hub.poll()).toMatchObject({ status: 'go', note: 'all go' });
+    expect(messagesTo(h, 'flight')).toHaveLength(0);
+    h.hub.abortPoll();
+    expect(messagesTo(h, 'sim').at(-1)).toMatchObject({ subject: 'Static fire: aborted' });
   });
 
   it('holdPoll turns an open poll to hold; hold, abort and a finished poll answer conflict where the spec says', async () => {
