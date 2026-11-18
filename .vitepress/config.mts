@@ -80,6 +80,7 @@ export default defineConfig({
           { text: 'Flight Plan', link: '/features/flight-plan' },
           { text: 'Downlink', link: '/features/downlink' },
           { text: 'Party Line', link: '/features/party-line' },
+          { text: 'Notifications', link: '/features/notifications' },
           { text: 'Mission Log', link: '/features/mission-log' },
           { text: 'Star Chart', link: '/features/star-chart' },
           { text: 'Mass Budget', link: '/features/mass-budget' },

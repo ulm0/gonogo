@@ -7,6 +7,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
+import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
+import { STATUS_TEXT } from './notify.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commissioningSteps, loadMarks, saveMarks, showCommissioning } from './shell.js';
 import type { Mark, Step } from './shell.js';
@@ -102,12 +104,41 @@ export function FlightRules(): ReactElement {
         <h2 className="label" id={`${titleId}-browser`}>
           THIS BROWSER
         </h2>
+        <Notifications />
         <p className="hint">The Commissioning checklist shows on an empty room until you put it away. Only this browser remembers that.</p>
         <button type="button" className="btn" aria-disabled={current.size === 0 || undefined} onClick={() => current.size > 0 && setMarks(new Set())}>
           Show Commissioning again
         </button>
       </section>
     </section>
+  );
+}
+
+/** Browser notifications: a switch for this browser. The key is the user action that lets the browser ask for permission. */
+function Notifications(): ReactElement {
+  const status = useNotifyStatus();
+  const on = status === 'on' || status === 'needs-permission';
+  const blocked = status === 'unsupported' || status === 'insecure' || status === 'denied';
+  return (
+    <div className="rules-notify">
+      <h3 className="label">NOTIFICATIONS</h3>
+      <p className="hint" role="status">
+        {STATUS_TEXT[status]}
+      </p>
+      <button
+        type="button"
+        className="btn"
+        aria-pressed={on}
+        aria-disabled={blocked || undefined}
+        onClick={() => {
+          if (blocked) return;
+          if (on && status === 'on') disableNotifications();
+          else void enableNotifications();
+        }}
+      >
+        {status === 'on' ? 'Turn notifications off' : 'Turn notifications on'}
+      </button>
+    </div>
   );
 }
 
@@ -196,6 +227,7 @@ export function Commissioning(): ReactElement | null {
           </li>
         ))}
       </ol>
+      <p className="hint commission-extra">Away from this tab a lot? Flight Rules can turn on notifications for messages to you, T-minus polls and Relief requests.</p>
     </section>
   );
 }
