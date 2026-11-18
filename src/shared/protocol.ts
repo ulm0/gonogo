@@ -1155,7 +1155,7 @@ export interface StateSnapshot {
 }
 
 /** How this gonogo was installed, from where its own file is. rpm: there is no rpm package, so such an install reads as npm (its file is under lib/node_modules) or other. */
-export const INSTALL_KINDS = ['docker', 'npm', 'pnpm', 'dlx', 'clone', 'other'] as const;
+export const INSTALL_KINDS = ['docker', 'npm', 'pnpm', 'brew', 'dlx', 'clone', 'other'] as const;
 export type InstallKind = (typeof INSTALL_KINDS)[number];
 
 /** The update the Director started from the page: install the new version, then reload. */

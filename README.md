@@ -12,6 +12,7 @@ Needs Node 24+, macOS or Linux (glibc), and one agent CLI on your `PATH`, signed
 
 ```
 pnpm dlx @ulm0/gonogo                      # or: pnpm add -g @ulm0/gonogo && gonogo
+brew install ulm0/tap/gonogo              # Homebrew (macOS, Linux)
 pnpm install && pnpm build && pnpm start   # from a clone
 docker build -t gonogo . && docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_TOKEN -v gonogo-state:/state -v gonogo-projects:/projects gonogo
 ```

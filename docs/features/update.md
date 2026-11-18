@@ -11,6 +11,7 @@ It now also tells **how this gonogo was installed**, from where its own file is,
 | Install | How it is told | What the strip offers |
 |---|---|---|
 | Container image | `GONOGO_INSTALL=docker` (the image sets it), `/.dockerenv` or `/run/.containerenv` | the commands `docker compose pull && docker compose up -d` (run in the folder of your `compose.yaml`); an **Update** button only when an update hook is set (below) |
+| Homebrew | file under `Cellar/gonogo/` | the command only: `brew upgrade gonogo`. The **Update** button never runs brew |
 | npm global | file under `lib/node_modules/@ulm0/gonogo/` | **Update**: `npm install -g @ulm0/gonogo@<version>` |
 | pnpm global | file under a `pnpm` folder, or an unknown place | **Update**: `pnpm add -g @ulm0/gonogo@<version>` |
 | `pnpm dlx` | file under `pnpm/dlx/` | the command only (nothing is installed to replace) |

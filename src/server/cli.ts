@@ -1199,7 +1199,8 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   }
   if (parsed.kind === 'doctor') {
     const checks = await checkEngines(env);
-    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\ndoctor never runs`));
+    const { kind } = installInfo(env);
+    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null, kind === 'brew' ? `gonogo itself: ${installNote(kind, false)}` : null).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\ndoctor never runs`));
     // the same refusal as the start: no claude and nothing in its place
     exit(checks.find((c) => c.provider === 'claude')?.path === null && !env.GONOGO_AGENT_CMD?.trim() ? 1 : 0);
     return;

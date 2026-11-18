@@ -316,7 +316,7 @@ export function checkEngines(env: Record<string, string | undefined>): Promise<E
 }
 
 /** What `gonogo doctor` prints: one line per engine, and under a missing one the vendor's install command to copy. */
-export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | null): string {
+export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | null, installNote: string | null = null): string {
   const lines = ['gonogo doctor: which agent CLIs are on the PATH', ''];
   for (const check of checks) {
     if (check.path !== null) {
@@ -329,6 +329,7 @@ export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | 
     if (check.install !== null) lines.push(`    docs: ${check.docs}`);
   }
   if (agentCmd !== null) lines.push('', `GONOGO_AGENT_CMD is set (${agentCmd}): it replaces claude.`);
+  if (installNote !== null) lines.push('', installNote);
   lines.push('', 'doctor never runs an install command: copy the one you want. (Only the page\'s Update button installs gonogo itself, after your click.)', `docs: ${DOCS_URL}`);
   return lines.join('\n') + '\n';
 }

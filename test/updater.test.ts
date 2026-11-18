@@ -15,6 +15,7 @@ describe('which install is this', () => {
     expect(installKind({ file: '/home/u/.cache/pnpm/dlx/abc/node_modules/@ulm0/gonogo/dist/server/cli.js', docker: false, clone: false })).toBe('dlx');
     expect(installKind({ file: NPM, docker: false, clone: false })).toBe('npm');
     expect(installKind({ file: '/home/u/.local/share/pnpm/global/5/node_modules/@ulm0/gonogo/dist/server/cli.js', docker: false, clone: false })).toBe('pnpm');
+    expect(installKind({ file: '/opt/homebrew/Cellar/gonogo/0.4.0/libexec/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', docker: false, clone: false })).toBe('brew');
     expect(installKind({ file: '/opt/somewhere/gonogo/dist/server/cli.js', docker: false, clone: false })).toBe('other');
   });
 
@@ -26,7 +27,7 @@ describe('which install is this', () => {
   it('builds the install of one exact version for npm and pnpm only', () => {
     expect(installCommand('npm', '1.2.3')).toEqual({ file: 'npm', args: ['install', '-g', '@ulm0/gonogo@1.2.3'] });
     expect(installCommand('pnpm', '1.2.3')).toEqual({ file: 'pnpm', args: ['add', '-g', '@ulm0/gonogo@1.2.3'] });
-    for (const kind of ['docker', 'dlx', 'clone', 'other'] as const) expect(installCommand(kind, '1.2.3')).toBeNull();
+    for (const kind of ['docker', 'brew', 'dlx', 'clone', 'other'] as const) expect(installCommand(kind, '1.2.3')).toBeNull();
   });
 
   it('the installer gets a small environment: no gonogo variable, no token', () => {
