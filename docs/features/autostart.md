@@ -27,6 +27,8 @@ does what your START key does, refuses a console that is running or on hold, and
 [Black Box](./black-box.md) records `flight started ana`. The Flight Rules box **FLIGHT may start agents** (on by default)
 turns it off: the tool then answers that you did.
 
+A stop that a [Propellant](./propellant.md) limit or budget made counts as your stop: FLIGHT cannot restart that console either, only you can.
+
 ## ALL STOP
 
 Flight Rules (ALL STOP) and the Patch Panel have **ALL STOP**: it holds every console that can be held, with the machinery of

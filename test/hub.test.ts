@@ -6547,7 +6547,6 @@ describe('Hub.startAgent: the boss starts a stopped agent', () => {
     h.hub.hold('ana');
     await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', /ana is on hold/);
     h.exit('ana', { code: 0 });
-    await h.hub.stop('ana');
     const before = h.spawns.length;
     expect((await h.hub.startAgent('ana', 'flight')).state).toBe('starting');
     expect(h.spawns.length).toBe(before + 1);
@@ -6617,6 +6616,15 @@ describe('start_agent and the Director\'s stop, and a boss that cannot start', (
     // stopped some other way (it exited by itself): FLIGHT may bring it back
     h.exit('ana', { code: 0 });
     expect((await h.hub.startAgent('ana', 'flight')).state).toBe('starting');
+  });
+
+  it('a STOP of an agent that already crashed sticks too: FLIGHT may not start it', async () => {
+    const h = await withAna();
+    h.exit('ana', { code: 1 });
+    expect(h.view('ana').state).toBe('stopped');
+    await h.hub.stop('ana');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.stoppedBy).toBe('director');
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'forbidden', /the Director stopped ana/);
   });
 
   it('a boss that cannot start does not keep the others from starting, and the notice names it', async () => {

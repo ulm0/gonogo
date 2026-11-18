@@ -1892,14 +1892,20 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   async function stopOp(rt: Rt): Promise<AgentView> {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
-    if (rt.state === 'stopped') return buildView(rt);
+    // remembered across a restart: FLIGHT may bring back an agent, never one the Director stopped (an agent that crashed and is STOPped too)
+    const remember = (): Promise<void> => {
+      rt.record.stoppedBy = 'director';
+      return saveRecords(rosterRecords()).catch((error: unknown) => log.warn(`could not save that ${rt.record.name} was stopped`, error));
+    };
+    if (rt.state === 'stopped') {
+      await remember();
+      return buildView(rt);
+    }
     rt.transition = 'stopping';
     flush(rt);
     await stopProcess(rt);
     if (rt.transition === 'stopping') rt.transition = null;
-    // remembered across a restart: FLIGHT may bring back an agent, never one the Director stopped
-    rt.record.stoppedBy = 'director';
-    await saveRecords(rosterRecords()).catch((error: unknown) => log.warn(`could not save that ${rt.record.name} was stopped`, error));
+    await remember();
     flush(rt);
     return buildView(rt);
   }
