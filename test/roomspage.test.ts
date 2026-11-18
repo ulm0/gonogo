@@ -3,6 +3,7 @@
 // (the look, the focus ring, the phone layout) is not covered here.
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { isColour, LIVERY_NAMES } from '../src/shared/livery.js';
 import { roomsPage } from '../src/server/roomspage.js';
 
 class Node {
@@ -74,7 +75,7 @@ function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?
   const html = roomsPage(null, '1.2.3');
   const scripts = [...html.matchAll(/<script>([^]*?)<\/script>/g)].map((m) => m[1] ?? '');
   const byId: Record<string, Node> = {};
-  for (const id of ['rooms', 'note', 'add', 'gate', 'sum', 'title', 'loading', 'new', 'cancel']) byId[id] = make(id === 'add' ? 'form' : 'div');
+  for (const id of ['rooms', 'note', 'add', 'gate', 'sum', 'live', 'title', 'loading', 'new', 'cancel']) byId[id] = make(id === 'add' ? 'form' : 'div');
   byId.gate?.append(make('h2'), make('p'));
   byId.add?.elements && Object.assign(byId.add.elements, { id: make('input'), name: make('input') });
   const root = Object.assign(make('html'), { style: { props: {} as Record<string, string>, setProperty(n: string, v: string) { this.props[n] = v; } } });
@@ -170,19 +171,55 @@ describe('the rooms list page script', () => {
     expect(byId.new?.disabled).toBe(true);
   });
 
-  it('puts the livery of the last visit on the page, names and colours only', () => {
-    const livery = JSON.stringify({ slug: 'night', tokens: { '--body': '#101418', '--text': 'rgb(240, 240, 240)', '--evil': 'url(https://x/y)', 'bad name': '#fff', '--ok-name': 'red;background:url(x)' } });
-    const { root } = run({ rooms: [], livery });
-    expect(root.style.props).toMatchObject({ '--body': '#101418', '--text': 'rgb(240, 240, 240)', 'color-scheme': 'dark' });
-    expect(root.style.props['--evil']).toBeUndefined();
-    expect(root.style.props['bad name']).toBeUndefined();
-    expect(root.style.props['--ok-name']).toBeUndefined();
-    expect(root.dataset.scheme).toBe('dark');
-    expect(root.dataset.livery).toBe('night');
+  const whole = (value: string | ((name: string) => string)): Record<string, string> => Object.fromEntries(LIVERY_NAMES.map((n) => [n, typeof value === 'string' ? value : value(n)]));
+  const applied = (tokens: unknown, slug = 'night'): Record<string, string> => run({ rooms: [], livery: JSON.stringify({ slug, tokens }) }).root.style.props;
+
+  it('puts a whole livery of the last visit on the page, scheme included', () => {
+    const tokens = whole((n) => (n === '--body' ? '#101418' : '#e0e0e0'));
+    const { root } = run({ rooms: [], livery: JSON.stringify({ slug: 'night', tokens }) });
+    expect(root.style.props).toMatchObject({ '--body': '#101418', '--text': '#e0e0e0', 'color-scheme': 'dark' });
+    expect(Object.keys(root.style.props)).toHaveLength(LIVERY_NAMES.length + 1);
+    expect(root.dataset).toMatchObject({ scheme: 'dark', livery: 'night' });
+    expect(applied(whole((n) => (n === '--body' ? 'rgb(250, 249, 246)' : '#222222')))['color-scheme']).toBe('light');
+  });
+
+  it('applies nothing of a partial livery, one with an extra name or one bad value (the app\'s all-or-nothing rule)', () => {
+    const tokens = whole('#223344');
+    expect(applied({ '--body': '#101418', '--text': '#eeeeee' })).toEqual({});
+    expect(applied({ ...tokens, '--evil': '#ffffff' })).toEqual({});
+    expect(applied({ ...tokens, '--text': 'red' })).toEqual({});
+    expect(applied({ ...tokens, '--text': 'url(https://x/y)' })).toEqual({});
+    expect(applied({ ...tokens, '--text': '#fff;background:url(x)' })).toEqual({});
+    const missing = { ...tokens } as Record<string, string>;
+    delete missing['--lcd'];
+    expect(applied(missing)).toEqual({});
+    expect(applied([])).toEqual({});
+    expect(applied(whole('#223344'), 'Bad Slug')).toEqual({});
+  });
+
+  it('accepts oklch, hsl and rgb in the forms of the app, and refuses what it refuses', () => {
+    for (const ok of ['oklch(0.2 0.02 250)', 'oklch(20% 0.02 250deg)', 'hsl(210, 20%, 10%)', 'hsl(210 20% 10%)', 'rgb(16 20 24)', 'rgb(10%, 20%, 30%)', '#abc', ' #AABBCC ']) {
+      expect(applied(whole(ok)), ok).not.toEqual({});
+    }
+    for (const bad of ['oklch(1.2 0 0)', 'oklch(0.2 -1 0)', 'oklch(0.2 0.02)', 'hsl(210, 120%, 10%)', 'rgb(300, 0, 0)', 'rgb(10%, 20, 30)', '#abcd', '#abcdef12', 'red', 'rgb(1,2,3);x', 'oklch(0.2 0.02 250)'.padEnd(70, ' ') + 'x', '']) {
+      expect(applied(whole(bad)), bad).toEqual({});
+    }
+  });
+
+  it('judges every value as isColour does, so the page and the app cannot drift apart', () => {
+    const values = ['#fff', '#ffff', 'rgb(0,0,0)', 'rgb(255 255 255)', 'rgb(256,0,0)', 'rgb(50%,50%,50%)', 'rgb(1e2,0,0)', 'hsl(0,0%,0%)', 'hsl(360deg 100% 50%)', 'hsl(0 0 0)', 'hsl(-30, 50%, 50%)', 'oklch(0.5 0.1 120)', 'oklch(0.5 0.1 120deg)', 'oklch(50% 0.1 120)', 'oklch(0.5 0.1 120rad)', 'oklch(0.5, 0.1, 120)', 'RGB(0,0,0)', 'rgb( 0 , 0 , 0 )', 'rgb(0 0, 0)', 'rgba(0,0,0,1)', 'transparent', 'var(--x)', 'oklch(.5 .1 .5)', 'oklch(0.5 +0.1 -5)'];
+    for (const value of values) expect(applied(whole(value)) !== undefined && Object.keys(applied(whole(value))).length > 0, value).toBe(isColour(value));
   });
 
   it('leaves the default livery and an unreadable one alone', () => {
-    expect(run({ rooms: [], livery: JSON.stringify({ slug: 'instrument', tokens: { '--body': '#000000' } }) }).root.style.props).toEqual({});
+    expect(applied(whole('#000000'), 'instrument')).toEqual({});
     expect(run({ rooms: [], livery: '{not json' }).root.style.props).toEqual({});
+  });
+
+  it('says how many need you only when the count changes', async () => {
+    const { byId } = run({ token: 'a'.repeat(64), rooms: [room({ needsYou: 2 })] });
+    await settle();
+    expect(text(byId.live)).toBe('2 agents need you.');
+    expect(byId.sum?.attrs.role).toBeUndefined();
   });
 });

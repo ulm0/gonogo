@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { LIVERY_NAMES } from '../shared/livery.js';
 import { TOKEN_FRAGMENT_KEY, TOKEN_STORAGE_KEY } from '../shared/protocol.js';
 
 /** Where the supervisor serves this page. The page itself uses no path of its own for it (it keeps the address it is opened at), so moving it is this one line. */
@@ -28,13 +29,13 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .rl-name{flex:1 1 auto;min-width:0;margin:0;overflow-wrap:anywhere}
 .rl-card .tile-state{margin-left:auto;white-space:nowrap}
 .rl-card .tile-lcd{min-height:0;padding:8px 10px;font-size:12px}
-.rl-card .tile-foot{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);overflow:hidden}
+.rl-card .tile-foot{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);overflow:hidden}
 .rl-card .tile-foot span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .rl-keys{display:flex;flex-wrap:wrap;gap:8px}
 .rl-keys .btn{flex:1 1 auto}
 .rl-keys .btn[data-kind=primary]{flex-grow:2}
 .rl-keys .input{flex:1 1 9em;min-width:0}
-.rl-new{cursor:pointer;align-items:flex-start;justify-content:center;min-height:120px}
+.rl-new{align-items:flex-start;justify-content:center;min-height:120px}
 .rl-form,.rl-gate{display:grid;gap:12px;padding:14px;max-width:560px}
 .rl-form[hidden],.rl-gate[hidden],.rl-error[hidden]{display:none}
 .rl-fields{display:flex;flex-wrap:wrap;gap:10px}
@@ -46,19 +47,46 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 @media (max-width:699px){.rl-main{padding:10px 12px 40px}.rl-keys .btn[data-kind=primary]{flex-basis:100%}}
 `;
 
-/** Puts the livery of the last visit on the page before it is drawn. The room pages write it after checking it; it is still checked here: names and colours only. */
+/**
+ * Puts the livery of the last visit on the page before it is drawn. The room pages write it after checking it; the rule here is the
+ * app's own (look.ts storedEntry, checkLivery): all or nothing. Every token name of the livery must be there, nothing else, and every
+ * value a colour of the forms of isColour (shared/livery.ts: hex, rgb, hsl, oklch, at most 64 characters, in range); one fault and the
+ * default look stays. test/roomspage.test.ts keeps ok() equal to isColour over a list of values. The scheme (dark or light, for the logo
+ * and the browser's own widgets) is worked out here for hex and rgb() bodies only: shortcut: another form of --body reads as light, so
+ * the logo may not turn on a dark livery written in hsl() or oklch(); upgrade by sharing the colour maths with the page.
+ */
 const LIVERY = `
 try{
-  const k=JSON.parse(localStorage.getItem('gonogo.livery')||'null');
-  if(k&&typeof k.slug==='string'&&/^[a-z0-9][a-z0-9-]{0,39}$/.test(k.slug)&&k.slug!=='instrument'&&k.tokens&&typeof k.tokens==='object'){
-    const root=document.documentElement,css=root.style;let n=0;
-    for(const[name,value]of Object.entries(k.tokens))if(/^--[a-z0-9-]{1,30}$/.test(name)&&typeof value==='string'&&/^(#[0-9a-f]{3,8}|(rgb|hsl)a?\\([0-9a-z.,%\\s\\/-]{1,40}\\))$/i.test(value)){css.setProperty(name,value);n++}
-    if(n){
-      const m=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(String(k.tokens['--body']||''));
-      const lin=h=>{const c=parseInt(h,16)/255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4)};
-      const dark=m!==null&&0.2126*lin(m[1])+0.7152*lin(m[2])+0.0722*lin(m[3])<0.18;
-      root.dataset.livery=k.slug;root.dataset.scheme=dark?'dark':'light';css.setProperty('color-scheme',dark?'dark':'light');
+  const NAMES=${JSON.stringify(LIVERY_NAMES)};
+  const N='[+-]?(?:\\\\d+\\\\.?\\\\d*|\\\\.\\\\d+)',NR=new RegExp('^'+N+'$'),PR=new RegExp('^'+N+'%$'),AR=new RegExp('^'+N+'(?:deg)?$');
+  const ok=v=>{
+    if(typeof v!=='string'||v.length>64)return false;
+    const t=v.trim();
+    if(/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(t))return true;
+    const f=/^(rgb|hsl|oklch)\\(\\s*([^()]*?)\\s*\\)$/i.exec(t);
+    if(!f)return false;
+    const b=f[2],l=b.includes(',')?b.split(/\\s*,\\s*/):b.split(/\\s+/);
+    if(l.length!==3||l.some(q=>q===''))return false;
+    const x=l[0],y=l[1],z=l[2];
+    switch(f[1].toLowerCase()){
+      case 'rgb':{const pc=PR.test(x);return l.every(q=>pc?PR.test(q):NR.test(q))&&l.every(q=>{const n=parseFloat(q)/(pc?100:255);return n>=0&&n<=1})}
+      case 'hsl':{if(!AR.test(x)||!PR.test(y)||!PR.test(z))return false;const s=parseFloat(y)/100,k=parseFloat(z)/100;return s>=0&&s<=1&&k>=0&&k<=1}
+      default:{const L=PR.test(x)?parseFloat(x)/100:NR.test(x)?parseFloat(x):NaN;return L>=0&&L<=1&&NR.test(y)&&parseFloat(y)>=0&&AR.test(z)}
     }
+  };
+  const k=JSON.parse(localStorage.getItem('gonogo.livery')||'null');
+  if(k&&typeof k.slug==='string'&&/^[a-z0-9][a-z0-9-]{0,39}$/.test(k.slug)&&k.slug!=='instrument'&&k.tokens&&typeof k.tokens==='object'&&!Array.isArray(k.tokens)
+    &&Object.keys(k.tokens).every(n=>NAMES.includes(n))&&NAMES.every(n=>ok(k.tokens[n]))){
+    const root=document.documentElement,css=root.style;
+    for(const n of NAMES)css.setProperty(n,k.tokens[n].trim());
+    const lin=c=>c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);
+    const body=String(k.tokens['--body']).trim();
+    let rgb=null,m=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(body);
+    if(m)rgb=[1,2,3].map(i=>parseInt(m[i],16)/255);
+    else if((m=/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(body)))rgb=[1,2,3].map(i=>parseInt(m[i]+m[i],16)/255);
+    else if((m=/^rgb\(\s*([^()]*?)\s*\)$/i.exec(body))){const q=m[1].split(/\s*,\s*|\s+/),pc=q[0].includes('%');rgb=q.map(v=>parseFloat(v)/(pc?100:255))}
+    const dark=rgb!==null&&0.2126*lin(rgb[0])+0.7152*lin(rgb[1])+0.0722*lin(rgb[2])<0.18;
+    root.dataset.livery=k.slug;root.dataset.scheme=dark?'dark':'light';css.setProperty('color-scheme',dark?'dark':'light');
   }
 }catch{}
 `;
@@ -67,7 +95,7 @@ const SCRIPT = `
 const KEY=${JSON.stringify(TOKEN_STORAGE_KEY)},FRAG=${JSON.stringify(TOKEN_FRAGMENT_KEY)};
 const $=id=>document.getElementById(id);
 const list=$('rooms'),note=$('note'),form=$('add'),gate=$('gate'),sum=$('sum'),title=$('title');
-let token=null,rooms=null,renaming=null,removing=null,seen='';
+let token=null,rooms=null,renaming=null,removing=null,seen='',said=-1;
 try{
   const h=new URLSearchParams(location.hash.slice(1));
   if(/^[0-9a-f]{64}$/i.test(h.get(FRAG)||'')){token=h.get(FRAG);try{localStorage.setItem(KEY,token)}catch{}history.replaceState(null,'',location.pathname)}
@@ -135,7 +163,7 @@ function card(r){
   }
   return li;
 }
-function focus(f){const t=list.querySelector('[data-f="'+f+'"]');if(t){t.focus();if(t.select)t.select()}}
+function focus(f){const t=list.querySelector('[data-f="'+f+'"]');if(t){t.focus();if(t.select)t.select()}return !!t}
 function draw(){
   const had=document.activeElement&&list.contains(document.activeElement)?document.activeElement.dataset.f:null;
   const cards=rooms.map(card);
@@ -148,9 +176,11 @@ function draw(){
   const needs=rooms.reduce((n,r)=>n+(r.needsYou||0),0);
   sum.replaceChildren(el('span','chip',rooms.length+(rooms.length===1?' room':' rooms')));
   if(needs){const c=el('span','chip',needs+' need you');c.dataset.tone='amber';sum.append(c)}
+  // said aloud only when the count changes, not at every redraw
+  if(needs!==said){said=needs;$('live').textContent=needs===0?'No room needs you.':needs+(needs===1?' agent needs you.':' agents need you.')}
   document.title=(needs?'('+needs+') ':'')+'rooms \\u00b7 gonogo';
   $('loading').hidden=true;
-  if(had)focus(had);
+  if(had&&!focus(had))title.focus();
 }
 function showForm(){form.hidden=false;$('new').setAttribute('aria-expanded','true');form.elements.id.focus()}
 function hideForm(){form.hidden=true;form.reset();$('new').setAttribute('aria-expanded','false');$('new').focus()}
@@ -203,7 +233,7 @@ export const roomsPage = (stylesheet: string | null, version: string | null = nu
   }<style>${STYLE}</style><script>${LIVERY}</script></head><body>` +
   `<header class="topbar"><h1 class="mark"><img class="mark-name" src="/lockup.svg" alt="gonogo"><span class="label mark-unit">ROOMS</span></h1><span class="topbar-grow"></span><button id="new" type="button" class="btn" data-kind="primary" aria-expanded="false" aria-controls="add">NEW ROOM</button></header>` +
   `<main class="rl-main">` +
-  `<div class="rl-head"><h2 id="title" class="label" tabindex="-1">Rooms</h2><span id="sum" role="status"></span></div>` +
+  `<div class="rl-head"><h2 id="title" class="label" tabindex="-1">Rooms</h2><span id="sum"></span><span id="live" class="sr-only" role="status"></span></div>` +
   `<section id="gate" class="module rl-gate" hidden><h2 class="label"></h2><p class="hint"></p></section>` +
   `<p id="loading" class="hint">Asking the rooms…</p>` +
   `<form id="add" class="module rl-form" hidden><span class="label">NEW ROOM</span><div class="rl-fields"><label><span class="label">ID</span><input class="input" name="id" required maxlength="24" pattern="[a-z][a-z0-9-]{0,23}" aria-describedby="idhint" autocomplete="off" spellcheck="false"><span id="idhint" class="hint">Lowercase letters, digits and dashes, like team-a. It is the folder and the address.</span></label><label><span class="label">NAME (OPTIONAL)</span><input class="input" name="name" maxlength="40" autocomplete="off"></label></div><div class="rl-keys"><button class="btn" data-kind="primary" type="submit">ADD ROOM</button><button id="cancel" class="btn" type="button">CANCEL</button></div></form>` +
