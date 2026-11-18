@@ -5,7 +5,8 @@
 #   docker compose up -d           # pulls the published image the first time
 #   docker compose logs gonogo     # the `gonogo ready:` line is the URL, token included
 # Update to the latest release: docker compose pull && docker compose up -d
-# A second instance: GONOGO_PORT=7778 GONOGO_DATA=$PWD/gonogo-data-2 docker compose -p gonogo-2 up -d
+# More rooms in one container: set `command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]`, run `docker compose exec gonogo gonogo rooms add <id>`, and open /r/<id>/ (docs/features/rooms.md).
+# A second, separate deployment: GONOGO_PORT=7778 GONOGO_DATA=$PWD/gonogo-data-2 docker compose -p gonogo-2 up -d
 #
 # WARNING: the Docker socket gives this container root over the host, and so does every agent in it, also the ones
 # that do not run in a Clean Room. Hire only agents you would let run as root on this machine.
