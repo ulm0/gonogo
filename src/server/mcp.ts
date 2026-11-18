@@ -5,6 +5,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { LIVERY_DESCRIPTION_MAX_CHARS, LIVERY_NAME_MAX_CHARS } from '../shared/livery.js';
 import {
+  AGENT_NAME_MAX,
+  DIR_MAX_CHARS,
   LOG_BODY_MAX_CHARS,
   LOG_QUERY_MAX_CHARS,
   LOG_SEARCH_MAX,
@@ -12,6 +14,7 @@ import {
   LOG_TITLE_MAX_CHARS,
   MCP_SERVER_NAME,
   POLL_VOTES,
+  ROLE_MAX_CHARS,
   TASK_DETAIL_MAX_CHARS,
   TASK_NOTE_MAX_CHARS,
   TASK_STATUSES,
@@ -22,6 +25,7 @@ import { BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_C
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
 import type { Liveries } from './livery.js';
 import type { MissionLog } from './missionlog.js';
+import type { Relief } from './relief.js';
 import type { Tasks } from './tasks.js';
 
 export interface McpDeps {
@@ -33,6 +37,8 @@ export interface McpDeps {
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update'>;
   /** Livery; absent in tests that do not need it (the tool then answers that it is not available). */
   liveries?: Pick<Liveries, 'submit'>;
+  /** Relief; absent in tests that do not need it (the tool then answers that it is not available). */
+  relief?: Pick<Relief, 'request'>;
   resolveToken(token: string): AgentIdentity | null;
   log: Logger;
   /** Reported to the client in the initialize result; read per request so a late-bound value works. */
@@ -222,6 +228,29 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           // the author is the caller's own name, never a field of the call
           const entry = await liveries.submit(agent, args);
           return toolResult({ ok: true, slug: entry.slug, note: 'saved; the Director chooses whether to apply it' }, false);
+        }),
+    );
+
+    const { relief } = deps;
+    server.registerTool(
+      'hire_agent',
+      {
+        description: MCP_DESCRIPTIONS.hire_agent,
+        // strict: a field the tool does not have (confirmBypass, command, payload) is refused, not dropped; the mode is checked by Relief, so that its answer says why
+        inputSchema: z.strictObject({
+          name: z.string().min(1).max(AGENT_NAME_MAX),
+          position: z.string().max(32).optional(),
+          role: z.string().max(ROLE_MAX_CHARS).optional(),
+          dir: z.string().max(DIR_MAX_CHARS).optional(),
+          engine: z.string().max(32).optional(),
+          mode: z.string().max(32).optional(),
+        }),
+      },
+      (args) =>
+        guarded('hire_agent', async () => {
+          if (!relief) return toolResult({ ok: false, error: 'Relief is not available' }, true);
+          // the requester is the agent of the token, never a field of the call
+          return toolResult({ ok: true, ...(await relief.request({ agent, generation }, args)) }, false);
         }),
     );
 

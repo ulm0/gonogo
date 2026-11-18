@@ -110,7 +110,7 @@ export const MCP_SERVER_NAME = 'gonogo';
 /** Clean Room (docs/clean-room-spec.md): the worktrees live in <home>/cleanroom/<name> on the branch gonogo/<name>. */
 export const CLEAN_ROOM_DIR = 'cleanroom';
 export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'log_write', 'log_search', 'log_read', 'livery_submit'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'log_write', 'log_search', 'log_read', 'livery_submit', 'hire_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -193,7 +193,7 @@ export const LOG_TAG_PATTERN = '^[a-z0-9][a-z0-9._-]{0,29}$';
 export const LOG_QUERY_MAX_CHARS = 200;
 export const LOG_SEARCH_MAX = 20;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
-export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery'] as const;
+export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
 /** How a part of the server tells the inbox of something the Director should see (`Downlink.post`). */
 export type DownlinkNotify = (kind: DownlinkEventKind, text: string) => void;
@@ -788,6 +788,8 @@ export interface StateSnapshot {
   livery?: LiveryView;
   /** Absent from an older server and from one that runs without Docking: the page then shows no docks. */
   docking?: DockingView;
+  /** Absent from an older server and from one that runs without Relief: the page then shows no hire requests. */
+  relief?: ReliefView;
 }
 
 /**
@@ -799,6 +801,35 @@ export interface Envelope {
   from: string;
   to: string;
   startedAt: number;
+}
+
+/**
+ * Relief (docs/relief-spec.md): a hire that the boss asked for with `hire_agent`. It waits for the Director's GO, and only
+ * then does the hub staff the agent, as the hire form does. `mode` is never above acceptEdits.
+ */
+export const RELIEF_MODES = ['default', 'acceptEdits'] as const;
+export interface ReliefRequest {
+  /** `h1`, `h2`, ...; never used twice in one run. */
+  id: string;
+  /** The agent that asked: always the boss. */
+  by: string;
+  at: number;
+  /** After this the request is gone and the boss is told. */
+  expiresAt: number;
+  name: string;
+  /** Roster position id, or null for a role written by the boss. */
+  position: string | null;
+  /** The whole role text the new agent will get. */
+  role: string;
+  /** Resolved absolute path. */
+  dir: string;
+  provider: Provider;
+  mode: PermissionMode;
+  /** The boss is a Clean Room agent: the new agent is one too. */
+  cleanRoom: CleanRoom | null;
+}
+export interface ReliefView {
+  requests: ReliefRequest[];
 }
 
 /* ---- REST bodies ---- */
@@ -1045,7 +1076,13 @@ export interface LiveryFrame {
   t: 'livery';
   livery: LiveryView;
 }
+/** The hire requests that wait for the Director changed; carries the whole view. Also inside StateSnapshot. */
+export interface ReliefFrame {
+  t: 'relief';
+  relief: ReliefView;
+}
 export type ServerFrame =
+  | ReliefFrame
   | DockingFrame
   | LiveryFrame
   | LogFrame
@@ -1064,7 +1101,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts

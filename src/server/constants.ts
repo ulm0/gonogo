@@ -187,6 +187,7 @@ export const ALLOWED_TOOLS = [
   'mcp__gonogo__log_search',
   'mcp__gonogo__log_read',
   'mcp__gonogo__livery_submit',
+  'mcp__gonogo__hire_agent',
 ] as const;
 /** claude's own cross-session messaging tools, denied so agents use gonogo's tools. */
 export const DENIED_TOOLS = ['SendMessage', 'ListAgents'] as const;
@@ -395,6 +396,14 @@ export const SLACK_SIGNATURE_MAX_AGE_MS = 5 * 60_000;
 /** Livery (docs/livery-spec.md): the custom liveries are `<home>/liveries/<slug>.json`; the chosen one is `<home>/livery.json`. */
 export const LIVERY_DIR = 'liveries';
 export const LIVERY_FILE = 'livery.json';
+/**
+ * Relief (docs/relief-spec.md): how many hire requests of the boss may wait for the Director, how many it may make in a
+ * window, and how long one waits. Requests live in memory only.
+ */
+export const RELIEF_PENDING_MAX = 3;
+export const RELIEF_RATE_MAX = 5;
+export const RELIEF_RATE_WINDOW_MS = 10 * 60_000;
+export const RELIEF_TTL_MS = 30 * 60_000;
 /** Propellant (docs/redline-propellant-spec.md): the limits and cursors file; the ledger fuel.jsonl is a log and has no version. */
 export const PROPELLANT_FILE = 'propellant.json';
 /** Mission Log (docs/mission-log-spec.md): the folder under the home, and how long a snippet of a search result is and how much of the text before the match it shows. */
@@ -422,6 +431,8 @@ export const MCP_DESCRIPTIONS = {
   log_read: 'Read one entry of the Mission Log by its id: the title, tags, author, times and the whole body.',
   livery_submit:
     'Submit a livery, a colour theme for gonogo, when the Director asked you to design one: a name, a one-line description and tokens, an object that holds every token the message named, each a CSS colour (#rgb, #rrggbb, rgb(), hsl() or oklch()). It is checked for colours and for contrast; if it is refused, the answer says what to fix. The Director chooses whether to apply it.',
+  hire_agent:
+    'Boss only. Ask the Director to hire an agent: name (lowercase letters, digits and hyphens), position (a call sign such as guido or surgeon, which gives the role text) and/or role (the role text itself), dir (an absolute folder; a Clean Room boss leaves it out), engine (default claude) and mode (default or acceptEdits; nothing higher is possible). It only makes a request: the Director sees every field and decides, and you are told his answer by message. At most 3 requests wait at once, 5 per 10 minutes, and one expires after 30 minutes.',
 } as const;
 
 /* ---- the tiny logger ---- */

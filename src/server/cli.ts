@@ -39,6 +39,7 @@ import { createTelemetry } from './telemetry.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
+import { createRelief } from './relief.js';
 import { createMissionLog } from './missionlog.js';
 import { createTasks } from './tasks.js';
 import { createUplinks } from './uplinks.js';
@@ -511,6 +512,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('livery'),
     });
+    const relief = createRelief({
+      hub: hubInstance,
+      checkDirectory: io.checkDirectory,
+      now: io.now,
+      setTimer: io.setTimer,
+      clearTimer: io.clearTimer,
+      emit: (frame) => web?.broadcast(frame),
+      notify: tell,
+      log: log.child('relief'),
+    });
     const webServer = createWebServer({
       host,
       port,
@@ -532,6 +543,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       liveries,
       relay,
       docking,
+      relief,
       log: log.child('web'),
     });
     web = webServer;
@@ -579,6 +591,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('tasks close', () => tasks.close());
       await step('mission log close', () => missionLog.close());
       await step('livery close', () => liveries.close());
+      await step('relief close', async () => relief.close());
       await step('relay close', () => relay.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());

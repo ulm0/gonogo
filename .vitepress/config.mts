@@ -82,6 +82,7 @@ export default defineConfig({
           { text: 'Docking', link: '/features/docking' },
           { text: 'Patch Panel', link: '/features/patch-panel' },
           { text: 'Flight Rules', link: '/features/flight-rules' },
+          { text: 'Relief', link: '/features/relief' },
         ],
       },
       {

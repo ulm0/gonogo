@@ -268,9 +268,10 @@ function LiveRegion(): ReactElement {
   const unread = useStore((s) => s.downlink.unread);
   const poll = useStore((s) => s.poll);
   const limit = useStore((s) => s.governor.limit);
+  const relief = useStore((s) => s.relief.length);
   const [out, setOut] = useState({ n: 0, text: '' });
   const [announcer] = useState(() => createAnnouncer((text) => setOut((o) => ({ n: o.n + 1, text }))));
-  useEffect(() => announcer.update({ agents: list, unread, poll, limit }, legends), [announcer, list, unread, poll, limit, legends]);
+  useEffect(() => announcer.update({ agents: list, unread, poll, limit, relief }, legends), [announcer, list, unread, poll, limit, relief, legends]);
   useEffect(() => {
     announcer.resume();
     return () => announcer.stop();
