@@ -10,8 +10,8 @@ const look = ref('');
 onMounted(() => {
   const read = () => (look.value = document.documentElement.dataset.livery ?? 'instrument');
   read();
-  // With no choice kept, the livery follows the system (config.mts); the key shows the change.
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', read);
+  // Follow every change to the livery: the system's (config.mts) and the landing's livery keys.
+  new MutationObserver(read).observe(document.documentElement, { attributes: true, attributeFilter: ['data-livery'] });
 });
 
 function choose(slug: string): void {
