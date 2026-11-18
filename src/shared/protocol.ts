@@ -98,8 +98,11 @@ export const MODEL_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$';
 export const KEY_NAME_PATTERN = '^[A-Z][A-Z0-9_]{0,63}$';
 export const KEY_VALUE_PATTERN = '^[\\x21-\\x7e]{1,4096}$';
 export const KEYS_MAX = 16;
-/** Names the form suggests for a key: the variables `pi --help` (1.5.2) lists. Hints, not a list. */
-export const KEY_SUGGESTIONS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY'] as const;
+/** Names the form suggests for a key: the variables `pi --help` (1.5.2) lists, then the Amazon Bedrock ones (docs/facts/bedrock.md). Hints, not a list. */
+export const KEY_SUGGESTIONS = [
+  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY',
+  'CLAUDE_CODE_USE_BEDROCK', 'AWS_REGION', 'AWS_BEARER_TOKEN_BEDROCK', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_PROFILE', 'ANTHROPIC_MODEL',
+] as const;
 /** Absent in an old roster record means 'claude'. */
 export const providerInfo = (provider: Provider | undefined): ProviderInfo => PROVIDER_INFO[provider ?? 'claude'];
 
