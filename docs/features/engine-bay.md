@@ -49,6 +49,24 @@ The MODEL field of the hire and edit form is free text with suggestions; empty m
 
 opencode, Copilot CLI, Qwen Code, Grok CLI, Crush and the custom command have no field: no model flag was found in what was read. Set the model in the CLI itself.
 
+## Amazon Bedrock
+
+gonogo has no Bedrock switch: an engine uses Bedrock when its own settings say so, and gonogo passes the environment on. Set the variables as Clearance keys for one agent (the form suggests the names) or in the shell that starts gonogo. Nothing was run against a real AWS account; see `docs/facts/bedrock.md` for sources and for what a real check needs.
+
+| Engine | Bedrock | What to set |
+|---|---|---|
+| Claude Code | expected to work with keys (not run against AWS) | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key) or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN`), or `AWS_PROFILE`. Model: the agent's model field with a Bedrock id, or the key `ANTHROPIC_MODEL` |
+| opencode | needs its own setup | the same AWS variables (`AWS_PROFILE`, the key pair or `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`); pick the Bedrock model inside opencode (gonogo has no model field for it) |
+| Codex | needs a config line | `model_provider = "amazon-bedrock"` in `~/.codex/config.toml` (optional profile and region there), plus `AWS_PROFILE` or keys |
+| pi | needs setup in pi | the AWS variables; the provider is picked in pi (`--model amazon-bedrock/<id>` is likely, not verified) |
+| Crush | needs setup in Crush | the AWS variables; gonogo starts it with no arguments |
+| Gemini, Antigravity | unsupported | Google models only |
+| Qwen, Grok, Kimi, Copilot, Cursor | not found | no Bedrock provider found in what was read |
+
+- **Clean Room.** The container gets only the agent's keys by name, never your shell's AWS variables, and `~/.aws` is not mounted, so a profile or SSO login does not work there: use keys, best a short-term Bedrock API key.
+- **Models.** Bedrock ids (`us.anthropic.claude-sonnet-4-6`) and application-inference-profile ARNs fit the model field; a longer ARN goes in as the key `ANTHROPIC_MODEL`.
+- **Cost.** Tokens count as usual; dollars show as unpriced until you add a price row for the Bedrock id (Propellant, DOLLARS, prices), because Bedrock prices can differ from the list.
+
 ## Keys (Clearance)
 
 The CLEARANCE fold sets environment variables for one agent, usually API keys such as `OPENAI_API_KEY` or `GEMINI_API_KEY`. It works for every engine and for a custom command.
