@@ -697,6 +697,18 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
+  // a Clean Room has no git of the Director's inside: nothing to mark
+  const coauthorBox = !values.cleanRoom && (
+    <div className="staff-clean">
+      <div className="staff-check">
+        <input id={`${id}-coauthor`} type="checkbox" className="check" checked={values.coauthor} onChange={(event) => change({ coauthor: event.target.checked }, 'coauthor')} aria-describedby={`${id}-coauthor-hint`} />
+        <label htmlFor={`${id}-coauthor`}>Co-author line in its commits</label>
+      </div>
+      <p className="hint" id={`${id}-coauthor-hint`}>
+        Its commits end with a Co-Authored-By line naming this console (gonogo), so you can tell its work in the history. Flight Rules turns it off for the room. Applies at its next start.
+      </p>
+    </div>
+  );
   const remoteBox = values.provider === 'claude' && !values.cleanRoom && (values.remoteControl || phoneMode === 'remote-control' || phoneMode === 'both') && (
     <div className="staff-clean" data-invalid={remoteError !== undefined ? '' : undefined}>
       <div className="staff-check">
@@ -893,6 +905,7 @@ function Staff({ form }: { form: Target }): ReactElement {
               {cleanRoomBox}
               {worktreeBox}
               {remoteBox}
+              {coauthorBox}
               {autostartBox}
               {modes}
               {confirmPanel}
@@ -992,6 +1005,7 @@ function Staff({ form }: { form: Target }): ReactElement {
             {cleanRoomBox}
             {worktreeBox}
             {remoteBox}
+            {coauthorBox}
             {modes}
             {confirmPanel}
             {payloadFold}

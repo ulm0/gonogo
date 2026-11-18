@@ -73,6 +73,7 @@ export default defineConfig({
           { text: 'Worktrees', link: '/features/worktrees' },
           { text: 'Feature toggles', link: '/features/features' },
           { text: 'Subagents', link: '/features/subagents' },
+          { text: 'Co-author line', link: '/features/coauthor' },
           { text: 'Tool permissions', link: '/features/permissions' },
           { text: 'Start again after a restart', link: '/features/autostart' },
           { text: 'Redline', link: '/features/redline' },

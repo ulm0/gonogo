@@ -96,6 +96,7 @@ import type { StartupStore } from './startup.js';
 import type { FeatureStore } from './features.js';
 import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
+import type { CoauthorStore } from './coauthor.js';
 import type { Rollout } from './rollout.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
@@ -185,6 +186,8 @@ export interface WebOptions {
   features?: Pick<FeatureStore, 'view' | 'isOn' | 'label' | 'plan' | 'apply'>;
   /** The subagent setting; absent in tests that do not need it (the routes answer 404). */
   subagents?: Pick<SubagentStore, 'view' | 'set'>;
+  /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
+  coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
   rollout?: Pick<Rollout, 'view'>;
   /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
@@ -387,7 +390,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, effort, keys } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor, model, effort, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -430,6 +433,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
   if (permissions !== undefined) {
     if (typeof permissions !== 'object' || permissions === null || Array.isArray(permissions)) return fieldError('permissions', 'an object');
     value.permissions = permissions as PermissionRules;
+  }
+  if (coauthor !== undefined) {
+    if (typeof coauthor !== 'boolean') return fieldError('coauthor', 'true or false');
+    value.coauthor = coauthor;
   }
   if (autostart !== undefined) {
     if (typeof autostart !== 'boolean') return fieldError('autostart', 'true or false');
@@ -522,6 +529,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.permissions !== undefined) {
     if (o.permissions !== null && (typeof o.permissions !== 'object' || Array.isArray(o.permissions))) return fieldError('permissions', 'an object or null');
     value.permissions = o.permissions as PermissionRules | null;
+  }
+  if (o.coauthor !== undefined) {
+    if (typeof o.coauthor !== 'boolean') return fieldError('coauthor', 'true or false');
+    value.coauthor = o.coauthor;
   }
   if (o.autostart !== undefined) {
     if (typeof o.autostart !== 'boolean') return fieldError('autostart', 'true or false');
@@ -1296,6 +1307,18 @@ export function createWebServer(options: WebOptions): WebServer {
     }
     if ((s[1] === 'hold-all' || s[1] === 'resume-all') && s.length === 2) {
       return { allow: ['POST'], run: (_req, res) => sendJson(res, 200, s[1] === 'hold-all' ? hub.holdAll() : hub.resumeAll()) };
+    }
+    if (s[1] === 'coauthor' && s.length === 2) {
+      const coauthor = options.coauthor;
+      if (!coauthor) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, coauthor.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await coauthor.set(body));
+        },
+      };
     }
     if (s[1] === 'subagents' && s.length === 2) {
       const subagents = options.subagents;

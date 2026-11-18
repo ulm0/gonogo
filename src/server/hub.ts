@@ -175,6 +175,8 @@ const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 /** The payload of a record as text, for comparing: null when it has none. */
 const payloadKey = (record: AgentRecord): string | null => (record.payload === undefined ? null : JSON.stringify(record.payload));
 /** The tool rules of a record as text, for comparing. */
+/** The co-author setting of a record as text, for comparing (it applies at the next start). */
+const coauthorKey = (record: AgentRecord): string => (record.coauthor === false ? 'off' : 'follows');
 const rulesKey = (record: AgentRecord): string | null => (record.permissions === undefined ? null : JSON.stringify(record.permissions));
 /** The Remote Control setting of a record as text, for comparing. */
 const remoteKey = (record: AgentRecord): string | null => (record.remoteControl === undefined ? null : JSON.stringify(record.remoteControl));
@@ -417,7 +419,7 @@ interface Rt {
   /** When a Stop block was last answered: R1 waits for the title to catch up (contract 4.7). */
   lastBlockAt: number | null;
   /** role, dir, mode, command and payload (as JSON text) as of the last spawn, for the `dirty` flag. */
-  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; worktree: string | null; remoteControl: string | null; permissions: string | null; engine: string } | null;
+  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; worktree: string | null; remoteControl: string | null; permissions: string | null; coauthor: string; engine: string } | null;
   /** Custom provider only: the output counter at the last sweep, when it last grew, and when the process was spawned. */
   custom: { bytes: number; activeAt: number | null; since: number };
   /** The flag the last start used, null until the launcher answered. */
@@ -700,6 +702,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           running.worktree !== worktreeKey(record) ||
           running.remoteControl !== remoteKey(record) ||
           running.permissions !== rulesKey(record) ||
+          running.coauthor !== coauthorKey(record) ||
           running.engine !== engineKey(record)),
       generation: rt.generation,
       exit: rt.exit ? { ...rt.exit } : null,
@@ -712,6 +715,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       remoteControl: record.remoteControl ?? null,
       permissions: record.permissions ?? null,
       autostart: record.autostart !== false,
+      coauthor: record.coauthor !== false,
       model: record.model ?? null,
       effort: record.effort ?? null,
       keys: { ...record.keys },
@@ -1713,7 +1717,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         rt.ready = true;
         rt.hooksSeen = false;
         rt.flag = null;
-        rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), permissions: rulesKey(rt.record), engine: engineKey(rt.record) };
+        rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), permissions: rulesKey(rt.record), coauthor: coauthorKey(rt.record), engine: engineKey(rt.record) };
         const saved = holds[item.name];
         const probe = screenOf(rt);
         // errs toward needs_you, never toward idle by guess: a saved hold or trip, then a dialog, then a screen that cannot be read yet
@@ -1887,7 +1891,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.pointed.clear();
     rt.screenClearSince = null;
     rt.lastBlockAt = null;
-    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), permissions: rulesKey(rt.record), engine: engineKey(rt.record) };
+    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), permissions: rulesKey(rt.record), coauthor: coauthorKey(rt.record), engine: engineKey(rt.record) };
     rt.flag = flag;
     // The browser reacts to a new generation by attaching, so the frame waits until the process exists in the terminal host.
     rt.frameHold = true;
@@ -2119,6 +2123,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.permissions = from.permissions;
     if (from.autostart === undefined) delete target.autostart;
     else target.autostart = from.autostart;
+    if (from.coauthor === undefined) delete target.coauthor;
+    else target.coauthor = from.coauthor;
     if (from.model === undefined) delete target.model;
     else target.model = from.model;
     if (from.effort === undefined) delete target.effort;
@@ -2291,6 +2297,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const worktree = req.worktree === undefined ? undefined : await checkWorktree(req.worktree, dir, req.cleanRoom);
       const permissions = req.permissions === undefined ? undefined : checkPermissions(provider, req.permissions);
       if (req.autostart !== undefined && typeof req.autostart !== 'boolean') throw new HubError('bad_request', 'autostart must be true or false', 'autostart');
+      if (req.coauthor !== undefined && typeof req.coauthor !== 'boolean') throw new HubError('bad_request', 'coauthor must be true or false', 'coauthor');
       const remoteControl = req.remoteControl === undefined ? undefined : checkRemoteControl(provider, req.remoteControl, cleanRoom !== undefined);
       assertOpen();
       const record: AgentRecord = {
@@ -2312,6 +2319,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (remoteControl) record.remoteControl = remoteControl;
       if (permissions) record.permissions = permissions;
       if (req.autostart === false) record.autostart = false;
+      if (req.coauthor === false) record.coauthor = false;
       if (model) record.model = model;
       if (effort) record.effort = effort;
       if (kept?.names) record.keys = kept.names;
@@ -2341,9 +2349,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'model', 'effort', 'keys'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'model', 'effort', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, effort, keys');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor, model, effort, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
@@ -2392,6 +2400,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       } else if (next.worktree !== undefined && (req.dir !== undefined || req.cleanRoom !== undefined)) {
         // a new folder must be in a repository, and a Clean Room has a worktree of its own
         next.worktree = await checkWorktree(next.worktree, next.dir, next.cleanRoom);
+      }
+      if (req.coauthor !== undefined) {
+        if (typeof req.coauthor !== 'boolean') throw new HubError('bad_request', 'coauthor must be true or false', 'coauthor');
+        if (req.coauthor) delete next.coauthor;
+        else next.coauthor = false;
       }
       if (req.autostart !== undefined) {
         if (typeof req.autostart !== 'boolean') throw new HubError('bad_request', 'autostart must be true or false', 'autostart');
@@ -2448,6 +2461,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         remoteKey(next) !== remoteKey(current) ||
         rulesKey(next) !== rulesKey(current) ||
         next.autostart !== current.autostart ||
+        next.coauthor !== current.coauthor ||
         engineKey(next) !== engineKey(current);
       if (!changed) return buildView(rt);
 

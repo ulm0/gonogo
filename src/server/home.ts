@@ -185,7 +185,7 @@ function parseAgent(a: unknown): AgentRecord | string {
   if (typeof boss !== 'boolean') return `${name}: boss must be true or false`;
   if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) return `${name}: createdAt must be a number`;
   const record: AgentRecord = { name, role, dir, mode, sessionId, desk, boss, createdAt };
-  const { position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart } = a;
+  const { position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor } = a;
   if (position !== undefined) {
     if (typeof position !== 'string' || !POSITION_IDS.includes(position)) return `${name}: unknown position`;
     record.position = position;
@@ -228,6 +228,10 @@ function parseAgent(a: unknown): AgentRecord | string {
   if (a.stoppedBy !== undefined) {
     if (a.stoppedBy !== 'director') return `${name}: stoppedBy is director or absent`;
     record.stoppedBy = 'director';
+  }
+  if (coauthor !== undefined) {
+    if (coauthor !== false) return `${name}: coauthor is false or absent`;
+    record.coauthor = false;
   }
   if (autostart !== undefined) {
     if (autostart !== false) return `${name}: autostart is false or absent`;

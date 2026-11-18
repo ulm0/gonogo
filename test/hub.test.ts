@@ -2825,6 +2825,7 @@ describe('hire (4.9)', () => {
       remoteControl: null,
       permissions: null,
       autostart: true,
+      coauthor: true,
       model: null,
       effort: null,
       keys: {},
@@ -6886,5 +6887,20 @@ describe('a hold that was lost with its process is not released by FLIGHT or by 
     await settle();
     expect(h.spawns).toEqual([]);
     expect(h.view('flight').state).toBe('stopped');
+  });
+});
+
+describe('the co-author opt-out of an agent', () => {
+  it('is a record field, in the view, set by hire and edit, and a change waits for the next start', async () => {
+    const h = await started();
+    expect((await h.hub.hire({ name: 'ana', role: 'x', dir: '/work/ana', mode: 'default', coauthor: false })).coauthor).toBe(false);
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.coauthor).toBe(false);
+    expect((await h.hub.hire({ name: 'ben', role: 'x', dir: '/work/ben', mode: 'default' })).coauthor).toBe(true);
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ben')).not.toHaveProperty('coauthor');
+    h.ready('ben');
+    expect(await h.hub.edit('ben', { coauthor: false })).toMatchObject({ coauthor: false, dirty: true });
+    expect(await h.hub.edit('ben', { coauthor: true })).toMatchObject({ coauthor: true, dirty: false });
+    await expectHubReject(h.hub.edit('ana', { coauthor: 'no' } as never), 'bad_request', 'coauthor must be true or false', 'coauthor');
+    await expectHubReject(h.hub.hire({ name: 'cy', role: 'x', dir: '/work/cy', mode: 'default', coauthor: 1 } as never), 'bad_request', 'coauthor must be true or false', 'coauthor');
   });
 });

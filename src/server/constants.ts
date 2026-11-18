@@ -29,6 +29,7 @@ export const STARTUP_WAVE_TIMEOUT_MS = 60_000;
 export const RUN_STATE_MAX_AGE_MS = 7 * 24 * 3_600_000;
 export const RUN_STATE_FILE = 'run-state.json';
 export const STARTUP_FILE = 'startup.json';
+export const COAUTHOR_FILE = 'coauthor.json';
 export const SUBAGENTS_FILE = 'subagents.json';
 /** The variable Claude Code reads for the most subagents running at once; a Clean Room container gets it by name. */
 export const SUBAGENT_LIMIT_ENV = 'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS';
