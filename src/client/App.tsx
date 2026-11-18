@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
 import { Loop } from './Activity.js';
@@ -17,6 +17,7 @@ import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
 import { openConsole, openHire, readStored, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
+import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import logo from '../../docs/brand/lockup.svg';
@@ -265,7 +266,8 @@ const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
 function RolloutStrip(): ReactElement | null {
   const rollout = useStore((s) => s.rollout);
   const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | null>(null);
+  const code = useRef<HTMLElement | null>(null);
   if (rollout === null || !rollout.newer || rollout.latest === null || dismissed === rollout.latest) return null;
   const { latest, command } = rollout;
   return (
@@ -273,14 +275,20 @@ function RolloutStrip(): ReactElement | null {
       <span>
         gonogo {latest} is out (this is {rollout.current}). To update, run:
       </span>
-      <code>{command}</code>
+      <code ref={code}>{command}</code>
       <button
         type="button"
         className="btn"
         data-kind="quiet"
-        onClick={() => navigator.clipboard.writeText(command).then(() => setCopied(true), () => undefined)}
+        onClick={() =>
+          // Without a clipboard (plain http from another machine) the command is selected, to copy by hand.
+          void copyText(command).then((ok) => {
+            setCopied(ok);
+            if (!ok && code.current !== null) window.getSelection()?.selectAllChildren(code.current);
+          })
+        }
       >
-        {copied ? 'Copied' : 'Copy'}
+        {copied === null ? 'Copy' : copied ? 'Copied' : 'Not copied'}
       </button>
       <button
         type="button"

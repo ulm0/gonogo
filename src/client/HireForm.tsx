@@ -27,6 +27,7 @@ import {
 import type { EngineNote, Field, Problems, Values } from './form.js';
 import { legendOf } from './loop.js';
 import { store, useStore } from './store.js';
+import { copyText } from './uplink.js';
 import type { ClientState } from './store.js';
 import './forms.css';
 
@@ -126,15 +127,16 @@ function PositionTile({
 
 /** Pad Check under the engine select: whether its program is there and, when it is not, the vendor's install command to copy. gonogo never runs it. */
 function EngineNoteView({ note, id }: { note: EngineNote; id: string }): ReactElement {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | null>(null);
+  const field = useRef<HTMLInputElement | null>(null);
   const install = note.install;
   const copy = (): void => {
     if (install === null) return;
-    // Over plain http from another machine the clipboard is not offered: the command stays selectable in its field.
-    navigator.clipboard.writeText(install).then(
-      () => setCopied(true),
-      () => undefined,
-    );
+    // Over plain http from another machine the browser has no clipboard: the command is selected in its field, to copy by hand.
+    void copyText(install).then((ok) => {
+      setCopied(ok);
+      if (!ok) field.current?.select();
+    });
   };
   return (
     <div className="staff-engine-note">
@@ -147,9 +149,9 @@ function EngineNoteView({ note, id }: { note: EngineNote; id: string }): ReactEl
           <label htmlFor={`${id}-cmd`} className="label">
             Install command
           </label>
-          <input id={`${id}-cmd`} className="input" type="text" readOnly value={install} spellCheck={false} onFocus={(event) => event.currentTarget.select()} />
+          <input ref={field} id={`${id}-cmd`} className="input" type="text" readOnly value={install} spellCheck={false} onFocus={(event) => event.currentTarget.select()} />
           <button type="button" className="btn" onClick={copy}>
-            {copied ? 'Copied' : 'Copy'}
+            {copied === null ? 'Copy' : copied ? 'Copied' : 'Not copied'}
           </button>
         </div>
       )}
