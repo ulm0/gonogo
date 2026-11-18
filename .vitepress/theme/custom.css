@@ -227,7 +227,8 @@
   border-bottom-width: 3px;
   border-radius: var(--radius-key);
   background: var(--key);
-  margin-inline-start: 4px;
+  /* The bar's own padding on the right is 8 px; 8 more keeps the key off the glass edge. */
+  margin-inline: 4px 8px;
 }
 
 /* The livery key: the select is the key (44 px, the whole of it), the ◐ of the app's livery key on it. */
