@@ -844,6 +844,8 @@ describe('end to end with the stand-in agent', () => {
     expect(c.items(id, mark).at(-1)).toMatchObject({ status: 'read', note: null, from: 'user', to: 'ana', hops: 0, subject: 'plan', body });
 
     // exactly one prompt, and it is the pointer: the body never goes through the terminal
+    // (the stand-in writes its log a moment after the state changes, so wait for it)
+    await waitFor(() => prompts(h, 'ana').length >= 1 && pastes(h, 'ana').length >= 1 && tools(h, 'ana', 'read_messages').length >= 1, 5000, 'the stand-in log of the pointer and the read');
     const pointer = 'gonogo: 1 new message from user. Call read_messages.';
     expect(pointerText([{ from: 'user' }])).toBe(pointer);
     expect(prompts(h, 'ana')).toEqual([pointer]);
@@ -1009,6 +1011,7 @@ describe('end to end with the stand-in agent', () => {
       await c.waitItem(second.body.id, (item) => item.status === 'read', 8000, 'to be read', mark);
       expect(c.statuses(second.body.id, mark).includes('held')).toBe(false);
       const pointer = pointerText([{ from: 'user' }]);
+      await waitFor(() => pastes(h, 'flight').length >= 2 && tools(h, 'flight', 'read_messages').length >= 2, 5000, 'the stand-in log of both pointers and reads');
       expect(pastes(h, 'flight')).toEqual([pointer, pointer]);
       expect(hooks(h, 'flight'), 'the stand-in posted no hook at all').toEqual([]);
       expect(tools(h, 'flight', 'read_messages').map((call) => (call.result as { count: number }).count)).toEqual([1, 1]);
@@ -1386,7 +1389,8 @@ describe('end to end with the stand-in agent', () => {
     await waitState(h, 'ana', 'idle');
     await sleep(400);
     expect(c.binary.length, 'no output after detach').toBe(seen);
-    expect(prompts(h, 'ana'), 'the dropped input never reached the stand-in').toEqual([pointerText([{ from: 'user' }])]);
+    await waitFor(() => prompts(h, 'ana').length >= 1, 5000, 'the pointer prompt in the stand-in log');
+    expect(prompts(h, 'ana'),'the dropped input never reached the stand-in').toEqual([pointerText([{ from: 'user' }])]);
 
     // /clear starts a new session: the next UserPromptSubmit carries its id and the roster follows
     const original = rosterEntry(h, 'ana').sessionId;
