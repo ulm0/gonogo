@@ -51,7 +51,7 @@ export function PermissionsEditor({ id, value, onChange, error, inheritedDeny = 
         </p>
       )}
       <p className="hint" id={`${id}-hint`}>
-        One rule on each line: allow, ask or deny, then a tool, such as <code>allow Bash(git:*)</code> or <code>deny Read(./.env)</code>. Deny beats ask, and ask beats allow. The mode of the console still decides what is not listed.
+        One rule on each line: allow, ask or deny, then a tool, such as <code>allow Bash(git:*)</code> or <code>deny Read(./.env)</code>. Deny beats ask, and ask beats allow (a deny of a bare Read or Edit also covers the console's own memory.md). The mode of the console still decides what is not listed.
       </p>
     </div>
   );

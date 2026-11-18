@@ -113,6 +113,13 @@ describe('settings.json of a Claude Code agent', () => {
     expect((buildSettings({ ...base, rules: { allow: ['Bash'] } }).permissions as Record<string, unknown>).ask).toBeUndefined();
   });
 
+  it('keeps the memory rules as allows, so a deny or ask of the same tool beats them (said on the page)', () => {
+    const settings = buildSettings({ ...base, rules: { deny: ['Edit'], ask: ['Read'] } }).permissions as { allow: string[]; deny: string[]; ask: string[] };
+    expect(settings.allow).toContain('Edit(//h/agents/ana/memory.md)');
+    expect(settings.deny).toContain('Edit');
+    expect(settings.ask).toContain('Read');
+  });
+
   it('does not touch the mode: bypass still skips the startup warning, and the hooks are there', () => {
     const settings = buildSettings({ ...base, mode: 'bypassPermissions', rules: { deny: ['Bash'] } });
     expect(settings.skipDangerousModePermissionPrompt).toBe(true);

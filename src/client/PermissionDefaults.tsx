@@ -32,7 +32,7 @@ export function PermissionDefaultsBlock(): ReactElement {
       <h2 className="label" id={`${id}-title`}>
         TOOL PERMISSIONS
       </h2>
-      <p className="hint">The tools a Claude Code console may use without asking, must ask about, or may never use. A console with rules of its own (its Edit form) uses those instead. It applies at each console&apos;s next start.</p>
+      <p className="hint">The tools a Claude Code console may use without asking, must ask about, or may never use. A console with rules of its own (its Edit form) uses its own allow and ask instead of these (its allow can undo a room ask), but a room deny always applies. A deny or ask of Read, Edit or Write also covers the console's own memory.md. It applies at each console&apos;s next start.</p>
       {saved !== null && (
         <>
           <PermissionsEditor id={id} value={text} onChange={setText} error={invalid ?? undefined} />

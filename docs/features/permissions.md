@@ -9,7 +9,7 @@ They are Claude Code's own `permissions` rules (`Bash`, `Read`, `Edit`, `Bash(gi
   Ask or Deny. Below it a text with one rule on each line, `allow Bash(git:*)`, for everything else (the selects read and
   write the lines of a bare tool). A line that is not a rule is named under the field; the server checks again.
 - **The room's rules.** Flight Rules, TOOL PERMISSIONS: the rules of every Claude Code console that has none of its own.
-  **A console's own `allow` and `ask` replace the room's, but the room's `deny` always applies too**, so one console's edit
+  **A console that has rules of its own (any list) uses its own `allow` and `ask` and none of the room's, even if it only wrote a `deny`; but the room's `deny` always applies too**, so one console's edit
   cannot drop a room-wide deny; the form shows the inherited denies, read only. Both apply at the console's next start (the
   console is marked as needing a restart). The room's rules are in `~/.gonogo/permissions.json` (`GET` and `PUT
   /api/permissions`); a console's own are in its record (`permissions` on hire and edit, `null` goes back to the room's).
@@ -17,7 +17,7 @@ They are Claude Code's own `permissions` rules (`Bash`, `Read`, `Edit`, `Bash(gi
   (`~/.gonogo/agents/<name>/settings.json`, passed with `--settings`), after its own rules. It never reads or writes your
   `~/.claude` or the repository's `.claude`. Claude Code merges that file with its own user and project settings, so a rule
   you set there still counts. gonogo's own rules stay whatever you write: `SendMessage` and `ListAgents` stay denied,
-  and a console can always read and edit its own `memory.md`. The tools of gonogo itself (`mcp__gonogo__...`) are refused in
+  and gonogo allows a console to read and edit its own `memory.md`. That is an `allow`, so a `deny` or `ask` of `Read`, `Edit` or `Write` in the room's or the console's rules takes `memory.md` away or makes it ask: scope those rules (`Edit(./src/**)`) if the console must keep its notes. The tools of gonogo itself (`mcp__gonogo__...`) are refused in
   every list, because a console that cannot use them cannot be reached.
 - **A rule** is a tool name, then an optional pattern in parentheses on one line: letters, digits, `_`, `.`, `-`, at most
   100 characters for the name and 200 for the pattern, at most 50 rules in a list.
