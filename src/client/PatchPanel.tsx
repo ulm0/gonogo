@@ -9,7 +9,7 @@ import * as api from './api.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commands, matchCommands, stepIndex } from './shell.js';
 import type { Act, View } from './shell.js';
-import { openConsole, openHire, showDownlink, showBlackBox, showBoard, showHangar, showLivery, showLog, showLoop, showParty, showPlan, showRecorder, showRoom, showRules, showWindow, useStore } from './store.js';
+import { openConsole, openHire, showDownlink, showBlackBox, showBoard, showHangar, showLivery, showLog, showLoop, showMissions, openNewMission, showParty, showPlan, showRecorder, showRoom, showRules, showWindow, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './patch.css';
 
@@ -17,6 +17,7 @@ const SHOW: Record<View, () => void> = {
   room: showRoom,
   loop: showLoop,
   party: showParty,
+  missions: showMissions,
   board: showBoard,
   blackbox: showBlackBox,
   hangar: showHangar,
@@ -40,6 +41,9 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
       return null;
     case 'hire':
       openHire();
+      return null;
+    case 'new-mission':
+      openNewMission();
       return null;
     case 'brief':
       // the brief box is in the room on a desk and at the foot of the loop on a phone (its field has the class `brief-input`)

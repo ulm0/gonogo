@@ -7,6 +7,7 @@ import * as api from './api.js';
 import { BlackBox } from './BlackBox.js';
 import { Downlink } from './Downlink.js';
 import { FlightPlan } from './FlightPlan.js';
+import { Missions } from './Missions.js';
 import { Hangar } from './Hangar.js';
 import { HireForm } from './HireForm.js';
 import { LaunchWindow } from './LaunchWindow.js';
@@ -358,6 +359,7 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'blackbox') return <BlackBox />;
   if (view === 'rules') return <FlightRules />;
   if (view === 'party') return <PartyLine />;
+  if (view === 'missions') return <Missions />;
   if (phone) {
     return (
       <main className="room room-phone">

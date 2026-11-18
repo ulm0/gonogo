@@ -70,12 +70,14 @@ export interface Values {
   detail: string;
   /** An agent name, or '' for nobody. */
   assignee: string;
+  /** A mission id, or '' for none. */
+  missionId: string;
 }
-export type Field = 'title' | 'detail' | 'assignee';
+export type Field = 'title' | 'detail' | 'assignee' | 'missionId';
 export type Problems = Partial<Record<Field, string>>;
-export const FIELDS: readonly Field[] = ['title', 'detail', 'assignee'];
+export const FIELDS: readonly Field[] = ['title', 'detail', 'assignee', 'missionId'];
 
-export const emptyValues = (): Values => ({ title: '', detail: '', assignee: '' });
+export const emptyValues = (): Values => ({ title: '', detail: '', assignee: '', missionId: '' });
 
 export function validate(v: Values): Problems {
   const problems: Problems = {};
@@ -87,7 +89,7 @@ export function validate(v: Values): Problems {
   return problems;
 }
 
-export const requestOf = (v: Values): TaskRequest => ({ title: v.title.trim(), detail: v.detail.trim(), assignee: v.assignee === '' ? null : v.assignee });
+export const requestOf = (v: Values): TaskRequest => ({ title: v.title.trim(), detail: v.detail.trim(), assignee: v.assignee === '' ? null : v.assignee, ...(v.missionId === '' ? {} : { missionId: v.missionId }) });
 
 /** The id of a card's element, for the focus that follows a move. */
 export const cardId = (id: string): string => `plan-card-${id}`;

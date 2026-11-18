@@ -85,15 +85,15 @@ describe('who a task can be given to', () => {
 describe('the form', () => {
   it('asks for a title of one line and a detail within the limit', () => {
     expect(validate(emptyValues())).toEqual({ title: 'Give it a title.' });
-    expect(validate({ title: '  ', detail: '', assignee: '' })).toEqual({ title: 'Give it a title.' });
-    expect(validate({ title: 'x'.repeat(TASK_TITLE_MAX_CHARS + 1), detail: '', assignee: '' }).title).toMatch(/^At most 200/);
-    expect(validate({ title: 'a\nb', detail: '', assignee: '' }).title).toBe('One line.');
-    expect(validate({ title: 'a', detail: 'x'.repeat(TASK_DETAIL_MAX_CHARS + 1), assignee: '' }).detail).toMatch(/^At most 4000/);
-    expect(validate({ title: 'x'.repeat(TASK_TITLE_MAX_CHARS), detail: 'y'.repeat(TASK_DETAIL_MAX_CHARS), assignee: 'ana' })).toEqual({});
+    expect(validate({ title: '  ', detail: '', assignee: '', missionId: '' })).toEqual({ title: 'Give it a title.' });
+    expect(validate({ title: 'x'.repeat(TASK_TITLE_MAX_CHARS + 1), detail: '', assignee: '', missionId: '' }).title).toMatch(/^At most 200/);
+    expect(validate({ title: 'a\nb', detail: '', assignee: '', missionId: '' }).title).toBe('One line.');
+    expect(validate({ title: 'a', detail: 'x'.repeat(TASK_DETAIL_MAX_CHARS + 1), assignee: '', missionId: '' }).detail).toMatch(/^At most 4000/);
+    expect(validate({ title: 'x'.repeat(TASK_TITLE_MAX_CHARS), detail: 'y'.repeat(TASK_DETAIL_MAX_CHARS), assignee: 'ana', missionId: '' })).toEqual({});
   });
 
   it('sends the title and detail trimmed, and nobody as null', () => {
-    expect(requestOf({ title: ' Write it ', detail: ' one page ', assignee: '' })).toEqual({ title: 'Write it', detail: 'one page', assignee: null });
-    expect(requestOf({ title: 'a', detail: '', assignee: 'ana' })).toEqual({ title: 'a', detail: '', assignee: 'ana' });
+    expect(requestOf({ title: ' Write it ', detail: ' one page ', assignee: '', missionId: '' })).toEqual({ title: 'Write it', detail: 'one page', assignee: null });
+    expect(requestOf({ title: 'a', detail: '', assignee: 'ana', missionId: '' })).toEqual({ title: 'a', detail: '', assignee: 'ana' });
   });
 });

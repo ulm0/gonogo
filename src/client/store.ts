@@ -15,6 +15,7 @@ import type {
   ServerFrame,
   ServerInfo,
   StateSnapshot,
+  Mission,
   Task,
   UplinkView,
 } from '../shared/protocol.js';
@@ -38,7 +39,7 @@ export interface ClientState {
   /** The staffing screen. A hire may start from an open seat (its position) or as a custom command. */
   form: null | { mode: 'hire'; position?: string | null; custom?: boolean } | { mode: 'edit'; name: string };
   /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log, the Livery, the Flight Rules, Party Line, the Plot Board, the Black Box, the Hangar or the Recorder. */
-  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules' | 'party' | 'board' | 'blackbox' | 'hangar' | 'recorder';
+  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules' | 'party' | 'missions' | 'board' | 'blackbox' | 'hangar' | 'recorder';
   /** Phone only: a console is open full screen over the room. A wide page ignores it (the selected console is always in its side panel). */
   consoleOpen: boolean;
   /** Transient message animations (Envelope lives in protocol.ts so that this file needs no .tsx). */
@@ -55,6 +56,12 @@ export interface ClientState {
   uplinks: UplinkView[];
   /** Flight Plan: every task of the board, in the order they were made. */
   tasks: Task[];
+  /** Missions: every mission, in the order they were made. */
+  missions: Mission[];
+  /** The mission whose detail the Missions view shows, or null for the list. */
+  selectedMission: string | null;
+  /** The Missions view opens on a new-mission form with these fields (from the Patch Panel or the brief box), or null. */
+  missionDraft: { name: string; goal: string } | null;
   /** Downlink: the Director's inbox. The server keeps what is read, so every browser shows the same. */
   downlink: DownlinkView;
   /** Mission Log: what the last frame said. The entries are not here; the view asks for them again when `rev` changes. */
@@ -163,6 +170,9 @@ export function emptyState(): ClientState {
     schedules: [],
     uplinks: [],
     tasks: [],
+    missions: [],
+    selectedMission: null,
+    missionDraft: null,
     downlink: NO_DOWNLINK,
     log: NO_LOG_NEWS,
     livery: defaultView(),
@@ -200,6 +210,11 @@ export const showDownlink = (): void => store.setState((s) => ({ ...s, view: 'do
 export const showLog = (): void => store.setState((s) => ({ ...s, view: 'log', consoleOpen: false }));
 export const showLivery = (): void => store.setState((s) => ({ ...s, view: 'livery', consoleOpen: false }));
 export const showRules = (): void => store.setState((s) => ({ ...s, view: 'rules', consoleOpen: false }));
+export const showMissions = (): void => store.setState((s) => ({ ...s, view: 'missions', consoleOpen: false, missionDraft: null }));
+/** Opens the Missions view on its New mission form; `draft` fills it (the brief box does). */
+export const openNewMission = (draft: { name: string; goal: string } = { name: '', goal: '' }): void =>
+  store.setState((s) => ({ ...s, view: 'missions', consoleOpen: false, selectedMission: null, missionDraft: draft }));
+export const selectMission = (id: string | null): void => store.setState((s) => ({ ...s, selectedMission: id, missionDraft: null }));
 export const showParty = (): void => store.setState((s) => ({ ...s, view: 'party', consoleOpen: false }));
 export const showBoard = (): void => store.setState((s) => ({ ...s, view: 'board', consoleOpen: false }));
 export const showBlackBox = (): void => store.setState((s) => ({ ...s, view: 'blackbox', consoleOpen: false }));
@@ -325,6 +340,8 @@ function applyState(s: ClientState, snapshot: StateSnapshot, now: number): Clien
     schedules: snapshot.schedules ?? [],
     uplinks: snapshot.uplinks ?? [],
     tasks: snapshot.tasks ?? [],
+    // an older server sends no missions
+    missions: snapshot.missions ?? [],
     downlink: snapshot.downlink ?? NO_DOWNLINK,
     // an older server sends no livery: the page then shows the default look
     livery: snapshot.livery ?? defaultView(),
@@ -416,6 +433,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, uplinks: frame.uplinks };
     case 'tasks':
       return { ...s, tasks: frame.tasks };
+    case 'missions':
+      return { ...s, missions: frame.missions };
     case 'downlink':
       return { ...s, downlink: frame.downlink };
     case 'livery':

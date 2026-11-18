@@ -2357,12 +2357,12 @@ describe('mcp', () => {
     expect(list?.inputSchema.required ?? []).toEqual([]);
     expect(list?.inputSchema.properties?.status).toMatchObject({ enum: ['todo', 'doing', 'review', 'done', 'blocked'] });
     const create = tools.find((t) => t.name === 'task_create');
-    expect(Object.keys(create?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'detail', 'title']);
+    expect(Object.keys(create?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'detail', 'missionId', 'title']);
     expect([...(create?.inputSchema.required ?? [])]).toEqual(['title']);
     expect(create?.inputSchema.properties?.title).toMatchObject({ maxLength: 200 });
     expect(create?.inputSchema.properties?.detail).toMatchObject({ maxLength: 4000 });
     const update = tools.find((t) => t.name === 'task_update');
-    expect(Object.keys(update?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'id', 'note', 'status']);
+    expect(Object.keys(update?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'id', 'missionId', 'note', 'status']);
     expect([...(update?.inputSchema.required ?? [])]).toEqual(['id']);
     for (const name of ['task_list', 'task_create', 'task_update'] as const) expect(tools.find((t) => t.name === name)?.description).toBe(MCP_DESCRIPTIONS[name]);
     const write = tools.find((t) => t.name === 'log_write');
@@ -2729,7 +2729,7 @@ describe('web: REST', () => {
     const res = await api(port, 'GET', '/api/state');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/json');
-    expect(res.json()).toEqual({ agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: NO_PROPELLANT_VIEW, schedules: [], uplinks: [], tasks: [], downlink: { unread: 0, items: [] } });
+    expect(res.json()).toEqual({ agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: NO_PROPELLANT_VIEW, schedules: [], uplinks: [], tasks: [], missions: [], downlink: { unread: 0, items: [] } });
   });
 
   it('puts the current poll and governor in the snapshot', async () => {
@@ -4939,7 +4939,7 @@ describe('web: WebSocket handshake', () => {
     const activity = [{ ...message('m1'), truncated: false }];
     const { port } = await startWeb({}, { views: () => views, activity: () => activity });
     const client = await openWs(port);
-    expect(client.frames[0]).toEqual({ t: 'state', state: { agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: NO_PROPELLANT_VIEW, schedules: [], uplinks: [], tasks: [], downlink: { unread: 0, items: [] } } });
+    expect(client.frames[0]).toEqual({ t: 'state', state: { agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: NO_PROPELLANT_VIEW, schedules: [], uplinks: [], tasks: [], missions: [], downlink: { unread: 0, items: [] } } });
   });
 
   it('answers 401 with the ApiError body when the token is not in the subprotocol, and refuses ?token=', async () => {

@@ -1,4 +1,4 @@
-import type { ActivityItem, AgentView, Budget, CostGauge, FuelGauge, FuelLimits, FuelWindow, GovernorView, PollView } from '../shared/protocol.js';
+import type { ActivityItem, AgentView, Budget, CostGauge, FuelGauge, FuelLimits, FuelWindow, GovernorView, Mission as MissionRecord, PollView } from '../shared/protocol.js';
 import { HISTORY_WINDOW_MS, MAX_AGENTS, providerInfo, STATIC_FIRE_POSITIONS } from '../shared/protocol.js';
 
 // Pure logic of the wall (mission, sequence, T-minus, Max Q), kept out of Wall.tsx so that it can be tested without a DOM.
@@ -12,8 +12,10 @@ export const legendOf = (legends: Legends, name: string): string => (Object.hasO
 
 export interface Mission {
   text: string;
-  /** Server time of the message: the clock counts up from here. */
+  /** Server time of the message, or of the start of a named mission: the clock counts up from here. */
   at: number;
+  /** Set when it is a named mission of the Missions view (ms1, ...); absent for the guess from the brief. */
+  id?: string;
 }
 
 const firstLine = (text: string): string => text.split('\n').find((line) => line.trim() !== '')?.trim() ?? '';
@@ -30,6 +32,17 @@ export function missionOf(activity: readonly ActivityItem[], boss: string | null
   const fromBody = firstLine(item.body);
   const text = subject === '' || subject.toLowerCase() === 'brief' ? fromBody || subject : subject;
   return { text, at: item.at };
+}
+
+/**
+ * The mission the wall shows: the active mission that started last, else the guess from the last brief (`missionOf`), so a room
+ * that never makes a mission looks as it always did. Two active missions share the strip: the latest wins.
+ */
+export function currentMission(missions: readonly MissionRecord[], activity: readonly ActivityItem[], boss: string | null): Mission | null {
+  let latest: MissionRecord | null = null;
+  for (const m of missions) if (m.status === 'active' && m.startedAt !== null && (latest === null || m.startedAt > (latest.startedAt ?? 0))) latest = m;
+  if (latest !== null && latest.startedAt !== null) return { text: latest.name, at: latest.startedAt, id: latest.id };
+  return missionOf(activity, boss);
 }
 
 /** `HH:MM:SS` for a duration in ms; hours do not stop at 99, a negative duration (a clock that runs behind) is zero. */
