@@ -109,7 +109,7 @@ Environment:
   GONOGO_MAX_WORKING      Max Q: at most this many Claude agents work at once, 1 to ${MAX_AGENTS} (default off)
   GONOGO_STATION          this station's name for Docking (default: the host name)
   GONOGO_AGENT_CMD        command that replaces claude
-  GONOGO_CLEANROOM_IMAGE  Docker image of a Clean Room console (default gonogo)
+  GONOGO_CLEANROOM_IMAGE  Docker image of a Clean Room console (default ghcr.io/ulm0/gonogo)
   GONOGO_LOG_LEVEL        debug, info, warn or error (default info)
   GONOGO_SCRUB_ENV        extra variables to keep out of the agents (comma list; a name ending in _ is a prefix)
 `;

@@ -2,8 +2,9 @@
 #   install -d -o 1000 -g 1000 /srv/gonogo /srv/gonogo/projects
 # Then, with CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported in your shell:
 #   export DOCKER_GID=$(stat -L -c %g /var/run/docker.sock)    # every compose command reads it
-#   docker compose up -d --build
+#   docker compose up -d           # pulls the published image the first time
 #   docker compose logs gonogo     # the `gonogo ready:` line is the URL, token included
+# Update to the latest release: docker compose pull && docker compose up -d
 #
 # WARNING: the Docker socket gives this container root over the host, and so does every agent in it, also the ones
 # that do not run in a Clean Room. Hire only agents you would let run as root on this machine.
@@ -12,10 +13,12 @@
 # inside. Another folder: export GONOGO_DATA=/path (it must not contain a colon).
 services:
   gonogo:
-    image: ghcr.io/ulm0/gonogo
-    build: .
+    image: ghcr.io/ulm0/gonogo:latest
     container_name: gonogo
     init: true
+    # Back after a crash or a reboot of the host. A running Clean Room console loses gonogo's network when this
+    # container restarts: restart that console.
+    restart: always
     ports:
       - 127.0.0.1:7777:7777
     environment:
