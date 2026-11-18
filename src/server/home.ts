@@ -58,6 +58,7 @@ const MODEL_RE = new RegExp(MODEL_PATTERN);
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
+const SUPERVISOR_LOCK_FILE = 'supervisor.lock';
 const MESSAGE_ID_RE = /^m(\d+)$/;
 const LOCK_ATTEMPTS = 5;
 
@@ -80,10 +81,8 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
 
-function lockError(dir: string, pid: number | string): Error {
-  return new Error(
-    `another gonogo is using ${dir} (pid ${pid}). Stop it, or delete ${join(dir, LOCK_FILE)} if none is running.`,
-  );
+function lockError(dir: string, pid: number | string, file: string = LOCK_FILE, what = 'gonogo'): Error {
+  return new Error(`another ${what} is using ${dir} (pid ${pid}). Stop it, or delete ${join(dir, file)} if none is running.`);
 }
 
 /** The pid in a lock file, or null when the content is not a positive integer. Throws ENOENT when the file is gone. */
@@ -129,9 +128,9 @@ function requirePrivate(path: string, mode: number, what: 'directory' | 'file'):
   }
 }
 
-function acquireLock(dir: string, key: string): void {
-  if (heldDirs.has(key)) throw lockError(dir, process.pid);
-  const path = join(dir, LOCK_FILE);
+function acquireLock(dir: string, key: string, file: string = LOCK_FILE, what = 'gonogo'): void {
+  if (heldDirs.has(key)) throw lockError(dir, process.pid, file, what);
+  const path = join(dir, file);
   let lastPid: number | string = '?';
   for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt += 1) {
     try {
@@ -156,7 +155,7 @@ function acquireLock(dir: string, key: string): void {
     if (pid !== null) {
       lastPid = pid;
       // heldDirs does not have this directory, so a lock naming our own pid is a leftover of an earlier run
-      if (pid !== process.pid && isProcessAlive(pid)) throw lockError(dir, pid);
+      if (pid !== process.pid && isProcessAlive(pid)) throw lockError(dir, pid, file, what);
     }
     // shortcut: two servers that both find the same stale lock in the same millisecond can both win; use flock if that ever matters
     try {
@@ -165,7 +164,24 @@ function acquireLock(dir: string, key: string): void {
       if (errCode(e) !== 'ENOENT') throw e;
     }
   }
-  throw lockError(dir, lastPid);
+  throw lockError(dir, lastPid, file, what);
+}
+
+/** The lock of the rooms supervisor of a home: `<home>/run/supervisor.lock`, the same rule as `server.lock` (a stale pid is taken over). Returns the release. */
+export function acquireSupervisorLock(dir: string): () => void {
+  const root = resolve(dir);
+  mkdirSync(join(root, 'run'), { recursive: true, mode: DIR_MODE });
+  const file = join('run', SUPERVISOR_LOCK_FILE);
+  const key = `${realpathSync(root)}:supervisor`;
+  acquireLock(root, key, file, 'gonogo supervisor');
+  return () => {
+    try {
+      if (readLockPid(join(root, file)) === process.pid) unlinkSync(join(root, file));
+    } catch {
+      // already gone
+    }
+    heldDirs.delete(key);
+  };
 }
 
 function isPermissionMode(x: unknown): x is PermissionMode {
@@ -376,14 +392,22 @@ function readTailLines(path: string, maxBytes: number): string[] | null {
   }
 }
 
-export function openHome(dir: string, log: Logger = nullLogger): Home {
+/**
+ * `roomToken`: this home is a room of the rooms supervisor. Its browser token is NOT `<home>/token` (that file is the Director's, held by the
+ * supervisor and never read here) but `<home>/run/room-token`, made new at every start, so the Director token never reaches a room.
+ */
+export interface OpenHomeOptions {
+  roomToken?: boolean;
+}
+
+export function openHome(dir: string, log: Logger = nullLogger, options: OpenHomeOptions = {}): Home {
   const logger = log.child('home');
   const root = resolve(dir);
   const agentsRoot = join(root, AGENTS_DIR);
   const rosterPath = join(root, AGENTS_FILE);
   const messagesPath = join(root, MESSAGES_FILE);
   const rotatedPath = join(root, MESSAGES_ROTATED_FILE);
-  const tokenPath = join(root, BROWSER_TOKEN_FILE);
+  const tokenPath = options.roomToken === true ? join(root, 'run', 'room-token') : join(root, BROWSER_TOKEN_FILE);
 
   // a home that exists is looked at before anything is put into it
   requirePrivate(root, DIR_MODE, 'directory');
@@ -422,6 +446,16 @@ export function openHome(dir: string, log: Logger = nullLogger): Home {
 
   let browserToken: string;
   try {
+    if (options.roomToken === true) {
+      // always new: a room's token is never kept, copied from `token`, or reused after a restart
+      mkdirSync(join(root, 'run'), { recursive: true, mode: DIR_MODE });
+      requirePrivate(join(root, 'run'), DIR_MODE, 'directory');
+      try {
+        unlinkSync(tokenPath);
+      } catch (e) {
+        if (errCode(e) !== 'ENOENT') throw e;
+      }
+    }
     requirePrivate(tokenPath, FILE_MODE, 'file');
     let existing = '';
     try {

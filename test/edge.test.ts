@@ -103,7 +103,7 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...actual, chmodSync: (...args: Parameters<typeof actual.chmodSync>): void => (fsHooks.chmodSync ?? actual.chmodSync)(...args) };
 });
 
-import { USAGE, isTransientError, main, parseArgs, resolveSettings, startGonogo } from '../src/server/cli.js';
+import { USAGE, isTransientError, main, parseArgs, runRoom, resolveSettings, startGonogo } from '../src/server/cli.js';
 import type { Running } from '../src/server/cli.js';
 import { openHome } from '../src/server/home.js';
 import { createHookHandler } from '../src/server/hooks.js';
@@ -6734,13 +6734,22 @@ function captureProcess() {
 type ProcessCapture = ReturnType<typeof captureProcess>;
 
 async function runMain(cap: ProcessCapture, argv: string[], env: Record<string, string | undefined>): Promise<{ url: string; port: number; token: string } | null> {
-  await main(argv, env);
+  // the start of one room (the CLI's own start is the supervisor now): flags as given, no pipe to the supervisor
+  const parsed = parseArgs(argv);
+  if (parsed.kind !== 'run') throw new Error('not a start');
+  await runRoom(parsed.options, env);
   const match = /^gonogo ready: (http:\/\/(?:127\.0\.0\.1|\[::1\]|[^:/]+):(\d+)\/#token=([0-9a-f]{64}))\n$/.exec(cap.out.join(''));
   return match ? { url: match[1] ?? '', port: Number(match[2]), token: match[3] ?? '' } : null;
 }
 
 describe('cli: main', () => {
   const baseEnv = (): Record<string, string | undefined> => ({ PATH: process.env.PATH, GONOGO_AGENT_CMD: 'node fake-claude' });
+  /** The start of one room, as the tests with fakes run it (the CLI's own start is the supervisor now). */
+  const roomMain = async (argv: string[], env: Record<string, string | undefined>): Promise<void> => {
+    const parsed = parseArgs(argv);
+    if (parsed.kind !== 'run') throw new Error('not a start');
+    await runRoom(parsed.options, env);
+  };
 
   it('prints the usage and exits 0 for --help, and starts nothing', async () => {
     installFakes();
@@ -6784,7 +6793,7 @@ describe('cli: main', () => {
     const home = join(tmpDir(), 'home');
     mkdirSync(home, { recursive: true });
     writeFileSync(join(home, 'agents.json'), 'nope');
-    await main([`--home=${home}`, '--port=0'], baseEnv());
+    await roomMain([`--home=${home}`, '--port=0'], baseEnv());
     expect(cap.exits).toEqual([1]);
     expect(cap.out).toEqual([]);
     const lines = cap.err.join('').trimEnd().split('\n');
@@ -6796,7 +6805,7 @@ describe('cli: main', () => {
   it('says that claude is missing in one line', async () => {
     installFakes();
     const cap = captureProcess();
-    await main([`--home=${join(tmpDir(), 'home')}`, '--port=0'], { PATH: tmpDir() });
+    await roomMain([`--home=${join(tmpDir(), 'home')}`, '--port=0'], { PATH: tmpDir() });
     expect(cap.exits).toEqual([1]);
     expect(cap.err.join('')).toBe('gonogo: the claude CLI was not found on PATH. Install Claude Code and sign in, or set GONOGO_AGENT_CMD.\n');
   });
@@ -6809,7 +6818,7 @@ describe('cli: main', () => {
     cleanups.push(() => new Promise<void>((resolve) => blocker.close(() => resolve())));
     const address = blocker.address();
     const taken = typeof address === 'object' && address ? address.port : 0;
-    await main([`--home=${join(tmpDir(), 'home')}`, `--port=${taken}`], baseEnv());
+    await roomMain([`--home=${join(tmpDir(), 'home')}`, `--port=${taken}`], baseEnv());
     expect(cap.exits).toEqual([1]);
     expect(cap.err.join('')).toContain(`gonogo: cannot listen on 127.0.0.1:${taken}: the port is already in use (EADDRINUSE)`);
   });
@@ -6817,7 +6826,7 @@ describe('cli: main', () => {
   it('adds the stack of a failed start when the log level is debug', async () => {
     installFakes();
     const cap = captureProcess();
-    await main([`--home=${join(tmpDir(), 'home')}`, '--port=0'], { PATH: tmpDir(), GONOGO_LOG_LEVEL: 'debug' });
+    await roomMain([`--home=${join(tmpDir(), 'home')}`, '--port=0'], { PATH: tmpDir(), GONOGO_LOG_LEVEL: 'debug' });
     const text = cap.err.join('');
     expect(text.startsWith('gonogo: the claude CLI was not found on PATH.')).toBe(true);
     expect(text).toMatch(/\n\s+at /);

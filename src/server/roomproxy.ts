@@ -1,5 +1,7 @@
 /**
- * The proxy of the rooms supervisor (docs/rooms-spec.md): `/r/<id>/...` on the front port reaches the gonogo process of that room.
+ * The proxy of the rooms supervisor (docs/rooms-spec.md, docs/single-mode-spec.md): `/r/<id>/...` on the front port reaches the gonogo process
+ * of that room, and any path that is not reserved reaches room `main`, so a user with one room keeps every address he had.
+ * Reserved (the supervisor's own, never proxied): `/rooms` and under it, `/api/rooms` and under it, `/internal` and under it, and `/r`.
  *
  * It is on the security path, so it is small and says no by default:
  * - The browser holds one secret, the Director token. The proxy checks it and swaps in the room's own browser token on the way
@@ -10,7 +12,9 @@
  *   room serves without a token anyway), with no Authorization at all.
  * - `/uplink/` and `/dock/` (webhooks and other stations, which prove themselves with a signature) go through with no
  *   Authorization either. `/hook/` and `/mcp/` are for the agents of a room, who use that room's own loopback port: here they are 404.
- * - A room id is `[a-z][a-z0-9-]{0,23}`; a path with `..`, an encoded slash or a NUL is 400.
+ * - A room id is `[a-z][a-z0-9-]{0,23}`; a path with `..`, an encoded slash or dot, a backslash, a NUL or an empty segment is 400. The path is
+ *   decoded ONCE and the reserved check and that check run on the same decoded, case-exact text, before anything is routed (S1).
+ * - `Set-Cookie` is dropped from every answer (S2): a room can never set a cookie on the shared address.
  * - Host and Origin are checked as a room checks them, then rewritten to the room's loopback address (the room checks them again).
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -31,17 +35,17 @@ export interface ProxyRoom {
 }
 
 export interface RoomProxyOptions {
-  /** The one secret of the browser. */
-  directorToken: string;
+  /** The one secret of the browser; a function so that a token rotated on disk is used at once. */
+  directorToken: string | (() => string);
   rooms(): ProxyRoom[];
   /** Host names this server may be reached by (besides loopback). */
   allowedNames: ReadonlySet<string>;
 }
 
 export interface RoomProxy {
-  /** True when the request was for `/r/...` (answered or proxied); false when it is the supervisor's own. */
+  /** True when the request was proxied or refused here; false when it is the supervisor's own (a reserved path). */
   handle(req: IncomingMessage, res: ServerResponse): boolean;
-  /** True when the upgrade was for `/r/...`. */
+  /** True when the upgrade was proxied or refused here; false for a reserved path. */
   upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean;
 }
 
@@ -56,14 +60,18 @@ type Kind = 'browser' | 'passthrough' | 'closed';
 /** What the first segment of the path inside a room is for. */
 function kindOf(rest: string): Kind {
   const first = rest.split('/')[1] ?? '';
-  if (first === 'hook' || first === 'mcp') return 'closed';
+  // case-insensitive on purpose: a router that folds case must not find an agent's route through here
+  if (['hook', 'mcp'].includes(first.toLowerCase())) return 'closed';
   if (first === 'uplink' || first === 'dock') return 'passthrough';
   return 'browser';
 }
 
 /** A path that tries to leave the room: `..`, an encoded slash or dot, a backslash, a NUL. */
 function suspicious(rest: string): boolean {
-  for (const segment of rest.split('/')) {
+  const segments = rest.split('/');
+  for (const [index, segment] of segments.entries()) {
+    // an empty segment inside the path (`//internal/busy`) is how a check on the first segment gets stepped around; a trailing slash is fine
+    if (segment === '' && index > 0 && index < segments.length - 1) return true;
     let decoded: string;
     try {
       decoded = decodeURIComponent(segment);
@@ -73,6 +81,13 @@ function suspicious(rest: string): boolean {
     if (decoded === '..' || decoded === '.' || decoded.includes('/') || decoded.includes('\\') || decoded.includes('\0')) return true;
   }
   return false;
+}
+
+/** The decoded, case-exact path (decoded once, per segment, after suspicious() passed) and whether it belongs to the supervisor. */
+function reservedPath(rest: string): boolean {
+  const segments = rest.split('/').map((segment) => decodeURIComponent(segment));
+  const first = segments[1] ?? '';
+  return first === 'rooms' || first === 'internal' || (first === 'api' && segments[2] === 'rooms');
 }
 
 const directorFromSubprotocols = (header: string | string[] | undefined): string | null => {
@@ -107,22 +122,51 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     path: string;
     kind: Exclude<Kind, 'closed'>;
     id: string;
+    /** Reached under `/r/<id>/`: a redirect of the room is put back under that prefix. */
+    prefixed: boolean;
   }
 
-  /** Resolves `/r/<id>/<rest>`; answers the error itself and returns null when it cannot. */
+  /** Splits a url into path and query; null when it is not an origin-form path. */
+  const split = (url: string): { path: string; query: string } | null => {
+    const match = /^(\/[^?#]*)(\?[^#]*)?$/.exec(url);
+    return match === null ? null : { path: match[1] as string, query: match[2] ?? '' };
+  };
+
+  /** True when the url is the supervisor's own (reserved) and nothing here should touch it. */
+  const isReserved = (url: string): boolean => {
+    const parts = split(url);
+    if (parts === null || suspicious(parts.path)) return false;
+    return reservedPath(parts.path);
+  };
+
+  /**
+   * Resolves `/r/<id>/<rest>` or, for any path that is not reserved, room `main` at the same path; answers the error itself and returns null
+   * when it cannot.
+   */
   function resolve(req: IncomingMessage, fail: (status: number, text: string) => void): Target | null {
-    const match = PREFIX.exec(req.url ?? '');
-    if (match === null) return (fail(404, 'not found'), null);
-    const [, id = '', rest = '/', query = ''] = match;
-    if (!validRoomId(id)) return (fail(404, 'no such room'), null);
+    const parts = split(req.url ?? '');
+    if (parts === null) return (fail(400, 'bad request'), null);
     if (!hostAllowed(req.headers.host)) return (fail(403, 'forbidden host'), null);
+    const prefixed = PREFIX.exec(req.url ?? '');
+    let id = 'main';
+    let rest = parts.path;
+    if (prefixed !== null) {
+      id = prefixed[1] ?? '';
+      rest = prefixed[2] ?? '/';
+      if (!validRoomId(id)) return (fail(404, 'no such room'), null);
+    } else if ((parts.path.split('/')[1] ?? '') === 'r') {
+      // /r and /r/ name no room
+      return (fail(404, 'no such room'), null);
+    }
+    // one decode, then the same text goes to both checks
     if (suspicious(rest)) return (fail(400, 'bad path'), null);
+    if (prefixed === null && reservedPath(rest)) return (fail(404, 'not found'), null);
     const kind = kindOf(rest);
     if (kind === 'closed') return (fail(404, 'not found'), null);
     const room = options.rooms().find((r) => r.id === id);
     if (room === undefined) return (fail(404, 'no such room'), null);
     if (room.port === null || room.token === null) return (fail(503, 'the room is not running'), null);
-    return { room: { ...room, port: room.port }, path: rest + query, kind, id };
+    return { room: { ...room, port: room.port }, path: rest + (prefixed === null ? parts.query : (prefixed[3] ?? '')), kind, id, prefixed: prefixed !== null };
   }
 
   /** The headers for the room: no secret of the browser, the room's own token only when the Director proved himself. */
@@ -145,11 +189,11 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     return out;
   }
 
-  const directorOk = (token: string | null): boolean => sameToken(token, options.directorToken);
+  const directorOk = (token: string | null): boolean => sameToken(token, typeof options.directorToken === 'string' ? options.directorToken : options.directorToken());
 
   return {
     handle(req, res) {
-      if (!(req.url ?? '').startsWith('/r/') && req.url !== '/r') return false;
+      if (isReserved(req.url ?? '')) return false;
       // /r/<id> without the slash: the page needs it for its relative asset paths
       const bare = /^\/r\/([a-z][a-z0-9-]{0,23})(\?[^#]*)?$/.exec(req.url ?? '');
       if (bare !== null) {
@@ -176,9 +220,10 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         { host: '127.0.0.1', port: target.room.port, method: req.method, path: target.path, headers: forwardHeaders(req, target, withRoomToken, false) },
         (answer) => {
           const headers: http.OutgoingHttpHeaders = {};
-          for (const [name, value] of Object.entries(answer.headers)) if (!HOP.has(name)) headers[name] = value;
-          // a redirect to a path of the room stays inside its prefix
-          if (typeof headers.location === 'string' && headers.location.startsWith('/') && !headers.location.startsWith('//')) headers.location = `/r/${target.id}${headers.location}`;
+          // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2)
+          for (const [name, value] of Object.entries(answer.headers)) if (!HOP.has(name) && name !== 'set-cookie') headers[name] = value;
+          // a redirect to a path of the room stays inside its prefix; room main at / has none
+          if (target.prefixed && typeof headers.location === 'string' && headers.location.startsWith('/') && !headers.location.startsWith('//')) headers.location = `/r/${target.id}${headers.location}`;
           res.writeHead(answer.statusCode ?? 502, headers);
           answer.pipe(res);
         },
@@ -190,7 +235,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     },
 
     upgrade(req, socket, head) {
-      if (!(req.url ?? '').startsWith('/r/')) return false;
+      if (isReserved(req.url ?? '')) return false;
       const refuse = (status: number, text: string): void => {
         socket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status] ?? 'Error'}\r\nContent-Type: text/plain\r\nContent-Length: ${Buffer.byteLength(text)}\r\nConnection: close\r\n\r\n${text}`);
       };

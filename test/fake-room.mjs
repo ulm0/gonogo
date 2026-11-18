@@ -8,10 +8,12 @@ import { join } from 'node:path';
 const args = process.argv.slice(2);
 const home = args[args.indexOf('--home') + 1];
 mkdirSync(home, { recursive: true });
-const tokenFile = join(home, 'token');
-if (!existsSync(tokenFile)) writeFileSync(tokenFile, randomBytes(32).toString('hex') + '\n');
+// like the real room: its own token is run/room-token, new at every start (the Director token is <root>/token and is never read here)
+mkdirSync(join(home, 'run'), { recursive: true });
+const tokenFile = join(home, 'run', 'room-token');
+writeFileSync(tokenFile, randomBytes(32).toString('hex') + '\n');
 const token = readFileSync(tokenFile, 'utf8').trim();
-writeFileSync(join(home, 'started-with'), JSON.stringify({ args, home: process.env.GONOGO_HOME, port: process.env.GONOGO_PORT ?? null }));
+writeFileSync(join(home, 'started-with'), JSON.stringify({ args, home: process.env.GONOGO_HOME, port: process.env.GONOGO_PORT ?? null, supervisor: process.env.GONOGO_SUPERVISOR_PID ?? null, reloaded: process.env.GONOGO_RELOADED ?? null, env: Object.keys(process.env).filter((k) => /token/i.test(k)) }));
 
 if (process.env.FAKE_ROOM_FAIL) {
   process.stderr.write(`gonogo: ${process.env.FAKE_ROOM_FAIL} #token=${"f".repeat(64)}\n`);

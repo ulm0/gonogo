@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import { stat } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -43,7 +44,7 @@ import { createRemoteTerminalHost } from './remoteterminal.js';
 import type { RemoteTerminalHost } from './remoteterminal.js';
 import { runDir } from './ptyhost.js';
 import { TOKENS_FILE } from './ptyhostproto.js';
-import { createHoldStore, relaunch, requestReload, runPtyHost, spawnHostProcess } from './reload.js';
+import { createHoldStore, relaunch, requestReload, rotateDirectorToken, runPtyHost, spawnHostProcess } from './reload.js';
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
@@ -77,6 +78,7 @@ import { cachedLatest, createRollout, installKind, installNote, isNewer, updateC
 import { createUpdater } from './updater.js';
 import { addRoom, loadRooms, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { startSupervisor } from './supervisor.js';
+import type { Supervisor } from './supervisor.js';
 import { dockerUpdateStatus, followResult, readResult, settleResult, viewOfResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
 import type { Updater } from './updater.js';
 import type { WebServer } from './web.js';
@@ -120,6 +122,8 @@ export interface StartOptions {
   ptyHostCommand?: string[];
   /** A room of the rooms supervisor: shut down gracefully when stdin ends, so a supervisor that is killed leaves no room running. */
   exitWithStdin?: boolean;
+  /** This process is a room of the supervisor (`gonogo __room`): its browser token is `run/room-token`, new at each start, and it asks for the port it had. */
+  roomChild?: boolean;
 }
 
 export interface Running {
@@ -142,19 +146,21 @@ export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
        gonogo reload
-       gonogo rooms [add <id> [--name <text>] | list | remove <id>] [--home <dir>]
+       gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
+       gonogo token rotate [--home <dir>]
 
-Run a mission-control room of Claude Code agents from a browser tab.
+Run mission control for Claude Code agents from a browser tab: one front port, one process per room (room "main" is the home itself).
 
 Commands:
   doctor                list the agent CLIs on the PATH with their versions, and the install command of each missing one
-  rooms                 several rooms behind one port, one gonogo process each (see the Rooms page of the docs); plain gonogo is one room
-  reload                hand over to the installed gonogo without stopping the agents (needs --pty-host on the running one)
+  rooms                 add, list or remove rooms (the page's room list does the same); "gonogo rooms" alone is "gonogo", kept for one release
+  token rotate          make a new Director token (the old one stops working)
+  reload                hand over to the installed gonogo without stopping the agents (needs --pty-host; not in Docker)
   update                print the command that updates gonogo the way it was installed (it never runs it)
 
 Options:
-  --port <n>            listen port (default ${DEFAULT_PORT}; env GONOGO_PORT)
-  --host <addr>         bind address (default ${DEFAULT_HOST}; env GONOGO_HOST)
+  --port <n>            the front port (default ${DEFAULT_PORT}; env GONOGO_PORT)
+  --host <addr>         the front port's bind address (default ${DEFAULT_HOST}; env GONOGO_HOST)
   --home <dir>          state directory (default ~/${DEFAULT_HOME_DIRNAME}; env GONOGO_HOME)
   --pty-host            keep the agents in a separate process so that gonogo reload does not stop them (env GONOGO_PTY_HOST=1)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
@@ -184,7 +190,8 @@ export type ParsedArgs =
   | { kind: 'update' }
   | { kind: 'reload'; home?: string }
   | { kind: 'ptyhost'; home: string }
-  | { kind: 'rooms'; action: 'serve'; options: StartOptions }
+  | { kind: 'room'; options: StartOptions }
+  | { kind: 'token'; home?: string }
   | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
   | { kind: 'selfupdate'; target: string; expect: string; home: string; image: string }
   | { kind: 'run'; options: StartOptions }
@@ -203,12 +210,21 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (argv.includes('--help') || argv.includes('-h')) return { kind: 'help' };
   if (argv.includes('--version') || argv.includes('-v')) return { kind: 'version' };
   if (argv[0] === 'doctor' || argv[0] === 'update') return argv.length === 1 ? { kind: argv[0] } : { kind: 'error', message: `${argv[0]} takes no arguments` };
+  // the hidden entry of a room: what `gonogo` was before it became the supervisor; main() refuses it without the pipe the supervisor holds
+  if (argv[0] === '__room') {
+    const room = parseArgs(argv.slice(1));
+    return room.kind === 'run' ? { kind: 'room', options: { ...room.options, roomChild: true } } : room;
+  }
+  if (argv[0] === 'token') {
+    if (argv[1] !== 'rotate') return { kind: 'error', message: 'token needs rotate' };
+    if (argv.length === 2) return { kind: 'token' };
+    if (argv.length === 4 && argv[2] === '--home' && argv[3] !== '') return { kind: 'token', home: argv[3] };
+    return { kind: 'error', message: 'token rotate takes only --home <dir>' };
+  }
   if (argv[0] === 'rooms') {
     const action = argv[1];
-    if (action !== 'add' && action !== 'list' && action !== 'remove') {
-      const served = parseArgs(argv.slice(1));
-      return served.kind === 'run' ? { kind: 'rooms', action: 'serve', options: served.options } : served;
-    }
+    // `gonogo rooms` alone (or with flags) is what `gonogo` is now; kept for one release
+    if (action !== 'add' && action !== 'list' && action !== 'remove') return parseArgs(argv.slice(1));
     const rest = argv.slice(2);
     const out: { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string } = { kind: 'rooms', action };
     for (let i = 0; i < rest.length; i += 1) {
@@ -413,6 +429,34 @@ function displayHost(host: string): string {
   return host.includes(':') ? `[${host}]` : host;
 }
 
+/** The port a room listened on last time (`<home>/run/port`), or null. 0.4.x ignores the file; it is harmless there. */
+function readStablePort(homeDir: string): number | null {
+  try {
+    const port = Number(readFileSync(join(homeDir, 'run', 'port'), 'utf8').trim());
+    return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStablePort(homeDir: string, port: number): void {
+  try {
+    mkdirSync(join(homeDir, 'run'), { recursive: true, mode: 0o700 });
+    writeFileSync(join(homeDir, 'run', 'port'), `${port}\n`, { mode: 0o600 });
+  } catch {
+    // the next start asks for any port: only a reload that keeps agents needs this
+  }
+}
+
+/** Whether a port can be bound on this host now (a throwaway listener). */
+function portFree(port: number, host: string): Promise<boolean> {
+  return new Promise((done) => {
+    const probe = net.createServer();
+    probe.once('error', () => done(false));
+    probe.listen(port, host, () => probe.close(() => done(true)));
+  });
+}
+
 function listenError(e: unknown, host: string, port: number): Error {
   const code = typeof e === 'object' && e !== null && 'code' in e && typeof e.code === 'string' ? e.code : undefined;
   const where = `${host.includes(':') ? `[${host}]` : host}:${port}`;
@@ -432,16 +476,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     throw new Error('the claude CLI was not found on PATH. Install Claude Code and sign in, or set GONOGO_AGENT_CMD.');
   }
 
-  const home = openHome(settings.home, log);
-  // plain gonogo is one room and never reads rooms.json: say so once when the file lists rooms, instead of leaving them silently unstarted
-  if (options.exitWithStdin !== true) {
-    try {
-      const others = loadRooms(settings.home).filter((r) => r.id !== 'main');
-      if (others.length > 0) log.warn(`rooms.json lists ${others.length} other room${others.length === 1 ? '' : 's'} (${others.map((r) => r.id).join(', ')}) but this is plain gonogo, one room: they are not started. Run \`gonogo rooms\` for all of them (Docker: command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]).`);
-    } catch {
-      // a damaged rooms.json is the supervisor's business; plain gonogo does not use it
-    }
-  }
+  const home = openHome(settings.home, log, { roomToken: options.roomChild === true });
   let hub: Hub | undefined;
   let hubStarting = false;
   let web: WebServer | undefined;
@@ -855,7 +890,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const socketPath = env.GONOGO_DOCKER_SOCKET || SOCKET_PATH;
     const dockerCall = installed.kind === 'docker' && existsSync(socketPath) ? socketCall(socketPath) : null;
     // a room started by `gonogo rooms` is one process of a supervisor: recreating the container would stop every room, and this page counts only its own agents
-    const supervised = options.exitWithStdin === true;
+    const supervised = options.roomChild === true;
     const dockerStatus = dockerCall === null ? undefined : supervised ? { ready: false, text: 'this room runs under gonogo rooms: update the container from the host (docker compose pull && docker compose up -d); self-update does not know the other rooms' } : await dockerUpdateStatus(dockerCall, hostname());
     const canUpdate = installed.kind === 'npm' || installed.kind === 'pnpm' || (installed.kind === 'docker' && (dockerStatus?.ready === true || /^https?:\/\//.test(hookUrl)));
     // what the last self-update left: shown until the Director goes on
@@ -883,6 +918,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       void followResult(dockerCall, home.dir, hostname(), lastResult, { onChange: (r) => rollout.setUpdate(viewOfResult(r)), stopped: () => closing }).catch(() => undefined);
     }
     const triggerReload = (): boolean => {
+      if (supervised) {
+        // a room does not restart itself: it asks its supervisor, which reloads every room and re-executes (docs/single-mode-spec.md, 6)
+        const parent = Number(env.GONOGO_SUPERVISOR_PID);
+        if (!Number.isInteger(parent) || parent <= 0 || parent !== process.ppid || installed.docker) return false;
+        setTimeout(() => process.kill(parent, 'SIGUSR2'), 100).unref();
+        return true;
+      }
       if (process.listenerCount('SIGUSR2') === 0) return false;
       setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 100).unref();
       return true;
@@ -900,12 +942,20 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       log: log.child('update'),
     });
+    // a room under the supervisor asks for the port it had: agents that survive a reload keep the hook and MCP address they were started with
+    // (the pty host keeps them running), and a new port would leave them talking to nothing. When it is taken a free port is used, and the agents must be restarted.
+    let listenPort = port;
+    if (options.roomChild === true && port === 0) {
+      const kept = readStablePort(home.dir);
+      if (kept !== null && (await portFree(kept, host))) listenPort = kept;
+      else if (kept !== null) log.warn(`the port this room had (${kept}) is taken: using another; agents started before must be restarted to find the hub`);
+    }
     const webServer = createWebServer({
       statusLine: (name, body) => {
         if (quota.report(name, body)) web?.broadcast({ t: 'propellant', propellant: propellant.view() });
       },
       host,
-      port,
+      port: listenPort,
       browserToken: home.browserToken,
       allowedHosts,
       staticDir,
@@ -977,6 +1027,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     }
     bound.host = addr.host;
     bound.port = addr.port;
+    if (options.roomChild === true) writeStablePort(home.dir, addr.port);
     // agents are handed a loopback URL whatever the bind address is: claude blocks http hooks to private addresses (contract 2.8 step 8)
     baseUrl = `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${addr.port}`;
 
@@ -1133,45 +1184,85 @@ function logLevel(value: string | undefined): LogLevel {
   return value === 'debug' || value === 'info' || value === 'warn' || value === 'error' ? value : 'info';
 }
 
-/** `gonogo rooms ...`: edits rooms.json, or serves all the rooms behind one port. */
-async function runRooms(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, env: Env): Promise<void> {
-  if (parsed.action !== 'serve') {
-    const root = parsed.home === undefined ? homeOf(env) : resolve(parsed.home);
-    if (parsed.action === 'add') {
-      const room = addRoom(root, parsed.id, parsed.name);
-      process.stdout.write(`added room ${room.id} (${room.name}). A running \`gonogo rooms\` starts it within 2 seconds; its files will be in ${roomHome(root, room.id)}\n`);
-    } else if (parsed.action === 'remove') {
-      removeRoom(root, parsed.id);
-      process.stdout.write(`took room ${parsed.id} off the list. Its folder ${roomHome(root, parsed.id as string)} stays; delete it yourself if you want it gone.\n`);
-    } else {
-      for (const room of loadRooms(root)) process.stdout.write(`${room.id}\t${room.name}\t${roomHome(root, room.id)}\n`);
-    }
-    // a change that nothing reads is the commonest mistake: plain gonogo is one room and never looks at rooms.json
-    if (parsed.action !== 'list' && !(await supervisorRunning(root))) process.stdout.write(`${NO_SUPERVISOR_HINT}\n`);
-    exit(0);
-    return;
+/** `gonogo rooms add|list|remove`: edits rooms.json. */
+async function runRoomsCommand(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, env: Env): Promise<void> {
+  const root = parsed.home === undefined ? homeOf(env) : resolve(parsed.home);
+  if (parsed.action === 'add') {
+    const room = addRoom(root, parsed.id, parsed.name);
+    process.stdout.write(`added room ${room.id} (${room.name}). A running gonogo starts it within 2 seconds; its files will be in ${roomHome(root, room.id)}\n`);
+  } else if (parsed.action === 'remove') {
+    removeRoom(root, parsed.id);
+    process.stdout.write(`took room ${parsed.id} off the list. Its folder ${roomHome(root, parsed.id as string)} stays; delete it yourself if you want it gone.\n`);
+  } else {
+    for (const room of loadRooms(root)) process.stdout.write(`${room.id}\t${room.name}\t${roomHome(root, room.id)}\n`);
   }
-  const settings = resolveSettings(parsed.options);
-  const log = createLogger({ level: logLevel(env.GONOGO_LOG_LEVEL) });
-  const supervisor = await startSupervisor({
-    home: settings.home,
-    host: settings.host,
-    port: settings.port,
-    allowedHosts: settings.allowedHosts,
-    command: [process.execPath, process.argv[1] ?? 'gonogo'],
-    staticDir: settings.staticDir,
-    version: packageVersion(),
-    env,
-    log,
-  });
-  const stop = (): void => {
-    void supervisor.stop().finally(() => exit(0));
-  };
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.once(signal, stop);
-  process.stdout.write(`gonogo rooms ready: ${supervisor.url}\n`);
+  // a change that nothing reads is the commonest mistake: nothing acts on rooms.json unless gonogo runs
+  if (parsed.action !== 'list' && !(await supervisorRunning(root))) process.stdout.write(`${NO_SUPERVISOR_HINT}\n`);
+  exit(0);
 }
 
-function installProcessHandlers(running: Running, log: Logger, argv: string[] = [], entry?: string): void {
+/** The arguments a room is started with beyond its own (the front port's flags that rooms inherit). */
+export function roomArgsOf(options: StartOptions): string[] {
+  return [...(options.ptyHost === true ? ['--pty-host'] : []), ...(options.updateCheck === false ? ['--no-update-check'] : []), ...(options.seed === true ? ['--seed-claude'] : [])];
+}
+
+/** `gonogo`: the supervisor. The front port, the room list and one `gonogo __room` process per room. */
+async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: Env): Promise<void> {
+  const settings = resolveSettings(parsed.options);
+  const level = logLevel(env.GONOGO_LOG_LEVEL);
+  const log = createLogger({ level });
+  // started by a reload: the old supervisor may still hold the port for a moment
+  const reloaded = env.GONOGO_RELOADED === '1';
+  let supervisor: Supervisor | undefined;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      supervisor = await startSupervisor({
+        home: settings.home,
+        host: settings.host,
+        port: settings.port,
+        allowedHosts: settings.allowedHosts,
+        command: [process.execPath, process.argv[1] ?? 'gonogo'],
+        roomArgs: roomArgsOf(parsed.options),
+        staticDir: settings.staticDir,
+        env,
+        log,
+      });
+      break;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (reloaded && attempt < 20 && /another gonogo supervisor is using|EADDRINUSE/.test(message)) {
+        await new Promise((done) => setTimeout(done, 500));
+        continue;
+      }
+      throw e;
+    }
+  }
+  const running = supervisor;
+  let ending = false;
+  const stop = (): void => {
+    if (ending) return exit(130);
+    ending = true;
+    void running.stop().finally(() => exit(0));
+  };
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(signal, stop);
+  // gonogo reload: every room hands its agents to its pty host and exits; this process lets go of the port and starts the installed gonogo again
+  process.on('SIGUSR2', () => {
+    if (ending) return;
+    ending = true;
+    log.info('reloading: every room hands over, then this supervisor starts again');
+    void running
+      .reload()
+      .then(() => running.stop())
+      .then(() => {
+        relaunch(process.argv.slice(2), process.argv[1]);
+        exit(0);
+      });
+  });
+  process.stdout.write(`gonogo ready: ${running.url}\n`);
+  log.info(`docs: ${DOCS_URL}`);
+}
+
+function installProcessHandlers(running: Running, log: Logger, argv: string[] = [], entry?: string, supervised = false): void {
   let signalled = false;
   const onSignal = (signal: NodeJS.Signals): void => {
     if (signalled) {
@@ -1193,11 +1284,13 @@ function installProcessHandlers(running: Running, log: Logger, argv: string[] = 
   process.on('SIGUSR2', () => {
     if (reloading || signalled) return;
     reloading = true;
-    log.info('reloading: handing over to a new gonogo');
+    log.info(supervised ? 'reloading: handing the agents to their pty host, then leaving for the supervisor to start again' : 'reloading: handing over to a new gonogo');
     void running
       .release()
       .then(
         () => {
+          // a room under the supervisor does not start itself again: it exits 75 and the supervisor, which asked, starts it at once
+          if (supervised) return exit(75);
           relaunch(argv, entry);
           exit(0);
         },
@@ -1269,9 +1362,28 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   }
   if (parsed.kind === 'rooms') {
     try {
-      await runRooms(parsed, env);
+      await runRoomsCommand(parsed, env);
     } catch (e) {
       process.stderr.write(`gonogo rooms: ${e instanceof Error ? e.message : String(e)}\n`);
+      exit(1);
+    }
+    return;
+  }
+  if (parsed.kind === 'token') {
+    try {
+      process.stdout.write(`${rotateDirectorToken(parsed.home === undefined ? homeOf(env) : resolve(parsed.home))}\n`);
+      exit(0);
+    } catch (e) {
+      process.stderr.write(`gonogo token: ${e instanceof Error ? e.message : String(e)}\n`);
+      exit(1);
+    }
+    return;
+  }
+  if (parsed.kind === 'run') {
+    try {
+      await runSupervisor(parsed, env);
+    } catch (e) {
+      process.stderr.write(`gonogo: ${e instanceof Error ? e.message : String(e)}\n`);
       exit(1);
     }
     return;
@@ -1296,7 +1408,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   }
   if (parsed.kind === 'reload') {
     try {
-      process.stdout.write(`${requestReload(parsed.home === undefined ? homeOf(env) : resolve(parsed.home))}\n`);
+      process.stdout.write(`${requestReload(parsed.home === undefined ? homeOf(env) : resolve(parsed.home), installInfo(env).docker)}\n`);
       exit(0);
     } catch (e) {
       process.stderr.write(`gonogo reload: ${e instanceof Error ? e.message : String(e)}\n`);
@@ -1310,6 +1422,17 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     return;
   }
 
+  // from here on: `gonogo __room`, one room of the supervisor
+  if (parsed.options.exitWithStdin !== true || process.stdin.isTTY === true) {
+    process.stderr.write('gonogo: __room is internal: run "gonogo"\n');
+    exit(2);
+    return;
+  }
+  await runRoom(parsed.options, env);
+}
+
+/** One room: what `gonogo` was before it became the supervisor. `gonogo __room` runs it; the tests run it directly with fakes. */
+export async function runRoom(options: StartOptions, env: Env): Promise<void> {
   const level = logLevel(env.GONOGO_LOG_LEVEL);
   const log = createLogger({ level });
   // shortcut: a signal during the start-up (about a second) takes Node's default and ends the process at once; the ptys hang up on their children and the next start replaces the stale lock
@@ -1319,7 +1442,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   delete process.env.GONOGO_RELOADED;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      running = await startGonogo({ ...parsed.options, updateCheck: parsed.options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
+      running = await startGonogo({ ...options, updateCheck: options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
       break;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1333,8 +1456,8 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
       return;
     }
   }
-  installProcessHandlers(running, log, process.argv.slice(2), process.argv[1]);
-  if (parsed.options.exitWithStdin === true) {
+  installProcessHandlers(running, log, process.argv.slice(2), process.argv[1], options.roomChild === true);
+  if (options.exitWithStdin === true) {
     // the supervisor holds the other end of this pipe: when it dies, for any reason, this ends and the room stops as for SIGTERM
     process.stdin.on('end', () => process.kill(process.pid, 'SIGTERM'));
     process.stdin.on('error', () => process.kill(process.pid, 'SIGTERM'));

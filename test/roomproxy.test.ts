@@ -11,6 +11,7 @@ import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol
 const DIRECTOR = 'd'.repeat(64);
 const TOKEN_A = 'a'.repeat(64);
 const TOKEN_B = 'b'.repeat(64);
+const TOKEN_MAIN = 'c'.repeat(64);
 
 interface Seen {
   method: string;
@@ -37,7 +38,7 @@ async function fakeRoom(name: string): Promise<Fake> {
         res.writeHead(302, { Location: '/elsewhere' });
         return res.end();
       }
-      res.writeHead(200, { 'content-type': 'text/plain', 'x-room': name, connection: 'close' });
+      res.writeHead(200, { 'content-type': 'text/plain', 'x-room': name, 'set-cookie': 'sid=1; Path=/', connection: 'close' });
       res.end(`room ${name} ${req.method} ${req.url}`);
     });
   });
@@ -65,6 +66,7 @@ async function fakeRoom(name: string): Promise<Fake> {
 
 let a: Fake;
 let b: Fake;
+let main: Fake;
 let front: http.Server;
 let base: string;
 let stoppedRoom = false;
@@ -72,6 +74,7 @@ let stoppedRoom = false;
 beforeEach(async () => {
   a = await fakeRoom('a');
   b = await fakeRoom('b');
+  main = await fakeRoom('main');
   stoppedRoom = false;
   const proxy = createRoomProxy({
     directorToken: DIRECTOR,
@@ -79,6 +82,7 @@ beforeEach(async () => {
     rooms: () => [
       { id: 'a', port: a.port, token: TOKEN_A },
       { id: 'b', port: b.port, token: TOKEN_B },
+      { id: 'main', port: main.port, token: TOKEN_MAIN },
       { id: 'down', port: stoppedRoom ? null : null, token: null },
     ],
   });
@@ -99,6 +103,7 @@ afterEach(async () => {
   await new Promise<void>((resolve) => front.close(() => resolve()));
   await a.close();
   await b.close();
+  await main.close();
 });
 
 const get = (path: string, headers: Record<string, string> = {}, method = 'GET', body?: string) => fetch(base + path, { method, headers, body });
@@ -114,8 +119,66 @@ const raw = (path: string, headers: Record<string, string>): Promise<number> =>
   });
 
 describe('rooms proxy: HTTP', () => {
-  it('leaves the supervisor its own paths', async () => {
-    expect(await (await get('/')).text()).toBe('supervisor');
+  it('leaves the supervisor its own reserved paths, and sends every other path to room main', async () => {
+    for (const path of ['/rooms', '/rooms/', '/rooms/health', '/rooms/assets/x.css', '/api/rooms', '/api/rooms/team', '/internal', '/internal/busy', '/internal/x/y']) {
+      expect(await (await get(path)).text(), path).toBe('supervisor');
+    }
+    expect(main.seen).toEqual([]);
+    expect(await (await get('/')).text()).toBe('room main GET /');
+    expect(await (await get('/assets/app.js')).text()).toBe('room main GET /assets/app.js');
+    expect(main.seen.map((x) => x.url).slice(0, 2)).toEqual(['/', '/assets/app.js']);
+    // a prefix that merely starts like a reserved name is main's
+    expect(await (await get('/roomsx')).text()).toBe('room main GET /roomsx');
+    expect(await (await get('/api/roomsx', director)).text()).toBe('room main GET /api/roomsx');
+    expect(await (await get('/api/state', director)).text()).toBe('room main GET /api/state');
+  });
+
+  it('main answers the same at / and at /r/main/, with its own token swapped in at both', async () => {
+    const one = await (await get('/api/state', director)).text();
+    const two = await (await get('/r/main/api/state', director)).text();
+    expect(one.replace('GET /api', 'GET /api')).toBe('room main GET /api/state');
+    expect(two).toBe('room main GET /api/state');
+    for (const seen of main.seen) expect(seen.headers.authorization).toBe(`Bearer ${TOKEN_MAIN}`);
+    expect(JSON.stringify(main.seen)).not.toContain(DIRECTOR);
+    expect((await get('/api/state')).status).toBe(401);
+    expect((await get('/api/state', { authorization: `Bearer ${TOKEN_MAIN}` })).status).toBe(401);
+    expect(main.seen).toHaveLength(2);
+  });
+
+  it('keeps the agents\' routes closed at the root too, in any case, and passes webhooks and docks without Authorization', async () => {
+    for (const path of ['/hook/ana/Stop', '/hook/', '/mcp', '/mcp?x=1', '/Hook/ana/Stop', '/MCP', '/r/main/Hook/x']) expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
+    expect((await get('/uplink/u1', director, 'POST', '{}')).status).toBe(200);
+    expect((await get('/dock/hello', director, 'POST', '{}')).status).toBe(200);
+    expect(main.seen.map((x) => x.headers.authorization)).toEqual([undefined, undefined]);
+    expect(main.seen.map((x) => x.url)).toEqual(['/uplink/u1', '/dock/hello']);
+  });
+
+  it('S1: a reserved name cannot be reached or hidden by encoding, case, empty segments or dots: decoded once, same text for both checks', async () => {
+    // refused (400) or the supervisor's own: never main
+    for (const path of ['/%72ooms', '/%72ooms/health', '/%69nternal/busy', '/api/%72ooms', '//internal/busy', '/internal//busy', '/rooms//health', '/internal/../api/state', '/./internal', '/r%2Fmain/x', '/%2e%2e/rooms', '/a/%2e%2e/b', '/x%5cy', '/x%00y', '/%']) {
+      const status = await raw(path, director);
+      expect([200, 400, 404], path).toContain(status);
+    }
+    expect(main.seen).toEqual([]);
+    // case is exact: /Rooms is not reserved, so it is main's (its own 404 to give)
+    expect(await (await get('/Rooms')).text()).toBe('room main GET /Rooms');
+    expect(main.seen.map((x) => x.url)).toEqual(['/Rooms']);
+    // the reserved ones that were decoded answer as the supervisor
+    expect(await raw('/%72ooms/health', {})).toBe(200);
+  });
+
+  it('S2: no Set-Cookie from any room, at / or under /r/<id>/; a redirect of main at / gets no /r/main prefix, one under /r/a does get its prefix', async () => {
+    for (const path of ['/cookie', '/r/a/cookie', '/r/main/cookie']) {
+      const res = await get(path, director);
+      expect(res.headers.get('set-cookie'), path).toBeNull();
+      expect(res.headers.get('x-room')).not.toBeNull();
+    }
+    const here = await fetch(`${base}/redirect`, { redirect: 'manual' });
+    expect(here.headers.get('location')).toBe('/elsewhere');
+    const there = await fetch(`${base}/r/a/redirect`, { redirect: 'manual' });
+    expect(there.headers.get('location')).toBe('/r/a/elsewhere');
+    const viaMain = await fetch(`${base}/r/main/redirect`, { redirect: 'manual' });
+    expect(viaMain.headers.get('location')).toBe('/r/main/elsewhere');
   });
 
   it('strips the prefix, passes method, query and body, and answers with the room\'s status and headers', async () => {

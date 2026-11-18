@@ -16,7 +16,7 @@ import { LIVERY_NAMES } from '../shared/livery.js';
 import { TOKEN_FRAGMENT_KEY, TOKEN_STORAGE_KEY } from '../shared/protocol.js';
 
 /** Where the supervisor serves this page. The page itself uses no path of its own for it (it keeps the address it is opened at), so moving it is this one line. */
-export const ROOMS_PATH = '/';
+export const ROOMS_PATH = '/rooms';
 
 const STYLE = `
 body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px/1.4 var(--font-ui,system-ui,sans-serif)}
@@ -150,7 +150,7 @@ function card(r){
   const foot=el('div','tile-foot');foot.append(el('span','','r/'+r.id));if(r.tabName)foot.append(el('span','','tab: '+r.tabName));
   li.append(foot);
   const keys=el('div','rl-keys');
-  if(up){const a=el('a','btn','OPEN');a.dataset.kind='primary';a.dataset.f='open:'+r.id;a.href='/r/'+encodeURIComponent(r.id)+'/';a.setAttribute('aria-label','Open '+name);keys.append(a)}
+  if(up){const a=el('a','btn','OPEN');a.dataset.kind='primary';a.dataset.f='open:'+r.id;a.href=r.id==='main'?'/':'/r/'+encodeURIComponent(r.id)+'/';a.setAttribute('aria-label','Open '+name);keys.append(a)}
   else{const b=key('OPEN','primary',()=>{},'open:'+r.id,'Open '+name);b.disabled=true;keys.append(b)}
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);
@@ -229,9 +229,9 @@ const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
 
 export const roomsPage = (stylesheet: string | null, version: string | null = null): string =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>rooms · gonogo</title>${
-    stylesheet === null ? '' : `<link rel="stylesheet" href="/assets/${stylesheet}">`
+    stylesheet === null ? '' : `<link rel="stylesheet" href="/rooms/assets/${stylesheet}">`
   }<style>${STYLE}</style><script>${LIVERY}</script></head><body>` +
-  `<header class="topbar"><h1 class="mark"><img class="mark-name" src="/lockup.svg" alt="gonogo"><span class="label mark-unit">ROOMS</span></h1><span class="topbar-grow"></span><button id="new" type="button" class="btn" data-kind="primary" aria-expanded="false" aria-controls="add">NEW ROOM</button></header>` +
+  `<header class="topbar"><h1 class="mark"><img class="mark-name" src="/rooms/lockup.svg" alt="gonogo"><span class="label mark-unit">ROOMS</span></h1><span class="topbar-grow"></span><button id="new" type="button" class="btn" data-kind="primary" aria-expanded="false" aria-controls="add">NEW ROOM</button></header>` +
   `<main class="rl-main">` +
   `<div class="rl-head"><h2 id="title" class="label" tabindex="-1">Rooms</h2><span id="sum"></span><span id="live" class="sr-only" role="status"></span></div>` +
   `<section id="gate" class="module rl-gate" hidden><h2 class="label"></h2><p class="hint"></p></section>` +

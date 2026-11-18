@@ -9,6 +9,8 @@ import net from 'node:net';
 import { join } from 'node:path';
 
 export const MAIN_ROOM = 'main';
+/** Names the front port answers itself at its root: not offered as ids for new rooms (rooms already so named keep working under /r/<id>/). */
+export const RESERVED_ROOT_NAMES = ['r', 'ws', 'internal', 'api', 'assets', 'rooms'] as const;
 export const ROOMS_FILE = 'rooms.json';
 export const ROOMS_DIR = 'rooms';
 export const ROOMS_MAX = 12;
@@ -84,6 +86,7 @@ function saveRooms(root: string, rooms: RoomEntry[]): void {
 export function addRoom(root: string, id: unknown, name?: string): RoomEntry {
   if (!validRoomId(id)) throw new RoomsError('a room id is a lower-case letter, then up to 23 lower-case letters, digits or dashes');
   if (id === MAIN_ROOM) throw new RoomsError('main is the home itself: pick another id');
+  if ((RESERVED_ROOT_NAMES as readonly string[]).includes(id)) throw new RoomsError(`"${id}" is a name of the front port (${RESERVED_ROOT_NAMES.join(', ')}): pick another id`);
   const rooms = loadRooms(root);
   if (rooms.some((r) => r.id === id)) throw new RoomsError(`there is already a room "${id}"`, 'conflict');
   if (rooms.length >= ROOMS_MAX) throw new RoomsError(`at most ${ROOMS_MAX} rooms: every room is a gonogo process of its own`, 'conflict');
@@ -173,5 +176,4 @@ export function supervisorRunning(root: string): Promise<boolean> {
 }
 
 /** What `gonogo rooms add|remove` adds when nothing would act on the change. */
-export const NO_SUPERVISOR_HINT =
-  'saved in rooms.json; no `gonogo rooms` supervisor is running, so the room will not start or stop. Run gonogo as `gonogo rooms ...` (Docker: command: ["rooms", "--host", "0.0.0.0", "--port", "7777"]).';
+export const NO_SUPERVISOR_HINT = 'saved in rooms.json; no gonogo is running for this home, so the room will not start or stop. Start gonogo (Docker: the image\'s default command is the supervisor).';

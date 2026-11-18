@@ -2,11 +2,11 @@
  * Live reload, the parts around the hub (docs/live-reload-spec.md): starting the pty host process, the saved holds, `gonogo reload`
  * and the start of the next gonogo.
  */
-import { spawn } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
-import { LOCK_FILE } from './constants.js';
 import { startPtyHost, runDir } from './ptyhost.js';
 import { HOLDS_FILE, HOST_LOG_FILE } from './ptyhostproto.js';
 
@@ -60,9 +60,28 @@ export function createHoldStore(homeDir: string, log: Logger): { load(): Record<
   };
 }
 
-/** `gonogo reload`: asks the running gonogo of this home to hand over (SIGUSR2). Returns a line to print, or throws. */
-export function requestReload(homeDir: string): string {
-  const lock = join(homeDir, LOCK_FILE);
+/** True when pid is a gonogo supervisor of this very gonogo: its command line holds this entry file and no `__room` (a reused pid of another program is never signalled, S3). */
+export function isSupervisorProcess(pid: number, entry: string | undefined = process.argv[1]): boolean {
+  try {
+    const args = process.platform === 'linux' ? readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter((a) => a !== '') : execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).trim().split(/\s+/);
+    if (args.length < 2 || entry === undefined) return false;
+    const same = (x: string, y: string): boolean => {
+      try {
+        return realpathSync(x) === realpathSync(y);
+      } catch {
+        return x === y;
+      }
+    };
+    return args.slice(1).some((a) => same(a, entry)) && !args.includes('__room');
+  } catch {
+    return false;
+  }
+}
+
+/** `gonogo reload`: asks the supervisor of this home to hand over (SIGUSR2). Returns a line to print, or throws. */
+export function requestReload(homeDir: string, docker: boolean): string {
+  if (docker) throw new Error('in Docker the supervisor is the container\'s only process, and re-executing it would end the container: update with the Update key (self-update) or "docker compose pull && docker compose up -d"');
+  const lock = join(homeDir, 'run', 'supervisor.lock');
   if (!existsSync(lock)) throw new Error(`no gonogo is running with the home ${homeDir}`);
   const pid = Number.parseInt(readFileSync(lock, 'utf8').trim(), 10);
   if (!Number.isInteger(pid) || pid <= 0) throw new Error(`${lock} does not hold a process number`);
@@ -71,8 +90,23 @@ export function requestReload(homeDir: string): string {
   } catch {
     throw new Error(`no gonogo is running with the home ${homeDir} (pid ${pid} is gone; the lock is stale)`);
   }
+  if (!isSupervisorProcess(pid)) throw new Error(`${lock} names pid ${pid}, which is not a gonogo supervisor (a stale lock whose number another program took): nothing was signalled`);
   process.kill(pid, 'SIGUSR2');
-  return `asked gonogo (pid ${pid}) to reload. Its agents keep running; the new process takes them over.`;
+  return `asked gonogo (pid ${pid}) to reload. Its rooms keep their agents when they run with --pty-host; the new supervisor takes them over.`;
+}
+
+/**
+ * `gonogo token rotate`: makes a new Director token in `<home>/token` (0600, written to a temporary file and renamed). The old one stops working.
+ * A running supervisor looks at the file on every request and takes the new value at once; nothing needs a restart. The token is not printed.
+ */
+export function rotateDirectorToken(homeDir: string): string {
+  mkdirSync(homeDir, { recursive: true, mode: 0o700 });
+  const path = join(homeDir, 'token');
+  const temp = `${path}.${process.pid}.tmp`;
+  rmSync(temp, { force: true });
+  writeFileSync(temp, `${randomBytes(32).toString('hex')}\n`, { mode: 0o600, flag: 'wx' });
+  renameSync(temp, path);
+  return `a new Director token is in ${path} (mode 0600); the old one no longer works. A running gonogo uses the new one at once. Read it with: cat ${path}\nRoom tokens are separate and were not touched. Old links, bookmarks and browsers that stored the token need the new one.`;
 }
 
 /**
