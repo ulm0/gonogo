@@ -15,7 +15,7 @@ pnpm build           # client (vite) and server (tsc) into dist/
 
 All three must pass. `pnpm check:pack` packs the project and runs it in plain Node; it needs the npm registry and rebuilds `dist`, so do not run it while something uses `dist`.
 
-Docs are VitePress, from `docs/` (pages listed in `.vitepress/config.mts`): `pnpm docs:dev` serves them with live reload, `pnpm docs:build` checks them (a dead link fails the build).
+Docs are VitePress, from `docs/` (pages listed in `.vitepress/config.mts`): `pnpm docs:dev` serves them with live reload, `pnpm docs:build` checks them (a dead link fails the build). CI runs it on every pull request. The site (gonogo.ulm0.com) is published **with a release**, from the `v*` tag, not on every merge: a merged docs change shows up with the next release. To publish a docs-only fix sooner, run the **Docs** workflow by hand (Actions, Run workflow) with a tag or branch as the ref; empty means the newest release tag.
 
 ## Where things are
 

@@ -2,17 +2,21 @@ name: Docs
 
 # Builds the VitePress site from docs/ and publishes it to GitHub Pages (https://gonogo.ulm0.com/).
 # The repository's Pages source must be set to "GitHub Actions".
+#
+# The site shows what is released, not what is on main: it is built from the v* tag when one is pushed (the same push that runs
+# release.yml; a release that fails to publish still leaves its docs up, rerun or fix and tag again). To publish a docs-only fix
+# on purpose, run it by hand ("Run workflow") with a ref: a tag, or a branch. The ref is empty by default and then means the
+# newest release tag (not a pre-release). CI (ci.yml) still builds the docs on every pull request, so broken docs are caught early.
 on:
   push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - '.vitepress/**'
-      - 'CONTRIBUTING.md'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/docs.yml'
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or branch to build, for example v0.2.0 (empty means the newest v* release tag)
+        required: false
+        default: ''
+        type: string
 
 permissions: {}
 
@@ -27,8 +31,22 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Pick what to build
+        id: pick
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          ref="${INPUT_REF:-${GITHUB_REF_NAME}}"
+          if [ -z "$INPUT_REF" ] && [ "$GITHUB_REF_TYPE" != tag ]; then
+            ref=$(git ls-remote --tags --refs --sort=-v:refname "https://github.com/$REPO" 'v*' | sed 's#.*refs/tags/##' | grep -v '[-]' | head -n1)
+            [ -n "$ref" ] || { echo "::error::no v* release tag to build the docs from"; exit 1; }
+          fi
+          echo "Building the docs from $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.pick.outputs.ref }}
           persist-credentials: false
       # No version: it installs the pnpm that package.json `packageManager` pins.
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
