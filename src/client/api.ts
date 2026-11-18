@@ -12,8 +12,10 @@ import type {
   GovernorRequest,
   GovernorView,
   HireRequest,
+  MemoryView,
   LiveryDesignRequest,
   LiveryView,
+  LogChart,
   LogEntry,
   LogRequest,
   LogSearch,
@@ -21,6 +23,7 @@ import type {
   PollView,
   PropellantRequest,
   PropellantView,
+  ReflectResult,
   RelayForwardRequest,
   RelayService,
   RelayTargetRequest,
@@ -243,6 +246,27 @@ function toLogEntry(value: unknown): LogEntry {
   return value as LogEntry;
 }
 
+function toLogChart(value: unknown): LogChart {
+  const record = asRecord(value);
+  if (record === null || typeof record.total !== 'number' || !Array.isArray(record.nodes) || !Array.isArray(record.edges)) {
+    throw failure('The server sent an answer gonogo does not understand.');
+  }
+  return value as LogChart;
+}
+
+function toMemoryView(value: unknown): MemoryView {
+  const record = asRecord(value);
+  if (record === null || typeof record.bytes !== 'number' || typeof record.over !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return value as MemoryView;
+}
+
+function toReflectResult(value: unknown): ReflectResult {
+  const record = asRecord(value);
+  if (record === null || asRecord(record.send) === null) throw failure('The server sent an answer gonogo does not understand.');
+  toMemoryView(record.memory);
+  return value as ReflectResult;
+}
+
 function toTask(value: unknown): Task {
   const record = asRecord(value);
   if (record === null || typeof record.id !== 'string' || typeof record.status !== 'string' || !Array.isArray(record.notes)) {
@@ -454,6 +478,20 @@ export async function updateLogEntry(id: string, request: LogRequest): Promise<L
 
 export async function deleteLogEntry(id: string): Promise<void> {
   await call('DELETE', `/log/${encodeURIComponent(id)}`);
+}
+
+/** Star Chart: the newest entries with their tags, authors and mentions. Asked again when a `log` frame says something changed. */
+export async function logChart(): Promise<LogChart> {
+  return toLogChart(await call('GET', '/log/chart'));
+}
+
+/** Mass Budget: the size of an agent's memory.md, and the request to condense it. No frame: the page asks. */
+export async function agentMemory(name: string): Promise<MemoryView> {
+  return toMemoryView(await call('GET', `${agentPath(name)}/memory`));
+}
+
+export async function reflect(name: string): Promise<ReflectResult> {
+  return toReflectResult(await call('POST', `${agentPath(name)}/reflect`));
 }
 
 /** Downlink: the inbox. It comes in the state and in `downlink` frames; each call answers with it as it is now. */

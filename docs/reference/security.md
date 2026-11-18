@@ -21,6 +21,10 @@
   - Payload env and header values (tokens, API keys): `agents.json` and the agent's `mcp.json`; the page receives them so Edit can show them. To keep one out, write `${NAME}` and Claude Code expands it from the agent's environment (gonogo's minus the scrubbed variables; from Claude Code's docs, not tried).
 - A payload server is code or a service you chose; its tools run with the agent's permission mode.
 
+## Mass Budget
+
+REFLECT reads and copies one agent's `memory.md`; gonogo never writes that file. The agent name must match the name pattern and be an agent, so no path comes from the request. The file is opened without following a symbolic link and without waiting on a pipe, must be a regular file, and is read up to 1 MiB; `memory.md.bak` is written through a temporary file and a rename, so a link standing in its place is replaced, never written through. The routes need the browser token like every `/api` route. The text of the notes is never logged. An agent that runs as you can still put anything in its own folder.
+
 ## Uplink
 
 **`POST /uplink/<id>` takes no browser token.** It needs that uplink's secret (a body signature, or the secret as a bearer token). At most 256 KiB and 30 a minute per uplink. Unknown and disabled uplinks both answer 404. The Host check applies; a request with an `Origin` header is refused. An agent reads a delivery as a message from you.

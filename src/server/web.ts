@@ -69,6 +69,7 @@ import type { Docking } from './docking.js';
 import { createMcpHandler } from './mcp.js';
 import { parsePropellantRequest } from './propellant.js';
 import type { Liveries } from './livery.js';
+import type { MassBudget } from './massbudget.js';
 import type { MissionLog } from './missionlog.js';
 import type { Propellant } from './propellant.js';
 import type { Telemetry } from './telemetry.js';
@@ -107,7 +108,9 @@ export interface WebOptions {
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
-  missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update' | 'remove'>;
+  missionLog?: Pick<MissionLog, 'search' | 'get' | 'chart' | 'create' | 'update' | 'remove'>;
+  /** Mass Budget; absent in tests that do not need it (the routes answer 404). The page asks; no frame. */
+  massBudget?: Pick<MassBudget, 'view' | 'reflect'>;
   /** Livery; absent in tests that do not need it (the snapshot then has no livery, the routes answer 404 and the livery tool says it is not available). It tells the browsers itself. */
   liveries?: Pick<Liveries, 'view' | 'select' | 'remove' | 'submit' | 'design'>;
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
@@ -787,6 +790,7 @@ export function createWebServer(options: WebOptions): WebServer {
         };
       }
       const id = s[2] ?? '';
+      if (id === 'chart') return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, missionLog.chart()) };
       return {
         allow: ['GET', 'PUT', 'DELETE'],
         run: async (req, res) => {
@@ -929,6 +933,16 @@ export function createWebServer(options: WebOptions): WebServer {
           const name = agentName(res, s[2]);
           if (name === null) return;
           sendJson(res, 200, await (s[3] === 'stop' ? hub.stop(name) : hub.restart(name)));
+        },
+      };
+    }
+    if (s.length === 4 && (s[3] === 'memory' || s[3] === 'reflect') && options.massBudget) {
+      const massBudget = options.massBudget;
+      return {
+        allow: [s[3] === 'memory' ? 'GET' : 'POST'],
+        run: async (_req, res) => {
+          const name = agentName(res, s[2]);
+          if (name !== null) sendJson(res, s[3] === 'memory' ? 200 : 201, await (s[3] === 'memory' ? massBudget.view(name) : massBudget.reflect(name)));
         },
       };
     }

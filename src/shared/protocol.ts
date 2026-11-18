@@ -704,6 +704,52 @@ export interface LogRequest {
   body?: string;
   tags?: string[];
 }
+/** Star Chart (docs/star-chart-spec.md): a node is an entry, a tag or an author. `id` is `entry:l1`, `tag:build` or `author:ana`; `ref` is the part after the colon. */
+export interface ChartNode {
+  id: string;
+  kind: 'entry' | 'tag' | 'author';
+  ref: string;
+  /** The title of an entry, else the tag or the author as written. */
+  label: string;
+  /** An entry: 1 plus the entries that mention it. A tag or an author: how many entries have it. */
+  weight: number;
+}
+/** `tag` and `author` go from an entry; `mention` from the entry whose text holds the id to the entry it names; `cooccur` joins two tags that share at least two entries. */
+export interface ChartEdge {
+  from: string;
+  to: string;
+  kind: 'tag' | 'author' | 'mention' | 'cooccur';
+  weight: number;
+}
+/** GET /api/log/chart: the newest entries with their tags and authors. `total` is every entry the log holds, `shown` how many are drawn. */
+export interface LogChart {
+  total: number;
+  shown: number;
+  nodes: ChartNode[];
+  edges: ChartEdge[];
+}
+
+/** Mass Budget (docs/mass-budget-spec.md): the size of an agent's memory.md against a soft limit, and the one backup made when it is asked to condense it. */
+export interface MemoryView {
+  /** false before the agent first started: the file is made then. */
+  exists: boolean;
+  bytes: number;
+  /** null for a file too large to count. */
+  lines: number | null;
+  softLines: number;
+  softBytes: number;
+  /** Over either soft limit. */
+  over: boolean;
+  /** When memory.md was last written, ms epoch, or null. */
+  changedAt: number | null;
+  /** memory.md.bak: the copy made when the last request was sent. */
+  backup: { bytes: number; at: number } | null;
+}
+/** POST /api/agents/:name/reflect: what the hub said of the message (`ok` false when it was not delivered, and then no backup was kept) and the file as it is now. */
+export interface ReflectResult {
+  send: SendResult;
+  memory: MemoryView;
+}
 
 /** Livery (docs/livery-spec.md): one look. `tokens` holds every token of src/shared/livery.ts. `author` is the agent that submitted it. */
 export interface LiveryEntry {
