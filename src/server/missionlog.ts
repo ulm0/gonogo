@@ -131,7 +131,10 @@ function parse(text: string, id: string): LogEntry {
 }
 
 export function createMissionLog(options: MissionLogOptions): MissionLog {
-  const { now, log } = options;
+  const { log } = options;
+  // Strictly increasing: two writes in the same millisecond must not tie, or the order of the newest-first list is a coin toss.
+  let lastAt = 0;
+  const now = (): number => (lastAt = Math.max(options.now(), lastAt + 1));
   const dir = join(options.dir, LOG_DIR);
   const entries = new Map<string, LogEntry>();
   const index = createIndex();
