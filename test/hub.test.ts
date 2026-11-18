@@ -2805,6 +2805,7 @@ describe('hire (4.9)', () => {
       command: null,
       payload: null,
       cleanRoom: null,
+      worktree: null,
       model: null,
       keys: {},
       doing: null,
@@ -5680,6 +5681,74 @@ describe('Clean Room: a container on its own worktree (hire and edit)', () => {
     const h = await started();
     delete (h.io as { checkCleanRoom?: unknown }).checkCleanRoom;
     expect((await hireWith(h, {})).cleanRoom).toEqual({});
+  });
+});
+
+describe('Worktree: an agent in its own git worktree (hire and edit)', () => {
+  const hireWith = (h: Harness, worktree: unknown, patch: Record<string, unknown> = {}): Promise<AgentView> =>
+    h.hub.hire({ name: 'ana', role: 'x', dir: '/work/ana', mode: 'default', worktree, ...patch } as unknown as HireRequest);
+  /** The fake check of the repository: the directories it was asked about, and its answer. */
+  const checking = (h: Harness, problem: { text: string | null } = { text: null }): string[] => {
+    const asked: string[] = [];
+    h.io.checkWorktree = async (dir) => {
+      asked.push(dir);
+      return problem.text;
+    };
+    return asked;
+  };
+
+  it('stores the setting in the record and the view, checks the directory and hands the record to the launcher', async () => {
+    const h = await started();
+    const asked = checking(h);
+    const view = await hireWith(h, {});
+    expect(view.worktree).toEqual({});
+    expect(asked).toEqual(['/work/ana']);
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')?.worktree).toEqual({});
+    expect(h.spawns.at(-1)?.agent.worktree).toEqual({});
+    const plain = await hireWith(h, undefined, { name: 'ben', dir: '/work/ben' });
+    expect(plain.worktree).toBeNull();
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ben')).not.toHaveProperty('worktree');
+    expect(asked).toEqual(['/work/ana']);
+  });
+
+  it('refuses a bad value, a Clean Room as well and a directory outside a repository, names the field and creates nothing', async () => {
+    const h = await started();
+    const problem = { text: null as string | null };
+    checking(h, problem);
+    const refuse = (worktree: unknown, message: string | RegExp, patch: Record<string, unknown> = {}): Promise<void> =>
+      expectHubReject(hireWith(h, worktree, patch), 'bad_request', message, 'worktree');
+    await refuse([], 'worktree must be an object');
+    await refuse({ branch: 'x' }, 'worktree has no field "branch"');
+    await refuse({}, /has a worktree already/, { cleanRoom: {} });
+    problem.text = 'a worktree needs the directory to be inside a git repository: not a git repository';
+    await refuse({}, /inside a git repository/);
+    expect(h.saves.at(-1)?.agents.some((record) => record.name === 'ana') ?? false).toBe(false);
+  });
+
+  it('is turned on and off by an edit, the console is dirty until the restart, and a rename waits for it to be off', async () => {
+    const h = await withAna();
+    const asked = checking(h);
+    const on = await h.hub.edit('ana', { worktree: {} });
+    expect(on).toMatchObject({ worktree: {}, dirty: true });
+    expect(asked).toEqual(['/work/ana']);
+    await h.hub.stop('ana');
+    await expectHubReject(h.hub.edit('ana', { name: 'bea' }), 'conflict', /cannot be renamed/, 'name');
+    await expectHubReject(h.hub.edit('ana', { cleanRoom: {} }), 'bad_request', /has a worktree already/, 'worktree');
+    const renamed = await h.hub.edit('ana', { name: 'bea', worktree: null });
+    expect(renamed).toMatchObject({ name: 'bea', worktree: null });
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'bea')).not.toHaveProperty('worktree');
+  });
+
+  it('checks the new folder of an edit when the worktree stays on', async () => {
+    const h = await withAna();
+    const problem = { text: null as string | null };
+    const asked = checking(h, problem);
+    await h.hub.edit('ana', { worktree: {} });
+    await h.hub.edit('ana', { dir: '/work/other' });
+    expect(asked).toEqual(['/work/ana', '/work/other']);
+    problem.text = 'a worktree needs the directory to be inside a git repository: no';
+    await expectHubReject(h.hub.edit('ana', { dir: '/work/third' }), 'bad_request', /inside a git repository/, 'worktree');
+    expect(h.view('ana').dir).toBe('/work/other');
   });
 });
 

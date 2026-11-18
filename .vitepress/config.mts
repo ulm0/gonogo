@@ -67,6 +67,7 @@ export default defineConfig({
           { text: 'Engine Bay', link: '/features/engine-bay' },
           { text: 'Payload', link: '/features/payload' },
           { text: 'Clean Room', link: '/features/clean-room' },
+          { text: 'Worktrees', link: '/features/worktrees' },
           { text: 'Redline', link: '/features/redline' },
           { text: 'Static fire', link: '/features/static-fire' },
           { text: 'Hold', link: '/features/hold' },

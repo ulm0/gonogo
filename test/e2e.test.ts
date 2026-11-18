@@ -4,7 +4,7 @@
 // server and uses the boss as its subject. Every scenario starts from a fresh server.
 import { execFileSync } from 'node:child_process';
 import { createHmac, randomBytes } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import type { IncomingHttpHeaders } from 'node:http';
@@ -34,6 +34,7 @@ import { signCall } from '../src/server/docking.js';
 import { pointerText } from '../src/server/hub.js';
 import { buildRoleText } from '../src/server/launcher.js';
 import { BUILTIN_LIVERIES } from '../src/shared/livery.js';
+import { WORKTREE_NOTE } from '../src/server/constants.js';
 import { cleanRoomEnv, fakeDockerBin, makeRepo } from './clean-room-helpers.js';
 import { AGENT_STATES, PROTOCOL_VERSION, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
 import type {
@@ -2526,6 +2527,51 @@ describe('end to end with the stand-in agent', () => {
       expect((await api<AgentView>(h, 'POST', '/api/agents/ana/stop')).status).toBe(200);
       await waitFor(() => readFileSync(dockerLog, 'utf8').trim().split('\n').length === 3, 5000, 'the docker rm after the stop');
       expect(JSON.parse(readFileSync(dockerLog, 'utf8').trim().split('\n')[2] ?? '{}')).toEqual({ verb: 'rm', argv: ['-f', run?.name] });
+    } finally {
+      await rm(aux, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('Worktree: a console starts in its own git worktree on the host, Hangar opens it, and a remove can delete it', async () => {
+    const aux = await mkdtemp(join(tmpdir(), 'gonogo-'));
+    try {
+      const repo = join(aux, 'repo');
+      await makeRepo(repo);
+      const h = await startServer({ env: cleanRoomEnv(await fakeDockerBin(aux)) });
+      const refuse = async (changes: Record<string, unknown>, text: RegExp): Promise<void> => {
+        const response = await api<ApiError>(h, 'POST', '/api/agents', { name: 'ana', role: 'Reviews', dir: join(repo, 'sub'), mode: 'default', worktree: {}, ...changes });
+        expect(response.status, JSON.stringify(changes)).toBe(400);
+        expect(response.body).toMatchObject({ field: 'worktree', error: expect.stringMatching(text) });
+      };
+      await refuse({ dir: h.work }, /inside a git repository/);
+      await refuse({ cleanRoom: {} }, /worktree already/);
+      expect(existsSync(join(h.home, 'worktrees'))).toBe(false);
+
+      await hire(h, 'ana', { dir: join(repo, 'sub'), worktree: {} });
+      expect((await view(h, 'ana'))?.worktree).toEqual({});
+      expect(rosterEntry(h, 'ana')).toMatchObject({ worktree: {} });
+      const worktree = join(h.home, 'worktrees', 'ana');
+      expect(readFileSync(join(worktree, 'sub', 'b.txt'), 'utf8')).toBe('b\n');
+      const [first] = starts(h, 'ana');
+      expect(first?.cwd).toBe(realpathSync(join(worktree, 'sub')));
+      const role = first?.argv[(first?.argv.indexOf('--append-system-prompt') ?? -2) + 1] ?? '';
+      expect(role).toContain(WORKTREE_NOTE.replace('{branch}', 'gonogo/ana'));
+
+      // Hangar opens the worktree, not the main folder
+      writeFileSync(join(worktree, 'sub', 'only-here.txt'), 'x');
+      const listed = await api<{ entries: Array<{ name: string }> }>(h, 'GET', '/api/agents/ana/files');
+      expect(listed.body.entries.map((entry) => entry.name)).toContain('sub');
+      const sub = await api<{ entries: Array<{ name: string }> }>(h, 'GET', '/api/agents/ana/files?path=sub');
+      expect(sub.body.entries.map((entry) => entry.name)).toContain('only-here.txt');
+
+      // the status, then a remove that keeps and a remove that deletes (git refuses the unsaved file)
+      expect((await api(h, 'GET', '/api/agents/flight/worktree')).status).toBe(404);
+      expect((await api(h, 'GET', '/api/agents/ana/worktree')).body).toMatchObject({ path: worktree, branch: 'gonogo/ana', exists: true, dirty: true, ahead: 0 });
+      expect((await api(h, 'DELETE', '/api/agents/ana?worktree=maybe')).status).toBe(400);
+      const refused = await api<{ worktree: { removed: boolean; reason: string } }>(h, 'DELETE', '/api/agents/ana?worktree=delete');
+      expect(refused).toMatchObject({ status: 200, body: { worktree: { removed: false } } });
+      expect(existsSync(join(worktree, 'sub', 'only-here.txt'))).toBe(true);
+      expect(await view(h, 'ana'), 'the console is removed all the same').toBeUndefined();
     } finally {
       await rm(aux, { recursive: true, force: true });
     }

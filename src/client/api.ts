@@ -57,6 +57,7 @@ import type {
   UplinkRequest,
   UplinkView,
   UserMessageRequest,
+  WorktreeStatus,
 } from '../shared/protocol.js';
 import {
   API_PREFIX,
@@ -360,8 +361,15 @@ export async function stopAgent(name: string): Promise<AgentView> {
   return toAgentView(await call('POST', `${agentPath(name)}/stop`));
 }
 
-export async function remove(name: string): Promise<void> {
-  await call('DELETE', agentPath(name));
+/** Removes the console; `deleteWorktree` also asks git to delete its worktree and branch (git refuses unsaved or unmerged work, and the console is gone anyway). */
+export async function remove(name: string, deleteWorktree = false): Promise<void> {
+  await call('DELETE', `${agentPath(name)}${deleteWorktree ? '?worktree=delete' : ''}`);
+}
+
+export async function worktreeStatus(name: string): Promise<WorktreeStatus> {
+  const record = asRecord(await call('GET', `${agentPath(name)}/worktree`));
+  if (record === null || typeof record.branch !== 'string' || typeof record.dirty !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as WorktreeStatus;
 }
 
 export async function sendMessage(request: UserMessageRequest): Promise<SendResult> {

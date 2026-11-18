@@ -130,6 +130,8 @@ export const MCP_SERVER_NAME = 'gonogo';
 /** Clean Room (docs/clean-room-spec.md): the worktrees live in <home>/cleanroom/<name> on the branch gonogo/<name>. */
 export const CLEAN_ROOM_DIR = 'cleanroom';
 export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
+/** Worktrees (docs/worktrees-spec.md): a plain worktree lives in <home>/worktrees/<name>, on the same branch name as a Clean Room. */
+export const WORKTREE_DIR = 'worktrees';
 export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
@@ -326,6 +328,21 @@ export interface Payload {
 export interface CleanRoom {
   image?: string;
 }
+/** Worktree: the agent starts in its own git worktree and branch of the repository of `dir`, on the host. No fields yet (an object so one can come later without a migration). */
+export type Worktree = Record<string, never>;
+export interface WorktreeStatus {
+  path: string;
+  branch: string;
+  /** The folder is made (an agent that never started has none). */
+  exists: boolean;
+  /** Uncommitted changes in it. */
+  dirty: boolean;
+  /** Commits on the branch that the repository's checked-out branch does not have. */
+  ahead: number;
+  /** The branch is in the checked-out branch already. */
+  merged: boolean;
+}
+
 /** One agent as stored in <home>/agents.json (inside RosterFile). */
 export interface AgentRecord {
   name: string;
@@ -349,6 +366,8 @@ export interface AgentRecord {
   payload?: Payload;
   /** Absent means the agent runs on the host. Claude Code agents only. */
   cleanRoom?: CleanRoom;
+  /** Absent means the agent starts in `dir`. Never together with cleanRoom. */
+  worktree?: Worktree;
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
   model?: string;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
@@ -439,6 +458,8 @@ export interface AgentView {
   payload: Payload | null;
   /** The Clean Room as stored, or null: the branch and the worktree path follow from the name (cleanRoomBranch, CLEAN_ROOM_DIR). */
   cleanRoom: CleanRoom | null;
+  /** The worktree setting as stored, or null: the branch and the path follow from the name (worktreeBranch, worktreePath). */
+  worktree: Worktree | null;
   /** The model as stored, or null for the CLI's default. */
   model: string | null;
   /** Clearance: key name to when it was set. Names only: a value is never sent to a browser. */
@@ -1025,6 +1046,8 @@ export interface HireRequest {
   payload?: Payload;
   /** Run the agent in a container on its own worktree. Refused (400, field 'cleanRoom') for another engine, a bad image, no Docker or a directory outside a git repository. */
   cleanRoom?: CleanRoom;
+  /** Start the agent in its own git worktree. Refused (400, field 'worktree') with cleanRoom, or for a directory outside a git repository. */
+  worktree?: Worktree;
   /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
   model?: string;
   /** Clearance: key name to value, set for this agent only. Bad name or value: 400, field 'keys'. */
@@ -1045,6 +1068,8 @@ export interface EditRequest {
   payload?: Payload | null;
   /** Replaces the Clean Room setting; null turns it off. */
   cleanRoom?: CleanRoom | null;
+  /** Replaces the worktree setting; null turns it off (the worktree and branch are kept). */
+  worktree?: Worktree | null;
   /** A model name, or null or empty text for the CLI's default. */
   model?: string | null;
   /** Key name to a new value, or to null to remove that key. Keys not named stay as they are. */
@@ -1566,6 +1591,8 @@ export interface HubIo {
   checkDirectory(path: string): Promise<DirCheck>;
   /** Clean Room: null when Docker answers and `dir` is inside a git repository, else the reason (one line). Optional for fakes. */
   checkCleanRoom?(dir: string): Promise<string | null>;
+  /** Worktree: null when `dir` is inside a git repository, else the reason (one line). Optional for fakes. */
+  checkWorktree?(dir: string): Promise<string | null>;
   loadRoster(): Promise<RosterFile>;
   saveRoster(file: RosterFile): Promise<void>;
   /** Last `limit` message records, oldest first. */

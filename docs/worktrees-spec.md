@@ -1,7 +1,7 @@
 # Spec: Worktrees for workers (draft)
 
 Design by FIDO, 2026-11-18. Backlog section 4, "Workers in git worktrees" (*inferred*: the reference's behaviour was not
-confirmed, this is built from the need). Status: draft, not built.
+confirmed, this is built from the need). Status: built (steps 1-4), except the boss's `hire_agent` inheriting the setting.
 
 ## Intent
 
@@ -23,7 +23,7 @@ with git working inside it.
   tests are the proof). The new module adds `removeWorktree` and `worktreeStatus`.
 - **Place and branch.** `<home>/cleanroom/<name>` stays for Clean Room. Plain worktrees go to `<home>/worktrees/<name>`, on
   branch `gonogo/<name>`, from the repository's `HEAD`, once. The branch name is the same for both on purpose: an agent
-  switched from one to the other keeps its work. Later starts find the worktree again (`git worktree list --porcelain`); a
+  switched from one to the other can reuse the branch, but only after the old worktree is removed: git refuses a branch checked out in two worktrees, so the start fails with git's message until the Director removes the old one (found at review of W1). Later starts find the worktree again (`git worktree list --porcelain`); a
   deleted folder is pruned and made again on the old branch; an existing branch is used as it is; a foreign folder is an
   error and is left alone (all as `ensureWorktree` does today).
 - **The agent starts in** the worktree, in the same sub-folder its `dir` has below the repository top. `dir` outside a git

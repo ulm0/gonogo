@@ -68,7 +68,8 @@ Plan:
 - [x] Hold button for an agent *(inferred)*. Built (2026-11-18) as **Hold**: a key in the console panel puts a Claude Code
       or Gemini CLI agent on hold through Redline's machinery (Escape if working, mail held) until RESUME
       (`docs/telemetry-spec.md`). Tested with the stand-in agent only.
-- [ ] Workers in git worktrees *(inferred)*.
+- [x] Workers in git worktrees *(inferred)*. Built (2026-11-18): the `Own git worktree` box, `docs/features/worktrees.md`.
+      Tested with real git and the stand-in agent only. Not built: a boss's `hire_agent` carrying the setting.
 - [ ] Phone approvals through Claude Code's `/remote-control`.
 
 ## 5. Voice

@@ -312,6 +312,8 @@ export const CLEAN_ROOM_COMMAND_MS = 30_000;
 /** Added to the role of a Clean Room agent: git cannot reach the repository from the container. {branch} is its branch. */
 export const CLEAN_ROOM_NOTE =
   'You run in a sandbox: a container that holds only a copy of the project (a git worktree on the branch "{branch}") and your own files. git cannot reach the repository from there, so do not try to commit: edit the files, and the owner commits and merges the branch from outside.';
+export const WORKTREE_NOTE =
+  'Your files are a git worktree on the branch "{branch}". Commit there; the Director merges the branch.';
 export const MAX_WORKING_ENV = 'GONOGO_MAX_WORKING';
 /** A custom command counts as working while it printed something in the last CUSTOM_ACTIVE_MS, and as starting until it prints or CUSTOM_START_MS pass. */
 export const CUSTOM_ACTIVE_MS = 2000;

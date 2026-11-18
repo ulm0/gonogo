@@ -47,6 +47,7 @@ import {
 import { readCustomCommand } from './command.js';
 import { migrateHome } from './migrate.js';
 import { parseCleanRoom } from './cleanroom.js';
+import { parseWorktree } from './worktree.js';
 import { keyNameProblem } from './clearance.js';
 import { parsePayload, payloadRefusal } from './payload.js';
 
@@ -181,7 +182,7 @@ function parseAgent(a: unknown): AgentRecord | string {
   if (typeof boss !== 'boolean') return `${name}: boss must be true or false`;
   if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) return `${name}: createdAt must be a number`;
   const record: AgentRecord = { name, role, dir, mode, sessionId, desk, boss, createdAt };
-  const { position, provider, command, payload, cleanRoom } = a;
+  const { position, provider, command, payload, cleanRoom, worktree } = a;
   if (position !== undefined) {
     if (typeof position !== 'string' || !POSITION_IDS.includes(position)) return `${name}: unknown position`;
     record.position = position;
@@ -214,6 +215,12 @@ function parseAgent(a: unknown): AgentRecord | string {
     const checked = parseCleanRoom(cleanRoom, record.provider);
     if (!checked.ok) return `${name}: ${checked.error}`;
     record.cleanRoom = checked.cleanRoom;
+  }
+  if (worktree !== undefined) {
+    const checked = parseWorktree(worktree);
+    if (!checked.ok) return `${name}: ${checked.error}`;
+    if (cleanRoom !== undefined) return `${name}: a Clean Room agent has a worktree already`;
+    record.worktree = checked.worktree;
   }
   const { model, keys } = a;
   if (model !== undefined) {

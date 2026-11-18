@@ -21,6 +21,7 @@ import type {
   AnswerRequest,
   ApiErrorCode,
   CleanRoom,
+  Worktree,
   EditRequest,
   ExitInfo,
   ExitSummary,
@@ -132,6 +133,7 @@ import {
   TITLE_WORKING_CONFIRM_MS,
 } from './constants.js';
 import { parseCleanRoom } from './cleanroom.js';
+import { parseWorktree } from './worktree.js';
 import { checkKeys } from './clearance.js';
 import { parsePayload, payloadRefusal } from './payload.js';
 
@@ -160,6 +162,8 @@ const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 const payloadKey = (record: AgentRecord): string | null => (record.payload === undefined ? null : JSON.stringify(record.payload));
 /** The Clean Room setting of a record as text, for comparing: null when the agent runs on the host. */
 const cleanRoomKey = (record: AgentRecord): string | null => (record.cleanRoom === undefined ? null : JSON.stringify(record.cleanRoom));
+/** The worktree setting of a record as text, for comparing: null when the agent starts in its own folder. */
+const worktreeKey = (record: AgentRecord): string | null => (record.worktree === undefined ? null : JSON.stringify(record.worktree));
 /** The model and the keys (names and times) of a record as text, for comparing: a key set again has a new time, so a changed value shows as dirty too. */
 const engineKey = (record: AgentRecord): string => JSON.stringify([record.model ?? null, record.keys ?? null]);
 const MODEL_RE = new RegExp(MODEL_PATTERN);
@@ -382,7 +386,7 @@ interface Rt {
   /** When a Stop block was last answered: R1 waits for the title to catch up (contract 4.7). */
   lastBlockAt: number | null;
   /** role, dir, mode, command and payload (as JSON text) as of the last spawn, for the `dirty` flag. */
-  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; engine: string } | null;
+  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; worktree: string | null; engine: string } | null;
   /** Custom provider only: the output counter at the last sweep, when it last grew, and when the process was spawned. */
   custom: { bytes: number; activeAt: number | null; since: number };
   /** The flag the last start used, null until the launcher answered. */
@@ -628,6 +632,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           running.command !== (record.command ?? null) ||
           running.payload !== payloadKey(record) ||
           running.cleanRoom !== cleanRoomKey(record) ||
+          running.worktree !== worktreeKey(record) ||
           running.engine !== engineKey(record)),
       generation: rt.generation,
       exit: rt.exit ? { ...rt.exit } : null,
@@ -636,6 +641,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       command: record.command ?? null,
       payload: record.payload ?? null,
       cleanRoom: record.cleanRoom ?? null,
+      worktree: record.worktree ?? null,
       model: record.model ?? null,
       keys: { ...record.keys },
       doing: rt.doing,
@@ -1654,7 +1660,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.pointed.clear();
     rt.screenClearSince = null;
     rt.lastBlockAt = null;
-    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), engine: engineKey(rt.record) };
+    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), engine: engineKey(rt.record) };
     rt.flag = flag;
     // The browser reacts to a new generation by attaching, so the frame waits until the process exists in the terminal host.
     rt.frameHold = true;
@@ -1864,6 +1870,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.payload = from.payload;
     if (from.cleanRoom === undefined) delete target.cleanRoom;
     else target.cleanRoom = from.cleanRoom;
+    if (from.worktree === undefined) delete target.worktree;
+    else target.worktree = from.worktree;
     if (from.model === undefined) delete target.model;
     else target.model = from.model;
     if (from.keys === undefined) delete target.keys;
@@ -1900,6 +1908,22 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const refused = checked.payload && payloadRefusal(provider, checked.payload);
     if (refused) throw new HubError('bad_request', refused.error, refused.field);
     return checked.payload;
+  }
+
+  /** A worktree setting: an object, not together with a Clean Room (which has one), and `dir` in a git repository. A bad one is 400, field worktree. */
+  async function checkWorktree(value: unknown, dir: string, cleanRoom: unknown): Promise<Worktree> {
+    const checked = parseWorktree(value);
+    if (!checked.ok) throw new HubError('bad_request', checked.error, 'worktree');
+    if (cleanRoom !== undefined && cleanRoom !== null) throw new HubError('bad_request', 'a Clean Room agent has a worktree already: use one of the two', 'worktree');
+    let problem: string | null;
+    try {
+      problem = (await io.checkWorktree?.(dir)) ?? null;
+    } catch (error) {
+      log.error('worktree check failed', error);
+      problem = errorMessage(error);
+    }
+    if (problem !== null) throw new HubError('bad_request', problem, 'worktree');
+    return checked.worktree;
   }
 
   /** A Clean Room setting: Claude Code only, a good image, and (when the check exists) Docker answers and `dir` is in a git repository. A bad one is 400, field cleanRoom. */
@@ -1991,6 +2015,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       }
       await checkSkills(payload);
       const cleanRoom = req.cleanRoom === undefined ? undefined : await checkCleanRoom(provider, req.cleanRoom, dir);
+      const worktree = req.worktree === undefined ? undefined : await checkWorktree(req.worktree, dir, req.cleanRoom);
       assertOpen();
       const record: AgentRecord = {
         name,
@@ -2007,6 +2032,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       setOptional(record, 'command', command);
       if (payload) record.payload = payload;
       if (cleanRoom) record.cleanRoom = cleanRoom;
+      if (worktree) record.worktree = worktree;
       if (model) record.model = model;
       if (kept?.names) record.keys = kept.names;
       hiring.set(name, record);
@@ -2035,9 +2061,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'model', 'keys'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'model', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, model, keys');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, model, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
@@ -2049,6 +2075,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         if (name !== current.name) {
           if (current.cleanRoom !== undefined && req.cleanRoom !== null) {
             throw new HubError('conflict', 'a Clean Room console cannot be renamed: its worktree and branch carry its name (turn Clean Room off to rename it)', 'name');
+          }
+          if (current.worktree !== undefined && req.worktree !== null) {
+            throw new HubError('conflict', 'a console with a worktree cannot be renamed: its worktree and branch carry its name (turn the worktree off to rename it)', 'name');
           }
           if (agents.has(name) || claimedNames.has(name)) {
             throw new HubError('conflict', `an agent named "${name}" already exists`, 'name');
@@ -2076,6 +2105,13 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (req.cleanRoom !== undefined) {
         if (req.cleanRoom === null) delete next.cleanRoom;
         else next.cleanRoom = await checkCleanRoom(current.provider ?? 'claude', req.cleanRoom, next.dir);
+      }
+      if (req.worktree !== undefined) {
+        if (req.worktree === null) delete next.worktree;
+        else next.worktree = await checkWorktree(req.worktree, next.dir, next.cleanRoom);
+      } else if (next.worktree !== undefined && (req.dir !== undefined || req.cleanRoom !== undefined)) {
+        // a new folder must be in a repository, and a Clean Room has a worktree of its own
+        next.worktree = await checkWorktree(next.worktree, next.dir, next.cleanRoom);
       }
       if (req.model !== undefined) {
         const model = checkModel(current.provider ?? 'claude', req.model);
@@ -2107,6 +2143,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         next.command !== current.command ||
         payloadKey(next) !== payloadKey(current) ||
         cleanRoomKey(next) !== cleanRoomKey(current) ||
+        worktreeKey(next) !== worktreeKey(current) ||
         engineKey(next) !== engineKey(current);
       if (!changed) return buildView(rt);
 

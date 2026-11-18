@@ -52,7 +52,7 @@ export function audited<T extends object>(store: T, record: AuditRecord, table: 
 }
 
 /** The fields an edit names: the names of the fields only, never their values. */
-const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom'];
+const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree'];
 const fieldsOf = (value: unknown, allowed: string[]): string[] => (isRecord(value) ? Object.keys(value).filter((key) => allowed.includes(key) && value[key] !== undefined) : []);
 
 const actorName = (actor: unknown): string => {
