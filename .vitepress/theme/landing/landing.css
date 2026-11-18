@@ -111,13 +111,9 @@
   color: var(--text);
 }
 
-.lp-dark,
-.dark .lp-light {
-  display: none;
-}
-
-.dark .lp-dark {
-  display: block;
+/* As in the app (shell.css .mark-name): on a dark livery the lockup is turned, light and dark swap, same size. */
+.dark .lp-logo {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .lp-h1 {
