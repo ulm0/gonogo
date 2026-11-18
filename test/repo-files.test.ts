@@ -117,6 +117,7 @@ describe('scripts/check-pack.mjs file list', () => {
     'package/dist/shared/positions.js',
     'package/dist/shared/fuel.js',
     'package/dist/shared/cron.js',
+    'package/dist/shared/details.js',
     'package/dist/shared/diff.js',
     'package/dist/shared/layout.js',
     'package/dist/shared/livery.js',

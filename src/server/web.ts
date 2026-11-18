@@ -16,6 +16,7 @@ import type {
   AnswerRequest,
   ApiErrorCode,
   Attachment,
+  Effort,
   EditRequest,
   EngineCheck,
   ErrorFrame,
@@ -164,7 +165,7 @@ export interface WebOptions {
   statusLine?: (agent: string, body: unknown) => void;
   /** Test clock of the status-line rate limit. */
   statusLineNow?: () => number;
-  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition'>;
+  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
@@ -386,7 +387,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, keys } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, effort, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -433,6 +434,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
   if (autostart !== undefined) {
     if (typeof autostart !== 'boolean') return fieldError('autostart', 'true or false');
     value.autostart = autostart;
+  }
+  if (effort !== undefined) {
+    if (typeof effort !== 'string') return fieldError('effort', 'a string');
+    value.effort = effort as Effort;
   }
   // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
   if (model !== undefined) {
@@ -521,6 +526,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.autostart !== undefined) {
     if (typeof o.autostart !== 'boolean') return fieldError('autostart', 'true or false');
     value.autostart = o.autostart;
+  }
+  if (o.effort !== undefined) {
+    if (o.effort !== null && typeof o.effort !== 'string') return fieldError('effort', 'a string or null');
+    value.effort = o.effort as Effort | null;
   }
   if (o.model !== undefined) {
     if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');
@@ -1217,7 +1226,24 @@ export function createWebServer(options: WebOptions): WebServer {
     if (s[1] === 'models' && s.length <= 4) {
       const models = options.models;
       if (!models) return null;
+      /** A change goes to every page and terminal as a frame, so their chips follow. */
+      const changed = async (run: Promise<Extract<HubEvent, { t: 'models' }>['models']>): Promise<Extract<HubEvent, { t: 'models' }>['models']> => {
+        const view = await run;
+        broadcast({ t: 'models', models: view });
+        return view;
+      };
       if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, models.view()) };
+      // PUT /api/models/engine and /api/models/effort: the room's default engine, and its default effort for Claude Code
+      if (s.length === 3 && (s[2] === 'engine' || s[2] === 'effort')) {
+        const key = s[2];
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await changed(key === 'engine' ? models.setEngine(body.engine) : models.setEffort(body.effort)));
+          },
+        };
+      }
       // PUT /api/models/positions/<id>: the model of a position
       if (s.length === 4) {
         if (s[2] !== 'positions') return null;
@@ -1225,7 +1251,7 @@ export function createWebServer(options: WebOptions): WebServer {
           allow: ['PUT'],
           run: async (req, res) => {
             const body = await jsonObject(req, res);
-            if (body) sendJson(res, 200, await models.setPosition(s[3] ?? '', body.model));
+            if (body) sendJson(res, 200, await changed(models.setPosition(s[3] ?? '', body.model)));
           },
         };
       }
@@ -1234,7 +1260,7 @@ export function createWebServer(options: WebOptions): WebServer {
         run: async (req, res) => {
           const body = await jsonObject(req, res);
           // the router has decoded the segment already: decoding again made a lone % throw (a 500)
-          if (body) sendJson(res, 200, await models.set(s[2] ?? '', body.model));
+          if (body) sendJson(res, 200, await changed(models.set(s[2] ?? '', body.model)));
         },
       };
     }

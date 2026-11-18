@@ -2,7 +2,7 @@
  * Default models (docs/engine-bay-spec.md): what the page knows about the room's model per engine. No React here but the hook.
  * A console's own model wins; the room's applies when it has none, at the next start.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import type { ModelDefaults, Provider } from '../shared/protocol.js';
 import { PROVIDERS, providerInfo } from '../shared/protocol.js';
 import * as api from './api.js';
@@ -25,18 +25,40 @@ export function modelNote(own: string | null | undefined, defaults: ModelDefault
   return `${where} A /model typed inside the console only changes that session: set it here to keep it.`;
 }
 
-/** The room's defaults, asked once when the component mounts; null until they come (or if the server cannot say). */
+/* The room's defaults are asked once for the whole page and shared: the hire form and every chip on the page read the same copy, and the
+   settings block publishes a change so that they follow it. They are not in a frame, so another browser's change shows at the next load. */
+let shared: ModelDefaults | null = null;
+let asked = false;
+const listeners = new Set<() => void>();
+
+/** The settings block saved a change: every reader gets it. */
+export function publishModelDefaults(next: ModelDefaults): void {
+  shared = next;
+  listeners.forEach((l) => l());
+}
+
+/** Forgets the copy (a test, or a new connection to another server). */
+export function resetModelDefaults(): void {
+  shared = null;
+  asked = false;
+  listeners.forEach((l) => l());
+}
+
+/** The room's defaults; null until they come (or if the server cannot say). */
 export function useModelDefaults(): ModelDefaults | null {
-  const [defaults, setDefaults] = useState<ModelDefaults | null>(null);
   useEffect(() => {
-    let live = true;
-    api.modelDefaults().then(
-      (found) => live && setDefaults(found),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
+    if (asked) return;
+    asked = true;
+    api.modelDefaults().then(publishModelDefaults, () => {
+      asked = false;
+    });
   }, []);
-  return defaults;
+  return useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => shared,
+    () => shared,
+  );
 }

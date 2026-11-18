@@ -42,6 +42,7 @@ function agent(name: string, extra: Partial<AgentView> = {}): AgentView {
     cleanRoom: null,
     worktree: null,
     model: null,
+    effort: null,
     keys: {},
     doing: null,
     subagents: { running: 0, started: 0, types: {} },
@@ -188,6 +189,14 @@ describe('a request', () => {
   it('asks for another engine, which has no permission modes, and shows the mode it will really get', async () => {
     await ask({ engine: 'opencode', mode: 'acceptEdits' });
     expect(relief.view().requests[0]).toMatchObject({ provider: 'opencode', mode: 'default' });
+  });
+
+  it('uses the room\'s default engine when the request names none, and the named one wins', async () => {
+    relief = make({ defaultEngine: () => 'pi' });
+    await ask();
+    expect(relief.view().requests[0]).toMatchObject({ provider: 'pi' });
+    await ask({ name: 'guido-2', engine: 'claude' });
+    expect(relief.view().requests[1]).toMatchObject({ provider: 'claude' });
   });
 
   it('answers a copy: changing the view does not change the request', async () => {

@@ -5,7 +5,7 @@
  */
 import WebSocket from 'ws';
 import { RECONNECT_DELAYS_MS, WS_BINARY_OUTPUT, WS_INPUT_CHUNK_CHARS, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
-import type { ClientFrame, ServerFrame, UserMessageRequest } from '../shared/protocol.js';
+import type { ClientFrame, ModelDefaults, ServerFrame, UserMessageRequest } from '../shared/protocol.js';
 import type { Link } from './tui-state.js';
 
 export interface TuiClientOptions {
@@ -36,6 +36,8 @@ export interface TuiClient {
   markRead(ids: string[]): Promise<void>;
   archive(ids: string[]): Promise<void>;
   startPoll(): Promise<void>;
+  /** The room's default models (GET /api/models), or null when the server does not answer them: the chips of a console need them. */
+  modelDefaults(): Promise<ModelDefaults | null>;
   /** The seq of the attach in force, or 0 when none. */
   readonly seq: number;
 }
@@ -124,6 +126,11 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
   }
 
   async function call(method: string, path: string, body?: unknown): Promise<void> {
+    await request(method, path, body);
+  }
+
+  /** One REST call: the answer's JSON (null for a 204 or text), or an Error with the server's own message. */
+  async function request(method: string, path: string, body?: unknown): Promise<unknown> {
     let response: Response;
     try {
       response = await fetch(new URL(path, options.url), {
@@ -134,7 +141,7 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
     } catch {
       throw new Error('could not reach the server');
     }
-    if (response.ok) return;
+    if (response.ok) return response.status === 204 ? null : await response.json().catch(() => null);
     let message = `the server answered ${response.status}`;
     try {
       const parsed = (await response.json()) as { error?: unknown };
@@ -183,6 +190,10 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
     markRead: (ids) => call('POST', '/api/downlink/read', { ids }),
     archive: (ids) => call('POST', '/api/downlink/archive', { ids }),
     startPoll: () => call('POST', '/api/poll', {}),
+    modelDefaults: async () => {
+      const value = await request('GET', '/api/models').catch(() => null);
+      return typeof value === 'object' && value !== null && 'models' in value ? (value as ModelDefaults) : null;
+    },
     get seq() {
       return attached;
     },

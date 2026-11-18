@@ -96,6 +96,7 @@ function agent(name: string, desk: number, extra: Partial<AgentView> = {}): Agen
     cleanRoom: null,
     worktree: null,
     model: null,
+    effort: null,
     keys: {},
     doing: null,
     subagents: { running: 0, started: 0, types: {} },
@@ -691,6 +692,7 @@ const VALUES: Values = {
   rules: '',
   autostart: true,
   model: '',
+  effort: '',
   keys: [],
   keysRemoved: [],
 };

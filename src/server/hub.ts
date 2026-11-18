@@ -28,6 +28,7 @@ import type {
   Worktree,
   RemoteControl,
   PermissionRules,
+  Effort,
   EditRequest,
   ExitInfo,
   ExitSummary,
@@ -71,6 +72,7 @@ import type {
 } from '../shared/protocol.js';
 import {
   DOING_MAX_CHARS,
+  EFFORTS,
   HISTORY_MAX,
   HISTORY_WINDOW_MS,
   HOLD_REASON,
@@ -81,6 +83,7 @@ import {
   PROVIDERS,
   providerInfo,
   RESERVED_NAMES,
+  takesEffort,
   STATIC_FIRE_POSITIONS,
   STATION_NAME_PATTERN,
 } from '../shared/protocol.js';
@@ -180,7 +183,7 @@ const cleanRoomKey = (record: AgentRecord): string | null => (record.cleanRoom =
 /** The worktree setting of a record as text, for comparing: null when the agent starts in its own folder. */
 const worktreeKey = (record: AgentRecord): string | null => (record.worktree === undefined ? null : JSON.stringify(record.worktree));
 /** The model and the keys (names and times) of a record as text, for comparing: a key set again has a new time, so a changed value shows as dirty too. */
-const engineKey = (record: AgentRecord): string => JSON.stringify([record.model ?? null, record.keys ?? null]);
+const engineKey = (record: AgentRecord): string => JSON.stringify([record.model ?? null, record.effort ?? null, record.keys ?? null]);
 const MODEL_RE = new RegExp(MODEL_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REPLY_ID_RE = /^m\d+$/;
@@ -710,6 +713,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       permissions: record.permissions ?? null,
       autostart: record.autostart !== false,
       model: record.model ?? null,
+      effort: record.effort ?? null,
       keys: { ...record.keys },
       doing: rt.doing,
       subagents: subagentsOf(rt),
@@ -2075,7 +2079,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   }
 
   function checkProvider(value: unknown): Provider {
-    if (value === undefined) return 'claude';
+    if (value === undefined) return options.defaultEngine?.() ?? 'claude';
     if (typeof value !== 'string' || !(PROVIDERS as readonly string[]).includes(value)) {
       throw new HubError('bad_request', `provider must be one of ${PROVIDERS.join(', ')}`, 'provider');
     }
@@ -2117,8 +2121,18 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.autostart = from.autostart;
     if (from.model === undefined) delete target.model;
     else target.model = from.model;
+    if (from.effort === undefined) delete target.effort;
+    else target.effort = from.effort;
     if (from.keys === undefined) delete target.keys;
     else target.keys = from.keys;
+  }
+
+  /** The effort for `--effort`: a level of EFFORTS, only for an engine that takes one. null or undefined is none. A bad value is 400, field effort. */
+  function checkEffort(provider: Provider, value: unknown): Effort | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== 'string' || !(EFFORTS as readonly string[]).includes(value)) throw new HubError('bad_request', `effort must be one of: ${EFFORTS.join(', ')}`, 'effort');
+    if (!takesEffort(provider)) throw new HubError('bad_request', `${providerInfo(provider).label} takes no effort setting`, 'effort');
+    return value as Effort;
   }
 
   /** The model for `--model`: empty text is none. Only an engine that takes one (PROVIDER_INFO.model). A bad value is 400, field model. */
@@ -2259,6 +2273,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const command = custom ? checkCommand(req.command) : undefined;
     const payload = checkPayload(provider, req.payload);
     const model = checkModel(provider, req.model);
+    const effort = checkEffort(provider, req.effort);
     const kept = req.keys === undefined ? undefined : checkKeysOf(req.keys, undefined, true);
     // A CLI without permission modes (a custom command among them): the mode and confirmBypass of the request are ignored.
     const mode = providerInfo(provider).modes ? checkMode(req.mode) : 'default';
@@ -2298,6 +2313,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (permissions) record.permissions = permissions;
       if (req.autostart === false) record.autostart = false;
       if (model) record.model = model;
+      if (effort) record.effort = effort;
       if (kept?.names) record.keys = kept.names;
       hiring.set(name, record);
       // The values first, from none (a removed agent of this name may have left some), then the roster; a roster that cannot be saved takes them back.
@@ -2325,9 +2341,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'model', 'keys'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'model', 'effort', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, keys');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, effort, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
@@ -2397,6 +2413,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         const model = checkModel(current.provider ?? 'claude', req.model);
         if (model) next.model = model;
         else delete next.model;
+      }
+      if (req.effort !== undefined) {
+        const effort = checkEffort(current.provider ?? 'claude', req.effort);
+        if (effort) next.effort = effort;
+        else delete next.effort;
       }
       if (req.keys !== undefined) {
         const kept = checkKeysOf(req.keys, current.keys, false);

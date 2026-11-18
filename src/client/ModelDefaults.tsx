@@ -4,11 +4,11 @@
  */
 import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ModelDefaults } from '../shared/protocol.js';
+import type { Effort, ModelDefaults, Provider } from '../shared/protocol.js';
 import { POSITIONS } from '../shared/positions.js';
-import { MODEL_PATTERN, providerInfo } from '../shared/protocol.js';
+import { EFFORTS, MODEL_PATTERN, PROVIDERS, providerInfo } from '../shared/protocol.js';
 import * as api from './api.js';
-import { MODEL_PROVIDERS } from './models.js';
+import { MODEL_PROVIDERS, publishModelDefaults } from './models.js';
 import { useRun } from './WallView.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
@@ -67,9 +67,39 @@ function Row({ label, names, saved, set, onSaved }: { label: string; names: read
   );
 }
 
+/** One select of the DEFAULTS block: the saved value, '' for none, saved at once on a change. */
+function Pick({ label, saved, options, empty, set, onSaved }: { label: string; saved: string; options: ReadonlyArray<{ value: string; text: string }>; empty: string; set(value: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void }): ReactElement {
+  const id = useId();
+  const { busy, error, run } = useRun();
+  return (
+    <li className="rules-model">
+      <label htmlFor={id} className="rules-call">
+        {label}
+      </label>
+      <select id={id} className="input" value={saved} disabled={busy} onChange={(event) => run(async () => onSaved(await set(event.target.value === '' ? null : event.target.value)))}>
+        <option value="">{empty}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.text}
+          </option>
+        ))}
+      </select>
+      {error !== null && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
 export function ModelDefaultsBlock(): ReactElement {
   const titleId = useId();
   const [defaults, setDefaults] = useState<ModelDefaults | null>(null);
+  const saved = (next: ModelDefaults): void => {
+    setDefaults(next);
+    publishModelDefaults(next);
+  };
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -84,10 +114,10 @@ export function ModelDefaultsBlock(): ReactElement {
   return (
     <section className="module rules-block rules-models" aria-labelledby={titleId}>
       <h2 className="label" id={titleId}>
-        DEFAULT MODELS
+        DEFAULTS
       </h2>
       <p className="hint">
-        The model a console starts with when it has none of its own: every hire, the positions and Relief hires. A console's own model (its Edit form) wins. It applies at each console's next start.
+        What a console starts with when it has none of its own: the engine of a hire that names none (the hire form, Relief and hire_agent), the model of each engine and position, and the effort of Claude Code. A console's own setting (its Edit form) wins. A model or effort applies at each console's next start; the chips of each console say which level it comes from.
       </p>
       {problem !== null && (
         <p className="error" role="alert">
@@ -95,9 +125,24 @@ export function ModelDefaultsBlock(): ReactElement {
         </p>
       )}
       {defaults !== null && (
+        <>
+          <h3 className="label">ENGINE AND EFFORT</h3>
+          <ul className="rules-model-list">
+            <Pick label="Default engine" saved={defaults.engine ?? ''} empty="Claude Code" options={PROVIDERS.filter((p) => p !== 'custom' && p !== 'claude').map((p) => ({ value: p, text: providerInfo(p).label }))} set={(engine) => api.setDefaultEngine(engine as Provider | null)} onSaved={saved} />
+            <Pick label="Claude Code effort" saved={defaults.effort ?? ''} empty="its own" options={EFFORTS.map((e) => ({ value: e, text: e }))} set={(effort) => api.setDefaultEffort(effort as Effort | null)} onSaved={saved} />
+          </ul>
+          {defaults.engine !== undefined && (!providerInfo(defaults.engine).hooks || !providerInfo(defaults.engine).mcp) && (
+            <p className="hint">
+              {providerInfo(defaults.engine).label}: {[providerInfo(defaults.engine).hooks ? null : 'no Redline or Hold', providerInfo(defaults.engine).mcp ? null : 'no gonogo tools'].filter((x) => x !== null).join(', ')}.
+            </p>
+          )}
+          <h3 className="label">MODEL BY ENGINE</h3>
+        </>
+      )}
+      {defaults !== null && (
         <ul className="rules-model-list">
           {MODEL_PROVIDERS.map((provider) => (
-            <Row key={provider} label={providerInfo(provider).label} names={providerInfo(provider).model ?? []} saved={defaults.models[provider] ?? ''} set={(model) => api.setModelDefault(provider, model)} onSaved={setDefaults} />
+            <Row key={provider} label={providerInfo(provider).label} names={providerInfo(provider).model ?? []} saved={defaults.models[provider] ?? ''} set={(model) => api.setModelDefault(provider, model)} onSaved={saved} />
           ))}
         </ul>
       )}
@@ -109,7 +154,7 @@ export function ModelDefaultsBlock(): ReactElement {
           </p>
           <ul className="rules-model-list">
             {POSITIONS.map((p) => (
-              <Row key={p.id} label={p.callSign} names={providerInfo('claude').model ?? []} saved={defaults.positions?.[p.id] ?? ''} set={(model) => api.setPositionModel(p.id, model)} onSaved={setDefaults} />
+              <Row key={p.id} label={p.callSign} names={providerInfo('claude').model ?? []} saved={defaults.positions?.[p.id] ?? ''} set={(model) => api.setPositionModel(p.id, model)} onSaved={saved} />
             ))}
           </ul>
         </>

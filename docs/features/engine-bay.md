@@ -35,6 +35,16 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 <AgyMock class="doc-mock" />
 
 
+## Engine, model and effort chips
+
+Every console shows three quiet chips: its **engine**, the **model it starts with** and its **effort**. They are in the head of the console panel (and under the name on a phone), in the CONSOLES list of Flight Rules, and in the terminal client's room list. The model is the one the console will start with: its own, else its position's default (Claude Code), else the room's for its engine, and the chip says so when it is not the console's own (`sonnet · room default`). With none set there is no model chip: the CLI's own default is not something gonogo knows, and it never shows a guess. A model changed with `/model` inside a console does not show: gonogo shows what it will start with.
+
+**Effort** is Claude Code's `--effort` (`low`, `medium`, `high`, `xhigh`, `max`, as `claude --help` lists them). The EFFORT field of the hire and edit form sets it for a Claude Code console; empty uses the room's default effort, then the CLI's own, and the chip shows only a value gonogo will pass. It applies at the next start and is `dirty` until then. `effort` is a field of the hire and edit requests (400 with the field for another level, or for an engine without one). Antigravity lists `--effort` in its help but the levels it takes were not read, so the field is not offered for it; the other engines have no such flag in what was read. `CLAUDE_EFFORT`, which a running `claude` sets for its children, is still scrubbed from agents.
+
+## Defaults of the room
+
+The DEFAULTS block of Flight Rules holds what a console starts with when it has none of its own. **Default engine** preselects the hire form and is the engine of a hire that names none: the hire form, Relief and `hire_agent`. It is never a custom command, and an engine named in the request wins. **Claude Code effort** is the `--effort` of a Claude Code console without one of its own. **Model by engine** and **by position** are the default models below. The chip of a console says which level a model or effort comes from (`opus · position default`, `effort high · room default`). A model or effort applies at each console's next start; a default engine applies to the next hire. The API: `PUT /api/models/engine` with `{ engine }` and `PUT /api/models/effort` with `{ effort }`, each null to clear; 400 with the field for a custom command, an unknown engine or a level that is not one. They live in `models.json` next to the models.
+
 ## Model
 
 The MODEL field of the hire and edit form is free text with suggestions; empty means the CLI's own default. It is passed as `--model <name>` and applies at the next start. Names are letters, digits and `. _ : / @ + -`, starting with a letter or digit, at most 100; anything else, and a model for an engine without the field, is refused. The suggestions are hints: the CLI judges the name.

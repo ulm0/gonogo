@@ -62,7 +62,7 @@ import { effectiveRules } from './permissions.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { isRecord } from './hooks.js';
-import { buildProviderStart, shellQuote, STATUS_LINE_SHIM } from './providers.js';
+import { buildProviderStart, knowsEffort, shellQuote, STATUS_LINE_SHIM } from './providers.js';
 import type { OtherProvider } from './providers.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -193,6 +193,8 @@ export function buildArgv(input: {
   pluginDir?: string | null;
   /** Engine Bay: the model of the agent; none leaves the CLI's own default. */
   model?: string;
+  /** Claude Code's `--effort`; none leaves its own. */
+  effort?: string;
   /** Remote Control: the session name the Claude app shows; none is off. */
   remoteControl?: string;
   /** Feature toggles: tool names (`mcp__gonogo__hire_agent`) of features that are off, left out of `--allowedTools`. */
@@ -210,6 +212,7 @@ export function buildArgv(input: {
     input.mcpPath,
     ...(input.pluginDir ? ['--plugin-dir', input.pluginDir] : []),
     ...(input.model ? ['--model', input.model] : []),
+    ...(input.effort ? ['--effort', input.effort] : []),
     ...(input.remoteControl ? ['--remote-control', input.remoteControl] : []),
     '--append-system-prompt',
     input.roleText,
@@ -658,8 +661,15 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
+      // Effort: the console's own, else the room's. An old claude exits on an option it does not know: its own effort refuses the start (it asked for it), the room's is dropped with a warning (one setting must not stop every console). A Clean Room runs the image's claude, not the host's, so it is not asked.
+      let effort = agent.effort ?? options.defaultEffort?.();
+      if (effort && clean === null && !options.agentCmd?.length && (await knowsEffort(file as string, options.env ?? process.env)) === false) {
+        if (agent.effort) throw new Error(`${file} does not list --effort, so the effort of ${name} cannot be set: update claude, or clear the effort`);
+        log.warn(`${file} does not list --effort: the room's default effort is not passed to ${name}; update claude`);
+        effort = undefined;
+      }
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
       let spec: PreparedStart['spec'];

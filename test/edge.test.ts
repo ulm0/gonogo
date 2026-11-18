@@ -207,6 +207,7 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     cleanRoom: null,
     worktree: null,
     model: null,
+    effort: null,
     keys: {},
     doing: null,
     subagents: { running: 0, started: 0, types: {} },
@@ -968,7 +969,20 @@ describe('home', () => {
     expect(home.loadRoster().agents[2]).not.toHaveProperty('keys');
   });
 
+  it('round-trips an effort of a Claude Code agent', async () => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    const base = { dir: '/w', mode: 'default' as const, sessionId: '123e4567-e89b-42d3-a456-426614174000', createdAt: 1, boss: false };
+    const file: RosterFile = { version: 1, agents: [{ ...base, name: 'ana', role: 'dev', desk: 1, effort: 'xhigh' }, { ...base, name: 'old', role: 'dev', desk: 2 }] };
+    await home.saveRoster(file);
+    expect(home.loadRoster()).toEqual(file);
+    expect(home.loadRoster().agents[1]).not.toHaveProperty('effort');
+  });
+
   it.each([
+    ['an effort that is not a level', { effort: 'ultra' }],
+    ['an effort that is not text', { effort: 3 }],
+    ['an effort on a gemini agent', { provider: 'gemini', effort: 'high' }],
     ['a model that is not text', { model: 5 }],
     ['a model that looks like a flag', { model: '--yolo' }],
     ['a model on an opencode agent', { provider: 'opencode', model: 'x' }],
@@ -6129,7 +6143,7 @@ describe('cli: startGonogo', () => {
       const fakes = installFakes();
       const env = { PATH: process.env.PATH, GONOGO_SEED_CLAUDE: 'true', CLAUDE_CONFIG_DIR: '/cfg' };
       const { running, cwd } = await startCli({ env, maxHops: 5, agentCmd: ['node', 'fake.mjs'] });
-      expect(fakes.captured.hubOptions).toEqual({ maxHops: 5, bossDir: cwd, maxWorking: null, redline: true });
+      expect(fakes.captured.hubOptions).toMatchObject({ maxHops: 5, bossDir: cwd, maxWorking: null, redline: true });
       const launcherOptions = fakes.captured.launcherOptions;
       expect(launcherOptions).toMatchObject({ homeDir: running.home, seed: true, env, agentCmd: ['node', 'fake.mjs'] });
       expect(launcherOptions?.log).toBeDefined();

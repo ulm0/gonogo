@@ -17,10 +17,11 @@ import {
 import { appendFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { POSITION_IDS } from '../shared/positions.js';
-import { ACTIVITY_STATUSES, KEYS_MAX, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo, RESERVED_NAMES } from '../shared/protocol.js';
+import { ACTIVITY_STATUSES, EFFORTS, KEYS_MAX, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo, RESERVED_NAMES, takesEffort } from '../shared/protocol.js';
 import type {
   ActivityStatus,
   AgentRecord,
+  Effort,
   Home,
   Logger,
   MessageRecord,
@@ -247,6 +248,12 @@ function parseAgent(a: unknown): AgentRecord | string {
     if (typeof model !== 'string' || !MODEL_RE.test(model)) return `${name}: model is not a usable name`;
     if (providerInfo(record.provider).model === null) return `${name}: ${providerInfo(record.provider).label} takes no model setting`;
     record.model = model;
+  }
+  const { effort } = a;
+  if (effort !== undefined) {
+    if (typeof effort !== 'string' || !(EFFORTS as readonly string[]).includes(effort)) return `${name}: effort is not one of ${EFFORTS.join(', ')}`;
+    if (!takesEffort(record.provider ?? 'claude')) return `${name}: ${providerInfo(record.provider).label} takes no effort setting`;
+    record.effort = effort as Effort;
   }
   if (keys !== undefined) {
     if (!isRecord(keys) || Object.keys(keys).length > KEYS_MAX) return `${name}: keys must be an object of at most ${KEYS_MAX} names`;

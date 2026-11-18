@@ -62,6 +62,63 @@ describe('the store', () => {
   });
 });
 
+describe('the default engine and effort', () => {
+  it('start as Claude Code and none, are kept across a reload, and go back with null', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    expect([store.engine(), store.effort()]).toEqual(['claude', undefined]);
+    expect(await store.setEngine('pi')).toEqual({ models: {}, positions: {}, engine: 'pi' });
+    expect(await store.setEffort('xhigh')).toEqual({ models: {}, positions: {}, engine: 'pi', effort: 'xhigh' });
+    const again = createModelDefaults({ dir: tmp });
+    await again.load();
+    expect([again.engine(), again.effort()]).toEqual(['pi', 'xhigh']);
+    expect(await again.setEngine(null)).toEqual({ models: {}, positions: {}, effort: 'xhigh' });
+    expect(await again.setEffort(null)).toEqual({ models: {}, positions: {} });
+    expect(again.engine()).toBe('claude');
+  });
+
+  it('refuse a custom command, an unknown engine and a level that is not one, and write nothing', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    await expect(store.setEngine('custom')).rejects.toMatchObject({ field: 'engine' });
+    await expect(store.setEngine('vim')).rejects.toMatchObject({ field: 'engine' });
+    await expect(store.setEngine(3)).rejects.toMatchObject({ field: 'engine' });
+    await expect(store.setEffort('ultra')).rejects.toMatchObject({ field: 'effort' });
+    expect(store.view()).toEqual({ models: {}, positions: {} });
+  });
+
+  it('are dropped from a file when they are not usable', async () => {
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: {}, engine: 'custom', effort: 'warp' }));
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    expect(store.view()).toEqual({ models: {}, positions: {} });
+  });
+
+  it('go through PUT /api/models/engine and /effort, with the field on a bad one', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    web = createWebServer({ host: '127.0.0.1', port: 0, browserToken: TOKEN, allowedHosts: [], staticDir: null, hub: {} as Hub, terminals: {} as TerminalHost, resolveToken: () => null, info: () => ({}) as ServerInfo, isReady: () => true, models: store, log: nullLogger });
+    const { port } = await web.listen();
+    const put = async (path: string, body: unknown): Promise<{ status: number; json: Record<string, unknown> }> => {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, { method: 'PUT', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+    };
+    expect(await put('/api/models/engine', { engine: 'opencode' })).toEqual({ status: 200, json: { models: {}, positions: {}, engine: 'opencode' } });
+    expect(await put('/api/models/effort', { effort: 'low' })).toMatchObject({ status: 200, json: { effort: 'low' } });
+    expect((await put('/api/models/engine', { engine: 'custom' })).json).toMatchObject({ field: 'engine' });
+    expect((await put('/api/models/effort', { effort: 'nope' })).json).toMatchObject({ field: 'effort' });
+  });
+
+  it('reach the launcher: the room\'s effort when the agent has none, and the agent\'s own wins', async () => {
+    await mkdir(join(tmp, 'work'), { recursive: true });
+    const l = createLauncher({ homeDir: join(tmp, 'home'), hubUrl: () => 'http://127.0.0.1:1', seed: false, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') }, defaultEffort: () => 'medium' });
+    const rec = (over: Partial<AgentRecord> = {}): AgentRecord => ({ name: 'ana', role: 'r', dir: join(tmp, 'work'), mode: 'default', sessionId: SID, desk: 1, boss: false, createdAt: 1, ...over });
+    const level = (args: string[]): string | undefined => (args.includes('--effort') ? args[args.indexOf('--effort') + 1] : undefined);
+    expect(level((await l.prepareStart(rec(), { generation: 1, flag: null })).spec.args)).toBe('medium');
+    expect(level((await l.prepareStart(rec({ effort: 'max' }), { generation: 2, flag: null })).spec.args)).toBe('max');
+  });
+});
+
 describe('the routes', () => {
   async function start(withStore: boolean): Promise<number> {
     const store = createModelDefaults({ dir: tmp });

@@ -43,6 +43,7 @@ import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showLoop, useFeature, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
+import { DetailChips } from './DetailChips.js';
 import { EditRoomKey } from './EditRoomKey.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
@@ -568,6 +569,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
             </span>
           </div>
           <span className="panel-sub">{consoleSubtitle(agent, position)}</span>
+          <DetailChips agent={agent} />
         </div>
         <Actions agent={agent} onRemove={() => setConfirming(true)} removeRef={removeRef} locked={locked} run={run} />
       </header>
@@ -723,6 +725,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
       <CleanRoomLine agent={agent} />
       <WorktreeLine agent={agent} />
       <SubagentsLine agent={agent} />
+      <DetailChips agent={agent} />
       <div className="phone-sub">
         <span className="panel-sub">{consoleSubtitle(agent, position)}</span>
         <button type="button" className="btn" data-kind="quiet" aria-expanded={more} onClick={() => setMore(!more)}>

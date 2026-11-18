@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, ReactNode } from 'react';
-import { KEY_SUGGESTIONS, KEYS_MAX, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS } from '../shared/protocol.js';
+import { EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
 import type { AgentView, EngineCheck, PermissionMode, PhoneMode, Provider } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -232,6 +232,14 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [keysOpen, setKeysOpen] = useState(false);
   const [checks, setChecks] = useState<EngineCheck[]>([]);
   const roomModels = useModelDefaults();
+  // The room's default engine preselects a new hire, once the defaults are known and only while the form is still as it opened.
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || form.mode !== 'hire' || roomModels === null) return;
+    preselected.current = true;
+    const engine = roomModels.engine;
+    if (engine !== undefined) setValues((v) => (v.provider === 'claude' && v.name === '' && v.role === '' ? chooseEngine(v, engine) : v));
+  }, [roomModels, form.mode]);
   const formRef = useRef<HTMLFormElement | null>(null);
   const bypassTile = useRef<HTMLButtonElement | null>(null);
   const confirmBox = useRef<HTMLInputElement | null>(null);
@@ -537,6 +545,18 @@ function Staff({ form }: { form: Target }): ReactElement {
           <option key={name} value={name} />
         ))}
       </datalist>
+    </Control>
+  );
+  const effortField = takesEffort(values.provider) && (
+    <Control id={`${id}-effort`} label="Effort" hint="Passed to Claude Code as --effort. Empty uses its own. An /effort typed inside the console only changes that session." error={undefined}>
+      <select id={`${id}-effort`} className="input" value={values.effort} onChange={(event) => change({ effort: event.target.value }, 'effort')}>
+        <option value="">its own</option>
+        {EFFORTS.map((level) => (
+          <option key={level} value={level}>
+            {level}
+          </option>
+        ))}
+      </select>
     </Control>
   );
   const roleField = !custom && (
@@ -868,6 +888,7 @@ function Staff({ form }: { form: Target }): ReactElement {
               {commandField}
               {roleField}
               {modelField}
+              {effortField}
               {dirField}
               {cleanRoomBox}
               {worktreeBox}
@@ -966,6 +987,7 @@ function Staff({ form }: { form: Target }): ReactElement {
             {commandField}
             {roleField}
             {modelField}
+            {effortField}
             {dirField}
             {cleanRoomBox}
             {worktreeBox}

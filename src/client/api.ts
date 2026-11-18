@@ -63,6 +63,7 @@ import type {
   Mission,
   MissionPatch,
   MissionRequest,
+  Effort,
   ModelDefaults,
   PermissionDefaults,
   PermissionRules,
@@ -377,6 +378,16 @@ export async function modelDefaults(): Promise<ModelDefaults> {
 /** Sets the room's model for one engine; null or empty clears it. */
 export async function setModelDefault(provider: Provider, model: string | null): Promise<ModelDefaults> {
   return toModelDefaults(await call('PUT', `/models/${encodeURIComponent(provider)}`, { model }));
+}
+
+/** The room's default engine; null goes back to Claude Code. */
+export async function setDefaultEngine(engine: Provider | null): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', '/models/engine', { engine }));
+}
+
+/** The room's default effort for Claude Code consoles with none of their own; null clears it. */
+export async function setDefaultEffort(effort: Effort | null): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', '/models/effort', { effort }));
 }
 
 export async function setPositionModel(position: string, model: string | null): Promise<ModelDefaults> {

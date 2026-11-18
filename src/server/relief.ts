@@ -41,6 +41,8 @@ export interface ReliefOptions {
   hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'>;
   /** `HubIo.checkDirectory`: the check of the hire form (absolute, exists, a directory). */
   checkDirectory(path: string): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /** The room's default engine, for a request that names none. Default claude. */
+  defaultEngine?(): Provider;
   now(): number;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
@@ -163,7 +165,7 @@ export function createRelief(options: ReliefOptions): Relief {
       if (typeof name !== 'string' || !NAME_RE.test(name)) throw bad('name must be 1 to 32 lowercase letters, digits or hyphens, and start with a letter or digit', 'name');
       if ((RESERVED_NAMES as readonly string[]).includes(name)) throw bad(`"${name}" is a reserved name`, 'name');
 
-      const engine = input.engine === undefined ? 'claude' : input.engine;
+      const engine = input.engine === undefined ? (options.defaultEngine?.() ?? 'claude') : input.engine;
       if (typeof engine !== 'string' || !(PROVIDERS as readonly string[]).includes(engine)) throw bad(`engine must be one of ${PROVIDERS.filter((p) => p !== 'custom').join(', ')}`, 'engine');
       if (engine === 'custom') throw bad('a custom command cannot be asked for: only the Director can hire one', 'engine');
       const provider = engine as Provider;

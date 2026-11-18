@@ -89,6 +89,14 @@ export const PROVIDER_INFO: Readonly<Record<Provider, ProviderInfo>> = {
   custom: { label: 'Custom command', bin: '', hooks: false, mcp: false, modes: false, payload: null, check: 'run', model: null, install: null, docs: '' },
 };
 
+/**
+ * Effort (`claude --effort <level>`, checked in `claude --help` 2.1.325): how hard a Claude Code agent thinks. The one engine with a per-agent
+ * mechanism that was checked: agy lists `--effort` in its help but the levels it takes were not read, so it has none here.
+ */
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof EFFORTS)[number];
+export const takesEffort = (provider: Provider): boolean => provider === 'claude';
+
 /** Model field of the hire form and the roster: a CLI model name or alias, passed as `--model <name>`. A leading dash would be read as a flag. */
 export const MODEL_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$';
 /**
@@ -462,6 +470,8 @@ export interface AgentRecord {
   stoppedBy?: 'director';
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
   model?: string;
+  /** Claude Code only: `--effort` at every start; absent means the CLI's own. */
+  effort?: Effort;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
   keys?: Record<string, number>;
 }
@@ -562,6 +572,8 @@ export interface AgentView {
   autostart: boolean;
   /** The model as stored, or null for the CLI's default. */
   model: string | null;
+  /** The effort as stored, or null for the CLI's own. Only Claude Code takes one. */
+  effort: Effort | null;
   /** Clearance: key name to when it was set. Names only: a value is never sent to a browser. */
   keys: Record<string, number>;
   /**
@@ -753,6 +765,10 @@ export interface ModelDefaults {
   models: Partial<Record<Provider, string>>;
   /** Position id to a model for a Claude Code agent in that position; wins over `models.claude`, loses to the agent's own model. Absent from an older server. */
   positions?: Record<string, string>;
+  /** The room's default engine: preselects the hire form, and is what a hire without an engine (Relief, hire_agent) gets. Absent means Claude Code. Never `custom`. */
+  engine?: Provider;
+  /** The room's default effort for a Claude Code console with none of its own. Absent means the CLI's own. */
+  effort?: Effort;
 }
 
 export interface RelayView {
@@ -1181,6 +1197,8 @@ export interface EngineCheck {
   path: string | null;
   /** First line of `<bin> --version`, or null (not found, no answer in time, nothing printed). */
   version: string | null;
+  /** Claude Code only: whether its `--help` lists `--effort` (false: an effort setting stops the start), or null when it could not be asked. */
+  effort?: boolean | null;
   /** The vendor's documented install command, or null when none was checked. Shown, never run. */
   install: string | null;
   docs: string;
@@ -1252,6 +1270,8 @@ export interface HireRequest {
   permissions?: PermissionRules;
   /** false keeps the room's startup policy from starting this agent again; true (the default) follows it. */
   autostart?: boolean;
+  /** Claude Code only: passed as `--effort`. Refused (400, field 'effort') for another engine or a level that is not in EFFORTS. */
+  effort?: Effort;
   /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
   model?: string;
   /** Clearance: key name to value, set for this agent only. Bad name or value: 400, field 'keys'. */
@@ -1280,6 +1300,8 @@ export interface EditRequest {
   permissions?: PermissionRules | null;
   /** false: the startup policy does not start this agent again; true follows the room's. */
   autostart?: boolean;
+  /** A level of EFFORTS, or null for the CLI's own. */
+  effort?: Effort | null;
   /** A model name, or null or empty text for the CLI's default. */
   model?: string | null;
   /** Key name to a new value, or to null to remove that key. Keys not named stay as they are. */
@@ -1591,7 +1613,13 @@ export interface RolloutFrame {
   t: 'rollout';
   rollout: RolloutView;
 }
+/** The room's default models, engine and effort changed; carries the whole view. Not in the snapshot: the page asks `GET /api/models`. */
+export interface ModelsFrame {
+  t: 'models';
+  models: ModelDefaults;
+}
 export type ServerFrame =
+  | ModelsFrame
   | TabNameFrame
   | RoomFrame
   | FeaturesFrame
@@ -1616,7 +1644,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
@@ -1814,6 +1842,8 @@ export interface LauncherOptions {
   defaultModel?: (provider: Provider, position?: string) => string | undefined;
   /** Feature toggles: the MCP tools of features that are off; they are left out of `--allowedTools`. Default none. */
   toolsOff?: () => string[];
+  /** The room's default effort for a Claude Code console with none of its own. */
+  defaultEffort?: () => Effort | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
   /** Subagents: the room's setting, read at each start. Default: allowed. */
@@ -2000,6 +2030,8 @@ export interface HubOptions {
   maxWorking?: number | null;
   /** Redline's automatic detectors (loop, error storm, ping-pong). Default true; GONOGO_REDLINE=off. Hub.trip works either way. */
   redline?: boolean;
+  /** The room's default engine (Flight Rules): hired when a request names none. Default claude. */
+  defaultEngine?: () => Provider;
 }
 
 export interface AgentSendRequest {
