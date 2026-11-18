@@ -3,7 +3,8 @@
  * Permission is asked only from `enableNotifications`, which the key in Flight Rules calls: never on page load.
  */
 import { useSyncExternalStore } from 'react';
-import { isAway, noticesFor, notifyStatus, seenIn, tabTitle, titleWith, waitingFor } from './notify.js';
+import { tabTitle } from '../shared/protocol.js';
+import { isAway, noticesFor, notifyStatus, seenIn, titleWith, waitingFor } from './notify.js';
 import type { Notice, NotifyStatus, Seen } from './notify.js';
 import { readStored, showDownlink, showRoom, store, writeStored } from './store.js';
 

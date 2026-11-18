@@ -97,6 +97,24 @@ describe('parseKeys', () => {
   });
 });
 
+describe('the name of the room in the header', () => {
+  const head = (state: TuiState): string => plain(render(state, initialUi(), { cols: 80, rows: 24 }, { color: false })[0] as string);
+  it('is the title of the tab: gonogo, the station, or the name the Director gave, from the state and from a tabname frame', () => {
+    const s = loaded([agent('flight', 0)]);
+    expect(head(s)).toMatch(/^gonogo {2}/);
+    const named = applyFrame(s, { t: 'tabname', tabName: { name: 'Review', fallback: 'lab' } });
+    expect(head(named)).toMatch(/^Review · gonogo {2}/);
+    expect(head(applyFrame(named, { t: 'tabname', tabName: { name: null, fallback: 'lab' } }))).toMatch(/^lab · gonogo/);
+    const fromState = applyFrame(initialState(), { t: 'state', state: { ...(stateFrame([agent('flight', 0)]) as { state: object }).state, tabName: { name: 'Lab 2', fallback: null } } } as never);
+    expect(head(fromState)).toMatch(/^Lab 2 · gonogo/);
+  });
+
+  it('does not let a name carry a control sequence to the terminal', () => {
+    const hostile = applyFrame(loaded([agent('flight', 0)]), { t: 'tabname', tabName: { name: '\x1b[2J\x1b]0;x\x07', fallback: null } });
+    expect(render(hostile, initialUi(), { cols: 80, rows: 24 }, { color: false })[0]).not.toMatch(/[\x00-\x1f\x7f]/);
+  });
+});
+
 describe('the keys on each screen', () => {
   const room = loaded([agent('flight', 0), agent('ana', 1), agent('ben', 2)], [message('m1'), message('m2', { read: true }), event('e1')]);
   const press = (ui: Ui, state: TuiState, ...keys: string[]): { ui: Ui; actions: ReturnType<typeof step>['actions'] } => {

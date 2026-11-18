@@ -1426,6 +1426,11 @@ export interface TabNameFrame {
   t: 'tabname';
   tabName: TabNameView;
 }
+/** The title of the tab without a count: `<name> · gonogo` with the Director's name or the station's, plain `gonogo` with neither. The page and the terminal client use it. */
+export function tabTitle(view: TabNameView): string {
+  const name = view.name ?? view.fallback;
+  return name === null || name === '' ? 'gonogo' : `${name} · gonogo`;
+}
 /** The saved layout of the Room view: absent (`layout: null`) is today's page. `rev` grows with every save and every reset. */
 export interface RoomView {
   rev: number;

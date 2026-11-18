@@ -4,7 +4,7 @@
  * a glyph and a word, so the colour is never the only mark, and a log of the session still reads. Every text of the server goes
  * through `clean` first: an agent wrote it, and the terminal acts on what it is given.
  */
-import { DOCS_URL, STATE_LABELS } from '../shared/protocol.js';
+import { DOCS_URL, STATE_LABELS, tabTitle } from '../shared/protocol.js';
 import type { AgentView, DownlinkItem } from '../shared/protocol.js';
 import { lengths } from './tui-keys.js';
 import type { Ui } from './tui-keys.js';
@@ -199,7 +199,8 @@ export function render(state: TuiState, ui: Ui, size: Size, options: RenderOptio
   const size2 = lengths(state);
   const needs = needsOf(state);
   const tabs: Array<[Ui['screen'], string, number]> = [['room', 'ROOM', size2.room], ['inbox', 'INBOX', state.downlink.unread], ['needs', 'NEEDS', needs.length], ['poll', 'POLL', state.poll === null ? 0 : 1]];
-  const head: Seg[] = [['gonogo', 'bold'], ['  ', undefined]];
+  // the name of the room, as the tab says it (cleaned: it is text from the server)
+  const head: Seg[] = [[clean(tabTitle(state.tabName), 60), 'bold'], ['  ', undefined]];
   tabs.forEach(([id, name, n], i) => {
     const label = `${i + 1} ${name}${n > 0 && id !== 'room' && id !== 'poll' ? ` ${n}` : ''}`;
     head.push([` ${label} `, id === ui.screen ? 'inverse' : id === 'needs' && n > 0 ? 'warn' : undefined]);

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultView } from '../src/shared/livery.js';
-import { TAB_NAME_MAX_CHARS } from '../src/shared/protocol.js';
+import { TAB_NAME_MAX_CHARS, tabTitle } from '../src/shared/protocol.js';
 import type { Hub, Logger, ServerInfo, StateSnapshot, TabNameView, TerminalHost } from '../src/shared/protocol.js';
 import { audited, TABNAME_AUDIT } from '../src/server/audited.js';
 import { nullLogger } from '../src/server/constants.js';
@@ -15,7 +15,7 @@ import { cleanTabName, createTabName } from '../src/server/tabname.js';
 import type { TabNameStore } from '../src/server/tabname.js';
 import { createWebServer } from '../src/server/web.js';
 import type { WebServer } from '../src/server/web.js';
-import { tabTitle, titleWith } from '../src/client/notify.js';
+import { titleWith } from '../src/client/notify.js';
 import { applyServerFrame, emptyState, store } from '../src/client/store.js';
 import { TabNameBlock } from '../src/client/TabName.js';
 

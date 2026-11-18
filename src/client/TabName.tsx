@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import { TAB_NAME_MAX_CHARS } from '../shared/protocol.js';
 import * as api from './api.js';
-import { tabTitle } from './notify.js';
+import { tabTitle } from '../shared/protocol.js';
 import { useStore } from './store.js';
 import { useRun } from './WallView.js';
 

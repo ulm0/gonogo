@@ -112,12 +112,6 @@ export const STATUS_TEXT: Record<NotifyStatus, string> = {
   on: 'On in this browser. A notification shows only while this tab is hidden or not focused.',
 };
 
-/** The title of the tab without a count: `<name> · gonogo` with the Director's name or the station's, plain `gonogo` with neither. */
-export function tabTitle(view: { name: string | null; fallback: string | null }): string {
-  const name = view.name ?? view.fallback;
-  return name === null || name === '' ? 'gonogo' : `${name} · gonogo`;
-}
-
 /** The tab title with the count of what waits for the Director in front: `(3) gonogo`. Nothing waiting leaves the title as it was. */
 export function titleWith(base: string, waiting: number): string {
   return waiting > 0 ? `(${waiting > 99 ? '99+' : waiting}) ${base}` : base;
