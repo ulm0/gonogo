@@ -32,7 +32,7 @@ Enforced on the server, not by the tool's text.
 - The room holds 24 agents: checked when it is asked and again at your GO.
 - Only you answer: the routes take the browser token, so an agent's token (the boss's included) gets 401.
 - A Clean Room boss hires Clean Room agents (Claude Code, same image) inside its own project folder, symbolic links followed, checked again at your GO. It leaves `dir` out to use that folder.
-- A GO that the hire form would refuse (name taken meanwhile, room full, folder gone, no Docker for a Clean Room) fails with the form's message, and FLIGHT is told.
+- A GO that the hire form would refuse (name taken meanwhile, room full, folder gone, no Docker for a Clean Room) fails with the form's message: a red notice in the dock says `GO on guido-1 failed: ...` until you dismiss it, and FLIGHT is told. The request is gone; FLIGHT has to ask again.
 
 Requests live in memory: a restart drops them and FLIGHT is not told. A boss saved before Relief keeps its old role text, which says it cannot hire; its tool list still has `hire_agent`.
 

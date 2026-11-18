@@ -25,6 +25,9 @@ export const reliefTitle = (request: Pick<ReliefRequest, 'name'>, legend: string
 /** The label over the role text: its length says how much there is to read, since the box scrolls. */
 export const roleLabel = (request: Pick<ReliefRequest, 'role'>): string => `Role text (${request.role.length} ${request.role.length === 1 ? 'character' : 'characters'})`;
 
+/** What the Director reads when his answer failed: the hire of a GO that the form would refuse (the request is gone by then, the block with it). */
+export const reliefFailure = (name: string, go: boolean, error: unknown): string => `${go ? 'GO' : 'NO-GO'} on ${name} failed: ${error instanceof Error ? error.message : String(error)}`;
+
 /** How long the request still waits, in whole minutes rounded up. */
 export function expiresText(request: Pick<ReliefRequest, 'expiresAt'>, now: number): string {
   const left = request.expiresAt - now;

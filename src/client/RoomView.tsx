@@ -35,7 +35,7 @@ import {
   voteOf,
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
-import { reliefRows, reliefTitle, roleLabel } from './relief.js';
+import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHire, showLoop, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
@@ -257,10 +257,12 @@ function Need({ agent, legend, phone }: { agent: AgentView; legend: string; phon
 }
 
 /** Relief: the boss asks to hire. Every parameter is here, and GO is the only way the agent is hired. */
-function ReliefNeed({ request, legend }: { request: ReliefRequest; legend: string }): ReactElement {
+function ReliefNeed({ request, legend, onFail }: { request: ReliefRequest; legend: string; onFail(text: string): void }): ReactElement {
   const now = useNow();
-  const { busy, error, run } = useRun();
+  const { busy, run } = useRun();
   const title = reliefTitle(request, legend);
+  // the request leaves the list before the hire runs, so this block is gone when a GO fails: the failure is told by `Needs`, which stays
+  const answer = (go: boolean): void => run(() => api.answerRelief(request.id, go).catch((e: unknown) => onFail(reliefFailure(request.name, go, e))));
   return (
     <section className="flood need relief-need" data-tone="amber" aria-label={title}>
       <span className="led need-led" data-on="true" data-blink="true" aria-hidden="true" />
@@ -282,16 +284,11 @@ function ReliefNeed({ request, legend }: { request: ReliefRequest; legend: strin
           {request.role}
         </p>
       </div>
-      {error !== null && (
-        <p className="error need-error" role="alert">
-          {error}
-        </p>
-      )}
       <div className="go-buttons">
-        <button type="button" className="btn" data-kind="danger" data-size="big" aria-disabled={busy || undefined} aria-label={`NO-GO: do not hire ${request.name}`} onClick={() => run(() => api.answerRelief(request.id, false))}>
+        <button type="button" className="btn" data-kind="danger" data-size="big" aria-disabled={busy || undefined} aria-label={`NO-GO: do not hire ${request.name}`} onClick={() => answer(false)}>
           NO-GO
         </button>
-        <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={busy || undefined} aria-label={`GO: hire ${request.name}`} onClick={() => run(() => api.answerRelief(request.id, true))}>
+        <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={busy || undefined} aria-label={`GO: hire ${request.name}`} onClick={() => answer(true)}>
           GO
         </button>
       </div>
@@ -304,16 +301,25 @@ export function Needs({ phone }: { phone: boolean }): ReactElement | null {
   const list = useAgentList();
   const { legends } = useSeats();
   const relief = useStore((s) => s.relief);
+  const [failed, setFailed] = useState<string | null>(null);
   const needing = needingYou(list);
-  if (needing.length === 0 && relief.length === 0) return null;
+  if (needing.length === 0 && relief.length === 0 && failed === null) return null;
   return (
     // On a wide page the floods dock at the foot of the viewport while the matrix is on screen: the wall is tall and the floods sit below the matrix.
     <div className={phone ? 'needs' : 'needs needs-dock'}>
+      {failed !== null && (
+        <section className="flood need" data-tone="nogo" role="alert">
+          <p className="need-text relief-failed">{failed}</p>
+          <button type="button" className="btn" data-size="big" onClick={() => setFailed(null)}>
+            DISMISS
+          </button>
+        </section>
+      )}
       {needing.map((agent) => (
         <Need key={agent.name} agent={agent} legend={legendOf(legends, agent.name)} phone={phone} />
       ))}
       {relief.map((request) => (
-        <ReliefNeed key={request.id} request={request} legend={legendOf(legends, request.by)} />
+        <ReliefNeed key={request.id} request={request} legend={legendOf(legends, request.by)} onFail={setFailed} />
       ))}
     </div>
   );

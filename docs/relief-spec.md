@@ -39,7 +39,7 @@ boss never staffs the room by itself: the request is data, and only the Director
   the requester included. The request leaves the list before anything waits, so two GOs hire once.
 - **GO.** `Hub.hire({ name, role, dir, mode, provider, position?, cleanRoom? })`: the same call as `POST /api/agents`, with no
   `confirmBypass`, no `command`, no `payload`. A failure (name taken meanwhile, room full, folder gone, no Docker) is the
-  HubError of the form, sent to the Director and to the boss; nothing is retried.
+  HubError of the form, sent to the Director and to the boss; nothing is retried. The block is already gone when the error comes back (the request leaves the list first), so `Needs` keeps the failure in a red notice (`role="alert"`, DISMISS) that says `GO on guido-1 failed: <the message>`.
 - **FLIGHT hears the answer** as a message from the Director's side (`Hub.sendFromUser`, as T-minus does): `Relief: guido-1 is
   staffed`, `Relief: request for guido-1 refused`, `... expired`, `Relief: guido-1 could not be hired` (with the reason).
 - **The Downlink** gets a `relief` event (chip RELIEF) when a request is made and when it ends. Relay does not forward it.

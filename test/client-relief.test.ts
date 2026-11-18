@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentView, ReliefRequest, ServerInfo, StateSnapshot } from '../src/shared/protocol.js';
 import { applyServerFrame, emptyState } from '../src/client/store.js';
-import { expiresText, reliefAnnouncement, reliefRows, reliefTitle, roleLabel } from '../src/client/relief.js';
+import { expiresText, reliefAnnouncement, reliefFailure, reliefRows, reliefTitle, roleLabel } from '../src/client/relief.js';
 import { ANNOUNCE_GAP_MS, createAnnouncer } from '../src/client/room.js';
 import { missionOf } from '../src/client/wall.js';
 
@@ -53,6 +53,11 @@ describe('what the Director reads', () => {
     // an engine without permission modes is not shown as asking before each tool
     expect(reliefRows(request({ provider: 'opencode', mode: 'default' }), 1_000).find((r) => r.label === 'Mode')?.value).toMatch(/^none: this engine has no permission modes/);
     expect(reliefRows(request({ cleanRoom: {} }), 1_000).find((r) => r.label === 'Clean Room')?.value).toBe('yes: its own container and branch');
+  });
+
+  it('tells a failed answer in words, the message of the server in them', () => {
+    expect(reliefFailure('guido-1', true, new Error('directory does not exist: /work/x'))).toBe('GO on guido-1 failed: directory does not exist: /work/x');
+    expect(reliefFailure('guido-1', false, 'offline')).toBe('NO-GO on guido-1 failed: offline');
   });
 
   it('says how long the role text is, so that a box that scrolls is not taken for the whole of it', () => {

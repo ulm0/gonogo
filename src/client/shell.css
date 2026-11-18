@@ -733,6 +733,15 @@
   margin: 4px 0 0;
 }
 
+/* the notice of a failed answer: it wraps on the phone too (a .need-detail is one line there), the message is the point */
+.relief-failed {
+  margin: 0;
+  color: var(--you-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
 .relief-row {
   display: flex;
   gap: 6px;
