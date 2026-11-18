@@ -12,9 +12,16 @@ import '../../src/client/tokens.css';
 import '../../src/client/primitives.css';
 import './custom.css';
 import LiverySwitch from './LiverySwitch.vue';
+import PropellantMock from './landing/PropellantMock.vue';
+import RoomMock from './landing/RoomMock.vue';
 
 export default {
   extends: DefaultTheme,
+  // The landing's room pieces, for a doc page to open with (docs/features/propellant.md, docs/guide/getting-started.md).
+  enhanceApp: ({ app }: { app: import('vue').App }) => {
+    app.component('PropellantMock', PropellantMock);
+    app.component('RoomMock', RoomMock);
+  },
   // The livery key: in the top bar from 768 px, in the menu screen below it.
   Layout: () => h(DefaultTheme.Layout, null, { 'nav-bar-content-after': () => h(LiverySwitch), 'nav-screen-content-after': () => h(LiverySwitch) }),
 };

@@ -2,6 +2,7 @@
 // A still-complete picture of the room, built from the app's own classes (primitives.css). One console changes every few
 // seconds; under prefers-reduced-motion nothing moves and the first frame already shows every state.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import './landing.css';
 
 type Frame = { kind: string; lines: [string, string]; state: string; vote?: boolean };
 const FRAMES: Frame[] = [
