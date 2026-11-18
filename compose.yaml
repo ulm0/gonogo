@@ -38,6 +38,6 @@ services:
       - ${DOCKER_GID:?set DOCKER_GID to the group id of the Docker socket, stat -L -c %g /var/run/docker.sock}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${GONOGO_DATA:-/srv/gonogo}:${GONOGO_DATA:-/srv/gonogo}
+      - ${GONOGO_DATA:-./gonogo-data}:${GONOGO_DATA:-/srv/gonogo}
     # gonogo stops its agents within 8 seconds and gives up at 12.
     stop_grace_period: 15s
