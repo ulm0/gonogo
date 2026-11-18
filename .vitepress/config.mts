@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitepress';
 import { BUILTIN_LIVERIES, schemeOf } from '../src/shared/livery.ts';
 
@@ -15,6 +16,8 @@ const liveryScript = `(() => {
 })();`;
 
 // The site is built from docs/ in place; the design notes there (specs, contract, backlog, facts) stay out of it.
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+
 export default defineConfig({
   title: 'gonogo',
   description: 'Self-hosted mission control for AI coding agents, in a browser tab.',
@@ -31,7 +34,7 @@ export default defineConfig({
     'superpowers/**',
   ],
   // The logo and the favicon are served from docs/brand as they are, not copied.
-  vite: { publicDir: 'brand' },
+  vite: { publicDir: 'brand', define: { __GONOGO_VERSION__: JSON.stringify(version) } },
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
