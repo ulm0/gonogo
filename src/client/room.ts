@@ -46,7 +46,7 @@ export function legendsOf(cells: readonly Cell[]): Legends {
 
 /* ---- a tile ---- */
 
-/** The look of a tile: the `data-kind` of primitives.css, plus `idle` (the unlit default). */
+/** The look of a tile: the `data-kind` of base.css, plus `idle` (the unlit default). */
 export type TileKind = 'working' | 'needs' | 'idle' | 'starting' | 'stopped' | 'open';
 
 export function tileKind(agent: AgentView): TileKind {

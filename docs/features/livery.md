@@ -3,7 +3,7 @@
 LIVERY (the round key of the top bar) chooses the look of gonogo, and asks an agent to design another. Design and limits:
 [`docs/livery-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/livery-spec.md).
 
-- **A livery** is a value for each of the 28 colour tokens of `src/client/tokens.css` (`--body`, `--panel`, `--key`, `--text`,
+- **A livery** is a value for each of the 28 colour tokens of `base.css` and `shell.css` (`--body`, `--panel`, `--key`, `--text`,
   `--lcd`, the signals, and so on), each a plain CSS colour: `#rgb`, `#rrggbb`, `rgb()`, `hsl()` or `oklch()`, with no alpha, no
   names and no `var()`. Four ship: **Instrument** (the default, today's look), **Night Shift** (dark graphite with a mint screen),
   **Low Ink** (near-white paper, thin lines, pale tints) and **High Contrast** (black on white, every text at 7:1 or better).

@@ -1,8 +1,17 @@
 /*
  * The shell: top bar, wall, room matrix, console panel, system states and the phone layout.
- * Built on tokens.css and primitives.css (the Instrument tokens and primitives); sizes and colours come from
+ * Built on base.css (the Instrument tokens and primitives); sizes and colours come from
  * docs/design/instrument/{InstRoom,InstPhone,InstGo}.dc.html. Views without a mockup take the same language.
  */
+
+:root {
+  /* Only what the mockups use and base.css does not name. */
+  --track: #d6d3cb; /* an empty ring, a vote that has not come */
+  --seq-base: #e2dfd7; /* the empty line of a sequence track */
+  --lcd-warm: #f1d79a; /* LCD text on a console that needs the Director */
+  --go-lit: #7cc493; /* the LED of the GO key (on the dark key) */
+  --you-key: #b8933f; /* the edge of a key that sits on the saffron tint */
+}
 
 .app {
   display: flex;
@@ -24,6 +33,33 @@
   font-size: 12.5px;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* The LED of a console takes the colour of its kind; a tile gets it from the kind of the tile too. */
+.led[data-kind='working'],
+.led[data-kind='starting'] {
+  --led: var(--work);
+}
+
+.led[data-kind='needs'] {
+  --led: var(--you);
+}
+
+.led[data-kind='idle'] {
+  --led: var(--go);
+}
+
+.led[data-kind='stopped'] {
+  --led: var(--edge-2);
+}
+
+.led[data-kind='open'] {
+  --led: transparent;
+}
+
+/* On a tint the label is the darker grey: --muted is for the page and the panel. */
+.flood .label {
+  color: var(--text-2);
 }
 
 /* ---- top bar ---- */
@@ -82,6 +118,28 @@
 
 .topbar-grow {
   flex-grow: 1;
+}
+
+.lamp {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+}
+
+.lamp[data-link='up'] .led {
+  --led: var(--go);
+}
+
+.lamp[data-link='wait'] .led {
+  --led: var(--you);
+}
+
+.lamp[data-link='down'] .led {
+  --led: var(--nogo);
 }
 
 .topbar .chip {
@@ -548,6 +606,75 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   padding: 2px 2px 4px;
+}
+
+/* A console: LED, call sign and cell number; a small LCD with two lines; the state. */
+.room-tile {
+  min-height: 96px;
+}
+
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tile-num {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+.tile-lcd {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 39px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: var(--well);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.tile-lcd .tile-sub {
+  color: inherit;
+}
+
+.room-tile[data-kind='working'] .tile-lcd {
+  background: var(--lcd);
+  color: var(--lcd-text);
+}
+
+.room-tile[data-kind='needs'] .tile-lcd {
+  background: var(--lcd);
+  color: var(--lcd-warm);
+}
+
+.room-tile[data-kind='stopped'] .tile-lcd {
+  background: var(--body);
+  color: var(--muted);
+}
+
+.room-tile[data-kind='open'] .tile-lcd {
+  background: transparent;
+  color: var(--muted);
+}
+
+.tile-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.room-tile .tile-state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tile-state-vote {

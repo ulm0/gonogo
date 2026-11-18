@@ -1,7 +1,7 @@
 /**
  * Livery (docs/livery-spec.md): the colour tokens a look is made of, the rule a livery must pass, and the four that ship.
  *
- * A livery is a value for every token of LIVERY_TOKENS (the colour tokens of src/client/tokens.css), each a plain CSS colour:
+ * A livery is a value for every token of LIVERY_TOKENS (the colour tokens of base.css and shell.css), each a plain CSS colour:
  * `#rgb`, `#rrggbb`, `rgb()`, `hsl()` or `oklch()`, with no alpha, written with commas or with spaces. The server checks a
  * submitted livery with `checkLivery` and the page sets its custom properties from `liveryProperties`, which filters through the
  * same rules, so a value that is not a colour never reaches the page. Contrast is the WCAG 2 ratio of relative luminances.
@@ -237,7 +237,7 @@ export const BUILTIN_LIVERIES: readonly BuiltinLivery[] = [
     slug: 'instrument',
     name: 'Instrument',
     description: 'The default: a warm grey device with a small green screen.',
-    // the values of tokens.css (a test keeps every livery that ships equal to its block there)
+    // the values of base.css and shell.css (a test keeps them equal)
     tokens: {
       '--body': '#e4e2dc',
       '--panel': '#f1f0ec',

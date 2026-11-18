@@ -65,7 +65,6 @@ export default defineConfig({
           { text: 'Security', link: '/reference/security' },
           { text: 'Troubleshooting', link: '/reference/troubleshooting' },
           { text: 'What was not verified', link: '/reference/not-verified' },
-          { text: 'Design system', link: '/design-system' },
           { text: 'Contributing', link: '/contributing' },
         ],
       },

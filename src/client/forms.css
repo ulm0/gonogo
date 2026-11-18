@@ -1,6 +1,6 @@
 /*
  * The staffing screen (hire, edit, custom command) in the Instrument look: two modules (A position, B console), keys, LEDs.
- * Built on primitives.css; the layout is that of docs/design/annunciator/{Hire,Edit,PhoneHire}.dc.html. Every class starts with staff-.
+ * Built on base.css; the layout is that of docs/design/annunciator/{Hire,Edit,PhoneHire}.dc.html. Every class starts with staff-.
  * Under 700 px wide the matrix has 3 columns and the big key sticks to the foot of the console module.
  */
 

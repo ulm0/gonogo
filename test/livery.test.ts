@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -91,28 +91,16 @@ describe('the token list and the rule', () => {
     expect(contrastRules()).toHaveLength(CONTRAST_PAIRS.length + 1);
   });
 
-  it('keeps every livery that ships equal to its block of tokens.css, every token of it', () => {
-    const tokens = css('tokens.css');
-    // the blocks whose selector names the livery (Instrument's is also :root); a token in a second block of the same livery counts too
-    const declared = (slug: string): Record<string, string> => {
-      const found: Record<string, string> = {};
-      for (const block of tokens.matchAll(/^([^\s/{}][^{}]*?)\{([^{}]*)\}/gm)) {
-        if (!block[1]!.split(',').some((s) => s.trim() === `[data-livery='${slug}']`)) continue;
-        for (const m of block[2]!.matchAll(/^\s*(--[a-z0-9-]+):\s*([^;]+);/gm)) found[m[1]!] = m[2]!.trim();
-      }
-      return found;
-    };
-    expect(/^:root,\n\[data-livery='instrument'\] \{/m.test(tokens), 'Instrument is the :root block').toBe(true);
-    for (const livery of BUILTIN_LIVERIES) {
-      const block = declared(livery.slug);
-      for (const name of LIVERY_NAMES) expect(livery.tokens[name as keyof typeof livery.tokens], `${livery.slug} ${name}`).toBe(block[name]);
-      // nothing of the colour tokens of a block is left out of the list
-      expect(Object.keys(block).filter((n) => isColour(block[n])).sort(), livery.slug).toEqual([...LIVERY_NAMES].sort());
+  it('keeps the Instrument livery equal to the tokens of base.css and shell.css, every one of them', () => {
+    const declared: Record<string, string> = {};
+    for (const file of ['base.css', 'shell.css']) {
+      const root = /^:root \{([\s\S]*?)^\}/m.exec(css(file))?.[1] ?? '';
+      for (const m of root.matchAll(/^\s*(--[a-z0-9-]+):\s*([^;]+);/gm)) declared[m[1]!] = m[2]!.trim();
     }
-    // no other stylesheet of the app declares a colour token: tokens.css is the one source
-    for (const file of readdirSync(new URL('../src/client/', import.meta.url)).filter((f) => f.endsWith('.css') && f !== 'tokens.css')) {
-      for (const name of LIVERY_NAMES) expect(css(file), `${file} declares ${name}`).not.toMatch(new RegExp(`^\\s*${name}\\s*:`, 'm'));
-    }
+    for (const name of LIVERY_NAMES) expect(instrument.tokens[name as keyof typeof instrument.tokens], name).toBe(declared[name]);
+    // nothing of the colour tokens of the two sheets is left out of the list
+    const colours = Object.keys(declared).filter((n) => isColour(declared[n]));
+    expect(colours.sort()).toEqual([...LIVERY_NAMES].sort());
   });
 
   it('passes every livery that ships, and the high-contrast one at 7:1 or better', () => {

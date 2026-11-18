@@ -5,10 +5,8 @@ import '@fontsource/geist/latin-600.css';
 import '@fontsource/geist-mono/latin-400.css';
 import '@fontsource/geist-mono/latin-500.css';
 import '@fontsource/geist-mono/latin-600.css';
-// tokens, page, primitives first: every other stylesheet builds on them, and a stylesheet loads in the order it is imported.
-import './tokens.css';
+// base.css first: every other stylesheet builds on its tokens, and a stylesheet loads in the order it is imported.
 import './base.css';
-import './primitives.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
