@@ -14,7 +14,7 @@ agent only ([What was not verified](../reference/not-verified.md)).
   do (`PUT /api/features` with `{ off: [...] }`, then the same with `confirm: true`).
 - **Needs and used by.** A feature that needs another goes off with it (Static fire needs T-minus, Missions needs Flight Plan,
   Star Chart needs Mission Log, Recorder needs Hangar, Review needs Recorder, Relay needs Uplink). The chips on each row say so.
-- **Core features have a lock.** Roster and mail, Downlink, Black Box (an audit trail that can be switched off is not one: it records the switches themselves), Redline and Hold, and the controls (Flight Rules, Patch Panel,
+- **Core features have a lock.** Roster and mail, Downlink, Black Box (an audit trail that can be switched off is not one: it records the switches themselves), Redline and Hold (so ALL STOP and ALL RESUME, which are Hold of every console, stay too), and the controls (Flight Rules, Patch Panel,
   Clearance, Engine Bay) cannot be switched off, and the row says why. Redline's automatic detectors keep their own
   operator switch, `GONOGO_REDLINE=off`.
 - **What is saved.** `~/.gonogo/features.json` holds only the ids that are off, so a feature added by an upgrade is on, and an id
@@ -32,6 +32,8 @@ agent only ([What was not verified](../reference/not-verified.md)).
 - **A poll that is open** blocks turning off T-minus poll and Static fire: abort or clear it first.
 - **Turning a feature on** reaches a running agent only at its next start (its tool list is fixed when it starts); the plan names the agents to restart. Turning Max Q off lets the mail it held go at once.
 - **The server checks the plan you read.** Applying sends the `off` list of the plan that was shown (`expect`); if the plan is not that any more, it answers 409 and changes nothing.
+
+- **`start_agent`** (the boss's tool for a stopped console) is not part of a feature: it has its own switch, *FLIGHT may start agents*, in Start again after a restart.
 
 ## What can be switched
 
