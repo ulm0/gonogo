@@ -274,7 +274,7 @@ describe('Pad Check', () => {
     expect(text).toContain('--  Codex (codex)  not found\n    install: npm install -g @openai/codex\n    docs: https://b.example');
     expect(text).toContain('--  Kimi CLI (kimi)  not found\n    no install command was checked; see https://c.example');
     expect(text).toContain('ok  pi (pi)  no version printed  /bin/pi');
-    expect(text).toContain('gonogo never runs an install command');
+    expect(text).toContain('doctor never runs an install command');
     expect(text).not.toContain('GONOGO_AGENT_CMD');
     expect(formatDoctor([], 'node fake.mjs')).toContain('GONOGO_AGENT_CMD is set (node fake.mjs): it replaces claude.');
   });
