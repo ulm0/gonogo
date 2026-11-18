@@ -77,12 +77,18 @@ interface TreeProps {
 function Tree({ path, depth, dirs, expanded, current, onToggle, onOpen }: TreeProps): ReactElement {
   const level = dirs[path];
   const indent = { paddingLeft: 10 + depth * 16 };
-  if (level === undefined) return <p className="hint hg-note" style={indent}>Loading…</p>;
+  if (level === undefined) {
+    return (
+      <li className="hint hg-note" style={indent}>
+        Loading…
+      </li>
+    );
+  }
   if (typeof level === 'string') {
     return (
-      <p className="error hg-note" role="alert">
+      <li className="error hg-note" role="alert">
         {level}
-      </p>
+      </li>
     );
   }
   const row = (entry: HangarEntry): ReactElement => {
@@ -200,7 +206,8 @@ function Files({ agent }: { agent: string }): ReactElement {
   const lines = useMemo(() => lineCount(value), [value]);
   const numbers = useMemo(() => gutterText(lines), [lines]);
 
-  const act = async (work: () => Promise<void>): Promise<void> => {
+  /** `saving`: a 409 is the file that changed on disk, and the problem offers to reload it; any other 409 (a name that exists) does not. */
+  const act = async (work: () => Promise<void>, saving = false): Promise<void> => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -208,7 +215,7 @@ function Files({ agent }: { agent: string }): ReactElement {
     try {
       await work();
     } catch (e) {
-      if (alive.current) setProblem({ text: messageOf(e), conflict: (e as ApiFailure).status === 409 });
+      if (alive.current) setProblem({ text: messageOf(e), conflict: saving && (e as ApiFailure).status === 409 });
     } finally {
       busyRef.current = false;
       if (alive.current) setBusy(false);
@@ -280,7 +287,7 @@ function Files({ agent }: { agent: string }): ReactElement {
       setFile({ ...file, base: value, etag: done.etag, size: done.size });
       setSaved(true);
       void load(parentOf(file.path));
-    });
+    }, true);
 
   const create = (): Promise<void> =>
     act(async () => {
@@ -456,6 +463,7 @@ function Files({ agent }: { agent: string }): ReactElement {
                   setSaved(false);
                 }}
                 onKeyDown={onKeyDown}
+                onBlur={() => void (leave.current = false)}
                 onScroll={(e) => {
                   if (gutter.current !== null) gutter.current.scrollTop = e.currentTarget.scrollTop;
                 }}

@@ -103,9 +103,22 @@ function Git({ agent }: { agent: string }): ReactElement {
         Reading git…
       </p>
     ) : (
-      <p className="error" role="alert">
-        {error}
-      </p>
+      <div className="rc-box rc-retry">
+        <p className="error" role="alert">
+          {error}
+        </p>
+        <button
+          type="button"
+          className="btn"
+          data-kind="quiet"
+          onClick={() => {
+            setError(null);
+            refresh();
+          }}
+        >
+          Try again
+        </button>
+      </div>
     );
   }
   if (!status.repo) {

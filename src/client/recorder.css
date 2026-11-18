@@ -120,7 +120,8 @@
   accent-color: var(--work);
 }
 
-.rc-commit .btn {
+.rc-commit .btn,
+.rc-retry .btn {
   align-self: flex-start;
 }
 
