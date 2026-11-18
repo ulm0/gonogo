@@ -2,9 +2,12 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.1.1 (2026-11-18)
 
-- **npm.** The package is published as `@ulm0/gonogo` (the unscoped `gonogo` on npm is another project); the command stays `gonogo`. `.github/workflows/release.yml` publishes it with provenance for each `v*` tag and creates the GitHub Release.
+- **npm.** The package is published as `@ulm0/gonogo` (the unscoped `gonogo` on npm is another project); the command stays `gonogo`. `.github/workflows/release.yml` publishes it with provenance for each `v*` tag and creates or updates its GitHub Release from this changelog.
+- **Docker Compose.** `compose.yaml` pulls `ghcr.io/ulm0/gonogo:latest` instead of building, restarts always, sets no `container_name` and publishes `GONOGO_PORT` (default 7777), so several instances can run side by side (`docker compose -p <name>`).
+- **Clean Room.** `GONOGO_CLEANROOM_NETWORK=container:self` finds gonogo's own container by its host name.
+- **Fix.** `gonogo --help` named the old default Clean Room image `gonogo`; it is `ghcr.io/ulm0/gonogo`.
 
 ## 0.1.0 (2026-11-17)
 

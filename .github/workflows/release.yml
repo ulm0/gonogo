@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes the npm package for a v* tag, with provenance, then creates the tag's GitHub Release.
+# Publishes the npm package for a v* tag, with provenance, then creates or updates the tag's GitHub Release.
 # A pushed v* tag runs it; so does a run by hand ("Run workflow") with the name of a tag that already exists.
 # It checks out that tag, runs the full checks, refuses a tag that is not "v" + package.json `version` and a package
 # name that is not @<repository owner>/gonogo, then publishes. A version with a pre-release suffix (1.2.0-rc.1) gets the
@@ -83,6 +83,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          name=$(node -p 'require("./package.json").name')
+          # A re-run for a version npm already has skips the publish, so the release below can still be updated.
+          if [ -n "$(pnpm view "$name@${TAG#v}" version 2>/dev/null)" ]; then
+            echo "$name@${TAG#v} is on npm already, not publishing it again"
+            exit 0
+          fi
           dist_tag=latest
           if [[ "$TAG" == *-* ]]; then dist_tag=next; fi
           pnpm publish --access public --provenance --no-git-checks --tag "$dist_tag"
@@ -94,14 +100,30 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create the GitHub Release unless it exists
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      # The notes are the tag's own section of CHANGELOG.md ("## <version> ..." up to the next "## "); without one,
+      # GitHub's generated notes. A release that exists already is updated, so a re-run (or a fixed changelog on a
+      # re-pushed tag) refreshes it.
+      - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          version=${TAG#v}
+          notes=$(awk -v v="$version" '$0 ~ "^## " { if (on) exit; on = ($2 == v) ; next } on' CHANGELOG.md)
+          prerelease=false
+          if [[ "$TAG" == *-* ]]; then prerelease=true; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "The release $TAG exists already"
-            exit 0
+            if [ -n "$notes" ]; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "$notes" --prerelease="$prerelease"
+            else
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --prerelease="$prerelease"
+            fi
+            echo "Updated the release $TAG"
+          elif [ -n "$notes" ]; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes "$notes" --prerelease="$prerelease"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes --prerelease="$prerelease"
           fi
-          prerelease=()
-          if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TAG" "${prerelease[@]}"
