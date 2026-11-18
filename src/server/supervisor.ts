@@ -16,10 +16,10 @@ import http from 'node:http';
 import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
-import { bearerToken, sendJson, sendText } from './hooks.js';
+import { bearerToken, sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
-import { loadRooms, MAIN_ROOM, roomHome } from './rooms.js';
+import { addRoom, loadRooms, MAIN_ROOM, removeRoom, renameRoom, RoomsError, roomHome, validRoomId } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { hostName } from './web.js';
 
@@ -29,6 +29,7 @@ const POLL_MS = 2000;
 const STATUS_TTL_MS = 3000;
 const START_BACKOFF_MS = [1000, 2000, 5000, 15_000, 30_000];
 // a room gives up its own shutdown after SHUTDOWN_MAX_MS: wait longer than that before SIGKILL, or the kill lands in the middle of it
+const BODY_MAX = 4096;
 const STOP_WAIT_MS = SHUTDOWN_MAX_MS + 5000;
 
 export type RoomState = 'starting' | 'running' | 'stopped' | 'crashed';
@@ -271,6 +272,84 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || allowedNames.has(name));
   };
 
+  /** The write routes need the same Origin rule as a room's: a browser page of another address is refused, a client without one is not. */
+  const originOk = (req: http.IncomingMessage): boolean => {
+    const origin = req.headers.origin;
+    if (origin === undefined) return true;
+    try {
+      const url = new URL(origin);
+      return url.host.toLowerCase() === (req.headers.host ?? '').toLowerCase() && hostOk(url.host);
+    } catch {
+      return false;
+    }
+  };
+
+  const readBody = (req: http.IncomingMessage): Promise<Record<string, unknown>> =>
+    new Promise((resolve, reject) => {
+      if (!/^application\/json(\s*;|$)/i.test(req.headers['content-type'] ?? '')) return reject(new RoomsError('send application/json'));
+      const chunks: Buffer[] = [];
+      let size = 0;
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        // answered, not cut off: the rest of the body is read and dropped (only the Director gets this far)
+        if (size > BODY_MAX) reject(new RoomsError(`the body is over ${BODY_MAX} bytes`));
+        else chunks.push(chunk);
+      });
+      req.on('end', () => {
+        try {
+          const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new Error('not an object');
+          resolve(body as Record<string, unknown>);
+        } catch {
+          reject(new RoomsError('the body must be a JSON object'));
+        }
+      });
+      req.on('error', () => reject(new RoomsError('the body could not be read')));
+    });
+
+  const roomView = async (id: string): Promise<RoomView | undefined> => (await viewsNow()).find((r) => r.id === id);
+
+  /** GET lists; POST adds; PATCH renames; DELETE takes a room off the list (its folder stays). The Director token was checked. */
+  async function roomsApi(req: http.IncomingMessage, res: http.ServerResponse, rawId: string | undefined): Promise<void> {
+    try {
+      const method = req.method ?? '';
+      if (method === 'GET' && rawId === undefined) return sendJson(res, 200, { rooms: await viewsNow() }, { 'Cache-Control': 'no-store' });
+      const allow = rawId === undefined ? 'GET, POST' : 'PATCH, DELETE';
+      if (!(rawId === undefined ? method === 'POST' : method === 'PATCH' || method === 'DELETE')) return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: allow });
+      if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      let id = rawId;
+      if (id !== undefined) {
+        try {
+          id = decodeURIComponent(id);
+        } catch {
+          return sendApiError(res, 400, 'bad room id', 'bad_request', 'id');
+        }
+        if (!validRoomId(id)) return sendApiError(res, 400, 'a room id is a lower-case letter, then up to 23 lower-case letters, digits or dashes', 'bad_request', 'id');
+      }
+      if (method === 'DELETE') {
+        removeRoom(options.home, id);
+        reconcile();
+        return sendJson(res, 200, { ok: true, note: `room ${id} was taken off the list and is stopping; its folder stays` });
+      }
+      const body = await readBody(req);
+      if (method === 'POST') {
+        const entry = addRoom(options.home, body.id, typeof body.name === 'string' ? body.name : undefined);
+        reconcile();
+        return sendJson(res, 201, (await roomView(entry.id)) ?? entry);
+      }
+      const entry = renameRoom(options.home, id, body.name);
+      reconcile();
+      return sendJson(res, 200, (await roomView(entry.id)) ?? entry);
+    } catch (error) {
+      if (error instanceof RoomsError) {
+        const status = error.kind === 'conflict' ? 409 : error.kind === 'not_found' ? 404 : 400;
+        return sendApiError(res, status, error.message, error.kind);
+      }
+      log.error('rooms api failed', error);
+      return sendApiError(res, 500, 'internal error', 'internal');
+    }
+  }
+
   const server = http.createServer((req, res) => {
     if (proxy.handle(req, res)) return;
     if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
@@ -295,10 +374,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }
       return;
     }
-    if (path === '/api/rooms' && req.method === 'GET') {
-      const token = bearerToken(req.headers.authorization);
-      if (!sameToken(token, directorToken)) return sendText(res, 401, 'unauthorized');
-      void viewsNow().then((rooms) => sendJson(res, 200, { rooms }, { 'Cache-Control': 'no-store' }));
+    const rooms = /^\/api\/rooms(?:\/([^/]+))?$/.exec(path ?? '');
+    if (rooms !== null) {
+      if (!sameToken(bearerToken(req.headers.authorization), directorToken)) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
+      void roomsApi(req, res, rooms[1]);
       return;
     }
     sendText(res, 404, 'not found');

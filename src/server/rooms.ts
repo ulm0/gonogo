@@ -21,7 +21,15 @@ export interface RoomEntry {
   autostart: boolean;
 }
 
-export class RoomsError extends Error {}
+/** `kind` tells the supervisor's routes which answer it is: bad input, a conflict with what exists, or no such room. */
+export class RoomsError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'bad_request' | 'conflict' | 'not_found' = 'bad_request',
+  ) {
+    super(message);
+  }
+}
 
 /** The id of a room as a path segment: lower case, starts with a letter, no dots and no slashes. */
 export const validRoomId = (id: unknown): id is string => typeof id === 'string' && ID_RE.test(id);
@@ -43,7 +51,7 @@ export function loadRooms(root: string): RoomEntry[] {
     text = readFileSync(join(root, ROOMS_FILE), 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return list;
-    throw new RoomsError(`cannot read ${ROOMS_FILE}: ${(error as Error).message}`);
+    throw new RoomsError(`cannot read ${ROOMS_FILE}: ${(error as Error).message}`, 'conflict');
   }
   try {
     const saved: unknown = JSON.parse(text);
@@ -56,7 +64,7 @@ export function loadRooms(root: string): RoomEntry[] {
       list.push({ id, name: typeof name === 'string' && cleanName(name) !== '' ? cleanName(name).slice(0, NAME_MAX) : id, autostart: autostart !== false });
     }
   } catch (error) {
-    throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`);
+    throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`, 'conflict');
   }
   return list;
 }
@@ -72,9 +80,10 @@ function saveRooms(root: string, rooms: RoomEntry[]): void {
 /** Adds a room (its folder is made when the room first starts). Throws RoomsError with the reason. */
 export function addRoom(root: string, id: unknown, name?: string): RoomEntry {
   if (!validRoomId(id)) throw new RoomsError('a room id is a lower-case letter, then up to 23 lower-case letters, digits or dashes');
+  if (id === MAIN_ROOM) throw new RoomsError('main is the home itself: pick another id');
   const rooms = loadRooms(root);
-  if (rooms.some((r) => r.id === id)) throw new RoomsError(`there is already a room "${id}"`);
-  if (rooms.length >= ROOMS_MAX) throw new RoomsError(`at most ${ROOMS_MAX} rooms: every room is a gonogo process of its own`);
+  if (rooms.some((r) => r.id === id)) throw new RoomsError(`there is already a room "${id}"`, 'conflict');
+  if (rooms.length >= ROOMS_MAX) throw new RoomsError(`at most ${ROOMS_MAX} rooms: every room is a gonogo process of its own`, 'conflict');
   const entry: RoomEntry = { id, name: name === undefined || cleanName(name) === '' ? id : cleanName(name).slice(0, NAME_MAX), autostart: true };
   saveRooms(root, [...rooms.filter((r) => r.id !== MAIN_ROOM), entry]);
   return entry;
@@ -84,6 +93,18 @@ export function addRoom(root: string, id: unknown, name?: string): RoomEntry {
 export function removeRoom(root: string, id: unknown): void {
   if (id === MAIN_ROOM) throw new RoomsError('main is the home itself and cannot be removed');
   const rooms = loadRooms(root);
-  if (!rooms.some((r) => r.id === id)) throw new RoomsError(`there is no room "${String(id)}"`);
+  if (!rooms.some((r) => r.id === id)) throw new RoomsError(`there is no room "${String(id)}"`, 'not_found');
   saveRooms(root, rooms.filter((r) => r.id !== id && r.id !== MAIN_ROOM));
+}
+
+/** Gives a room another name (its id and folder stay). `main` has no entry in the file, so its name is fixed. */
+export function renameRoom(root: string, id: unknown, name: unknown): RoomEntry {
+  if (id === MAIN_ROOM) throw new RoomsError('the name of main is fixed');
+  if (typeof name !== 'string' || cleanName(name) === '') throw new RoomsError(`a name is 1 to ${NAME_MAX} characters of text`);
+  const rooms = loadRooms(root);
+  const found = rooms.find((r) => r.id === id);
+  if (found === undefined) throw new RoomsError(`there is no room "${String(id)}"`, 'not_found');
+  const next: RoomEntry = { ...found, name: cleanName(name).slice(0, NAME_MAX) };
+  saveRooms(root, rooms.filter((r) => r.id !== MAIN_ROOM).map((r) => (r.id === id ? next : r)));
+  return next;
 }

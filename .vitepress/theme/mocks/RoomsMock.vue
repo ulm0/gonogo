@@ -4,7 +4,7 @@ import '../landing/landing.css';
 </script>
 
 <template>
-  <div class="module lp-visual rm" role="img" aria-label="Rooms: Main, 3 of 4 agents running, 1 needs you, OPEN. Team B, 2 of 2 agents running, OPEN. Staging, stopped.">
+  <div class="module lp-visual rm" role="img" aria-label="Rooms: Main, 3 of 4 agents running, 1 needs you, OPEN. Team B, 2 of 2 agents running, OPEN, RENAME, REMOVE. Staging, stopped, RENAME, REMOVE. A NEW ROOM form with an id, a name and ADD.">
     <span class="label">ROOMS · gonogo.example:7777</span>
     <div class="rm-list">
       <div class="tile lp-static" data-kind="needs">
@@ -13,12 +13,18 @@ import '../landing/landing.css';
       </div>
       <div class="tile lp-static" data-kind="working">
         <span class="legend">TEAM B</span><span class="tile-sub">2 of 2 agents running</span>
-        <span class="btn" data-kind="primary">OPEN</span>
+        <span class="btn" data-kind="primary">OPEN</span><span class="btn">RENAME</span><span class="btn">REMOVE</span>
       </div>
       <div class="tile lp-static">
         <span class="legend">STAGING</span><span class="tile-sub">stopped</span>
-        <span class="btn" aria-disabled="true">OPEN</span>
+        <span class="btn" aria-disabled="true">OPEN</span><span class="btn">RENAME</span><span class="btn">REMOVE</span>
       </div>
+    </div>
+    <div class="rm-add">
+      <span class="label">NEW ROOM</span>
+      <span class="input lcd">id: team-c</span>
+      <span class="input lcd">name (optional)</span>
+      <span class="btn" data-kind="primary">ADD</span>
     </div>
   </div>
 </template>
@@ -28,4 +34,6 @@ import '../landing/landing.css';
 .rm-list { display: grid; gap: 8px; }
 .rm-list .tile { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .rm-list .legend { flex: 1 1 8em; }
+.rm-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.rm-add .input { flex: 1 1 9em; min-width: 0; }
 </style>
