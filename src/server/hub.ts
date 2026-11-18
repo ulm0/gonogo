@@ -3069,6 +3069,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           const gen = found.running.find((item) => item.name === name)?.generation ?? 0;
           await io.stop(name, gen).catch(() => undefined);
         }
+        // a hold of an agent that did not come back with the host (it may still be alive there) stays a hold: nothing starts it again but the Director
+        for (const [name, reason] of Object.entries(found.holds)) {
+          if (typeof reason === 'string' && reason !== '' && agents.has(name) && !adopted.includes(name)) lostHolds.set(name, reason);
+        }
+        if (lostHolds.size > 0) saveHolds();
         if (adopted.length > 0) log.info(`took over ${adopted.length} running agent${adopted.length === 1 ? '' : 's'}: ${adopted.join(', ')}`);
       } catch (error) {
         log.warn('could not take over the running agents', error);
@@ -3086,7 +3091,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     for (const entry of io.runSet?.() ?? []) if (agents.get(entry.name)?.state === 'stopped' && !(startBoss && entry.name === boss?.record.name) && (settings.policy !== 'running' || set === null)) io.markRun?.(entry.name, false, false);
     let bossFailed: string | null = null;
     // an adopted boss is running already: nothing to start, and it was not cut in the middle of a turn
-    if (boss && startBoss && boss.state === 'stopped') {
+    if (boss && startBoss && boss.state === 'stopped' && !lostHolds.has(boss.record.name)) {
       // a boss that cannot start must not keep the others from starting
       try {
         await enqueue(boss, 'restart', () => restartOp(boss), true);
@@ -3142,6 +3147,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         continue;
       }
       if (rt.state !== 'stopped') continue;
+      if (lostHolds.has(rt.record.name)) {
+        // held when its process was lost: starting it again would release the hold without the Director
+        skipped.push(`${entry.name} (on hold)`);
+        continue;
+      }
       if (rt.record.autostart === false) {
         skipped.push(`${entry.name} (opted out)`);
         io.markRun?.(entry.name, false, false);
@@ -3232,6 +3242,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (rt.state !== 'stopped' || rt.transition !== null) {
         throw new HubError('conflict', rt.redline === HOLD_REASON ? `${rt.record.name} is on hold: the Director resumes it` : rt.redline !== null ? `${rt.record.name} has tripped the redline: the Director resumes or stops it` : `${rt.record.name} is already running`);
       }
+      // its process may still be alive in the pty host, held: only the Director's start or resume lets it go
+      if (lostHolds.has(rt.record.name)) throw new HubError('conflict', `${rt.record.name} is on hold: the Director resumes it`);
       if (io.startup?.().bossMayStart === false) throw new HubError('forbidden', 'the Director turned off "FLIGHT may start agents" in Flight Rules');
       if (rt.record.stoppedBy === 'director') throw new HubError('forbidden', `the Director stopped ${rt.record.name}: only he starts it again`);
       log.info(`${by} starts ${rt.record.name}`);

@@ -27,6 +27,8 @@ does what your START key does, refuses a console that is running or on hold, and
 [Black Box](./black-box.md) records `flight started ana`. The Flight Rules box **FLIGHT may start agents** (on by default)
 turns it off: the tool then answers that you did.
 
+A console whose Hold was lost with its process (a stalled pty host) stays on hold: neither start_agent nor a restart of gonogo starts it, only your start or resume does.
+
 A stop that a [Propellant](./propellant.md) limit or budget made counts as your stop: FLIGHT cannot restart that console either, only you can.
 
 ## ALL STOP

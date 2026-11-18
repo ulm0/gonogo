@@ -6603,6 +6603,7 @@ describe('Hub.startAgent: the boss starts a stopped agent', () => {
     await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', 'ana is already running');
     h.hub.hold('ana');
     await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', /ana is on hold/);
+    h.hub.resume('ana');
     h.exit('ana', { code: 0 });
     const before = h.spawns.length;
     expect((await h.hub.startAgent('ana', 'flight')).state).toBe('starting');
@@ -6846,5 +6847,44 @@ describe('Subagents: what the hooks say of the helpers of an agent', () => {
     expect(h.metered.at(-1)).toMatchObject({ name: 'ana', transcriptPath: '/p/session.jsonl' });
     for (let n = 0; n < 200; n += 1) start(h, `id${n}`);
     expect(h.view('ana').subagents.running).toBeLessThanOrEqual(64);
+  });
+});
+
+describe('a hold that was lost with its process is not released by FLIGHT or by autostart', () => {
+  const ROSTER = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 }), rosterRecord('ben', { desk: 2 })];
+
+  it('start_agent refuses an agent whose hold was lost, the hold stays in the file, and the Director\'s start lets it go', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const h = await withAna({ saveHolds: (holds) => void saved.push({ ...holds }) });
+    h.hub.hold('ana');
+    h.exit('ana', { requested: false, signal: 9 });
+    expect(h.view('ana').state).toBe('stopped');
+    const before = h.spawns.length;
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', 'ana is on hold: the Director resumes it');
+    expect(h.spawns.length).toBe(before);
+    expect(saved.at(-1)).toHaveProperty('ana');
+    await h.hub.restart('ana');
+    expect(h.spawns.length).toBe(before + 1);
+    expect(saved.at(-1)).toEqual({});
+  });
+
+  it('autostart does not start an agent that the previous host still holds, names it, and starts the others', async () => {
+    const saved: Array<Record<string, string>> = [];
+    const set: RunEntry[] = [{ name: 'flight', working: false }, { name: 'ana', working: false }, { name: 'ben', working: false }];
+    const h = makeHarness({ roster: ROSTER, saveHolds: (holds) => void saved.push({ ...holds }), startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: set, adoptable: async () => ({ running: [], holds: { ana: 'hold: the Director asked' } }) });
+    await h.hub.start();
+    await settle();
+    await h.advance(2000);
+    expect(h.spawns.map((s) => s.agent.name).sort()).toEqual(['ben', 'flight']);
+    expect(h.notices.at(-1)?.[1]).toContain('ana (on hold)');
+    expect(saved.at(-1)).toEqual({ ana: 'hold: the Director asked' });
+  });
+
+  it('a boss whose hold was lost is not started by the policy either', async () => {
+    const h = makeHarness({ roster: ROSTER, startup: { policy: 'boss', carryOn: true, bossMayStart: true }, adoptable: async () => ({ running: [], holds: { flight: 'hold: the Director asked' } }) });
+    await h.hub.start();
+    await settle();
+    expect(h.spawns).toEqual([]);
+    expect(h.view('flight').state).toBe('stopped');
   });
 });
