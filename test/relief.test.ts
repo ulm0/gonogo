@@ -24,6 +24,8 @@ function agent(name: string, extra: Partial<AgentView> = {}): AgentView {
     stateSince: 1,
     needsKind: null,
     needsReason: null,
+    needSeq: null,
+    remoteControl: null,
     transition: null,
     draft: false,
     held: null,

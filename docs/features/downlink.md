@@ -14,6 +14,7 @@ DOWNLINK (top bar, or DOWN on a phone) is your inbox. Design and limits: [`docs/
   - Uplink refused for bad signature more than 3 times in 10 minutes (one line per uplink per 10 minutes, never the secret)
   - task an agent moved to blocked or review (not your own moves)
   - hire request FLIGHT made, and its end: hired, refused, expired or failed ([Relief](./relief.md))
+  - permission dialog an agent opens (`ana asks: Bash: pnpm vitest run`), once for each dialog; the inbox only, not forwarded by Relay (phone approvals, step 1)
 
 ## Read state
 

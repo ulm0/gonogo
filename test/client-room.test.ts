@@ -56,6 +56,8 @@ function agent(name: string, desk: number, extra: Partial<AgentView> = {}): Agen
     stateSince: 0,
     needsKind: null,
     needsReason: null,
+    needSeq: null,
+    remoteControl: null,
     transition: null,
     draft: false,
     held: null,

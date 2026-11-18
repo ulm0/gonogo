@@ -189,6 +189,8 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     stateSince: 1,
     needsKind: null,
     needsReason: null,
+    needSeq: null,
+    remoteControl: null,
     transition: null,
     draft: false,
     held: null,
@@ -3635,6 +3637,10 @@ describe('web: REST', () => {
         calls,
         relay: {
           view: () => view as never,
+          setPhone: async (input) => {
+            calls.push(['phone', input]);
+            return view as never;
+          },
           set: async (service, input) => {
             calls.push(['set', service, input]);
             known(service);

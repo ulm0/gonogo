@@ -1132,8 +1132,18 @@ describe('end to end with the stand-in agent', () => {
       expect(needs.history.map((change) => change.state).slice(-3)).toEqual(['idle', 'working', 'needs_you']);
       expect(needs.history.at(-1)).toEqual({ state: 'needs_you', at: needs.stateSince });
 
+      // the dialog has a number, the inbox has an event for it, and an answer for another dialog types nothing
+      expect(needs.needSeq).toBe(1);
+      const inbox = (await api<DownlinkView>(h, 'GET', '/api/downlink')).body;
+      expect(inbox.items.find((item) => item.type === 'event' && item.kind === 'permission')).toMatchObject({ text: expect.stringMatching(/^flight asks: Bash/), read: false });
+      const stale = await api<ApiError>(h, 'POST', '/api/agents/flight/answer', { go: true, needSeq: 7 });
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ code: 'conflict', field: 'needSeq' });
+      expect((await api<ApiError>(h, 'POST', '/api/agents/flight/answer', { go: true, needSeq: 'one' })).status).toBe(400);
+      expect(logOf<FakeEvent & { action: string }>(h, 'flight', 'dialog').map((event) => event.action)).toEqual(['shown']);
+
       const answered = c.mark();
-      const response = await api<AgentView>(h, 'POST', '/api/agents/flight/answer', { go: true });
+      const response = await api<AgentView>(h, 'POST', '/api/agents/flight/answer', { go: true, needSeq: 1 });
       expect(response.status).toBe(200);
       expect(response.body, 'the state is the hooks\' to change, not the answer\'s').toMatchObject({ name: 'flight', state: 'needs_you', needsKind: 'permission' });
       const next = await c.waitFrame((f) => f.t === 'agent' && f.agent.name === 'flight' && f.agent.state !== 'needs_you', 6000, 'the way out of needs you', answered);
@@ -1986,7 +1996,7 @@ describe('end to end with the stand-in agent', () => {
     // the targets are saved in a private file and the token never comes back
     expect((await api(h, 'PUT', '/api/relay/slack', { token: SLACK_TOKEN, to: 'C0123456789' })).status).toBe(200);
     const view = await api<{ slack: { to: string } | null; telegram: { to: string } | null; forward: string[] }>(h, 'PUT', '/api/relay/telegram', { token: TELEGRAM_TOKEN, to: '555' });
-    expect(view.body).toEqual({ slack: { to: 'C0123456789', last: null }, telegram: { to: '555', last: null }, forward: ['message', 'redline', 'tminus', 'flight-plan'] });
+    expect(view.body).toEqual({ slack: { to: 'C0123456789', last: null }, telegram: { to: '555', last: null }, forward: ['message', 'redline', 'tminus', 'flight-plan'], phone: 'off' });
     expect(statSync(join(h.home, 'relay.json')).mode & 0o777).toBe(0o600);
     expect(await api<ApiError>(h, 'PUT', '/api/relay/slack', { token: 'nope', to: 'C0123456789' })).toMatchObject({ status: 400, body: { field: 'token' } });
 
@@ -2576,6 +2586,65 @@ describe('end to end with the stand-in agent', () => {
       await rm(aux, { recursive: true, force: true });
     }
   }, 60_000);
+  it('Phone approvals: a permission goes to Telegram with signed buttons, a press types Enter once, and a late press is refused', async () => {
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const relayFetch: typeof fetch = async (url, init) => {
+      posts.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return Response.json({ ok: true, result: { message_id: 40 + posts.length, chat: { id: 555 } } });
+    };
+    const h = await startServer({ relayFetch });
+    await waitState(h, 'flight', 'idle');
+    const TOKEN = '123456789:AAFabcdefghijklmnopqrstuvwxyz012345';
+    const urlOf = (method: string): string => `https://api.telegram.org/bot${TOKEN}/${method}`;
+    expect((await api(h, 'PUT', '/api/relay/telegram', { token: TOKEN, to: '555' })).status).toBe(200);
+    const uplink = (await api<UplinkCreated>(h, 'POST', '/api/uplinks', { name: 'Telegram', to: 'flight', kind: 'telegram' })).body;
+    expect((await api(h, 'PUT', '/api/relay/phone', { mode: 'sideways' })).status).toBe(400);
+
+    // off (the default): nothing is sent
+    const c = await Client.open(h);
+    await c.attach('flight');
+    c.typeLine('flight', '@fake permission Bash 2000');
+    await waitState(h, 'flight', 'needs_you', 10_000);
+    expect(posts.filter((post) => post.url.endsWith('/sendMessage'))).toEqual([]);
+    expect((await api(h, 'POST', '/api/agents/flight/answer', { go: true })).status).toBe(200);
+    await waitState(h, 'flight', 'idle', 15_000);
+
+    // telegram: the next dialog is sent with two buttons
+    expect((await api<{ phone: string }>(h, 'PUT', '/api/relay/phone', { mode: 'telegram' })).body.phone).toBe('telegram');
+    const press = (data: string, id = 'q1', chat = 555): Promise<Response> =>
+      fetch(`${h.base}/uplink/${uplink.id}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': uplink.secret },
+        body: JSON.stringify({ callback_query: { id, data, message: { message_id: 41, chat: { id: chat } } } }),
+      });
+    c.typeLine('flight', '@fake permission Bash 2000');
+    await waitState(h, 'flight', 'needs_you', 10_000);
+    await waitFor(() => posts.some((post) => post.url.endsWith('/sendMessage') && post.body.reply_markup !== undefined), 5000, 'the message with buttons');
+    const sent = posts.find((post) => post.url.endsWith('/sendMessage') && post.body.reply_markup !== undefined);
+    expect(sent?.url).toBe(urlOf('sendMessage'));
+    expect(String(sent?.body.text)).toMatch(/^flight asks: Bash/);
+    const buttons = (sent?.body.reply_markup as { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }).inline_keyboard[0] ?? [];
+    expect(buttons.map((b) => b.text)).toEqual(['GO', 'NO-GO']);
+    const go = buttons[0]?.callback_data ?? '';
+
+    // a press from another chat is not for the agents, a bad tag is refused on Telegram, and the dialog is still open
+    expect(await (await press(go, 'q0', 556)).json()).toEqual({ ok: true, ignored: true });
+    expect((await press(go.replace(/.$/, (ch) => (ch === '0' ? '1' : '0')), 'q1')).status).toBe(200);
+    await waitFor(() => posts.some((post) => post.url.endsWith('/answerCallbackQuery') && post.body.text === 'Invalid button'), 5000, 'the refusal on Telegram');
+    expect((await getState(h)).agents.find((a) => a.name === 'flight')?.state).toBe('needs_you');
+
+    // the right press types Enter: the tool runs, and the buttons are taken off
+    expect((await press(go, 'q2')).status).toBe(200);
+    await waitState(h, 'flight', 'idle', 15_000);
+    await waitFor(() => posts.some((post) => post.url.endsWith('/editMessageReplyMarkup')), 5000, 'the buttons taken off');
+    expect(posts.some((post) => post.url.endsWith('/answerCallbackQuery') && post.body.text === 'Sent GO')).toBe(true);
+    expect(logOf<FakeEvent & { action: string }>(h, 'flight', 'dialog').map((event) => event.action)).toEqual(['shown', 'allowed', 'shown', 'allowed']);
+
+    // the same button again is late: nothing is typed
+    expect((await press(go, 'q3')).status).toBe(200);
+    await waitFor(() => posts.some((post) => post.url.endsWith('/answerCallbackQuery') && post.body.text === 'Too late: already answered'), 5000, 'too late');
+    expect(logOf<FakeEvent & { action: string }>(h, 'flight', 'dialog').map((event) => event.action)).toHaveLength(4);
+  }, 90_000);
 
   it('34. Mass Budget and Star Chart: a request to condense is a message, the file is copied and never written by gonogo, and the chart follows the log', async () => {
     const h = await startServer();

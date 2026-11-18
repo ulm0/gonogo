@@ -58,12 +58,16 @@ export interface UplinksOptions {
   notify?: DownlinkNotify;
   /** Relay: what the slack and telegram kinds know of the messages that were forwarded. Without it no body is a reply. */
   inbound?: Inbound;
+  /** Phone approvals: a button was pressed. Gets the secret of the uplink (it signed the button); never throws, never waits for. */
+  press?(secret: string, press: ButtonPress): void;
   log: Logger;
 }
 
 export interface Uplinks {
   load(): Promise<void>;
   list(): UplinkView[];
+  /** The secret of the first enabled uplink of a kind (it signs the buttons of phone approvals), or null. Never sent to a browser. */
+  secretOf(kind: UplinkKind): string | null;
   /** The input is a JSON value from the wire; a bad one throws a HubError (bad_request, field). The answer carries the secret. */
   create(input: unknown): Promise<UplinkCreated>;
   update(id: string, input: unknown): Promise<UplinkView>;
@@ -96,7 +100,16 @@ export interface Inbound {
   telegramChat(): string | null;
 }
 /** What a kind makes of a body: a message, an answer for the sender (a ping, a challenge), or null for an event that is not for the agents. */
-export type Made = { text: string; cut: boolean; to?: string; subject?: string; inReplyTo?: string; once?: string } | { answer: unknown; note: string } | null;
+export type Made = { text: string; cut: boolean; to?: string; subject?: string; inReplyTo?: string; once?: string } | { answer: unknown; note: string } | { callback: ButtonPress } | null;
+
+/** A press of a button of a phone (Telegram `callback_query`) from the Director's own chat: what phone.ts checks and acts on. */
+export interface ButtonPress {
+  /** Telegram's id of the press, to answer it. */
+  queryId: string;
+  data: string;
+  chat: string;
+  messageId: string;
+}
 
 export interface KindDef {
   /** The request carries the secret, as a signature of the raw body or as itself. `now` is for the kinds whose signature has a time. */
@@ -321,6 +334,8 @@ export function createUplinks(options: UplinksOptions): Uplinks {
 
     list,
 
+    secretOf: (kind) => uplinks.find((u) => u.kind === kind && u.enabled)?.secret ?? null,
+
     async create(input) {
       const request = validate(input, true) as UplinkRequest;
       const kind = request.kind ?? 'generic';
@@ -398,6 +413,12 @@ export function createUplinks(options: UplinksOptions): Uplinks {
       }
       // before the rate limit: what the agents never hear of (chatter in a channel) must not use up the deliveries of a minute
       if (made === null) return IGNORED;
+      // a button is not a message: it has its own limit (phone.ts), and the answer to Telegram is plain 200
+      if ('callback' in made) {
+        record(u, 'answered', 'a button of the phone was pressed');
+        options.press?.(u.secret, made.callback);
+        return { ok: true, answer: { ok: true } };
+      }
       if ('answer' in made) {
         record(u, 'answered', made.note);
         return { ok: true, answer: made.answer };

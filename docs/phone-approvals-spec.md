@@ -1,7 +1,7 @@
 # Spec: Phone approvals (draft)
 
-Design by FIDO, 2026-11-18. Backlog section 4, "Phone approvals through Claude Code's `/remote-control`". Status: draft,
-not built.
+Design by FIDO, 2026-11-18. Backlog section 4, "Phone approvals through Claude Code's `/remote-control`". Status: built (steps 1-6;
+see the feature page for what was not verified).
 
 ## Verdict first
 

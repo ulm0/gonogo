@@ -194,7 +194,16 @@ const telegramAuthentic = (_raw: Buffer, headers: IncomingHttpHeaders, secret: s
 };
 
 function telegramRead(raw: Buffer, _headers: IncomingHttpHeaders, inbound: Inbound): Made {
-  const message = parse(raw).message;
+  const update = parse(raw);
+  // a button of phone approvals: only from the chat of the target, and what it means is for phone.ts to check (the tag)
+  const query = update.callback_query;
+  if (isRecord(query)) {
+    const chat = str(get(query, 'message.chat.id'));
+    const queryId = str(query.id);
+    if (chat === '' || chat !== inbound.telegramChat() || queryId === '' || typeof query.data !== 'string') return null;
+    return { callback: { queryId, data: query.data, chat, messageId: str(get(query, 'message.message_id')) } };
+  }
+  const message = update.message;
   const said = str(get(message, 'text')).trim();
   const chat = str(get(message, 'chat.id'));
   // a bot can be found and written to by anybody on Telegram: only the chat of the target is the Director

@@ -77,6 +77,7 @@ export default defineConfig({
           { text: 'Launch Window', link: '/features/launch-window' },
           { text: 'Uplink', link: '/features/uplink' },
           { text: 'Relay', link: '/features/relay' },
+          { text: 'Phone approvals', link: '/features/phone-approvals' },
           { text: 'Flight Plan', link: '/features/flight-plan' },
           { text: 'Downlink', link: '/features/downlink' },
           { text: 'Party Line', link: '/features/party-line' },

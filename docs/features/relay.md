@@ -40,7 +40,7 @@ Anyone who can message or mention the bot reaches the agent, and issue titles, p
 
 Browser token required. No frame, no option.
 
-- `GET /api/relay` answers `{ "slack": { "to": "C0123456789", "last": { "at", "ok", "note" } }, "telegram": null, "forward": ["message", "redline", "tminus", "flight-plan"] }`, without the token.
+- `GET /api/relay` answers `{ "slack": { "to": "C0123456789", "last": { "at", "ok", "note" } }, "telegram": null, "forward": ["message", "redline", "tminus", "flight-plan"], "phone": "off" }`, without the token.
 - `PUT /api/relay/slack`, `PUT /api/relay/telegram` take `{"token": "...", "to": "..."}` (omit `token` to keep the saved one). `DELETE` on the same paths removes the target.
 - `POST /api/relay/slack/test`, `POST /api/relay/telegram/test` send the test.
 - `PUT /api/relay/forward` takes `{"kinds": ["message", "redline"]}`.
