@@ -135,7 +135,12 @@ export function createStore(initial: ClientState): Store {
 }
 
 export const NO_GOVERNOR: GovernorView = { limit: null, working: 0, holding: 0 };
-export const NO_PROPELLANT: PropellantView = { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {} };
+const NO_WINDOWS = { '5h': 0, day: 0, week: 0, month: 0 };
+export const NO_PROPELLANT: PropellantView = {
+  room: { used: { ...NO_WINDOWS }, limits: {} },
+  agents: {},
+  cost: { room: { usd: { ...NO_WINDOWS }, unpriced: { ...NO_WINDOWS }, budget: {} }, agents: {}, days: [], pricedSince: null },
+};
 export const NO_DOWNLINK: DownlinkView = { unread: 0, items: [] };
 export const NO_DOCKING: DockingView = { station: '', docks: [] };
 

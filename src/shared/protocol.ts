@@ -497,6 +497,33 @@ export interface FuelGauge {
 export interface PropellantView {
   room: FuelGauge;
   agents: Record<string, FuelGauge>;
+  /** The same use in dollars at list prices (docs/cost-spec.md). */
+  cost: CostView;
+}
+/** A budget in dollars per window; a missing window has none. */
+export type Budget = Partial<Record<FuelWindow, number>>;
+export interface CostGauge {
+  /** Dollars of the priced use in each window (an API-equivalent estimate, not a bill). */
+  usd: Record<FuelWindow, number>;
+  /** Tokens (input + cache creation + output) in each window that could not be priced: an old ledger line or a model with no price. */
+  unpriced: Record<FuelWindow, number>;
+  budget: Budget;
+}
+/** One local calendar day of spend. */
+export interface DayCost {
+  /** YYYY-MM-DD in the server's local time. */
+  date: string;
+  usd: number;
+  unpriced: number;
+  byAgent: Record<string, number>;
+}
+export interface CostView {
+  room: CostGauge;
+  agents: Record<string, CostGauge>;
+  /** The last 14 local calendar days, oldest first. */
+  days: DayCost[];
+  /** Epoch ms of the oldest ledger line that carries a model, so it can be priced; null when none does. */
+  pricedSince: number | null;
 }
 
 /** Launch Window: a message sent by itself on a cron rule (docs/launch-window-spec.md). One entry of schedules.json. */
@@ -1036,6 +1063,8 @@ export interface GovernorRequest {
 export interface PropellantRequest {
   room?: FuelLimits;
   agents?: Record<string, FuelLimits>;
+  /** Dollar budgets; same rules as the limits. */
+  budget?: { room?: Budget; agents?: Record<string, Budget> };
 }
 /** POST /api/schedules. */
 export interface ScheduleRequest {

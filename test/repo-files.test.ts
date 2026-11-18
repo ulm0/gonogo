@@ -118,6 +118,7 @@ describe('scripts/check-pack.mjs file list', () => {
     'package/dist/shared/fuel.js',
     'package/dist/shared/cron.js',
     'package/dist/shared/livery.js',
+    'package/dist/shared/prices.js',
     'package/dist/client/index.html',
     'package/dist/client/THIRD-PARTY-NOTICES.md',
     'package/dist/client/assets/index-abc.js',
@@ -129,7 +130,7 @@ describe('scripts/check-pack.mjs file list', () => {
     expect(listProblems(complete, server)).toStrictEqual([]);
   });
 
-  it.each(['package/LICENSE', 'package/dist/client/THIRD-PARTY-NOTICES.md', 'package/dist/shared/positions.js', 'package/dist/shared/fuel.js', 'package/dist/shared/cron.js', 'package/dist/shared/livery.js'])('fails when %s is not packed', (gone) => {
+  it.each(['package/LICENSE', 'package/dist/client/THIRD-PARTY-NOTICES.md', 'package/dist/shared/positions.js', 'package/dist/shared/fuel.js', 'package/dist/shared/cron.js', 'package/dist/shared/livery.js', 'package/dist/shared/prices.js'])('fails when %s is not packed', (gone) => {
     expect(listProblems(complete.filter((entry) => entry !== gone), server)).toStrictEqual([`missing ${gone}`]);
   });
 

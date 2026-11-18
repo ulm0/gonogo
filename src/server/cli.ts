@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -40,6 +40,7 @@ import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
+import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
@@ -363,8 +364,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('launcher'),
     });
 
+    const prices = createPrices({ dir: home.dir, log: log.child('prices') });
+    await prices.load();
     const propellant = createPropellant({
       dir: home.dir,
+      prices: () => prices.table(),
+      // the 80 % budget warning: the inbox and Relay, not the Black Box (it is not a trip)
+      notify: (kind, text) => {
+        downlink.post(kind, text);
+        relay.event(kind, text);
+      },
       projectsRoot: join(env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude'), 'projects'),
       now: () => Date.now(),
       log: log.child('propellant'),
@@ -402,6 +411,20 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relay.event(kind, text);
       if (kind === 'redline') blackBox.record('redline', tripText(text));
       else if (kind === 'tminus') blackBox.record('poll', pollText(text));
+    };
+
+    /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, an agent's own only that agent. */
+    const enforce = (name: string): void => {
+      const over = propellant.over(name);
+      if (over === null || !hub) return;
+      const names = over.scope === 'room' ? hub.views().filter((v) => v.provider === 'claude').map((v) => v.name) : [name];
+      for (const n of names) {
+        try {
+          hub.trip(n, over.reason);
+        } catch (e) {
+          log.debug(`could not trip ${n}`, e);
+        }
+      }
     };
 
     let seq = home.lastMessageSeq();
@@ -457,20 +480,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return info !== null && info.running && info.generation === generation && terminalHost.write(name, data);
       },
       meter: (name, _generation, transcriptPath) => {
-        void propellant.record(name, transcriptPath).then((tokens) => {
-          if (tokens === 0 || !hub) return;
+        void propellant.record(name, transcriptPath).then((used) => {
+          if (used === 0 || !hub) return;
           web?.broadcast({ t: 'propellant', propellant: propellant.view() });
-          const over = propellant.over(name);
-          if (over === null) return;
-          // a room limit stops every Claude agent that runs, an agent's own limit only that agent
-          const names = over.scope === 'room' ? hub.views().filter((v) => v.provider === 'claude').map((v) => v.name) : [name];
-          for (const n of names) {
-            try {
-              hub.trip(n, over.reason);
-            } catch (e) {
-              log.debug(`could not trip ${n}`, e);
-            }
-          }
+          enforce(name);
         });
       },
       toolHook: (name, event, payload) => telemetry.hook(name, event, payload),
@@ -615,6 +628,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       info,
       isReady: () => ready,
       propellant: audited(propellant, blackBox.record, PROPELLANT_AUDIT),
+      prices: audited(prices, blackBox.record, PRICES_AUDIT),
+      // a changed price or budget is checked at once, not at the next reply
+      spendChanged: () => {
+        propellant.recheck();
+        for (const v of hub?.views() ?? []) if (v.provider === 'claude') enforce(v.name);
+      },
       telemetry,
       schedules: audited(schedules, blackBox.record, SCHEDULES_AUDIT),
       uplinks: audited(uplinks, blackBox.record, UPLINKS_AUDIT),
@@ -690,6 +709,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('relay close', () => relay.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
+      await step('prices close', () => prices.close());
       await step('telemetry close', () => telemetry.close());
       await step('rollout close', () => rollout.close());
       await step('clearance close', () => clearance.close());

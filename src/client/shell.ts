@@ -18,7 +18,8 @@ export type Act =
   | { kind: 'brief' }
   | { kind: 'poll' }
   | { kind: 'read' }
-  | { kind: 'livery'; slug: string };
+  | { kind: 'livery'; slug: string }
+  | { kind: 'propellant'; part: 'prices' | 'budget' };
 
 export interface Command {
   id: string;
@@ -64,6 +65,8 @@ export function commands({ agents, legends, poll, unread, livery }: CommandInput
   for (const view of Object.keys(VIEW_NAMES) as View[]) {
     out.push({ id: `view:${view}`, label: VIEW_NAMES[view], group: 'View', also: view === 'rules' ? 'settings' : '', act: { kind: 'view', view } });
   }
+  out.push({ id: 'propellant:prices', label: 'Propellant: prices', group: 'Action', also: 'cost model dollars', act: { kind: 'propellant', part: 'prices' } });
+  out.push({ id: 'propellant:budget', label: 'Propellant: budget', group: 'Action', also: 'cost dollars limit spend', act: { kind: 'propellant', part: 'budget' } });
   out.push({ id: 'hire', label: 'Staff a console', group: 'Action', also: 'hire new agent', act: { kind: 'hire' } });
   if (agents.some((a) => a.boss)) out.push({ id: 'brief', label: 'Brief FLIGHT', group: 'Action', also: 'mission message', act: { kind: 'brief' } });
   if (pollButtons(poll).includes('poll') && pollTargets(agents).length > 0) {

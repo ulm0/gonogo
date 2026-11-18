@@ -2,10 +2,10 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseTokens, tokenText } from '../src/shared/fuel.js';
+import { parseMoney, parseTokens, tokenText } from '../src/shared/fuel.js';
 import { createPropellant, lineUsage, parseLimits, parsePropellantRequest } from '../src/server/propellant.js';
 import type { Propellant } from '../src/server/propellant.js';
-import { fuelLevel, withLimit } from '../src/client/wall.js';
+import { budgetLevel, fuelLevel, withBudget, withLimit } from '../src/client/wall.js';
 import type { Logger } from '../src/shared/protocol.js';
 
 const quiet: Logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, child: () => quiet } as unknown as Logger;
@@ -47,14 +47,14 @@ afterEach(async () => {
 describe('lineUsage', () => {
   it('counts input, cache creation and output, not cache reads', () => {
     const line = JSON.stringify({ message: { id: 'msg_1', usage: { input_tokens: 2, cache_creation_input_tokens: 40, cache_read_input_tokens: 9000, output_tokens: 250 } }, timestamp: '2026-11-17T12:00:00Z' });
-    expect(lineUsage(line)).toEqual({ id: 'msg_1', at: NOW, tokens: 292 });
+    expect(lineUsage(line)).toEqual({ id: 'msg_1', at: NOW, tokens: 292, model: null, split: { i: 2, cw: 40, o: 250, cr: 9000 } });
   });
 
   it('ignores lines without usage, broken JSON and negative or odd numbers', () => {
     expect(lineUsage('{"type":"user","message":{"content":"hi"}}')).toBeNull();
     expect(lineUsage('{not json')).toBeNull();
     expect(lineUsage(JSON.stringify({ message: { usage: { output_tokens: 5 } } }))).toBeNull();
-    expect(lineUsage(JSON.stringify({ message: { id: 'm', usage: { output_tokens: -5, input_tokens: '7' } } }))).toEqual({ id: 'm', at: null, tokens: 0 });
+    expect(lineUsage(JSON.stringify({ message: { id: 'm', usage: { output_tokens: -5, input_tokens: '7' } } }))).toEqual({ id: 'm', at: null, tokens: 0, model: null, split: { i: 0, cw: 0, o: 0, cr: 0 } });
   });
 });
 
@@ -124,7 +124,9 @@ describe('Propellant', () => {
     await p.close();
     clock = NOW + 32 * 24 * HOUR;
     const later = await make();
-    expect(later.view()).toEqual({
+    const { cost, ...fuel } = later.view();
+    expect(cost.days).toHaveLength(14);
+    expect(fuel).toEqual({
       room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: { month: 5_000_000 } },
       agents: { ben: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: { day: 10 } } },
     });
@@ -184,5 +186,27 @@ describe('token amounts', () => {
     expect(fuelLevel({ ...gauge, used: { ...gauge.used, '5h': 10 } }, '5h')).toBe('ok');
     expect(withLimit({ '5h': 1 }, 'day', 5)).toEqual({ '5h': 1, day: 5 });
     expect(withLimit({ '5h': 1, day: 5 }, 'day', null)).toEqual({ '5h': 1 });
+  });
+});
+
+describe('dollars in the meter', () => {
+  it('reads dollars the way people type them', () => {
+    expect(parseMoney('12')).toBe(12);
+    expect(parseMoney('$12.40')).toBe(12.4);
+    expect(parseMoney(' 1.5k ')).toBe(1500);
+    expect(parseMoney('0.005')).toBeNull();
+    expect(parseMoney('0')).toBeNull();
+    expect(parseMoney('1.234')).toBeNull();
+    expect(parseMoney('2000k')).toBeNull();
+    expect(parseMoney('ten')).toBeNull();
+  });
+
+  it('tells the budget level and edits one window', () => {
+    const cost = { usd: { '5h': 8, day: 10, week: 1, month: 1 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: { '5h': 10, day: 10 } };
+    expect(budgetLevel(cost, '5h')).toBe('warn');
+    expect(budgetLevel(cost, 'day')).toBe('over');
+    expect(budgetLevel(cost, 'week')).toBe('none');
+    expect(withBudget({ '5h': 1 }, 'day', 5)).toEqual({ '5h': 1, day: 5 });
+    expect(withBudget({ '5h': 1, day: 5 }, 'day', null)).toEqual({ '5h': 1 });
   });
 });

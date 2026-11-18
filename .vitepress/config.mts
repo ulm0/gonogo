@@ -71,6 +71,7 @@ export default defineConfig({
           { text: 'Static fire', link: '/features/static-fire' },
           { text: 'Hold', link: '/features/hold' },
           { text: 'Propellant', link: '/features/propellant' },
+          { text: 'Cost', link: '/features/cost' },
           { text: 'Telemetry', link: '/features/telemetry' },
           { text: 'Launch Window', link: '/features/launch-window' },
           { text: 'Uplink', link: '/features/uplink' },

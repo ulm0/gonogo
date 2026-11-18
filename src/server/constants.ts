@@ -409,6 +409,9 @@ export const RELIEF_RATE_WINDOW_MS = 10 * 60_000;
 export const RELIEF_TTL_MS = 30 * 60_000;
 /** Propellant (docs/redline-propellant-spec.md): the limits and cursors file; the ledger fuel.jsonl is a log and has no version. */
 export const PROPELLANT_FILE = 'propellant.json';
+/** Cost (docs/cost-spec.md): the owner's model prices, mode 0600, and the largest budget in dollars. */
+export const PRICES_FILE = 'prices.json';
+export const BUDGET_MAX_USD = 1_000_000;
 /** Clearance (docs/engine-bay-spec.md): the values of the keys set for each agent, mode 0600. The roster keeps their names only. */
 export const KEYS_FILE = 'keys.json';
 /** Pad Check: `<bin> --version` gets this long, and its first line is cut to this many characters. */
