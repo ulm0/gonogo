@@ -37,8 +37,8 @@ export interface ClientState {
   selected: string | null;
   /** The staffing screen. A hire may start from an open seat (its position) or as a custom command. */
   form: null | { mode: 'hire'; position?: string | null; custom?: boolean } | { mode: 'edit'; name: string };
-  /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log, the Livery or the Flight Rules. */
-  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules';
+  /** Which full view is up when no form is: the room, the comm loop, Launch Window, the Flight Plan, the Downlink, the Mission Log, the Livery, the Flight Rules or Party Line. */
+  view: 'room' | 'loop' | 'window' | 'plan' | 'downlink' | 'log' | 'livery' | 'rules' | 'party';
   /** Phone only: a console is open full screen over the room. A wide page ignores it (the selected console is always in its side panel). */
   consoleOpen: boolean;
   /** Transient message animations (Envelope lives in protocol.ts so that this file needs no .tsx). */
@@ -195,6 +195,7 @@ export const showDownlink = (): void => store.setState((s) => ({ ...s, view: 'do
 export const showLog = (): void => store.setState((s) => ({ ...s, view: 'log', consoleOpen: false }));
 export const showLivery = (): void => store.setState((s) => ({ ...s, view: 'livery', consoleOpen: false }));
 export const showRules = (): void => store.setState((s) => ({ ...s, view: 'rules', consoleOpen: false }));
+export const showParty = (): void => store.setState((s) => ({ ...s, view: 'party', consoleOpen: false }));
 /** An open seat passes its position; the spare seat passes none. */
 export const openHire = (position: string | null = null): void => store.setState((s) => ({ ...s, form: { mode: 'hire', position } }));
 export const openEdit = (name: string): void => store.setState((s) => ({ ...s, form: { mode: 'edit', name } }));

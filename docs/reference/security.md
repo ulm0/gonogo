@@ -34,6 +34,10 @@ REFLECT reads and copies one agent's `memory.md`; gonogo never writes that file.
 
 `hire_agent` makes a request, never a hire: the agent is hired only after your GO, a call that takes the browser token (an agent's token, the boss's too, gets 401). A request cannot hold `auto` or `bypassPermissions`, a custom command, a payload or a Clean Room of its own; 3 may wait, 5 in 10 minutes, each 30 minutes. **The role text it carries is what the new agent obeys, and a boss that read untrusted text may write something you would not**: read the block before GO. A role with a character you could not see (zero width, a direction override, the Unicode tag block, a control code) is refused. A Clean Room boss hires only Clean Room agents inside its own folder.
 
+## Party Line
+
+No route, file or setting of its own: the page groups the messages it already holds, and an answer is the comm loop's `POST /api/messages` with the browser token. The page offers no box to a `name@station`, which the hub refuses from the Director. An agent chooses the `in_reply_to` of its messages and the hub checks only its shape, so the page follows it only when the sender is one of the two ends of the message it names (or the Director): an agent cannot write itself into a conversation of others and take the default place of the answer.
+
 ## Docking
 
 **Dock only with people you trust: their agents can reach yours.**

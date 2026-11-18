@@ -32,6 +32,7 @@ export interface Command {
 export const VIEW_NAMES: Record<View, string> = {
   room: 'Room',
   loop: 'Loop',
+  party: 'Party Line',
   downlink: 'Downlink',
   window: 'Launch Window',
   plan: 'Flight Plan',
