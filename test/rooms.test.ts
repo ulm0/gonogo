@@ -109,7 +109,7 @@ describe('the supervisor', () => {
     await until(async () => (await listed(s)).every((r) => r.state === 'running'));
     const rooms = await listed(s);
     expect(rooms.map((r) => r.id)).toEqual(['main', 'team']);
-    expect(rooms[0]).toMatchObject({ agents: 2, needsYou: 1 });
+    expect(rooms[0]).toMatchObject({ agents: 2, needsYou: 1, working: 1, lastActivity: 1_700_000_900_000, tabName: 'Fake tab' });
     // the room's own settings, not the supervisor's
     const main = JSON.parse(readFileSync(join(home, 'started-with'), 'utf8')) as { args: string[]; home: string; port: string | null };
     expect(main.home).toBe(home);
@@ -191,7 +191,8 @@ describe('the supervisor', () => {
     const token = s.directorToken;
     const html = await (await api(s, '/', null)).text();
     expect(html).toContain('<link rel="stylesheet" href="/assets/index-abc123.css">');
-    expect(html).toMatch(/class="module"/);
+    expect(html).toMatch(/class="topbar"/);
+    expect(html).toContain('src="/lockup.svg"');
     const css = await api(s, '/assets/index-abc123.css', null);
     expect([css.status, css.headers.get('content-type')]).toEqual([200, 'text/css']);
     expect(await css.text()).toBe('.tile{color:red}');
@@ -351,16 +352,39 @@ describe('the supervisor', () => {
       expect(await running(s, 'team')).toBe(true);
     }, 40_000);
 
-    it('the list page has the forms, and its script is valid JavaScript that the CSP hash covers', async () => {
+    it('the list page has the forms, and each of its scripts is valid JavaScript that the CSP hash covers', async () => {
       const s = await supervise();
       const res = await api(s, '/', null);
       const html = await res.text();
       expect(html).toContain('NEW ROOM');
       expect(html).toMatch(/<input class="input" name="id"/);
-      const script = /<script>([^]*)<\/script>/.exec(html)?.[1] ?? '';
-      expect(() => new vm.Script(script)).not.toThrow();
-      const hash = `'sha256-${createHash('sha256').update(script, 'utf8').digest('base64')}'`;
-      expect(res.headers.get('content-security-policy')).toContain(`script-src ${hash}`);
+      const scripts = [...html.matchAll(/<script>([^]*?)<\/script>/g)].map((m) => m[1] ?? '');
+      expect(scripts).toHaveLength(2);
+      for (const script of scripts) {
+        expect(() => new vm.Script(script)).not.toThrow();
+        const hash = `'sha256-${createHash('sha256').update(script, 'utf8').digest('base64')}'`;
+        expect(res.headers.get('content-security-policy')).toContain(hash);
+      }
+      expect(res.headers.get('content-security-policy')).toContain("img-src 'self'");
+    });
+
+    it('the list page shows the version and serves the logo of the built client', async () => {
+      const client = join(home, 'client2');
+      mkdirSync(client, { recursive: true });
+      writeFileSync(join(client, 'index.html'), '<html></html>');
+      writeFileSync(join(client, 'lockup.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+      mkdirSync(join(client, 'assets'));
+      sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '' }, staticDir: client, version: '9.8.7"<b>' });
+      const html = await (await api(sup, '/', null)).text();
+      expect(html).toContain('gonogo 9.8.7&#34;&#60;b&#62;');
+      expect(html).not.toContain('<b>');
+      const logo = await api(sup, '/lockup.svg', null);
+      expect([logo.status, logo.headers.get('content-type')]).toEqual([200, 'image/svg+xml']);
+      expect((await api(sup, '/lockup.png', null)).status).toBe(404);
+    });
+
+    it('the logo shipped to the page is the one of the brand folder', () => {
+      expect(readFileSync(new URL('../public/lockup.svg', import.meta.url), 'utf8')).toBe(readFileSync(new URL('../docs/brand/lockup.svg', import.meta.url), 'utf8'));
     });
   });
 

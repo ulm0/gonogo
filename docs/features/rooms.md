@@ -38,7 +38,7 @@ one (a graceful stop: SIGTERM, then SIGKILL after 12 s). `gonogo rooms` takes `-
 **If the supervisor is killed** (`kill -9`, the machine's out-of-memory killer), each room sees the pipe it was started with close and shuts down gracefully, so no room is left running on a port nobody knows, and the next `gonogo rooms` starts clean. A plain `gonogo` that was left running on the same home still holds its lock: stop it first. At most 12 rooms: each is a Node process (and a
 pty host with `--pty-host`), so count tens of megabytes each.
 
-Open the printed address (the list page wears the app's own styles, taken from the built client): the list shows each room with its agents and how many need you, and OPEN goes to `/r/<id>/`. In a room,
+Open the printed address. The list page is dressed like the app: the top bar with the logo, the version corner in the bottom right and the livery you chose (it reads the one the room pages keep in this browser; a browser that never opened a room shows the default). It takes its styles from the built client, so without a build it falls back to plain ones. Each room is a card like a console tile of the Room view: a light (green running, amber blinking when something needs you, red when it crashed, dim when stopped), its name, a state word (the light is never the only sign), the agents running of all, how many need you and how many are working, the last activity, the tab name when one is set, and `r/<id>`. A crashed room shows its reason. OPEN goes to `/r/<id>/` (a key that cannot be pressed while the room is not running). The room's name is the one you gave it, else its id; main is called Main. With only main, the page offers a new room. In a room,
 **Rooms** in the Patch Panel (Cmd+K) goes back to the list.
 
 ## Plain gonogo is one room
@@ -47,8 +47,8 @@ Open the printed address (the list page wears the app's own styles, taken from t
 
 ## Add, rename and remove from the page
 
-The list page has a **NEW ROOM** form (an id, and a name if you want one) and, on every room but main, **RENAME** and **REMOVE**. REMOVE
-asks first, and says that the room's folder stays: it only takes the room off the list and stops it (its agents stop gracefully, as in
+The list page has a **NEW ROOM** key (top bar) that opens a form with an id and, if you want one, a name; and, on every room but main, **RENAME** (the name becomes a field in the card; Enter saves, Escape cancels) and **REMOVE**. REMOVE
+asks first, in the card (focus lands on KEEP), and says that the room's folder stays: it only takes the room off the list and stops it (its agents stop gracefully, as in
 `gonogo rooms remove`). The same calls are on the supervisor's own port, for scripts: `GET /api/rooms`, `POST /api/rooms` `{ "id", "name"? }`,
 `PATCH /api/rooms/<id>` `{ "name" }` and `DELETE /api/rooms/<id>`, with the Director token as a Bearer header (a room's own token is 401), a JSON
 body of at most 4 KB, and an Origin that is this server's own when there is one. A bad id or name is 400, main is refused (400), a
