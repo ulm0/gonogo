@@ -22,6 +22,7 @@ import type {
   HireRequest,
   Worktree,
   RemoteControl,
+  PermissionRules,
   HubEvent,
   Hub,
   InputEffect,
@@ -87,6 +88,7 @@ import type { Recorder } from './recorder.js';
 import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { ModelDefaultsStore } from './models.js';
+import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
 import type { Rollout } from './rollout.js';
 import type { Schedules } from './schedules.js';
@@ -143,6 +145,8 @@ export interface WebOptions {
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'setPhone' | 'test'>;
   /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   models?: Pick<ModelDefaultsStore, 'view' | 'set'>;
+  /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
+  permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
   docking?: Pick<Docking, 'view' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
@@ -355,7 +359,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, model, keys } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, model, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -393,6 +397,11 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
   if (remoteControl !== undefined) {
     if (typeof remoteControl !== 'object' || remoteControl === null || Array.isArray(remoteControl)) return fieldError('remoteControl', 'an object');
     value.remoteControl = remoteControl as RemoteControl;
+  }
+  // the hub reads the lists and names the rule that is wrong
+  if (permissions !== undefined) {
+    if (typeof permissions !== 'object' || permissions === null || Array.isArray(permissions)) return fieldError('permissions', 'an object');
+    value.permissions = permissions as PermissionRules;
   }
   // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
   if (model !== undefined) {
@@ -473,6 +482,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.remoteControl !== undefined) {
     if (o.remoteControl !== null && (typeof o.remoteControl !== 'object' || Array.isArray(o.remoteControl))) return fieldError('remoteControl', 'an object or null');
     value.remoteControl = o.remoteControl as RemoteControl | null;
+  }
+  if (o.permissions !== undefined) {
+    if (o.permissions !== null && (typeof o.permissions !== 'object' || Array.isArray(o.permissions))) return fieldError('permissions', 'an object or null');
+    value.permissions = o.permissions as PermissionRules | null;
   }
   if (o.model !== undefined) {
     if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');
@@ -1115,6 +1128,18 @@ export function createWebServer(options: WebOptions): WebServer {
           const body = await jsonObject(req, res);
           // the router has decoded the segment already: decoding again made a lone % throw (a 500)
           if (body) sendJson(res, 200, await models.set(s[2] ?? '', body.model));
+        },
+      };
+    }
+    if (s[1] === 'permissions' && s.length === 2) {
+      const rules = options.permissions;
+      if (!rules) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, rules.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await rules.set(body));
         },
       };
     }

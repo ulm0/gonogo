@@ -23,6 +23,7 @@ import type {
   CleanRoom,
   Worktree,
   RemoteControl,
+  PermissionRules,
   EditRequest,
   ExitInfo,
   ExitSummary,
@@ -136,6 +137,7 @@ import {
 import { parseCleanRoom } from './cleanroom.js';
 import { parseWorktree } from './worktree.js';
 import { parseRemoteControl } from './remotecontrol.js';
+import { parsePermissions } from './permissions.js';
 import { checkKeys } from './clearance.js';
 import { parsePayload, payloadRefusal } from './payload.js';
 
@@ -162,6 +164,8 @@ const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 /** The payload of a record as text, for comparing: null when it has none. */
 const payloadKey = (record: AgentRecord): string | null => (record.payload === undefined ? null : JSON.stringify(record.payload));
+/** The tool rules of a record as text, for comparing. */
+const rulesKey = (record: AgentRecord): string | null => (record.permissions === undefined ? null : JSON.stringify(record.permissions));
 /** The Remote Control setting of a record as text, for comparing. */
 const remoteKey = (record: AgentRecord): string | null => (record.remoteControl === undefined ? null : JSON.stringify(record.remoteControl));
 /** The Clean Room setting of a record as text, for comparing: null when the agent runs on the host. */
@@ -392,7 +396,7 @@ interface Rt {
   /** When a Stop block was last answered: R1 waits for the title to catch up (contract 4.7). */
   lastBlockAt: number | null;
   /** role, dir, mode, command and payload (as JSON text) as of the last spawn, for the `dirty` flag. */
-  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; worktree: string | null; remoteControl: string | null; engine: string } | null;
+  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; worktree: string | null; remoteControl: string | null; permissions: string | null; engine: string } | null;
   /** Custom provider only: the output counter at the last sweep, when it last grew, and when the process was spawned. */
   custom: { bytes: number; activeAt: number | null; since: number };
   /** The flag the last start used, null until the launcher answered. */
@@ -642,6 +646,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           running.cleanRoom !== cleanRoomKey(record) ||
           running.worktree !== worktreeKey(record) ||
           running.remoteControl !== remoteKey(record) ||
+          running.permissions !== rulesKey(record) ||
           running.engine !== engineKey(record)),
       generation: rt.generation,
       exit: rt.exit ? { ...rt.exit } : null,
@@ -652,6 +657,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       cleanRoom: record.cleanRoom ?? null,
       worktree: record.worktree ?? null,
       remoteControl: record.remoteControl ?? null,
+      permissions: record.permissions ?? null,
       model: record.model ?? null,
       keys: { ...record.keys },
       doing: rt.doing,
@@ -1683,7 +1689,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.pointed.clear();
     rt.screenClearSince = null;
     rt.lastBlockAt = null;
-    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), engine: engineKey(rt.record) };
+    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), worktree: worktreeKey(rt.record), remoteControl: remoteKey(rt.record), permissions: rulesKey(rt.record), engine: engineKey(rt.record) };
     rt.flag = flag;
     // The browser reacts to a new generation by attaching, so the frame waits until the process exists in the terminal host.
     rt.frameHold = true;
@@ -1897,6 +1903,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.worktree = from.worktree;
     if (from.remoteControl === undefined) delete target.remoteControl;
     else target.remoteControl = from.remoteControl;
+    if (from.permissions === undefined) delete target.permissions;
+    else target.permissions = from.permissions;
     if (from.model === undefined) delete target.model;
     else target.model = from.model;
     if (from.keys === undefined) delete target.keys;
@@ -1933,6 +1941,14 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const refused = checked.payload && payloadRefusal(provider, checked.payload);
     if (refused) throw new HubError('bad_request', refused.error, refused.field);
     return checked.payload;
+  }
+
+  /** Tool rules: lists of Claude Code rules, Claude Code only. A bad one is 400, field permissions. */
+  function checkPermissions(provider: Provider, value: unknown): PermissionRules | undefined {
+    const checked = parsePermissions(value, provider);
+    if (!checked.ok) throw new HubError('bad_request', checked.error, 'permissions');
+    // no rule at all is the same as none: the room's apply
+    return Object.keys(checked.permissions).length === 0 ? undefined : checked.permissions;
   }
 
   /** A Remote Control setting: an object, Claude Code only, not with a Clean Room. A bad one is 400, field remoteControl. */
@@ -2048,6 +2064,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       await checkSkills(payload);
       const cleanRoom = req.cleanRoom === undefined ? undefined : await checkCleanRoom(provider, req.cleanRoom, dir);
       const worktree = req.worktree === undefined ? undefined : await checkWorktree(req.worktree, dir, req.cleanRoom);
+      const permissions = req.permissions === undefined ? undefined : checkPermissions(provider, req.permissions);
       const remoteControl = req.remoteControl === undefined ? undefined : checkRemoteControl(provider, req.remoteControl, cleanRoom !== undefined);
       assertOpen();
       const record: AgentRecord = {
@@ -2067,6 +2084,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (cleanRoom) record.cleanRoom = cleanRoom;
       if (worktree) record.worktree = worktree;
       if (remoteControl) record.remoteControl = remoteControl;
+      if (permissions) record.permissions = permissions;
       if (model) record.model = model;
       if (kept?.names) record.keys = kept.names;
       hiring.set(name, record);
@@ -2095,9 +2113,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'model', 'keys'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'model', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, model, keys');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, model, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
@@ -2153,6 +2171,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       } else if (next.remoteControl !== undefined && next.cleanRoom !== undefined && req.cleanRoom !== undefined) {
         throw new HubError('bad_request', 'a Clean Room agent cannot use Remote Control: turn Remote Control off first', 'cleanRoom');
       }
+      if (req.permissions !== undefined) {
+        const rules = req.permissions === null ? undefined : checkPermissions(current.provider ?? 'claude', req.permissions);
+        if (rules) next.permissions = rules;
+        else delete next.permissions;
+      }
       if (req.model !== undefined) {
         const model = checkModel(current.provider ?? 'claude', req.model);
         if (model) next.model = model;
@@ -2185,6 +2208,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         cleanRoomKey(next) !== cleanRoomKey(current) ||
         worktreeKey(next) !== worktreeKey(current) ||
         remoteKey(next) !== remoteKey(current) ||
+        rulesKey(next) !== rulesKey(current) ||
         engineKey(next) !== engineKey(current);
       if (!changed) return buildView(rt);
 

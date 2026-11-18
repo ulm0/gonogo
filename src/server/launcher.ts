@@ -12,6 +12,7 @@ import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PROVID
 import type {
   AgentIdentity,
   AgentRecord,
+  PermissionRules,
   Launcher,
   LauncherOptions,
   McpServer,
@@ -55,6 +56,7 @@ import {
 import { prepareWorktree, worktreeBranch } from './worktree.js';
 import type { WorktreePlace } from './worktree.js';
 import { remoteControlName } from './remotecontrol.js';
+import { effectiveRules } from './permissions.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { buildProviderStart } from './providers.js';
@@ -94,7 +96,11 @@ export function buildRoleText(name: string, role: string, memoryPath: string): s
   return ROLE_PREAMBLE.replace(/\{(name|memory|role)\}/g, (_, key: string) => values[key]);
 }
 
+const unique = (items: string[]): string[] => [...new Set(items)];
+
 export function buildSettings(input: {
+  /** Tool permissions (docs/features/permissions.md): the agent's own rules, else the room's. gonogo's denials and its memory rules stay. */
+  rules?: PermissionRules;
   hubUrl: string;
   name: string;
   mode: PermissionMode;
@@ -124,7 +130,11 @@ export function buildSettings(input: {
     tui: 'fullscreen',
     promptSuggestionEnabled: false,
     crossSessionInbound: 'refuse',
-    permissions: { deny: [...DENIED_TOOLS], allow: [`Read(${memoryRule})`, `Edit(${memoryRule})`] },
+    permissions: {
+      deny: unique([...DENIED_TOOLS, ...(input.rules?.deny ?? [])]),
+      allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, ...(input.rules?.allow ?? [])]),
+      ...(input.rules?.ask?.length ? { ask: unique(input.rules.ask) } : {}),
+    },
   };
   if (input.mode === 'bypassPermissions') settings.skipDangerousModePermissionPrompt = true;
   if (input.apiKeyHelper) settings.apiKeyHelper = API_KEY_HELPER_COMMAND;
@@ -548,7 +558,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const mcpPath = join(base, MCP_FILE);
       const keys = options.keys?.(name) ?? {};
       const moveApiKey = seed && hasText(keys.ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY);
-      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey });
+      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: effectiveRules(agent.permissions, options.defaultPermissions?.()) });
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
       await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, agent.payload?.mcpServers), null, 2), FILE_MODE);
       const pluginDir = await writeSkillsPlugin(base, agent.payload?.skills);

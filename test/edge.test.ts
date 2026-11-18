@@ -191,6 +191,7 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     needsReason: null,
     needSeq: null,
     remoteControl: null,
+    permissions: null,
     transition: null,
     draft: false,
     held: null,
@@ -913,6 +914,23 @@ describe('home', () => {
     expect(home.loadRoster().agents[1]).not.toHaveProperty('worktree');
   });
 
+  it('round-trips tool rules, and loads a file without them', async () => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    const id = '123e4567-e89b-42d3-a456-426614174000';
+    const base = { dir: '/w', mode: 'default' as const, sessionId: id, createdAt: 1, boss: false };
+    const file: RosterFile = {
+      version: 1,
+      agents: [
+        { ...base, name: 'ana', role: 'dev', desk: 1, permissions: { allow: ['Bash(git:*)'], deny: ['WebFetch'] } },
+        { ...base, name: 'old', role: 'dev', desk: 2 },
+      ],
+    };
+    await home.saveRoster(file);
+    expect(home.loadRoster()).toEqual(file);
+    expect(home.loadRoster().agents[1]).not.toHaveProperty('permissions');
+  });
+
   it('round-trips a model and the names of keys, and the file holds no value', async () => {
     const dir = tmpDir();
     const home = openTestHome(dir);
@@ -1023,6 +1041,9 @@ describe('home', () => {
     ['a worktree that is not an object', JSON.stringify({ version: 1, agents: [agentRecord('ana', { worktree: true })] })],
     ['a worktree field it does not know', JSON.stringify({ version: 1, agents: [agentRecord('ana', { worktree: { base: 'main' } })] })],
     ['a worktree on a Clean Room agent', JSON.stringify({ version: 1, agents: [agentRecord('ana', { worktree: {}, cleanRoom: {} })] })],
+    ['tool rules that are not an object', JSON.stringify({ version: 1, agents: [agentRecord('ana', { permissions: ['Bash'] })] })],
+    ['a tool rule that is not a rule', JSON.stringify({ version: 1, agents: [agentRecord('ana', { permissions: { allow: ['rm -rf /'] } })] })],
+    ['tool rules on a gemini agent', JSON.stringify({ version: 1, agents: [agentRecord('ana', { provider: 'gemini', permissions: { allow: ['Bash'] } })] })],
     ['a payload on a custom agent', JSON.stringify({ version: 1, agents: [agentRecord('ana', { provider: 'custom', command: 'ls', payload: { mcpServers: { f: { command: 'x' } } } })] })],
   ])('refuses a roster with %s, naming the path and never resetting the file', (_what, text) => {
     const dir = tmpDir();

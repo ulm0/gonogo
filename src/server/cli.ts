@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -58,6 +58,7 @@ import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
 import { createModelDefaults } from './models.js';
+import { createPermissionDefaults } from './permissions.js';
 import { cachedLatest, createRollout, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import type { WebServer } from './web.js';
 
@@ -362,6 +363,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await clearance.load();
     const modelDefaults = createModelDefaults({ dir: home.dir, log: log.child('models') });
     await modelDefaults.load();
+    const permissionDefaults = createPermissionDefaults({ dir: home.dir, log: log.child('permissions') });
+    await permissionDefaults.load();
     const launcher = createLauncher({
       homeDir: home.dir,
       hubUrl: () => baseUrl,
@@ -370,6 +373,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       agentCmd,
       keys: (name) => clearance.values(name),
       defaultModel: (provider) => modelDefaults.get(provider),
+      defaultPermissions: () => permissionDefaults.get(),
       log: log.child('launcher'),
     });
 
@@ -691,6 +695,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       liveries: audited(liveries, blackBox.record, LIVERIES_AUDIT),
       relay: audited(relay, blackBox.record, RELAY_AUDIT),
       models: modelDefaults,
+      permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -768,6 +773,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('relief close', async () => relief.close());
       await step('relay close', () => relay.close());
       await step('models close', () => modelDefaults.close());
+      await step('permissions close', () => permissionDefaults.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
       await step('prices close', () => prices.close());
