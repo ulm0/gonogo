@@ -7,6 +7,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 - **Amazon Bedrock.** Checked against the vendors' docs and gonogo's code, not run against AWS: Claude Code is expected to work with the AWS variables as Clearance keys or in the shell (a Clean Room needs keys; it has no `~/.aws`), Bedrock ids fit the model field and show as unpriced until you add a price row. The hire form suggests the Bedrock key names. A Bedrock section in the Engine Bay page and `docs/facts/bedrock.md`.
 - **Tool permissions.** Choose what a Claude Code console's harness may do: allow, ask and deny rules (`Bash(git:*)`, `WebFetch(domain:...)`) in a console's form, with room-wide rules in Flight Rules. They go into the console's own settings file after gonogo's rules, which stay; the mode is unchanged. Other engines say "not supported".
 
+- **Live reload (opt-in).** `gonogo --pty-host` keeps the agents in a small process of their own, so `gonogo reload` (or Reload in Flight Rules) starts a new gonogo without stopping them: the turn in progress, the screen, and a Hold all survive. Tokens are saved as hashes. Off by default for one release.
+
 ## 0.2.0 (2026-11-18)
 
 Features and fixes since 0.1.2. Each was tried with the stand-in agent only: not verified with a real `claude`, `agy`, Telegram or remote control, and not in a browser.

@@ -1587,7 +1587,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         } else if (probe?.dialog) {
           setState(rt, 'needs_you', { kind: 'dialog', reason: 'a dialog was open when gonogo reloaded' });
         } else {
-          setState(rt, probe?.promptBox ? 'idle' : 'working');
+          // the input box is drawn during a turn too, so it says nothing; the window title does (an unreadable one counts as working)
+          setState(rt, titleOf(rt)?.glyph === 'idle' ? 'idle' : 'working');
         }
         syncHolds(rt);
         if (rt.state === 'idle' && rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);

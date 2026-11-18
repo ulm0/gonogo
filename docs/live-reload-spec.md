@@ -1,6 +1,6 @@
 # Spec: Live reload (draft)
 
-Design by FIDO, 2026-11-18, task t33a. Status: draft, not built. Nothing here was run: it is read from `terminal.ts`, `cli.ts`, `web.ts` and `launcher.ts`.
+Design by FIDO, 2026-11-18, task t33a. Status: built (EECOM, t34), opt-in; what it does and what was seen is in `docs/features/live-reload.md`. Differences from this draft: the listening socket is not passed (the old server closes first, the new one waits); the page key is a button in Flight Rules; `hub.pid` is not used (the home lock already refuses a second server).
 
 ## Intent
 

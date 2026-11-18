@@ -6260,10 +6260,11 @@ describe('Tool permissions: the rules of an agent (hire and edit)', () => {
 describe('live reload: a new hub takes over the agents that kept running', () => {
   const roster = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 })];
 
-  it('adopts a running agent with its generation, reads idle from the prompt box and does not start it again', async () => {
+  it('adopts a running agent with its generation, reads idle or working from the window title and does not start it again', async () => {
     const h = makeHarness({ roster, adoptable: async () => ({ running: [{ name: 'flight', generation: 5 }, { name: 'ana', generation: 7 }], holds: {} }) });
     h.setScreen('ana', { cols: 80, rows: 24, promptBox: true, dialog: null, promptText: '' });
-    h.setScreen('flight', { cols: 80, rows: 24, promptBox: false, dialog: null, promptText: null });
+    h.setTitle('ana', 'idle');
+    h.setTitle('flight', 'working');
     await h.hub.start();
     await h.advance(10);
     expect(h.spawns, 'nothing is spawned for an agent that is already running').toEqual([]);

@@ -139,6 +139,8 @@ interface ServerOptions {
   updateCheck?: boolean;
   /** Live reload (scenario 38): the ptys are in a pty host that the test runs itself. */
   ptyHost?: boolean;
+  /** The port of an earlier server (scenario 38): the agents it started keep posting their hooks there. Default any. */
+  port?: number;
 }
 
 const harnesses: Harness[] = [];
@@ -155,7 +157,7 @@ async function startServer(options: ServerOptions = {}): Promise<Harness> {
   let run: Running;
   try {
     run = await startGonogo({
-      port: 0,
+      port: options.port ?? 0,
       host: '127.0.0.1',
       home,
       cwd: tmp,
@@ -2863,8 +2865,9 @@ describe('end to end with the stand-in agent', () => {
       const before = await view(first, 'ana');
       const pidBefore = (await api<{ agents: Array<{ name: string; pid: number | null }> }>(first, 'GET', '/api/state')).body.agents.find((a) => a.name === 'ana')?.pid ?? null;
 
+      const port = first.run.port;
       await first.run.release(); // what gonogo reload does to the old server: it ends, the agents stay
-      const second = await startServer({ home, ptyHost: true });
+      const second = await startServer({ home, ptyHost: true, port }); // the same port: the agents' hook and MCP URLs name it
       expect(await view(second, 'ana')).toMatchObject({ state: 'working', generation: before?.generation });
       expect(await view(second, 'ben')).toMatchObject({ state: 'needs_you', needsKind: 'redline' });
       const pidAfter = (await api<{ agents: Array<{ name: string; pid: number | null }> }>(second, 'GET', '/api/state')).body.agents.find((a) => a.name === 'ana')?.pid ?? null;
