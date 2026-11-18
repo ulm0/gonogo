@@ -10,6 +10,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 - **Container.** The image has the `gh` CLI (2.103.3, checksum verified), and the config of `gh` and of `git config --global` lives in `/state/config`, so a login survives a restart. `POST /api/poll/hold` on a poll already on hold answers "the poll is already on hold".
 - **Worktrees.** An `Own git worktree` box starts an agent in its own git worktree and branch (`~/.gonogo/worktrees/<name>`, `gonogo/<name>`), for every engine; the remove dialog can delete the worktree and branch, and git keeps unsaved or unmerged work.
 - **Default models.** Flight Rules sets a room model for each engine; consoles with no model of their own use it at their next start. The model field says where its value comes from and that a `/model` typed in a console is not kept.
+- **Notifications.** A switch in Flight Rules (off by default, per browser) shows a browser notification for a message to you, a T-minus poll that holds or comes out go, and a Relief request, while the tab is hidden or not focused. Clicking it opens the view. The tab title counts what waits, with or without permission.
 
 ## 0.1.2 (2026-11-18)
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
 import { Loop } from './Activity.js';
+import { startNotifications } from './notify-browser.js';
 import * as api from './api.js';
 import { BlackBox } from './BlackBox.js';
 import { Downlink } from './Downlink.js';
@@ -422,6 +423,8 @@ function Office(): ReactElement {
 }
 
 export function App(): ReactElement {
+  // browser notifications and the unread count in the tab title: the switch is in Flight Rules, and nothing asks for permission here
+  useEffect(() => startNotifications(), []);
   const connection = useStore((s) => s.connection);
   const loading = useStore((s) => s.info === null);
   const gone = useStore((s) => s.failedAttempts >= RECONNECT_SERVER_GONE_AFTER);
