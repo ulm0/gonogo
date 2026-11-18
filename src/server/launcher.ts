@@ -59,7 +59,8 @@ import { remoteControlName } from './remotecontrol.js';
 import { effectiveRules } from './permissions.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
-import { buildProviderStart } from './providers.js';
+import { isRecord } from './hooks.js';
+import { buildProviderStart, shellQuote, STATUS_LINE_SHIM } from './providers.js';
 import type { OtherProvider } from './providers.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -98,6 +99,17 @@ export function buildRoleText(name: string, role: string, memoryPath: string): s
 
 const unique = (items: string[]): string[] => [...new Set(items)];
 
+/** The command of the Director's own status line in his user settings, or undefined. Read only: gonogo never writes that file. */
+export async function ownStatusLine(configDir: string): Promise<string | undefined> {
+  try {
+    const saved: unknown = JSON.parse(await readFile(join(configDir, 'settings.json'), 'utf8'));
+    const line = isRecord(saved) ? saved.statusLine : undefined;
+    return isRecord(line) && line.type === 'command' && typeof line.command === 'string' && line.command.trim() !== '' ? line.command : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildSettings(input: {
   /** Tool permissions (docs/features/permissions.md): the agent's own rules, else the room's. gonogo's denials and its memory rules stay. */
   rules?: PermissionRules;
@@ -106,6 +118,8 @@ export function buildSettings(input: {
   mode: PermissionMode;
   memoryPath: string;
   apiKeyHelper: boolean;
+  /** Plan quota: the status line that posts `rate_limits` to the hub; `next` is the Director's own status-line command, which keeps its output. Absent: none. */
+  statusLine?: { node: string; next?: string };
 }): Record<string, unknown> {
   const hooks: Record<string, unknown> = {};
   for (const event of HOOK_EVENTS) {
@@ -138,6 +152,11 @@ export function buildSettings(input: {
   };
   if (input.mode === 'bypassPermissions') settings.skipDangerousModePermissionPrompt = true;
   if (input.apiKeyHelper) settings.apiKeyHelper = API_KEY_HELPER_COMMAND;
+  if (input.statusLine) {
+    const url = `${input.hubUrl}${HOOK_PATH_PREFIX}${input.name}/StatusLine`;
+    const words = [input.statusLine.node, '-e', STATUS_LINE_SHIM, url, ...(input.statusLine.next ? [input.statusLine.next] : [])];
+    settings.statusLine = { type: 'command', command: words.map(shellQuote).join(' '), refreshInterval: 300 };
+  }
   return settings;
 }
 
@@ -592,7 +611,11 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const mcpPath = join(base, MCP_FILE);
       const keys = options.keys?.(name) ?? {};
       const moveApiKey = seed && hasText(keys.ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY);
-      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: effectiveRules(agent.permissions, options.defaultPermissions?.()) });
+      // Plan quota: the shim goes in always; the Director's own status line (user settings, read only) is chained, never replaced. Not in a container: his command is a host path.
+      const ownConfig = hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : join(homedir(), '.claude');
+      const next = clean === null ? await ownStatusLine(ownConfig) : undefined;
+      const statusLine = { node: clean === null ? process.execPath : 'node', ...(next === undefined ? {} : { next }) };
+      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: effectiveRules(agent.permissions, options.defaultPermissions?.()), statusLine });
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
       await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, agent.payload?.mcpServers), null, 2), FILE_MODE);
       const pluginDir = await writeSkillsPlugin(base, agent.payload?.skills);

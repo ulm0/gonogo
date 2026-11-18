@@ -46,6 +46,7 @@ import { TOKENS_FILE } from './ptyhostproto.js';
 import { createHoldStore, relaunch, requestReload, runPtyHost, spawnHostProcess } from './reload.js';
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
+import { createQuota } from './quota.js';
 import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createRelay } from './relay.js';
@@ -449,8 +450,20 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       const doing = flightPlan().find((t) => t.assignee === agent && t.status === 'doing');
       return doing === undefined ? {} : { task: doing.id, ...(doing.missionId === undefined ? {} : { mission: doing.missionId }) };
     };
+    const quota = createQuota({
+      dir: home.dir,
+      now: () => Date.now(),
+      // the 80 and 95 % alerts: the inbox and Relay, not the Black Box (nothing was tripped)
+      notify: (kind, text) => {
+        downlink.post(kind, text);
+        relay.event(kind, text);
+      },
+      log: log.child('quota'),
+    });
+    await quota.load();
     const propellant = createPropellant({
       dir: home.dir,
+      plan: () => quota.view(),
       attribute: workingOn,
       prices: () => prices.table(),
       // the 80 % budget warning: the inbox and Relay, not the Black Box (it is not a trip)
@@ -772,6 +785,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('update'),
     });
     const webServer = createWebServer({
+      statusLine: (name, body) => {
+        if (quota.report(name, body)) web?.broadcast({ t: 'propellant', propellant: propellant.view() });
+      },
       host,
       port,
       browserToken: home.browserToken,
@@ -903,6 +919,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('permissions close', () => permissionDefaults.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
+      await step('quota close', () => quota.close());
       await step('prices close', () => prices.close());
       await step('telemetry close', () => telemetry.close());
       await step('rollout close', () => rollout.close());

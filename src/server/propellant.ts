@@ -16,6 +16,7 @@ import { join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { AGENT_NAME_PATTERN, FUEL_WINDOWS } from '../shared/protocol.js';
 import type {
+  PlanQuota,
   SpendOf,
   Budget,
   CostGauge,
@@ -202,6 +203,8 @@ export interface PropellantOptions {
   log: Logger;
   /** The price table (defaults and the owner's rows). Without it the list prices are used. */
   prices?: () => Record<string, ModelPrice>;
+  /** The plan quota from the status line (docs/quota-spec.md), shown beside the ledger. */
+  plan?: () => PlanQuota | null;
   /** Downlink: a budget has reached 80 %. */
   notify?: DownlinkNotify;
   /** The mission and task an agent is on now (its `doing` task). Read when its replies are counted and when a mission budget is checked. */
@@ -486,7 +489,8 @@ export function createPropellant(options: PropellantOptions): Propellant {
     const names = new Set([...entries.map((e) => e.agent), ...Object.keys(saved.agents)]);
     for (const name of [...names].sort()) agents[name] = gauge(name, saved.agents[name] ?? {});
     rearm();
-    return { room: gauge(null, saved.room), agents, cost: costView() };
+    const plan = options.plan?.() ?? null;
+    return { room: gauge(null, saved.room), agents, cost: costView(), ...(plan === null ? {} : { plan }) };
   };
 
   return {

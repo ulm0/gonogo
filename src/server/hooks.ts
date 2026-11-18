@@ -15,6 +15,8 @@ import { AGENT_NAME_PATTERN, MAX_HOOK_BODY_BYTES } from './constants.js';
 export interface HookDeps {
   hub: Pick<Hub, 'onHook'>;
   resolveToken(token: string): AgentIdentity | null;
+  /** Plan quota: the body of a status-line post (docs/quota-spec.md). Not a hook event, so the hub never sees it. */
+  statusLine?(agent: string, body: unknown): void;
   log: Logger;
 }
 
@@ -138,6 +140,9 @@ export function readBody(req: IncomingMessage, limit: number): Promise<BodyResul
 
 /* ---- the hook endpoint ---- */
 
+/** The name of the status-line post beside the hook events. */
+const STATUS_LINE = 'StatusLine';
+
 function isHookEvent(event: string): event is HookEvent {
   return (HOOK_EVENTS as readonly string[]).includes(event);
 }
@@ -167,7 +172,7 @@ export function createHookHandler(
       sendMethodNotAllowed(res, 'POST');
       return;
     }
-    if (!nameRe.test(agentName) || !isHookEvent(event)) {
+    if (!nameRe.test(agentName) || !(isHookEvent(event) || event === STATUS_LINE)) {
       sendNotFound(res);
       return;
     }
@@ -193,6 +198,11 @@ export function createHookHandler(
       return;
     }
 
+    if (event === STATUS_LINE) {
+      deps.statusLine?.(agentName, payload);
+      sendJson(res, 200, {});
+      return;
+    }
     let reply: HookReply;
     try {
       // the hub reads every field defensively (protocol.ts), so the unchecked shape is what it expects

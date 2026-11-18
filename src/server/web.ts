@@ -156,6 +156,8 @@ export interface WebOptions {
   reload?: () => { ok: true; note: string } | { ok: false; reason: string };
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'setPhone' | 'test'>;
   /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
+  /** Plan quota: a status-line post of an agent (docs/quota-spec.md). */
+  statusLine?: (agent: string, body: unknown) => void;
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
@@ -548,7 +550,7 @@ export function createWebServer(options: WebOptions): WebServer {
   const { hub, terminals, log } = options;
   const nameRe = new RegExp(AGENT_NAME_PATTERN);
   const tokenDigest = sha256(options.browserToken);
-  const hookHandler = createHookHandler({ hub, resolveToken: options.resolveToken, log: log.child('hook') });
+  const hookHandler = createHookHandler({ hub, resolveToken: options.resolveToken, statusLine: options.statusLine, log: log.child('hook') });
   const mcpHandler = createMcpHandler({
     hub,
     resolveToken: options.resolveToken,

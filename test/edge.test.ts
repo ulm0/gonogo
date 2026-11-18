@@ -1464,6 +1464,19 @@ function onHookCalls(calls: Call[]): unknown[] {
 }
 
 describe('hooks', () => {
+  it('StatusLine (plan quota) needs the agent\'s own token, goes to the quota and never to the hub', async () => {
+    const seen: [string, unknown][] = [];
+    const { port, hubCalls } = await startWeb({ statusLine: (agent, body) => seen.push([agent, body]) });
+    expect((await postHook(port, '/hook/ana/StatusLine', { token: null, body: '{"rate_limits":{}}' })).status).toBe(401);
+    expect((await postHook(port, '/hook/ana/StatusLine', { token: BEN_TOKEN, body: '{"rate_limits":{}}' })).status).toBe(403);
+    expect((await postHook(port, '/hook/ana/StatusLine', { body: '[]' })).status).toBe(400);
+    expect(seen).toEqual([]);
+    const ok = await postHook(port, '/hook/ana/StatusLine', { body: '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1795518000}}}' });
+    expect(ok.status).toBe(200);
+    expect(seen).toEqual([['ana', { rate_limits: { seven_day: { used_percentage: 5, resets_at: 1795518000 } } }]]);
+    expect(onHookCalls(hubCalls)).toEqual([]);
+  });
+
   it('answers 401 without a usable agent token, and keeps serving', async () => {
     const { port, hubCalls } = await startWeb();
     const attempts: Array<string | null> = [null, 'f'.repeat(64), '', 'é'.repeat(64), TOKEN];

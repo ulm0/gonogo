@@ -6,7 +6,8 @@
 import { useState } from 'react';
 import type { CSSProperties, FormEvent, ReactElement } from 'react';
 import { FUEL_WINDOWS } from '../shared/protocol.js';
-import type { Budget, CostGauge, CostView, DayCost, FuelGauge, FuelLimits, FuelWindow } from '../shared/protocol.js';
+import type { Budget, CostGauge, CostView, DayCost, FuelGauge, FuelLimits, FuelWindow, PlanQuota } from '../shared/protocol.js';
+import { ageText, NO_PLAN_TEXT, PLAN_LABEL, planRows } from './quota.js';
 import { moneyText } from '../shared/prices.js';
 import type { ModelPrice, PricesView } from '../shared/prices.js';
 import { parseMoney, parseTokens, tokenText } from '../shared/fuel.js';
@@ -138,12 +139,37 @@ export function FuelMeter({
   );
 }
 
+/** The plan's own number from Claude Code's status line, or the plain words that there is none. */
+export function PlanBlock({ plan, now }: { plan: PlanQuota | undefined; now: number }): ReactElement {
+  if (plan === undefined) return <p className="hint fuel-plan">{NO_PLAN_TEXT}</p>;
+  const age = ageText(plan, now);
+  return (
+    <div className="fuel-plan" data-stale={plan.stale ? '' : undefined}>
+      <h3 className="label">PLAN</h3>
+      {planRows(plan, now).map((r) => (
+        <div key={r.key} className="fuel-plan-row" data-level={r.level}>
+          <span className="fuel-plan-name">{r.label}</span>
+          <div className="fuel-bar" role="meter" aria-label={`Plan ${r.label.toLowerCase()} window`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(r.pct))} aria-valuetext={r.text}>
+            <span style={{ width: `${Math.min(100, r.pct)}%`, background: r.level === "over" ? "var(--nogo)" : undefined }} />
+          </div>
+          <span className="fuel-plan-text">{r.text}</span>
+        </div>
+      ))}
+      <p className="hint">
+        {PLAN_LABEL}. {age}
+      </p>
+    </div>
+  );
+}
+
 /** The wall module: the whole room. */
 export function RoomFuel(): ReactElement {
   const room = useStore((s) => s.propellant.room);
   const cost = useStore((s) => s.propellant.cost);
+  const plan = useStore((s) => s.propellant.plan);
   return (
     <>
+      <PlanBlock plan={plan} now={Date.now()} />
       <FuelMeter gauge={room} cost={cost.room} who="the room" save={(limits) => api.setPropellant({ room: limits })} saveBudget={(room) => api.setPropellant({ budget: { room } })} />
       <details className="fuel-fold" id="fuel-days">
         <summary className="label">COST BY DAY</summary>

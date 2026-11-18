@@ -26,6 +26,7 @@ import {
   transcriptDirName,
 } from '../src/server/launcher.js';
 import { readCustomCommand } from '../src/server/command.js';
+import { shellQuote, STATUS_LINE_SHIM } from '../src/server/providers.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -207,6 +208,12 @@ function expectedSettings(hubUrl: string, name: string, memoryPath: string, extr
     },
     ...extra,
   };
+}
+
+/** What prepareStart writes: the settings of buildSettings plus the plan-quota status line (docs/quota-spec.md), with no chained command of the Director's. */
+function startSettings(hubUrl: string, name: string, memoryPath: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const command = [process.execPath, '-e', STATUS_LINE_SHIM, `${hubUrl}/hook/${name}/StatusLine`].map(shellQuote).join(' ');
+  return { ...expectedSettings(hubUrl, name, memoryPath, extra), statusLine: { type: 'command', command, refreshInterval: 300 } };
 }
 
 describe('parseAgentCmd', () => {
@@ -571,7 +578,7 @@ describe('prepareStart', () => {
     });
 
     const settingsText = await text(join(base, 'settings.json'));
-    expect(settingsText).toBe(JSON.stringify(expectedSettings(HUB, 'ana', memory), null, 2));
+    expect(settingsText).toBe(JSON.stringify(startSettings(HUB, 'ana', memory), null, 2));
     expect(
       settingsText.startsWith(
         '{\n  "hooks": {\n    "UserPromptSubmit": [\n      {\n        "hooks": [\n          {\n            "type": "http",\n' +
@@ -581,10 +588,10 @@ describe('prepareStart', () => {
       ),
     ).toBe(true);
     expect(
-      settingsText.endsWith(
+      settingsText.includes(
         '  },\n  "tui": "fullscreen",\n  "promptSuggestionEnabled": false,\n  "crossSessionInbound": "refuse",\n' +
           '  "permissions": {\n    "deny": [\n      "SendMessage",\n      "ListAgents"\n    ],\n    "allow": [\n' +
-          `      "Read(//${memory.slice(1)})",\n      "Edit(//${memory.slice(1)})"\n    ]\n  }\n}`,
+          `      "Read(//${memory.slice(1)})",\n      "Edit(//${memory.slice(1)})"\n    ]\n  },\n`,
       ),
     ).toBe(true);
     expect(await text(join(base, 'mcp.json'))).toBe(
@@ -692,7 +699,7 @@ describe('prepareStart', () => {
       expect(prepared.spec.args.slice(2, 4)).toStrictEqual(['--permission-mode', mode]);
       const memory = join(home, 'agents', name, 'memory.md');
       const extra = mode === 'bypassPermissions' ? { skipDangerousModePermissionPrompt: true } : {};
-      expect(await json(agentFile(name, 'settings.json'))).toStrictEqual(expectedSettings(HUB, name, memory, extra));
+      expect(await json(agentFile(name, 'settings.json'))).toStrictEqual(startSettings(HUB, name, memory, extra));
     }
   });
 
@@ -1392,7 +1399,7 @@ describe('seed mode', () => {
       expect(spec.env.GONOGO_API_KEY).toBe(keyEnv.ANTHROPIC_API_KEY);
       expect(spec.env.IS_DEMO).toBe('1');
       expect(await json(agentFile('ana', 'settings.json'))).toStrictEqual(
-        expectedSettings(HUB, 'ana', agentFile('ana', 'memory.md'), { apiKeyHelper: 'printenv GONOGO_API_KEY' }),
+        startSettings(HUB, 'ana', agentFile('ana', 'memory.md'), { apiKeyHelper: 'printenv GONOGO_API_KEY' }),
       );
       expect(logs.lines.filter((line) => line.level === 'warn')).toStrictEqual([]);
     });
@@ -1401,7 +1408,7 @@ describe('seed mode', () => {
       for (const env of [baseEnv(), baseEnv({ ANTHROPIC_API_KEY: '' })]) {
         const { spec } = await seedLauncher({ env }).prepareStart(agent(), START);
         expect('GONOGO_API_KEY' in spec.env).toBe(false);
-        expect(await json(agentFile('ana', 'settings.json'))).toStrictEqual(expectedSettings(HUB, 'ana', agentFile('ana', 'memory.md')));
+        expect(await json(agentFile('ana', 'settings.json'))).toStrictEqual(startSettings(HUB, 'ana', agentFile('ana', 'memory.md')));
       }
     });
 

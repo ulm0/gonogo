@@ -30,6 +30,7 @@ import {
   LIVERY_FILE,
   PRICES_FILE,
   PROPELLANT_FILE,
+  QUOTA_FILE,
   RELAY_FILE,
   ROLLOUT_FILE,
   SCHEDULES_FILE,
@@ -65,6 +66,7 @@ export const FORMATS: Format[] = [
   PROPELLANT_FILE,
   PRICES_FILE,
   KEYS_FILE,
+  QUOTA_FILE,
   ROLLOUT_FILE,
   LIVERY_DIR + ALL_JSON,
 ].map((file): Format => (file === PROPELLANT_FILE ? { file, steps: [], unversionedIs1: true } : { file, steps: [] }));

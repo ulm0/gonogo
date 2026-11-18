@@ -72,6 +72,23 @@ export const HOOK_SHIM = [
   'process.stdout.write(r.ok?await r.text():"{}")}catch{process.stdout.write("{}")}})',
 ].join('');
 
+/**
+ * Plan quota (docs/quota-spec.md): Claude Code runs this as the agent's status line with `node -e`. It reads the status-line JSON from
+ * stdin, keeps ONLY `rate_limits` (nothing else of it leaves the process: no cwd, ids, cost or transcript path) and posts it to
+ * argv[1] with the agent's token (GONOGO_TOKEN, which claude has in its environment). argv[2], when given, is the Director's own
+ * status-line command: it gets the same JSON and its output is what is shown; else one short line. Any failure still prints a line.
+ * No single quote inside: it is passed in single quotes.
+ */
+export const STATUS_LINE_SHIM = [
+  'let d="";process.stdin.on("data",c=>d+=c).on("end",async()=>{let o="";',
+  'try{const j=JSON.parse(d||"{}"),r=j.rate_limits;',
+  'const w=r&&(r.seven_day||r.five_hour);if(w&&typeof w.used_percentage==="number")o="plan "+Math.round(w.used_percentage)+"%"+(r.seven_day?" wk":" 5h");',
+  'if(r)await fetch(process.argv[1],{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GONOGO_TOKEN},',
+  'body:JSON.stringify({rate_limits:r}),signal:AbortSignal.timeout(3000)}).catch(()=>{})}catch{}',
+  'if(process.argv[2]){try{o=require("child_process").execSync(process.argv[2],{input:d,timeout:4000,encoding:"utf8"}).trim()}catch{}}',
+  'process.stdout.write(o+"\\n")})',
+].join('');
+
 /** One shell word: Gemini runs a hook command through the shell. */
 export const shellQuote = (word: string): string => `'${word.replace(/'/g, `'\\''`)}'`;
 
