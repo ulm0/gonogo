@@ -40,6 +40,17 @@ describe('the aliases', () => {
   });
 });
 
+describe('opening COMMS with no tab', () => {
+  it('opens INBOX when something waits, else the tab used last, and clears the agent filter', () => {
+    showTraffic('ana');
+    showComms();
+    expect(store.getState()).toMatchObject({ commsTab: 'traffic', commsAgent: null });
+    store.setState((s) => ({ ...s, downlink: { unread: 2, items: [] } }));
+    showComms();
+    expect(store.getState().commsTab).toBe('inbox');
+  });
+});
+
 describe('the remembered tab', () => {
   it('is written when a tab is chosen in the bar, and not by an alias', () => {
     const kept = new Map<string, string>();
@@ -74,6 +85,7 @@ describe('the view', () => {
   it('shows the unread count on INBOX only', () => {
     store.setState({ ...emptyState(), commsTab: 'inbox', downlink: { unread: 3, items: [] } });
     const out = renderToString(createElement(Comms));
+    expect(out).toContain('aria-label="INBOX, 3 unread"');
     expect(out).toMatch(/INBOX<span class="chip" data-tone="amber" aria-hidden="true">3</);
     expect(out).not.toMatch(/TRAFFIC<span class="chip"/);
   });

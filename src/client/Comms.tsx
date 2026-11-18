@@ -8,6 +8,7 @@ import type { KeyboardEvent, ReactElement } from 'react';
 import { Loop } from './Activity.js';
 import { Downlink } from './Downlink.js';
 import { PartyLine } from './PartyLine.js';
+import { unreadText } from './inbox.js';
 import { useAgentList } from './RoomView.js';
 import { chooseCommsTab, COMMS_TABS, openConsole, setCommsAgent, showRoom, useStore } from './store.js';
 import type { CommsTab } from './store.js';
@@ -28,10 +29,12 @@ export function Comms(): ReactElement {
   const agents = useStore((s) => s.agents);
   const list = useAgentList();
   const move = (event: KeyboardEvent): void => {
-    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-    if (step === 0) return;
+    const last = COMMS_TABS.length - 1;
+    const at = COMMS_TABS.indexOf(tab);
+    const to = event.key === 'ArrowRight' ? (at + 1) % COMMS_TABS.length : event.key === 'ArrowLeft' ? (at + last) % COMMS_TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? last : null;
+    if (to === null) return;
     event.preventDefault();
-    const next = COMMS_TABS[(COMMS_TABS.indexOf(tab) + step + COMMS_TABS.length) % COMMS_TABS.length] as CommsTab;
+    const next = COMMS_TABS[to] as CommsTab;
     chooseCommsTab(next);
     requestAnimationFrame(() => document.getElementById(`${id}-${next}`)?.focus());
   };
@@ -47,6 +50,7 @@ export function Comms(): ReactElement {
               role="tab"
               className="btn comms-tab"
               data-kind={tab === t ? 'primary' : 'quiet'}
+              aria-label={t === 'inbox' && unread > 0 ? `INBOX, ${unreadText(unread)}` : undefined}
               aria-selected={tab === t}
               aria-controls={`${id}-panel`}
               tabIndex={tab === t ? 0 : -1}

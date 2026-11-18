@@ -231,7 +231,14 @@ export const openConsole = (name: string): void => store.setState((s) => ({ ...s
 export const closeConsole = (): void => store.setState((s) => (s.consoleOpen ? { ...s, consoleOpen: false } : s));
 export const showRoom = (): void => store.setState((s) => ({ ...s, view: 'room', consoleOpen: false }));
 /** COMMS: one view with three tabs. With no tab it opens the one the Director used last (kept in this browser). A tab chosen in the bar is remembered; the shortcuts below only open it. */
-export const showComms = (tab?: CommsTab, agent: string | null = null): void => store.setState((s) => ({ ...s, view: 'comms', commsTab: tab ?? s.commsTab, commsAgent: tab === 'traffic' ? agent : s.commsAgent, consoleOpen: false }));
+export const showComms = (tab?: CommsTab, agent: string | null = null): void => store.setState((s) => ({
+    ...s,
+    view: 'comms',
+    // asked for no tab (the top bar, the phone bar): what waits for the Director first, else the tab used last, and no agent filter left over
+    commsTab: tab ?? (s.downlink.unread > 0 ? 'inbox' : s.commsTab),
+    commsAgent: tab === undefined ? null : tab === 'traffic' ? agent : s.commsAgent,
+    consoleOpen: false,
+  }));
 export const chooseCommsTab = (tab: CommsTab): void => {
   writeStored(COMMS_TAB_STORAGE_KEY, tab);
   store.setState((s) => ({ ...s, commsTab: tab }));
