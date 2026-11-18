@@ -39,5 +39,8 @@ export function askedText(view: MemoryView, now: number): string | null {
 
 /** What the Director is told after the request. */
 export function resultText(name: string, result: ReflectResult): string {
-  return result.send.ok ? `Asked ${name} to condense its notes. It reads the request when it is idle. The old file is kept as memory.md.bak.` : `Not sent: ${result.send.note ?? 'the hub did not deliver it'}.`;
+  if (!result.send.ok) return `Not sent: ${result.send.note ?? 'the hub did not deliver it'}.`;
+  // the request went out before the copy was made; a folder (or anything else) standing at memory.md.bak leaves no copy
+  const kept = result.memory.backup === null ? 'No copy was kept: memory.md.bak could not be written.' : 'The old file is kept as memory.md.bak.';
+  return `Asked ${name} to condense its notes. It reads the request when it is idle. ${kept}`;
 }

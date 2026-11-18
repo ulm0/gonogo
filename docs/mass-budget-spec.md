@@ -28,7 +28,8 @@ the file grows. The Director sees the size in the console panel and, with one ke
 - **The copy.** The bytes gonogo read are written to a temporary file in the agent's folder (mode 0600, `wx`), the message is sent,
   and when the hub took it (`send.ok`) the file is renamed to `memory.md.bak`, replacing the one before. When the hub did not
   deliver (a stopped agent, an engine without the gonogo tools: `ok` false, or a thrown `HubError`) the temporary file is removed
-  and the older copy stays. There is one copy, of the file as it was when the last request was sent. gonogo only looks at its
+  and the older copy stays. When the hub took the message but the rename failed (a folder an agent left at `memory.md.bak`), the
+  message stays sent, the failure is logged, the temporary file is removed, `backup` is null and the page says no copy was kept. There is one copy, of the file as it was when the last request was sent. gonogo only looks at its
   size and time, and never restores or removes it.
 - **What happened since** is worked out from the two files, with no state of its own: `backup.at` (the copy's time, when it was
   asked) against `changedAt` (the time of `memory.md`). The panel says "Asked at 14:03. The notes changed since: 18.6 KB then, 3.0 KB

@@ -189,6 +189,17 @@ describe('a request to condense', () => {
     expect(await readFile(`${path}.bak`, 'utf8')).toBe('notes\n');
   });
 
+  it('sends the message and leaves no temporary file when a folder stands where the copy goes', async () => {
+    await writeFile(path, 'notes\n');
+    await mkdir(`${path}.bak`);
+    const result = await make().reflect('ana');
+    expect(result.send.ok).toBe(true);
+    // no copy is reported, so the page does not claim one
+    expect(result.memory.backup).toBeNull();
+    expect(warnings).toEqual(['could not write memory.md.bak of ana']);
+    expect(await names()).toEqual(['memory.md', 'memory.md.bak']);
+  });
+
   it('sends once when it is asked twice at the same time', async () => {
     await writeFile(path, 'notes\n');
     const mass = make();

@@ -155,7 +155,11 @@ export function createMassBudget(options: MassBudgetOptions): MassBudget {
         if (read.data === null) throw conflict(`${MEMORY_FILE} of ${name} is ${Math.round(read.bytes / 1024)} KiB, more than the ${MEMORY_READ_MAX / 1024} KiB gonogo copies: trim it by hand`);
         // written first, put in place after the hub took the message
         const tmp = join(dirname(path), `.${MEMORY_BACKUP_FILE}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`);
-        await writeFile(tmp, read.data, { mode: FILE_MODE, flag: 'wx' });
+        await writeFile(tmp, read.data, { mode: FILE_MODE, flag: 'wx' }).catch(async (error: unknown) => {
+          // a full disk leaves half a file behind
+          await rm(tmp, { force: true });
+          throw error;
+        });
         let send: SendResult;
         try {
           send = options.send({ to: name, subject: 'Mass Budget: condense your memory file', body: reflectBody({ name, path, bytes: read.bytes, lines: lineCount(read.data) }) });

@@ -52,7 +52,9 @@ describe('who can be asked', () => {
 
   it('is told what happened', () => {
     const send = { ok: true, id: 'm1', to: 'ana', status: 'queued', note: null } as const;
-    expect(resultText('ana', { send, memory: view() })).toMatch(/^Asked ana to condense its notes\..*memory\.md\.bak\.$/);
+    expect(resultText('ana', { send, memory: view({ backup: { bytes: 2150, at: 1000 } }) })).toMatch(/^Asked ana to condense its notes\..*The old file is kept as memory\.md\.bak\.$/);
+    // the message went out, but nothing stands at memory.md.bak that is a copy (a folder is in its place): it is not claimed
+    expect(resultText('ana', { send, memory: view() })).toMatch(/^Asked ana to condense its notes\..*No copy was kept: memory\.md\.bak could not be written\.$/);
     expect(resultText('ana', { send: { ...send, ok: false, status: 'undelivered', note: 'ana is stopped' }, memory: view() })).toBe('Not sent: ana is stopped.');
     expect(resultText('ana', { send: { ...send, ok: false, status: 'undelivered', note: null }, memory: view() })).toBe('Not sent: the hub did not deliver it.');
   });
