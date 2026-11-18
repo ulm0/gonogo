@@ -22,6 +22,8 @@ describe('the Plot Board page', () => {
     expect(writtenText(server(), agents, now)).toMatch(/^Written by FLIGHT \d\d:\d\d, revision 4\.$/);
     expect(writtenText(server({ author: 'user' }), agents, now)).toMatch(/^Written by DIRECTOR /);
     expect(writtenText(server({ author: null, updatedAt: null, revision: 0 }), agents, now)).toBe('Nobody has written the Plot Board yet.');
+    // a plan in the file by hand has no author, and is not "nobody"
+    expect(writtenText(server({ author: null, updatedAt: now, revision: 0 }), agents, now)).toMatch(/^Written by hand \d\d:\d\d\.$/);
   });
 
   it('counts characters against the limit', () => {

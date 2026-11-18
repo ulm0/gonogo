@@ -13,7 +13,7 @@ The PLOT BOARD key (round, top bar) opens one page of text: the room's current p
 
 ## The page
 
-A box labelled Plan; under it who wrote the plan, when, the revision and the characters used. SAVE; the second key reads DISCARD TYPING, or LOAD THE LATEST when the board changed while you typed. The page asks the server every 5 seconds while its tab is visible: a box you did not type in follows the board, a box with your typing in it keeps it.
+A box labelled Plan; under it who wrote the plan (`Written by hand` for a file made by hand), when, the revision and the characters used. SAVE; the second key reads DISCARD TYPING, or LOAD THE LATEST when the board changed while you typed. The page asks the server every 5 seconds while its tab is visible: a box you did not type in follows the board, a box with your typing in it keeps it.
 
 ## Agent tools
 
@@ -26,7 +26,7 @@ The boss is the agent the room treats as boss, asked at each call. An agent read
 
 ## File
 
-`~/.gonogo/board.md` (mode 0600): front matter (`version`, `revision`, `author`, `updatedAt`, each value JSON on one line), `---`, the plan. It is read at start: a hand edit shows after a restart, and a write before then replaces it. A file without that front matter is read as the plan. A `version` above 1 stops the start (see [Configuration](../reference/configuration.md#versions-of-the-saved-state)).
+`~/.gonogo/board.md` (mode 0600): front matter (`version`, `revision`, `author`, `updatedAt`, each value JSON on one line), `---`, the plan. It is read at start: a hand edit shows after a restart, and a write before then replaces it. A file without that front matter is read as the plan (the page says `Written by hand`); a plan longer than 10000 characters is cut when read, and the next write keeps the cut text. A `version` above 1 stops the start (see [Configuration](../reference/configuration.md#versions-of-the-saved-state)).
 
 ## API
 

@@ -16,9 +16,11 @@ export function boardMode(text: string, base: number, server: BoardView): BoardM
   return server.revision === base ? 'edited' : 'stale';
 }
 
-/** "Written by FLIGHT at 14:03, revision 4." or the line for a board nobody wrote. */
+/** "Written by FLIGHT 14:03, revision 4.", "Written by hand 14:03." for a file made by hand, or the line for a board nobody wrote. */
 export function writtenText(view: BoardView, agents: Readonly<Record<string, AgentView>>, now: number): string {
-  if (view.author === null || view.updatedAt === null) return 'Nobody has written the Plot Board yet.';
+  if (view.updatedAt === null) return 'Nobody has written the Plot Board yet.';
+  // a plan put in board.md by hand has the time of the file and no author
+  if (view.author === null) return `Written by hand ${whenText(view.updatedAt, now)}.`;
   return `Written by ${legendOf(view.author, agents)} ${whenText(view.updatedAt, now)}, revision ${view.revision}.`;
 }
 
