@@ -4,11 +4,11 @@ pageClass: countdown
 
 # Getting started
 
-Run a mission-control room of Claude Code agents from a browser tab.
+Run a mission-control room of coding agents (Claude Code, Codex, Gemini CLI and more) from a browser tab.
 
 <RoomMock class="doc-mock" />
 
-gonogo is one Node process. It runs each agent as a real `claude` process in a pseudo-terminal, shows the terminals in the browser, and gives the agents seven tools to message each other and share a task board. State is a few files in one directory. Closing the tab stops nothing.
+gonogo is one Node process. It runs each agent as a real CLI process (`claude` by default) in a pseudo-terminal, shows the terminals in the browser, and gives the agents seven tools to message each other and share a task board. State is a few files in one directory. Closing the tab stops nothing.
 
 The npm package is `@ulm0/gonogo`; see [What was not verified](../reference/not-verified.md).
 
@@ -17,7 +17,7 @@ The npm package is `@ulm0/gonogo`; see [What was not verified](../reference/not-
 ## Requirements
 
 - Node 24 or newer.
-- `claude` (Claude Code) on the `PATH`, signed in. Written against Claude Code 2.1.325.
+- One agent CLI on the `PATH`, signed in: `claude` (Claude Code, written against 2.1.325) or another from [Engine Bay](../features/engine-bay.md). Telemetry and Max Q need hooks (Claude Code, Gemini CLI); the other engines show state from their output.
 - macOS, or Linux with glibc 2.28 or newer. Not Alpine (musl), not Windows: pnpm refuses to install elsewhere.
 - Do not install with `--no-optional` (`--omit=optional`): the terminal library ships its binary as an optional platform package. Without one, `gonogo` prints the library's message as one line and exits with code 1.
 
