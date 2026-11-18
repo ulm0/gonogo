@@ -212,6 +212,37 @@ idle) sets light and surface; `aria-pressed="true"` rings the chosen one. `.room
 `.field`: label, control, `.hint`. `.input`: 46 px on `--key`, `--well` when read-only; `aria-invalid="true"` draws a 2 px
 `--nogo` edge, reason in an `.error` below. `.textarea` is mono.
 
+### Elements of the feature pages
+
+Each is built from the keys, chips, lights, modules and fields above, so it follows the livery. The feature pages show them in use.
+
+<div class="ds-frame" :data-livery="look">
+<div class="ds-stack" style="max-width: 460px">
+<span class="label">Verdict line and review note</span>
+<span class="lcd">VERDICT approved · diff 4f2a1c</span>
+<span class="lcd">VERDICT older diff · changes requested</span>
+<div class="flood" data-tone="lit" style="display: grid; gap: 6px; padding: 10px"><span class="lp-row"><span class="chip" data-tone="amber">warning</span><span class="legend">GUIDO</span><span class="hint">open</span></span><span>Does urgent mail skip Hold?</span><span style="display: flex; gap: 8px"><span class="btn" data-kind="quiet">Reply</span><span class="btn" data-kind="quiet">Resolve</span></span></div>
+<span class="label">PLAN and COST blocks</span>
+<div class="module" style="display: grid; gap: 4px; padding: 10px"><span class="label">Plan</span><span class="lcd-num">3 / 7 tasks done</span></div>
+<div class="module" style="display: grid; gap: 4px; padding: 10px"><span class="label">Cost</span><span class="lcd-num">$1.20 of $10.00</span><span class="hint">API-equivalent estimate</span></div>
+<span class="label">Worktree chip</span>
+<span style="display: flex; gap: 8px"><span class="chip" data-tone="lit">gonogo/ana</span><span class="chip" data-tone="amber">hold</span></span>
+<span class="label">Room editor: grip and tray</span>
+<div style="display: flex; gap: 8px"><div class="tile" style="min-width: 120px; padding: 8px"><span class="legend">MAX Q</span><span class="hint" aria-hidden="true">⠿ drag · corner resizes</span></div><div class="module" style="padding: 8px"><span class="hint">Hidden: SEQUENCE</span></div></div>
+<span class="label">Feature toggle row</span>
+<div style="display: flex; gap: 8px; justify-content: space-between; align-items: center"><span>Notifications in this browser</span><button type="button" class="btn" data-kind="primary" aria-pressed="true">On</button></div>
+<span class="label">Terminal frame</span>
+<pre class="lcd" style="margin: 0; font-size: 12px; overflow-x: auto">NEEDS 2: ana: permission request (press 3)
+> flight   idle
+  ana      needs    Bash: git push</pre>
+<span class="label">Version corner</span>
+<span style="display: flex; gap: 8px"><span class="lcd">gonogo 0.2.0</span><span class="chip" data-tone="amber">0.3.0 available</span></span>
+</div>
+</div>
+
+`.lcd` carries the verdict and the terminal frame; `.chip` the tone of a note and the branch; `.module` the PLAN and COST blocks; a
+`.tile` the block being moved. Only the tokens above colour them, so text keeps 4.5:1 (7:1 in High Contrast).
+
 ## Shape, depth and motion
 
 | | Value | Where |

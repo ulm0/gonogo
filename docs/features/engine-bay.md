@@ -32,6 +32,8 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
   Copilot: `--additional-mcp-config @agents/<name>/copilot-mcp.json`.
 - **Sessions.** Engines other than Claude Code start a new session every time, and the role prompt costs a model turn.
 - Propellant counts Claude Code only; the PROPELLANT fold shows only on a Claude console.
+<AgyMock class="doc-mock" />
+
 
 ## Model
 
