@@ -43,7 +43,7 @@ ARG NODE_IMAGE=node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b
 # Only the docker CLI binary of this image is copied (no daemon, no compose or buildx plugin), for Clean Room.
 ARG DOCKER_CLI_IMAGE=docker:29.10.0-cli
 # The pnpm that installs Claude Code in the runtime stage: the same release as package.json `packageManager`.
-ARG PNPM_VERSION=10.34.9
+ARG PNPM_VERSION=12.21.0
 
 FROM ${DOCKER_CLI_IMAGE} AS docker-cli
 
