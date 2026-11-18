@@ -356,6 +356,28 @@
   font-size: 11px;
 }
 
+/* Static fire: a subject field and its key under the poll keys. */
+.wall-fire {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wall-fire .input {
+  flex: 1 1 120px;
+  height: 44px;
+}
+
+.wall-fire .btn {
+  flex: none;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.wall-fire .hint {
+  flex: 1 1 100%;
+}
+
 /* Max Q: a knob. The ring is --work as far as the agents working are of the limit (270 degrees = all of them). */
 .wall-maxq {
   align-items: center;
@@ -1424,6 +1446,11 @@
 
   .wall-tminus > .label {
     font-size: 10px;
+  }
+
+  .wall-fire {
+    flex: 1 1 100%;
+    order: 6;
   }
 
   .wall-word {

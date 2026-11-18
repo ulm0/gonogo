@@ -68,6 +68,7 @@ export default defineConfig({
           { text: 'Payload', link: '/features/payload' },
           { text: 'Clean Room', link: '/features/clean-room' },
           { text: 'Redline', link: '/features/redline' },
+          { text: 'Static fire', link: '/features/static-fire' },
           { text: 'Propellant', link: '/features/propellant' },
           { text: 'Launch Window', link: '/features/launch-window' },
           { text: 'Uplink', link: '/features/uplink' },

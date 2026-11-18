@@ -71,6 +71,7 @@ import {
   PROVIDERS,
   providerInfo,
   RESERVED_NAMES,
+  STATIC_FIRE_POSITIONS,
   STATION_NAME_PATTERN,
 } from '../shared/protocol.js';
 import { POSITION_IDS } from '../shared/positions.js';
@@ -2369,7 +2370,12 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     emit({ t: 'poll', poll: pollView() });
     // The inbox hears each result once: a later vote that leaves the status as it is says nothing new.
     const result = pollState === null || pollState.status === 'open' ? '' : `${pollState.id}:${pollState.status}`;
-    if (pollState !== null && result !== '' && result !== pollResult) io.notify?.('tminus', `${pollState.status.toUpperCase()}: ${pollState.note}`);
+    if (pollState !== null && result !== '' && result !== pollResult) {
+      const line = `${pollState.status.toUpperCase()}: ${pollState.note}`;
+      // A static fire is about the answers: they go to the inbox with the result.
+      const answers = pollState.entries.flatMap((entry) => (entry.reason !== '' ? [`${entry.agent}: ${entry.reason}`] : []));
+      io.notify?.('tminus', pollState.subject === undefined ? line : [`Static fire on ${pollState.subject}: ${line}`, ...answers].join(' · '));
+    }
     pollResult = result;
   }
 
@@ -2377,16 +2383,21 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     sendFromUser({ to, subject, body });
   }
 
-  /** An open poll ends in hold at the first no-go and in go when everybody voted go (and then the boss is told). */
+  /**
+   * An open poll ends in hold at the first no-go and in go when everybody voted go (and then the boss is told). A static fire
+   * waits for every answer (the break report and the rollback plan both matter) and tells nobody: the Director reads the result.
+   */
   function settlePoll(): void {
     const poll = pollState;
     if (!poll || (poll.status !== 'open' && !(poll.status === 'hold' && holdBy === 'vote'))) return;
-    if (poll.entries.some((entry) => entry.vote === 'no-go')) {
+    if (poll.subject !== undefined && poll.entries.some((entry) => entry.vote === null)) {
+      poll.status = 'open';
+    } else if (poll.entries.some((entry) => entry.vote === 'no-go')) {
       poll.status = 'hold';
       holdBy = 'vote';
     } else if (poll.entries.length > 0 && poll.entries.every((entry) => entry.vote === 'go')) {
       poll.status = 'go';
-      const boss = bossRt();
+      const boss = poll.subject === undefined ? bossRt() : undefined;
       if (boss) tellFromUser(boss.record.name, 'T-minus: all go', 'Every polled position is go. Proceed.');
     } else {
       poll.status = 'open';
@@ -2435,8 +2446,12 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     const req = asObject(request, 'the request');
     if (pollState !== null) throw new HubError('conflict', 'clear the poll first');
-    const targets = pollTargets(req.agents);
-    if (targets.length === 0) throw new HubError('bad_request', 'nobody to poll');
+    const subject = staticFireSubject(req);
+    const targets =
+      subject === undefined
+        ? pollTargets(req.agents)
+        : pollTargets(undefined).filter((rt) => (STATIC_FIRE_POSITIONS as readonly string[]).includes(rt.record.position ?? ''));
+    if (targets.length === 0) throw new HubError('bad_request', subject === undefined ? 'nobody to poll' : 'no SIMSUP or RETRO is running');
     pollSeq += 1;
     pollState = {
       id: pollSeq,
@@ -2444,16 +2459,41 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       status: 'open',
       entries: targets.map((rt): PollEntry => ({ agent: rt.record.name, vote: null, reason: '', at: null })),
       note: '',
+      ...(subject === undefined ? {} : { subject }),
     };
     for (const rt of targets) {
-      tellFromUser(
-        rt.record.name,
-        'T-minus: go/no-go poll',
-        'The Director is polling for go or no-go. Call go_nogo with your vote and a one-sentence reason.',
-      );
+      if (subject === undefined) {
+        tellFromUser(
+          rt.record.name,
+          'T-minus: go/no-go poll',
+          'The Director is polling for go or no-go. Call go_nogo with your vote and a one-sentence reason.',
+        );
+      } else if (rt.record.position === 'simsup') {
+        tellFromUser(
+          rt.record.name,
+          `Static fire: ${subject}`,
+          `Before this ships, try to break it: ${subject}. Then call go_nogo: go if it held, no-go with what broke in one sentence (write the steps to reproduce to the Mission Log).`,
+        );
+      } else {
+        tellFromUser(
+          rt.record.name,
+          `Static fire: ${subject}`,
+          `Before this ships, write the rollback plan for: ${subject}. Put the plan in the Mission Log with log_write, then call go_nogo: go when it can be rolled back, no-go if it cannot, with a one-sentence reason.`,
+        );
+      }
     }
     publishPoll();
     return pollView() as PollView;
+  }
+
+  /** The subject of a static fire, one clean line; undefined for a T-minus poll. */
+  function staticFireSubject(req: Record<string, unknown>): string | undefined {
+    if (req.subject === undefined) return undefined;
+    if (req.agents !== undefined) throw new HubError('bad_request', 'a static fire picks SIMSUP and RETRO itself', 'agents');
+    const max = SUBJECT_MAX_CHARS - 'Static fire: '.length;
+    const subject = typeof req.subject === 'string' ? collapseWhitespace(req.subject.replace(UNSAFE_IN_REASON, ' ')) : '';
+    if (subject === '' || subject.length > max) throw new HubError('bad_request', `subject must be text of 1 to ${max} characters`, 'subject');
+    return subject;
   }
 
   function holdPoll(): PollView {
@@ -2471,7 +2511,10 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (pollState.status !== 'aborted') {
       pollState.status = 'aborted';
       for (const entry of pollState.entries) {
-        if (entry.vote !== 'no-go') tellFromUser(entry.agent, 'T-minus: aborted', 'The Director aborted the poll. Stand by.');
+        if (entry.vote !== 'no-go') {
+          if (pollState.subject === undefined) tellFromUser(entry.agent, 'T-minus: aborted', 'The Director aborted the poll. Stand by.');
+          else tellFromUser(entry.agent, 'Static fire: aborted', 'The Director aborted the static fire. Stand by.');
+        }
       }
       publishPoll();
     }

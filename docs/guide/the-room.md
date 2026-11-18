@@ -33,12 +33,13 @@ The first start creates an agent named `flight` in the directory gonogo was star
 
 ## Positions, T-minus, Max Q and custom agents
 
-- **Positions.** The hire form offers 15 positions (FLIGHT, FAO, FIDO, GUIDO, CONTROL, DPS, INCO, EECOM, BOOSTER, SURGEON, SIMSUP, RETRO, RSO, PAO, CAPCOM). A position fills the name and a role text (both editable) and sets the accent colour. They are presets: two agents may share one if their names differ. List: `src/shared/positions.ts`.
+- **Positions.** The hire form offers 15 positions (FLIGHT, FAO, FIDO, GUIDO, CONTROL, DPS, INCO, EECOM, BOOSTER, SURGEON, SIMSUP, RETRO, RSO, PAO, CAPCOM). A position fills the name and a role text (both editable) and sets the accent colour. They are presets, not seats: a position that is taken fills the next free name (`guido-2`, `guido-3`), and two agents may share one if their names differ. List: `src/shared/positions.ts`.
 - **T-minus poll.** Start it from the wall: it polls all running agents with the gonogo tools except FLIGHT (the REST route also takes a list of names). Each gets `T-minus: go/no-go poll` and answers with `go_nogo` (`go` or `no-go` plus a one-sentence reason).
   - The first no-go holds the poll; the wall shows who and why. If that agent changes to go and everyone else is go, it reads GO.
   - All go: FLIGHT is told `T-minus: all go`.
   - You can hold (stays until cleared), abort (agents are told to stand by) and clear.
   - A stopped agent counts as no-go. One poll at a time; not saved, a restart clears it.
+- **Static fire.** Under the T-minus keys, type what to test and press STATIC FIRE: running SIMSUP agents try to break it, running RETRO agents write the rollback plan, and their answers come back as the tally and in the Downlink. See [Static fire](../features/static-fire.md).
 - **Max Q.** Limits how many agents with hooks (Claude Code, Gemini CLI) may be `working` at once. Set it on the wall or with `GONOGO_MAX_WORKING`. At the limit, a message from one agent to an idle agent waits (`waiting: load limit (N of M agents working)`) until a working agent finishes. Your messages and polls never wait; a working agent still gets mail when its turn ends. Custom agents and engines without hooks take no slot.
 - **Custom agents.** Provider "Custom" runs any command (words separated by spaces, or a JSON array of strings, up to 1000 characters; no shell, so quote with the array form) in the agent's directory and terminal. Same environment scrubbing, but no token, no hooks, no `gonogo` tools: messages to it come back undelivered, it shows `working` while it prints and `idle` when quiet, and it never takes part in a poll. The form hides position and permission mode. A command that cannot be read (bad JSON, empty, a NUL character) is refused at hire and edit.
 
