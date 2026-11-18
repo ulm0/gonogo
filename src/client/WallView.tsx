@@ -4,7 +4,7 @@ import { MAX_AGENTS, SUBJECT_MAX_CHARS } from '../shared/protocol.js';
 import * as api from './api.js';
 import { phoneOrder } from '../shared/layout.js';
 import { legendsOf, seat } from './room.js';
-import { selectMission, showMissions, useNow, useStore } from './store.js';
+import { selectMission, showMissions, useFeature, useNow, useStore } from './store.js';
 import {
   briefedText,
   clockText,
@@ -337,11 +337,13 @@ export const WALL_BLOCKS: Readonly<Record<'mission' | 'sequence' | 'tminus' | 'm
  */
 export function Wall(): ReactElement {
   const layout = useStore((s) => s.room.layout);
+  const tminus = useFeature('tminus');
+  const maxq = useFeature('maxq');
   if (layout !== null) {
     return (
       <section className="wall" aria-label="The wall">
         {phoneOrder(layout.blocks)
-          .filter((b) => b.id !== 'operations')
+          .filter((b) => b.id !== 'operations' && !(b.id === 'tminus' && !tminus) && !(b.id === 'maxq' && !maxq))
           .map((b) => {
             const Block = WALL_BLOCKS[b.id as keyof typeof WALL_BLOCKS];
             return <Block key={b.id} />;
@@ -353,8 +355,8 @@ export function Wall(): ReactElement {
     <section className="wall" aria-label="The wall">
       <Mission />
       <Sequence />
-      <TMinus />
-      <MaxQ />
+      {tminus && <TMinus />}
+      {maxq && <MaxQ />}
       <Propellant />
     </section>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLOCK_ROWS_MAX, GRID_COLUMNS, GRID_ROWS_MAX, DEFAULT_BLOCKS, DEFAULT_DESKS, checkLayout, clampBlock, compact, copyBlocks, describe as say, fits, hide, overlaps, phoneOrder, place, restore, shown, swapKeys } from '../src/shared/layout.js';
+import { blockIsOff, displayBlocks, mergeEdit, BLOCK_ROWS_MAX, GRID_COLUMNS, GRID_ROWS_MAX, DEFAULT_BLOCKS, DEFAULT_DESKS, checkLayout, clampBlock, compact, copyBlocks, describe as say, fits, hide, overlaps, phoneOrder, place, restore, shown, swapKeys } from '../src/shared/layout.js';
 import type { Block, BlockId } from '../src/shared/layout.js';
 
 const get = (blocks: readonly Block[], id: BlockId): Block => blocks.find((b) => b.id === id) as Block;
@@ -195,5 +195,39 @@ describe('checkLayout', () => {
   it('lets hidden blocks overlap the shown ones: they take no room', () => {
     const list = [{ ...DEFAULT_BLOCKS[0], hidden: true }, { ...DEFAULT_BLOCKS[1], x: 0 }, ...DEFAULT_BLOCKS.slice(2)];
     expect(checkLayout({ blocks: list })).toMatchObject({ ok: true });
+  });
+});
+
+describe('the blocks of a feature that is off', () => {
+  it('knows which blocks belong to a feature, and draws the others settled around the gap, without changing the layout', () => {
+    expect(blockIsOff(get(blocks(), 'maxq'), ['maxq'])).toBe(true);
+    expect(blockIsOff(get(blocks(), 'propellant'), ['maxq'])).toBe(false);
+    expect(blockIsOff(get(blocks(), 'maxq'), [])).toBe(false);
+    const saved = blocks();
+    const shownNow = displayBlocks(saved, ['maxq']);
+    expect(shownNow.some((b) => b.id === 'maxq')).toBe(false);
+    expect(noOverlap(shownNow)).toBe(true);
+    expect(saved).toEqual(DEFAULT_BLOCKS);
+    // nothing off: exactly the layout
+    expect(displayBlocks(saved, [])).toEqual(DEFAULT_BLOCKS);
+  });
+
+  it('keeps the entry of an off block when the draft is edited, and hides it (rectangle kept) only when an edit lands on it', () => {
+    const draft = blocks();
+    const edited = place(displayBlocks(draft, ['maxq']), 'propellant', { x: 8, y: 0 });
+    const merged = mergeEdit(draft, edited, ['maxq']);
+    // the edit now lies on MAX Q's place: its entry stays, hidden, so the file is one the server accepts
+    expect(get(merged, 'maxq')).toMatchObject({ x: 8, y: 0, w: 2, h: 2, hidden: true });
+    expect(checkLayout({ blocks: merged })).toMatchObject({ ok: true });
+    const clear = mergeEdit(draft, place(displayBlocks(draft, ['maxq']), 'mission', { x: 0, y: 0 }), ['maxq']);
+    expect(get(clear, 'maxq')).toEqual(get(draft, 'maxq'));
+  });
+
+  it('puts the consoles back above the last row of the grid when a file lacks them', () => {
+    const tall = [{ id: 'mission', x: 0, y: 0, w: 3, h: 2 }, { id: 'sequence', x: 0, y: 195, w: 3, h: 5 }];
+    const result = checkLayout({ blocks: tall });
+    expect(result.ok === false ? result.error : 'ok').toMatch(/overlap|fit/);
+    const ok = checkLayout({ blocks: [{ id: 'sequence', x: 0, y: 150, w: 3, h: 2 }] });
+    expect(ok.ok && get(ok.blocks, 'operations').y + get(ok.blocks, 'operations').h).toBeLessThanOrEqual(GRID_ROWS_MAX);
   });
 });

@@ -30,7 +30,7 @@ The rules for a block and its feature (`docs/features-spec.md`):
 | Case | What the page does |
 |---|---|
 | Block hidden, feature **on** | The feature stays reachable from the Patch Panel ("Show T-minus") and from the tray. **Nothing live is hidden silently:** a hidden T-minus with an open poll or a Static fire, a hidden Max Q that is holding mail, and any console that needs the Director show a one-line strip at the top of the room (`T-MINUS: poll open, 2 of 4 answered. SHOW`). The poll still counts and still ends. |
-| Block of a feature that is **off** | Not drawn, not in the tray's restore list as an action: the tray shows it greyed with "off in Features" and a link to the block. Its place in the layout is **kept**, so turning the feature on again puts it back where it was. The grid compacts around the gap for display only, without changing the saved layout. |
+| Block of a feature that is **off** | Not drawn, not in the tray's restore list as an action: the tray shows it greyed with "off in Features" and a link to the block. Its place in the layout is **kept**, so turning the feature on again puts it back where it was, unless the layout was saved while it was off: then it comes back in the tray. The grid compacts around the gap for display only, without changing the saved layout. |
 | Feature turned off while a draft is open | The block leaves the draft's page at once; SAVE keeps its entry. |
 | Feature turned on that has a block hidden by the Director | Shown in the tray, not placed (the Director removed it on purpose). |
 | Operations | Cannot be hidden; the Needs strip and the floods are not blocks and stay where they are. |

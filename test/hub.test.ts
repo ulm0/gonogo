@@ -6658,3 +6658,55 @@ describe('start_agent and the Director\'s stop, and a boss that cannot start', (
     expect(h.notices.at(-1)?.[1]).toMatch(/not started: flight \(.*the folder is gone/);
   });
 });
+
+describe('Feature toggles at the hub', () => {
+  it('Max Q off: the limit is ignored and no mail waits for load', async () => {
+    const h = await started({ maxWorking: 1 });
+    let on = true;
+    h.io.featureOn = (id) => (id === 'maxq' ? on : true);
+    for (const name of ['ana', 'bob', 'cara']) await h.hire(name);
+    h.work('ana');
+    const held = h.send('bob', 'cara');
+    await h.advance(DELIVERY_SETTLE_MS * 2);
+    expect(h.msg(held.id).note).toContain('load limit');
+    on = false;
+    const free = h.send('bob', 'cara', 'again');
+    await h.advance(DELIVERY_SETTLE_MS * 2);
+    expect(h.msg(free.id).note ?? '').not.toContain('load limit');
+  });
+
+  it('Telemetry off: the tool hooks are not handed to the recorder', async () => {
+    const h = await withAna();
+    const seen: string[] = [];
+    h.io.toolHook = (name, event) => void seen.push(`${name}:${event}`);
+    h.hook('ana', 'PreToolUse', { tool_name: 'Bash' });
+    h.io.featureOn = (id) => id !== 'telemetry';
+    h.hook('ana', 'PreToolUse', { tool_name: 'Bash' });
+    expect(seen).toEqual(['ana:PreToolUse']);
+  });
+
+  it('Static fire off: a poll with a subject is refused, a plain poll is not', async () => {
+    const h = await withAna();
+    h.io.featureOn = (id) => id !== 'static-fire';
+    await h.hire('sim');
+    expect(() => h.hub.startPoll({ subject: 'the new build' } as never)).toThrow(/Static fire is off/);
+    expect(h.hub.startPoll({}).status).toBe('open');
+  });
+});
+
+describe('refreshLimits: Max Q switched off releases the mail it held', () => {
+  it('delivers a held message at once when the feature goes off', async () => {
+    const h = await started({ maxWorking: 1 });
+    let on = true;
+    h.io.featureOn = (id) => (id === 'maxq' ? on : true);
+    for (const name of ['ana', 'bob', 'cara']) await h.hire(name);
+    h.work('ana');
+    const held = h.send('bob', 'cara');
+    await h.advance(DELIVERY_SETTLE_MS * 2);
+    expect(h.msg(held.id).note).toContain('load limit');
+    on = false;
+    h.hub.refreshLimits();
+    await h.advance(DELIVERY_SETTLE_MS * 2);
+    expect(h.typed.map((t) => t.name)).toContain('cara');
+  });
+});

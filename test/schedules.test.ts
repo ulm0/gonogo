@@ -77,9 +77,10 @@ const quiet = (sink: string[]): Logger => {
   return log;
 };
 
-async function make(): Promise<Schedules> {
+async function make(enabled?: () => boolean): Promise<Schedules> {
   const s = createSchedules({
     dir,
+    enabled,
     now: clock.now,
     setTimer: clock.setTimer,
     clearTimer: clock.clearTimer,
@@ -146,6 +147,19 @@ describe('Launch Window', () => {
     expect(file.schedules).toHaveLength(1);
     expect(file.schedules[0]).toMatchObject({ id: 's1', name: 'Standup', rule: '*/5 * * * *' });
     expect(file.schedules[0]).not.toHaveProperty('nextAt');
+  });
+
+  it('fires nothing while Launch Window is switched off, and does not catch up when it is switched on again', async () => {
+    let on = false;
+    const s = await make(() => on);
+    await s.create(standup);
+    clock.advance(20 * MIN);
+    expect(sent).toEqual([]);
+    // the next fire is in the future again, so nothing was saved up
+    expect(s.list()[0]?.nextAt).toBe(at(2026, 11, 17, 12, 25));
+    on = true;
+    clock.advance(5 * MIN);
+    expect(sent).toHaveLength(1);
   });
 
   it('sends a message from the Director on the minute, once, with the name in the subject', async () => {

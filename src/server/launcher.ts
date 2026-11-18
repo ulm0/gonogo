@@ -188,6 +188,8 @@ export function buildArgv(input: {
   model?: string;
   /** Remote Control: the session name the Claude app shows; none is off. */
   remoteControl?: string;
+  /** Feature toggles: tool names (`mcp__gonogo__hire_agent`) of features that are off, left out of `--allowedTools`. */
+  toolsOff?: readonly string[];
 }): string[] {
   return [
     input.flag === 'resume' ? '--resume' : '--session-id',
@@ -207,7 +209,7 @@ export function buildArgv(input: {
     '--system-prompt-snapshot',
     'off',
     '--allowedTools', // variadic, so it stays last
-    ...ALLOWED_TOOLS,
+    ...ALLOWED_TOOLS.filter((tool) => !input.toolsOff?.includes(tool)),
   ];
 }
 
@@ -648,7 +650,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name) });
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       let spec: PreparedStart['spec'];

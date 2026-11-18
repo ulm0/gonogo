@@ -46,6 +46,8 @@ export interface SchedulesOptions {
   send(request: UserMessageRequest): SendResult;
   /** The whole list changed (a schedule made, edited, removed or run). */
   emit(schedules: ScheduleView[]): void;
+  /** Feature toggles: false while Launch Window is switched off. A schedule that comes due then does not fire and is not caught up later. */
+  enabled?(): boolean;
   /** Downlink: a fire the hub refused or could not take. */
   notify?: DownlinkNotify;
   log: Logger;
@@ -192,6 +194,7 @@ export function createSchedules(options: SchedulesOptions): Schedules {
       const due = e.next;
       e.next = nextFire(e.rule, t);
       any = true;
+      if (options.enabled?.() === false) continue;
       if (t - due > SCHEDULE_GRACE_MS) log.warn(`launch window "${e.schedule.name}" missed its fire at ${new Date(due).toISOString()}; missed fires are not replayed`);
       else fire(e);
     }

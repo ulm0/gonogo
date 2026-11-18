@@ -266,6 +266,7 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       rec('startAgent', name, by);
       return agentView(name);
     },
+    refreshLimits: () => rec('refreshLimits'),
     restart: async (name) => {
       rec('restart', name);
       if (name === 'ghost') throw new FakeHubError('not_found', 'unknown agent');
@@ -2777,6 +2778,7 @@ describe('mcp', () => {
 
 const STATUS_OF_CODE: Record<ApiErrorCode, number> = {
   bad_request: 400,
+  feature_off: 404,
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,

@@ -250,3 +250,44 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* ---- features: a switch for each, the plan under the row it was asked for ---- */
+
+.rules-features .feat-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feat-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.feat-row[data-off] .feat-name {
+  opacity: 0.6;
+}
+
+.feat-name {
+  font-weight: 600;
+}
+
+.feat-plan {
+  flex-basis: 100%;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.feat-plan p {
+  flex-basis: 100%;
+  margin: 0;
+}

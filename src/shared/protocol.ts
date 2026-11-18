@@ -170,6 +170,7 @@ export const API_ERROR_CODES = [
   'internal',
   'unavailable',
   'rate_limited',
+  'feature_off',
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
@@ -1101,6 +1102,8 @@ export interface StateSnapshot {
   docking?: DockingView;
   /** Absent from an older server and from one that runs without Relief: the page then shows no hire requests. */
   relief?: ReliefView;
+  /** Absent from an older server: the page then shows every feature on. */
+  features?: FeaturesView;
   /** Absent from an older server: the page then shows no update note. */
   rollout?: RolloutView;
 }
@@ -1547,6 +1550,15 @@ export interface LiveryFrame {
   livery: LiveryView;
 }
 /** The hire requests that wait for the Director changed; carries the whole view. Also inside StateSnapshot. */
+/** Feature toggles (src/shared/features.ts): the ids that are off. Everything else is on, so a feature added later is on after an upgrade. */
+export interface FeaturesView {
+  off: string[];
+}
+/** A feature was switched; carries the whole view. Also inside StateSnapshot. */
+export interface FeaturesFrame {
+  t: 'features';
+  features: FeaturesView;
+}
 export interface ReliefFrame {
   t: 'relief';
   relief: ReliefView;
@@ -1560,6 +1572,7 @@ export interface RolloutFrame {
 export type ServerFrame =
   | TabNameFrame
   | RoomFrame
+  | FeaturesFrame
   | MissionsFrame
   | ReliefFrame
   | RolloutFrame
@@ -1581,7 +1594,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
@@ -1777,6 +1790,8 @@ export interface LauncherOptions {
   keys?: (name: string) => Record<string, string>;
   /** Default models: the model of a provider that the room sets, used when an agent has no `model` of its own. Default none. */
   defaultModel?: (provider: Provider, position?: string) => string | undefined;
+  /** Feature toggles: the MCP tools of features that are off; they are left out of `--allowedTools`. Default none. */
+  toolsOff?: () => string[];
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
   log?: Logger;
@@ -1888,6 +1903,8 @@ export interface HubIo {
   runSet?(): RunEntry[] | null;
   /** Autostart: an agent's process started or stopped, or its turn began or ended. Never throws, never waits. */
   markRun?(name: string, running: boolean, working: boolean): void;
+  /** Feature toggles: is a feature on? Absent: every feature is on. */
+  featureOn?(id: string): boolean;
   loadRoster(): Promise<RosterFile>;
   saveRoster(file: RosterFile): Promise<void>;
   /** Last `limit` message records, oldest first. */
@@ -2037,6 +2054,8 @@ export interface Hub {
   holdAll(): HoldAllResult;
   /** ALL RESUME: resumes every agent that is on hold (a Redline trip is left for its own Resume). */
   resumeAll(): ResumeAllResult;
+  /** A feature switch changed what holds mail back (Max Q): held messages read it again now and the governor is published. */
+  refreshLimits(): void;
   stop(name: string): Promise<AgentView>;
   /** Stop, drop from the roster. The boss cannot be removed (409). Files on disk are kept. */
   remove(name: string): Promise<void>;

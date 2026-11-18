@@ -181,6 +181,20 @@ export const SCHEDULES_AUDIT: Table = {
 };
 export const PERMISSIONS_AUDIT: Table = { set: ['config', "Director changed the room's tool rules"] };
 export const STARTUP_AUDIT: Table = { set: ['config', 'Director changed the startup policy'] };
+/** Feature toggles: which features were switched, by id (ids are plain words). */
+export const FEATURES_AUDIT: Table = {
+  apply: [
+    'config',
+    (_args, result) => {
+      const plan = isRecord(result) && isRecord(result.plan) ? result.plan : {};
+      const ids = (value: unknown): string[] => (Array.isArray(value) ? value.filter((id): id is string => plain(id) !== null) : []);
+      const off = [...ids(plan.turnOff), ...ids(plan.forced)];
+      const on = ids(plan.turnOn);
+      const parts = [off.length > 0 ? `off ${off.join(', ')}` : '', on.length > 0 ? `on ${on.join(', ')}` : ''].filter(Boolean);
+      return `Director switched features: ${parts.join('; ') || 'turned the rest on'}`;
+    },
+  ],
+};
 export const PROPELLANT_AUDIT: Table = {
   setLimits: ['config', 'Director changed the Propellant limits'],
   setBudget: ['config', 'Director changed the Propellant budget'],

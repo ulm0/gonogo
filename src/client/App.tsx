@@ -18,7 +18,7 @@ import { Recorder } from './Recorder.js';
 import { PlotBoard } from './PlotBoard.js';
 import { PatchPanel } from './PatchPanel.js';
 import { Commissioning, FlightRules } from './Rules.js';
-import { isPanelKey } from './shell.js';
+import { isPanelKey, VIEW_FEATURE } from './shell.js';
 import { PartyLine } from './PartyLine.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
@@ -75,6 +75,7 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
   const dir = list.find((a) => a.boss)?.dir ?? null;
   const unread = useStore((s) => s.downlink.unread);
   const view = useStore((s) => s.view);
+  const off = useStore((s) => s.features);
   return (
     <header className="topbar">
       <h1 className="mark" aria-label="gonogo">
@@ -101,18 +102,18 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
           <UnreadCount />
         </button>
       )}
-      {!phone && (
+      {!phone && !off.includes('launch-window') && (
         <button type="button" className="btn" data-kind="quiet" aria-current={view === 'window' ? 'page' : undefined} onClick={showWindow}>
           Launch Window
         </button>
       )}
-      {!phone && (
+      {!phone && !off.includes('flight-plan') && (
         <button type="button" className="btn" data-kind="quiet" aria-current={view === 'plan' ? 'page' : undefined} onClick={showPlan}>
           Flight Plan
           <PlanCount />
         </button>
       )}
-      {!phone && (
+      {!phone && !off.includes('mission-log') && (
         <button type="button" className="btn" data-kind="quiet" aria-current={view === 'log' ? 'page' : undefined} onClick={showLog}>
           Mission Log
         </button>
@@ -128,9 +129,11 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
         </button>
       )}
       {/* round keys: another word in the bar would not fit on one line at 1280 px */}
-      <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Livery" title="Livery" aria-current={view === 'livery' ? 'page' : undefined} onClick={showLivery}>
-        <span className="livery-mark" aria-hidden="true" />
-      </button>
+      {!off.includes('livery') && (
+        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Livery" title="Livery" aria-current={view === 'livery' ? 'page' : undefined} onClick={showLivery}>
+          <span className="livery-mark" aria-hidden="true" />
+        </button>
+      )}
       {phone ? (
         <button type="button" className="btn topbar-plus" data-kind="primary" aria-label="Staff a console" onClick={() => openHire()}>
           +
@@ -147,6 +150,7 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
 /** The wall of a phone is mission, clock, poll and Max Q; the three screens are one bar away. */
 function PhoneBar({ onPanel }: { onPanel(): void }): ReactElement {
   const view = useStore((s) => s.view);
+  const off = useStore((s) => s.features);
   const unread = useStore((s) => s.downlink.unread);
   const planCount = activeText(activeOf(useStore((s) => s.tasks)));
   const goBrief = (): void => {
@@ -169,16 +173,22 @@ function PhoneBar({ onPanel }: { onPanel(): void }): ReactElement {
         Down
         <UnreadCount />
       </button>
-      <button type="button" className="btn" data-kind={view === 'window' ? 'primary' : undefined} aria-label="Launch Window" aria-current={view === 'window' ? 'page' : undefined} onClick={showWindow}>
-        Launch
-      </button>
-      <button type="button" className="btn" data-kind={view === 'plan' ? 'primary' : undefined} aria-label={planCount === '' ? 'Flight Plan' : `Flight Plan, ${planCount}`} aria-current={view === 'plan' ? 'page' : undefined} onClick={showPlan}>
-        Plan
-        <PlanCount />
-      </button>
-      <button type="button" className="btn" data-kind={view === 'log' ? 'primary' : undefined} aria-label="Mission Log" aria-current={view === 'log' ? 'page' : undefined} onClick={showLog}>
-        Log
-      </button>
+      {!off.includes('launch-window') && (
+        <button type="button" className="btn" data-kind={view === 'window' ? 'primary' : undefined} aria-label="Launch Window" aria-current={view === 'window' ? 'page' : undefined} onClick={showWindow}>
+          Launch
+        </button>
+      )}
+      {!off.includes('flight-plan') && (
+        <button type="button" className="btn" data-kind={view === 'plan' ? 'primary' : undefined} aria-label={planCount === '' ? 'Flight Plan' : `Flight Plan, ${planCount}`} aria-current={view === 'plan' ? 'page' : undefined} onClick={showPlan}>
+          Plan
+          <PlanCount />
+        </button>
+      )}
+      {!off.includes('mission-log') && (
+        <button type="button" className="btn" data-kind={view === 'log' ? 'primary' : undefined} aria-label="Mission Log" aria-current={view === 'log' ? 'page' : undefined} onClick={showLog}>
+          Log
+        </button>
+      )}
       <button type="button" className="btn" aria-label="Patch Panel" onClick={onPanel}>
         Patch
       </button>
@@ -399,7 +409,11 @@ function LiveRegion(): ReactElement {
 
 function Screen({ phone }: { phone: boolean }): ReactElement {
   const form = useStore((s) => s.form);
-  const view = useStore((s) => s.view);
+  const shown = useStore((s) => s.view);
+  const off = useStore((s) => s.features);
+  // a view whose feature was switched off while it was open falls back to the Room
+  const owner = VIEW_FEATURE[shown];
+  const view = owner !== undefined && off.includes(owner) ? 'room' : shown;
   const activity = useStore((s) => s.activity);
   const agents = useStore((s) => s.agents);
   const list = useAgentList();

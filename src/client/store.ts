@@ -80,6 +80,8 @@ export interface ClientState {
   docking: DockingView;
   /** Relief: the hire requests of the boss that wait for the Director's GO. */
   relief: ReliefRequest[];
+  /** Feature toggles: the ids of the features that are off (src/shared/features.ts). The server refuses them too. */
+  features: string[];
   /** Rollout: what the daily update check saw, or null from an older server. */
   rollout: RolloutView | null;
 }
@@ -191,6 +193,7 @@ export function emptyState(): ClientState {
     livery: defaultView(),
     docking: NO_DOCKING,
     relief: [],
+    features: [],
     rollout: null,
   };
 }
@@ -277,6 +280,9 @@ export function useNow(): number {
 }
 
 /** The selector must return a stable reference while the state it reads is unchanged (never build an array or object in it). */
+/** Is a feature on (Flight Rules, FEATURES)? The server enforces the same list, so a hidden key is also a refused route. */
+export const useFeature = (id: string): boolean => useStore((s) => !s.features.includes(id));
+
 export function useStore<T>(selector: (s: ClientState) => T): T {
   const read = (): T => selector(store.getState());
   // The third argument is what a render without a DOM (server rendering) reads; the browser never uses it.
@@ -367,6 +373,8 @@ function applyState(s: ClientState, snapshot: StateSnapshot, now: number): Clien
     docking: snapshot.docking ?? NO_DOCKING,
     // an older server, or one without Relief, sends none
     relief: snapshot.relief?.requests ?? [],
+    // an older server sends none: every feature is on
+    features: snapshot.features?.off ?? [],
     rollout: snapshot.rollout ?? null,
     // a state is a connect or a reconnect: frames may have been missed, so the view asks again
     log: { rev: s.log.rev + 1, changed: [], removed: [] },
@@ -465,6 +473,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, docking: frame.docking };
     case 'relief':
       return { ...s, relief: frame.relief.requests };
+    case 'features':
+      return { ...s, features: frame.features.off };
     case 'rollout':
       return { ...s, rollout: frame.rollout };
     case 'log':

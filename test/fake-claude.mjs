@@ -191,8 +191,10 @@ function parseArgv(args) {
   if (out.role === null || out.role.trim() === '') die('missing or empty --append-system-prompt');
   if (out.snapshot !== 'off') die('missing --system-prompt-snapshot off');
   if (out.allowed === null) die('missing --allowedTools');
-  if ([...out.allowed].sort().join(' ') !== [...ALLOWED_TOOLS].sort().join(' ')) {
-    die(`--allowedTools must list exactly ${ALLOWED_TOOLS.join(' ')}`);
+  // the tools of a feature that is switched off are left out of the list (docs/features-spec.md): a subset, with the core tools in it
+  const core = ['mcp__gonogo__send_message', 'mcp__gonogo__list_roster', 'mcp__gonogo__read_messages'];
+  if (out.allowed.some((tool) => !ALLOWED_TOOLS.includes(tool)) || core.some((tool) => !out.allowed.includes(tool))) {
+    die(`--allowedTools must list ${core.join(' ')} and no tool outside ${ALLOWED_TOOLS.join(' ')}`);
   }
   return out;
 }
