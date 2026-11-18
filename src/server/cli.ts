@@ -124,6 +124,8 @@ export interface StartOptions {
   exitWithStdin?: boolean;
   /** This process is a room of the supervisor (`gonogo __room`): its browser token is `run/room-token`, new at each start, and it asks for the port it had. */
   roomChild?: boolean;
+  /** A room of the supervisor: asks it over the pipe it holds whether another room is busy (a poll or Static fire open), for the Docker update. */
+  askBusy?: () => Promise<{ busy: string | null; room: string | null }>;
 }
 
 export interface Running {
@@ -888,10 +890,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // Docker self-update: the socket is there and this container can find itself and has a moving tag (docs/self-update-spec.md)
     const socketPath = env.GONOGO_DOCKER_SOCKET || SOCKET_PATH;
     const dockerCall = installed.kind === 'docker' && existsSync(socketPath) ? socketCall(socketPath) : null;
-    // a room started by `gonogo rooms` is one process of a supervisor: recreating the container would stop every room, and this page counts only its own agents
+    // every room is a process of one gonogo: an update replaces them all (the container, or the install and a reload), so only room main, whose home
+    // is the root where update.json is read after the swap, offers it; the others point to it
     const supervised = options.roomChild === true;
-    const dockerStatus = dockerCall === null ? undefined : supervised ? { ready: false, text: 'this room runs under gonogo rooms: update the container from the host (docker compose pull && docker compose up -d); self-update does not know the other rooms' } : await dockerUpdateStatus(dockerCall, hostname());
-    const canUpdate = installed.kind === 'npm' || installed.kind === 'pnpm' || (installed.kind === 'docker' && (dockerStatus?.ready === true || /^https?:\/\//.test(hookUrl)));
+    const isMain = !supervised || env.GONOGO_ROOM === 'main';
+    const dockerStatus = dockerCall === null ? undefined : !isMain ? { ready: false, text: 'update from the main room: this container holds every room' } : await dockerUpdateStatus(dockerCall, hostname());
+    const canUpdate = isMain && (installed.kind === 'npm' || installed.kind === 'pnpm' || (installed.kind === 'docker' && (dockerStatus?.ready === true || /^https?:\/\//.test(hookUrl))));
     // what the last self-update left: shown until the Director goes on
     const found = dockerCall === null ? null : await readResult(home.dir);
     const lastResult = dockerCall === null || found === null ? null : await settleResult(dockerCall, home.dir, found, hostname());
@@ -903,7 +907,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       current: version,
       command: installed.command,
       install: installed.kind,
-      installNote: installNote(installed.kind, canUpdate, dockerStatus),
+      installNote: isMain ? installNote(installed.kind, canUpdate, dockerStatus) : 'This room is one of several in one gonogo: update from the main room.',
       canUpdate,
       selfUpdate: dockerStatus?.ready === true,
       ...(lastResult === null || Date.now() - lastResult.at > 24 * 3_600_000 ? {} : { update: viewOfResult(lastResult) }),
@@ -936,7 +940,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       reload: triggerReload,
       keepsAgents: remote !== null,
-      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, busy: () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : null) } }),
+      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
       hook: /^https?:\/\//.test(hookUrl) ? { url: hookUrl, token: (env.GONOGO_UPDATE_HOOK_TOKEN ?? '').trim() || null } : null,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       log: log.child('update'),
@@ -1437,6 +1441,53 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   await runRoom(parsed.options, env);
 }
 
+/**
+ * The one question a room may put to its supervisor, over the pipes they already share (no route, no port): the room writes the line
+ * `gonogo-ask busy` on stdout, the supervisor answers one line `gonogo-answer busy {"busy":<text|null>,"room":<id|null>}` on stdin. One answer per
+ * question; a second question while one is out waits for it. No answer in 5 s is "busy", so an update never goes ahead on a guess.
+ */
+export function createPipeAnswers(write: (line: string) => void, timeoutMs = 5000) {
+  let waiting: Array<(answer: { busy: string | null; room: string | null }) => void> = [];
+  let buffer = '';
+  const none = { busy: 'the supervisor did not answer whether another room is busy: try again', room: null };
+  return {
+    feed(text: string): void {
+      buffer += text;
+      let at: number;
+      while ((at = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, at).trim();
+        buffer = buffer.slice(at + 1);
+        const match = /^gonogo-answer busy (\{.*\})$/.exec(line);
+        // only a line of the shape of an answer takes the place of a question: other output of the supervisor is ignored
+        if (match === null) continue;
+        const next = waiting.shift();
+        if (next === undefined) continue;
+        try {
+          const body = JSON.parse(match[1] as string) as { busy?: unknown; room?: unknown };
+          next({ busy: typeof body.busy === 'string' ? body.busy.slice(0, 300) : null, room: typeof body.room === 'string' ? body.room.slice(0, 40) : null });
+        } catch {
+          next(none);
+        }
+      }
+    },
+    ask(): Promise<{ busy: string | null; room: string | null }> {
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          waiting = waiting.filter((w) => w !== done);
+          resolve(none);
+        }, timeoutMs);
+        const done = (answer: { busy: string | null; room: string | null }): void => {
+          clearTimeout(timer);
+          resolve(answer);
+        };
+        waiting.push(done);
+        write('gonogo-ask busy\n');
+      });
+    },
+  };
+}
+const pipeAnswers = createPipeAnswers((line) => process.stdout.write(line));
+
 /** One room: what `gonogo` was before it became the supervisor. `gonogo __room` runs it; the tests run it directly with fakes. */
 export async function runRoom(options: StartOptions, env: Env): Promise<void> {
   const level = logLevel(env.GONOGO_LOG_LEVEL);
@@ -1446,9 +1497,10 @@ export async function runRoom(options: StartOptions, env: Env): Promise<void> {
   // started by a reload: the old gonogo may still hold the home and the port for a moment
   const reloaded = env.GONOGO_RELOADED === '1';
   delete process.env.GONOGO_RELOADED;
+  const askBusy = options.roomChild === true && options.exitWithStdin === true ? () => pipeAnswers.ask() : undefined;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      running = await startGonogo({ ...options, updateCheck: options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
+      running = await startGonogo({ ...options, ...(askBusy === undefined ? {} : { askBusy }), updateCheck: options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
       break;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1466,6 +1518,7 @@ export async function runRoom(options: StartOptions, env: Env): Promise<void> {
   if (options.exitWithStdin === true) {
     // the supervisor holds the other end of this pipe: when it dies, for any reason, this ends and the room stops as for SIGTERM
     process.stdin.on('end', () => process.kill(process.pid, 'SIGTERM'));
+    process.stdin.on('data', (chunk) => pipeAnswers.feed(String(chunk)));
     process.stdin.on('error', () => process.kill(process.pid, 'SIGTERM'));
     process.stdin.resume();
   }

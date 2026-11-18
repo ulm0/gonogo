@@ -28,7 +28,7 @@ const server = http.createServer((req, res) => {
   const ok = req.headers.authorization === `Bearer ${token}`;
   if (req.url === '/api/state') {
     if (!ok) return void res.writeHead(401).end('no');
-    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
+    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], poll: process.env.FAKE_ROOM_POLL_OPEN && home.includes('/rooms/') ? { status: 'open' } : null, tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
   }
   res.writeHead(200, { 'content-type': 'text/html' }).end(`<p>room at ${home}</p>`);
 });
@@ -43,6 +43,11 @@ server.on('upgrade', (req, socket, head) => {
 const delay = Number(process.env.FAKE_ROOM_DELAY_MS ?? 0);
 setTimeout(() => server.listen(0, '127.0.0.1', () => {
   process.stdout.write(`gonogo ready: http://127.0.0.1:${server.address().port}/#token=${token}\n`);
+  // FAKE_ROOM_ASK=<line>: the room puts that line to its supervisor on stdout; what comes back on stdin is written to 'answer'
+  if (process.env.FAKE_ROOM_ASK && (!process.env.FAKE_ROOM_ASK_ONLY || process.env.FAKE_ROOM_ASK_ONLY === process.env.GONOGO_ROOM)) {
+    process.stdin.on('data', (d) => fs.appendFileSync(join(home, 'answer'), d));
+    setTimeout(() => process.stdout.write(process.env.FAKE_ROOM_ASK + '\n'), 300);
+  }
   // a room that leaves with 75 although nobody asked it to
   if (process.env.FAKE_ROOM_EXIT75) setTimeout(() => process.exit(75), 200);
   const crash = process.env.FAKE_ROOM_CRASH_ONCE;
