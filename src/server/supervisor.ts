@@ -19,7 +19,7 @@ import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { bearerToken, sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
-import { addRoom, loadRooms, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
+import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { hostName } from './web.js';
 
@@ -263,7 +263,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         needsYou: agents.filter((a) => a.state === 'needs_you').length,
         working: agents.filter((a) => a.state === 'working').length,
         lastActivity: times.length === 0 ? null : Math.max(...times),
-        tabName: typeof tab === 'string' && tab !== '' ? tab : null,
+        tabName: typeof tab === 'string' && roomText(tab) !== '' ? roomText(tab) : null,
       };
       statusCache.set(child.entry.id, { at: Date.now(), value });
       return value;
@@ -388,7 +388,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         const file = file0;
         if (!lstatSync(file).isFile()) throw new Error('not a regular file');
         const body = readFileSync(file);
-        res.writeHead(200, { 'Content-Type': TYPES[ext0 as string] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+        res.writeHead(200, { 'Content-Type': TYPES[ext0 as string] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff', ...(ext0 === 'svg' ? { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox" } : {}) });
         res.end(body);
       } catch {
         sendText(res, 404, 'not found');

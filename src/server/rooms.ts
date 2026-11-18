@@ -39,6 +39,8 @@ export const validRoomId = (id: unknown): id is string => typeof id === 'string'
 export const roomHome = (root: string, id: string): string => (id === MAIN_ROOM ? root : join(root, ROOMS_DIR, id));
 
 // eslint-disable-next-line no-control-regex
+/** A name that came from a room's own state (its tab name): cleaned and cut like a room's name, so a room cannot show the Director bidi or control characters. */
+export const roomText = (text: string): string => cleanName(text).slice(0, NAME_MAX);
 const cleanName = (text: string): string => text.replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
 
 /**

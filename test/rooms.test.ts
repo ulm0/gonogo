@@ -380,7 +380,16 @@ describe('the supervisor', () => {
       expect(html).not.toContain('<b>');
       const logo = await api(sup, '/lockup.svg', null);
       expect([logo.status, logo.headers.get('content-type')]).toEqual([200, 'image/svg+xml']);
+      expect(logo.headers.get('content-security-policy')).toBe("default-src 'none'; style-src 'unsafe-inline'; sandbox");
       expect((await api(sup, '/lockup.png', null)).status).toBe(404);
+    });
+
+    it('the tab name a room reports is cleaned and cut like a room name', async () => {
+      sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', FAKE_TAB: `a\u202eb\nc${'x'.repeat(60)}` } });
+      const s = sup;
+      await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+      const tab = ((await (await api(s, '/api/rooms')).json()) as { rooms: Array<{ tabName: string }> }).rooms[0]?.tabName ?? '';
+      expect(tab).toBe(`a b c${'x'.repeat(60)}`.slice(0, 40));
     });
 
     it('the logo shipped to the page is the one of the brand folder', () => {

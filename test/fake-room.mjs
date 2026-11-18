@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
   const ok = req.headers.authorization === `Bearer ${token}`;
   if (req.url === '/api/state') {
     if (!ok) return void res.writeHead(401).end('no');
-    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], tabName: { name: 'Fake tab', fallback: null } }));
+    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
   }
   res.writeHead(200, { 'content-type': 'text/html' }).end(`<p>room at ${home}</p>`);
 });
