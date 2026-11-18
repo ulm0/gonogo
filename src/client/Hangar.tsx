@@ -114,7 +114,7 @@ function Tree({ path, depth, dirs, expanded, current, onToggle, onOpen }: TreePr
         <li key={entry.name}>
           <button type="button" className="hg-item" style={indent} aria-expanded={open} onClick={() => onToggle(full)}>
             <span className="hg-mark" aria-hidden="true">
-              {open ? '▾' : '▸'}
+              <span className="icon" data-icon={open ? 'chevron-down' : 'chevron-right'} />
             </span>
             {entry.name}
           </button>

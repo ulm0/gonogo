@@ -470,7 +470,7 @@ function Remove({ agent, legend, onKeep, onRemove, busy }: { agent: AgentView; l
       <p id={`remove-${agent.name}`}>The console and its session go. Its notes stay on disk until you delete them.</p>
       {agent.worktree && (
         <div className="staff-check">
-          <input id={`remove-tree-${agent.name}`} type="checkbox" checked={deleteTree} onChange={(event) => setDeleteTree(event.target.checked)} />
+          <input id={`remove-tree-${agent.name}`} type="checkbox" className="check" checked={deleteTree} onChange={(event) => setDeleteTree(event.target.checked)} />
           <label htmlFor={`remove-tree-${agent.name}`}>Also delete its worktree and branch (git keeps them when they hold unsaved or unmerged work)</label>
           {deleteTree && <p className="hint">Files that git ignores (.env, node_modules, build output) are deleted with the worktree.</p>}
         </div>

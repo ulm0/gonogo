@@ -41,12 +41,6 @@
   border: 0;
 }
 
-/* A select matches :read-only, which greys it (see forms.css): it keeps the look of a field you can change. */
-.win-form .input:is(select) {
-  background: var(--key);
-  color: var(--text);
-}
-
 .win-body {
   font-family: var(--font-ui);
   font-size: 14px;
@@ -81,14 +75,6 @@
   align-items: center;
   gap: 12px;
   min-height: 44px;
-}
-
-.win-check input {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  margin: 0;
-  accent-color: var(--go-ink);
 }
 
 .win-check label {
@@ -214,7 +200,7 @@
   grid-area: error;
 }
 
-/* ---- the on switch: a checkbox that looks like one ---- */
+/* ---- the on switch: the label of a .switch (primitives.css) ---- */
 
 .win-switch {
   display: inline-flex;
@@ -227,41 +213,6 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
-}
-
-.win-switch input {
-  appearance: none;
-  position: relative;
-  flex: none;
-  width: 44px;
-  height: 26px;
-  margin: 0;
-  border: 1px solid var(--muted);
-  border-radius: 13px;
-  background: var(--well);
-  cursor: pointer;
-}
-
-.win-switch input::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--muted);
-  transition: transform 0.15s;
-}
-
-.win-switch input:checked {
-  border-color: var(--go-ink);
-  background: var(--go-ink);
-}
-
-.win-switch input:checked::after {
-  background: var(--key);
-  transform: translateX(18px);
 }
 
 @media (min-width: 700px) {

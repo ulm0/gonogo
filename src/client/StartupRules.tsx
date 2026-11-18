@@ -66,7 +66,7 @@ export function SubagentsBlock(): ReactElement {
       </h2>
       {settings !== null && (
         <>
-          <select aria-label="Subagents" value={settings.mode} onChange={(event) => change({ mode: event.target.value as SubagentMode })}>
+          <select className="input" data-fit aria-label="Subagents" value={settings.mode} onChange={(event) => change({ mode: event.target.value as SubagentMode })}>
             {SUBAGENT_MODES.map((mode) => (
               <option key={mode} value={mode}>
                 {SUB_TEXT[mode]}
@@ -74,7 +74,7 @@ export function SubagentsBlock(): ReactElement {
             ))}
           </select>
           {settings.mode === 'limit' && (
-            <input aria-label="Most subagents at once" type="number" min={1} max={SUBAGENT_LIMIT_MAX} value={settings.limit} onChange={(event) => change({ limit: Number(event.target.value) })} />
+            <input className="input" data-fit aria-label="Most subagents at once" type="number" min={1} max={SUBAGENT_LIMIT_MAX} value={settings.limit} onChange={(event) => change({ limit: Number(event.target.value) })} />
           )}
           <p className="hint">
             What a Claude Code console may do with the helpers it starts. A limit is Claude Code's own, and it does not apply while a session runs ultracode. None denies the Agent tool. A helper still uses the console's gonogo tools, as the console. Applies at each console's next start.
@@ -115,7 +115,7 @@ export function StartupBlock(): ReactElement {
       </h2>
       {settings !== null && (
         <>
-          <select aria-label="Start again after a restart" value={settings.policy} onChange={(event) => change({ policy: event.target.value as StartupPolicy })}>
+          <select className="input" data-fit aria-label="Start again after a restart" value={settings.policy} onChange={(event) => change({ policy: event.target.value as StartupPolicy })}>
             {STARTUP_POLICIES.map((policy) => (
               <option key={policy} value={policy}>
                 {TEXT[policy]}
@@ -124,11 +124,11 @@ export function StartupBlock(): ReactElement {
           </select>
           <p className="hint">{HINT[settings.policy]}</p>
           <label className="staff-check">
-            <input type="checkbox" checked={settings.bossMayStart} onChange={(event) => change({ bossMayStart: event.target.checked })} />
+            <input type="checkbox" className="check" checked={settings.bossMayStart} onChange={(event) => change({ bossMayStart: event.target.checked })} />
             FLIGHT may start agents (the start_agent tool, for a console that is stopped; never one on hold)
           </label>
           <label className="staff-check">
-            <input type="checkbox" checked={settings.carryOn} onChange={(event) => change({ carryOn: event.target.checked })} />
+            <input type="checkbox" className="check" checked={settings.carryOn} onChange={(event) => change({ carryOn: event.target.checked })} />
             Tell a console that was in the middle of a turn to carry on
           </label>
         </>

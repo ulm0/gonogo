@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **A design-system pass.** Selects, checkboxes, radios and switches are no longer the browser's own: `select.input`, `.check`, `.radio` and `.switch` draw them in the instrument's look (native inputs, so keyboard and screen reader are unchanged; 4.5:1, 7:1 in High Contrast), in Flight Rules (FEATURES, DEFAULTS, startup, subagents, phone approvals, permissions), the hire and edit forms, Launch Window, Uplink, Relay, the Recorder and the docs mocks. The lock emoji and the text arrows of the Hangar tree are gone: `.icon` draws lock, chevrons and the livery half-circle in the colour of the text. A new livery must now also hold 4.5:1 between `--go-ink` and `--key` (a checked box); one made earlier still loads.
+
 ## 0.3.0 (2026-11-18)
 
 Since 0.2.0: subagents, plan quota, feature toggles, tool permissions, mission cost and budget, a room editor, restart recovery, live reload (opt-in), an Update button, Bedrock notes and more. Tried with the stand-in agent only, for most features without a real `claude`; not in a browser; not with a real Telegram, a Docker updater or an AWS run (Bedrock is checked against docs only); `agy` is checked against its help only.

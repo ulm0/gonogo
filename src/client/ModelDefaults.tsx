@@ -76,7 +76,7 @@ function Pick({ label, saved, options, empty, set, onSaved }: { label: string; s
       <label htmlFor={id} className="rules-call">
         {label}
       </label>
-      <select id={id} className="input" value={saved} disabled={busy} onChange={(event) => run(async () => onSaved(await set(event.target.value === '' ? null : event.target.value)))}>
+      <select id={id} className="input" data-fit value={saved} disabled={busy} onChange={(event) => run(async () => onSaved(await set(event.target.value === '' ? null : event.target.value)))}>
         <option value="">{empty}</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>

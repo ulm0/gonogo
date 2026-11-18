@@ -166,7 +166,7 @@ export function Editor({
           </div>
         )}
         <div className="win-check">
-          <input id={`${id}-enabled`} type="checkbox" checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
+          <input id={`${id}-enabled`} type="checkbox" className="check" checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
           <label htmlFor={`${id}-enabled`}>On: take deliveries</label>
         </div>
       </fieldset>
@@ -266,7 +266,7 @@ function Row({ uplink, now, onEdit, onNotice, onSecret }: { uplink: UplinkView; 
       <div className="win-buttons">
         <label className="win-switch">
           <input
-            type="checkbox"
+            type="checkbox" className="switch"
             role="switch"
             checked={uplink.enabled}
             aria-label={`${name} enabled`}

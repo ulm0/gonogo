@@ -212,6 +212,38 @@ idle) sets light and surface; `aria-pressed="true"` rings the chosen one. `.room
 `.field`: label, control, `.hint`. `.input`: 46 px on `--key`, `--well` when read-only; `aria-invalid="true"` draws a 2 px
 `--nogo` edge, reason in an `.error` below. `.textarea` is mono.
 
+### Tabs
+
+<div class="ds-frame" :data-livery="look">
+<div class="ds-stack" style="max-width: 420px">
+<span class="tabs" role="tablist" aria-label="Example"><button type="button" role="tab" class="btn tab" data-kind="primary" aria-selected="true" aria-label="INBOX, 2 unread">INBOX <span class="chip" data-tone="amber" aria-hidden="true">2</span></button><button type="button" role="tab" class="btn tab" data-kind="quiet" aria-selected="false" tabindex="-1">TRAFFIC</button><button type="button" role="tab" class="btn tab" data-kind="quiet" aria-selected="false" tabindex="-1">THREADS</button></span>
+</div>
+</div>
+
+`.tabs` holds `.btn.tab` keys with `role="tab"`: the chosen one `data-kind="primary"` and `aria-selected`, the others quiet with `tabindex="-1"`, so that Tab enters the bar once and the arrow keys, Home and End walk it. A count is an amber chip that is `aria-hidden`, and the key's `aria-label` says it in words ("INBOX, 2 unread"). Each key is 44 px; under 700 px they share the width. COMMS uses it.
+
+### Select, check, radio, switch and icons
+
+Native controls, so the keyboard, the screen reader and the form come for free, drawn in the instrument's look with the livery's tokens. No script and no dependency.
+
+<div class="ds-frame" :data-livery="look">
+<div class="ds-stack" style="max-width: 420px">
+<div class="field"><label for="ds-sel">Engine</label><select id="ds-sel" class="input"><option>Claude Code</option><option>Gemini CLI</option><option>pi</option></select></div>
+<div class="field"><label for="ds-sel-bad">Model</label><select id="ds-sel-bad" class="input" aria-invalid="true"><option>pick one</option></select></div>
+<span style="display: flex; align-items: center; gap: 12px; min-height: 44px"><input id="ds-c1" type="checkbox" class="check" checked /><label for="ds-c1">Own git worktree</label></span>
+<span style="display: flex; align-items: center; gap: 12px; min-height: 44px"><input id="ds-c2" type="checkbox" class="check" /><label for="ds-c2">Also delete its folder</label></span>
+<span style="display: flex; align-items: center; gap: 12px; min-height: 44px"><input id="ds-c3" type="checkbox" class="check" disabled /><label for="ds-c3">Disabled</label></span>
+<span style="display: flex; align-items: center; gap: 12px; min-height: 44px"><input id="ds-r1" type="radio" name="ds-r" class="radio" checked /><label for="ds-r1">All changes</label></span>
+<span style="display: flex; align-items: center; gap: 12px; min-height: 44px"><input id="ds-r2" type="radio" name="ds-r" class="radio" /><label for="ds-r2">Only what is staged</label></span>
+<span style="display: flex; align-items: center; gap: 12px; min-height: 44px"><input id="ds-s1" type="checkbox" role="switch" class="switch" checked /><label for="ds-s1">Enabled</label></span>
+<span style="display: flex; align-items: center; gap: 12px; min-height: 44px"><input id="ds-s2" type="checkbox" role="switch" class="switch" /><label for="ds-s2">Off</label></span>
+<span class="label">Icons</span>
+<span style="display: flex; gap: 16px; font-size: 20px"><span class="icon" data-icon="lock" role="img" aria-label="lock"></span><span class="icon" data-icon="chevron-right" role="img" aria-label="closed"></span><span class="icon" data-icon="chevron-down" role="img" aria-label="open"></span><span class="icon" data-icon="half" role="img" aria-label="livery"></span></span>
+</div>
+</div>
+
+`select.input` is the field with a chevron of `--text-2` (4.5:1 and better on `--key`); `data-fit` makes it as wide as its longest option for a select that shares a line. `.check` and `.radio` are 22 px with a 2 px `--muted` edge and, when on, the dark `--go-ink` with a mark in `--key`; `.switch` is a 44 by 26 px track with a thumb, on a native checkbox with `role="switch"`. Give each a `<label>` that fills a 44 px row, so the row is the touch target. `.icon` is a shape drawn in the colour of the text around it (`lock`, `chevron-right`, `chevron-down`, `half`); under Windows forced colours the shapes take the system's colours (checked boxes and switches are Highlight with a Canvas mark; that was written from the CSS spec and not run on Windows), the app has no emoji, and an icon that carries meaning needs `role="img"` and a label, or a word next to it.
+
 ### Elements of the feature pages
 
 Each is built from the keys, chips, lights, modules and fields above, so it follows the livery. The feature pages show them in use.
@@ -221,7 +253,7 @@ Each is built from the keys, chips, lights, modules and fields above, so it foll
 <span class="label">Engine, model and effort chips</span>
 <span style="display: flex; flex-wrap: wrap; gap: 4px 6px"><span class="chip" data-tone="quiet">Claude Code</span><span class="chip" data-tone="quiet">opus · position default</span><span class="chip" data-tone="quiet">effort high · room default</span></span>
 <span class="label">Feature toggle row</span>
-<div style="display: grid; gap: 6px"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><input type="checkbox" role="switch" checked aria-label="Missions" /><span style="font-weight: 600">Missions</span><span class="hint">Groups tasks and the cost of a goal.</span><span class="chip" data-tone="quiet">needs Flight Plan</span></span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><input type="checkbox" role="switch" aria-label="Review" /><span style="font-weight: 600; opacity: 0.6">Review</span><span class="hint">Post-Flight Review of a diff.</span></span><div style="border: 1px solid var(--edge); border-radius: 4px; padding: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px" role="group" aria-label="Plan for Review"><span style="flex-basis: 100%">Turning Review on needs nothing else.</span><button type="button" class="btn">CANCEL</button><button type="button" class="btn" data-kind="primary">TURN ON</button></div></div>
+<div style="display: grid; gap: 6px"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><input type="checkbox" role="switch" class="switch" checked aria-label="Missions" /><span style="font-weight: 600">Missions</span><span class="hint">Groups tasks and the cost of a goal.</span><span class="chip" data-tone="quiet">needs Flight Plan</span></span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px"><input type="checkbox" role="switch" class="switch" aria-label="Review" /><span style="font-weight: 600; opacity: 0.6">Review</span><span class="hint">Post-Flight Review of a diff.</span></span><div style="border: 1px solid var(--edge); border-radius: 4px; padding: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px" role="group" aria-label="Plan for Review"><span style="flex-basis: 100%">Turning Review on needs nothing else.</span><button type="button" class="btn">CANCEL</button><button type="button" class="btn" data-kind="primary">TURN ON</button></div></div>
 <span class="label">Version corner</span>
 <span style="font-family: var(--font-mono); font-size: 10px; line-height: 1.4; color: var(--text-2); opacity: 0.7">gonogo 0.3.0</span>
 <span class="label">Verdict line and review note</span>

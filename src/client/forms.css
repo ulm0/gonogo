@@ -255,7 +255,7 @@
 
 /* A select matches :read-only, which greys a read-only name: the engine select keeps the look of a field you can change. */
 .staff .input.staff-engine {
-  background: var(--key);
+  background-color: var(--key);
   color: var(--text);
 }
 
@@ -402,10 +402,6 @@
   gap: 2px;
 }
 
-.staff-clean .staff-check input {
-  accent-color: var(--work);
-}
-
 .staff-clean .hint {
   margin: 0;
 }
@@ -495,14 +491,6 @@
   align-items: center;
   gap: 12px;
   min-height: 44px;
-}
-
-.staff-check input {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  margin: 0;
-  accent-color: var(--nogo);
 }
 
 .staff-check label {

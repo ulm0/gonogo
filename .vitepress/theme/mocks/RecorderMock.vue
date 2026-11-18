@@ -29,8 +29,8 @@ const why = computed(() => commitProblem(message.value, scope.value, FILES, true
         <label for="rc-mock-message">Message</label>
         <textarea id="rc-mock-message" v-model="message" class="textarea" rows="2" autocomplete="off" />
       </div>
-      <label class="mk-radio"><input v-model="scope" type="radio" value="all" />All changes ({{ FILES.length }}): git adds them first</label>
-      <label class="mk-radio"><input v-model="scope" type="radio" value="staged" />Only what is staged ({{ stagedCount(FILES) }})</label>
+      <label class="mk-radio"><input v-model="scope" type="radio" class="radio" value="all" />All changes ({{ FILES.length }}): git adds them first</label>
+      <label class="mk-radio"><input v-model="scope" type="radio" class="radio" value="staged" />Only what is staged ({{ stagedCount(FILES) }})</label>
       <span class="mk-commit"><span class="btn" data-kind="primary" :aria-disabled="why !== null || undefined">Commit</span><span class="hint" aria-live="polite">{{ why ?? 'Ready.' }}</span></span>
     </div>
     <pre class="lcd mk-diff" role="region" aria-label="Diff of src/index.ts" tabindex="0"><span v-for="(l, i) in lines" :key="i" :data-kind="l.kind">{{ l.text }}
@@ -84,13 +84,6 @@ const why = computed(() => commitProblem(message.value, scope.value, FILES, true
   min-height: 36px;
   color: var(--text);
   font-size: 13px;
-}
-
-.mk-radio input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--work);
 }
 
 .mk-commit {

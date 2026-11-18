@@ -112,14 +112,6 @@
   text-transform: none;
 }
 
-.rc-radio input {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  margin: 0;
-  accent-color: var(--work);
-}
-
 .rc-commit .btn,
 .rc-retry .btn {
   align-self: flex-start;

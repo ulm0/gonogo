@@ -16,7 +16,7 @@ export function PermissionsEditor({ id, value, onChange, error, inheritedDeny = 
         {COMMON_TOOLS.map((tool) => (
           <li key={tool}>
             <label htmlFor={`${id}-${tool}`}>{tool}</label>
-            <select id={`${id}-${tool}`} value={toolState(value, tool)} onChange={(event) => onChange(setToolState(value, tool, event.target.value as '' | PermissionList))}>
+            <select id={`${id}-${tool}`} className="input" data-fit value={toolState(value, tool)} onChange={(event) => onChange(setToolState(value, tool, event.target.value as '' | PermissionList))}>
               {(['', ...PERMISSION_LISTS] as const).map((list) => (
                 <option key={list} value={list}>
                   {LABEL[list]}
@@ -36,7 +36,7 @@ export function PermissionsEditor({ id, value, onChange, error, inheritedDeny = 
       </label>
       <textarea
         id={`${id}-text`}
-        className="perm-text"
+        className="textarea perm-text"
         rows={4}
         spellCheck={false}
         value={value}
