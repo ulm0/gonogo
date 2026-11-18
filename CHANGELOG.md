@@ -4,7 +4,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
-- **Amazon Bedrock.** Checked against the vendors' docs and gonogo's code, not run against AWS: Claude Code works with the AWS variables as Clearance keys or in the shell (a Clean Room needs keys; it has no `~/.aws`), Bedrock ids fit the model field and show as unpriced until you add a price row. The hire form suggests the Bedrock key names. A Bedrock section in the Engine Bay page and `docs/facts/bedrock.md`.
+- **Amazon Bedrock.** Checked against the vendors' docs and gonogo's code, not run against AWS: Claude Code is expected to work with the AWS variables as Clearance keys or in the shell (a Clean Room needs keys; it has no `~/.aws`), Bedrock ids fit the model field and show as unpriced until you add a price row. The hire form suggests the Bedrock key names. A Bedrock section in the Engine Bay page and `docs/facts/bedrock.md`.
 
 ## 0.2.0 (2026-11-18)
 

@@ -55,7 +55,7 @@ gonogo has no Bedrock switch: an engine uses Bedrock when its own settings say s
 
 | Engine | Bedrock | What to set |
 |---|---|---|
-| Claude Code | works with keys | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key) or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN`), or `AWS_PROFILE`. Model: the agent's model field with a Bedrock id, or the key `ANTHROPIC_MODEL` |
+| Claude Code | expected to work with keys (not run against AWS) | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key) or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN`), or `AWS_PROFILE`. Model: the agent's model field with a Bedrock id, or the key `ANTHROPIC_MODEL` |
 | opencode | needs its own setup | the same AWS variables (`AWS_PROFILE`, the key pair or `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`); pick the Bedrock model inside opencode (gonogo has no model field for it) |
 | Codex | needs a config line | `model_provider = "amazon-bedrock"` in `~/.codex/config.toml` (optional profile and region there), plus `AWS_PROFILE` or keys |
 | pi | needs setup in pi | the AWS variables; the provider is picked in pi (`--model amazon-bedrock/<id>` is likely, not verified) |
