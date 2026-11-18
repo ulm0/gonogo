@@ -69,6 +69,7 @@ import type {
   PermissionRules,
   StartupSettings,
   SubagentSettings,
+  CoauthorSettings,
   HoldAllResult,
   ResumeAllResult,
   Provider,
@@ -423,6 +424,19 @@ export async function holdAll(): Promise<HoldAllResult> {
 /** ALL RESUME: resumes every console that is on hold. */
 export async function resumeAll(): Promise<ResumeAllResult> {
   return (await call('POST', '/resume-all')) as ResumeAllResult;
+}
+
+/** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */
+export async function coauthorSettings(): Promise<CoauthorSettings> {
+  const record = asRecord(await call('GET', '/coauthor'));
+  if (record === null || typeof record.enabled !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as CoauthorSettings;
+}
+
+export async function setCoauthorSettings(enabled: boolean): Promise<CoauthorSettings> {
+  const record = asRecord(await call('PUT', '/coauthor', { enabled }));
+  if (record === null || typeof record.enabled !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as CoauthorSettings;
 }
 
 /** Subagents: what a Claude Code agent may do with its helpers (allow, limit, none). */

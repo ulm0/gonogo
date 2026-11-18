@@ -103,7 +103,7 @@ const baseEnv = (extra: Record<string, string | undefined> = {}): Record<string,
 });
 
 function launcher(over: Partial<LauncherOptions> = {}): Launcher {
-  return createLauncher({ homeDir: home, hubUrl: () => HUB, seed: false, env: baseEnv(), log: logs.log, ...over });
+  return createLauncher({ homeDir: home, hubUrl: () => HUB, seed: false, env: baseEnv(), log: logs.log, coauthor: () => ({ enabled: false }), ...over });
 }
 
 function seedLauncher(over: Partial<LauncherOptions> = {}): Launcher {

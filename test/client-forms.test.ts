@@ -70,7 +70,7 @@ function item(id: string, from: string, to: string, extra: Partial<ActivityItem>
   };
 }
 
-const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, worktree: false, remoteControl: false, autostart: true, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
+const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
 
 describe('staffing a seat, no position or a custom command', () => {
   it('picking a position after a custom command makes the agent a Claude one and replaces the placeholder role', () => {

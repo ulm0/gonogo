@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 const launcher = (seed = false): Launcher =>
-  createLauncher({ homeDir: home, hubUrl: () => HUB, seed, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') } });
+  createLauncher({ homeDir: home, hubUrl: () => HUB, seed, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') }, coauthor: () => ({ enabled: false }) });
 const agent = (provider: Provider, over: Partial<AgentRecord> = {}): AgentRecord => ({
   name: 'ana',
   role: 'Reviews pull requests.',

@@ -9,7 +9,7 @@ import type { Position } from '../shared/positions.js';
 /** The server's COMMAND_MAX_CHARS (src/server/constants.ts, which the client build does not include). */
 export const COMMAND_MAX_CHARS = 1000;
 
-export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'remoteControl' | 'autostart' | 'permissions' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'effort' | 'keys';
+export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'remoteControl' | 'autostart' | 'coauthor' | 'permissions' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'effort' | 'keys';
 export type Problems = Partial<Record<Field, string>>;
 
 /** One key typed in the form: a name and its value, which only ever travels from here to the server. */
@@ -42,6 +42,8 @@ export interface Values {
   rules: string;
   /** Start with gonogo: false keeps the room's startup policy from starting this agent again. */
   autostart: boolean;
+  /** Co-author line: this console's commits end with `Co-Authored-By: <name> (gonogo)`. Unticked: not for this console, whatever the room says. */
+  coauthor: boolean;
   /** Engine Bay: the model for `--model`; '' is the CLI's default. */
   model: string;
   /** Claude Code only: a level of EFFORTS for `--effort`; '' is the CLI's own. */
@@ -106,7 +108,7 @@ export function choosePosition(
 
 /** The custom command tile: no position, no permissions, and a fixed role (the form shows none for it). */
 export function chooseCustom(values: Values, agents: Readonly<Record<string, AgentView>>): Values {
-  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, autostart: values.autostart, rules: '', model: '', effort: '', name: untouched(values, agents).name ? '' : values.name };
+  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, autostart: values.autostart, coauthor: values.coauthor, rules: '', model: '', effort: '', name: untouched(values, agents).name ? '' : values.name };
 }
 
 /** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
@@ -178,6 +180,7 @@ export function initialValues(
     remoteControl: Boolean(current?.remoteControl),
     rules: rulesToText(current?.permissions),
     autostart: current?.autostart !== false,
+    coauthor: current?.coauthor !== false,
     model: current?.model ?? '',
     effort: current?.effort ?? '',
     keys: [],
@@ -399,6 +402,7 @@ export function hireRequest(values: Values): HireRequest {
   const rules = values.provider === 'claude' ? rulesOf(values.rules) : null;
   if (rules !== null) request.permissions = rules;
   if (!values.autostart) request.autostart = false;
+  if (!values.coauthor) request.coauthor = false;
   return request;
 }
 
@@ -432,6 +436,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     if (JSON.stringify(rules) !== JSON.stringify(original.permissions ?? null)) changes.permissions = rules;
   }
   if (values.autostart !== (original.autostart !== false)) changes.autostart = values.autostart;
+  if (values.coauthor !== (original.coauthor !== false)) changes.coauthor = values.coauthor;
   if (JSON.stringify(remoteControlOf(values)) !== JSON.stringify(original.remoteControl ?? null)) changes.remoteControl = remoteControlOf(values);
   if (JSON.stringify(worktreeOf(values)) !== JSON.stringify(original.worktree ?? null)) changes.worktree = worktreeOf(values);
   const keys = keysOf(values, Object.keys(original.keys ?? {}));

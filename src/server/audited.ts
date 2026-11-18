@@ -52,7 +52,7 @@ export function audited<T extends object>(store: T, record: AuditRecord, table: 
 }
 
 /** The fields an edit names: the names of the fields only, never their values. */
-const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart'];
+const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor'];
 const fieldsOf = (value: unknown, allowed: string[]): string[] => (isRecord(value) ? Object.keys(value).filter((key) => allowed.includes(key) && value[key] !== undefined) : []);
 
 const actorName = (actor: unknown): string => {
@@ -180,6 +180,7 @@ export const SCHEDULES_AUDIT: Table = {
   run: ['config', 'Director ran schedule'],
 };
 export const PERMISSIONS_AUDIT: Table = { set: ['config', "Director changed the room's tool rules"] };
+export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const STARTUP_AUDIT: Table = { set: ['config', 'Director changed the startup policy'] };
 /** Feature toggles: which features were switched, by id (ids are plain words). */

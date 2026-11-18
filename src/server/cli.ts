@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, FEATURES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -72,6 +72,7 @@ import { createPermissionDefaults } from './permissions.js';
 import { createRunState } from './runstate.js';
 import { createStartupStore } from './startup.js';
 import { createSubagentStore } from './subagents.js';
+import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { createUpdater } from './updater.js';
 import type { Updater } from './updater.js';
@@ -435,6 +436,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await runState.load();
     const startupStore = createStartupStore({ dir: home.dir, log: log.child('startup') });
     await startupStore.load();
+    const coauthorStore = createCoauthorStore({ dir: home.dir, log: log.child('coauthor') });
+    await coauthorStore.load();
     const subagentStore = createSubagentStore({ dir: home.dir, log: log.child('subagents') });
     await subagentStore.load();
     const launcher = createLauncher({
@@ -450,6 +453,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       defaultEffort: () => modelDefaults.effort(),
       defaultPermissions: () => permissionDefaults.get(),
       subagents: () => subagentStore.view(),
+      coauthor: () => coauthorStore.view(),
       log: log.child('launcher'),
     });
 
@@ -858,6 +862,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
       subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),
+      coauthor: audited(coauthorStore, blackBox.record, COAUTHOR_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -955,6 +960,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('features close', () => features.close());
       await step('permissions close', () => permissionDefaults.close());
       await step('subagents close', () => subagentStore.close());
+      await step('coauthor close', () => coauthorStore.close());
       await step('startup close', async () => {
         await startupStore.close();
         await runState.close();
@@ -1122,7 +1128,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   }
   if (parsed.kind === 'doctor') {
     const checks = await checkEngines(env);
-    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null));
+    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\ndoctor never runs`));
     // the same refusal as the start: no claude and nothing in its place
     exit(checks.find((c) => c.provider === 'claude')?.path === null && !env.GONOGO_AGENT_CMD?.trim() ? 1 : 0);
     return;

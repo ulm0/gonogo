@@ -408,6 +408,10 @@ export interface SubagentSettings {
   /** Used when the mode is `limit`; kept when it is not. */
   limit: number;
 }
+/** Co-author (docs/coauthor-spec.md): the room's switch for the `Co-Authored-By: <agent> (gonogo)` line an agent's commits carry. On by default. */
+export interface CoauthorSettings {
+  enabled: boolean;
+}
 export const STARTUP_POLICIES = ['boss', 'running', 'off'] as const;
 export type StartupPolicy = (typeof STARTUP_POLICIES)[number];
 export interface StartupSettings {
@@ -466,6 +470,8 @@ export interface AgentRecord {
   permissions?: PermissionRules;
   /** Absent means it follows the room's startup policy; `false` is never started again by it. */
   autostart?: false;
+  /** Absent follows the room's co-author setting; `false` keeps the co-author line off for this agent. */
+  coauthor?: false;
   /** The Director stopped this agent and it has not been started since: FLIGHT's `start_agent` is refused. Cleared by any start. */
   stoppedBy?: 'director';
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
@@ -570,6 +576,8 @@ export interface AgentView {
   permissions: PermissionRules | null;
   /** false: the room's startup policy does not start this agent again. */
   autostart: boolean;
+  /** false: this agent's commits carry no co-author line (the room's setting decides otherwise). */
+  coauthor: boolean;
   /** The model as stored, or null for the CLI's default. */
   model: string | null;
   /** The effort as stored, or null for the CLI's own. Only Claude Code takes one. */
@@ -1270,6 +1278,8 @@ export interface HireRequest {
   permissions?: PermissionRules;
   /** false keeps the room's startup policy from starting this agent again; true (the default) follows it. */
   autostart?: boolean;
+  /** false keeps the co-author line off for this agent; true (the default) follows the room's setting. */
+  coauthor?: boolean;
   /** Claude Code only: passed as `--effort`. Refused (400, field 'effort') for another engine or a level that is not in EFFORTS. */
   effort?: Effort;
   /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
@@ -1300,6 +1310,8 @@ export interface EditRequest {
   permissions?: PermissionRules | null;
   /** false: the startup policy does not start this agent again; true follows the room's. */
   autostart?: boolean;
+  /** false: the co-author line stays off for this agent; true follows the room's. */
+  coauthor?: boolean;
   /** A level of EFFORTS, or null for the CLI's own. */
   effort?: Effort | null;
   /** A model name, or null or empty text for the CLI's default. */
@@ -1846,6 +1858,8 @@ export interface LauncherOptions {
   defaultEffort?: () => Effort | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
+  /** Co-author: the room's setting, read at each start. Default: on. */
+  coauthor?: () => CoauthorSettings;
   /** Subagents: the room's setting, read at each start. Default: allowed. */
   subagents?: () => SubagentSettings;
   log?: Logger;

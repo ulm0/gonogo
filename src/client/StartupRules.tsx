@@ -90,6 +90,48 @@ export function SubagentsBlock(): ReactElement {
   );
 }
 
+/** Flight Rules: the Co-Authored-By line an agent's commits carry (docs/features/coauthor.md). */
+export function CoauthorBlock(): ReactElement {
+  const id = useId();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.coauthorSettings().then((found) => live && setEnabled(found.enabled), (e: unknown) => live && setProblem(e instanceof Error ? e.message : String(e)));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <section className="module rules-block" aria-labelledby={`${id}-title`}>
+      <h2 className="label" id={`${id}-title`}>
+        CO-AUTHOR LINE
+      </h2>
+      {enabled !== null && (
+        <label className="staff-check">
+          <input
+            type="checkbox" className="switch" role="switch"
+            checked={enabled}
+            onChange={(event) => {
+              setProblem(null);
+              api.setCoauthorSettings(event.target.checked).then((found) => setEnabled(found.enabled), (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+            }}
+          />
+          Add a gonogo co-author line to commits agents make
+        </label>
+      )}
+      <p className="hint">
+        A commit an agent makes ends with Co-Authored-By: its name (gonogo) and an address that is never a real account. It is added by a git hook gonogo sets for the agent alone: your repository and your git config are not written. Commits you make through Recorder get none. A console can opt out in its form. The switch and the opt-out apply at each console&apos;s next restart: one that is running keeps what it started with.
+      </p>
+      {problem !== null && (
+        <p className="error" role="alert">
+          {problem}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function StartupBlock(): ReactElement {
   const id = useId();
   const [settings, setSettings] = useState<StartupSettings | null>(null);

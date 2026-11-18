@@ -57,6 +57,7 @@ import {
 } from './constants.js';
 import { prepareWorktree, worktreeBranch } from './worktree.js';
 import type { WorktreePlace } from './worktree.js';
+import { coauthorEnv, ensureHooksDir, realHookNames } from './coauthor.js';
 import { remoteControlName } from './remotecontrol.js';
 import { effectiveRules } from './permissions.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
@@ -536,6 +537,22 @@ export function createLauncher(options: LauncherOptions): Launcher {
   };
 
   /** A custom command is a plain terminal: no settings, MCP file, token or memory file, and no folder trust. */
+  /**
+   * The co-author line (docs/coauthor-spec.md): the agent's own hooks folder and the three variables that point git at it, when the room
+   * and the agent have it on. Never an error: a start does not fail for want of a trailer.
+   */
+  const withCoauthor = async (agent: AgentRecord, env: Record<string, string>, cwd: string, agentFolder: string, onlyAdd = false): Promise<Record<string, string>> => {
+    if (agent.coauthor === false || options.coauthor?.().enabled === false || agent.cleanRoom !== undefined) return env;
+    try {
+      const dir = await ensureHooksDir(agentFolder, agent.name, await realHookNames(cwd, options.env ?? process.env));
+      const added = coauthorEnv(env, dir);
+      return onlyAdd ? added : { ...env, ...added };
+    } catch (error) {
+      log.warn(`${agent.name}: no co-author line this start`, errorText(error));
+      return onlyAdd ? {} : env;
+    }
+  };
+
   const prepareCustom = async (agent: AgentRecord): Promise<PreparedStart> => {
     const { name } = agent;
     let words: string[] | null;
@@ -548,7 +565,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
     if (!file) throw new Error(`the command of ${name} is empty`);
     const dirInfo = await stat(agent.dir).catch(() => null);
     if (!dirInfo?.isDirectory()) throw new Error(`working directory does not exist: ${agent.dir}`);
-    return { spec: { file, args, env: buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name) }), cwd: (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir }, flag: 'session-id', token: '' };
+    const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
+    const env = await withCoauthor(agent, buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name) }), where, agentDir(name));
+    return { spec: { file, args, env, cwd: where }, flag: 'session-id', token: '' };
   };
 
   /** Engine Bay: another agent CLI, started by its program name with the files and flags of its adapter (providers.ts). */
@@ -571,9 +590,10 @@ export function createLauncher(options: LauncherOptions): Launcher {
     };
     const start = buildProviderStart(provider, ctx);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
-    const env = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: options.keys?.(agent.name) }), ...start.env };
+    const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
+    const env = await withCoauthor(agent, { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: options.keys?.(agent.name) }), ...start.env }, where, base);
     log.debug(`prepared ${agent.name} to run ${provider}`);
-    return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir }, flag: 'session-id', token };
+    return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
   };
 
   const prepareStart = async (
@@ -671,6 +691,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
       }
       const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
+      // a Clean Room has no git of the Director's inside: nothing to mark there
+      if (clean === null) Object.assign(childEnv, await withCoauthor(agent, childEnv, startDir, base, true));
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
       let spec: PreparedStart['spec'];
       if (clean === null) {

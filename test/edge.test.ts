@@ -193,6 +193,7 @@ function agentView(name: string, over: Partial<AgentView> = {}): AgentView {
     remoteControl: null,
     permissions: null,
     autostart: true,
+    coauthor: true,
     transition: null,
     draft: false,
     held: null,
@@ -1077,6 +1078,7 @@ describe('home', () => {
     ['a tool rule that is not a rule', JSON.stringify({ version: 1, agents: [agentRecord('ana', { permissions: { allow: ['rm -rf /'] } })] })],
     ['tool rules on a gemini agent', JSON.stringify({ version: 1, agents: [agentRecord('ana', { provider: 'gemini', permissions: { allow: ['Bash'] } })] })],
     ['autostart that is not false', JSON.stringify({ version: 1, agents: [agentRecord('ana', { autostart: true })] })],
+    ['coauthor that is not false', JSON.stringify({ version: 1, agents: [agentRecord('ana', { coauthor: true })] })],
     ['a payload on a custom agent', JSON.stringify({ version: 1, agents: [agentRecord('ana', { provider: 'custom', command: 'ls', payload: { mcpServers: { f: { command: 'x' } } } })] })],
   ])('refuses a roster with %s, naming the path and never resetting the file', (_what, text) => {
     const dir = tmpDir();
