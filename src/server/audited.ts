@@ -68,6 +68,7 @@ export const HUB_AUDIT: Table = {
   stop: ['crew', 'Director stopped'],
   remove: ['crew', 'Director removed'],
   edit: ['config', (args) => `Director edited ${plain(args[0]) ?? 'an agent'}: ${fieldsOf(args[1], EDIT_FIELDS).join(', ') || 'nothing'}`],
+  hold: ['redline', (args) => `Director put ${plain(args[0]) ?? 'an agent'} on hold`],
   resume: ['redline', 'Director resumed'],
   answer: ['answer', (args) => `Director answered ${plain(args[0]) ?? 'an agent'}: ${isRecord(args[1]) && args[1].go === true ? 'go' : 'no-go'}`],
   startPoll: ['poll', 'Director started a T-minus poll'],
@@ -75,6 +76,11 @@ export const HUB_AUDIT: Table = {
   abortPoll: ['poll', 'Director aborted the poll'],
   clearPoll: ['poll', 'Director cleared the poll'],
   setGovernor: ['config', (_args, result) => `Director set Max Q to ${isRecord(result) && typeof result.limit === 'number' ? `${result.limit} working` : 'no limit'}`],
+};
+
+/** Relief: the Director's go or no-go to a hire request, by the request's id (never the name, role, directory or text of the request). */
+export const RELIEF_AUDIT: Table = {
+  decide: ['answer', (args) => `Director answered hire request ${plain(args[0]) ?? '?'}: ${args[1] === 'go' ? 'go' : 'no-go'}`],
 };
 
 /** Flight Plan: who made or changed a task, and what kind of change (the status and the assignee, never a title, detail or note). */

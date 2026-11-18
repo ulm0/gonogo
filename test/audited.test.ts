@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditKind } from '../src/shared/protocol.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from '../src/server/audited.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from '../src/server/audited.js';
 
 type Told = Array<[AuditKind, string]>;
 
@@ -82,6 +82,7 @@ describe('what the Director does through the hub', () => {
     stop: async (name: string) => view(name),
     remove: async (name: string): Promise<void> => void name,
     edit: async (name: string, _request: unknown) => view(name),
+    hold: (name: string) => view(name),
     resume: (name: string) => view(name),
     answer: (name: string, _request: unknown) => view(name),
     startPoll: (_request: unknown) => ({ id: 3, status: 'open' }),
@@ -143,6 +144,13 @@ describe('what the Director does through the hub', () => {
       ['config', 'Director set Max Q to 4 working'],
       ['config', 'Director set Max Q to no limit'],
     ]);
+  });
+
+  it('records a Hold of an agent, and a Hold that was refused is not recorded', () => {
+    const { store, told } = wrapped({ ...hub, hold: (name: string) => (name === 'bad' ? (() => { throw new Error('no hooks'); })() : view(name)) }, HUB_AUDIT);
+    store.hold('ana');
+    expect(() => store.hold('bad')).toThrow();
+    expect(told).toEqual([['redline', 'Director put ana on hold']]);
   });
 
   it('leaves the other methods of the hub as they are', () => {
@@ -295,5 +303,31 @@ describe('what a Redline trip and a poll say', () => {
 
   it('puts the result of a poll after its name', () => {
     expect(pollText('HOLD: no-go: ana')).toBe('T-minus poll HOLD: no-go: ana');
+  });
+});
+
+describe('what the Director answers to Relief', () => {
+  const relief = { decide: async (id: string, verdict: string, _by: unknown) => ({ id, verdict, requests: [{ name: 'secret-name', role: SECRET }] }), view: () => ({ requests: [] }) };
+
+  it('records a go and a no-go by the id of the request, and nothing of the request', async () => {
+    const { store, told } = wrapped(relief, RELIEF_AUDIT);
+    await store.decide('h1', 'go', { kind: 'user' });
+    await store.decide('h2', 'no-go', { kind: 'user' });
+    expect(told).toEqual([
+      ['answer', 'Director answered hire request h1: go'],
+      ['answer', 'Director answered hire request h2: no-go'],
+    ]);
+    expect(JSON.stringify(told)).not.toContain(SECRET);
+    expect(store.view()).toEqual({ requests: [] });
+  });
+
+  it('records nothing when the answer is refused or the id is not a plain id', async () => {
+    const refusing = { decide: async (_id: string, _verdict: string, _by: unknown): Promise<never> => { throw new Error('forbidden'); } };
+    const refused = wrapped(refusing, RELIEF_AUDIT);
+    await expect(refused.store.decide('h1', 'go', { kind: 'agent' })).rejects.toThrow();
+    expect(refused.told).toEqual([]);
+    const { store, told } = wrapped(relief, RELIEF_AUDIT);
+    await store.decide(`x ${SECRET}`, 'go', { kind: 'user' });
+    expect(told).toEqual([['answer', 'Director answered hire request ?: go']]);
   });
 });

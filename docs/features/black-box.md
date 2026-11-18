@@ -12,9 +12,9 @@ Names, ids, statuses and counts. Never a message, a title, a note, a role, a com
 |---|---|
 | `crew` | `Director hired ana`, `Director stopped ana`, `Director restarted ana`, `Director removed ana` |
 | `config` | `Director edited ana: role, mode` (field names only), `Director set Max Q to 4 working`, `Director changed schedule s3`, `Director made an uplink u1`, `Director set up Relay target slack`, `Director chose a livery`, `Director paired a station d1` |
-| `redline` | `guido tripped the Redline: loop`, `Director resumed guido` |
+| `redline` | `guido tripped the Redline: loop`, `Director put guido on hold`, `Director resumed guido` |
 | `poll` | `Director started a T-minus poll`, `T-minus poll HOLD: no-go: simsup` |
-| `answer` | `Director answered ana: go` (a permission prompt) |
+| `answer` | `Director answered ana: go` (a permission prompt), `Director answered hire request h1: no-go` (Relief) |
 | `plan` | `ana updated task t3: status doing`, `flight wrote the Plot Board: revision 4, 312 characters` |
 | `uplink` | `Uplink u1 delivered message m41` |
 | `audit` | `gonogo 0.1.1 started`, `gonogo stopped`, and `25 events were not recorded: more than 600 in a minute` |

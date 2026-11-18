@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -646,7 +646,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       liveries: audited(liveries, blackBox.record, LIVERIES_AUDIT),
       relay: audited(relay, blackBox.record, RELAY_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
-      relief,
+      relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
       engines: () => checkEngines(env),
       hangar: createHangar(roots),
