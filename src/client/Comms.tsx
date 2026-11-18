@@ -41,14 +41,14 @@ export function Comms(): ReactElement {
   return (
     <div className="comms">
       <div className="comms-bar">
-        <div className="comms-tabs" role="tablist" aria-label="Comms" onKeyDown={move}>
+        <div className="tabs" role="tablist" aria-label="Comms" onKeyDown={move}>
           {COMMS_TABS.map((t) => (
             <button
               key={t}
               id={`${id}-${t}`}
               type="button"
               role="tab"
-              className="btn comms-tab"
+              className="btn tab"
               data-kind={tab === t ? 'primary' : 'quiet'}
               aria-label={t === 'inbox' && unread > 0 ? `INBOX, ${unreadText(unread)}` : undefined}
               aria-selected={tab === t}

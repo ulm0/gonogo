@@ -15,8 +15,8 @@ const current = () => TABS.find((t) => t.id === tab.value) ?? TABS[0];
 <template>
   <div class="module cm">
     <div class="cm-bar">
-      <span class="cm-tabs" role="tablist" aria-label="Comms">
-        <button v-for="t in TABS" :key="t.id" type="button" role="tab" class="btn cm-tab" :data-kind="tab === t.id ? 'primary' : 'quiet'" :aria-selected="tab === t.id" @click="tab = t.id">
+      <span class="tabs" role="tablist" aria-label="Comms">
+        <button v-for="t in TABS" :key="t.id" type="button" role="tab" class="btn tab" :data-kind="tab === t.id ? 'primary' : 'quiet'" :aria-selected="tab === t.id" @click="tab = t.id">
           {{ t.label }}<span v-if="t.id === 'inbox'" class="chip" data-tone="amber" aria-hidden="true">2</span>
         </button>
       </span>
@@ -31,7 +31,5 @@ const current = () => TABS.find((t) => t.id === tab.value) ?? TABS[0];
 <style scoped>
 .cm { display: grid; gap: 10px; padding: 12px; }
 .cm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
-.cm-tabs { display: flex; gap: 6px; }
-.cm-tab { min-height: 44px; }
 .cm-rows { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 </style>
