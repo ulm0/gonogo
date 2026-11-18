@@ -270,34 +270,70 @@ function GoneStrip(): ReactElement | null {
 
 const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
 
-/** Rollout: a quiet note when a newer gonogo is out, with the command that updates this one (shown, never run). Dismissed for that version, in this browser only. */
+const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
+
+/** The running version, small, in a corner of the page; it links to the changelog. */
+function VersionCorner(): ReactElement | null {
+  const info = useStore((s) => s.info);
+  if (info === null) return null;
+  return (
+    <a className="version-corner" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener" aria-label={`gonogo ${info.version}, open the changelog`}>
+      gonogo {info.version}
+    </a>
+  );
+}
+
+/**
+ * Rollout: a quiet note when a newer gonogo is out, with the way to update the install this one is (the command is shown; with an npm or pnpm
+ * global install, or a container with an update hook, an Update button runs it). Never without that click. Dismissed for that version, in this browser only.
+ */
 function RolloutStrip(): ReactElement | null {
   const rollout = useStore((s) => s.rollout);
   const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
   const [copied, setCopied] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const code = useRef<HTMLElement | null>(null);
-  if (rollout === null || !rollout.newer || rollout.latest === null || dismissed === rollout.latest) return null;
+  const update = rollout?.update;
+  const busy = update !== undefined && (update.state === 'running' || update.state === 'reloading');
+  if (rollout === null || !rollout.newer || rollout.latest === null) return null;
+  if (dismissed === rollout.latest && update === undefined) return null;
   const { latest, command } = rollout;
   return (
     <aside className="rollout-strip" aria-label="Update">
       <span>
-        gonogo {latest} is out (this is {rollout.current}). To update, run:
+        gonogo {latest} is out (this is {rollout.current}).{rollout.canUpdate === true ? '' : ' To update, run:'}
       </span>
-      <code ref={code}>{command}</code>
-      <button
-        type="button"
-        className="btn"
-        data-kind="quiet"
-        onClick={() =>
-          // Without a clipboard (plain http from another machine) the command is selected, to copy by hand.
-          void copyText(command).then((ok) => {
-            setCopied(ok);
-            if (!ok && code.current !== null) window.getSelection()?.selectAllChildren(code.current);
-          })
-        }
-      >
-        {copied === null ? 'Copy' : copied ? 'Copied' : 'Not copied'}
-      </button>
+      {rollout.canUpdate !== true && <code ref={code}>{command}</code>}
+      {rollout.canUpdate === true && (
+        <button
+          type="button"
+          className="btn"
+          aria-disabled={busy || undefined}
+          onClick={() => {
+            if (busy) return;
+            setError(null);
+            api.startUpdate(latest).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+          }}
+        >
+          Update to {latest}
+        </button>
+      )}
+      {rollout.canUpdate !== true && (
+        <button
+          type="button"
+          className="btn"
+          data-kind="quiet"
+          onClick={() =>
+            // Without a clipboard (plain http from another machine) the command is selected, to copy by hand.
+            void copyText(command).then((ok) => {
+              setCopied(ok);
+              if (!ok && code.current !== null) window.getSelection()?.selectAllChildren(code.current);
+            })
+          }
+        >
+          {copied === null ? 'Copy' : copied ? 'Copied' : 'Not copied'}
+        </button>
+      )}
       <button
         type="button"
         className="btn"
@@ -309,6 +345,28 @@ function RolloutStrip(): ReactElement | null {
       >
         Dismiss
       </button>
+      {rollout.installNote !== undefined && rollout.installNote !== '' && <span className="hint rollout-note">{rollout.installNote}</span>}
+      {error !== null && (
+        <span className="error" role="alert">
+          {error}
+        </span>
+      )}
+      {update !== undefined && update.state !== 'idle' && (
+        <div className="rollout-progress" role="status">
+          <span>{update.note}</span>
+          {update.tail.length > 0 && (
+            <details>
+              <summary>Installer output</summary>
+              <pre>{update.tail.join('\n')}</pre>
+            </details>
+          )}
+          {update.rollback !== null && (
+            <span>
+              To go back: <code>{update.rollback}</code>, then reload.
+            </span>
+          )}
+        </div>
+      )}
     </aside>
   );
 }
@@ -405,6 +463,7 @@ function Office(): ReactElement {
       <TopBar phone={phone} onPanel={() => setPanel(true)} />
       <GoneStrip />
       <RolloutStrip />
+      <VersionCorner />
       <Screen phone={phone} />
       {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
       <LiveRegion />

@@ -266,7 +266,7 @@ describe('updateText', () => {
     const text = updateText('pnpm add -g @ulm0/gonogo@latest', false, { current: '0.1.1', latest: '0.2.0', newer: true });
     expect(text).toContain('gonogo 0.2.0 is out; this is 0.1.1.');
     expect(text).toContain('\n  pnpm add -g @ulm0/gonogo@latest\n');
-    expect(text).toContain('gonogo never updates itself.');
+    expect(text).toContain('gonogo never updates itself without your click.');
   });
 
   it('with nothing newer it still prints the command, and a container says where to run it', () => {

@@ -370,6 +370,13 @@ describe('rollout (the update note)', () => {
     expect(later.rollout?.latest).toBe('0.3.0');
   });
 
+  it('carries the progress of an update from the page with the rest of the view, frame by frame', () => {
+    const running = run([{ t: 'rollout', rollout: view({ install: 'npm', canUpdate: true, update: { state: 'running', version: '0.2.0', note: 'Installing 0.2.0…', tail: [], rollback: null } }) }]);
+    expect(running.rollout?.update?.state).toBe('running');
+    const done = run([{ t: 'rollout', rollout: view({ install: 'npm', canUpdate: true, update: { state: 'reloading', version: '0.2.0', note: 'Reloading', tail: ['added 1 package'], rollback: 'npm install -g @ulm0/gonogo@0.1.1' } }) }], running);
+    expect(done.rollout?.update).toMatchObject({ state: 'reloading', rollback: 'npm install -g @ulm0/gonogo@0.1.1' });
+  });
+
   it('an older server sends none, and a state that has none drops the old view', () => {
     const { rollout: _none, ...older } = snapshot([agent('flight', 0)]);
     expect(run([{ t: 'state', state: older as StateSnapshot }]).rollout).toBeNull();

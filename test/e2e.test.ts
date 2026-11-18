@@ -2460,6 +2460,13 @@ describe('end to end with the stand-in agent', () => {
     expect(calls[0]?.init?.headers).toEqual({ accept: 'application/json' });
     expect(JSON.parse(readFileSync(join(on.home, 'rollout.json'), 'utf8'))).toMatchObject({ version: 1, latest: '99.1.0' });
     expect(statSync(join(on.home, 'rollout.json')).mode & 0o777).toBe(0o600);
+    // update from the page: no update runs without an install it can update; a wrong version is a 400; nothing was installed
+    // (a container or a git checkout, whichever this test runs in: neither can be updated here)
+    expect((await getState(on)).rollout).toMatchObject({ install: expect.stringMatching(/^(docker|clone)$/), canUpdate: false });
+    expect(await api(on, 'POST', '/api/update', { version: '99.1.0' })).toMatchObject({ status: 409, body: { code: 'conflict', error: expect.stringMatching(/cannot (be updated from the page|replace its own image)/) } });
+    expect(await api(on, 'POST', '/api/update', { version: 'latest' })).toMatchObject({ status: 400, body: { code: 'bad_request', field: 'version' } });
+    expect(await api(on, 'POST', '/api/update', { version: '99.1.1' })).toMatchObject({ status: 409 });
+    expect(await api(on, 'GET', '/api/update')).toMatchObject({ status: 405 });
     // the page is told when a client is connected while the check ends: the frame carries the view
     const c = await Client.open(on);
     const state = c.frames.find((f) => f.t === 'state');

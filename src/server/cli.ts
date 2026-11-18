@@ -6,7 +6,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
 import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
-import type { DownlinkNotify, Hub, HubIo, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
+import type { DownlinkNotify, Hub, HubIo, InstallKind, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
 import {
   CLAUDE_BIN,
   DEFAULT_HOME_DIRNAME,
@@ -66,7 +66,9 @@ import { checkEngines, formatDoctor, installedProviders, onPath } from './provid
 import { createClearance } from './clearance.js';
 import { createModelDefaults } from './models.js';
 import { createPermissionDefaults } from './permissions.js';
-import { cachedLatest, createRollout, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
+import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
+import { createUpdater } from './updater.js';
+import type { Updater } from './updater.js';
 import type { WebServer } from './web.js';
 
 type Env = Record<string, string | undefined>;
@@ -336,10 +338,12 @@ function packageVersion(): string {
 }
 
 /** How this gonogo was installed, from where its own file is: in a container, a git checkout, or one of the package managers (Rollout). */
-function installInfo(): { command: string; docker: boolean } {
-  const docker = existsSync('/.dockerenv') || existsSync('/run/.containerenv');
+function installInfo(env: Env = process.env): { command: string; docker: boolean; kind: InstallKind } {
+  // the image sets GONOGO_INSTALL=docker; the files cover a container run from another image
+  const docker = env.GONOGO_INSTALL === 'docker' || existsSync('/.dockerenv') || existsSync('/run/.containerenv');
   const clone = existsSync(fileURLToPath(new URL('../../.git', import.meta.url)));
-  return { docker, command: updateCommand({ file: fileURLToPath(import.meta.url), docker, clone }) };
+  const where = { file: fileURLToPath(import.meta.url), docker, clone };
+  return { docker, command: updateCommand(where), kind: installKind(where) };
 }
 
 /** The home as `gonogo --version` and `gonogo update` find it: GONOGO_HOME or the default, with no flag read (they read the cache only). */
@@ -732,17 +736,39 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('relief'),
     });
     phone = createPhone({ hub: audited(hubInstance, blackBox.record, HUB_AUDIT), relief, relay, secret: () => uplinks.secretOf('telegram'), now: io.now, log: log.child('phone') });
+    // Update from the page: npm or pnpm global installs, or a container with an update hook (GONOGO_UPDATE_HOOK, optional GONOGO_UPDATE_HOOK_TOKEN)
+    const installed = installInfo(env);
+    const hookUrl = (env.GONOGO_UPDATE_HOOK ?? '').trim();
+    const canUpdate = installed.kind === 'npm' || installed.kind === 'pnpm' || (installed.kind === 'docker' && /^https?:\/\//.test(hookUrl));
     const rollout = createRollout({
       dir: home.dir,
       now: io.now,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       enabled: options.updateCheck === true,
       current: version,
-      command: installInfo().command,
+      command: installed.command,
+      install: installed.kind,
+      installNote: installNote(installed.kind, canUpdate),
+      canUpdate,
       emit: (view) => web?.broadcast({ t: 'rollout', rollout: view }),
       log: log.child('rollout'),
     });
     await rollout.load();
+    const triggerReload = (): boolean => {
+      if (process.listenerCount('SIGUSR2') === 0) return false;
+      setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 100).unref();
+      return true;
+    };
+    const updater: Updater = createUpdater({
+      kind: installed.kind,
+      current: version,
+      rollout,
+      reload: triggerReload,
+      keepsAgents: remote !== null,
+      hook: /^https?:\/\//.test(hookUrl) ? { url: hookUrl, token: (env.GONOGO_UPDATE_HOOK_TOKEN ?? '').trim() || null } : null,
+      fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      log: log.child('update'),
+    });
     const webServer = createWebServer({
       host,
       port,
@@ -782,9 +808,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
       // only a gonogo started from the command line has the signal handler that does the hand-over; a test or an embedder has not
+      update: (version) => updater.start(version),
       reload: () => {
-        if (process.listenerCount('SIGUSR2') === 0) return { ok: false, reason: 'reload is only available in a gonogo started from the command line' };
-        setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 100).unref();
+        if (!triggerReload()) return { ok: false, reason: 'reload is only available in a gonogo started from the command line' };
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
       },
       engines: () => checkEngines(env),

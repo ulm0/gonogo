@@ -2,7 +2,7 @@
 
 <RolloutMock class="doc-mock" />
 
-gonogo tells you when a newer `@ulm0/gonogo` exists and says which command updates the way you installed it. **It never updates itself.** Design and limits: [`docs/rollout-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/rollout-spec.md).
+gonogo tells you when a newer `@ulm0/gonogo` exists and says which command updates the way you installed it. **It never updates itself without your click** (Update, on the page, for an npm or pnpm install or a container with an update hook: [Update from the page](update.md)). Design and limits: [`docs/rollout-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/rollout-spec.md).
 
 ## The check
 

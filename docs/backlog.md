@@ -123,7 +123,7 @@ tracked. Only what is still missing stays open here.
 - [x] Office themes. Built 2026-11-17 as **Livery**: four built-in colour themes, custom ones, and an agent that designs one
       from a line of text. It changes colours only, not the floor art.
 - Excluded by the owner (2026-11-18): avatars that walk around the floor.
-- [x] Auto-update. Built 2026-11-18 as **Rollout**: a daily registry check and `gonogo update`, which prints the command. gonogo never updates itself.
+- [x] Auto-update. Built 2026-11-18 as **Rollout**: a daily registry check and `gonogo update`, which prints the command. gonogo never updates itself without a click: the page's Update button (npm or pnpm global, or a container's update hook) is `docs/features/update.md`.
 - Excluded by the owner (2026-11-18): translations.
 - Excluded by the owner (2026-11-18): Windows.
 
