@@ -529,7 +529,7 @@ describe('the updater in a container with the socket', () => {
   it('pulls, checks, starts the helper from the new image and says it handed over', async () => {
     const f = fake();
     const { updater, seen } = build(f);
-    expect(updater.start('0.4.0').state).toBe('running');
+    expect((await updater.start('0.4.0')).state).toBe('running');
     await settle(seen, 'handed-off');
     expect(seen.at(-1), JSON.stringify(seen.at(-1))).toMatchObject({ state: 'handed-off', version: '0.4.0' });
     expect(f.bodies.find((b) => b.route === '/containers/create')).toMatchObject({ Image: NEW_IMG, Labels: { 'gonogo.helper': '1' } });
@@ -552,7 +552,7 @@ describe('the updater in a container with the socket', () => {
     const f = fake();
     const seen: UpdateView[] = [];
     const updater = createUpdater({ kind: 'docker', cwd: dir, current: '0.3.0', rollout: { view: () => ({ enabled: true, current: '0.3.0', latest: '0.4.0', checkedAt: 1, newer: true, command: 'x' }), setUpdate: (u) => void seen.push(u) }, reload: () => false, keepsAgents: false, hook: null, handoffMs: 30, docker: { call: f.call, hostname: ME.slice(0, 12), home: dir, ready: true, busy: () => null }, fetch: (() => Promise.reject(new Error('no'))) as typeof fetch });
-    updater.start('0.4.0');
+    await updater.start('0.4.0');
     await settle(seen, 'handed-off');
     await settle(seen, 'failed');
     expect(seen.at(-1)).toMatchObject({ state: 'failed' });
@@ -561,11 +561,11 @@ describe('the updater in a container with the socket', () => {
 
   it('is refused while a poll or Static fire is running, and when a label mismatch stops it nothing is created', async () => {
     const f = fake();
-    expect(() => build(f, 'a T-minus poll or Static fire is running').updater.start('0.4.0')).toThrow(UpdateError);
+    await expect(Promise.resolve().then(() => build(f, 'a T-minus poll or Static fire is running').updater.start('0.4.0'))).rejects.toThrow(UpdateError);
     expect(f.log).toEqual([]);
     f.script.pullLabel = '0.3.9';
     const { updater, seen } = build(f);
-    updater.start('0.4.0');
+    await updater.start('0.4.0');
     await settle(seen, 'failed');
     expect(seen.at(-1)?.note).toMatch(/not 0\.4\.0.*Nothing was changed/);
     expect(f.log.some((l) => l.includes('containers/create'))).toBe(false);

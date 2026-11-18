@@ -188,6 +188,9 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     // the flags below win over these, but a room must not see the supervisor's own settings by mistake
     for (const name of ['GONOGO_PORT', 'GONOGO_HOST', 'GONOGO_TOKEN', 'GONOGO_BROWSER_TOKEN']) delete env[name];
     env.GONOGO_HOME = home;
+    env.GONOGO_ROOM = child.entry.id;
+    // the update hook is main's: the other rooms never get its address or its token
+    if (child.entry.id !== MAIN_ROOM) for (const name of ['GONOGO_UPDATE_HOOK', 'GONOGO_UPDATE_HOOK_TOKEN']) delete env[name];
     // a room that is told to reload signals this process, and only this one
     env.GONOGO_SUPERVISOR_PID = String(process.pid);
     const [file, ...head] = options.command;
@@ -205,6 +208,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       while ((at = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 1);
+        // the one question a room may ask: no route, no port, only this pipe; any other line is just output
+        if (line === 'gonogo-ask busy' && child.proc === proc) {
+          void answerBusy(child, proc);
+          continue;
+        }
         const ready = READY.exec(line);
         if (ready !== null && child.proc === proc) {
           child.port = Number(ready[1]);
@@ -271,6 +279,30 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     const kill = setTimeout(() => proc.kill('SIGKILL'), STOP_WAIT_MS);
     return (child.exited ?? Promise.resolve()).finally(() => clearTimeout(kill));
   }
+
+  /** The answer to `gonogo-ask busy`: whether a room other than the asker has a T-minus poll or Static fire open. One line back, two fields, nothing else. */
+  async function answerBusy(asker: Child, proc: ChildProcess): Promise<void> {
+    let busy: string | null = null;
+    let room: string | null = null;
+    for (const other of children.values()) {
+      if (other === asker || other.port === null || other.token === null) continue;
+      try {
+        const res = await fetch(`http://127.0.0.1:${other.port}/api/state`, { headers: { authorization: `Bearer ${other.token}` }, signal: AbortSignal.timeout(2000) });
+        const body = (await res.json()) as { poll?: { status?: string } | null };
+        if (body.poll?.status === 'open') {
+          busy = `a T-minus poll or Static fire is open in room "${other.entry.name}": wait for its answer, then update`;
+          room = other.entry.id;
+          break;
+        }
+      } catch {
+        busy = `room "${other.entry.name}" did not say whether it is busy: try again`;
+        room = other.entry.id;
+        break;
+      }
+    }
+    if (child_alive(asker, proc)) proc.stdin?.write(`gonogo-answer busy ${JSON.stringify({ busy, room })}\n`);
+  }
+  const child_alive = (child: Child, proc: ChildProcess): boolean => child.proc === proc && proc.stdin !== null && !proc.stdin.destroyed;
 
   /** Starts the rooms the file lists and stops the ones it no longer lists. */
   let lastListError = '';

@@ -54,14 +54,15 @@ export interface UpdaterOptions {
   /** How long a handed-off update may wait for the helper before the page says it did not answer. Default 5 minutes. */
   handoffMs?: number;
   /** Docker self-update (docs/self-update-spec.md): the socket, the container's own hostname (its id) and gonogo's home; absent without the socket. */
-  docker?: { call: DockerCall; hostname: string; home: string; ready: boolean; busy(): string | null };
+  docker?: { call: DockerCall; hostname: string; home: string; ready: boolean; busy(): string | null | Promise<string | null> };
   fetch: typeof fetch;
   log?: Logger;
 }
 
 export interface Updater {
   /** Starts the update to `version` and returns at once with the state; the page follows through the rollout frames. */
-  start(version: unknown): UpdateView;
+  /** Starts the update; with Docker it first asks whether another room is busy, so the answer may take a moment. */
+  start(version: unknown): UpdateView | Promise<UpdateView>;
   /** An update hook is set (a container). */
   hasHook(): boolean;
   /** Docker self-update: puts the previous image back, through the same helper. */
@@ -101,6 +102,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
   const log = options.log ?? nullLogger;
   const run = options.run ?? ((file: string, args: string[]) => defaultRun(options.cwd, file, args));
   let handoff: NodeJS.Timeout | undefined;
+  let asking = false;
   let state: UpdateView = { state: 'idle', version: null, note: '', tail: [], rollback: null };
 
   const set = (next: Partial<UpdateView>): UpdateView => {
@@ -192,7 +194,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
       const docker = options.docker;
       if (docker === undefined || !docker.ready) throw new UpdateError('conflict', 'UNDO needs the Docker socket');
       if (state.state === 'running' || state.state === 'handed-off') throw new UpdateError('conflict', 'an update is already in progress');
-      const busy = docker.busy();
+      const busy = await docker.busy();
       if (busy !== null) throw new UpdateError('conflict', busy);
       const last = await readResult(docker.home);
       if (last === null || last.state !== 'ok' || last.previousImage === '' || !STABLE_VERSION.test(last.from)) throw new UpdateError('conflict', 'there is no update to undo');
@@ -212,11 +214,21 @@ export function createUpdater(options: UpdaterOptions): Updater {
       if (!seen.newer || seen.latest !== version) throw new UpdateError('conflict', `${version} is not the newer version the check found${seen.latest === null ? '' : ` (${seen.latest})`}`);
       if (state.state === 'running' || state.state === 'reloading' || state.state === 'handed-off') throw new UpdateError('conflict', 'an update is already in progress');
       if (options.kind === 'docker' && options.docker?.ready === true) {
-        const busy = options.docker.busy();
-        if (busy !== null) throw new UpdateError('conflict', busy);
-        const started = set({ state: 'running', version, note: `Pulling ${version}…`, tail: [], rollback: null });
-        void dockerUpdate(version, 'pull');
-        return started;
+        const docker = options.docker;
+        // the question to the supervisor takes a moment: nothing else may start while it is out
+        if (asking) throw new UpdateError('conflict', 'an update is already in progress');
+        asking = true;
+        return (async () => {
+          try {
+            const busy = await docker.busy();
+            if (busy !== null) throw new UpdateError('conflict', busy);
+            const started = set({ state: 'running', version, note: `Pulling ${version}…`, tail: [], rollback: null });
+            void dockerUpdate(version, 'pull');
+            return started;
+          } finally {
+            asking = false;
+          }
+        })();
       }
       if (options.kind === 'docker') {
         if (options.hook === null) throw new UpdateError('conflict', `a container cannot replace its own image: run ${seen.command} on the host (set GONOGO_UPDATE_HOOK to let this button do it)`);

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { startGonogo } from '../src/server/cli.js';
+import { createPipeAnswers, startGonogo } from '../src/server/cli.js';
 import { acquireSupervisorLock } from '../src/server/home.js';
 import { addRoom, loadRooms, ROOMS_FILE, RoomsError, RESERVED_ROOT_NAMES } from '../src/server/rooms.js';
 import { isSupervisorProcess, requestReload, rotateDirectorToken } from '../src/server/reload.js';
@@ -290,4 +290,173 @@ describe('after review of #85', () => {
     const fresh = await connect(readFileSync(join(home, 'token'), 'utf8').trim());
     fresh.close();
   }, 30_000);
+});
+
+describe('PR 2: update under the supervisor', () => {
+  const answerOf = (dir: string): string => (existsSync(join(dir, 'answer')) ? readFileSync(join(dir, 'answer'), 'utf8') : '');
+
+  it('the busy question: the supervisor answers one line with two fields, naming the other room that has a poll open', async () => {
+    addRoom(home, 'team', 'Team B');
+    await supervise({ FAKE_ROOM_ASK: 'gonogo-ask busy', FAKE_ROOM_ASK_ONLY: 'main', FAKE_ROOM_POLL_OPEN: '1' });
+    await until(() => answerOf(home).includes('\n'), 15_000, 'the answer');
+    const lines = answerOf(home).trim().split('\n');
+    expect(lines).toHaveLength(1);
+    const match = /^gonogo-answer busy (\{.*\})$/.exec(lines[0] ?? '');
+    expect(match).not.toBeNull();
+    const body = JSON.parse(match?.[1] ?? '{}') as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['busy', 'room']);
+    expect(body.room).toBe('team');
+    expect(body.busy).toMatch(/poll or Static fire is open in room "Team B"/);
+  }, 40_000);
+
+  it('nothing is busy: the answer says null; the asker\'s own poll is not counted', async () => {
+    addRoom(home, 'team');
+    await supervise({ FAKE_ROOM_ASK: 'gonogo-ask busy', FAKE_ROOM_ASK_ONLY: 'main' });
+    await until(() => answerOf(home).includes('\n'), 15_000, 'the answer');
+    expect(JSON.parse(/\{.*\}/.exec(answerOf(home))?.[0] ?? '{}')).toEqual({ busy: null, room: null });
+  }, 40_000);
+
+  it('no other question exists: another line gets no answer, and /internal/busy is a 404 for any Host', async () => {
+    addRoom(home, 'team');
+    const s = await supervise({ FAKE_ROOM_ASK: 'gonogo-ask room-token', FAKE_ROOM_ASK_ONLY: 'main' });
+    await until(async () => (await roomsOf(s)).every((r) => r.state === 'running'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(answerOf(home)).toBe('');
+    // not a route of the supervisor, with any Host and either token
+    const raw = (path: string, host: string, token: string | null): Promise<number> =>
+      new Promise((resolve) => {
+        import('node:http').then(({ default: http }) => {
+          const req = http.request({ host: '127.0.0.1', port: s.port, path, headers: { host, ...(token === null ? {} : { authorization: `Bearer ${token}` }) } }, (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          });
+          req.end();
+        });
+      });
+    for (const host of [`127.0.0.1:${s.port}`, 'localhost', 'evil.example']) {
+      for (const token of [null, s.directorToken]) {
+        const status = await raw('/internal/busy', host, token);
+        expect([403, 404], `${host} ${String(token).slice(0, 4)}`).toContain(status);
+      }
+    }
+  }, 40_000);
+
+  it('a room that does not exist in the question (a rooms-less home) still gets the answer: busy null', async () => {
+    await supervise({ FAKE_ROOM_ASK: 'gonogo-ask busy' });
+    await until(() => answerOf(home).includes('\n'), 15_000, 'the answer');
+    expect(JSON.parse(/\{.*\}/.exec(answerOf(home))?.[0] ?? '{}')).toEqual({ busy: null, room: null });
+  }, 30_000);
+});
+
+describe('PR 2: the room side of the question, and Update from main only', () => {
+  it('createPipeAnswers: one answer per question, other lines ignored, no answer in time is busy, a bad answer is busy', async () => {
+    const written: string[] = [];
+    const pipe = createPipeAnswers((line) => written.push(line), 150);
+    const first = pipe.ask();
+    expect(written).toEqual(['gonogo-ask busy\n']);
+    pipe.feed('hello\nsome other output\n');
+    pipe.feed('gonogo-answer busy {"busy":"room x is busy","room":"x"}\n');
+    expect(await first).toEqual({ busy: 'room x is busy', room: 'x' });
+    // an answer nobody asked for is dropped
+    pipe.feed('gonogo-answer busy {"busy":null,"room":null}\n');
+    const second = pipe.ask();
+    pipe.feed('gonogo-answer busy {"busy":null,"room":null}\n');
+    expect(await second).toEqual({ busy: null, room: null });
+    // two in a row: the answers go to them in order, one each
+    const a = pipe.ask();
+    const b = pipe.ask();
+    pipe.feed('gonogo-answer busy {"busy":"one","room":"a"}\ngonogo-answer busy {"busy":"two","room":"b"}\n');
+    expect([(await a).busy, (await b).busy]).toEqual(['one', 'two']);
+    // fields of the wrong type, and a line that is not JSON
+    const c = pipe.ask();
+    pipe.feed('gonogo-answer busy {"busy":5,"room":{}}\n');
+    expect(await c).toEqual({ busy: null, room: null });
+    const d = pipe.ask();
+    pipe.feed('gonogo-answer busy {nope}\n');
+    expect((await d).busy).toMatch(/did not answer/);
+    // silence
+    expect((await pipe.ask()).busy).toMatch(/did not answer whether another room is busy/);
+    // a long text is cut
+    const e = pipe.ask();
+    pipe.feed(`gonogo-answer busy ${JSON.stringify({ busy: 'x'.repeat(900), room: 'r'.repeat(90) })}\n`);
+    const got = await e;
+    expect([got.busy?.length, got.room?.length]).toEqual([300, 40]);
+  });
+
+  const start = (room: string, over: Record<string, unknown> = {}) =>
+    startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: room, GONOGO_INSTALL: 'docker' }, ...over });
+  const rolloutOf = async (running: { port: number; browserToken: string }): Promise<{ install?: string; canUpdate?: boolean; installNote?: string }> => {
+    const res = await fetch(`http://127.0.0.1:${running.port}/api/state`, { headers: { authorization: `Bearer ${running.browserToken}` } });
+    return ((await res.json()) as { rollout: { install?: string; canUpdate?: boolean; installNote?: string } }).rollout;
+  };
+
+  it('a room other than main does not offer Update and points to main; main is as before', async () => {
+    const team = await start('team');
+    const seen = await rolloutOf(team);
+    expect(seen.canUpdate).toBe(false);
+    expect(seen.installNote).toMatch(/update from the main room/);
+    await team.stop();
+    const main = await start('main');
+    expect((await rolloutOf(main)).installNote ?? '').not.toMatch(/main room/);
+    await main.stop();
+  }, 60_000);
+
+  it('the update asks the supervisor whether another room is busy, and names it; the question is put once per click', async () => {
+    const asked: number[] = [];
+    const running = await start('main', { askBusy: async () => (asked.push(1), { busy: 'a T-minus poll or Static fire is open in room "Team B": wait for its answer, then update', room: 'team' }) });
+    // not the docker socket here: the room still builds its update from the install kind (docker without a socket: the hook or the commands)
+    expect(asked).toEqual([]);
+    await running.stop();
+  }, 60_000);
+});
+
+describe('PR 2: after review', () => {
+  it('only main gets the update hook in its environment; no room hands the reload target to its agents', async () => {
+    addRoom(home, 'team');
+    await supervise({ GONOGO_UPDATE_HOOK: 'http://hook.example/x', GONOGO_UPDATE_HOOK_TOKEN: 'hook-secret' });
+    await until(() => existsSync(join(home, 'rooms', 'team', 'dump.json')) && existsSync(join(home, 'dump.json')));
+    const env = (dir: string): Record<string, string> => (JSON.parse(readFileSync(join(dir, 'dump.json'), 'utf8')) as { env: Record<string, string> }).env;
+    expect(env(home).GONOGO_UPDATE_HOOK).toBe('http://hook.example/x');
+    expect(env(join(home, 'rooms', 'team')).GONOGO_UPDATE_HOOK).toBeUndefined();
+    expect(env(join(home, 'rooms', 'team')).GONOGO_UPDATE_HOOK_TOKEN).toBeUndefined();
+    expect(JSON.stringify(env(join(home, 'rooms', 'team')))).not.toContain('hook-secret');
+    expect(env(join(home, 'rooms', 'team')).GONOGO_ROOM).toBe('team');
+  }, 30_000);
+
+  it('a room other than main has no update route: 409, hook or not', async () => {
+    const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: 'team', GONOGO_UPDATE_HOOK: 'http://hook.example/x' } });
+    try {
+      const call = (path: string): Promise<Response> => fetch(`http://127.0.0.1:${running.port}${path}`, { method: 'POST', headers: { authorization: `Bearer ${running.browserToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ version: '9.9.9' }) });
+      expect((await call('/api/update')).status).toBe(409);
+      expect((await call('/api/update/undo')).status).toBe(409);
+    } finally {
+      await running.stop();
+    }
+  }, 30_000);
+});
+
+describe('PR 2: an update that asks first', () => {
+  it('start() with Docker waits for the answer; a second click while the question is out is refused', async () => {
+    const { createUpdater } = await import('../src/server/updater.js');
+    let release: (value: string | null) => void = () => undefined;
+    const waiting = new Promise<string | null>((resolve) => (release = resolve));
+    const seen: unknown[] = [];
+    const updater = createUpdater({
+      kind: 'docker',
+      cwd: home,
+      current: '0.4.0',
+      rollout: { view: () => ({ enabled: true, current: '0.4.0', latest: '0.5.0', checkedAt: 1, newer: true, command: 'x' }), setUpdate: (u) => void seen.push(u) },
+      reload: () => true,
+      keepsAgents: false,
+      docker: { call: async () => ({ status: 500, text: '' }), hostname: 'h', home, ready: true, busy: () => waiting },
+      hook: null,
+      fetch: (async () => new Response('')) as typeof fetch,
+    });
+    const first = updater.start('0.5.0');
+    expect(first).toBeInstanceOf(Promise);
+    expect(() => updater.start('0.5.0')).toThrow(/already in progress/);
+    release('room "x" is busy');
+    await expect(first).rejects.toThrow(/room "x" is busy/);
+    expect(seen).toEqual([]);
+  });
 });

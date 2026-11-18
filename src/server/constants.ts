@@ -224,6 +224,9 @@ export const SCRUB_ENV_EXACT = [
   'AI_AGENT',
   'GONOGO_TOKEN',
   'GONOGO_API_KEY',
+  // what a room knows about its supervisor (the reload target): not the agents' business
+  'GONOGO_SUPERVISOR_PID',
+  'GONOGO_ROOM',
   // the Director's own token (gonogo tui): an agent must never inherit it
   'GONOGO_BROWSER_TOKEN',
   // the update hook is the Director's: an agent with it could pull and restart gonogo without the click
