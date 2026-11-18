@@ -1,6 +1,6 @@
 // Rooms (docs/rooms-spec.md): the list of rooms, the commands, and the supervisor with stand-in rooms (test/fake-room.mjs).
 // The real thing (built gonogo as the rooms) was tried by hand: docs/features/rooms.md, "What was seen".
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -180,16 +180,21 @@ describe('the supervisor', () => {
     writeFileSync(join(client, 'index.html'), '<html><head><link rel="stylesheet" crossorigin href="./assets/index-abc123.css"></head></html>');
     writeFileSync(join(client, 'assets', 'index-abc123.css'), '.tile{color:red}');
     writeFileSync(join(client, 'assets', 'secret.txt'), 'no');
+    // a symlink named like a stylesheet that points at the Director token must not be followed
+    symlinkSync(join(home, 'rooms-token'), join(client, 'assets', 'linked.css'));
+    symlinkSync(client, join(client, 'assets', 'dir.css'));
     sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '' }, staticDir: client });
     const s = sup;
+    const token = s.directorToken;
     const html = await (await api(s, '/', null)).text();
     expect(html).toContain('<link rel="stylesheet" href="/assets/index-abc123.css">');
     expect(html).toMatch(/class="module"/);
     const css = await api(s, '/assets/index-abc123.css', null);
     expect([css.status, css.headers.get('content-type')]).toEqual([200, 'text/css']);
     expect(await css.text()).toBe('.tile{color:red}');
-    for (const path of ['/assets/secret.txt', '/assets/nope.css', '/assets/..%2findex.html', '/assets/../index.html', '/assets/']) expect((await api(s, path, null)).status, path).toBe(404);
+    for (const path of ['/assets/linked.css', '/assets/dir.css', '/assets/secret.txt', '/assets/nope.css', '/assets/..%2findex.html', '/assets/../index.html', '/assets/']) expect((await api(s, path, null)).status, path).toBe(404);
     expect((await api(s, '/', null)).headers.get('content-security-policy')).toMatch(/style-src 'self' 'sha256-/);
+    expect(await (await api(s, '/assets/linked.css', null)).text()).not.toContain(token);
   });
 
   it('without a built client the list page still works, with plain styles', async () => {

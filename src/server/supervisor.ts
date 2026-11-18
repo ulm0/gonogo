@@ -11,7 +11,7 @@
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
@@ -284,7 +284,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     const asset = /^\/assets\/([\w.-]+\.(css|woff2?))$/.exec(path ?? '');
     if (asset !== null && assetsDir !== null && req.method === 'GET' && !(asset[1] as string).includes('..')) {
       try {
-        const body = readFileSync(join(assetsDir, asset[1] as string));
+        // a regular file only: a symlink in a writable install folder must not turn this route into a read of rooms-token
+        const file = join(assetsDir, asset[1] as string);
+        if (!lstatSync(file).isFile()) throw new Error('not a regular file');
+        const body = readFileSync(file);
         res.writeHead(200, { 'Content-Type': TYPES[asset[2] as string] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
         res.end(body);
       } catch {
