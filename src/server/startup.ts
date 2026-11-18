@@ -33,7 +33,13 @@ export function createStartupStore(options: { dir: string; log?: Logger }): Star
         if (!isRecord(saved) || saved.version !== 1 || !(STARTUP_POLICIES as readonly unknown[]).includes(saved.policy) || (saved.carryOn !== undefined && typeof saved.carryOn !== 'boolean') || (saved.bossMayStart !== undefined && typeof saved.bossMayStart !== 'boolean')) throw new Error('not a version 1 startup file');
         settings = { policy: saved.policy as StartupPolicy, carryOn: saved.carryOn !== false, bossMayStart: saved.bossMayStart !== false };
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') return;
+        // the file is moved aside only when its content is wrong; one that cannot be read (EACCES, EISDIR) is left where it is
+        if (code !== undefined) {
+          log.error(`${STARTUP_FILE} could not be read; the room starts the boss only`, error);
+          return;
+        }
         log.error(`${STARTUP_FILE} could not be read; the room starts the boss only and the file is kept as ${STARTUP_FILE}.bad`, error instanceof SyntaxError ? 'not valid JSON' : error);
         await rename(path, `${path}.bad`).catch(() => undefined);
       }

@@ -23,7 +23,7 @@ agent only, never with a real `claude` ([What was not verified](../reference/not
 ## `start_agent`
 
 The boss has a tool, `start_agent` with `{ name }`, for a console that is stopped (FLIGHT could not start one before). It
-does what your START key does, refuses a console that is running or on hold, takes at most 6 starts a minute, and the
+does what your START key does, refuses a console that is running or on hold, and **one you stopped yourself** (it stays stopped until you start it; `stoppedBy` in its record), takes at most 6 starts a minute, and the
 [Black Box](./black-box.md) records `flight started ana`. The Flight Rules box **FLIGHT may start agents** (on by default)
 turns it off: the tool then answers that you did.
 

@@ -224,6 +224,10 @@ function parseAgent(a: unknown): AgentRecord | string {
     if (cleanRoom !== undefined) return `${name}: a Clean Room agent has a worktree already`;
     record.worktree = checked.worktree;
   }
+  if (a.stoppedBy !== undefined) {
+    if (a.stoppedBy !== 'director') return `${name}: stoppedBy is director or absent`;
+    record.stoppedBy = 'director';
+  }
   if (autostart !== undefined) {
     if (autostart !== false) return `${name}: autostart is false or absent`;
     record.autostart = false;

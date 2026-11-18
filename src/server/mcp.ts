@@ -407,8 +407,9 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           const mine = (starts.get(agent) ?? []).filter((t) => at - t < 60_000);
           if (mine.length >= START_AGENT_RATE_MAX) return toolResult({ ok: false, error: `at most ${START_AGENT_RATE_MAX} starts a minute` }, true);
           // the caller is the agent of the token, never a field of the call; the hub refuses a running agent and one on hold
-          const view = await hub.startAgent(name, agent);
+          // counted before the await: parallel calls must not all pass the limit
           starts.set(agent, [...mine, at]);
+          const view = await hub.startAgent(name, agent);
           return toolResult({ ok: true, name: view.name, state: view.state }, false);
         }),
     );

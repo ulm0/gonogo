@@ -1868,6 +1868,10 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   async function restartOp(rt: Rt): Promise<AgentView> {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
+    if (rt.record.stoppedBy !== undefined) {
+      delete rt.record.stoppedBy;
+      await saveRecords(rosterRecords()).catch((error: unknown) => log.warn(`could not save that ${rt.record.name} was started`, error));
+    }
     if (rt.state !== 'stopped') {
       rt.transition = 'restarting';
       flush(rt);
@@ -1893,6 +1897,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     flush(rt);
     await stopProcess(rt);
     if (rt.transition === 'stopping') rt.transition = null;
+    // remembered across a restart: FLIGHT may bring back an agent, never one the Director stopped
+    rt.record.stoppedBy = 'director';
+    await saveRecords(rosterRecords()).catch((error: unknown) => log.warn(`could not save that ${rt.record.name} was stopped`, error));
     flush(rt);
     return buildView(rt);
   }
@@ -2978,12 +2985,21 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     // the set is what the next start will use: an agent that this start leaves stopped (the policy, an opt-out, a removed agent) is not in it
     // an agent that is running already (taken over from the pty host) is not left out
     for (const entry of io.runSet?.() ?? []) if (agents.get(entry.name)?.state === 'stopped' && !(startBoss && entry.name === boss?.record.name) && (settings.policy !== 'running' || set === null)) io.markRun?.(entry.name, false, false);
+    let bossFailed: string | null = null;
     // an adopted boss is running already: nothing to start, and it was not cut in the middle of a turn
     if (boss && startBoss && boss.state === 'stopped') {
-      await enqueue(boss, 'restart', () => restartOp(boss), true);
-      if (settings.carryOn && byName.get(boss.record.name)?.working === true) carryOn(boss);
+      // a boss that cannot start must not keep the others from starting
+      try {
+        await enqueue(boss, 'restart', () => restartOp(boss), true);
+        // a start that failed leaves the agent stopped with the reason; it is not thrown
+        if (boss.state === 'stopped') bossFailed = `${boss.record.name} (${boss.exit?.text ?? 'did not start'})`;
+        else if (settings.carryOn && byName.get(boss.record.name)?.working === true) carryOn(boss);
+      } catch (error) {
+        bossFailed = `${boss.record.name} (${errorMessage(error)})`;
+        log.error('the boss could not start', error);
+      }
     }
-    if (set !== null) void autostart(set, settings.carryOn, boss).catch((error: unknown) => log.error('autostart failed', error));
+    if (set !== null) void autostart(set, settings.carryOn, boss, bossFailed).catch((error: unknown) => log.error('autostart failed', error));
   }
 
   /** One message from the Director to an agent that was in a turn when the server stopped; it goes through the usual door, so Max Q and Redline apply. */
@@ -3013,7 +3029,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
    * Autostart (docs/autostart-spec.md): the agents of the saved set start again, a wave of STARTUP_WAVE at a time (fewer when Max Q is
    * lower), each once. A start that fails leaves the agent stopped with the reason; an agent that opted out stays stopped.
    */
-  async function autostart(set: RunEntry[], carry: boolean, boss: Rt | null): Promise<void> {
+  async function autostart(set: RunEntry[], carry: boolean, boss: Rt | null, bossFailed: string | null): Promise<void> {
     const todo: Rt[] = [];
     const skipped: string[] = [];
     for (const entry of set) {
@@ -3032,7 +3048,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         io.markRun?.(entry.name, false, false);
       } else todo.push(rt);
     }
-    const failed: string[] = [];
+    const failed: string[] = bossFailed === null ? [] : [bossFailed];
     let started = boss !== null && boss.state !== 'stopped' ? 1 : 0;
     const wave = Math.max(1, Math.min(STARTUP_WAVE, limit ?? STARTUP_WAVE));
     for (let at = 0; at < todo.length && !closing; at += wave) {
@@ -3118,6 +3134,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         throw new HubError('conflict', rt.redline === HOLD_REASON ? `${rt.record.name} is on hold: the Director resumes it` : rt.redline !== null ? `${rt.record.name} has tripped the redline: the Director resumes or stops it` : `${rt.record.name} is already running`);
       }
       if (io.startup?.().bossMayStart === false) throw new HubError('forbidden', 'the Director turned off "FLIGHT may start agents" in Flight Rules');
+      if (rt.record.stoppedBy === 'director') throw new HubError('forbidden', `the Director stopped ${rt.record.name}: only he starts it again`);
       log.info(`${by} starts ${rt.record.name}`);
       return enqueue(rt, 'restart', () => restartOp(rt), true);
     },

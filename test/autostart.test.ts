@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -118,6 +118,15 @@ describe('the startup policy', () => {
     await expect(store.set({ carryOn: 'yes' })).rejects.toMatchObject({ field: 'carryOn' });
     await expect(store.set([])).rejects.toMatchObject({ code: 'bad_request' });
     expect(store.view()).toEqual({ policy: 'boss', carryOn: true, bossMayStart: true });
+  });
+
+  it('leaves a file it cannot read where it is, and moves aside only one with wrong content', async () => {
+    await mkdir(join(dir, 'startup.json'));
+    const store = createStartupStore({ dir });
+    await store.load();
+    expect(store.view().policy).toBe('boss');
+    expect((await stat(join(dir, 'startup.json'))).isDirectory()).toBe(true);
+    expect(await stat(join(dir, 'startup.json.bad')).catch(() => null)).toBeNull();
   });
 
   it('falls back to the boss only when the file is damaged, and keeps it aside', async () => {

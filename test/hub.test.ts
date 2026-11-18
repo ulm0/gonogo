@@ -6546,7 +6546,7 @@ describe('Hub.startAgent: the boss starts a stopped agent', () => {
     await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', 'ana is already running');
     h.hub.hold('ana');
     await expectHubReject(h.hub.startAgent('ana', 'flight'), 'conflict', /ana is on hold/);
-    h.hub.resume('ana');
+    h.exit('ana', { code: 0 });
     await h.hub.stop('ana');
     const before = h.spawns.length;
     expect((await h.hub.startAgent('ana', 'flight')).state).toBe('starting');
@@ -6595,9 +6595,42 @@ describe('ALL STOP and ALL RESUME, and the switch of start_agent', () => {
     const h = makeHarness({ startup: { policy: 'boss', carryOn: true, bossMayStart: false } });
     await h.boot();
     await h.hire('ana');
-    await h.hub.stop('ana');
+    h.exit('ana', { code: 0 });
     await expectHubReject(h.hub.startAgent('ana', 'flight'), 'forbidden', /FLIGHT may start agents/);
     expect(h.view('ana').state).toBe('stopped');
     expect((await h.hub.restart('ana')).state).toBe('starting');
+  });
+});
+
+describe('start_agent and the Director\'s stop, and a boss that cannot start', () => {
+  it('refuses an agent the Director stopped until a start clears it, and the flag is in the roster', async () => {
+    const h = await withAna();
+    await h.hub.stop('ana');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.stoppedBy).toBe('director');
+    await expectHubReject(h.hub.startAgent('ana', 'flight'), 'forbidden', /the Director stopped ana/);
+    expect(h.view('ana').state).toBe('stopped');
+    await h.hub.restart('ana');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')).not.toHaveProperty('stoppedBy');
+    await h.hub.stop('ana');
+    await h.hub.restart('ana');
+    h.ready('ana');
+    // stopped some other way (it exited by itself): FLIGHT may bring it back
+    h.exit('ana', { code: 0 });
+    expect((await h.hub.startAgent('ana', 'flight')).state).toBe('starting');
+  });
+
+  it('a boss that cannot start does not keep the others from starting, and the notice names it', async () => {
+    const roster = [rosterRecord('flight', { boss: true, desk: 0 }), rosterRecord('ana', { desk: 1 })];
+    const h = makeHarness({ roster, startup: { policy: 'running', carryOn: true, bossMayStart: true }, runSet: [{ name: 'flight', working: false }, { name: 'ana', working: false }] });
+    const real = h.io.spawn;
+    h.io.spawn = async (req) => {
+      if (req.agent.name === 'flight') throw new Error('the folder is gone');
+      return real(req);
+    };
+    await h.hub.start();
+    await settle();
+    await h.advance(2000);
+    expect(h.spawns.map((s) => s.agent.name)).toContain('ana');
+    expect(h.notices.at(-1)?.[1]).toMatch(/not started: flight \(.*the folder is gone/);
   });
 });

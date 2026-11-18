@@ -437,6 +437,8 @@ export interface AgentRecord {
   permissions?: PermissionRules;
   /** Absent means it follows the room's startup policy; `false` is never started again by it. */
   autostart?: false;
+  /** The Director stopped this agent and it has not been started since: FLIGHT's `start_agent` is refused. Cleared by any start. */
+  stoppedBy?: 'director';
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
   model?: string;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
