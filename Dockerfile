@@ -90,12 +90,12 @@ RUN apt-get update \
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 
 # Claude Code, pinned, from the npm registry (the package its docs give for containers), installed by the pinned pnpm
-# through corepack. --allow-build: the postinstall step links the native binary into place, and pnpm 10 skips it
+# through corepack. --allow-build: the postinstall step links the native binary into place, and pnpm skips it
 # otherwise, so `claude --version` right after fails the build in that case. This layer stays before the gonogo layer,
 # so a gonogo rebuild does not redo the 350 MiB one. pnpm's store and corepack's cache are removed in the same layer,
 # or they would add about as much again to the image; the image keeps no pnpm.
 RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global \
-      --global-dir=/usr/local/share/pnpm --global-bin-dir=/usr/local/bin \
+      --config.global-dir=/usr/local/share/pnpm --config.global-bin-dir=/usr/local/bin \
       --allow-build=@anthropic-ai/claude-code @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
  && claude --version \
  && rm -rf /root/.cache /root/.local/share/pnpm
