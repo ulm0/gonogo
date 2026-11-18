@@ -14,6 +14,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TOKEN_FRAGMENT_KEY, TOKEN_STORAGE_KEY } from '../shared/protocol.js';
 
+/** Where the supervisor serves this page. The page itself uses no path of its own for it (it keeps the address it is opened at), so moving it is this one line. */
+export const ROOMS_PAGE_PATH = '/';
+
 const STYLE = `
 body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px/1.4 var(--font-ui,system-ui,sans-serif)}
 .rl-main{max-width:1120px;margin:0 auto;padding:16px 24px 48px;display:grid;gap:14px}

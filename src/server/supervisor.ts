@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { bearerToken, sendApiError, sendJson, sendText } from './hooks.js';
-import { clientStylesheet, roomsPage, roomsPageHeaders } from './roomspage.js';
+import { clientStylesheet, ROOMS_PAGE_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
 import { addRoom, loadRooms, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
@@ -374,7 +374,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     if (proxy.handle(req, res)) return;
     if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
     const path = (req.url ?? '').split('?')[0];
-    if (path === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
+    if (path === ROOMS_PAGE_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
       res.writeHead(200, roomsPageHeaders());
       res.end(req.method === 'HEAD' ? undefined : roomsPage(stylesheet, options.version ?? null));
       return;
