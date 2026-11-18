@@ -17,7 +17,7 @@ Evidence is this room's own records (the Black Box, the Mission Log, the task bo
 - **`auto` permission mode.** All 15 consoles ran in `auto` for the whole day.
 - **Saved-state upgrade.** One home went 0.1.2, 0.2.0, 0.3.0; every format is still version 1, so no migration ran.
 - **Release.** The release workflow ran for v0.1.1, v0.1.2, v0.2.0 and v0.3.0 (all succeeded; GitHub Releases exist). It is set to publish to npm with provenance; the npm page was not checked.
-- **Docker self-update.** EECOM ran it in docker-in-docker on a real daemon (Mission Log "self-update manual run 0.4.0"): good update, undo, three failing images rolled back, leftovers removed, a private image refused. Killing the helper left a stale result on the page in one case, and a daemon older than API 1.44 was not run.
+- **Docker self-update (0.4.0).** EECOM ran it in an isolated docker-in-docker (docker:27.5.1-dind, API 1.47) on a real daemon, twice (Mission Log "self-update manual run 0.4.0" and its e2 re-run on the #79 fix): good update, a second update and UNDO, three failing images rolled back, leftovers removed, a private image refused, and a helper killed during the health wait now leaves an `interrupted` result with no UNDO. Not run: a daemon older than API 1.44 (a unit test only), a helper killed while the old container stops (documented: gonogo stays down until `docker compose up -d`), a registry with credentials, linux/arm64 as a host.
 
 Used by nobody in this room, so still **not run**: Hold on a console and ALL STOP, a hire request through Relief (every hire was the Director's), Relay (no target is set), a docked station (a code was made, nothing was paired), the Plot Board, a model designing a livery, Payload, Launch Window and Uplink with a real model.
 
@@ -49,6 +49,8 @@ Used by nobody in this room, so still **not run**: Hold on a console and ALL STO
 - **Proxy recipes:** none of the Caddy, nginx or `tailscale serve` configs in [Exposing gonogo safely](../https.md) and [Security](./security.md#reverse-proxy) was run; ruling out basic auth comes from reading `src/client/api.ts`.
 - **Saved-state upgrades:** no format has changed version, so no real migration ran. Not tested: two gonogos on one home at once, a disk filling between the copy and the write.
 - **Release:** the npm page and its provenance, the published image, and the docs deploy were not checked by this page's author.
+- **Homebrew (0.4.0):** the formula (`packaging/homebrew/gonogo.rb`) and the release job `homebrew` were never run with a real `brew` (no macOS, no Linuxbrew here): not `brew install --build-from-source`, `brew test gonogo`, `brew audit`, nor the job (off until the tap repository and its secret exist). The `brew` install type in Rollout is read from a path in tests only; the executable bit of node-pty's `spawn-helper` on macOS is unchecked.
+- **COMMS, Rooms, co-author line (0.4.0):** exercised by unit tests and a real server with the stand-in agent, plus the real runs above; no browser view looked at by hand. Not run: `gonogo rooms` with real agents or a real proxy in front, the co-author hook in a commit made by a real `claude`, COMMS on a phone.
 - **Flaky tests:** end-to-end scenarios 4 and 6 (pointer timing) on a loaded machine, and the Uplink 256 KiB body route test (`write EPIPE`). They pass on rerun. #31 fixed scenarios 4 and 8 and #55 the Mission Log order; whether 6 and the Uplink test still flake was not re-checked.
 
 ## Known limits
