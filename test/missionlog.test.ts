@@ -59,6 +59,15 @@ afterEach(async () => {
 });
 
 describe('Mission Log: writing', () => {
+  it('an edit in the same millisecond as a write still lists first: the newest-first order has no ties', async () => {
+    const log = await loaded();
+    await log.create('ana', { title: 'One', body: 'first entry' });
+    await log.create('ana', { title: 'Two', body: 'second entry' });
+    await log.update('l1', { title: 'One, edited' }, 'ana');
+    expect(log.search('', 10).hits.map((hit) => hit.id)).toEqual(['l1', 'l2']);
+  });
+
+
   it('writes one markdown file for an entry, in a private folder, and tells the browsers its id and title only', async () => {
     const log = await loaded();
     const entry = await log.create('ana', { title: 'Cache key', body: 'The cache key has the node version.\n\nSecond paragraph.', tags: ['Build', 'cache', 'build'] });
