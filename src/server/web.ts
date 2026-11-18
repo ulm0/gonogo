@@ -96,6 +96,7 @@ import type { Tasks } from './tasks.js';
 import type { Missions } from './missions.js';
 import type { Review } from './review.js';
 import type { RoomLayoutStore } from './roomlayout.js';
+import type { TabNameStore } from './tabname.js';
 import type { Uplinks } from './uplinks.js';
 
 export interface WebOptions {
@@ -132,6 +133,8 @@ export interface WebOptions {
   missions?: Pick<Missions, 'list' | 'create' | 'update' | 'remove'>;
   /** Room editor; absent in tests that do not need it (the snapshot then has no room and the routes answer 404). It tells the browsers itself. */
   room?: Pick<RoomLayoutStore, 'view' | 'save' | 'reset'>;
+  /** Tab name; absent in tests that do not need it (the route answers 404 and the snapshot has none). It tells the browsers itself. */
+  tabName?: Pick<TabNameStore, 'view' | 'set'>;
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
@@ -633,6 +636,7 @@ export function createWebServer(options: WebOptions): WebServer {
     tasks: options.tasks?.list() ?? [],
     missions: options.missions?.list() ?? [],
     ...(options.room === undefined ? {} : { room: options.room.view() }),
+    ...(options.tabName === undefined ? {} : { tabName: options.tabName.view() }),
     downlink: options.downlink?.view() ?? { unread: 0, items: [] },
     livery: options.liveries?.view(),
     docking: options.docking?.view(),
@@ -1017,6 +1021,18 @@ export function createWebServer(options: WebOptions): WebServer {
           }
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await tasks.update(director, id, body));
+        },
+      };
+    }
+    if (s[1] === 'tab-name' && s.length === 2) {
+      const tabName = options.tabName;
+      if (!tabName) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, tabName.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await tabName.set(body.name));
         },
       };
     }

@@ -12,6 +12,7 @@ import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
 import { STATUS_TEXT } from './notify.js';
+import { TabNameBlock } from './TabName.js';
 import { PHONE_MODES } from '../shared/protocol.js';
 import type { PhoneMode, RelayView } from '../shared/protocol.js';
 import { useAgentList, useSeats } from './RoomView.js';
@@ -183,6 +184,7 @@ export function FlightRules(): ReactElement {
           </button>
         </section>
       </div>
+      <TabNameBlock />
       <ModelDefaultsBlock />
       <PermissionDefaultsBlock />
       <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
