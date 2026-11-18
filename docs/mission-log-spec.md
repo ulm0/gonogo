@@ -110,7 +110,7 @@ is new: the agents use three more tools of the MCP server they already have.
 
 - Versions or a history of an entry: not in the brief. An edit replaces the text.
 - Folders, links between entries, pinning, import of an agent's `memory.md`: not in the brief.
-- Embeddings or a database: the brief says BM25 in plain JS.
+- Embeddings or a database: the brief says BM25 in plain JS. Semantic search (the backlog's later item) was left out, not built under another name: it needs a trained model, and gonogo ships none, downloads none and calls no outside service. What can be computed from the log alone (co-occurrence, shared words) is lexical, which BM25 already is; Star Chart (`docs/star-chart-spec.md`) shows the links that are there.
 - Sending an agent the entries that match its task: the agent searches when its role text tells it to.
 - Highlighting the match in a snippet: the snippet is plain text and the page shows it as it is.
 

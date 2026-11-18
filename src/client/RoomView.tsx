@@ -6,6 +6,7 @@ import type { Position } from '../shared/positions.js';
 import { ConsoleTraffic } from './Activity.js';
 import { AgentFuel } from './Propellant.js';
 import { Brief } from './Brief.js';
+import { MassBudget } from './MassBudget.js';
 import * as api from './api.js';
 import {
   askDetail,
@@ -507,6 +508,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
       )}
       {details.length > 0 && <p className="panel-details">{details.join(' · ')}</p>}
       <CleanRoomLine agent={agent} />
+      <MassBudget agent={agent} />
       {confirming && (
         <Remove
           agent={agent}
@@ -652,6 +654,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
         </button>
       </div>
       {more && <Actions agent={agent} onRemove={() => setConfirming(true)} removeRef={removeRef} locked={locked} run={run} />}
+      {more && <MassBudget agent={agent} />}
       {error !== null && (
         <p className="error" role="alert">
           {error}

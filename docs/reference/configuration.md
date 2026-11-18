@@ -49,6 +49,7 @@ Everything lives under the home (`~/.gonogo` by default). Files are mode 0600 an
 | `livery.json` | Chosen livery: `{ "version": 1, "current": "<slug>" }`. Unknown or unreadable means Instrument. |
 | `liveries/<slug>.json` | Custom liveries (name, description, author, 28 tokens). One that is incomplete or fails the contrast rule is skipped with a warning and kept. |
 | `mission-log/<id>.md` | Mission Log entries: front matter (`version`, id, title, tags, author, times) and body. Unreadable or newer-version entries are skipped with a warning and kept. `mission-log/.seq` holds the highest id so ids are never reused. |
+| `agents/<name>/memory.md.bak` | The one copy of `memory.md` that Mass Budget takes when you press REFLECT (mode 0600). Replaced by the next request. gonogo only looks at its size and time, and never restores or removes it. |
 | `<file>.bak-v<n>` | Copy made before upgrading a file from version `n` (e.g. `agents.json.bak-v1`). Never read or removed by gonogo. Copies of `uplinks.json`, `relay.json` or `docking.json` keep their old secrets. |
 | `server.lock` | The running gonogo's pid. A second gonogo on the same home refuses to start. Delete it if you are told one is running and none is. |
 | `token` | The browser token. |

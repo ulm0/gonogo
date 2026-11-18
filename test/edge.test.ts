@@ -1821,6 +1821,7 @@ describe('mission log', () => {
           known(id);
           return entry;
         },
+        chart: () => ({ total: 7, shown: 1, nodes: [{ id: 'entry:l1', kind: 'entry', ref: 'l1', label: 'Cache key', weight: 1 }], edges: [] }),
         create: async (author, input) => {
           calls.push(['create', author, input]);
           if ((input as { title?: unknown }).title === 'bad') throw new FakeHubError('bad_request', 'title must be 1 to 200 characters on one line', 'title');
@@ -1847,6 +1848,8 @@ describe('mission log', () => {
     expect((await api(port, 'GET', '/api/log')).json()).toEqual({ total: 7, hits: [hit] });
     expect((await api(port, 'GET', '/api/log?q=')).status).toBe(200);
     expect((await api(port, 'GET', '/api/log/l1')).json()).toEqual(entry);
+    expect((await api(port, 'GET', '/api/log/chart')).json()).toMatchObject({ total: 7, shown: 1, nodes: [{ id: 'entry:l1' }], edges: [] });
+    for (const method of ['POST', 'PUT', 'DELETE'] as const) expect((await api(port, method, '/api/log/chart', method === 'DELETE' ? undefined : {})).status, method).toBe(405);
     const made = await api(port, 'POST', '/api/log', { title: 'Cache key', body: 'b', tags: ['build'] });
     expect([made.status, made.json()]).toEqual([201, entry]);
     expect((await api(port, 'POST', '/api/log', { title: 'bad' })).json()).toEqual({ error: 'title must be 1 to 200 characters on one line', code: 'bad_request', field: 'title' });

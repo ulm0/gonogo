@@ -53,11 +53,13 @@ import type {
   HireRequest,
   LiveryFrame,
   LiveryView,
+  LogChart,
   LogEntry,
   LogSearch,
   Payload,
   PollFrame,
   PollView,
+  ReflectResult,
   ReliefFrame,
   ReliefView,
   RosterFile,
@@ -2411,5 +2413,45 @@ describe('end to end with the stand-in agent', () => {
     } finally {
       await rm(aux, { recursive: true, force: true });
     }
+  }, 60_000);
+
+  it('31. Mass Budget and Star Chart: a request to condense is a message, the file is copied and never written by gonogo, and the chart follows the log', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    const memory = join(h.home, 'agents', 'ana', 'memory.md');
+    const notes = readFileSync(memory, 'utf8');
+    expect((await api(h, 'GET', '/api/agents/ana/memory')).body).toMatchObject({ exists: true, bytes: Buffer.byteLength(notes), lines: 3, over: false, backup: null });
+
+    // the request is a message from the Director that the agent reads like any other; the copy is private and the file is as it was
+    const asked = await api<ReflectResult>(h, 'POST', '/api/agents/ana/reflect');
+    expect(asked).toMatchObject({ status: 201, body: { send: { ok: true, to: 'ana' }, memory: { backup: { bytes: Buffer.byteLength(notes) } } } });
+    await itemRead(h, asked.body.send.id);
+    expect(tools(h, 'ana', 'read_messages').at(-1)?.result).toMatchObject({ messages: [{ from: 'user', subject: 'Mass Budget: condense your memory file', body: expect.stringContaining(memory) }] });
+    expect(readFileSync(`${memory}.bak`, 'utf8')).toBe(notes);
+    expect(statSync(`${memory}.bak`).mode & 0o777).toBe(0o600);
+    expect(readFileSync(memory, 'utf8')).toBe(notes);
+
+    // a stopped agent is not asked, and its older copy stays
+    await api(h, 'POST', '/api/agents/ana/stop');
+    await waitState(h, 'ana', 'stopped');
+    expect((await api<ReflectResult>(h, 'POST', '/api/agents/ana/reflect')).body).toMatchObject({ send: { ok: false, status: 'undelivered' } });
+    expect(readFileSync(`${memory}.bak`, 'utf8')).toBe(notes);
+    expect(readdirSync(join(h.home, 'agents', 'ana')).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+
+    // the routes are the browser's, for a name that is an agent
+    expect((await rawRequest(h, '/api/agents/ana/memory', { Authorization: 'Bearer nope' })).status).toBe(401);
+    expect((await api(h, 'GET', '/api/agents/ghost/memory')).status).toBe(404);
+    expect((await api(h, 'POST', '/api/agents/Bad Name/reflect')).status).toBe(404);
+    expect((await api(h, 'GET', '/api/agents/ana/reflect')).status).toBe(405);
+
+    // the chart: entries, tags, authors and the ids that entries name, from the same log
+    await api(h, 'POST', '/api/log', { title: 'Cache key', body: 'The key has the node version.', tags: ['build', 'cache'] });
+    await api(h, 'POST', '/api/log', { title: 'Cache miss', body: 'Follows l1.', tags: ['build', 'cache'] });
+    const chart = (await api<LogChart>(h, 'GET', '/api/log/chart')).body;
+    expect(chart).toMatchObject({ total: 2, shown: 2 });
+    expect(chart.nodes.map((n) => n.id).sort()).toEqual(['author:user', 'entry:l1', 'entry:l2', 'tag:build', 'tag:cache']);
+    expect(chart.edges.filter((e) => e.kind === 'mention')).toEqual([{ from: 'entry:l2', to: 'entry:l1', kind: 'mention', weight: 1 }]);
+    expect(chart.edges.filter((e) => e.kind === 'cooccur')).toEqual([{ from: 'tag:build', to: 'tag:cache', kind: 'cooccur', weight: 2 }]);
+    expect((await rawRequest(h, '/api/log/chart', { Authorization: 'Bearer nope' })).status).toBe(401);
   }, 60_000);
 });

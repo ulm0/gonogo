@@ -7,16 +7,25 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { LOG_BODY_MAX_CHARS, LOG_QUERY_MAX_CHARS, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
-import type { LogEntry, LogHit, LogSearch } from '../shared/protocol.js';
+import type { LogChart, LogEntry, LogHit, LogSearch } from '../shared/protocol.js';
 import * as api from './api.js';
 import { whenText } from './inbox.js';
 import { legendOf } from './loop.js';
 import { countText, emptyValues, FIELDS, newsText, requestOf, rowId, validate, valuesOf } from './log.js';
 import type { Field, Problems, Values } from './log.js';
+import { Chart, Links } from './StarChart.js';
 import { showRoom, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './loop.css';
 import './log.css';
+
+/** What the left column shows: the search and its rows, the Star Chart, or the Star Chart as lists. */
+type Lens = 'entries' | 'chart' | 'links';
+const LENSES: ReadonlyArray<{ lens: Lens; label: string }> = [
+  { lens: 'entries', label: 'Entries' },
+  { lens: 'chart', label: 'Chart' },
+  { lens: 'links', label: 'Links' },
+];
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const isField = (name: unknown): name is Field => typeof name === 'string' && (FIELDS as readonly string[]).includes(name);
@@ -260,6 +269,8 @@ export function MissionLog(): ReactElement {
   const [openId, setOpenId] = useState<string | null>(null);
   const [entry, setEntry] = useState<LogEntry | null>(null);
   const [mode, setMode] = useState<'read' | 'edit' | 'new'>('read');
+  const [lens, setLens] = useState<Lens>('entries');
+  const [chart, setChart] = useState<LogChart | null>(null);
   const [notice, setNotice] = useState('');
   const heading = useRef<HTMLHeadingElement | null>(null);
   const latest = useRef(0);
@@ -281,6 +292,23 @@ export function MissionLog(): ReactElement {
     }, 200);
     return () => clearTimeout(timer);
   }, [query, news.rev]);
+
+  // The Star Chart: asked when it is shown and again when a frame says something changed.
+  useEffect(() => {
+    if (lens === 'entries') return;
+    let current = true;
+    api.logChart().then(
+      (found) => {
+        if (!current) return;
+        setChart(found);
+        setListError(null);
+      },
+      (e: unknown) => current && setListError(messageOf(e)),
+    );
+    return () => {
+      current = false;
+    };
+  }, [lens, news.rev]);
 
   // The open entry: asked again when a frame says something changed, since an agent may have rewritten it. One that is gone closes.
   useEffect(() => {
@@ -349,6 +377,13 @@ export function MissionLog(): ReactElement {
         <h1 id={titleId} ref={heading} tabIndex={-1} className="disp loop-title log-heading">
           MISSION LOG
         </h1>
+        <div className="chart-lens" role="group" aria-label="Show the log as">
+          {LENSES.map((l) => (
+            <button key={l.lens} type="button" className="btn" data-kind="quiet" aria-pressed={lens === l.lens} onClick={() => setLens(l.lens)}>
+              {l.label}
+            </button>
+          ))}
+        </div>
         <button type="button" className="btn" data-kind="primary" onClick={() => setMode('new')}>
           New entry
         </button>
@@ -356,39 +391,46 @@ export function MissionLog(): ReactElement {
           Room
         </button>
       </header>
-      <div className="log-cols">
+      <div className="log-cols" data-lens={lens}>
         <div className="log-list">
-          <form className="log-search module" role="search" onSubmit={(e) => e.preventDefault()}>
-            <div className="field">
-              <label htmlFor={`${titleId}-q`}>Search the log</label>
-              <input
-                id={`${titleId}-q`}
-                className="input"
-                type="search"
-                value={query}
-                maxLength={LOG_QUERY_MAX_CHARS}
-                autoComplete="off"
-                autoCapitalize="none"
-                aria-describedby={`${titleId}-count`}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-            <p className="hint" id={`${titleId}-count`}>
-              {search === null ? 'Loading…' : countText(query, search)}
-            </p>
-          </form>
+          {lens === 'chart' && chart !== null && <Chart chart={chart} openId={openId} onOpen={open} />}
+          {lens === 'links' && chart !== null && <Links chart={chart} openId={openId} onOpen={open} />}
+          {lens !== 'entries' && chart === null && listError === null && <p className="hint">Loading…</p>}
           {listError !== null && (
             <p className="error" role="alert">
               {listError}
             </p>
           )}
-          {search !== null && search.hits.length === 0 && search.total === 0 && <p className="loop-empty">The log is empty. Agents write to it with log_write, and you can add an entry here.</p>}
-          {search !== null && search.hits.length > 0 && (
-            <ul className="log-rows">
-              {search.hits.map((hit) => (
-                <Row key={hit.id} hit={hit} open={hit.id === openId} onOpen={() => open(hit.id)} />
-              ))}
-            </ul>
+          {lens === 'entries' && (
+            <>
+              <form className="log-search module" role="search" onSubmit={(e) => e.preventDefault()}>
+                <div className="field">
+                  <label htmlFor={`${titleId}-q`}>Search the log</label>
+                  <input
+                    id={`${titleId}-q`}
+                    className="input"
+                    type="search"
+                    value={query}
+                    maxLength={LOG_QUERY_MAX_CHARS}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    aria-describedby={`${titleId}-count`}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </div>
+                <p className="hint" id={`${titleId}-count`}>
+                  {search === null ? 'Loading…' : countText(query, search)}
+                </p>
+              </form>
+              {search !== null && search.hits.length === 0 && search.total === 0 && <p className="loop-empty">The log is empty. Agents write to it with log_write, and you can add an entry here.</p>}
+              {search !== null && search.hits.length > 0 && (
+                <ul className="log-rows">
+                  {search.hits.map((hit) => (
+                    <Row key={hit.id} hit={hit} open={hit.id === openId} onOpen={() => open(hit.id)} />
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </div>
         <div className="log-side">

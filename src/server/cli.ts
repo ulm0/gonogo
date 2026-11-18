@@ -40,6 +40,7 @@ import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
 import { createRelief } from './relief.js';
+import { createMassBudget } from './massbudget.js';
 import { createMissionLog } from './missionlog.js';
 import { createTasks } from './tasks.js';
 import { createUplinks } from './uplinks.js';
@@ -505,6 +506,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (frame) => web?.broadcast(frame),
       log: log.child('mission log'),
     });
+    const massBudget = createMassBudget({
+      memoryPath: (name) => launcher.memoryPath(name),
+      agent: (name) => hubInstance.views().find((v) => v.name === name),
+      send: (request) => hubInstance.sendFromUser(request),
+      log: log.child('mass budget'),
+    });
     const liveries = createLiveries({
       dir: home.dir,
       send: (request) => hubInstance.sendFromUser(request),
@@ -540,6 +547,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       tasks,
       downlink,
       missionLog,
+      massBudget,
       liveries,
       relay,
       docking,

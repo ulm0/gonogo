@@ -1,0 +1,236 @@
+/*
+ * Star Chart, the Mission Log as a graph, in the Instrument look: an SVG that scales to the width of its column and the same chart
+ * as lists. Every colour is a token, so the four liveries hold. A node is told by its shape as well as by its fill, and each has a
+ * dark outline (3:1 against the panel in every livery); the text is --text on the panel, with a halo of the panel colour so that
+ * a line behind it does not cut it. Nothing moves, so there is nothing to turn off for reduced motion.
+ */
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+}
+
+/* ---- edges ---- */
+
+.chart-edge {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-opacity: 0.55;
+}
+
+.chart-edge[data-kind='mention'] {
+  stroke: var(--work);
+  stroke-width: 1.75;
+  stroke-opacity: 0.9;
+}
+
+.chart-edge[data-kind='cooccur'] {
+  stroke-dasharray: 4 3;
+}
+
+.chart-edge[data-dim],
+.chart-node[data-dim] {
+  opacity: 0.3;
+}
+
+.chart-arrow {
+  fill: var(--work);
+}
+
+/* ---- nodes ---- */
+
+.chart-node {
+  cursor: pointer;
+}
+
+.chart-node:focus,
+.chart-node:focus-visible {
+  outline: none;
+}
+
+.chart-shape {
+  stroke: var(--text-2);
+  stroke-width: 1.5;
+}
+
+.chart-node[data-kind='entry'] .chart-shape {
+  fill: var(--work);
+}
+
+.chart-node[data-kind='tag'] .chart-shape {
+  fill: var(--go-tint);
+}
+
+.chart-node[data-kind='author'] .chart-shape {
+  fill: var(--you-tint);
+}
+
+/* the pointer's target, and the ring of a node that is open, picked or has the keyboard */
+.chart-hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2;
+}
+
+.chart-node[aria-pressed='true'] .chart-hit {
+  stroke: var(--text);
+}
+
+.chart-node:focus-visible .chart-hit {
+  stroke: var(--text);
+  stroke-dasharray: 3 2;
+  fill: var(--you-tint);
+}
+
+.chart-label {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--key);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* an entry's id shows when it is under the pointer, open or has the keyboard; tags and authors always show their names */
+.chart-label:not([data-show]) {
+  display: none;
+}
+
+.chart-node:hover .chart-label:not([data-show]),
+.chart-node:focus-visible .chart-label:not([data-show]),
+.chart-node[aria-pressed='true'] .chart-label:not([data-show]) {
+  display: inline;
+}
+
+.chart-status,
+.chart-key {
+  margin: 0;
+}
+
+/* ---- the lists ---- */
+
+.chart-links {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.chart-links > section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chart-group {
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+}
+
+.chart-name {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.chart-rel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.chart-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+}
+
+.chart-ref {
+  min-width: 44px;
+  padding: 0 10px;
+  /* an id is written as it is: l12 */
+  text-transform: none;
+}
+
+.chart-ref[aria-current='true'] {
+  border-color: var(--work);
+}
+
+/* ---- the switch of the Mission Log's header ---- */
+
+.chart-lens {
+  display: flex;
+  gap: 4px;
+}
+
+.chart-lens .btn[aria-pressed='true'] {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
+}
+
+/* on a phone the switch has a row of its own, under the title, so that the title keeps its room */
+@media (max-width: 699px) {
+  .chart-lens {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .chart-lens .btn {
+    flex: 1 1 0;
+    padding: 0 8px;
+  }
+}
+
+/* a wide chart wants a wide column; the entry stays on the right */
+.log-cols[data-lens='chart'],
+.log-cols[data-lens='links'] {
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
+}
+
+@media (max-width: 899px) {
+  .log-cols[data-lens='chart'],
+  .log-cols[data-lens='links'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
