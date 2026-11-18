@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { locate, parseDiff, textAt } from '../src/shared/diff.js';
-import { REVIEW_BATCH_MAX, REVIEW_MAIL_MAX_CHARS, REVIEW_NOTES_MAX, REVIEW_REQUEST_TTL_MS } from '../src/shared/protocol.js';
+import { REVIEW_BATCH_MAX, REVIEW_MAIL_MAX_CHARS, REVIEW_NOTES_MAX, REVIEW_REQUEST_TTL_MS, REVIEW_TEXT_MAX_CHARS } from '../src/shared/protocol.js';
 import type { AgentSendRequest, Logger, SendResult } from '../src/shared/protocol.js';
 import { buildDockerArgs } from '../src/server/cleanroom.js';
 import { createRoots } from '../src/server/hangar.js';
@@ -124,6 +124,19 @@ describe('locate', () => {
   it('keeps a note on a line that was only re-indented or re-spaced', () => {
     expect(locate(at(2, 'if (a) {'), diff(['x', '    if   (a)  {']))).toEqual({ state: 'exact', line: 2 });
     expect(locate(at(2, '  return 1;'), diff(['x', 'y', '\treturn 1;']))).toEqual({ state: 'moved', line: 3 });
+  });
+
+  it('keeps a note on a line longer than the text a note keeps: both are cut the same way', () => {
+    const long = `const x = ${'a'.repeat(450)};`;
+    const files = diff(['top', long]);
+    // what the store keeps of the line when the note is made
+    const kept = textAt(files, 'f.ts', 'new', 2)!.slice(0, REVIEW_TEXT_MAX_CHARS);
+    expect(kept).toHaveLength(300);
+    expect(locate(at(2, kept), files)).toEqual({ state: 'exact', line: 2 });
+    expect(locate(at(1, kept), diff(['top', 'mid', long]))).toEqual({ state: 'moved', line: 3 });
+    // a change after the 300th character is not seen, one before it is
+    expect(locate(at(2, kept), diff(['top', `${long}EXTRA`]))).toEqual({ state: 'exact', line: 2 });
+    expect(locate(at(2, kept), diff(['top', long.replace('const', 'let')]))).toMatchObject({ state: 'outdated' });
   });
 
   it('says unknown, not outdated, when a diff cut short does not reach the line', () => {
@@ -389,6 +402,16 @@ describe('outdated', () => {
     expect((await review.view('ana')).notes).toHaveLength(1);
     expect((await review.view('ana')).notes[0]!.place.state).toBe('outdated');
     diffText = DIFF;
+    expect((await review.view('ana')).notes[0]!.place.state).toBe('exact');
+  });
+
+  it('does not call a note outdated because its line is longer than the 300 characters it keeps', async () => {
+    const review = make();
+    const long = `  const value = '${'z'.repeat(500)}';`;
+    diffText = `diff --git a/l.ts b/l.ts\n--- a/l.ts\n+++ b/l.ts\n@@ -0,0 +1,2 @@\n+first\n+${long}\n`;
+    const made = await review.addNote(USER, 'ana', { path: 'l.ts', side: 'new', line: 2, body: 'long line' });
+    expect(made.text).toHaveLength(300);
+    expect(made.place).toEqual({ state: 'exact', line: 2 });
     expect((await review.view('ana')).notes[0]!.place.state).toBe('exact');
   });
 

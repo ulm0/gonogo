@@ -4,6 +4,7 @@
  * (to draw the diff). It reads what `git diff --no-color` prints; it never throws, and a diff cut in the middle gives the
  * files and lines up to the cut.
  */
+import { REVIEW_TEXT_MAX_CHARS } from './protocol.js';
 import type { ReviewFileDiff, ReviewHunk, ReviewLine, ReviewPlace, ReviewSide } from './protocol.js';
 
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -80,8 +81,11 @@ export function textAt(files: readonly ReviewFileDiff[], file: string, side: Rev
   return null;
 }
 
-/** The same text, whatever the indentation or the spacing: a note stays on a line that was only re-indented. */
-const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
+/**
+ * The same text, whatever the indentation or the spacing: a note stays on a line that was only re-indented. A note keeps at most
+ * REVIEW_TEXT_MAX_CHARS of its line, so both sides are cut the same way before they are compared: a longer line is still itself.
+ */
+const squash = (text: string): string => text.slice(0, REVIEW_TEXT_MAX_CHARS).replace(/\s+/g, ' ').trim();
 
 /** The lines of one file of the diff that are on a side, with their number on it. */
 function onSide(file: ReviewFileDiff | undefined, side: ReviewSide): Array<{ no: number; text: string }> {
