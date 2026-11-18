@@ -43,7 +43,7 @@ export type HeldKind = (typeof HELD_KINDS)[number];
  * What runs in the pty (Engine Bay, docs/engine-bay-spec.md). 'claude' is Claude Code with hooks and the MCP tools;
  * 'custom' is any command (a terminal with a lamp: no messages, no hooks); the rest are other agent CLIs.
  */
-export const PROVIDERS = ['claude', 'gemini', 'codex', 'opencode', 'qwen', 'grok', 'kimi', 'crush', 'pi', 'copilot', 'cursor', 'custom'] as const;
+export const PROVIDERS = ['claude', 'gemini', 'antigravity', 'codex', 'opencode', 'qwen', 'grok', 'kimi', 'crush', 'pi', 'copilot', 'cursor', 'custom'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 /** How far an adapter was checked: run against a model, checked against the installed program only, or written from its docs. */
@@ -74,7 +74,9 @@ export interface ProviderInfo {
 }
 export const PROVIDER_INFO: Readonly<Record<Provider, ProviderInfo>> = {
   claude: { label: 'Claude Code', bin: 'claude', hooks: true, mcp: true, modes: true, payload: 'all', check: 'run', model: ['sonnet', 'opus', 'haiku'], install: 'npm install -g @anthropic-ai/claude-code@latest', docs: 'https://code.claude.com/docs/en/setup' },
-  gemini: { label: 'Gemini CLI', bin: 'gemini', hooks: true, mcp: true, modes: true, payload: 'servers', check: 'local', model: ['auto', 'pro', 'flash', 'flash-lite'], install: 'npm install -g @google/gemini-cli', docs: 'https://github.com/google-gemini/gemini-cli' },
+  gemini: { label: 'Gemini CLI (legacy)', bin: 'gemini', hooks: true, mcp: true, modes: true, payload: 'servers', check: 'local', model: ['auto', 'pro', 'flash', 'flash-lite'], install: 'npm install -g @google/gemini-cli', docs: 'https://github.com/google-gemini/gemini-cli' },
+  // hooks and mcp are false until a start can load them from the agent's own folder (docs/facts/antigravity.md): agy reads hooks.json and mcp_config.json only from .agents/, ~/.gemini/config/ and plugins.
+  antigravity: { label: 'Antigravity CLI', bin: 'agy', hooks: false, mcp: false, modes: true, payload: null, check: 'local', model: [], install: 'curl -fsSL https://antigravity.google/cli/install.sh | bash', docs: 'https://antigravity.google/docs/getting-started' },
   codex: { label: 'Codex', bin: 'codex', hooks: false, mcp: true, modes: true, payload: null, check: 'docs', model: [], install: 'npm install -g @openai/codex', docs: 'https://github.com/openai/codex' },
   opencode: { label: 'opencode', bin: 'opencode', hooks: false, mcp: true, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://opencode.ai/v2/install | bash', docs: 'https://opencode.ai/docs/' },
   qwen: { label: 'Qwen Code', bin: 'qwen', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | bash', docs: 'https://github.com/QwenLM/qwen-code' },

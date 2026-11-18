@@ -313,3 +313,17 @@ describe('the Antigravity (agy) hook shim and hooks.json', () => {
     expect(AGY_MODES).toStrictEqual({ default: [], acceptEdits: ['--mode', 'accept-edits'], auto: ['--mode', 'auto'], bypassPermissions: ['--dangerously-skip-permissions'] });
   });
 });
+
+describe('antigravity (agy) start', () => {
+  it('passes the mode, the model and the bare role as -i; no hooks, no MCP, no files in the agent folder', async () => {
+    const l = launcher();
+    const accept = (await l.prepareStart(agent('antigravity', { mode: 'acceptEdits', model: 'some-model' }), START)).spec;
+    expect(accept.file).toBe('agy');
+    expect(accept.args.slice(0, 4)).toStrictEqual(['--mode', 'accept-edits', '--model', 'some-model']);
+    expect(accept.args.slice(-2, -1)).toStrictEqual(['-i']);
+    expect(accept.args.at(-1)).not.toContain('read_messages');
+    const bypass = (await l.prepareStart(agent('antigravity', { mode: 'bypassPermissions' }), START)).spec;
+    expect(bypass.args[0]).toBe('--dangerously-skip-permissions');
+    expect(bypass.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBeUndefined();
+  });
+});

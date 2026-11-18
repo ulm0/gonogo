@@ -163,6 +163,10 @@ export function buildProviderStart(provider: OtherProvider, ctx: StartContext): 
         env: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: file(GEMINI_SETTINGS_FILE) },
         files: { [GEMINI_SETTINGS_FILE]: JSON.stringify(buildGeminiSettings(ctx), null, 2) },
       };
+    case 'antigravity':
+      // No hooks and no gonogo tools yet (see PROVIDER_INFO): a terminal with a lamp that knows the mode, the model and its role.
+      // The role alone, without the preamble about tools it does not have. -i runs it as the first prompt and stays interactive.
+      return { args: [...AGY_MODES[ctx.mode], ...model, '-i', ctx.role], env: {}, files: {} };
     case 'codex':
       // -c overrides config.toml for this run only, so CODEX_HOME (and the owner's login in it) stays as it is.
       return {

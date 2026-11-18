@@ -47,6 +47,7 @@ those four, and lets the owner pick the CLI in the hire form.
   the form hides the modes.
 - **Propellant** reads Claude transcripts only (the shim does not forward `transcript_path`); a room limit trips
   Claude agents only. **Max Q** counts agents with hooks (Claude Code, Gemini CLI).
+- **Antigravity CLI (`agy`)** replaces Gemini CLI for the individual Google tiers (Gemini CLI stays, marked legacy). Started with `--mode accept-edits|auto` or `--dangerously-skip-permissions`, `--model`, `-i <role>`. It reads `hooks.json` and `mcp_config.json` only from the project's `.agents/`, `~/.gemini/config/` and plugins, so until a per-agent location is verified it is an output-activity engine without hooks or tools (like pi). The hook shim and `hooks.json` builder exist and are tested; `docs/facts/antigravity.md` says what was and was not checked. `agy --mode auto` needs its terminal sandbox.
 - **Seed mode** passes `--skip-trust` to Gemini (the folder is trusted for that run, nothing is written); nothing else.
 
 ## Checked how
@@ -54,7 +55,8 @@ those four, and lets the owner pick the CLI in the hire form.
 | Engine | Program | State | Tools | Check |
 |---|---|---|---|---|
 | Claude Code | `claude` | hooks | yes | run (unchanged) |
-| Gemini CLI | `gemini` | hooks | yes | local: `--help` and the bundled source of 0.59.0, not signed in |
+| Gemini CLI (legacy) | `gemini` | hooks | yes | local: `--help` and the bundled source of 0.59.0, not signed in |
+| Antigravity CLI | `agy` | output | no | local: `--help` of 1.5.11, not signed in; hooks and tools wait for a per-agent config location (`docs/facts/antigravity.md`) |
 | Codex | `codex` | output | yes | docs |
 | opencode | `opencode` | output | yes | docs |
 | Kimi CLI | `kimi` | output | yes | docs |
@@ -103,7 +105,8 @@ one (see Pad Check).
 | Engine | Flag | Checked |
 |---|---|---|
 | Claude Code | `--model` | real runs (`--model haiku`, `docs/facts/claude-code-hooks-mcp.md`); of the hints only `haiku` was run |
-| Gemini CLI | `-m, --model` | `gemini --help` of 0.59.0; hints are its aliases from its CLI reference |
+| Gemini CLI (legacy) | `-m, --model` | `gemini --help` of 0.59.0; hints are its aliases from its CLI reference |
+| Antigravity CLI | `--model` | `agy --help` of 1.5.11; no hints |
 | pi | `--model` | `pi --help` of 1.5.2; hints from its examples |
 | Codex | `--model`, `-m` | OpenAI's CLI reference, not installed |
 | Kimi CLI | `--model`, `-m` | its command reference, not installed |
@@ -165,7 +168,8 @@ one (see Pad Check).
 | Engine | Command | Page |
 |---|---|---|
 | Claude Code | `npm install -g @anthropic-ai/claude-code@latest` (its page also lists a native installer, `brew install --cask claude-code` and others; npm needs only the Node 24 gonogo already needs) | code.claude.com/docs/en/setup |
-| Gemini CLI | `npm install -g @google/gemini-cli` | its README |
+| Gemini CLI (legacy) | `npm install -g @google/gemini-cli` | its README |
+| Antigravity CLI | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` (read, not run) | antigravity.google/docs/getting-started |
 | Codex | `npm install -g @openai/codex` | its README |
 | opencode | `curl -fsSL https://opencode.ai/v2/install \| bash` | its README and docs page |
 | Copilot CLI | `curl -fsSL https://gh.io/copilot-install \| bash` | its README |
