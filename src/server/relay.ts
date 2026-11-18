@@ -18,8 +18,8 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { RELAY_FORWARD_KINDS, RELAY_SERVICES } from '../shared/protocol.js';
-import type { DownlinkEventKind, HubEvent, Logger, RelayForwardKind, RelayLast, RelayService, RelayView } from '../shared/protocol.js';
+import { PHONE_MODES, RELAY_FORWARD_KINDS, RELAY_SERVICES } from '../shared/protocol.js';
+import type { DownlinkEventKind, HubEvent, Logger, PhoneMode, RelayForwardKind, RelayLast, RelayService, RelayView } from '../shared/protocol.js';
 import {
   FILE_MODE,
   RELAY_BACKOFF_MS,
@@ -56,6 +56,14 @@ export interface Relay extends Inbound {
   remove(service: string): Promise<RelayView>;
   /** `{ kinds }`: which kinds of item go to the targets. */
   forward(input: unknown): Promise<RelayView>;
+  /** `{ mode }`: where phone approvals go (off, telegram, remote-control or both). */
+  setPhone(input: unknown): Promise<RelayView>;
+  /** Phone approvals: whether the Telegram path is on and a Telegram target exists. */
+  phoneTelegram(): boolean;
+  /** One message with buttons to the Telegram target; resolves with its key when it went. */
+  sendButtons(text: string, markup: unknown): Promise<boolean>;
+  /** One call of the Telegram bot API (answerCallbackQuery, editMessageReplyMarkup); true when it was accepted. Never throws, never says the token. */
+  telegramCall(method: 'answerCallbackQuery' | 'editMessageReplyMarkup', body: Record<string, unknown>): Promise<boolean>;
   /** Sends one test message, one try, and waits for the answer. A refusal is in `last`, not thrown. */
   test(service: string): Promise<RelayView>;
   /** Every frame the hub emits: a message to the Director is forwarded. */
@@ -83,7 +91,7 @@ interface Service {
   token: RegExp;
   to: RegExp;
   toHint: string;
-  request(target: Target, text: string): { url: string; headers: Record<string, string>; body: unknown };
+  request(target: Target, text: string, extra?: Record<string, unknown>): { url: string; headers: Record<string, string>; body: unknown };
   answer(json: unknown, target: Target): Answer;
 }
 
@@ -116,11 +124,11 @@ const SERVICES: Record<RelayService, Service> = {
     token: /^\d{4,15}:[A-Za-z0-9_-]{20,64}$/,
     to: /^-?[1-9]\d{0,19}$/,
     toHint: 'the chat id, a number such as 123456789',
-    request: (target, text) => ({
+    request: (target, text, extra) => ({
       // the token is part of the address: this url is never logged
       url: `https://api.telegram.org/bot${target.token}/sendMessage`,
       headers: { 'Content-Type': 'application/json' },
-      body: { chat_id: target.to, text },
+      body: { chat_id: target.to, text, ...extra },
     }),
     answer: (json, target) => {
       const id = pick(json, ['result', 'message_id']);
@@ -154,6 +162,7 @@ export function createRelay(options: RelayOptions): Relay {
   const last: Partial<Record<RelayService, RelayLast>> = {};
   /** Everything is sent until the Director chooses. */
   let forwarded = new Set<RelayForwardKind>(RELAY_FORWARD_KINDS);
+  let phone: PhoneMode = 'off';
   /** Forwarded messages by the service's own id, oldest first (a Map keeps the order of insertion). */
   const threads = new Map<string, Thread>();
   const handled = new Set<string>();
@@ -169,7 +178,7 @@ export function createRelay(options: RelayOptions): Relay {
   };
 
   const save = (): Promise<void> => {
-    const json = JSON.stringify({ version: 1, ...targets, forward: RELAY_FORWARD_KINDS.filter((k) => forwarded.has(k)) }, null, 2);
+    const json = JSON.stringify({ version: 1, ...targets, forward: RELAY_FORWARD_KINDS.filter((k) => forwarded.has(k)), phone }, null, 2);
     return later(async () => {
       const tmp = join(dir, `.${RELAY_FILE}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`);
       await writeFile(tmp, json, { mode: FILE_MODE, flag: 'wx' });
@@ -179,13 +188,13 @@ export function createRelay(options: RelayOptions): Relay {
 
   const view = (): RelayView => {
     const of = (service: RelayService) => (targets[service] ? { to: targets[service].to, last: last[service] ?? null } : null);
-    return { slack: of('slack'), telegram: of('telegram'), forward: RELAY_FORWARD_KINDS.filter((k) => forwarded.has(k)) };
+    return { slack: of('slack'), telegram: of('telegram'), forward: RELAY_FORWARD_KINDS.filter((k) => forwarded.has(k)), phone };
   };
 
   /** One message to one service: the id the service gave it, or why it did not go. Never throws, never says the token. */
-  async function post(service: RelayService, target: Target, text: string, tries: number): Promise<{ ok: boolean; note: string; key: string | null }> {
+  async function post(service: RelayService, target: Target, text: string, tries: number, extra?: Record<string, unknown>): Promise<{ ok: boolean; note: string; key: string | null }> {
     const def = SERVICES[service];
-    const { url, headers, body } = def.request(target, text);
+    const { url, headers, body } = def.request(target, text, extra);
     let note = '';
     for (let attempt = 1; attempt <= tries && !closing.signal.aborted; attempt++) {
       let wait = RELAY_BACKOFF_MS * 2 ** (attempt - 1);
@@ -275,6 +284,7 @@ export function createRelay(options: RelayOptions): Relay {
         if (isRecord(t) && typeof t.token === 'string' && typeof t.to === 'string' && SERVICES[service].token.test(t.token) && SERVICES[service].to.test(t.to)) targets[service] = { token: t.token, to: t.to };
         else log.warn(`${RELAY_FILE}: the ${service} target was skipped`);
       }
+      if (typeof saved.phone === 'string' && (PHONE_MODES as readonly string[]).includes(saved.phone)) phone = saved.phone as PhoneMode;
       if (Array.isArray(saved.forward)) forwarded = new Set(saved.forward.filter((k): k is RelayForwardKind => typeof k === 'string' && isForward(k)));
     },
 
@@ -311,6 +321,45 @@ export function createRelay(options: RelayOptions): Relay {
       forwarded = new Set(kinds as RelayForwardKind[]);
       await save();
       return view();
+    },
+
+    async setPhone(input) {
+      if (!isRecord(input)) throw bad('request body must be a JSON object');
+      for (const key of Object.keys(input)) if (key !== 'mode') throw bad(`unknown field "${key}"`, key);
+      if (typeof input.mode !== 'string' || !(PHONE_MODES as readonly string[]).includes(input.mode)) throw bad(`mode must be one of: ${PHONE_MODES.join(', ')}`, 'mode');
+      phone = input.mode as PhoneMode;
+      await save();
+      return view();
+    },
+
+    phoneTelegram: () => (phone === 'telegram' || phone === 'both') && targets.telegram !== undefined,
+
+    async sendButtons(text, markup) {
+      const target = targets.telegram;
+      if (!target || closing.signal.aborted) return false;
+      const clipped = text.length > RELAY_TEXT_MAX_CHARS ? `${cutText(text, RELAY_TEXT_MAX_CHARS - 1)}…` : text;
+      // not in the queue of the other forwards: a button that waits behind them may be late for its dialog
+      const sent = await post('telegram', target, clipped, RELAY_TRIES, { reply_markup: markup });
+      last.telegram = { at: now(), ok: sent.ok, note: sent.note };
+      if (!sent.ok) log.warn(`relay: telegram: ${sent.note}`);
+      return sent.ok;
+    },
+
+    async telegramCall(method, body) {
+      const target = targets.telegram;
+      if (!target || closing.signal.aborted) return false;
+      try {
+        const res = await options.fetch(`https://api.telegram.org/bot${target.token}/${method}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: target.to, ...body }),
+          redirect: 'error',
+          signal: AbortSignal.any([AbortSignal.timeout(RELAY_TIMEOUT_MS), closing.signal]),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
     },
 
     async test(name) {

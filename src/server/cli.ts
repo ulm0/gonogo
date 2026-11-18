@@ -46,6 +46,8 @@ import { createTelemetry } from './telemetry.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
+import { createPhone } from './phone.js';
+import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
 import { createMassBudget } from './massbudget.js';
 import { createMissionLog } from './missionlog.js';
@@ -411,9 +413,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('black box'),
     });
     /** What the parts of the server tell the Director's inbox goes to the targets of Relay too; a trip and a poll result go to the Black Box. */
-    const tell: DownlinkNotify = (kind, text) => {
+    let phone: Phone | null = null;
+    const tell: DownlinkNotify = (kind, text, ref) => {
       downlink.post(kind, text);
       relay.event(kind, text);
+      if (ref !== undefined) phone?.approval(ref, text);
       if (kind === 'redline') blackBox.record('redline', tripText(text));
       else if (kind === 'tminus') blackBox.record('poll', pollText(text));
     };
@@ -545,6 +549,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (list) => web?.broadcast({ t: 'uplinks', uplinks: list }),
       notify: tell,
       inbound: relay,
+      press: (secret, pressed) => void phone?.press(secret, pressed).catch((error: unknown) => log.warn('phone approvals: a button failed', error instanceof Error ? error.message : String(error))),
       log: log.child('uplink'),
     });
     const tasks = audited(createTasks({
@@ -610,6 +615,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('relief'),
     });
+    phone = createPhone({ hub: audited(hubInstance, blackBox.record, HUB_AUDIT), relief, relay, secret: () => uplinks.secretOf('telegram'), now: io.now, log: log.child('phone') });
     const rollout = createRollout({
       dir: home.dir,
       now: io.now,

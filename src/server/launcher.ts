@@ -54,6 +54,7 @@ import {
 } from './constants.js';
 import { prepareWorktree, worktreeBranch } from './worktree.js';
 import type { WorktreePlace } from './worktree.js';
+import { remoteControlName } from './remotecontrol.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { buildProviderStart } from './providers.js';
@@ -156,6 +157,8 @@ export function buildArgv(input: {
   pluginDir?: string | null;
   /** Engine Bay: the model of the agent; none leaves the CLI's own default. */
   model?: string;
+  /** Remote Control: the session name the Claude app shows; none is off. */
+  remoteControl?: string;
 }): string[] {
   return [
     input.flag === 'resume' ? '--resume' : '--session-id',
@@ -169,6 +172,7 @@ export function buildArgv(input: {
     input.mcpPath,
     ...(input.pluginDir ? ['--plugin-dir', input.pluginDir] : []),
     ...(input.model ? ['--model', input.model] : []),
+    ...(input.remoteControl ? ['--remote-control', input.remoteControl] : []),
     '--append-system-prompt',
     input.roleText,
     '--system-prompt-snapshot',
@@ -577,7 +581,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude') });
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude'), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       let spec: PreparedStart['spec'];

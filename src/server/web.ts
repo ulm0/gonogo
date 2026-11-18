@@ -21,6 +21,7 @@ import type {
   GovernorRequest,
   HireRequest,
   Worktree,
+  RemoteControl,
   HubEvent,
   Hub,
   InputEffect,
@@ -135,7 +136,7 @@ export interface WebOptions {
   /** Livery; absent in tests that do not need it (the snapshot then has no livery, the routes answer 404 and the livery tool says it is not available). It tells the browsers itself. */
   liveries?: Pick<Liveries, 'view' | 'select' | 'remove' | 'submit' | 'design'>;
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
-  relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'test'>;
+  relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'setPhone' | 'test'>;
   /** Default models; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   models?: Pick<ModelDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
@@ -348,7 +349,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, model, keys } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, model, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -383,6 +384,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
     if (typeof worktree !== 'object' || worktree === null || Array.isArray(worktree)) return fieldError('worktree', 'an object');
     value.worktree = worktree as Worktree;
   }
+  if (remoteControl !== undefined) {
+    if (typeof remoteControl !== 'object' || remoteControl === null || Array.isArray(remoteControl)) return fieldError('remoteControl', 'an object');
+    value.remoteControl = remoteControl as RemoteControl;
+  }
   // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
   if (model !== undefined) {
     if (typeof model !== 'string') return fieldError('model', 'a string');
@@ -416,7 +421,9 @@ function parseGovernor(o: Record<string, unknown>): Parsed<GovernorRequest> {
 
 function parseAnswer(o: Record<string, unknown>): Parsed<AnswerRequest> {
   if (typeof o.go !== 'boolean') return fieldError('go', 'true or false');
-  return { ok: true, value: { go: o.go } };
+  if (o.needSeq === undefined) return { ok: true, value: { go: o.go } };
+  if (typeof o.needSeq !== 'number' || !Number.isSafeInteger(o.needSeq) || o.needSeq < 0) return fieldError('needSeq', 'a whole number');
+  return { ok: true, value: { go: o.go, needSeq: o.needSeq } };
 }
 
 function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
@@ -456,6 +463,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.worktree !== undefined) {
     if (o.worktree !== null && (typeof o.worktree !== 'object' || Array.isArray(o.worktree))) return fieldError('worktree', 'an object or null');
     value.worktree = o.worktree as Worktree | null;
+  }
+  if (o.remoteControl !== undefined) {
+    if (o.remoteControl !== null && (typeof o.remoteControl !== 'object' || Array.isArray(o.remoteControl))) return fieldError('remoteControl', 'an object or null');
+    value.remoteControl = o.remoteControl as RemoteControl | null;
   }
   if (o.model !== undefined) {
     if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');
@@ -1034,7 +1045,7 @@ export function createWebServer(options: WebOptions): WebServer {
             return;
           }
           const body = await jsonObject(req, res);
-          if (body) sendJson(res, 200, await (name === 'forward' ? relay.forward(body) : relay.set(name, body)));
+          if (body) sendJson(res, 200, await (name === 'forward' ? relay.forward(body) : name === 'phone' ? relay.setPhone(body) : relay.set(name, body)));
         },
       };
     }

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, ReactNode } from 'react';
 import { KEY_SUGGESTIONS, KEYS_MAX, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, EngineCheck, PermissionMode, Provider } from '../shared/protocol.js';
+import type { AgentView, EngineCheck, PermissionMode, PhoneMode, Provider } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
@@ -372,6 +372,16 @@ function Staff({ form }: { form: Target }): ReactElement {
   const serversError = shown('payload.mcpServers');
   const skillsError = shown('payload.skills');
   const cleanError = shown('cleanRoom');
+  const remoteError = shown('remoteControl');
+  // offered only when Flight Rules chose a phone path that uses the Claude app (or the agent has it on already)
+  const [phoneMode, setPhoneMode] = useState<PhoneMode>('off');
+  useEffect(() => {
+    let live = true;
+    api.getRelay().then((view) => live && setPhoneMode(view.phone), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const worktreeError = shown('worktree');
   const modelError = shown('model');
   const keysError = shown('keys');
@@ -637,6 +647,29 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
+  const remoteBox = values.provider === 'claude' && !values.cleanRoom && (values.remoteControl || phoneMode === 'remote-control' || phoneMode === 'both') && (
+    <div className="staff-clean" data-invalid={remoteError !== undefined ? '' : undefined}>
+      <div className="staff-check">
+        <input
+          id={`${id}-remote`}
+          type="checkbox"
+          checked={values.remoteControl}
+          aria-invalid={remoteError !== undefined}
+          aria-describedby={describedBy(`${id}-remote`, true, remoteError !== undefined)}
+          onChange={(event) => change({ remoteControl: event.target.checked }, 'remoteControl')}
+        />
+        <label htmlFor={`${id}-remote`}>Approve in the Claude app</label>
+      </div>
+      {remoteError !== undefined && (
+        <p className="error" id={`${id}-remote-error`}>
+          {remoteError}
+        </p>
+      )}
+      <p className="hint" id={`${id}-remote-hint`}>
+        Starts Claude Code with --remote-control, so its session shows in the Claude app as gonogo-{values.name === '' ? 'name' : values.name} and you can approve there. Needs a claude.ai login on this machine: it does not work with an API key or a token. gonogo does not see what you answer in the app.
+      </p>
+    </div>
+  );
   const payloadFold = payloadKind !== null && (
     <details className="staff-fold" open={foldOpen} onToggle={(event) => setFoldOpen(event.currentTarget.open)}>
       <summary className="label">PAYLOAD</summary>
@@ -797,7 +830,9 @@ function Staff({ form }: { form: Target }): ReactElement {
               {dirField}
               {cleanRoomBox}
             {worktreeBox}
+            {remoteBox}
               {worktreeBox}
+              {remoteBox}
               {modes}
               {confirmPanel}
               {payloadFold}

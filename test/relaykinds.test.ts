@@ -18,7 +18,7 @@ const inbound: Inbound = {
 };
 const read = (kind: keyof typeof RELAY_KINDS, body: unknown, headers: Record<string, string> = {}): Made => RELAY_KINDS[kind].read(bytes(body), headers, inbound);
 const textOf = (made: Made): string => {
-  if (made === null || 'answer' in made) throw new Error(`not a message: ${JSON.stringify(made)}`);
+  if (made === null || 'answer' in made || 'callback' in made) throw new Error(`not a message: ${JSON.stringify(made)}`);
   return made.text;
 };
 
@@ -270,5 +270,11 @@ describe('relay kinds: Telegram', () => {
     // a reply to something else is a message like any other
     expect(textOf(read('telegram', message({ reply_to_message: { message_id: 78 } })))).toMatch(/^Telegram message from/);
     threads.clear();
+  });
+  it('Telegram: a button press from the chat of the target is a press, from any other chat or without data nothing', () => {
+    const press = (chat: number, data: unknown = 'a:permission:p1:go:abcdef12') => ({ callback_query: { id: 'q9', data, message: { message_id: 41, chat: { id: chat } } } });
+    expect(read('telegram', press(555))).toEqual({ callback: { queryId: 'q9', data: 'a:permission:p1:go:abcdef12', chat: '555', messageId: '41' } });
+    expect(read('telegram', press(556))).toBeNull();
+    expect(read('telegram', press(555, 7))).toBeNull();
   });
 });

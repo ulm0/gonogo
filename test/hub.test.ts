@@ -2806,6 +2806,8 @@ describe('hire (4.9)', () => {
       payload: null,
       cleanRoom: null,
       worktree: null,
+      needSeq: null,
+      remoteControl: null,
       model: null,
       keys: {},
       doing: null,
@@ -5218,6 +5220,73 @@ describe('Hub.answer', () => {
     expect(h.frames('ana')).toHaveLength(frames);
   });
 
+  it('numbers each permission dialog and posts one Downlink event for it, in the inbox only', async () => {
+    const h = await withAna();
+    expect(h.view('ana').needSeq).toBeNull();
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', PERMISSION_PAYLOAD);
+    expect(h.view('ana').needSeq).toBe(1);
+    expect(h.notices).toEqual([['permission', 'ana asks: Bash: git push origin main']]);
+    // a second dialog replaces the first one: a new number and a new event
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Edit', tool_input: { file_path: '/work/ana/a.txt' } });
+    expect(h.view('ana').needSeq).toBe(2);
+    expect(h.notices.at(-1)).toEqual(['permission', 'ana asks: Edit: /work/ana/a.txt']);
+    expect(h.notices).toHaveLength(2);
+    // the same dialog again (a repeated hook) is the same dialog
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Edit', tool_input: { file_path: '/work/ana/a.txt' } });
+    expect(h.view('ana').needSeq).toBe(2);
+    expect(h.notices).toHaveLength(2);
+    // the number shows only while a dialog is open
+    h.hook('ana', 'PostToolUse', PERMISSION_PAYLOAD);
+    expect(h.view('ana').needSeq).toBeNull();
+    h.hook('ana', 'PermissionRequest', PERMISSION_PAYLOAD);
+    expect(h.view('ana').needSeq).toBe(3);
+  });
+
+  it('posts no event for a permission that a Hold or a trip has covered', async () => {
+    const h = await withAna();
+    h.work('ana');
+    h.hub.hold('ana');
+    const before = h.notices.length;
+    h.hook('ana', 'PermissionRequest', PERMISSION_PAYLOAD);
+    expect(h.notices.length).toBe(before);
+    expect(h.view('ana').needSeq).toBeNull();
+  });
+
+  it('types the answer only for the dialog that is open: a late tap of a phone is a conflict and types nothing', async () => {
+    const h = await withAna();
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', PERMISSION_PAYLOAD);
+    const first = h.view('ana').needSeq ?? -1;
+    // replaced by another dialog before the tap
+    h.hook('ana', 'PermissionRequest', { tool_name: 'Edit', tool_input: { file_path: '/work/ana/a.txt' } });
+    expectHubError(() => h.hub.answer('ana', { go: true, needSeq: first }), 'conflict', /answered or replaced/, 'needSeq');
+    expect(h.pressed).toEqual([]);
+    expect(h.hub.answer('ana', { go: true, needSeq: first + 1 }).needSeq).toBe(first + 1);
+    expect(h.pressed).toEqual([{ name: 'ana', generation: h.gen('ana'), data: '\r' }]);
+    // answered in the terminal, then the tap comes: the state moved, so it is the usual conflict
+    h.setScreen('ana', { promptBox: true, dialog: null });
+    h.hook('ana', 'PostToolUse', PERMISSION_PAYLOAD);
+    expectHubError(() => h.hub.answer('ana', { go: true, needSeq: first + 1 }), 'conflict', 'ana is not asking for a go');
+    expect(h.pressed).toHaveLength(1);
+    // a number from the future is not the open dialog either
+    h.hook('ana', 'PermissionRequest', PERMISSION_PAYLOAD);
+    expectHubError(() => h.hub.answer('ana', { go: false, needSeq: 99 }), 'conflict', /answered or replaced/, 'needSeq');
+    expect(h.pressed).toHaveLength(1);
+  });
+
+  it('keeps the page working without a needSeq, and refuses one that is not a whole number', async () => {
+    const h = await withAna();
+    h.work('ana');
+    h.hook('ana', 'PermissionRequest', PERMISSION_PAYLOAD);
+    for (const bad of ['1', -1, 1.5, null, Number.NaN]) {
+      expectHubError(() => h.hub.answer('ana', { go: true, needSeq: bad } as unknown as AnswerRequest), 'bad_request', 'needSeq must be a whole number', 'needSeq');
+    }
+    expect(h.pressed).toEqual([]);
+    h.hub.answer('ana', { go: true });
+    expect(h.pressed).toHaveLength(1);
+  });
+
   it('the hooks end needs_you afterwards, as after a key typed in the terminal', async () => {
     const h = await withAna();
     h.work('ana');
@@ -6114,5 +6183,38 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     await h.hub.remove('ana');
     expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
     expect(h.warnings.some((line) => line.includes('could not remove the keys of ana'))).toBe(true);
+  });
+});
+
+describe('Remote Control: an agent approved in the Claude app (hire and edit)', () => {
+  const hireWith = (h: Harness, remoteControl: unknown, patch: Record<string, unknown> = {}): Promise<AgentView> =>
+    h.hub.hire({ name: 'ana', role: 'x', dir: '/work/ana', mode: 'default', remoteControl, ...patch } as unknown as HireRequest);
+
+  it('stores the setting in the record and the view, and hands it to the launcher', async () => {
+    const h = await started();
+    const view = await hireWith(h, {});
+    expect(view.remoteControl).toEqual({});
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')?.remoteControl).toEqual({});
+    expect(h.spawns.at(-1)?.agent.remoteControl).toEqual({});
+    const plain = await hireWith(h, undefined, { name: 'ben', dir: '/work/ben' });
+    expect(plain.remoteControl).toBeNull();
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ben')).not.toHaveProperty('remoteControl');
+  });
+
+  it('refuses a bad value, another engine and a Clean Room, naming the field', async () => {
+    const h = await started();
+    const refuse = (value: unknown, message: string | RegExp, patch: Record<string, unknown> = {}): Promise<void> => expectHubReject(hireWith(h, value, patch), 'bad_request', message, 'remoteControl');
+    await refuse([], 'remoteControl must be an object');
+    await refuse({ a: 1 }, 'remoteControl has no field "a"');
+    await refuse({}, /Claude Code agents only/, { provider: 'gemini' });
+    await refuse({}, /Clean Room/, { cleanRoom: {} });
+  });
+
+  it('is turned on and off by an edit and the console is dirty until the restart', async () => {
+    const h = await withAna();
+    expect(await h.hub.edit('ana', { remoteControl: {} })).toMatchObject({ remoteControl: {}, dirty: true });
+    expect(await h.hub.edit('ana', { remoteControl: null })).toMatchObject({ remoteControl: null });
+    await h.hub.edit('ana', { remoteControl: {} });
+    await expectHubReject(h.hub.edit('ana', { cleanRoom: {} }), 'bad_request', /Remote Control off first/, 'cleanRoom');
   });
 });

@@ -5,10 +5,13 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
+import * as api from './api.js';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
 import { STATUS_TEXT } from './notify.js';
+import { PHONE_MODES } from '../shared/protocol.js';
+import type { PhoneMode, RelayView } from '../shared/protocol.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commissioningSteps, loadMarks, saveMarks, showCommissioning } from './shell.js';
 import type { Mark, Step } from './shell.js';
@@ -38,6 +41,62 @@ function useMarks(): ReadonlySet<Mark> {
   return marks;
 }
 const addMark = (mark: Mark): void => setMarks(new Set([...marks, mark]));
+
+const PHONE_TEXT: Record<PhoneMode, string> = {
+  off: 'Off',
+  telegram: 'Telegram buttons',
+  'remote-control': 'Claude app (Remote Control)',
+  both: 'Both',
+};
+const PHONE_HINT: Record<PhoneMode, string> = {
+  off: 'Nothing is sent to a phone.',
+  telegram: 'A pending permission or hire request goes to your Telegram chat with GO and NO-GO buttons. Needs a Telegram Relay target and a Telegram Uplink.',
+  'remote-control': 'Lets you start a Claude Code agent with --remote-control, so you approve in the Claude app. Needs a claude.ai login; not for Clean Room or API-key rooms.',
+  both: 'Both of the above; the first answer wins.',
+};
+
+/** Phone approvals: where a pending permission or hire request is sent. The Telegram target stays in Relay. */
+function PhoneApprovals(): ReactElement {
+  const id = useId();
+  const [view, setView] = useState<RelayView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.getRelay().then((found) => live && setView(found), (e: unknown) => live && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const mode = view?.phone ?? 'off';
+  return (
+    <section className="module rules-block" aria-labelledby={`${id}-phone`}>
+      <h2 className="label" id={`${id}-phone`}>
+        PHONE APPROVALS
+      </h2>
+      <select
+        aria-label="Phone approvals"
+        value={mode}
+        disabled={view === null}
+        onChange={(event) => {
+          setError(null);
+          api.setPhoneMode(event.target.value as PhoneMode).then(setView, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+        }}
+      >
+        {PHONE_MODES.map((m) => (
+          <option key={m} value={m}>
+            {PHONE_TEXT[m]}
+          </option>
+        ))}
+      </select>
+      <p className="hint">{PHONE_HINT[mode]}</p>
+      {error !== null && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
 
 export function FlightRules(): ReactElement {
   const titleId = useId();
@@ -72,6 +131,7 @@ export function FlightRules(): ReactElement {
             Choose a livery
           </button>
         </section>
+        <PhoneApprovals />
         <section className="module rules-block" aria-labelledby={`${titleId}-window`}>
           <h2 className="label" id={`${titleId}-window`}>
             LAUNCH WINDOW

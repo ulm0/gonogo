@@ -15,7 +15,7 @@ import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { positionById, POSITION_IDS } from '../shared/positions.js';
 import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, DownlinkNotify, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
+import type { AgentView, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
 import { providerInfo } from '../shared/protocol.js';
 import { RELIEF_PENDING_MAX, RELIEF_RATE_MAX, RELIEF_RATE_WINDOW_MS, RELIEF_TTL_MS } from './constants.js';
 import { isRecord } from './hooks.js';
@@ -86,7 +86,7 @@ export function createRelief(options: ReliefOptions): Relief {
 
   const view = (): ReliefView => ({ requests: [...pending.values()].map(({ request }) => ({ ...request, cleanRoom: request.cleanRoom === null ? null : { ...request.cleanRoom } })) });
   const changed = (): void => options.emit({ t: 'relief', relief: view() });
-  const notify = (text: string): void => options.notify?.('relief', text);
+  const notify = (text: string, ref?: DownlinkRef): void => options.notify?.('relief', text, ref);
 
   /** The boss hears the answer as a message from the Director's side, as it hears a T-minus result. */
   const tell = (boss: string, subject: string, body: string): void => {
@@ -201,7 +201,7 @@ export function createRelief(options: ReliefOptions): Relief {
       const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, cleanRoom };
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
-      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}, ${checked.path}`);
+      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}, ${checked.path}`, { kind: 'relief', id });
       return { id, status: 'pending', note: `waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
     },
 

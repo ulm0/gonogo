@@ -33,6 +33,7 @@ import type {
   PropellantView,
   ReflectResult,
   RelayForwardRequest,
+  PhoneMode,
   RelayService,
   RelayTargetRequest,
   RecorderCommit,
@@ -677,6 +678,11 @@ export async function getRelay(): Promise<RelayView> {
 /** Without `token` the saved one stays. */
 export async function setRelayTarget(service: RelayService, request: RelayTargetRequest): Promise<RelayView> {
   return toRelayView(await call('PUT', `/relay/${service}`, request));
+}
+
+/** Phone approvals: where permissions and hire requests are sent (Flight Rules). */
+export async function setPhoneMode(mode: PhoneMode): Promise<RelayView> {
+  return toRelayView(await call('PUT', '/relay/phone', { mode }));
 }
 
 export async function removeRelayTarget(service: RelayService): Promise<RelayView> {

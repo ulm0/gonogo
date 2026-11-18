@@ -91,7 +91,7 @@ describe('relay: the targets', () => {
   it('has none at first and forwards every kind', async () => {
     const relay = make();
     await relay.load();
-    expect(relay.view()).toEqual({ slack: null, telegram: null, forward: [...RELAY_FORWARD_KINDS] });
+    expect(relay.view()).toEqual({ slack: null, telegram: null, forward: [...RELAY_FORWARD_KINDS], phone: 'off' });
     expect(relay.telegramChat()).toBeNull();
   });
 
@@ -99,7 +99,7 @@ describe('relay: the targets', () => {
     const relay = make();
     await relay.load();
     const view = await relay.set('slack', { token: SLACK_TOKEN, to: CHANNEL });
-    expect(view).toEqual({ slack: { to: CHANNEL, last: null }, telegram: null, forward: [...RELAY_FORWARD_KINDS] });
+    expect(view).toEqual({ slack: { to: CHANNEL, last: null }, telegram: null, forward: [...RELAY_FORWARD_KINDS], phone: 'off' });
     await relay.set('telegram', { token: TELEGRAM_TOKEN, to: CHAT });
     expect(relay.telegramChat()).toBe(CHAT);
     expect(JSON.stringify(relay.view())).not.toMatch(/xoxb|AAF/);
@@ -110,6 +110,7 @@ describe('relay: the targets', () => {
       slack: { token: SLACK_TOKEN, to: CHANNEL },
       telegram: { token: TELEGRAM_TOKEN, to: CHAT },
       forward: [...RELAY_FORWARD_KINDS],
+      phone: 'off',
     });
   });
 
@@ -186,7 +187,7 @@ describe('relay: the targets', () => {
     );
     const relay = make();
     await relay.load();
-    expect(relay.view()).toEqual({ slack: null, telegram: { to: CHAT, last: null }, forward: ['redline', 'tminus'] });
+    expect(relay.view()).toEqual({ slack: null, telegram: { to: CHAT, last: null }, forward: ['redline', 'tminus'], phone: 'off' });
     expect(logs.join('\n')).toMatch(/the slack target was skipped/);
     expect(logs.join('\n')).not.toContain('oops');
   });
@@ -520,5 +521,58 @@ describe('relay: replies', () => {
     expect(relay.seen('slack:C1:1')).toBe(true);
     for (let i = 0; i < RELAY_SEEN_MAX; i++) relay.seen(`k${i}`);
     expect(relay.seen('slack:C1:1')).toBe(false);
+  });
+});
+
+describe('phone approvals: the setting and the two calls', () => {
+  const target = async (relay: Relay): Promise<void> => void (await relay.load(), await relay.set('telegram', { token: TELEGRAM_TOKEN, to: CHAT }));
+
+  it('is off at first, is chosen by the Director, is saved, and refuses a mode it does not know', async () => {
+    const relay = make();
+    await relay.load();
+    expect(relay.view().phone).toBe('off');
+    await expect(relay.setPhone({ mode: 'sms' })).rejects.toMatchObject({ field: 'mode' });
+    await expect(relay.setPhone({ mode: 'both', x: 1 })).rejects.toMatchObject({ field: 'x' });
+    expect((await relay.setPhone({ mode: 'both' })).phone).toBe('both');
+    const again = make();
+    await again.load();
+    expect(again.view().phone).toBe('both');
+  });
+
+  it('uses the Telegram path only for telegram or both, and only with a Telegram target', async () => {
+    const relay = make();
+    await relay.load();
+    await relay.setPhone({ mode: 'telegram' });
+    expect(relay.phoneTelegram()).toBe(false);
+    await relay.set('telegram', { token: TELEGRAM_TOKEN, to: CHAT });
+    expect(relay.phoneTelegram()).toBe(true);
+    for (const [mode, on] of [['off', false], ['remote-control', false], ['both', true]] as const) {
+      await relay.setPhone({ mode });
+      expect(relay.phoneTelegram(), mode).toBe(on);
+    }
+  });
+
+  it('sends a message with its buttons, and one call of the bot API, never saying the token', async () => {
+    const relay = make();
+    await target(relay);
+    answers = [telegramOk(7)];
+    const markup = { inline_keyboard: [[{ text: 'GO', callback_data: 'a:permission:p1:go:abcdef12' }]] };
+    expect(await relay.sendButtons('ana asks: Bash: ls', markup)).toBe(true);
+    expect(calls[0]?.url).toBe(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`);
+    expect(calls[0]?.json).toMatchObject({ chat_id: CHAT, text: 'ana asks: Bash: ls', reply_markup: markup });
+    answers = [reply({ ok: true, result: true })];
+    expect(await relay.telegramCall('answerCallbackQuery', { callback_query_id: 'q1', text: 'Sent GO' })).toBe(true);
+    expect(calls.at(-1)?.url).toMatch(/\/answerCallbackQuery$/);
+    answers = [reply({ ok: false }, 400)];
+    expect(await relay.telegramCall('editMessageReplyMarkup', { message_id: 7 })).toBe(false);
+    expect(JSON.stringify(logs)).not.toContain(TELEGRAM_TOKEN);
+  });
+
+  it('does nothing without a Telegram target', async () => {
+    const relay = make();
+    await relay.load();
+    expect(await relay.sendButtons('x', {})).toBe(false);
+    expect(await relay.telegramCall('answerCallbackQuery', {})).toBe(false);
+    expect(calls).toHaveLength(0);
   });
 });

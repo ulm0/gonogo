@@ -11,6 +11,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 - **Worktrees.** An `Own git worktree` box starts an agent in its own git worktree and branch (`~/.gonogo/worktrees/<name>`, `gonogo/<name>`), for every engine; the remove dialog can delete the worktree and branch, and git keeps unsaved or unmerged work.
 - **Default models.** Flight Rules sets a room model for each engine; consoles with no model of their own use it at their next start. The model field says where its value comes from and that a `/model` typed in a console is not kept.
 - **Notifications.** A switch in Flight Rules (off by default, per browser) shows a browser notification for a message to you, a T-minus poll that holds or comes out go, and a Relief request, while the tab is hidden or not focused. Clicking it opens the view. The tab title counts what waits, with or without permission.
+- **Phone approvals.** A pending permission or hire request can go to your Telegram chat with signed GO and NO-GO buttons (a hire request: NO-GO and Open only), and an agent can start with `--remote-control` to be approved in the Claude app. Chosen in Flight Rules. Late presses do nothing (`needSeq`). Both are new inbox events too.
 
 ## 0.1.2 (2026-11-18)
 

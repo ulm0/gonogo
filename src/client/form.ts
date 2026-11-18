@@ -1,5 +1,5 @@
 import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, CleanRoom, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider, Worktree } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 
@@ -8,7 +8,7 @@ import type { Position } from '../shared/positions.js';
 /** The server's COMMAND_MAX_CHARS (src/server/constants.ts, which the client build does not include). */
 export const COMMAND_MAX_CHARS = 1000;
 
-export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'keys';
+export type Field = 'name' | 'role' | 'dir' | 'mode' | 'confirmBypass' | 'position' | 'command' | 'cleanRoom' | 'worktree' | 'remoteControl' | 'payload.mcpServers' | 'payload.skills' | 'model' | 'keys';
 export type Problems = Partial<Record<Field, string>>;
 
 /** One key typed in the form: a name and its value, which only ever travels from here to the server. */
@@ -35,6 +35,8 @@ export interface Values {
   cleanRoom: boolean;
   /** Worktree: the agent starts in its own git worktree on the host. Any engine; not with a Clean Room, which has one. */
   worktree: boolean;
+  /** Remote Control: start the agent with --remote-control, to approve in the Claude app. Claude Code only, not with a Clean Room. */
+  remoteControl: boolean;
   /** Engine Bay: the model for `--model`; '' is the CLI's default. */
   model: string;
   /** Clearance: keys typed now (a name that is already set replaces its value), and the names of set keys to remove. */
@@ -42,7 +44,7 @@ export interface Values {
   keysRemoved: string[];
 }
 
-export const FIELDS: readonly string[] = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'cleanRoom', 'worktree', 'payload.mcpServers', 'payload.skills', 'model', 'keys'];
+export const FIELDS: readonly string[] = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'cleanRoom', 'worktree', 'remoteControl', 'payload.mcpServers', 'payload.skills', 'model', 'keys'];
 
 const NAME_PATTERN = new RegExp(AGENT_NAME_PATTERN);
 
@@ -97,12 +99,12 @@ export function choosePosition(
 
 /** The custom command tile: no position, no permissions, and a fixed role (the form shows none for it). */
 export function chooseCustom(values: Values, agents: Readonly<Record<string, AgentView>>): Values {
-  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, model: '', name: untouched(values, agents).name ? '' : values.name };
+  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, model: '', name: untouched(values, agents).name ? '' : values.name };
 }
 
 /** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
 export function chooseEngine(values: Values, provider: Provider): Values {
-  return { ...values, provider, model: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom, worktree: values.worktree && !(provider === 'claude' && values.cleanRoom) };
+  return { ...values, provider, model: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom, worktree: values.worktree && !(provider === 'claude' && values.cleanRoom), remoteControl: provider === 'claude' && values.remoteControl };
 }
 
 /** What the form says under the engine select about the program: found (and where, which version) or not, with the vendor's install command. The command is shown, never run. */
@@ -166,6 +168,7 @@ export function initialValues(
     skills: (current?.payload?.skills ?? []).join('\n'),
     cleanRoom: Boolean(current?.cleanRoom),
     worktree: Boolean(current?.worktree),
+    remoteControl: Boolean(current?.remoteControl),
     model: current?.model ?? '',
     keys: [],
     keysRemoved: [],
@@ -264,6 +267,11 @@ export function payloadOf(values: Values): Payload | null {
 export function cleanRoomOf(values: Values, original: AgentView | null): CleanRoom | null {
   if (values.provider !== 'claude' || !values.cleanRoom) return null;
   return original?.cleanRoom ?? {};
+}
+
+/** The Remote Control the form describes: Claude Code only, and a Clean Room has no claude.ai login. */
+export function remoteControlOf(values: Values): RemoteControl | null {
+  return values.provider === 'claude' && values.remoteControl && !values.cleanRoom ? {} : null;
 }
 
 /** The worktree the form describes: a Clean Room has its own, so the box is off then. */
@@ -367,6 +375,7 @@ export function hireRequest(values: Values): HireRequest {
   const cleanRoom = cleanRoomOf(values, null);
   if (cleanRoom !== null) request.cleanRoom = cleanRoom;
   if (worktreeOf(values) !== null) request.worktree = {};
+  if (remoteControlOf(values) !== null) request.remoteControl = {};
   return request;
 }
 
@@ -394,6 +403,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     const model = modelOf(values);
     if (model !== (original.model ?? '')) changes.model = model === '' ? null : model;
   }
+  if (JSON.stringify(remoteControlOf(values)) !== JSON.stringify(original.remoteControl ?? null)) changes.remoteControl = remoteControlOf(values);
   if (JSON.stringify(worktreeOf(values)) !== JSON.stringify(original.worktree ?? null)) changes.worktree = worktreeOf(values);
   const keys = keysOf(values, Object.keys(original.keys ?? {}));
   if (keys) changes.keys = keys;

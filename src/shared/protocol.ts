@@ -223,10 +223,15 @@ export const AUDIT_TEXT_MAX_CHARS = 200;
 /** How a part of the server tells the Black Box of an event: names, ids and words of the server, never a text somebody wrote. */
 export type AuditRecord = (kind: AuditKind, text: string) => void;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
-export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief'] as const;
+export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
 /** How a part of the server tells the inbox of something the Director should see (`Downlink.post`). */
-export type DownlinkNotify = (kind: DownlinkEventKind, text: string) => void;
+/** What a `permission` or `relief` event is about, for the buttons of a phone (docs/phone-approvals-spec.md): the dialog of an agent, or a hire request. */
+export type DownlinkRef = { kind: 'permission'; agent: string; seq: number } | { kind: 'relief'; id: string };
+export type DownlinkNotify = (kind: DownlinkEventKind, text: string, ref?: DownlinkRef) => void;
+/** Phone approvals (Flight Rules): where a pending permission or hire request is sent to the Director's phone. `remote-control` starts nothing by itself: it allows `remoteControl` on an agent. */
+export const PHONE_MODES = ['off', 'telegram', 'remote-control', 'both'] as const;
+export type PhoneMode = (typeof PHONE_MODES)[number];
 /** What an uplink understands: `generic` is any sender that signs its JSON, the others are the services of Relay (docs/relay-spec.md). */
 export const UPLINK_KINDS = ['generic', 'github', 'linear', 'slack', 'telegram'] as const;
 export type UplinkKind = (typeof UPLINK_KINDS)[number];
@@ -343,6 +348,8 @@ export interface WorktreeStatus {
   merged: boolean;
 }
 
+/** Remote Control: the agent is started with `--remote-control`, so the Director can approve in the Claude app. No fields yet. Claude Code only, never with a Clean Room. */
+export type RemoteControl = Record<string, never>;
 /** One agent as stored in <home>/agents.json (inside RosterFile). */
 export interface AgentRecord {
   name: string;
@@ -368,6 +375,8 @@ export interface AgentRecord {
   cleanRoom?: CleanRoom;
   /** Absent means the agent starts in `dir`. Never together with cleanRoom. */
   worktree?: Worktree;
+  /** Absent means off. */
+  remoteControl?: RemoteControl;
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
   model?: string;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
@@ -436,6 +445,8 @@ export interface AgentView {
   needsKind: NeedsKind | null;
   /** Exact text, for example "startup dialog: answer it in the terminal" or "permission request: Bash: git push origin main". */
   needsReason: string | null;
+  /** Which permission dialog is open: counts up with every PermissionRequest of this agent, null unless needsKind is 'permission'. `AnswerRequest.needSeq` names it. */
+  needSeq: number | null;
   /** Non-null while a stop, restart or remove is running. Routing treats 'stopping' and 'removing' as stopped. */
   transition: Transition | null;
   /** The user typed text into this agent's input and has not pressed Enter or Ctrl-C yet, and the box has not been empty for a second (30 min expiry). A lone Escape does not end it. */
@@ -460,6 +471,8 @@ export interface AgentView {
   cleanRoom: CleanRoom | null;
   /** The worktree setting as stored, or null: the branch and the path follow from the name (worktreeBranch, worktreePath). */
   worktree: Worktree | null;
+  /** Remote Control as stored, or null. */
+  remoteControl: RemoteControl | null;
   /** The model as stored, or null for the CLI's default. */
   model: string | null;
   /** Clearance: key name to when it was set. Names only: a value is never sent to a browser. */
@@ -627,6 +640,8 @@ export interface RelayView {
   telegram: RelayTargetView | null;
   /** The kinds of item that are sent to every target, in the order of RELAY_FORWARD_KINDS. */
   forward: RelayForwardKind[];
+  /** Phone approvals: where permissions and hire requests go (default off). */
+  phone: PhoneMode;
 }
 /** PUT /api/relay/slack and /api/relay/telegram. `token` may be left out to keep the one saved. */
 export interface RelayTargetRequest {
@@ -1053,6 +1068,8 @@ export interface HireRequest {
   cleanRoom?: CleanRoom;
   /** Start the agent in its own git worktree. Refused (400, field 'worktree') with cleanRoom, or for a directory outside a git repository. */
   worktree?: Worktree;
+  /** Start the agent with --remote-control. Refused (400, field 'remoteControl') for another engine or with cleanRoom. */
+  remoteControl?: RemoteControl;
   /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
   model?: string;
   /** Clearance: key name to value, set for this agent only. Bad name or value: 400, field 'keys'. */
@@ -1075,6 +1092,8 @@ export interface EditRequest {
   cleanRoom?: CleanRoom | null;
   /** Replaces the worktree setting; null turns it off (the worktree and branch are kept). */
   worktree?: Worktree | null;
+  /** Replaces the Remote Control setting; null turns it off. */
+  remoteControl?: RemoteControl | null;
   /** A model name, or null or empty text for the CLI's default. */
   model?: string | null;
   /** Key name to a new value, or to null to remove that key. Keys not named stay as they are. */
@@ -1135,6 +1154,8 @@ export interface TaskPatch {
 /** The Director's answer to a permission prompt, given outside the terminal (POST /api/agents/:name/answer). */
 export interface AnswerRequest {
   go: boolean;
+  /** The dialog the answer is for (`AgentView.needSeq`). When it is not the open dialog, the answer is a 409 and nothing is typed. Absent: whatever dialog is open (the page). */
+  needSeq?: number;
 }
 
 export interface VoteResult {
@@ -1634,7 +1655,7 @@ export interface HubIo {
   /** To every connected browser. */
   emit(event: HubEvent): void;
   /** Downlink: something the Director should see (a Redline trip, a T-minus result), one line. Optional for fakes. */
-  notify?(kind: DownlinkEventKind, text: string): void;
+  notify?(kind: DownlinkEventKind, text: string, ref?: DownlinkRef): void;
   /** Docking: the stations this one is docked with. Optional: without it "name@station" is not an address. */
   dock?: DockLink;
   log: Logger;
