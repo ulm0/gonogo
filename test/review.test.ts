@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { locate, parseDiff, textAt } from '../src/shared/diff.js';
 import { REVIEW_BATCH_MAX, REVIEW_MAIL_MAX_CHARS, REVIEW_NOTES_MAX, REVIEW_REQUEST_TTL_MS } from '../src/shared/protocol.js';
 import type { AgentSendRequest, Logger, SendResult } from '../src/shared/protocol.js';
+import { buildDockerArgs } from '../src/server/cleanroom.js';
 import { createRoots } from '../src/server/hangar.js';
 import { createRecorder } from '../src/server/recorder.js';
 import { HubError } from '../src/server/hub.js';
@@ -218,6 +219,25 @@ describe('notes', () => {
     await review.addNote(USER, 'ana', note);
     expect(JSON.parse(await readFile(join(dir, 'reviews.json'), 'utf8'))).toMatchObject({ version: 1, seq: 1, notes: [{ id: 'rn1', agent: 'ana', text: 'const b = 3;' }], verdicts: {}, requests: [] });
     expect((await readdir(dir)).sort()).toEqual(['reviews.json']);
+  });
+
+  it('is out of the reach of a Clean Room: the container mounts its worktree and its own agent folder, never the home that holds reviews.json', () => {
+    const home = '/state/gonogo';
+    const args = buildDockerArgs({
+      image: 'gonogo-agent',
+      uid: 1000,
+      gid: 1000,
+      place: { container: 'gonogo-cr-ana', network: null, home: `${home}/cleanroom-home/ana`, worktree: `${home}/cleanroom/ana`, cwd: `${home}/cleanroom/ana` } as never,
+      agentDir: `${home}/agents/ana`,
+      names: [],
+      command: ['claude'],
+    });
+    const mounted = args.flatMap((a, i) => (args[i - 1] === '-v' ? [a.split(':')[0] as string] : []));
+    expect(mounted).toContain(`${home}/agents/ana`);
+    // a path the container can write is under one of these three; reviews.json is in none of them
+    const reviews = `${home}/reviews.json`;
+    expect(mounted.some((m) => reviews === m || reviews.startsWith(`${m}/`))).toBe(false);
+    expect(mounted.every((m) => !m.endsWith('reviews.json'))).toBe(true);
   });
 
   it('refuses a line that is not in the diff, a bad field and any field it does not have, naming the field', async () => {
