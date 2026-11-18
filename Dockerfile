@@ -93,9 +93,10 @@ COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 # through corepack. --allow-build: the postinstall step links the native binary into place, and pnpm skips it
 # otherwise, so `claude --version` right after fails the build in that case. This layer stays before the gonogo layer,
 # so a gonogo rebuild does not redo the 350 MiB one. pnpm's store and corepack's cache are removed in the same layer,
-# or they would add about as much again to the image; the image keeps no pnpm.
+# or they would add about as much again to the image; the image keeps no pnpm. No global virtual store: pnpm 12 would
+# otherwise leave Claude Code in that store under /root, which the node user cannot reach and the rm removes.
 RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global \
-      --config.global-dir=/usr/local/share/pnpm --config.global-bin-dir=/usr/local/bin \
+      --config.global-dir=/usr/local/share/pnpm --config.global-bin-dir=/usr/local/bin --config.enable-global-virtual-store=false \
       --allow-build=@anthropic-ai/claude-code @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
  && claude --version \
  && rm -rf /root/.cache /root/.local/share/pnpm
