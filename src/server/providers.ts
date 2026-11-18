@@ -281,13 +281,36 @@ async function versionOf(file: string, env: Record<string, string | undefined>):
   return line;
 }
 
+const effortCache = new Map<string, boolean | null>();
+
+/**
+ * Does this program's `--help` list `--effort`? An old claude exits at once on an option it does not know. null when it could not be asked
+ * (not found, no answer in time): that never blocks a start, only a clear "no" does.
+ */
+export async function knowsEffort(file: string, env: Record<string, string | undefined>): Promise<boolean | null> {
+  let key = file;
+  try {
+    key = `${file}\0${statSync(file).mtimeMs}`;
+  } catch {
+    // a bare name resolved by PATH: cached by name
+  }
+  const known = effortCache.get(key);
+  if (known !== undefined) return known;
+  const output = await new Promise<string | null>((done) => {
+    execFile(file, ['--help'], { timeout: ENGINE_VERSION_MS, maxBuffer: 1024 * 1024, env: { PATH: env.PATH, HOME: env.HOME, LANG: env.LANG, NO_COLOR: '1' } }, (error, stdout) => done(error === null ? stdout : null));
+  });
+  const answer = output === null || output.trim() === '' ? null : /(^|\s)--effort\b/.test(output);
+  if (answer !== null) effortCache.set(key, answer);
+  return answer;
+}
+
 /** Pad Check: every engine but the custom command, where it was found and what it calls itself. Runs nothing but `--version`; never installs. */
 export function checkEngines(env: Record<string, string | undefined>): Promise<EngineCheck[]> {
   return Promise.all(
     PROVIDERS.filter((provider) => provider !== 'custom').map(async (provider): Promise<EngineCheck> => {
       const { label, bin, install, docs } = PROVIDER_INFO[provider];
       const path = findOnPath(bin, env.PATH);
-      return { provider, label, bin, path, version: path === null ? null : await versionOf(path, env).catch(() => null), install, docs };
+      return { provider, label, bin, path, version: path === null ? null : await versionOf(path, env).catch(() => null), install, docs, ...(provider === 'claude' && path !== null ? { effort: await knowsEffort(path, env) } : {}) };
     }),
   );
 }
@@ -298,6 +321,7 @@ export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | 
   for (const check of checks) {
     if (check.path !== null) {
       lines.push(`ok  ${check.label} (${check.bin})  ${check.version ?? 'no version printed'}  ${check.path}`);
+      if (check.effort === false) lines.push('    this claude does not list --effort: a console with an effort setting (its own or the room\'s) will not start; update claude or clear the effort');
       continue;
     }
     lines.push(`--  ${check.label} (${check.bin})  not found`);

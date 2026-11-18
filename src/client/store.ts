@@ -25,6 +25,7 @@ import { defaultView } from '../shared/livery.js';
 import { ACTIVITY_CLIENT_MAX, ENVELOPE_KEEP_MS } from '../shared/protocol.js';
 import { NO_LOG_NEWS } from './log.js';
 import type { LogNews } from './log.js';
+import { publishModelDefaults } from './models.js';
 
 export interface ClientState {
   connection: 'connecting' | 'open' | 'reconnecting' | 'unauthorized';
@@ -477,6 +478,9 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, features: frame.features.off };
     case 'rollout':
       return { ...s, rollout: frame.rollout };
+    case 'models':
+      publishModelDefaults(frame.models);
+      return s;
     case 'log':
       return { ...s, log: { rev: s.log.rev + 1, changed: frame.changed, removed: frame.removed } };
     default:

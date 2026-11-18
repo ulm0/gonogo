@@ -1226,6 +1226,12 @@ export function createWebServer(options: WebOptions): WebServer {
     if (s[1] === 'models' && s.length <= 4) {
       const models = options.models;
       if (!models) return null;
+      /** A change goes to every page and terminal as a frame, so their chips follow. */
+      const changed = async (run: Promise<Extract<HubEvent, { t: 'models' }>['models']>): Promise<Extract<HubEvent, { t: 'models' }>['models']> => {
+        const view = await run;
+        broadcast({ t: 'models', models: view });
+        return view;
+      };
       if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, models.view()) };
       // PUT /api/models/engine and /api/models/effort: the room's default engine, and its default effort for Claude Code
       if (s.length === 3 && (s[2] === 'engine' || s[2] === 'effort')) {
@@ -1234,7 +1240,7 @@ export function createWebServer(options: WebOptions): WebServer {
           allow: ['PUT'],
           run: async (req, res) => {
             const body = await jsonObject(req, res);
-            if (body) sendJson(res, 200, await (key === 'engine' ? models.setEngine(body.engine) : models.setEffort(body.effort)));
+            if (body) sendJson(res, 200, await changed(key === 'engine' ? models.setEngine(body.engine) : models.setEffort(body.effort)));
           },
         };
       }
@@ -1245,7 +1251,7 @@ export function createWebServer(options: WebOptions): WebServer {
           allow: ['PUT'],
           run: async (req, res) => {
             const body = await jsonObject(req, res);
-            if (body) sendJson(res, 200, await models.setPosition(s[3] ?? '', body.model));
+            if (body) sendJson(res, 200, await changed(models.setPosition(s[3] ?? '', body.model)));
           },
         };
       }
@@ -1254,7 +1260,7 @@ export function createWebServer(options: WebOptions): WebServer {
         run: async (req, res) => {
           const body = await jsonObject(req, res);
           // the router has decoded the segment already: decoding again made a lone % throw (a 500)
-          if (body) sendJson(res, 200, await models.set(s[2] ?? '', body.model));
+          if (body) sendJson(res, 200, await changed(models.set(s[2] ?? '', body.model)));
         },
       };
     }

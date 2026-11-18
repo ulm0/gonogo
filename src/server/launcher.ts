@@ -62,7 +62,7 @@ import { effectiveRules } from './permissions.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { isRecord } from './hooks.js';
-import { buildProviderStart, shellQuote, STATUS_LINE_SHIM } from './providers.js';
+import { buildProviderStart, knowsEffort, shellQuote, STATUS_LINE_SHIM } from './providers.js';
 import type { OtherProvider } from './providers.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -663,6 +663,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
       const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort: agent.effort ?? options.defaultEffort?.(), toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
+      if (claudeArgs.includes('--effort') && !options.agentCmd?.length && (await knowsEffort(file as string, options.env ?? process.env)) === false) {
+        throw new Error(`${file} does not list --effort, so the effort of ${name} cannot be set: update claude, or clear the effort (its own or the room's)`);
+      }
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
       let spec: PreparedStart['spec'];

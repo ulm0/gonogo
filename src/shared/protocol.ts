@@ -1197,6 +1197,8 @@ export interface EngineCheck {
   path: string | null;
   /** First line of `<bin> --version`, or null (not found, no answer in time, nothing printed). */
   version: string | null;
+  /** Claude Code only: whether its `--help` lists `--effort` (false: an effort setting stops the start), or null when it could not be asked. */
+  effort?: boolean | null;
   /** The vendor's documented install command, or null when none was checked. Shown, never run. */
   install: string | null;
   docs: string;
@@ -1611,7 +1613,13 @@ export interface RolloutFrame {
   t: 'rollout';
   rollout: RolloutView;
 }
+/** The room's default models, engine and effort changed; carries the whole view. Not in the snapshot: the page asks `GET /api/models`. */
+export interface ModelsFrame {
+  t: 'models';
+  models: ModelDefaults;
+}
 export type ServerFrame =
+  | ModelsFrame
   | TabNameFrame
   | RoomFrame
   | FeaturesFrame
@@ -1636,7 +1644,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts

@@ -1,6 +1,9 @@
 /** Agent detail chips: the facts (engine, model and where it comes from, effort), the form's effort field, the chips drawn, the terminal row. */
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { detailsLine, detailsOf, effectiveEffort, effectiveModel, modelText } from '../src/shared/details.js';
 import { EFFORTS, takesEffort } from '../src/shared/protocol.js';
@@ -9,6 +12,8 @@ import { DetailChips } from '../src/client/DetailChips.js';
 import { effortOf, editRequest, hireRequest, initialValues } from '../src/client/form.js';
 import type { Values } from '../src/client/form.js';
 import { publishModelDefaults, resetModelDefaults } from '../src/client/models.js';
+import { createLauncher } from '../src/server/launcher.js';
+import { checkEngines, formatDoctor, knowsEffort } from '../src/server/providers.js';
 import { render } from '../src/server/tui-render.js';
 import { initialUi } from '../src/server/tui-keys.js';
 import { applyFrame, initialState } from '../src/server/tui-state.js';
@@ -135,5 +140,40 @@ describe('the terminal room list', () => {
 
   it('shows no model before the defaults are known', () => {
     expect(lines(80, null).join('\n')).toMatch(/Claude · high/);
+  });
+});
+
+describe('a claude that does not know --effort', () => {
+  const fake = async (help: string): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), 'gonogo-effort-'));
+    const bin = join(dir, 'claude');
+    await writeFile(bin, `#!/bin/sh\ncase "$1" in --help) printf '%s\\n' ${JSON.stringify(help)};; *) echo 2.0.0;; esac\n`, { mode: 0o755 });
+    return bin;
+  };
+
+  it('is read from --help: yes, no, and null when it cannot be asked', async () => {
+    expect(await knowsEffort(await fake('Options:\n  --effort <level>  how hard'), { PATH: '/usr/bin:/bin' })).toBe(true);
+    expect(await knowsEffort(await fake('Options:\n  --model <m>'), { PATH: '/usr/bin:/bin' })).toBe(false);
+    expect(await knowsEffort('/nonexistent/claude', { PATH: '/usr/bin:/bin' })).toBeNull();
+  });
+
+  it('shows in gonogo doctor, and stops the start with a message that names the effort', async () => {
+    const old = await fake('Options:\n  --model <m>');
+    const dir = dirname(old);
+    const checks = await checkEngines({ PATH: dir });
+    expect(checks.find((c) => c.provider === 'claude')?.effort).toBe(false);
+    expect(formatDoctor(checks, null)).toMatch(/does not list --effort/);
+    await mkdir(join(dir, 'work'), { recursive: true });
+    const l = createLauncher({ homeDir: join(dir, 'home'), hubUrl: () => 'http://127.0.0.1:1', seed: false, claudeBin: old, env: { PATH: dir, HOME: join(dir, 'user') } });
+    const rec = (effort?: 'high') => ({ name: 'ana', role: 'r', dir: join(dir, 'work'), mode: 'default' as const, sessionId: '0b2f5c1e-6d3a-4f7e-9a1b-2c3d4e5f6a7b', desk: 1, boss: false, createdAt: 1, ...(effort ? { effort } : {}) });
+    await expect(l.prepareStart(rec('high'), { generation: 1, flag: null })).rejects.toThrow(/does not list --effort, so the effort of ana cannot be set/);
+    expect((await l.prepareStart(rec(), { generation: 2, flag: null })).spec.args).not.toContain('--effort');
+  });
+});
+
+describe('the models frame', () => {
+  it('replaces the defaults of the terminal and of the page', () => {
+    const next: ModelDefaults = { models: { claude: 'opus' }, effort: 'low' };
+    expect(applyFrame(initialState(), { t: 'models', models: next }).models).toEqual(next);
   });
 });

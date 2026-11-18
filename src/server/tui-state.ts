@@ -59,6 +59,8 @@ export function applyFrame(s: TuiState, frame: ServerFrame): TuiState {
       return { ...s, downlink: frame.downlink };
     case 'relief':
       return { ...s, relief: frame.relief.requests };
+    case 'models':
+      return { ...s, models: frame.models };
     case 'poll':
       return { ...s, poll: frame.poll };
     case 'tabname':
