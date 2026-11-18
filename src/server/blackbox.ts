@@ -15,7 +15,8 @@
  * can change them; git history makes that visible, it does not prevent it.
  */
 import { execFile } from 'node:child_process';
-import { appendFile, lstat, mkdir, open, readdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { appendFile, lstat, mkdir, open, readdir, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { AUDIT_KINDS, AUDIT_TEXT_MAX_CHARS } from '../shared/protocol.js';
 import type { AuditEvent, AuditGitState, AuditKind, AuditView, Logger, TimerHandle } from '../shared/protocol.js';
@@ -54,7 +55,7 @@ const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.jsonl$/;
 const GIT_FIXED = ['-c', 'user.name=gonogo', '-c', 'user.email=gonogo@localhost', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
 
 /** The real runner: execFile (no shell), the repository as GIT_DIR and GIT_WORK_TREE so that no other repository is found above it, no config file read. */
-export function execGit(repo: string, path: string | undefined = process.env.PATH): GitRun {
+export function execGit(repo: string, path: string | undefined = process.env.PATH, timeoutMs: number = BLACKBOX_GIT_TIMEOUT_MS): GitRun {
   const env: Record<string, string> = {
     ...(path === undefined ? {} : { PATH: path }),
     GIT_DIR: join(repo, '.git'),
@@ -66,10 +67,12 @@ export function execGit(repo: string, path: string | undefined = process.env.PAT
   };
   return (args) =>
     new Promise((done, fail) => {
-      execFile('git', [...GIT_FIXED, ...args], { cwd: repo, env, timeout: BLACKBOX_GIT_TIMEOUT_MS, maxBuffer: 1_048_576, windowsHide: true, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
+      execFile('git', [...GIT_FIXED, ...args], { cwd: repo, env, timeout: timeoutMs, maxBuffer: 1_048_576, windowsHide: true, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
         const code = (error as { code?: unknown } | null)?.code;
         if (error === null) done({ code: 0, stdout, stderr });
         else if (typeof code === 'number') done({ code, stdout, stderr });
+        // a git that was killed leaves its index.lock, and only the server runs git here: without this every later commit fails until somebody deletes it
+        else if ((error as { killed?: boolean }).killed === true) void rm(join(repo, '.git', 'index.lock'), { force: true }).catch(() => undefined).then(() => fail(error));
         else fail(error);
       });
     });
@@ -203,7 +206,9 @@ export function createBlackBox(options: BlackBoxOptions): BlackBox {
     recent = [event, ...recent].slice(0, BLACKBOX_RECENT_MAX);
     if (!writable) return;
     waiting += 1;
-    later(() => appendFile(join(repo, dayFile(at)), `${JSON.stringify({ ...event, at: new Date(at).toISOString() })}\n`, { mode: FILE_MODE }));
+    // O_NOFOLLOW: a link where the day's file goes must not send the line somewhere else (the folder itself is checked in load)
+    const flag = constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW;
+    later(() => appendFile(join(repo, dayFile(at)), `${JSON.stringify({ ...event, at: new Date(at).toISOString() })}\n`, { mode: FILE_MODE, flag }));
     arm();
   };
 

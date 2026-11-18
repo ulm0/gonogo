@@ -67,6 +67,12 @@ export function BlackBox(): ReactElement {
                 Copy
               </button>
             </div>
+            {/* the live region below tells a screen reader; this line is for everybody else, and the only word a page without a clipboard gives */}
+            {notice !== '' && (
+              <p className="hint" aria-hidden="true">
+                {notice}
+              </p>
+            )}
           </div>
           <p className="hint">{countText(view.events.length)}</p>
           {view.events.length > 0 && (

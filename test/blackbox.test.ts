@@ -241,6 +241,20 @@ describe('the Black Box with a git that is scripted', () => {
     expect(box.view().events).toHaveLength(1);
   });
 
+  it('refuses a link where the file of the day goes: the line is not written through it, and is still shown', async () => {
+    const victim = join(dir, 'victim.txt');
+    await writeFile(victim, 'keep');
+    await mkdir(repo, { recursive: true });
+    await symlink(victim, join(repo, '2026-11-18.jsonl'));
+    const box = make(fakeGit().run);
+    await box.load();
+    box.record('crew', 'one');
+    await box.close();
+    expect(await readFile(victim, 'utf8')).toBe('keep');
+    expect(logs.join('\n')).toContain('the Black Box could not write');
+    expect(box.view().events).toHaveLength(1);
+  });
+
   describe('what an event may say', () => {
     it('is one clean line: controls and bidi marks become spaces, white space is collapsed, and it is cut', async () => {
       const box = make(fakeGit().run);
@@ -458,5 +472,18 @@ describe.skipIf(!hasGit)('the Black Box with the git of this machine', () => {
     expect(box.view().git).toBe('error');
     expect(box.view().note).not.toBe('');
     expect(box.view().note.split('\n')).toHaveLength(1);
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('a git that is killed for taking too long', () => {
+  it('leaves no index.lock behind, so that the next commit can work', async () => {
+    const bin = join(dir, 'bin');
+    await mkdir(bin);
+    await mkdir(join(repo, '.git'), { recursive: true });
+    // takes the lock the way git does, then stays
+    await writeFile(join(bin, 'git'), '#!/bin/sh\ntouch "$GIT_DIR/index.lock"\nexec sleep 30\n');
+    await chmod(join(bin, 'git'), 0o755);
+    await expect(execGit(repo, `${bin}:/usr/bin:/bin`, 300)(['add', '-A'])).rejects.toMatchObject({ killed: true });
+    await expect(stat(join(repo, '.git', 'index.lock'))).rejects.toThrow();
   });
 });

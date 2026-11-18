@@ -30,7 +30,7 @@ Not recorded: messages, terminal input, tool calls, an agent that exits by itsel
 
 ## git
 
-- Run without a shell, with a 10 second limit. The identity is passed on the command line, so no git config of yours is read or changed. Hooks, signing and fsmonitor are off, also when the repository's own config asks for them.
+- Run without a shell, with a 10 second limit (a git killed for it leaves no `index.lock` behind). The identity is passed on the command line, so no git config of yours is read or changed. Hooks, signing and fsmonitor are off, also when the repository's own config asks for them.
 - **Missing:** the page says `git was not found on the PATH`. The room works and events are still written to the files; the first batch after you install git and restart commits them.
 - **Failing:** the page shows git's first line of error and the next batch tries again.
 - The Docker image has git.

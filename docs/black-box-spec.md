@@ -15,7 +15,8 @@ the server writes to it, and when git is missing the room works and the page say
 - **The repository.** `~/.gonogo/black-box/` (mode 0700), a git repository of its own, made at start when it is not there. In it
   one file for each UTC day, `YYYY-MM-DD.jsonl` (mode 0600), a line for each event: `{"at":"2026-11-18T14:03:55.120Z","kind":"redline","text":"guido tripped the Redline: loop"}`.
   A line is appended as soon as the event happens; only the commit waits. The folder must be a plain folder: when it is a link the
-  Black Box refuses it (`black-box is not a plain folder`), writes nothing, and the room goes on.
+  Black Box refuses it (`black-box is not a plain folder`), writes nothing, and the room goes on. A link where the file of a day goes is not followed either (`O_NOFOLLOW`): the line is shown and
+  not written, and the log says so.
 - **What an event is.** `kind` is one of `crew`, `redline`, `poll`, `answer`, `plan`, `uplink`, `config`, `audit` (`AUDIT_KINDS`).
   `text` is one clean line of at most 200 characters: controls, bidi marks and runs of white space become one space. It is made of
   fixed words, names, ids, statuses and counts. It is never a message, a title, a detail, a note, a role, a schedule's text, a
@@ -42,7 +43,7 @@ the server writes to it, and when git is missing the room works and the page say
   runs are one at a time and after the appends they follow. At start the same batch is armed once, so what a crash left uncommitted
   is committed (the message is `audit: earlier events` when no event of this run is in the batch).
 - **git, safely.** Every call is `execFile('git', [...])` with an argument array (no shell), the repository as its working
-  directory, a timeout of 10 s (`BLACKBOX_GIT_TIMEOUT_MS`, then SIGKILL) and an output cap of 1 MiB. The environment is made from
+  directory, a timeout of 10 s (`BLACKBOX_GIT_TIMEOUT_MS`, then SIGKILL; the `index.lock` that a killed git leaves is removed, since only the server runs git there) and an output cap of 1 MiB. The environment is made from
   nothing: `PATH` of the server's own environment, `GIT_DIR` and `GIT_WORK_TREE` set to the repository (so that no other
   repository above it is found), `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0` and `LC_ALL=C`.
   Nothing of the process's `GIT_*` variables passes (`GIT_CONFIG_GLOBAL` is read by git 2.32 and newer; the `-c` switches below hold for any version). The identity is passed with `-c user.name=gonogo -c user.email=gonogo@localhost`,
@@ -63,7 +64,7 @@ the server writes to it, and when git is missing the room works and the page say
   gonogo, and no route writes to it.
 - **The screen** is a view of its own, BLACK BOX (`BlackBox.tsx`, `audit.ts`, `records.css`; `store.view` is `blackbox`), reached by a
   round key of the top bar next to the Plot Board's. The line on the state of git (amber when it is not `ok`), the command in a read-only
-  field that selects itself whole, COPY (the page says `Copied.` or that the browser would not), and the events: time in the
+  field that selects itself whole, COPY (the page says `Copied.` or that the browser would not, in words and not only for a screen reader), and the events: time in the
   browser's zone, a chip for the kind, the text. The page asks every 5 seconds while the tab is visible.
 - **The top bar** takes this key and the Plot Board's as round keys; see `docs/plot-board-spec.md` for how the bar was made to fit.
 - **No option and no environment variable.** The limits are constants (`constants.ts`).
