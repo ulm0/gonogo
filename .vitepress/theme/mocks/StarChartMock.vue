@@ -3,7 +3,7 @@
 // (src/server/logchart.ts) and the page's own layout (src/client/chart.ts). Choosing a tag or an author lights what it is joined to.
 import { computed, ref } from 'vue';
 import { buildChart } from '../../../src/server/logchart';
-import { CHART_HEIGHT, CHART_WIDTH, chartText, layout, neighbours } from '../../../src/client/chart';
+import { CHART_HEIGHT, CHART_WIDTH, chartText, labelLeft, layout, neighbours } from '../../../src/client/chart';
 import type { LogEntry } from '../../../src/shared/protocol';
 
 const at = (n: number): Pick<LogEntry, 'createdAt' | 'updatedAt' | 'body'> => ({ createdAt: n, updatedAt: n, body: '' });
@@ -19,7 +19,8 @@ const chart = buildChart(ENTRIES);
 const spots = layout(chart);
 const picked = ref<string | null>(null);
 const near = computed(() => (picked.value === null ? null : neighbours(chart, picked.value)));
-const flip = (x: number): boolean => x > CHART_WIDTH - 120;
+const textOf = (n: (typeof chart.nodes)[number]): string => (n.kind === 'entry' ? n.ref : n.kind === 'author' ? n.label.toUpperCase() : n.label);
+const flip = (n: (typeof chart.nodes)[number]): boolean => labelLeft(spots.get(n.id)!.x, textOf(n));
 const pick = (id: string, kind: string): void => {
   if (kind !== 'entry') picked.value = picked.value === id ? null : id;
 };
@@ -49,7 +50,7 @@ const pick = (id: string, kind: string): void => {
         <circle v-if="n.kind === 'entry'" class="mk-shape" :r="5 + Math.min(n.weight - 1, 4)" />
         <rect v-else-if="n.kind === 'tag'" class="mk-shape" x="-6.5" y="-6.5" width="13" height="13" transform="rotate(45)" />
         <rect v-else class="mk-shape" x="-8" y="-8" width="16" height="16" rx="3" />
-        <text class="mk-label" :text-anchor="flip(spots.get(n.id)!.x) ? 'end' : 'start'" :x="(n.kind === 'entry' ? 11 : 12) * (flip(spots.get(n.id)!.x) ? -1 : 1)" y="4">{{ n.kind === 'entry' ? n.ref : n.kind === 'author' ? n.label.toUpperCase() : n.label }}</text>
+        <text class="mk-label" :text-anchor="flip(n) ? 'end' : 'start'" :x="(n.kind === 'entry' ? 11 : 12) * (flip(n) ? -1 : 1)" y="4">{{ textOf(n) }}</text>
       </g>
     </svg>
     <p class="hint">{{ chartText(chart) }} Click a tag or an author to light what it is joined to.</p>
@@ -79,7 +80,7 @@ svg {
 .mk-edge {
   stroke: var(--muted);
   stroke-width: 1;
-  stroke-opacity: 0.55;
+  stroke-opacity: 0.7;
 }
 
 .mk-edge[data-kind='mention'] {

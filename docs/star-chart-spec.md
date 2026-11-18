@@ -27,16 +27,17 @@ graph library. The same chart is a set of lists that a keyboard, a screen reader
   nodes is fixed (entries newest first, tags by use, authors by count), so the same log gives the same answer.
 - **The layout** (`src/client/chart.ts`): a force layout, 150 rounds, in the page: nodes push each other away, edges pull their
   ends together (a `cooccur` edge less), a small pull to the middle keeps lone nodes and islands on the page. It starts from a spiral
-  in node order and uses no random number, so the same chart gives the same picture and nothing moves on a redraw.
+  in node order and uses no random number, so the same chart gives the same picture and nothing moves on a redraw. The pulls leave a
+  dense log as a ball in the middle, so the finished picture is stretched about its middle to fill the frame, at most twice (`MAX_GROW`).
 - **The drawing** (`StarChart.tsx`, `chart.css`): one SVG that scales to its column. A circle is an entry, a diamond a tag and a
   square an author (the shape says it as well as the fill); each has a dark outline. A tag and an author show their name (an
   author as its call sign, as elsewhere); an entry shows its id when there are 40 nodes or fewer, and otherwise under the pointer, with
-  the keyboard or when open. A `mention` is an arrow, a `cooccur` is dashed. A name near the right edge is written to the left of its
-  node. The colours are tokens, so the four liveries hold; nothing moves.
+  the keyboard or when open. A `mention` is an arrow, a `cooccur` is dashed. A name that would run past the right edge (counted at about 6.6 units a character) is
+  written to the left of its node. The colours are tokens, so the four liveries hold; nothing moves.
 - **Choosing a node:** an entry opens in the Mission Log's reader (the same one as a row of the list: edit, delete, close). A tag or
   an author lights what it is joined to and dims the rest; choosing it again clears. The line under the drawing says what is chosen.
 - **The keyboard:** the drawing is one tab stop (roving tabindex); the arrow keys, Home and End walk the nodes, Enter or Space
-  chooses. Each node is a `role="button"` with a name ("Entry l12: Cache key", "Tag build: 5 entries").
+  chooses. Each node is a `role="button"` with a name ("Entry l12: Cache key", "Tag build: 5 entries"). An entry's key, in the drawing and in LINKS, has the id of the Mission Log's rows, so CLOSE in the reader puts the focus back on it.
 - **The list alternative** (LINKS, `links()`): the same nodes and edges as lists. Each entry is a row (id, author, title, tags) that
   opens it, with the ids it names and the ids that name it as buttons. Each tag lists its entries as buttons and the tags it shares
   entries with, each author its entries. Real buttons of 44 px, no scrolling sideways.
@@ -74,5 +75,5 @@ graph library. The same chart is a set of lists that a keyboard, a screen reader
 - Tested: the graph on its own (mentions, co-occurrence, the caps, order, the edges that name only nodes that exist), the layout and
   the lists on their own (bounds, same input same output, 150 entries under a second, strange edges), the route with a fake and with a
   real server and the stand-in agent (scenario 31), and the page in Chrome at 1440 and 390 px in Instrument and Night Shift (the clicks
-  by script). Contrast of every colour it uses was computed for the four liveries (text 4.5:1, outlines and fills 3:1 or better). Not
+  by script). Contrast of every colour it uses was computed for the four liveries (text 4.5:1; the outline of each shape and the lines 3:1 or better against the panel; the pale fill of a tag or an author is about 1.2:1, so the outline and the shape carry it, not the fill). Not
   tried: Firefox, Safari, a screen reader, a log of hundreds of entries, a layout that someone judges to be good.

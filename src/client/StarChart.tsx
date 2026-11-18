@@ -7,7 +7,8 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 import type { AgentView, ChartNode, LogChart } from '../shared/protocol.js';
-import { CHART_HEIGHT, CHART_WIDTH, chartText, layout, links, neighbours, nodeText } from './chart.js';
+import { CHART_HEIGHT, CHART_WIDTH, chartText, labelLeft, layout, links, neighbours, nodeText } from './chart.js';
+import { rowId } from './log.js';
 import { legendOf } from './loop.js';
 import { useStore } from './store.js';
 import './chart.css';
@@ -90,9 +91,13 @@ export function Chart({ chart, openId, onOpen }: Props): ReactElement {
           const spot = spots.get(node.id);
           if (!spot) return null;
           const open = node.kind === 'entry' && node.ref === openId;
+          const text = node.kind === 'entry' ? node.ref : who(node);
+          const left = labelLeft(spot.x, text);
           return (
             <g
               key={node.id}
+              // the reader's CLOSE puts the focus back on the key that opened the entry
+              id={node.kind === 'entry' ? rowId(node.ref) : undefined}
               ref={(el) => {
                 if (el) refs.current.set(node.id, el);
                 else refs.current.delete(node.id);
@@ -119,12 +124,12 @@ export function Chart({ chart, openId, onOpen }: Props): ReactElement {
               <text
                 className="chart-label"
                 data-show={node.kind !== 'entry' || chart.nodes.length <= LABEL_ALL ? '' : undefined}
-                // a name near the right edge is written to the left of its node, so that the page does not cut it
-                textAnchor={spot.x > CHART_WIDTH - 120 ? 'end' : 'start'}
-                x={(node.kind === 'entry' ? 11 : 12) * (spot.x > CHART_WIDTH - 120 ? -1 : 1)}
+                // a name that would run past the right edge is written to the left of its node, so that the page does not cut it
+                textAnchor={left ? 'end' : 'start'}
+                x={(node.kind === 'entry' ? 11 : 12) * (left ? -1 : 1)}
                 y={4}
               >
-                {node.kind === 'entry' ? node.ref : who(node)}
+                {text}
               </text>
             </g>
           );
@@ -155,13 +160,13 @@ export function Links({ chart, openId, onOpen }: Props): ReactElement {
     <div className="chart-links">
       <p className="hint">{chartText(chart)}</p>
       <section aria-labelledby={`${id}-entries`}>
-        <h3 className="label" id={`${id}-entries`}>
+        <h2 className="label" id={`${id}-entries`}>
           ENTRIES
-        </h3>
+        </h2>
         <ul className="chart-list">
           {found.entries.map((e) => (
             <li key={e.node.ref}>
-              <button type="button" className="log-row" aria-current={e.node.ref === openId ? 'true' : undefined} onClick={() => onOpen(e.node.ref)}>
+              <button type="button" id={rowId(e.node.ref)} className="log-row" aria-current={e.node.ref === openId ? 'true' : undefined} onClick={() => onOpen(e.node.ref)}>
                 <span className="log-row-top">
                   <span className="log-id">{e.node.ref}</span>
                   <span className="log-who">{legendOf(e.author, agents)}</span>
@@ -184,9 +189,9 @@ export function Links({ chart, openId, onOpen }: Props): ReactElement {
         { key: 'authors', title: 'AUTHORS', rows: found.authors },
       ].map(({ key, title, rows }) => (
         <section key={key} aria-labelledby={`${id}-${key}`}>
-          <h3 className="label" id={`${id}-${key}`}>
+          <h2 className="label" id={`${id}-${key}`}>
             {title}
-          </h3>
+          </h2>
           <ul className="chart-list">
             {rows.map((group) => (
               <li key={group.node.id} className="chart-group">

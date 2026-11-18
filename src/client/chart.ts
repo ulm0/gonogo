@@ -12,6 +12,7 @@ export interface Spot {
 
 const MARGIN = 30;
 const ITERATIONS = 150;
+const MAX_GROW = 2;
 const GOLDEN_ANGLE = 2.399963229728653;
 /** How hard an edge pulls: two tags that often meet pull less than an entry pulls its tag. */
 const PULL = { tag: 1, author: 1, mention: 1, cooccur: 0.4 } as const;
@@ -81,9 +82,29 @@ export function layout(chart: LogChart, width = CHART_WIDTH, height = CHART_HEIG
       y[i] = Math.min(height - MARGIN, Math.max(MARGIN, (y[i] ?? 0) + my * step));
     }
   }
+  // The pulls leave a dense log as a ball in the middle (150 entries came to a third of the frame): stretch the picture about its
+  // middle to fill the frame, at most twice, so that a handful of nodes does not run to the corners. The same picture, larger.
+  const fill = (v: Float64Array, size: number): void => {
+    let low = Infinity;
+    let high = -Infinity;
+    for (const c of v) {
+      low = Math.min(low, c);
+      high = Math.max(high, c);
+    }
+    if (high - low < 1) return;
+    const grow = Math.min(MAX_GROW, (size - 2 * MARGIN) / (high - low));
+    for (let i = 0; i < n; i += 1) v[i] = size / 2 + ((v[i] ?? 0) - (low + high) / 2) * grow;
+  };
+  fill(x, width);
+  fill(y, height);
   nodes.forEach((node, i) => spots.set(node.id, { x: Math.round((x[i] ?? 0) * 10) / 10, y: Math.round((y[i] ?? 0) * 10) / 10 }));
   return spots;
 }
+
+/** An 11 px mono character is about 6.6 units wide in the drawing. */
+const LABEL_CHAR = 6.6;
+/** A name is written to the left of its node when it would run past the right edge of the drawing; one side always has room (the longest tag is 30 characters). */
+export const labelLeft = (x: number, text: string): boolean => x + 14 + text.length * LABEL_CHAR > CHART_WIDTH;
 
 /** The ids of the nodes joined to `id` by an edge, and `id` itself. */
 export function neighbours(chart: LogChart, id: string): Set<string> {

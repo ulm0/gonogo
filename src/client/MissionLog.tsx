@@ -271,6 +271,8 @@ export function MissionLog(): ReactElement {
   const [mode, setMode] = useState<'read' | 'edit' | 'new'>('read');
   const [lens, setLens] = useState<Lens>('entries');
   const [chart, setChart] = useState<LogChart | null>(null);
+  // its own error: a good answer of the search must not wipe the word that the chart could not be had
+  const [chartError, setChartError] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const heading = useRef<HTMLHeadingElement | null>(null);
   const latest = useRef(0);
@@ -301,9 +303,9 @@ export function MissionLog(): ReactElement {
       (found) => {
         if (!current) return;
         setChart(found);
-        setListError(null);
+        setChartError(null);
       },
-      (e: unknown) => current && setListError(messageOf(e)),
+      (e: unknown) => current && setChartError(messageOf(e)),
     );
     return () => {
       current = false;
@@ -395,7 +397,12 @@ export function MissionLog(): ReactElement {
         <div className="log-list">
           {lens === 'chart' && chart !== null && <Chart chart={chart} openId={openId} onOpen={open} />}
           {lens === 'links' && chart !== null && <Links chart={chart} openId={openId} onOpen={open} />}
-          {lens !== 'entries' && chart === null && listError === null && <p className="hint">Loading…</p>}
+          {lens !== 'entries' && chart === null && chartError === null && <p className="hint">Loading…</p>}
+          {lens !== 'entries' && chartError !== null && (
+            <p className="error" role="alert">
+              {chartError}
+            </p>
+          )}
           {listError !== null && (
             <p className="error" role="alert">
               {listError}

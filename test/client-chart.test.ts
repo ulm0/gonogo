@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LogChart, LogEntry } from '../src/shared/protocol.js';
 import { buildChart, CHART_ENTRIES_MAX } from '../src/server/logchart.js';
-import { CHART_HEIGHT, CHART_WIDTH, chartText, layout, links, neighbours, nodeText } from '../src/client/chart.js';
+import { CHART_HEIGHT, CHART_WIDTH, chartText, labelLeft, layout, links, neighbours, nodeText } from '../src/client/chart.js';
 
 const entry = (n: number, patch: Partial<LogEntry> = {}): LogEntry => ({ id: `l${n}`, title: `Entry ${n}`, body: 'text', tags: [], author: 'ana', createdAt: n, updatedAt: n, ...patch });
 const SAMPLE = buildChart([
@@ -47,6 +47,37 @@ describe('layout', () => {
     expect(performance.now() - started).toBeLessThan(1000);
     expect(spots.size).toBe(chart.nodes.length);
     for (const { x, y } of spots.values()) expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true);
+  });
+});
+
+describe('layout of a dense log', () => {
+  it('fills the frame along at least one axis and stays inside the margins', () => {
+    const entries = Array.from({ length: CHART_ENTRIES_MAX }, (_, i) => entry(i + 1, { tags: [`t${i % 8}`, `t${(i * 3) % 8}`], body: `see l${Math.max(1, i)}` }));
+    const spots = [...layout(buildChart(entries)).values()];
+    const xs = spots.map((s) => s.x);
+    const ys = spots.map((s) => s.y);
+    const spanX = Math.max(...xs) - Math.min(...xs);
+    const spanY = Math.max(...ys) - Math.min(...ys);
+    expect(Math.max(spanX / (CHART_WIDTH - 60), spanY / (CHART_HEIGHT - 60))).toBeGreaterThan(0.95);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(30 - 0.1);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(CHART_WIDTH - 30 + 0.1);
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(30 - 0.1);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(CHART_HEIGHT - 30 + 0.1);
+  });
+});
+
+describe('labelLeft', () => {
+  it('writes a name to the left of its node only when it would run past the right edge, whatever its length', () => {
+    expect(labelLeft(100, 'l12')).toBe(false);
+    expect(labelLeft(740, 'l12')).toBe(true);
+    // a 30-character tag at x 587 ends at about 800: it goes left, where there is room
+    expect(labelLeft(587, 'a'.repeat(30))).toBe(true);
+    expect(labelLeft(587, 'build')).toBe(false);
+    // at every x one side has room for the longest name
+    for (let x = 30; x <= CHART_WIDTH - 30; x += 10) {
+      const left = labelLeft(x, 'a'.repeat(30));
+      expect(left ? x - 12 - 30 * 6.6 : x + 12 + 30 * 6.6, String(x)).toSatisfy((edge: number) => (left ? edge >= 0 : edge <= CHART_WIDTH));
+    }
   });
 });
 
