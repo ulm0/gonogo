@@ -10,7 +10,9 @@ import * as api from './api.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commands, matchCommands, stepIndex } from './shell.js';
 import type { Act, View } from './shell.js';
-import { openConsole, openHire, showDownlink, showBlackBox, showBoard, showHangar, showLivery, showLog, showLoop, showMissions, openNewMission, showParty, showPlan, showRecorder, showRoom, showRules, showWindow, useStore } from './store.js';
+import { openConsole, openHire, showDownlink, showBlackBox, showBoard, showHangar, showLivery, showLog, showLoop, showMissions, openNewMission, showParty, showPlan, showRecorder, showRoom, showRules, showWindow, store, useStore } from './store.js';
+import { restore } from '../shared/layout.js';
+import { startEditing } from './EditRoomKey.js';
 import { useRun } from './WallView.js';
 import './patch.css';
 
@@ -50,6 +52,15 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
     case 'new-mission':
       openNewMission();
       return null;
+    case 'edit-room':
+      // a promise, so that a refusal (a screen under 900 px) shows in the panel instead of being thrown away
+      return Promise.resolve().then(startEditing);
+    case 'reset-room':
+      return api.resetRoom('all', store.getState().room.rev);
+    case 'show-block': {
+      const { room } = store.getState();
+      return room.layout === null ? Promise.resolve() : api.saveRoom({ rev: room.rev, blocks: restore(room.layout.blocks, act.block), desks: room.layout.desks });
+    }
     case 'brief':
       // the brief box is in the room on a desk and at the foot of the loop on a phone (its field has the class `brief-input`)
       (phone ? showLoop : showRoom)();
@@ -92,7 +103,8 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const { busy, error, run } = useRun();
-  const all = useMemo(() => commands({ agents: list, legends, poll, unread, livery }), [list, legends, poll, unread, livery]);
+  const room = useStore((s) => s.room);
+  const all = useMemo(() => commands({ agents: list, legends, poll, unread, livery, room }), [list, legends, poll, unread, livery, room]);
   const shown = useMemo(() => matchCommands(all, query), [all, query]);
   const at = Math.min(active, shown.length - 1);
 
@@ -126,7 +138,7 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
   const choose = (index: number): void => {
     const c = shown[index];
     if (c === undefined || busy) return;
-    if (c.act.kind === 'poll' || c.act.kind === 'read' || c.act.kind === 'livery') {
+    if (c.act.kind === 'poll' || c.act.kind === 'read' || c.act.kind === 'livery' || c.act.kind === 'edit-room' || c.act.kind === 'reset-room' || c.act.kind === 'show-block') {
       const act = c.act;
       run(async () => {
         await perform(act, phone);

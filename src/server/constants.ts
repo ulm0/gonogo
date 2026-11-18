@@ -368,6 +368,8 @@ export const DOCK_PULL_MS = 30_000;
 export const TASKS_FILE = 'tasks.json';
 /** Missions (docs/missions-spec.md): the file, the history lines one mission keeps, and how many finished missions are kept. */
 export const MISSIONS_FILE = 'missions.json';
+/** Room editor (docs/room-editor-spec.md): where the blocks of the Room view are and the order of the desks. */
+export const ROOM_FILE = 'room.json';
 export const MISSION_NOTES_MAX = 100;
 export const MISSIONS_DONE_KEEP = 20;
 export const TASK_NOTES_MAX = 20;

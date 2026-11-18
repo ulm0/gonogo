@@ -95,6 +95,7 @@ import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
 import type { Missions } from './missions.js';
 import type { Review } from './review.js';
+import type { RoomLayoutStore } from './roomlayout.js';
 import type { Uplinks } from './uplinks.js';
 
 export interface WebOptions {
@@ -129,6 +130,8 @@ export interface WebOptions {
   tasks?: Pick<Tasks, 'list' | 'create' | 'update' | 'remove'>;
   /** Missions; absent in tests that do not need it (the snapshot then lists none, the routes answer 404 and the mission tools say it is not available). It tells the browsers itself. */
   missions?: Pick<Missions, 'list' | 'create' | 'update' | 'remove'>;
+  /** Room editor; absent in tests that do not need it (the snapshot then has no room and the routes answer 404). It tells the browsers itself. */
+  room?: Pick<RoomLayoutStore, 'view' | 'save' | 'reset'>;
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
@@ -627,6 +630,7 @@ export function createWebServer(options: WebOptions): WebServer {
     uplinks: options.uplinks?.list() ?? [],
     tasks: options.tasks?.list() ?? [],
     missions: options.missions?.list() ?? [],
+    ...(options.room === undefined ? {} : { room: options.room.view() }),
     downlink: options.downlink?.view() ?? { unread: 0, items: [] },
     livery: options.liveries?.view(),
     docking: options.docking?.view(),
@@ -1001,6 +1005,25 @@ export function createWebServer(options: WebOptions): WebServer {
           }
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await tasks.update(director, id, body));
+        },
+      };
+    }
+    if (s[1] === 'room' && s.length === 2) {
+      const room = options.room;
+      if (!room) return null;
+      return {
+        allow: ['GET', 'PUT', 'DELETE'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, room.view());
+          if (req.method === 'DELETE') {
+            const part = new URL(req.url ?? '/', 'http://localhost').searchParams.get('part');
+            if (part !== null && part !== 'all' && part !== 'desks') return sendApiError(res, 400, 'part must be all or desks', 'bad_request', 'part');
+            const rev = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('rev'));
+            if (!Number.isSafeInteger(rev) || rev < 0 || new URL(req.url ?? '/', 'http://localhost').searchParams.get('rev') === null) return sendApiError(res, 400, 'rev must be the revision the room was seen at', 'bad_request', 'rev');
+            return sendJson(res, 200, await room.reset(part === 'desks' ? 'desks' : 'all', rev));
+          }
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await room.save(body));
         },
       };
     }

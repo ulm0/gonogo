@@ -11,6 +11,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 - **Model per position.** Flight Rules has a BY POSITION list: a Claude Code console in a position starts with that position's model before its engine's room default; its own model still wins.
 - **Cost per mission and task.** A reply is counted to the mission and task the agent has on `doing`; the Missions view shows the cost of each mission and each task.
 - **Mission budget.** A dollar budget on a mission: one Downlink warning at 80 %, and Redline stops the agents working on it at 100 %.
+- **Room editor.** EDIT ROOM puts the blocks of the Room view (the wall's five and OPERATIONS) on a 12-column grid: move and resize by pointer or keyboard, hide what you do not use (never OPERATIONS), choose the order of the consoles (drag, or Positions, Needs you first, Name). A saved layout is shared by every browser and read by the phone; a hidden block with something live shows a strip. Without one the page is as it was. Saves name the revision they were made from.
 
 ## 0.2.0 (2026-11-18)
 

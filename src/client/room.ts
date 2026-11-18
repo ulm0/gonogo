@@ -1,5 +1,6 @@
 import type { AgentState, AgentView, PollView } from '../shared/protocol.js';
 import { CLEAN_ROOM_DIR, cleanRoomBranch, WORKTREE_DIR, HOLD_REASON, MAX_AGENTS, providerInfo, STATE_LABELS } from '../shared/protocol.js';
+import type { DeskOrder } from '../shared/layout.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import { reliefAnnouncement } from './relief.js';
@@ -20,7 +21,7 @@ export type Cell =
  * when several share one. Everyone else (no position, a duplicate, a custom command) follows in desk order, then one SPARE
  * open cell while the room has room.
  */
-export function seat(agents: readonly AgentView[]): Cell[] {
+export function seat(agents: readonly AgentView[], desks?: DeskOrder): Cell[] {
   const sorted = [...agents].sort((a, b) => a.desk - b.desk || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const taken = new Map<string, AgentView>();
   for (const agent of sorted) {
@@ -35,7 +36,39 @@ export function seat(agents: readonly AgentView[]): Cell[] {
     if (!seated.has(agent)) cells.push({ type: 'agent', n: cells.length + 1, agent, position: positionById(agent.position), seated: false });
   }
   if (agents.length < MAX_AGENTS) cells.push({ type: 'spare', n: cells.length + 1 });
-  return cells;
+  return desks === undefined || desks.sort === 'positions' ? cells : arrange(cells, desks);
+}
+
+/** The key of a cell in the order of the desks: `p:<position>` for the cell of a position (open or taken), `a:<name>` for an agent that has none, `spare`. */
+export const cellKey = (cell: Cell): string => (cell.type === 'spare' ? 'spare' : cell.type === 'open' || (cell.seated && cell.position !== null) ? `p:${(cell.position as Position).id}` : `a:${(cell as Extract<Cell, { type: 'agent' }>).agent.name}`);
+
+const STATE_RANK: Record<AgentState, number> = { needs_you: 0, working: 1, starting: 2, idle: 3, stopped: 4 };
+
+/**
+ * The cells in the order the Director chose (docs/room-editor-spec.md). `state` puts what needs him first, then what works, then
+ * the idle and the stopped; `name` is alphabetical; both put the agents before the open cells of positions. `manual` follows the
+ * list of keys: a key with no cell is skipped, a cell with no key goes to the end in the usual order. SPARE stays last, and the
+ * cells are numbered again from 1.
+ */
+function arrange(cells: readonly Cell[], desks: DeskOrder): Cell[] {
+  const spare = cells.filter((c) => c.type === 'spare');
+  const rest = cells.filter((c) => c.type !== 'spare');
+  let ordered: Cell[];
+  if (desks.sort === 'manual') {
+    const rank = new Map(desks.order.map((k, i) => [k, i]));
+    ordered = rest
+      .map((c, i) => ({ c, i }))
+      .sort((a, b) => (rank.get(cellKey(a.c)) ?? Infinity) - (rank.get(cellKey(b.c)) ?? Infinity) || a.i - b.i)
+      .map((x) => x.c);
+  } else {
+    const agents = rest.filter((c): c is Extract<Cell, { type: 'agent' }> => c.type === 'agent');
+    const open = rest.filter((c) => c.type === 'open');
+    agents.sort((a, b) =>
+      desks.sort === 'state' ? STATE_RANK[a.agent.state] - STATE_RANK[b.agent.state] : a.agent.name < b.agent.name ? -1 : a.agent.name > b.agent.name ? 1 : 0,
+    );
+    ordered = [...agents, ...open];
+  }
+  return [...ordered, ...spare].map((c, i) => ({ ...c, n: i + 1 }));
 }
 
 /** Names to what the room calls them: the call sign for a seated agent, else the name in capitals. */

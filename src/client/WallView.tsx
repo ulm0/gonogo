@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, RefObject } from 'react';
 import { MAX_AGENTS, SUBJECT_MAX_CHARS } from '../shared/protocol.js';
 import * as api from './api.js';
+import { phoneOrder } from '../shared/layout.js';
 import { legendsOf, seat } from './room.js';
 import { selectMission, showMissions, useNow, useStore } from './store.js';
 import {
@@ -81,7 +82,7 @@ function Heading({ letter, children }: { letter: string; children: string }): Re
   );
 }
 
-function Mission(): ReactElement {
+export function Mission(): ReactElement {
   const activity = useStore((s) => s.activity);
   const missions = useStore((s) => s.missions);
   const agents = useStore((s) => s.agents);
@@ -108,7 +109,7 @@ function Mission(): ReactElement {
   );
 }
 
-function Sequence(): ReactElement {
+export function Sequence(): ReactElement {
   const order = useStore((s) => s.order);
   const agents = useStore((s) => s.agents);
   const now = useNow();
@@ -149,7 +150,7 @@ function Sequence(): ReactElement {
   );
 }
 
-function TMinus(): ReactElement {
+export function TMinus(): ReactElement {
   const poll = useStore((s) => s.poll);
   const order = useStore((s) => s.order);
   const agents = useStore((s) => s.agents);
@@ -321,8 +322,33 @@ export function Propellant(): ReactElement {
   );
 }
 
-/** The wall: five modules, mission clock, sequence, T-minus, Max Q and Propellant. */
+/** The five blocks of the wall, by their id in the room editor's catalogue. */
+export const WALL_BLOCKS: Readonly<Record<'mission' | 'sequence' | 'tminus' | 'maxq' | 'propellant', () => ReactElement>> = {
+  mission: Mission,
+  sequence: Sequence,
+  tminus: TMinus,
+  maxq: MaxQ,
+  propellant: Propellant,
+};
+
+/**
+ * The wall: five modules, mission clock, sequence, T-minus, Max Q and Propellant. With a saved layout (room editor) a phone gets
+ * the same blocks in the order of their rows, the hidden ones left out; without one, the wall is as it always was.
+ */
 export function Wall(): ReactElement {
+  const layout = useStore((s) => s.room.layout);
+  if (layout !== null) {
+    return (
+      <section className="wall" aria-label="The wall">
+        {phoneOrder(layout.blocks)
+          .filter((b) => b.id !== 'operations')
+          .map((b) => {
+            const Block = WALL_BLOCKS[b.id as keyof typeof WALL_BLOCKS];
+            return <Block key={b.id} />;
+          })}
+      </section>
+    );
+  }
   return (
     <section className="wall" aria-label="The wall">
       <Mission />

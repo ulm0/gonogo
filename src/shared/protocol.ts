@@ -1040,6 +1040,8 @@ export interface StateSnapshot {
   tasks: Task[];
   /** Absent from an older server: the page then shows no missions. */
   missions?: Mission[];
+  /** Absent from an older server: the page then shows today's layout. */
+  room?: RoomView;
   downlink: DownlinkView;
   /** Absent from an older server: the page then shows the Instrument look. */
   livery?: LiveryView;
@@ -1388,6 +1390,37 @@ export interface TasksFrame {
   t: 'tasks';
   tasks: Task[];
 }
+/** Room editor (docs/room-editor-spec.md): the blocks of the Room view, and how the consoles are ordered. `src/shared/layout.ts` works on them. */
+export const BLOCK_IDS = ['mission', 'sequence', 'tminus', 'maxq', 'propellant', 'operations'] as const;
+export type BlockId = (typeof BLOCK_IDS)[number];
+export interface Block {
+  id: BlockId;
+  /** 0 to 11, from the left. */
+  x: number;
+  /** 0 and up, from the top, in rows. */
+  y: number;
+  w: number;
+  h: number;
+  /** Removed from the page; it keeps its place so that RESTORE puts it back. */
+  hidden?: boolean;
+}
+export const DESK_SORTS = ['positions', 'state', 'name', 'manual'] as const;
+export type DeskSort = (typeof DESK_SORTS)[number];
+export interface DeskOrder {
+  sort: DeskSort;
+  /** Cell keys: `p:<position id>` for the cell of a position, `a:<name>` for an agent that has none. Used by `manual`. */
+  order: string[];
+}
+/** The saved layout of the Room view: absent (`layout: null`) is today's page. `rev` grows with every save and every reset. */
+export interface RoomView {
+  rev: number;
+  layout: { blocks: Block[]; desks: DeskOrder } | null;
+}
+/** The layout was saved or reset; carries the whole view. Also inside StateSnapshot. */
+export interface RoomFrame {
+  t: 'room';
+  room: RoomView;
+}
 /** A mission was made, changed or removed; carries the whole list. Also inside StateSnapshot. */
 export interface MissionsFrame {
   t: 'missions';
@@ -1426,6 +1459,7 @@ export interface RolloutFrame {
   rollout: RolloutView;
 }
 export type ServerFrame =
+  | RoomFrame
   | MissionsFrame
   | ReliefFrame
   | RolloutFrame
@@ -1447,7 +1481,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
