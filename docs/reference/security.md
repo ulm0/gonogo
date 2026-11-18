@@ -1,5 +1,7 @@
 # Security
 
+<GatesMock class="doc-mock" />
+
 - gonogo listens on `127.0.0.1` unless you pass `--host`. There is no TLS: to reach it from another machine, put a reverse proxy or a private network in front ([recipe below](#reverse-proxy), and [Exposing gonogo safely](../https.md) for what to forward, what never to, Caddy, nginx and Tailscale).
 - Every `/api` call and the `/ws` WebSocket need the browser token. The built client files do not; they hold no state.
 - **`POST /uplink/<id>` is the route meant for senders outside, and takes no browser token.** It needs the secret of that uplink instead (a signature of the body, or the secret as a bearer token), takes at most 256 KiB and 30 a minute per uplink, and answers 404 alike for an unknown and a disabled uplink. The Host check applies to it as to the rest, and a request with an `Origin` header is refused. **Uplink secrets are stored in plain text** in `uplinks.json` (mode 0600), which an agent in `bypassPermissions` mode can read. What a delivery says is read by an agent as a message from you. **Relay's bot tokens and the signing secrets of Slack and Linear are stored in plain text** in `relay.json` and `uplinks.json` (mode 0600). A token is never logged and never sent back to the browser, but an agent in `bypassPermissions` mode can read the files.

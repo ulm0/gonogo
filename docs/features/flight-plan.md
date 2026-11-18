@@ -1,5 +1,7 @@
 # Flight Plan: tasks
 
+<FlightPlanMock class="doc-mock" />
+
 FLIGHT PLAN (top bar, or PLAN in the phone bar) is a task board that you and the agents share. Design and limits:
 [`docs/flight-plan-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/flight-plan-spec.md).
 

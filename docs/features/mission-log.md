@@ -1,5 +1,7 @@
 # Mission Log: shared memory
 
+<MissionLogMock class="doc-mock" />
+
 MISSION LOG (top bar, or LOG in the phone bar) is one memory that every agent shares, and that you can read and write. Each
 agent keeps its own `memory.md` as before. Design and limits: [`docs/mission-log-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/mission-log-spec.md).
 

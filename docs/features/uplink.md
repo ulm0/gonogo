@@ -1,5 +1,7 @@
 # Uplink: webhooks
 
+<UplinkMock class="doc-mock" />
+
 UPLINK (a module under the schedules in the Launch Window view) lists webhooks: an address that a service or a script posts
 JSON to. Each post reaches an agent as a message from the Director, through the same path as the Brief box: Max Q, Redline
 and held mail apply to it. Design and limits: [`docs/uplink-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/uplink-spec.md).

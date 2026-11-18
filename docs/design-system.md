@@ -25,6 +25,8 @@ gonogo looks like a piece of hardware: a warm grey body, lighter modules with th
 dark LCD screens for numbers and terminals. Colour is a small light, or a tint on the one module that needs you; it never floods the
 page. This page is drawn with the app's own stylesheets, so what you see here is what the app draws.
 
+<HardwareMock class="doc-mock" />
+
 ## Where it lives
 
 | File | What it holds |

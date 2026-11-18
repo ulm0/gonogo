@@ -1,5 +1,7 @@
 # Downlink: the inbox
 
+<DownlinkMock class="doc-mock" />
+
 DOWNLINK (top bar, or DOWN in the phone bar) is your inbox. Design and limits: [`docs/downlink-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/downlink-spec.md).
 
 - **What lands in it.** Every message an agent sends to `user`, and a line for each of these: a Redline trip (the agent and the

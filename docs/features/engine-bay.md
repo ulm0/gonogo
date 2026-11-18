@@ -1,5 +1,7 @@
 # Engine Bay: other agent CLIs
 
+<EngineBayMock class="doc-mock" />
+
 The Engine select of the hire form picks the CLI an agent runs. Installed ones (found on gonogo's `PATH`) come first;
 the others say `not installed`. You sign in to each CLI yourself, outside gonogo, as with Claude Code. The engine
 cannot change after the hire. Design and limits: [`docs/engine-bay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/engine-bay-spec.md).

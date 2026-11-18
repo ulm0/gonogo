@@ -21,6 +21,9 @@ export default {
   enhanceApp: ({ app }: { app: import('vue').App }) => {
     app.component('PropellantMock', PropellantMock);
     app.component('RoomMock', RoomMock);
+    // Every page's own piece of the room: theme/mocks/<Name>.vue is <Name> in any page.
+    for (const [path, mod] of Object.entries(import.meta.glob<{ default: import('vue').Component }>('./mocks/*.vue', { eager: true })))
+      app.component(path.slice(8, -4), mod.default);
   },
   // The livery key: in the top bar from 768 px, in the menu screen below it.
   Layout: () => h(DefaultTheme.Layout, null, { 'nav-bar-content-after': () => h(LiverySwitch), 'nav-screen-content-after': () => h(LiverySwitch) }),

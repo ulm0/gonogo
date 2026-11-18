@@ -1,5 +1,7 @@
 # Docking: two stations
 
+<DockingMock class="doc-mock" />
+
 DOCKING (a module under RELAY in the Launch Window view) connects this gonogo to another one, so that their agents can message each
 other and a task can be handed to the other board. Each side is a station with a name (`GONOGO_STATION`) and a random id kept in
 `station.json`. Design and limits: [`docs/docking-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/docking-spec.md). **Only tried between two servers on one machine** (see [What was not verified](../reference/not-verified.md)).

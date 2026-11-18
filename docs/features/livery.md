@@ -1,5 +1,7 @@
 # Livery: themes
 
+<LiveryMock class="doc-mock" />
+
 LIVERY (the round key of the top bar) chooses the look of gonogo, and asks an agent to design another. Design and limits:
 [`docs/livery-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/livery-spec.md).
 

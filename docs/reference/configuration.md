@@ -1,5 +1,7 @@
 # Configuration
 
+<PrecedenceMock class="doc-mock" />
+
 ## Options
 
 A flag beats its environment variable, which beats the default. `--port=7777` and `--port 7777` are the same.

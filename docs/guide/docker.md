@@ -2,6 +2,8 @@
 
 The image is Debian bookworm (glibc), runs as the user `node` (uid 1000, because `bypassPermissions` refuses root), and holds git, tini, a pinned Claude Code (2.1.325; `--build-arg CLAUDE_CODE_VERSION=<x.y.z>` changes it) and gonogo from the same tarball `pnpm dlx` would use.
 
+<DockerRunMock class="doc-mock" />
+
 Build it from a clone of the repository (the `Dockerfile` is not in the package tarball), then run it:
 
 ```
