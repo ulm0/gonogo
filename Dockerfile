@@ -39,7 +39,7 @@
 
 # A floating tag: a rebuild can pick up a newer Node and a newer Debian. To pin the base image, build with
 #   --build-arg NODE_IMAGE=node:24-bookworm-slim@sha256:<digest>     (`docker pull node:24-bookworm-slim` prints the digest)
-ARG NODE_IMAGE=node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
+ARG NODE_IMAGE=node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 # Only the docker CLI binary of this image is copied (no daemon, no compose or buildx plugin), for Clean Room.
 ARG DOCKER_CLI_IMAGE=docker:29.9.1-cli
 # The pnpm that installs Claude Code in the runtime stage: the same release as package.json `packageManager`.
