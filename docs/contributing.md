@@ -19,5 +19,21 @@ To try the tarball by hand, run pnpm with an empty user config and a temporary `
 ```
 tmp=$(mktemp -d) && : > "$tmp/npmrc"
 env HOME="$tmp" NPM_CONFIG_USERCONFIG="$tmp/npmrc" pnpm pack --pack-destination "$tmp"
-env HOME="$tmp" NPM_CONFIG_USERCONFIG="$tmp/npmrc" pnpm dlx "file:$tmp/gonogo-0.1.0.tgz" --port 0
+env HOME="$tmp" NPM_CONFIG_USERCONFIG="$tmp/npmrc" pnpm dlx "file:$(ls "$tmp"/*.tgz)" --port 0
 ```
+
+## Releasing
+
+The npm package is `@ulm0/gonogo` (the unscoped `gonogo` on npm is another project); the command it installs is `gonogo`. `.github/workflows/release.yml` publishes it, with provenance, and creates the GitHub Release with generated notes. It runs on a pushed `v*` tag, or by hand (Actions > Release > Run workflow) with the name of a tag that already exists. It checks out that tag, runs the checks above, and stops when the tag is not `v` plus the `version` of `package.json` or the package name is not `@ulm0/gonogo`. A version like `1.2.0-rc.1` goes to the npm dist-tag `next`. The same tag also makes `.github/workflows/image.yml` push the image.
+
+To release: put the new `version` in `package.json` and an entry in `CHANGELOG.md`, merge to `main`, then tag that commit and push the tag (`git tag v<version> && git push origin v<version>`).
+
+One-time setup, by the owner, before the first publish:
+
+1. On npmjs.com, sign in as the account that owns the scope of `@ulm0/gonogo` and create a granular access token (Access Tokens > Generate New Token > Granular Access Token): read and write on packages, limited to the package `@ulm0/gonogo` once it exists (for the first publish, to its scope), with a short expiry.
+2. Add it as the repository secret `NPM_TOKEN` (Settings > Secrets and variables > Actions).
+3. Push the next tag, or run the workflow by hand for a tag that already exists.
+
+After the first publish, switch to npm trusted publishing (OIDC), so no token lives in the repository: on npmjs.com, the package's Settings > Trusted Publisher > GitHub Actions, with this repository and the workflow file `release.yml`. Then remove the `NODE_AUTH_TOKEN` line from the publish step, delete the `NPM_TOKEN` secret and revoke the token. The comment at the top of `release.yml` lists the same steps.
+
+The tarball carries no lock file (pnpm reads none from a package): gonogo's own dependencies are pinned exactly in `package.json`, and theirs resolve at install time. The Docker image installs from `pnpm-lock.yaml` instead.

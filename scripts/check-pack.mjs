@@ -18,7 +18,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:
 import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -151,7 +151,7 @@ async function standInPids(logDir) {
 
 async function main() {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-  const tarballName = `${pkg.name}-${pkg.version}.tgz`;
+  let tarballName = '';
   // `pnpm run` names itself here (a pnpm.cjs, or the standalone binary of @pnpm/exe), so every step runs the pnpm
   // that package.json `packageManager` pins.
   const pnpmPath = process.env.npm_execpath;
@@ -199,8 +199,10 @@ async function main() {
     await mkdir(packDir);
     const packed = await pnpm(['pack', '--pack-destination', packDir], { cwd: ROOT, env: isolated(process.env, 'pack'), timeoutMs: 10 * 60_000 });
     if (packed.code !== 0) fail('pack', `pnpm pack exited ${packed.code}${packed.timedOut ? ' (timed out)' : ''}\n${tail(packed.stderr + packed.stdout, 40)}`);
-    const tgz = join(packDir, tarballName);
-    if (!existsSync(tgz)) fail('pack', `${tarballName} was not created in ${packDir}: ${(await readdir(packDir)).join(', ') || 'nothing there'}`);
+    // pnpm names a scoped package's tarball <scope>-<name>-<version>.tgz and prints its path as the last line.
+    const tgz = packed.stdout.trimEnd().split('\n').at(-1)?.trim() ?? '';
+    tarballName = basename(tgz);
+    if (!tarballName.endsWith('.tgz') || !existsSync(tgz) || realpathSync(dirname(tgz)) !== realpathSync(packDir)) fail('pack', `pnpm pack printed no tarball in ${packDir} (last line ${JSON.stringify(tgz)}): ${(await readdir(packDir)).join(', ') || 'nothing there'}`);
     const listed = await run('tar', ['-tzf', tgz], { cwd: tmp, env: { PATH: process.env.PATH }, timeoutMs: 60_000 });
     if (listed.code !== 0) fail('pack', `tar could not list ${tgz}: ${listed.stderr}`);
     const entries = listed.stdout.split('\n').filter((l) => l && !l.endsWith('/'));

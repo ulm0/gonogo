@@ -14,10 +14,11 @@ Documentation: <https://gonogo.ulm0.com/>
 
 ## Install
 
-Needs Node 24+, macOS or Linux (glibc), and `claude` on your `PATH`, signed in. Not published to the npm registry or as an image yet, so build from a clone with [pnpm](https://pnpm.io/) (`corepack enable pnpm` gives you the release `package.json` pins):
+Needs Node 24+, macOS or Linux (glibc), and `claude` on your `PATH`, signed in. With [pnpm](https://pnpm.io/), from the npm registry (the package is `@ulm0/gonogo`; the unscoped `gonogo` there is another project), from a clone, or in Docker:
 
 ```
-pnpm install && pnpm build && pnpm start
+pnpm dlx @ulm0/gonogo                      # or: pnpm add -g @ulm0/gonogo && gonogo
+pnpm install && pnpm build && pnpm start   # from a clone
 docker build -t gonogo . && docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_TOKEN -v gonogo-state:/state -v gonogo-projects:/projects gonogo
 ```
 
@@ -27,4 +28,4 @@ Clean Room with gonogo itself in Docker: [`compose.yaml`](compose.yaml) mounts t
 
 ## More
 
-The [documentation site](https://gonogo.ulm0.com/) (source in `docs/`) has the full usage, [`docs/https.md`](docs/https.md) exposing it safely, [`CONTRIBUTING.md`](CONTRIBUTING.md) how to work on it, [`docs/backlog.md`](docs/backlog.md) what is planned. License: MIT, see [`LICENSE`](LICENSE) and `dist/client/THIRD-PARTY-NOTICES.md`.
+The [documentation site](https://gonogo.ulm0.com/) (source in `docs/`) has the full usage, [`docs/https.md`](docs/https.md) exposing it safely, [`CONTRIBUTING.md`](CONTRIBUTING.md) how to work on it, [`docs/backlog.md`](docs/backlog.md) what is planned, [`CHANGELOG.md`](CHANGELOG.md) what each release changed. License: MIT, see [`LICENSE`](LICENSE) and `dist/client/THIRD-PARTY-NOTICES.md`.

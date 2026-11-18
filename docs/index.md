@@ -37,7 +37,14 @@ features:
 
 ## Quick start
 
-Needs Node 24+, macOS or Linux (glibc), and `claude` on your `PATH`, signed in. Not published to the npm registry or as an image yet, so build from a clone with [pnpm](https://pnpm.io/) (`corepack enable pnpm` gives you the release `package.json` pins):
+Needs Node 24+, macOS or Linux (glibc), and `claude` on your `PATH`, signed in. With [pnpm](https://pnpm.io/), from the npm registry (the package is `@ulm0/gonogo`; the unscoped `gonogo` there is another project):
+
+```sh
+pnpm dlx @ulm0/gonogo
+# or install the gonogo command: pnpm add -g @ulm0/gonogo && gonogo
+```
+
+Or build from a clone (`corepack enable pnpm` gives you the release `package.json` pins):
 
 ```sh
 git clone https://github.com/ulm0/gonogo.git && cd gonogo

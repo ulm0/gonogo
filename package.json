@@ -1,5 +1,5 @@
 {
-  "name": "gonogo",
+  "name": "@ulm0/gonogo",
   "version": "0.1.0",
   "description": "Self-hosted mission control for AI coding agents: real Claude Code terminals in a browser tab (a phone too), agents that message each other, schedules, webhooks and token budgets.",
   "keywords": [
@@ -16,6 +16,15 @@
     "terminal",
     "mcp"
   ],
+  "homepage": "https://gonogo.ulm0.com/",
+  "bugs": {
+    "url": "https://github.com/ulm0/gonogo/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ulm0/gonogo.git"
+  },
+  "author": "ulm0",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -32,6 +41,10 @@
     "darwin",
     "linux"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "pnpm run build:client && pnpm run build:server",
     "build:client": "vite build",

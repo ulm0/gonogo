@@ -16,6 +16,9 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (...path: string[]): string => readFileSync(join(root, ...path), 'utf8');
 
 interface PackageJson {
+  name: string;
+  bin: Record<string, string>;
+  publishConfig: Record<string, unknown>;
   license: string;
   os: string[];
   keywords: string[];
@@ -39,6 +42,12 @@ describe('the licence and the package manifest', () => {
   it('restricts the install to the platforms that have a terminal library, and has keywords', () => {
     expect(pkg.os).toStrictEqual(['darwin', 'linux']);
     expect(pkg.keywords).toEqual(expect.arrayContaining(['claude-code', 'agents', 'mcp']));
+  });
+
+  it('publishes under a scope, publicly and with provenance, and keeps the command gonogo', () => {
+    expect(pkg.name).toMatch(/^@[a-z0-9-]+\/gonogo$/);
+    expect(pkg.publishConfig).toStrictEqual({ access: 'public', provenance: true });
+    expect(Object.keys(pkg.bin)).toStrictEqual(['gonogo']);
   });
 
   it('asks the client build for the notices of the libraries it bundles', () => {
@@ -142,6 +151,7 @@ const committed = [
   '.vitepress/theme/index.ts',
   '.vitepress/theme/custom.css',
   'README.md',
+  'CHANGELOG.md',
   'CONTRIBUTING.md',
   'Dockerfile',
   '.dockerignore',
@@ -176,8 +186,8 @@ describe('committed files hold nothing private', () => {
   });
 
   it.each(committed)('%s has no home path, volume path, scratch folder or name of this machine', (path) => {
-    // The project's own public coordinates (its GitHub repository, its image, its Pages site and its docs domain) name an account, not this machine.
-    const text = read(path).replace(/\b(?:ghcr\.io|github\.com)\/[a-z0-9-]+\/gonogo\b|\b[a-z0-9-]+\.github\.io\/gonogo\b|\bgonogo\.[a-z0-9-]+\.[a-z]{2,}\b/gi, '');
+    // The project's own public coordinates (its GitHub repository, its image, its npm package, its Pages site and its docs domain) name an account, not this machine.
+    const text = read(path).replace(/\b(?:ghcr\.io|github\.com)\/[a-z0-9-]+\/gonogo\b|(?<![\w.-])@[a-z0-9-]+\/gonogo\b|\b[a-z0-9-]+\.github\.io\/gonogo\b|\bgonogo\.[a-z0-9-]+\.[a-z]{2,}\b/gi, '');
     expect(text, 'a home directory with a login name in it').not.toMatch(/\/Users\/[A-Za-z0-9_-]/);
     expect(text, 'a volume name').not.toMatch(/\/Volumes\/[^<`\s]/);
     expect(text, 'the scratch folder of a session').not.toMatch(/\.claude-tmp\b/);

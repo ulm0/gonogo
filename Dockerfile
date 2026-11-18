@@ -49,7 +49,7 @@ FROM ${DOCKER_CLI_IMAGE} AS docker-cli
 
 # ---------------------------------------------------------------------------
 # Stage 1: build the package tarball exactly as `pnpm publish` would ship it. The runtime stage runs that tarball,
-# so the container runs the same artifact as `pnpm dlx gonogo`, and a packaging mistake (a file missing from "files",
+# so the container runs the same artifact as `pnpm dlx @ulm0/gonogo`, and a packaging mistake (a file missing from "files",
 # a missing shebang) fails the image build. `prepack` in package.json builds the client (vite) and the server (tsc).
 # corepack runs the pnpm that package.json `packageManager` pins, release and checksum.
 # ---------------------------------------------------------------------------

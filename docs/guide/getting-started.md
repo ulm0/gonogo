@@ -4,7 +4,7 @@ Run a mission-control room of Claude Code agents from a browser tab.
 
 gonogo is one Node process. It starts every agent as a real `claude` process in a pseudo-terminal, shows each terminal in the browser, draws the agents as consoles on an operations floor, and lets them message each other and share a task board through seven tools. All state is a few files in one directory. Closing the tab stops nothing. It is a fresh code base: no code, art or names were taken from another application.
 
-Status: gonogo is not published to the npm registry, and no Docker image is published; the `Dockerfile` was built and run once on linux/arm64 (see [What was not verified](../reference/not-verified.md)).
+Status: the npm package is `@ulm0/gonogo`; see [What was not verified](../reference/not-verified.md).
 
 ## Requirements
 
@@ -15,7 +15,14 @@ Status: gonogo is not published to the npm registry, and no Docker image is publ
 
 ## Run it
 
-gonogo is not on the npm registry yet, and nothing reserves the name `gonogo` for this project. `pnpm dlx gonogo` (or `pnpm add -g gonogo`) is therefore not a valid command until a deliberate first publish: today it would run whichever package holds that name, with your credentials. Build the tarball from a clone of the repository and run that; the last recipe under [Development](../contributing.md#development) does it. After a publish this section will read `pnpm dlx gonogo`.
+From the npm registry, with pnpm:
+
+```
+pnpm dlx @ulm0/gonogo                      # run it once
+pnpm add -g @ulm0/gonogo && gonogo         # or install the gonogo command
+```
+
+The package is `@ulm0/gonogo`. The unscoped name `gonogo` on npm belongs to another project: `pnpm dlx gonogo` runs that one, with your credentials. The command is `gonogo` either way, and the [options](../reference/configuration.md#options) go after it (`pnpm dlx @ulm0/gonogo --port 7780`).
 
 From a clone of the repository, with pnpm (`corepack enable pnpm` installs the release that `packageManager` in `package.json` pins):
 
