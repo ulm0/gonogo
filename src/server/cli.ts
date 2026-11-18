@@ -5,7 +5,7 @@ import { homedir, hostname } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROTOCOL_VERSION } from '../shared/protocol.js';
-import { MAX_AGENTS } from '../shared/protocol.js';
+import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
 import type { DownlinkNotify, Hub, HubIo, Logger, ServerInfo, TerminalHost } from '../shared/protocol.js';
 import {
   CLAUDE_BIN,
@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -52,6 +52,7 @@ import { createRelief } from './relief.js';
 import { createMassBudget } from './massbudget.js';
 import { createMissionLog } from './missionlog.js';
 import { createMissions } from './missions.js';
+import { createReview } from './review.js';
 import { createTasks } from './tasks.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
@@ -623,6 +624,18 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return view === undefined ? null : { dir: view.dir, cleanRoom: view.cleanRoom !== null, worktree: view.worktree !== null };
       },
     });
+    const recorder = createRecorder(roots, env);
+    const review = audited(createReview({
+      dir: home.dir,
+      now: io.now,
+      agent: (name) => {
+        const view = hubInstance.views().find((v) => v.name === name);
+        return view === undefined ? null : { mailable: providerInfo(view.provider).mcp };
+      },
+      diff: (name) => recorder.reviewDiff(name),
+      send: (request) => hubInstance.sendFromUser(request),
+      log: log.child('review'),
+    }), blackBox.record, REVIEW_AUDIT);
     const relief = createRelief({
       hub: hubInstance,
       checkDirectory: io.checkDirectory,
@@ -691,7 +704,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
           return done;
         },
       },
-      recorder: createRecorder(roots, env),
+      recorder,
+      review,
       log: log.child('web'),
     });
     web = webServer;

@@ -25,6 +25,8 @@ export const RECORDER_FILES_MAX = 1000;
 export interface Recorder {
   status(name: string): Promise<RecorderStatus>;
   diff(name: string, path: unknown, staged: boolean): Promise<RecorderDiff>;
+  /** Post-Flight Review: everything that differs from the last commit, staged or not (`git diff HEAD`), read-only. A folder with no commit yet gives what is staged. A conflict (HubError) when it is not a repository. */
+  reviewDiff(name: string): Promise<RecorderDiff>;
   log(name: string): Promise<RecorderCommit[]>;
   commit(name: string, input: unknown): Promise<{ commit: RecorderCommit }>;
 }
@@ -136,6 +138,22 @@ export function createRecorder(roots: Roots, env: Env): Recorder {
       const args = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', ...(staged ? ['--cached'] : []), '--', ...(parts.length === 0 ? [] : [parts.join('/')])];
       const { out, truncated } = await git(at, args, RECORDER_DIFF_CAP, RECORDER_READ_MS);
       return { diff: out, truncated };
+    },
+
+    async reviewDiff(name) {
+      const at = await ready(name);
+      const base = ['diff', '--no-ext-diff', '--no-textconv', '--no-color'];
+      try {
+        const { out, truncated } = await git(at, [...base, 'HEAD', '--'], RECORDER_DIFF_CAP, RECORDER_READ_MS);
+        return { diff: out, truncated };
+      } catch (e) {
+        // no commit yet: HEAD names nothing, and what is staged is all there is to review
+        if (e instanceof GitFailure && /ambiguous argument 'HEAD'|bad revision|unknown revision/i.test(e.message)) {
+          const { out, truncated } = await git(at, [...base, '--cached', '--'], RECORDER_DIFF_CAP, RECORDER_READ_MS);
+          return { diff: out, truncated };
+        }
+        throw e;
+      }
     },
 
     async log(name) {

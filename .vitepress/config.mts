@@ -96,6 +96,7 @@ export default defineConfig({
           { text: 'Rollout', link: '/features/rollout' },
           { text: 'Hangar', link: '/features/hangar' },
           { text: 'Recorder', link: '/features/recorder' },
+          { text: 'Post-Flight Review', link: '/features/review' },
         ],
       },
       {

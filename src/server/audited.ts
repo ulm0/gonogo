@@ -98,6 +98,17 @@ export const MISSIONS_AUDIT: Table = {
   remove: ['plan', (args) => `Director removed mission ${plain(args[0]) ?? '?'}${args[1] === true ? ' and unlinked its tasks' : ''}`],
 };
 
+/** Post-Flight Review: who added notes to whose diff and what the Director did with them: ids, names and counts, never a summary, a reason, a path or a line. */
+export const REVIEW_AUDIT: Table = {
+  addNote: ['plan', (args) => `Director added a review note on ${plain(args[1]) ?? '?'}`],
+  addNotes: ['plan', (args, result) => `${actorName(args[0])} added ${isRecord(result) && Array.isArray(result.added) ? result.added.length : 0} review notes on ${plain(args[1]) ?? '?'}`],
+  update: ['plan', (args) => `Director set review note ${plain(args[1]) ?? '?'} of ${plain(args[0]) ?? '?'} to ${isRecord(args[2]) && args[2].status === 'resolved' ? 'resolved' : 'open'}`],
+  remove: ['plan', (args) => `Director removed review note ${plain(args[1]) ?? '?'} of ${plain(args[0]) ?? '?'}`],
+  send: ['plan', (args, result) => `Director sent ${isRecord(result) && typeof result.sent === 'number' ? result.sent : 0} review notes to ${plain(args[0]) ?? '?'}`],
+  walkthrough: ['plan', (args) => `Director asked ${plain(args[0]) ?? '?'} for a walkthrough of its diff`],
+  peer: ['plan', (args) => `Director asked ${plain(args[1]) ?? '?'} to review the diff of ${plain(args[0]) ?? '?'}`],
+};
+
 /** Flight Plan: who made or changed a task, and what kind of change (the status and the assignee, never a title, detail or note). */
 export const TASKS_AUDIT: Table = {
   create: ['plan', (args, result) => `${actorName(args[0])} created task ${isRecord(result) ? (plain(result.id) ?? '?') : '?'}`],

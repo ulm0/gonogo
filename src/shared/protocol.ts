@@ -132,7 +132,7 @@ export const CLEAN_ROOM_DIR = 'cleanroom';
 export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 /** Worktrees (docs/worktrees-spec.md): a plain worktree lives in <home>/worktrees/<name>, on the same branch name as a Clean Room. */
 export const WORKTREE_DIR = 'worktrees';
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -1971,6 +1971,90 @@ export interface RecorderCommit {
   /** ms epoch. */
   at: number;
   subject: string;
+}
+/* ---- Post-Flight Review (docs/review-spec.md) ---- */
+
+/** The side of a diff a note is on: the old file (a removed or unchanged line) or the new one. */
+export const REVIEW_SIDES = ['old', 'new'] as const;
+export type ReviewSide = (typeof REVIEW_SIDES)[number];
+export const REVIEW_TONES = ['info', 'warning', 'error'] as const;
+export type ReviewTone = (typeof REVIEW_TONES)[number];
+export const REVIEW_STATUSES = ['open', 'resolved'] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+export const REVIEW_SUMMARY_MAX_CHARS = 200;
+export const REVIEW_RATIONALE_MAX_CHARS = 1000;
+/** Notes kept for one agent (open and resolved), and notes one review_note call may carry. */
+export const REVIEW_NOTES_MAX = 300;
+export const REVIEW_BATCH_MAX = 20;
+export const REVIEW_AGENTS_MAX = 8;
+
+/** One line of a diff: what it is, its number in the old and the new file (null on the side it is not on), and its text without the sign. */
+export interface ReviewLine {
+  kind: 'add' | 'del' | 'ctx';
+  old: number | null;
+  new: number | null;
+  text: string;
+}
+export interface ReviewHunk {
+  /** The `@@ -a,b +c,d @@` line. */
+  header: string;
+  lines: ReviewLine[];
+}
+export interface ReviewFileDiff {
+  path: string;
+  oldPath?: string;
+  status: 'modified' | 'added' | 'deleted' | 'renamed';
+  binary: boolean;
+  hunks: ReviewHunk[];
+}
+/** One note on a line of an agent's diff, as the page and the tools get it. */
+export interface ReviewNote {
+  /** n1, n2, ...: never reused for one agent. */
+  id: string;
+  file: string;
+  side: ReviewSide;
+  line: number;
+  /** One line. */
+  summary: string;
+  /** Why, in more words; may be absent. */
+  rationale?: string;
+  /** "user" (the Director) or the name of the agent that wrote it. */
+  author: string;
+  tone: ReviewTone;
+  status: ReviewStatus;
+  /** The id of the note this answers: a reply sits on the line of its parent. */
+  replyTo: string | null;
+  at: number;
+  /** When the Director's SEND NOTES carried it to the author, or null. */
+  sentAt: number | null;
+  /** The line is not in the diff any more, or its text changed since the note was made. The note is kept. */
+  outdated: boolean;
+}
+/** What GET /api/agents/<name>/review answers: the diff against the last commit, split into files and hunks, and the notes. */
+export interface ReviewView {
+  /** False when the folder is not a git repository (then `reason` says why); the other fields are empty. */
+  repo: boolean;
+  reason?: string;
+  files: ReviewFileDiff[];
+  truncated: boolean;
+  notes: ReviewNote[];
+  /** Agents the Director asked to review this diff; they may read it and write notes on it. */
+  reviewers: string[];
+}
+/** POST /api/agents/<name>/review/notes (the Director) and one item of review_note. A reply names `replyTo` and takes the file, side and line of its parent. */
+export interface ReviewNoteRequest {
+  file?: string;
+  side?: ReviewSide;
+  line?: number;
+  summary: string;
+  rationale?: string;
+  tone?: ReviewTone;
+  replyTo?: string;
+}
+/** What the Director's three actions did: how many notes went, and the id of the message. */
+export interface ReviewSent {
+  sent: number;
+  message: string;
 }
 export interface RecorderCommitRequest {
   message: string;

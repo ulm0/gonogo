@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditKind } from '../src/shared/protocol.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from '../src/server/audited.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from '../src/server/audited.js';
 
 type Told = Array<[AuditKind, string]>;
 
@@ -167,6 +167,39 @@ describe('Flight Plan and Plot Board', () => {
     remove: async (_id: string): Promise<void> => undefined,
     handOff: async (id: string, _station: string, _assignee: string | null) => ({ id }),
   };
+
+  it('says what happened in a review, by names, ids and counts, never a summary, a reason, a path or a line', async () => {
+    const review = {
+      addNote: async (_actor: unknown, name: string, input: unknown) => ({ name, input }),
+      addNotes: async (_actor: unknown, _name: string, _inputs: unknown) => ({ added: [{ id: 'n1' }, { id: 'n2' }], rejected: [] }),
+      update: async (_name: string, id: string, _input: unknown) => ({ id }),
+      remove: async (_name: string, _id: string) => undefined,
+      send: async (_name: string) => ({ sent: 3, message: 'm1' }),
+      walkthrough: async (_name: string) => ({ sent: 0, message: 'm2' }),
+      peer: async (_name: string, _reviewer: string) => ({ sent: 0, message: 'm3' }),
+    };
+    const { store, told } = wrapped(review, REVIEW_AUDIT);
+    await store.addNote({ kind: 'user' }, 'ana', { file: 'secret/path.ts', line: 3, summary: SECRET, rationale: SECRET });
+    await store.addNotes({ kind: 'agent', name: 'ben' }, 'ana', [{ summary: SECRET }]);
+    await store.update('ana', 'n1', { status: 'resolved' });
+    await store.update('ana', 'n2', { status: 'open' });
+    await store.remove('ana', 'n1');
+    await store.send('ana');
+    await store.walkthrough('ana');
+    await store.peer('ana', 'ben');
+    expect(told).toEqual([
+      ['plan', 'Director added a review note on ana'],
+      ['plan', 'ben added 2 review notes on ana'],
+      ['plan', 'Director set review note n1 of ana to resolved'],
+      ['plan', 'Director set review note n2 of ana to open'],
+      ['plan', 'Director removed review note n1 of ana'],
+      ['plan', 'Director sent 3 review notes to ana'],
+      ['plan', 'Director asked ana for a walkthrough of its diff'],
+      ['plan', 'Director asked ben to review the diff of ana'],
+    ]);
+    expect(JSON.stringify(told)).not.toContain(SECRET);
+    expect(JSON.stringify(told)).not.toContain('secret/path');
+  });
 
   it('says who made or changed a task and how, never its title, detail or note', async () => {
     const { store, told } = wrapped(tasks, TASKS_AUDIT);

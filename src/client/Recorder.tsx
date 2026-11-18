@@ -10,6 +10,7 @@ import type { RecorderCommit, RecorderDiff, RecorderFile, RecorderScope, Recorde
 import * as api from './api.js';
 import { WorkspaceHead, useWorkspaceAgent } from './Hangar.js';
 import { whenText } from './inbox.js';
+import { Review } from './Review.js';
 import { commitProblem, diffLines, fileLabels, shortHash, stagedCount } from './changes.js';
 import './loop.css';
 import './hangar.css';
@@ -237,6 +238,7 @@ function Git({ agent }: { agent: string }): ReactElement {
           </pre>
           {diff?.truncated === true && <p className="hint">The diff is longer than what is shown here.</p>}
         </section>
+        <Review agent={agent} />
         <section className="module rc-box" aria-label="Log">
           <h2 className="label">{`Log: last ${RECORDER_LOG_MAX}`}</h2>
           {log.length === 0 ? (

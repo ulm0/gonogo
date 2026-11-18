@@ -92,6 +92,7 @@ import type { Rollout } from './rollout.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
 import type { Missions } from './missions.js';
+import type { Review } from './review.js';
 import type { Uplinks } from './uplinks.js';
 
 export interface WebOptions {
@@ -149,6 +150,8 @@ export interface WebOptions {
   /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
   worktrees?: { has(name: string): boolean; status(name: string): Promise<WorktreeStatus>; discard(name: string): Promise<WorktreeRemoval> };
   recorder?: Recorder;
+  /** Post-Flight Review; absent in tests that do not need it (the routes answer 404 and the two review tools say it is not available). The page asks again; no frame. */
+  review?: Pick<Review, 'view' | 'addNote' | 'addNotes' | 'update' | 'remove' | 'send' | 'walkthrough' | 'peer'>;
   /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
@@ -526,6 +529,7 @@ export function createWebServer(options: WebOptions): WebServer {
     resolveToken: options.resolveToken,
     tasks: options.tasks,
     missions: options.missions,
+    review: options.review,
     missionLog: options.missionLog,
     board: options.board,
     liveries: options.liveries,
@@ -680,6 +684,55 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) await run(res, (name) => (req.method === 'PUT' ? hangar.save(name, body) : hangar.create(name, body)));
         },
       };
+    }
+    const review = options.review;
+    if (review && s[3] === 'review' && s.length >= 4 && s.length <= 6) {
+      const director = { kind: 'user' } as const;
+      if (s.length === 4) return { allow: ['GET'], run: (_req, res) => run(res, (name) => review.view(name)) };
+      if (s[4] === 'notes' && s.length === 5) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const name = agentName(res, s[2]);
+            if (name === null) return;
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 201, await review.addNote(director, name, body));
+          },
+        };
+      }
+      if (s[4] === 'notes' && s.length === 6) {
+        return {
+          allow: ['PATCH', 'DELETE'],
+          run: async (req, res) => {
+            const name = agentName(res, s[2]);
+            if (name === null) return;
+            if (req.method === 'DELETE') {
+              await review.remove(name, s[5] ?? '');
+              res.writeHead(204);
+              res.end();
+              return;
+            }
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await review.update(name, s[5] ?? '', body));
+          },
+        };
+      }
+      if (s.length === 5 && (s[4] === 'send' || s[4] === 'walkthrough' || s[4] === 'peer')) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const name = agentName(res, s[2]);
+            if (name === null) return;
+            if (s[4] === 'peer') {
+              const body = await jsonObject(req, res);
+              if (body) sendJson(res, 200, await review.peer(name, body.reviewer));
+              return;
+            }
+            sendJson(res, 200, await (s[4] === 'send' ? review.send(name) : review.walkthrough(name)));
+          },
+        };
+      }
+      return null;
     }
     if (recorder && s[3] === 'git' && s.length === 4) return { allow: ['GET'], run: (_req, res) => run(res, (name) => recorder.status(name)) };
     if (recorder && s[3] === 'git' && s.length === 5 && s[4] === 'log') return { allow: ['GET'], run: (_req, res) => run(res, (name) => recorder.log(name)) };

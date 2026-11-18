@@ -4,6 +4,8 @@
 
 OPEN GIT (next to OPEN FILES), or the GIT tab of [Hangar](./hangar.md), opens RECORDER: what changed in the folder of that agent (or its [Clean Room](./clean-room.md) worktree), the diff, the last 50 commits, and a commit with your message. Design and limits: [`docs/recorder-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/recorder-spec.md). Git does not run inside a Clean Room container, so this is how you commit its branch without a terminal.
 
+Under the diff is [Post-Flight Review](./review.md): notes on the lines of the diff, from you and from agents.
+
 ## What it does
 
 - **Changes.** The branch and one row per file, in words: `staged: modified`, `not staged: deleted`, `staged: renamed from a.txt`, `untracked`, `conflict`. At most 1000 files; untracked folders are one row. A row shows that file's diff.
