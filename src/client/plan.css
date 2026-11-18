@@ -51,12 +51,6 @@
   flex: 1 1 0;
 }
 
-/* A select matches :read-only, which greys it (see forms.css): it keeps the look of a field you can change. */
-.plan .input:is(select) {
-  background: var(--key);
-  color: var(--text);
-}
-
 /* ---- the board ---- */
 
 .plan-board {

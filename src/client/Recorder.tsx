@@ -196,11 +196,11 @@ function Git({ agent }: { agent: string }): ReactElement {
           <fieldset className="field rc-scope">
             <legend>What to commit</legend>
             <label className="rc-radio">
-              <input type="radio" name={`${id}-scope`} checked={scope === 'all'} onChange={() => setScope('all')} />
+              <input type="radio" className="radio" name={`${id}-scope`} checked={scope === 'all'} onChange={() => setScope('all')} />
               {`All changes (${files.length}): git adds them first`}
             </label>
             <label className="rc-radio">
-              <input type="radio" name={`${id}-scope`} checked={scope === 'staged'} onChange={() => setScope('staged')} />
+              <input type="radio" className="radio" name={`${id}-scope`} checked={scope === 'staged'} onChange={() => setScope('staged')} />
               {`Only what is staged (${stagedCount(files)})`}
             </label>
           </fieldset>

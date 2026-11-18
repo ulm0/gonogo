@@ -66,7 +66,7 @@ export const CONTRAST_PAIRS: ReadonlyArray<readonly [string, readonly string[]]>
   ['--work', ['--panel', '--key']],
   ['--nogo-text', ['--body', '--panel', '--key', '--nogo-tint']],
   ['--you-ink', ['--you-tint']],
-  ['--go-ink', ['--go-tint']],
+  ['--go-ink', ['--go-tint', '--key']], // a checked box or switch: the dark of the box, the mark in the key's colour
   ['--panel', ['--text']],
   ['--lcd-text', ['--lcd']],
   ['--lcd-dim', ['--lcd']],

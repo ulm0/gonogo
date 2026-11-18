@@ -256,7 +256,7 @@
   margin-inline: 4px 8px;
 }
 
-/* The livery key: the select is the key (44 px, the whole of it), the ◐ of the app's livery key on it. */
+/* The livery key: the select is the key (44 px, the whole of it), the half-filled circle of the app's livery key on it. */
 .livery-key {
   position: relative;
   align-items: center;

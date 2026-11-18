@@ -47,7 +47,7 @@ onBeforeUnmount(() => clearInterval(tick));
         <span class="btn lp-hide-sm">Mission log</span>
         <span class="btn lp-hide-md">Launch window</span>
         <span class="btn">Downlink <span class="chip" data-tone="amber">2</span></span>
-        <span class="btn" data-shape="round">◐</span>
+        <span class="btn" data-shape="round"><span class="icon" data-icon="half" aria-hidden="true" /></span>
       </span>
     </div>
     <div class="lp-room-wall">

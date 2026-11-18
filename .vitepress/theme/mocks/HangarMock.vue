@@ -19,8 +19,8 @@ const dirty = computed(() => text.value !== SAVED);
   <div class="module hg-mock">
     <div class="mk-side">
       <span class="label">Files</span>
-      <span class="mk-item"><span class="mk-mark" aria-hidden="true">▸</span>docs</span>
-      <span class="mk-item"><span class="mk-mark" aria-hidden="true">▾</span>src</span>
+      <span class="mk-item"><span class="mk-mark" aria-hidden="true"><span class="icon" data-icon="chevron-right" /></span>docs</span>
+      <span class="mk-item"><span class="mk-mark" aria-hidden="true"><span class="icon" data-icon="chevron-down" /></span>src</span>
       <span v-for="f in FILES" :key="f.name" class="mk-item mk-file" :aria-current="f.name === 'index.ts' ? 'true' : undefined"><span>{{ f.name }}</span><span class="mk-size">{{ sizeText(f.size) }}</span></span>
       <span class="mk-item mk-file"><span>README.md</span><span class="mk-size">{{ sizeText(45) }}</span></span>
       <span class="mk-item mk-file mk-quiet"><span>leak</span><span class="chip" data-tone="quiet">link</span></span>

@@ -6,9 +6,9 @@ import '../landing/landing.css';
 <template>
   <div class="module lp-visual wt" role="img" aria-label="Hire form box: Own git worktree, ticked. It makes ~/.gonogo/worktrees/ana on the branch gonogo/ana. The remove dialog has Also delete its worktree and branch, off.">
     <span class="label">Own git worktree</span>
-    <label class="wt-box"><input type="checkbox" checked disabled /> Own git worktree</label>
+    <label class="wt-box"><input type="checkbox" class="check" checked disabled /> Own git worktree</label>
     <span class="lcd wt-path">~/.gonogo/worktrees/ana   branch gonogo/ana   from HEAD</span>
-    <label class="wt-box"><input type="checkbox" disabled /> Also delete its worktree and branch</label>
+    <label class="wt-box"><input type="checkbox" class="check" disabled /> Also delete its worktree and branch</label>
   </div>
 </template>
 

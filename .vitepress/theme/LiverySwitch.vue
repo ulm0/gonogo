@@ -30,7 +30,7 @@ function choose(slug: string): void {
 
 <template>
   <label class="livery-key">
-    <span class="livery-key-mark" aria-hidden="true">◐</span>
+    <span class="livery-key-mark icon" data-icon="half" aria-hidden="true" />
     <span class="visually-hidden">Livery</span>
     <select :value="look" @change="choose(($event.target as HTMLSelectElement).value)">
       <option v-for="l in BUILTIN_LIVERIES" :key="l.slug" :value="l.slug">{{ l.name }}</option>

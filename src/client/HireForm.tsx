@@ -619,7 +619,7 @@ function Staff({ form }: { form: Target }): ReactElement {
         <input
           id={`${id}-ok`}
           ref={confirmBox}
-          type="checkbox"
+          type="checkbox" className="check"
           checked={values.confirm}
           aria-invalid={confirmError !== undefined}
           aria-describedby={confirmError !== undefined ? `${id}-ok-error` : undefined}
@@ -643,7 +643,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       <div className="staff-check">
         <input
           id={`${id}-clean`}
-          type="checkbox"
+          type="checkbox" className="check"
           checked={values.cleanRoom}
           aria-invalid={cleanError !== undefined}
           aria-describedby={describedBy(`${id}-clean`, true, cleanError !== undefined)}
@@ -668,7 +668,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       <div className="staff-check">
         <input
           id={`${id}-worktree`}
-          type="checkbox"
+          type="checkbox" className="check"
           checked={values.worktree}
           aria-invalid={worktreeError !== undefined}
           aria-describedby={describedBy(`${id}-worktree`, true, worktreeError !== undefined)}
@@ -689,7 +689,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const autostartBox = (startsAgain || !values.autostart) && (
     <div className="staff-clean">
       <div className="staff-check">
-        <input id={`${id}-autostart`} type="checkbox" checked={values.autostart} onChange={(event) => change({ autostart: event.target.checked }, 'autostart')} aria-describedby={`${id}-autostart-hint`} />
+        <input id={`${id}-autostart`} type="checkbox" className="check" checked={values.autostart} onChange={(event) => change({ autostart: event.target.checked }, 'autostart')} aria-describedby={`${id}-autostart-hint`} />
         <label htmlFor={`${id}-autostart`}>Start with gonogo</label>
       </div>
       <p className="hint" id={`${id}-autostart-hint`}>
@@ -702,7 +702,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       <div className="staff-check">
         <input
           id={`${id}-remote`}
-          type="checkbox"
+          type="checkbox" className="check"
           checked={values.remoteControl}
           aria-invalid={remoteError !== undefined}
           aria-describedby={describedBy(`${id}-remote`, true, remoteError !== undefined)}

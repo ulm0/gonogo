@@ -73,13 +73,13 @@ export function FeaturesBlock(): ReactElement {
                 <li key={feature.id} className="feat-row" data-off={isOff ? '' : undefined}>
                   {feature.core !== undefined ? (
                     <span className="feat-lock" title={feature.core}>
-                      <span aria-hidden="true">🔒</span>
+                      <span className="icon" data-icon="lock" aria-hidden="true" />
                       <span className="sr-only">Core: </span>
                     </span>
                   ) : (
                     <input
                       id={`${id}-${feature.id}`}
-                      type="checkbox"
+                      type="checkbox" className="switch"
                       role="switch"
                       checked={!isOff}
                       disabled={!feature.wired && !isOff}

@@ -43,7 +43,7 @@ function Forward({ view, setView, onNotice }: Shared): ReactElement {
         <div className="win-check" key={kind}>
           <input
             id={`${id}-${kind}`}
-            type="checkbox"
+            type="checkbox" className="check"
             checked={view?.forward.includes(kind) ?? false}
             aria-disabled={busy || undefined}
             onChange={(e) => {

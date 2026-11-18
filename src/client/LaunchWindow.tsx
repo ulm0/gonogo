@@ -191,7 +191,7 @@ function Editor({ schedule, onDone }: { schedule: ScheduleView | null; onDone():
           </div>
         </div>
         <div className="win-check">
-          <input id={`${id}-enabled`} type="checkbox" checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
+          <input id={`${id}-enabled`} type="checkbox" className="check" checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
           <label htmlFor={`${id}-enabled`}>On: send it by itself</label>
         </div>
       </fieldset>
@@ -242,7 +242,7 @@ function Row({ schedule, now, onEdit, onNotice }: { schedule: ScheduleView; now:
       <div className="win-buttons">
         <label className="win-switch">
           <input
-            type="checkbox"
+            type="checkbox" className="switch"
             role="switch"
             checked={schedule.enabled}
             aria-label={`${name} enabled`}

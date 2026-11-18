@@ -237,6 +237,140 @@
   color: var(--muted);
 }
 
+/* A select: the field's look with its own chevron, which follows the livery (--text-2 is 4.5:1 or better on --key). The menu itself is the browser's. */
+select.input {
+  appearance: none;
+  padding-right: 40px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-2) 50%), linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* A select matches :read-only, which greys a read-only text field: a select is never read only. */
+select.input:read-only {
+  background-color: var(--key);
+  color: var(--text);
+}
+
+/* a select that sits in a line with other things takes the width of its longest option */
+.input[data-fit] {
+  width: auto;
+}
+
+select.input:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* ---- check, radio and switch: native inputs (keyboard, screen reader and forms for free) drawn in the instrument's look ---- */
+
+.check,
+.radio,
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  margin: 0;
+  border: 2px solid var(--muted);
+  background: var(--key);
+  cursor: pointer;
+}
+
+.check,
+.radio {
+  width: 22px;
+  height: 22px;
+}
+
+.check {
+  border-radius: 5px;
+}
+
+.radio {
+  border-radius: 50%;
+}
+
+/* the mark is drawn in the key's colour on the dark of the checked box */
+.check::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 11px;
+  height: 5px;
+  border: solid var(--key);
+  border-width: 0 0 3px 3px;
+  opacity: 0;
+  transform: rotate(-45deg);
+}
+
+.radio::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--key);
+  opacity: 0;
+}
+
+.check:checked,
+.radio:checked {
+  border-color: var(--go-ink);
+  background: var(--go-ink);
+}
+
+.check:checked::after,
+.radio:checked::after {
+  opacity: 1;
+}
+
+.check:indeterminate::after {
+  top: 7px;
+  height: 0;
+  transform: none;
+  border-width: 0 0 3px;
+  width: 10px;
+  opacity: 1;
+}
+
+.switch {
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--well);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s;
+}
+
+.switch:checked {
+  border-color: var(--go-ink);
+  background: var(--go-ink);
+}
+
+.switch:checked::after {
+  background: var(--key);
+  transform: translateX(18px);
+}
+
+.check:disabled,
+.radio:disabled,
+.switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .hint {
   font-size: 12px;
   line-height: 1.45;
@@ -529,4 +663,33 @@
   .led[data-blink='true'] {
     animation: none;
   }
+}
+
+/* ---- icons: a few shapes drawn in the colour of the text around them (no emoji, no image to load) ---- */
+
+.icon {
+  display: inline-block;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+  vertical-align: -0.125em;
+}
+
+.icon[data-icon='lock'] {
+  --icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M4.5%207V5a3.5%203.5%200%200%201%207%200v2h.5A1.5%201.5%200%200%201%2013.5%208.5v5A1.5%201.5%200%200%201%2012%2015H4a1.5%201.5%200%200%201-1.5-1.5v-5A1.5%201.5%200%200%201%204%207zm1.5%200h4V5a2%202%200%200%200-4%200z%27%2F%3E%3C%2Fsvg%3E");
+}
+
+.icon[data-icon='chevron-right'] {
+  --icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M5%202.5%2011.5%208%205%2013.5z%27%2F%3E%3C%2Fsvg%3E");
+}
+
+.icon[data-icon='chevron-down'] {
+  --icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M2.5%205H13.5L8%2011.5z%27%2F%3E%3C%2Fsvg%3E");
+}
+
+.icon[data-icon='half'] {
+  --icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20fill-rule%3D%27evenodd%27%20d%3D%27M8%201a7%207%200%201%200%200%2014A7%207%200%200%200%208%201zm0%201.5v11a5.5%205.5%200%200%201%200-11z%27%2F%3E%3C%2Fsvg%3E");
 }

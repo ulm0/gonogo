@@ -80,6 +80,8 @@ function PhoneApprovals(): ReactElement {
         PHONE APPROVALS
       </h2>
       <select
+        className="input"
+        data-fit
         aria-label="Phone approvals"
         value={mode}
         disabled={view === null}

@@ -135,12 +135,10 @@
   gap: 8px;
 }
 
-/* A select matches :read-only, which greys it (see forms.css): it keeps the look of a field you can change. */
+/* a select is not full width here */
 .pl .input:is(select) {
   width: auto;
   min-width: 160px;
-  background: var(--key);
-  color: var(--text);
 }
 
 .pl-more {
