@@ -5840,6 +5840,7 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     const held = new Map<string, Record<string, string>>();
     const calls: string[] = [];
     h.io.keys = {
+      values: (name) => ({ ...held.get(name) }),
       apply: async (name, patch, fresh = false) => {
         calls.push(`apply ${name}${fresh ? ' fresh' : ''}`);
         const next: Record<string, string> = { ...(fresh ? {} : held.get(name)) };
@@ -5992,13 +5993,35 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     expect(Object.keys(held.get('ana') ?? {})).toHaveLength(15);
   });
 
-  it('a roster that cannot be saved leaves the names as they were', async () => {
+  it('a roster that cannot be saved leaves the names and the values as they were', async () => {
     const h = await started();
-    withKeys(h);
+    const { held } = withKeys(h);
     await hireWith(h, { keys: { OPENAI_API_KEY: SECRET } });
     h.script.saveError = 'disk full';
     await expectHubReject(h.hub.edit('ana', { keys: { OPENAI_API_KEY: null } }), 'internal', 'could not save the roster: disk full');
     expect(Object.keys(h.view('ana').keys)).toEqual(['OPENAI_API_KEY']);
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: SECRET });
+    // a replaced value comes back, and a key the edit added goes again
+    await expectHubReject(h.hub.edit('ana', { keys: { OPENAI_API_KEY: 'sk-new-value', NEW_KEY: 'n' } }), 'internal', 'could not save the roster: disk full');
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: SECRET });
+    expect(Object.keys(h.view('ana').keys)).toEqual(['OPENAI_API_KEY']);
+  });
+
+  it('a rename whose roster cannot be saved puts the values back under the old name', async () => {
+    const h = await started();
+    const { held } = withKeys(h);
+    // like the glue of cli.ts: the keys move with the folder, and move back with it
+    const moveFolder = h.io.renameAgentFiles;
+    h.io.renameAgentFiles = async (from, to) => {
+      await moveFolder(from, to);
+      await h.io.keys?.rename(from, to);
+    };
+    await hireWith(h, { keys: { OPENAI_API_KEY: SECRET } });
+    await h.hub.stop('ana');
+    h.script.saveError = 'disk full';
+    await expectHubReject(h.hub.edit('ana', { name: 'bea', keys: { OPENAI_API_KEY: 'sk-new-value' } }), 'internal', 'could not save the roster: disk full');
+    expect([...held.keys()]).toEqual(['ana']);
+    expect(held.get('ana')).toEqual({ OPENAI_API_KEY: SECRET });
   });
 
   it('a rename writes the new values under the new name, after the folder moved; a remove drops them', async () => {
@@ -6018,7 +6041,7 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     const h = await started();
     withKeys(h);
     await hireWith(h);
-    h.io.keys = { apply: async () => undefined, rename: async () => undefined, remove: () => Promise.reject(new Error('disk full')) };
+    h.io.keys = { values: () => ({}), apply: async () => undefined, rename: async () => undefined, remove: () => Promise.reject(new Error('disk full')) };
     await h.hub.remove('ana');
     expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
     expect(h.warnings.some((line) => line.includes('could not remove the keys of ana'))).toBe(true);

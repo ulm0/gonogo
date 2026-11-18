@@ -18,8 +18,15 @@ import { FILE_MODE, KEYS_FILE, nullLogger } from './constants.js';
 const NAME_RE = new RegExp(KEY_NAME_PATTERN);
 const VALUE_RE = new RegExp(KEY_VALUE_PATTERN);
 /** Variables that change what runs or where, or that gonogo sets itself: a key is data, so these are refused. */
-const RESERVED_EXACT = new Set(['PATH', 'HOME', 'SHELL', 'USER', 'LOGNAME', 'PWD', 'TMPDIR', 'TERM', 'COLORTERM', 'IS_DEMO', 'NODE_OPTIONS', 'NODE_PATH', 'CLAUDE_CONFIG_DIR']);
-const RESERVED_PREFIXES = ['GONOGO_', 'LD_', 'DYLD_', 'BASH_FUNC_'];
+const RESERVED_EXACT = new Set([
+  'PATH', 'HOME', 'SHELL', 'USER', 'LOGNAME', 'PWD', 'TMPDIR', 'TERM', 'COLORTERM', 'IS_DEMO', 'NODE_OPTIONS', 'NODE_PATH', 'CLAUDE_CONFIG_DIR',
+  // shell and interpreter start-up hooks: each runs a file or a command before the program the agent started
+  'BASH_ENV', 'SHELLOPTS', 'BASHOPTS', 'PROMPT_COMMAND', 'IFS', 'PYTHONSTARTUP', 'PYTHONPATH', 'PYTHONHOME', 'RUBYOPT', 'RUBYLIB', 'PERL5OPT', 'PERL5LIB',
+  'GIT_SSH_COMMAND', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_EXEC_PATH',
+]);
+// DOCKER_: a Clean Room's docker client runs with the agent's keys in its environment, and DOCKER_HOST would move the container to another daemon.
+// shortcut: the usual start-up hooks, not every variable some program reads as a command; the Director owns the agent anyway, so extend the list when one turns up.
+const RESERVED_PREFIXES = ['GONOGO_', 'LD_', 'DYLD_', 'BASH_FUNC_', 'DOCKER_', 'GIT_CONFIG_'];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -61,8 +68,6 @@ export function checkKeys(value: unknown, current: Readonly<Record<string, numbe
 
 export interface Clearance extends KeyStore {
   load(): Promise<void>;
-  /** The values of one agent's keys, for its next start. */
-  values(name: string): Record<string, string>;
   close(): Promise<void>;
 }
 

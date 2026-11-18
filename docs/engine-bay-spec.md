@@ -124,12 +124,16 @@ one (see Pad Check).
   message, Downlink item or Relay post, and no error repeats one or a badly spelled name. There is no audit log yet (backlog
   section 2); the one to come keeps names only.
 - **Rules.** Name: capital letters, digits and `_`, starting with a letter, at most 64. Refused: `PATH`, `HOME`, `SHELL`,
-  `USER`, `LOGNAME`, `PWD`, `TMPDIR`, `TERM`, `COLORTERM`, `IS_DEMO`, `NODE_OPTIONS`, `NODE_PATH`, `CLAUDE_CONFIG_DIR`, and
-  every `GONOGO_`, `LD_`, `DYLD_` and `BASH_FUNC_` name: a key is data, not a way to change what runs. Value: 1 to 4096
-  printable ASCII characters, no space. At most 16 keys per agent. Bad input is 400 with the field `keys`.
+  `USER`, `LOGNAME`, `PWD`, `TMPDIR`, `TERM`, `COLORTERM`, `IS_DEMO`, `NODE_OPTIONS`, `NODE_PATH`, `CLAUDE_CONFIG_DIR`, the
+  shell and interpreter start-up hooks (`BASH_ENV`, `SHELLOPTS`, `BASHOPTS`, `PROMPT_COMMAND`, `IFS`, `PYTHONSTARTUP`,
+  `PYTHONPATH`, `PYTHONHOME`, `RUBYOPT`, `RUBYLIB`, `PERL5OPT`, `PERL5LIB`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`,
+  `GIT_EXEC_PATH`), and every `GONOGO_`, `LD_`, `DYLD_`, `BASH_FUNC_`, `DOCKER_` and `GIT_CONFIG_` name: a key is data, not a
+  way to change what runs (`DOCKER_` because a Clean Room's docker client runs with the keys in its environment). The list is
+  the usual start-up hooks, not every variable some program reads as a command. Value: 1 to 4096 printable ASCII
+  characters, no space. At most 16 keys per agent. Bad input is 400 with the field `keys`.
 - **Order of writes.** Hire: the values first (from none, so a removed agent of the same name leaves nothing), then the
-  roster; a roster that cannot be saved takes the values back. Edit: the values just before the roster (shortcut: a roster that
-  cannot be saved then leaves them changed). Rename: `renameAgentFiles` moves the keys with the folder. Remove: they go.
+  roster; a roster that cannot be saved takes the values back. Edit: the values just before the roster; a roster that
+  cannot be saved puts the values the edit touched back (shortcut: if that write fails too, the new values stay, and the log says so). Rename: `renameAgentFiles` moves the keys with the folder. Remove: they go.
 - **Precedence.** The environment of an agent's process is built in this order, later wins: (1) gonogo's own environment
   minus the variables of the built-in scrub list and `GONOGO_SCRUB_ENV`; (2) the agent's keys, which `GONOGO_SCRUB_ENV` does not
   touch (the Director chose them for this agent); (3) the variables gonogo sets (`TERM`, `COLORTERM`, `GONOGO_TOKEN`, `NO_PROXY`

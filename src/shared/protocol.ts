@@ -1536,6 +1536,8 @@ export interface HubIo {
 
 /** What the hub needs of Clearance: the secret values of an agent's keys (keys.json, mode 0600). */
 export interface KeyStore {
+  /** The values of one agent's keys as they are now: a copy. The hub reads them only to put them back when an edit cannot be saved. */
+  values(name: string): Record<string, string>;
   /** Sets (string) or removes (null) keys of that agent; `fresh` starts from none (a hire). Rejects when the file cannot be written. */
   apply(name: string, patch: Record<string, string | null>, fresh?: boolean): Promise<void>;
   /** Moves the keys of a renamed agent. */

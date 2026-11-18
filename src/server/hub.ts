@@ -2127,11 +2127,16 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         agents.set(newName, rt);
         renamePollEntry(oldName, newName);
       }
+      // What the keys the edit touches hold now, as a patch that puts them back: a key that was not there goes again (null).
+      const held = io.keys?.values(next.name) ?? {};
+      const putBack = Object.fromEntries(Object.keys(keyPatch ?? {}).map((key) => [key, held[key] ?? null]));
       try {
-        // shortcut: values are written before the roster, so a roster that cannot be saved leaves them changed; upgrade if disk errors matter.
         if (keyPatch !== null && Object.keys(keyPatch).length > 0) await io.keys?.apply(next.name, keyPatch);
         await saveRecords(rosterRecords());
       } catch (error) {
+        // The values were written before the roster; they go back first, while the keys are still under the new name.
+        // shortcut: when this write fails as well, the new values stay and the log says so; upgrade if disk errors matter.
+        if (Object.keys(putBack).length > 0) await io.keys?.apply(next.name, putBack).catch((undo: unknown) => log.error('could not put the keys back', undo));
         assignFields(current, previous);
         if (newName !== null) {
           agents.delete(newName);

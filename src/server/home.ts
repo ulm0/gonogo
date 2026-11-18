@@ -224,6 +224,7 @@ function parseAgent(a: unknown): AgentRecord | string {
   if (keys !== undefined) {
     if (!isRecord(keys) || Object.keys(keys).length > KEYS_MAX) return `${name}: keys must be an object of at most ${KEYS_MAX} names`;
     const names: Record<string, number> = {};
+    // shortcut: a name that a later gonogo reserves makes the roster unusable here (the start stops and names the agent); delete it from `keys` to go on
     for (const [key, at] of Object.entries(keys)) {
       if (keyNameProblem(key) !== null || typeof at !== 'number' || !Number.isFinite(at)) return `${name}: keys holds a name or a time that is not usable`;
       names[key] = at;
