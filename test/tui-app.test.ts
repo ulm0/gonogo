@@ -330,6 +330,23 @@ describe('a console', () => {
     expect(await r.text()).not.toContain('claude is ready');
   });
 
+  it('cuts the clipboard and title sequences out of what a console prints, in the snapshot and in the bytes, even split in two', async () => {
+    const r = start();
+    await r.link('open');
+    await r.frame(stateFrame([agent('flight', 0)]));
+    r.stdin.type('\r');
+    await r.frame({ t: 'snapshot', seq: 1, agent: 'flight', generation: 1, cols: 100, rows: 24, running: true, data: 'ready\x1b]0;pwned\x07 ok' });
+    r.fake.get().onOutput(Buffer.from('a\x1b]52;c;ZGF0YQ=='));
+    r.fake.get().onOutput(Buffer.from('\x07b \x1b[31mred\x1b[0m\x1b]2;t\x1b\\c'));
+    await sleep(20);
+    const written = r.stdout.chunks.join('');
+    expect(written).not.toContain('pwned');
+    expect(written).not.toContain('ZGF0YQ');
+    expect(written).not.toContain('\x1b]');
+    expect(await r.text()).toContain('ready ok');
+    expect(await r.text()).toContain('ab redc');
+  });
+
   it('sends a Ctrl-] with a second one, and the key after any other', async () => {
     const r = start();
     await r.link('open');

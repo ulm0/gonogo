@@ -5,6 +5,8 @@
  */
 import { createTuiClient } from './tui-client.js';
 import type { TuiClient } from './tui-client.js';
+import { createOscFilter } from './tui-osc.js';
+import type { OscFilter } from './tui-osc.js';
 import { CONSOLE_HELP, consoleInput, initialConsoleInput } from './tui-console.js';
 import type { ConsoleInput } from './tui-console.js';
 import { initialUi, parseKeys, step } from './tui-keys.js';
@@ -57,6 +59,8 @@ export async function runTui(options: TuiOptions): Promise<number> {
   let state: TuiState = initialState();
   let ui: Ui = initialUi();
   let mode: { kind: 'screen' } | { kind: 'console'; agent: string; input: ConsoleInput } = { kind: 'screen' };
+  /** What a console's output may not do to this terminal: write the clipboard or set the title. A new one for each attach. */
+  let osc: OscFilter = createOscFilter();
   let last: string[] = [];
   let dirty = true;
   let entered = false;
@@ -71,7 +75,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
     token: options.token,
     onFrame: (frame: ServerFrame) => {
       if (frame.t === 'snapshot') {
-        if (mode.kind === 'console' && frame.seq === client.seq) stdout.write(`\x1b[0m\x1b[2J\x1b[H${frame.data}`);
+        if (mode.kind === 'console' && frame.seq === client.seq) stdout.write(Buffer.concat([Buffer.from('\x1b[0m\x1b[2J\x1b[H'), osc.filter(Buffer.from(frame.data, 'utf8'))]));
         return;
       }
       state = applyFrame(state, frame);
@@ -79,13 +83,14 @@ export async function runTui(options: TuiOptions): Promise<number> {
       dirty = true;
     },
     onOutput: (bytes) => {
-      if (mode.kind === 'console') stdout.write(bytes);
+      if (mode.kind === 'console') stdout.write(osc.filter(bytes));
     },
     onLink: (link) => {
       state = { ...state, link };
       // the page's rule: a console re-attaches itself after a reconnect
       if (link === 'open' && mode.kind === 'console') {
         const { cols, rows } = size();
+        osc = createOscFilter();
         client.attach(mode.agent, cols, rows);
       }
       dirty = true;
@@ -109,6 +114,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
   function enterConsole(agent: string): void {
     const { cols, rows } = size();
     mode = { kind: 'console', agent, input: initialConsoleInput() };
+    osc = createOscFilter();
     stdout.write(`${CLEAR}\x1b[?25h`);
     client.attach(agent, cols, rows);
   }

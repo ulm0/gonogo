@@ -32,6 +32,8 @@ The top line starts with the name of the room as the browser tab says it (`gonog
 
 Enter on an agent takes the whole screen: its current screen first, then everything it prints, and everything you type goes to it unchanged. The one way out is **Ctrl-]**, then `q`; Ctrl-] then `?` writes the keys on the last line (the console paints over it later); Ctrl-] twice sends one Ctrl-] to the console; another key after Ctrl-] is sent as it is. A console has one size: attaching resizes it to this terminal, and the page's view of it follows; the page and the terminal take turns. After a reconnect the console is attached again.
 
+The agent's output decides what a console prints, so two kinds of sequence are cut before they reach your terminal: the ones that write the clipboard (OSC 52) and the ones that set the title of the window or the tab (OSC 0, 1, 2). Colours, the cursor, the alternate screen and hyperlinks pass. The filter works across the pieces the output arrives in. The 8-bit forms of these sequences are not handled; a UTF-8 terminal does not read them.
+
 ## What it does not do
 
 Flight Plan, Missions, the Mission Log, the Recorder and Hangar, settings, staffing a console (use the page), polls beyond calling one, a mouse, themes. The terminal client keeps nothing on disk. Texts an agent wrote (names, reasons, messages) are shown with control characters taken out, so an agent cannot draw on your terminal.
