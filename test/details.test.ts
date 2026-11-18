@@ -108,14 +108,14 @@ describe('the terminal room list', () => {
   const frame = (agents: AgentView[]) => ({ t: 'state', state: { agents, activity: [], info: { cwd: '/' }, poll: null, governor: { limit: null, working: 0, holding: 0 }, downlink: { unread: 0, items: [] } } }) as never;
   const lines = (cols: number, models: ModelDefaults | null): string[] => render({ ...applyFrame(initialState(), frame([agent({ name: 'flight', desk: 0, boss: true, effort: 'high' }), agent({ provider: 'pi' })])), link: 'open', models }, initialUi(), { cols, rows: 20 }, { color: false });
 
-  it('shows the engine, the model it starts with and the effort from 76 columns of the pane, and not below', () => {
-    const wide = lines(90, defaults).join('\n');
+  it('shows the engine, the model it starts with and the effort on a row with nothing else to say, from 70 columns', () => {
+    const wide = lines(80, defaults).join('\n');
     expect(wide).toMatch(/flight\s+idle\s+.*Claude · sonnet · high/);
     expect(wide).toMatch(/ana\s+idle\s+.*pi\b/);
-    expect(lines(70, defaults).join('\n')).not.toContain('sonnet');
+    expect(lines(60, defaults).join('\n')).not.toContain('sonnet');
   });
 
   it('shows no model before the defaults are known', () => {
-    expect(lines(90, null).join('\n')).toMatch(/Claude · high/);
+    expect(lines(80, null).join('\n')).toMatch(/Claude · high/);
   });
 });
