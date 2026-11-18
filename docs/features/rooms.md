@@ -5,7 +5,7 @@
 **Rooms are not file-isolated.** Every room is a gonogo process of its own, so rooms do not share memory, mail, tokens, tools or
 crashes. But they all run as **your operating-system user**, and an agent that does not run in a Clean Room can read every file of
 every room (and of your home folder). The isolation is at gonogo's API, not at the file system. The same holds inside a container:
-one room's agent can reach the Docker socket, if you mounted it, as it can today. Use a Clean Room for an agent that must not see
+one room's agent can reach the Docker socket, if you mounted it, as it can today. The files that run the rooms (`rooms.json`, `rooms/<id>/` and `rooms-token`) are in main's home, so main's agents can read them, the Director token included. Use a Clean Room for an agent that must not see
 the other rooms. Design: [`docs/rooms-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/rooms-spec.md).
 
 ## What it is
@@ -31,7 +31,11 @@ gonogo rooms remove team                  # takes it off the list; its folder st
 
 `add` and `remove` edit `<home>/rooms.json`; a running supervisor notices within 2 seconds, starts the new room or stops the removed
 one (a graceful stop: SIGTERM, then SIGKILL after 12 s). `gonogo rooms` takes `--port`, `--host`, `--home` and `--allow-host` like
-`gonogo`. A room that crashes is started again after 1, 2, 5, 15, then 30 seconds. At most 12 rooms: each is a Node process (and a
+`gonogo`. A room that crashes is started again after 1, 2, 5, 15, then 30 seconds; a room that cannot start shows the last error gonogo printed in its row (for example that another gonogo holds its home). A room stops within 12 seconds (its agents are stopped first), and the supervisor waits 17 before it kills one; in Docker set `stop_grace_period: 60s`.
+
+**A damaged `rooms.json`** (a hand edit with a syntax error) is not read as "no rooms": the supervisor logs it, keeps every room as it is, and reads the file again once it is fixed; it refuses to start with one.
+
+**If the supervisor is killed** (`kill -9`, the machine's out-of-memory killer), each room sees the pipe it was started with close and shuts down gracefully, so no room is left running on a port nobody knows, and the next `gonogo rooms` starts clean. A plain `gonogo` that was left running on the same home still holds its lock: stop it first. At most 12 rooms: each is a Node process (and a
 pty host with `--pty-host`), so count tens of megabytes each.
 
 Open the printed address: the list shows each room with its agents and how many need you, and OPEN goes to `/r/<id>/`. In a room,
@@ -73,6 +77,8 @@ API call through `/r/team/` and `/r/main/` returned different homes; a WebSocket
 first frame was team's state; the page and its icon loaded under `/r/team/`; without a token the API was 401 and `/hook/` was 404.
 `kill -9` of the team's process: the room list showed it running again on a new port after 1 s, and `main` never stopped. SIGTERM of
 the supervisor stopped both rooms and released both home locks.
+
+`kill -9` of the supervisor: both rooms and their agents were gone 6 s later, no lock left, and a new `gonogo rooms` started both clean.
 
 ## Not built, not tried
 

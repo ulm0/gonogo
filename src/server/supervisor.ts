@@ -15,7 +15,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
-import { nullLogger } from './constants.js';
+import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { bearerToken, sendJson, sendText } from './hooks.js';
 import { roomsPage, ROOMS_PAGE_HEADERS } from './roomspage.js';
 import { createRoomProxy, sameToken } from './roomproxy.js';
@@ -28,7 +28,8 @@ const READY = /gonogo ready: http:\/\/[^\s/:]+:(\d{1,5})\/#token=([0-9a-f]{64})/
 const POLL_MS = 2000;
 const STATUS_TTL_MS = 3000;
 const START_BACKOFF_MS = [1000, 2000, 5000, 15_000, 30_000];
-const STOP_WAIT_MS = 12_000;
+// a room gives up its own shutdown after SHUTDOWN_MAX_MS: wait longer than that before SIGKILL, or the kill lands in the middle of it
+const STOP_WAIT_MS = SHUTDOWN_MAX_MS + 5000;
 
 export type RoomState = 'starting' | 'running' | 'stopped' | 'crashed';
 
@@ -40,6 +41,8 @@ export interface RoomView {
   agents: number | null;
   running: number | null;
   needsYou: number | null;
+  /** Why a room that is not running is not (its last error line), or null. */
+  note: string | null;
 }
 
 export interface SupervisorOptions {
@@ -77,6 +80,8 @@ interface Child {
   startedAt: number;
   timer: NodeJS.Timeout | null;
   wanted: boolean;
+  /** The last `gonogo: ...` line the room printed to stderr (why it did not start, for example a lock): shown in its row. */
+  lastError: string | null;
   exited: Promise<void> | null;
 }
 
@@ -116,12 +121,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     for (const name of ['GONOGO_PORT', 'GONOGO_HOST', 'GONOGO_TOKEN']) delete env[name];
     env.GONOGO_HOME = home;
     const [file, ...head] = options.command;
-    const args = [...head, '--home', home, '--port', '0', '--host', '127.0.0.1', ...(child.entry.id === MAIN_ROOM ? [] : ['--no-update-check']), ...(options.roomArgs ?? [])];
+    const args = [...head, '--home', home, '--port', '0', '--host', '127.0.0.1', '--exit-with-stdin', ...(child.entry.id === MAIN_ROOM ? [] : ['--no-update-check']), ...(options.roomArgs ?? [])];
     child.state = 'starting';
     child.port = null;
     child.token = null;
     child.startedAt = Date.now();
-    const proc = spawn(file as string, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(file as string, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
     child.proc = proc;
     let buffer = '';
     proc.stdout?.on('data', (chunk: Buffer) => {
@@ -135,6 +140,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
           child.port = Number(ready[1]);
           child.token = ready[2] ?? null;
           child.state = 'running';
+          child.lastError = null;
           log.info(`room ${child.entry.id} is up on 127.0.0.1:${child.port}`);
         } else if (line.trim() !== '') {
           // the ready line holds the room's token: if a later version words it so that READY misses it, the token is still not logged
@@ -143,7 +149,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }
     });
     proc.stderr?.on('data', (chunk: Buffer) => {
-      for (const line of chunk.toString('utf8').split('\n')) if (line.trim() !== '') log.info(`[${child.entry.id}] ${line}`);
+      for (const line of chunk.toString('utf8').split('\n')) {
+        if (line.trim() === '') continue;
+        log.info(`[${child.entry.id}] ${line}`);
+        // gonogo's own fatal message, as main() prints it
+        if (line.startsWith('gonogo: ')) child.lastError = line.slice(8).replace(/#token=\S+/g, '#token=<hidden>').slice(0, 200);
+      }
     });
     child.exited = new Promise<void>((done) => {
       proc.once('exit', (code, signal) => {
@@ -185,13 +196,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   }
 
   /** Starts the rooms the file lists and stops the ones it no longer lists. */
+  let lastListError = '';
   function reconcile(): void {
     if (stopping) return;
-    const listed = loadRooms(options.home);
+    let listed: RoomEntry[];
+    try {
+      listed = loadRooms(options.home);
+      lastListError = '';
+    } catch (error) {
+      // a damaged rooms.json is not "no rooms": keep every room as it is, and say so once
+      const message = error instanceof Error ? error.message : String(error);
+      if (message !== lastListError) log.error(`${message}; keeping the rooms that run`);
+      lastListError = message;
+      if (children.size === 0) throw error;
+      return;
+    }
     for (const entry of listed) {
       const have = children.get(entry.id);
       if (have === undefined) {
-        const child: Child = { entry, proc: null, port: null, token: null, state: 'stopped', failures: 0, startedAt: 0, timer: null, wanted: entry.autostart, exited: null };
+        const child: Child = { entry, proc: null, port: null, token: null, state: 'stopped', failures: 0, startedAt: 0, timer: null, wanted: entry.autostart, lastError: null, exited: null };
         children.set(entry.id, child);
         if (entry.autostart) launch(child);
       } else {
@@ -227,7 +250,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   }
 
   const viewsNow = async (): Promise<RoomView[]> =>
-    Promise.all([...children.values()].map(async (c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, ...(await statusOf(c)) })));
+    Promise.all([...children.values()].map(async (c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.state === 'running' ? null : c.lastError, ...(await statusOf(c)) })));
 
   /* ---------------------------------------------------------------- the front port */
 
@@ -279,7 +302,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     port,
     directorToken,
     url: `http://${shownHost}:${port}/#token=${directorToken}`,
-    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, agents: null, running: null, needsYou: null })),
+    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.lastError, agents: null, running: null, needsYou: null })),
     async stop() {
       if (stopping) return;
       stopping = true;

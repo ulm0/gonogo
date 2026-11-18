@@ -30,22 +30,33 @@ export const validRoomId = (id: unknown): id is string => typeof id === 'string'
 export const roomHome = (root: string, id: string): string => (id === MAIN_ROOM ? root : join(root, ROOMS_DIR, id));
 
 // eslint-disable-next-line no-control-regex
-const cleanName = (text: string): string => text.replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').trim();
+const cleanName = (text: string): string => text.replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
 
-/** The rooms of a home, `main` first. A missing or unreadable file is just `main`. */
+/**
+ * The rooms of a home, `main` first. No file is just `main`. A file that is there but cannot be read, is not JSON or has no list of rooms
+ * (a hand edit with a syntax error, a torn save) THROWS: it must never read as "no rooms", or the supervisor would stop every room.
+ */
 export function loadRooms(root: string): RoomEntry[] {
   const list: RoomEntry[] = [{ id: MAIN_ROOM, name: 'Main', autostart: true }];
+  let text: string;
   try {
-    const saved: unknown = JSON.parse(readFileSync(join(root, ROOMS_FILE), 'utf8'));
-    const rooms = typeof saved === 'object' && saved !== null && Array.isArray((saved as { rooms?: unknown }).rooms) ? ((saved as { rooms: unknown[] }).rooms) : [];
+    text = readFileSync(join(root, ROOMS_FILE), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return list;
+    throw new RoomsError(`cannot read ${ROOMS_FILE}: ${(error as Error).message}`);
+  }
+  try {
+    const saved: unknown = JSON.parse(text);
+    const rooms = typeof saved === 'object' && saved !== null && Array.isArray((saved as { rooms?: unknown }).rooms) ? (saved as { rooms: unknown[] }).rooms : null;
+    if (rooms === null) throw new Error('no list of rooms');
     for (const item of rooms) {
       if (typeof item !== 'object' || item === null) continue;
       const { id, name, autostart } = item as Record<string, unknown>;
       if (!validRoomId(id) || id === MAIN_ROOM || list.some((r) => r.id === id)) continue;
       list.push({ id, name: typeof name === 'string' && cleanName(name) !== '' ? cleanName(name).slice(0, NAME_MAX) : id, autostart: autostart !== false });
     }
-  } catch {
-    // no file yet, or one that is not ours: only main
+  } catch (error) {
+    throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`);
   }
   return list;
 }

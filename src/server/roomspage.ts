@@ -40,6 +40,7 @@ function show(rooms){
     const m=el('span','meta',r.state==='running'?(r.agents===null?'running':r.running+' of '+r.agents+' agents running'):r.state);
     li.append(m);
     if(r.needsYou)li.append(el('span','need',r.needsYou+' need you'));
+    if(r.note&&!up)li.append(el('span','meta',r.note));
     const a=el('a','open','OPEN');a.href='/r/'+encodeURIComponent(r.id)+'/';if(!up)a.setAttribute('aria-disabled','true');
     li.append(a);return li}));
 }

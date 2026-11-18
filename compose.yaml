@@ -42,4 +42,5 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${GONOGO_DATA:-${PWD}/gonogo-data}:${GONOGO_DATA:-${PWD}/gonogo-data}
     # gonogo stops its agents within 8 seconds and gives up at 12.
+    # With rooms (gonogo rooms) every room stops its own agents within 12 seconds and the supervisor waits 17 for the slowest: use 60.
     stop_grace_period: 15s

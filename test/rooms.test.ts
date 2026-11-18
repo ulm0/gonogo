@@ -57,8 +57,13 @@ describe('rooms.json', () => {
     expect(() => removeRoom(home, 'nope')).toThrow(/no room/);
   });
 
-  it('survives a damaged file, odd entries and a name with control characters', () => {
-    writeFileSync(join(home, ROOMS_FILE), '{nope');
+  it('a damaged file THROWS (it is not "no rooms"); a missing file is just main; odd entries and names are cleaned', () => {
+    for (const bad of ['{nope', '', '[]', '{"rooms": 5}', 'null']) {
+      writeFileSync(join(home, ROOMS_FILE), bad);
+      expect(() => loadRooms(home), bad).toThrow(RoomsError);
+      expect(() => addRoom(home, 'x'), bad).toThrow(/damaged/);
+    }
+    rmSync(join(home, ROOMS_FILE));
     expect(loadRooms(home).map((r) => r.id)).toEqual(['main']);
     writeFileSync(join(home, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [null, 5, { id: '../x' }, { id: 'ok', name: 'a‮b\nc' }, { id: 'ok' }, { id: 'main' }] }));
     expect(loadRooms(home)).toEqual([
@@ -80,6 +85,8 @@ describe('gonogo rooms (the command line)', () => {
     expect(parseArgs(['rooms', '--nope'])).toMatchObject({ kind: 'error' });
     // plain gonogo stays one room
     expect(parseArgs([])).toEqual({ kind: 'run', options: {} });
+    // the flag a room is started with
+    expect(parseArgs(['--exit-with-stdin'])).toEqual({ kind: 'run', options: { exitWithStdin: true } });
   });
 });
 
@@ -89,8 +96,8 @@ async function supervise(): Promise<Supervisor> {
 }
 const api = (s: Supervisor, path: string, token: string | null = s.directorToken, init: RequestInit = {}): Promise<Response> =>
   fetch(`http://127.0.0.1:${s.port}${path}`, { ...init, headers: { ...(token === null ? {} : { authorization: `Bearer ${token}` }), ...init.headers } });
-const listed = async (s: Supervisor): Promise<Array<{ id: string; state: string; agents: number | null; needsYou: number | null }>> =>
-  ((await (await api(s, '/api/rooms')).json()) as { rooms: Array<{ id: string; state: string; agents: number | null; needsYou: number | null }> }).rooms;
+const listed = async (s: Supervisor): Promise<Array<{ id: string; state: string; agents: number | null; needsYou: number | null; note: string | null }>> =>
+  ((await (await api(s, '/api/rooms')).json()) as { rooms: Array<{ id: string; state: string; agents: number | null; needsYou: number | null; note: string | null }> }).rooms;
 
 describe('the supervisor', () => {
   it('starts main (the root home) and every listed room, each in its own home with its own token, and lists them', async () => {
@@ -166,6 +173,50 @@ describe('the supervisor', () => {
     expect(existsSync(join(folder, 'token'))).toBe(true);
     expect((await api(s, '/r/late/api/state')).status).toBe(404);
   }, 40_000);
+
+  it('a damaged rooms.json stops nothing: every room keeps running, and the list is read again when the file is fixed', async () => {
+    addRoom(home, 'team');
+    const s = await supervise();
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    const good = readFileSync(join(home, 'rooms.json'), 'utf8');
+    writeFileSync(join(home, 'rooms.json'), '{"rooms": [{');
+    await new Promise((r) => setTimeout(r, 5000));
+    expect((await listed(s)).map((r) => [r.id, r.state])).toEqual([['main', 'running'], ['team', 'running']]);
+    expect(existsSync(join(home, 'rooms', 'team', 'stopped'))).toBe(false);
+    writeFileSync(join(home, 'rooms.json'), JSON.stringify({ version: 1, rooms: [...(JSON.parse(good) as { rooms: unknown[] }).rooms, { id: 'more' }] }));
+    await until(async () => (await listed(s)).some((r) => r.id === 'more' && r.state === 'running'), 15_000, 'the fixed file to be read');
+  }, 60_000);
+
+  it('starting with a damaged rooms.json is refused with the reason', async () => {
+    writeFileSync(join(home, 'rooms.json'), '{nope');
+    await expect(supervise()).rejects.toThrow(/damaged/);
+  });
+
+  it('a room that cannot start shows its last error in its row, without a token', async () => {
+    sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', FAKE_ROOM_FAIL: 'another gonogo is using /h (pid 7)' } });
+    await until(async () => (await listed(sup as Supervisor)).some((r) => r.note !== null), 10_000, 'the note');
+    const rows = (await (await api(sup, '/api/rooms')).json()) as { rooms: Array<{ state: string; note: string | null }> };
+    expect(rows.rooms[0]?.note).toBe('another gonogo is using /h (pid 7) #token=<hidden>');
+    expect(['crashed', 'starting']).toContain(rows.rooms[0]?.state);
+  }, 30_000);
+
+  it('a room started by the supervisor ends gracefully when the supervisor dies (stdin closes)', async () => {
+    const { spawn } = await import('node:child_process');
+    const roomHome = join(home, 'orphan');
+    const child = spawn(process.execPath, [FAKE, '--home', roomHome, '--exit-with-stdin'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    await until(() => existsSync(join(roomHome, 'started-with')), 10_000, 'the room');
+    const gone = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+    child.stdin.end(); // what the death of the supervisor does to the pipe
+    expect(await gone).toBe(0);
+    expect(readFileSync(join(roomHome, 'stopped'), 'utf8')).toBe('graceful');
+  }, 30_000);
+
+  it('starts its rooms with a pipe on stdin and the flag that makes them follow the supervisor', async () => {
+    const s = await supervise();
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    const main = JSON.parse(readFileSync(join(home, 'started-with'), 'utf8')) as { args: string[] };
+    expect(main.args).toContain('--exit-with-stdin');
+  });
 
   it('stops every room gracefully (SIGTERM) and closes the port', async () => {
     addRoom(home, 'team');

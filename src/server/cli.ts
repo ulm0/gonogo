@@ -116,6 +116,8 @@ export interface StartOptions {
   ptyHost?: boolean;
   /** [node, entry] that starts the pty host, default the entry this process was started with. A test hands in its own. */
   ptyHostCommand?: string[];
+  /** A room of the rooms supervisor: shut down gracefully when stdin ends, so a supervisor that is killed leaves no room running. */
+  exitWithStdin?: boolean;
 }
 
 export interface Running {
@@ -155,6 +157,7 @@ Options:
   --pty-host            keep the agents in a separate process so that gonogo reload does not stop them (env GONOGO_PTY_HOST=1)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list)
+  --exit-with-stdin     stop gracefully when stdin ends (for a room started by gonogo rooms)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
   -v, --version         show the version
@@ -238,6 +241,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     }
     if (arg === '--pty-host') {
       options.ptyHost = true;
+      continue;
+    }
+    if (arg === '--exit-with-stdin') {
+      options.exitWithStdin = true;
       continue;
     }
     if (arg === '--no-update-check') {
@@ -1256,6 +1263,12 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     }
   }
   installProcessHandlers(running, log, process.argv.slice(2), process.argv[1]);
+  if (parsed.options.exitWithStdin === true) {
+    // the supervisor holds the other end of this pipe: when it dies, for any reason, this ends and the room stops as for SIGTERM
+    process.stdin.on('end', () => process.kill(process.pid, 'SIGTERM'));
+    process.stdin.on('error', () => process.kill(process.pid, 'SIGTERM'));
+    process.stdin.resume();
+  }
   process.stdout.write(`gonogo ready: ${running.url}\n`);
   // a log line (stderr, GONOGO_LOG_LEVEL): stdout holds the one `gonogo ready:` line that scripts parse
   log.info(`docs: ${DOCS_URL}`);

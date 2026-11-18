@@ -13,6 +13,10 @@ if (!existsSync(tokenFile)) writeFileSync(tokenFile, randomBytes(32).toString('h
 const token = readFileSync(tokenFile, 'utf8').trim();
 writeFileSync(join(home, 'started-with'), JSON.stringify({ args, home: process.env.GONOGO_HOME, port: process.env.GONOGO_PORT ?? null }));
 
+if (process.env.FAKE_ROOM_FAIL) {
+  process.stderr.write(`gonogo: ${process.env.FAKE_ROOM_FAIL} #token=${"f".repeat(64)}\n`);
+  process.exit(1);
+}
 const server = http.createServer((req, res) => {
   const ok = req.headers.authorization === `Bearer ${token}`;
   if (req.url === '/api/state') {
@@ -29,6 +33,11 @@ server.listen(0, '127.0.0.1', () => {
     setTimeout(() => process.exit(1), 300);
   }
 });
+// --exit-with-stdin: the supervisor's end of the pipe closing is a graceful stop, as for a real room
+if (args.includes('--exit-with-stdin')) {
+  process.stdin.on('end', () => process.kill(process.pid, 'SIGTERM'));
+  process.stdin.resume();
+}
 process.on('SIGTERM', () => {
   writeFileSync(join(home, 'stopped'), 'graceful');
   server.close(() => process.exit(0));
