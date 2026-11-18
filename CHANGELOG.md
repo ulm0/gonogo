@@ -4,9 +4,25 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.1.2 (2026-11-18)
+
+Features from the backlog. Each was tried with the stand-in agent and in Chrome, none yet with a real `claude` or another real CLI.
+
 - **Releases.** npm publishing uses trusted publishing (OIDC); the repository holds no npm token.
-- **Plot Board.** One shared plan (`board.md`): every agent reads it, FLIGHT and you write it, and a write must name the revision it read. Round key in the top bar.
+- **Static fire.** A T-minus poll with a subject: running SIMSUP agents try to break it, RETRO agents write the rollback. A second agent in a position takes the next free name (`guido-2`).
+- **Hold and Telemetry.** A Hold key per agent (Claude Code and Gemini CLI) and a timeline of its tool calls (`telemetry.jsonl`, 200 calls per agent).
+- **Patch Panel, Flight Rules and Commissioning.** A command bar (Cmd+K or Ctrl+K) that opens any console, view or action, one screen with every setting, and a checklist for an empty room. The views without a key of their own (Party Line, Plot Board, Black Box, Hangar, Recorder) open from the Patch Panel.
+- **Party Line.** Messages grouped into conversations, with a reply box.
+- **Relief.** FLIGHT can ask to hire an agent with `hire_agent`; only your GO hires it. Limits: `default` or `acceptEdits` only, at most 24 agents, 3 requests waiting, 5 in 10 minutes, 30 minutes to answer.
+- **Mass Budget and Star Chart.** REFLECT asks an agent to condense its `memory.md` (gonogo keeps one copy and never writes the file); the Mission Log as a graph. Semantic search is not built: it needs a model gonogo does not ship.
+- **Hangar and Recorder.** The files and the git of one agent's folder: a tree with a plain editor (create and save, no delete or rename), and status, diff, log and commit (no push, pull, checkout or reset).
+- **Clearance, Pad Check and Rollout.** A model and API keys per agent (`keys.json`, written once, never shown); `gonogo doctor` lists the agent CLIs found and prints the vendor's install command, never runs it; once a day gonogo asks the npm registry for a newer version (turn it off with `GONOGO_UPDATE_CHECK=0` or `--no-update-check`) and `gonogo update` prints the command.
+- **Plot Board.** One shared plan (`board.md`): every agent reads it, FLIGHT and you write it, and a write must name the revision it read.
 - **Black Box.** An append-only record of the room (hires, stops, polls, Redline trips, plan changes, uplink deliveries, configuration changes) in a git repository in `~/.gonogo/black-box/`, committed by the server in batches. Names and ids only. Without git the room works and the page says so.
+- **MCP tools.** `board_read`, `board_write` (boss only) and `hire_agent` (boss only) join the others.
+- **Files.** New in the home: `board.md`, `black-box/`, `telemetry.jsonl`, `keys.json`, `rollout.json`. `agents.json` keeps version 1 with new optional fields (`model`, the names of keys): a gonogo older than this one drops them on its next save, while the values stay in `keys.json`.
+- **Docs.** Every page opens with its piece of the room, in the room's style, and the pages are shorter. The home page says what go / no-go means.
+- **Fix.** The image and CI build with pnpm 12.
 
 ## 0.1.1 (2026-11-18)
 
