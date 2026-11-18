@@ -2858,6 +2858,7 @@ describe('end to end with the stand-in agent', () => {
     const asked = await api<ReflectResult>(h, 'POST', '/api/agents/ana/reflect');
     expect(asked).toMatchObject({ status: 201, body: { send: { ok: true, to: 'ana' }, memory: { backup: { bytes: Buffer.byteLength(notes) } } } });
     await itemRead(h, asked.body.send.id);
+    await waitState(h, 'ana', 'idle'); // the stand-in logs its read_messages call just after the item reads
     expect(tools(h, 'ana', 'read_messages').at(-1)?.result).toMatchObject({ messages: [{ from: 'user', subject: 'Mass Budget: condense your memory file', body: expect.stringContaining(memory) }] });
     expect(readFileSync(`${memory}.bak`, 'utf8')).toBe(notes);
     expect(statSync(`${memory}.bak`).mode & 0o777).toBe(0o600);
