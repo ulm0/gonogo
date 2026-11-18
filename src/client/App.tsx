@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
 import { Loop } from './Activity.js';
@@ -11,11 +11,16 @@ import { LaunchWindow } from './LaunchWindow.js';
 import { Livery } from './Livery.js';
 import { MissionLog } from './MissionLog.js';
 import { PlotBoard } from './PlotBoard.js';
+import { PatchPanel } from './PatchPanel.js';
+import { Commissioning, FlightRules } from './Rules.js';
+import { isPanelKey } from './shell.js';
+import { PartyLine } from './PartyLine.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, SelectedConsole, YourConsole, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { openConsole, openHire, showBlackBox, showBoard, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showWindow, useStore } from './store.js';
+import { openConsole, openHire, readStored, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
+import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import logo from '../../docs/brand/lockup.svg';
@@ -60,7 +65,7 @@ function UnreadCount(): ReactElement | null {
 
 const downlinkName = (unread: number): string => (unread === 0 ? 'Downlink' : `Downlink, ${unreadText(unread)}`);
 
-function TopBar({ phone }: { phone: boolean }): ReactElement {
+function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactElement {
   const list = useAgentList();
   const dir = list.find((a) => a.boss)?.dir ?? null;
   const unread = useStore((s) => s.downlink.unread);
@@ -107,19 +112,17 @@ function TopBar({ phone }: { phone: boolean }): ReactElement {
           Mission Log
         </button>
       )}
-      {/* round keys on every width: another word in the bar would not fit on one line at 1280 px */}
-      <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Plot Board" title="Plot Board" aria-current={view === 'board' ? 'page' : undefined} onClick={showBoard}>
-        <svg className="topbar-glyph" viewBox="0 0 16 16" aria-hidden="true">
-          <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-          <path d="M4.5 6h7M4.5 8.5h7M4.5 11h4" />
-        </svg>
-      </button>
-      <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Black Box" title="Black Box" aria-current={view === 'blackbox' ? 'page' : undefined} onClick={showBlackBox}>
-        <svg className="topbar-glyph" viewBox="0 0 16 16" aria-hidden="true">
-          <rect x="2" y="3" width="12" height="10" rx="1.5" />
-          <circle cx="8" cy="8" r="2.2" />
-        </svg>
-      </button>
+      {!phone && (
+        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Patch Panel" aria-keyshortcuts="Meta+K Control+K" title="Patch Panel (Cmd+K or Ctrl+K)" onClick={onPanel}>
+          <span className="patch-mark" aria-hidden="true" />
+        </button>
+      )}
+      {!phone && (
+        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Flight Rules" title="Flight Rules" aria-current={view === 'rules' ? 'page' : undefined} onClick={showRules}>
+          <span className="rules-mark" aria-hidden="true" />
+        </button>
+      )}
+      {/* round keys: another word in the bar would not fit on one line at 1280 px */}
       <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Livery" title="Livery" aria-current={view === 'livery' ? 'page' : undefined} onClick={showLivery}>
         <span className="livery-mark" aria-hidden="true" />
       </button>
@@ -137,7 +140,7 @@ function TopBar({ phone }: { phone: boolean }): ReactElement {
 }
 
 /** The wall of a phone is mission, clock, poll and Max Q; the three screens are one bar away. */
-function PhoneBar(): ReactElement {
+function PhoneBar({ onPanel }: { onPanel(): void }): ReactElement {
   const view = useStore((s) => s.view);
   const unread = useStore((s) => s.downlink.unread);
   const planCount = activeText(activeOf(useStore((s) => s.tasks)));
@@ -170,6 +173,9 @@ function PhoneBar(): ReactElement {
       </button>
       <button type="button" className="btn" data-kind={view === 'log' ? 'primary' : undefined} aria-label="Mission Log" aria-current={view === 'log' ? 'page' : undefined} onClick={showLog}>
         Log
+      </button>
+      <button type="button" className="btn" aria-label="Patch Panel" onClick={onPanel}>
+        Patch
       </button>
     </nav>
   );
@@ -257,6 +263,51 @@ function GoneStrip(): ReactElement | null {
   );
 }
 
+const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
+
+/** Rollout: a quiet note when a newer gonogo is out, with the command that updates this one (shown, never run). Dismissed for that version, in this browser only. */
+function RolloutStrip(): ReactElement | null {
+  const rollout = useStore((s) => s.rollout);
+  const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
+  const [copied, setCopied] = useState<boolean | null>(null);
+  const code = useRef<HTMLElement | null>(null);
+  if (rollout === null || !rollout.newer || rollout.latest === null || dismissed === rollout.latest) return null;
+  const { latest, command } = rollout;
+  return (
+    <aside className="rollout-strip" aria-label="Update">
+      <span>
+        gonogo {latest} is out (this is {rollout.current}). To update, run:
+      </span>
+      <code ref={code}>{command}</code>
+      <button
+        type="button"
+        className="btn"
+        data-kind="quiet"
+        onClick={() =>
+          // Without a clipboard (plain http from another machine) the command is selected, to copy by hand.
+          void copyText(command).then((ok) => {
+            setCopied(ok);
+            if (!ok && code.current !== null) window.getSelection()?.selectAllChildren(code.current);
+          })
+        }
+      >
+        {copied === null ? 'Copy' : copied ? 'Copied' : 'Not copied'}
+      </button>
+      <button
+        type="button"
+        className="btn"
+        data-kind="quiet"
+        onClick={() => {
+          writeStored(ROLLOUT_DISMISSED_KEY, latest);
+          setDismissed(latest);
+        }}
+      >
+        Dismiss
+      </button>
+    </aside>
+  );
+}
+
 /* ---- the live region ---- */
 
 /** `n` changes with every write, so the same words twice in a row are read twice. */
@@ -266,9 +317,10 @@ function LiveRegion(): ReactElement {
   const unread = useStore((s) => s.downlink.unread);
   const poll = useStore((s) => s.poll);
   const limit = useStore((s) => s.governor.limit);
+  const relief = useStore((s) => s.relief.length);
   const [out, setOut] = useState({ n: 0, text: '' });
   const [announcer] = useState(() => createAnnouncer((text) => setOut((o) => ({ n: o.n + 1, text }))));
-  useEffect(() => announcer.update({ agents: list, unread, poll, limit }, legends), [announcer, list, unread, poll, limit, legends]);
+  useEffect(() => announcer.update({ agents: list, unread, poll, limit, relief }, legends), [announcer, list, unread, poll, limit, relief, legends]);
   useEffect(() => {
     announcer.resume();
     return () => announcer.stop();
@@ -299,11 +351,14 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'livery') return <Livery />;
   if (view === 'board') return <PlotBoard />;
   if (view === 'blackbox') return <BlackBox />;
+  if (view === 'rules') return <FlightRules />;
+  if (view === 'party') return <PartyLine />;
   if (phone) {
     return (
       <main className="room room-phone">
         <Wall />
         <Needs phone />
+        <Commissioning />
         <Operations phone />
       </main>
     );
@@ -313,6 +368,7 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
       <Wall />
       <main className="room">
         <div className="room-main">
+          <Commissioning />
           <Operations phone={false} />
           <YourConsole />
         </div>
@@ -327,22 +383,36 @@ function Office(): ReactElement {
   const form = useStore((s) => s.form);
   const consoleOpen = useStore((s) => s.consoleOpen);
   const view = useStore((s) => s.view);
+  const [panel, setPanel] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!isPanelKey(e)) return;
+      e.preventDefault();
+      setPanel(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const patch = <PatchPanel open={panel} phone={phone} onClose={() => setPanel(false)} />;
   // A console open on a phone is a full screen with its own header and no bottom bar.
   if (phone && consoleOpen && form === null && view === 'room') {
     return (
       <>
         <PhoneConsoleScreen />
         <LiveRegion />
+        {patch}
       </>
     );
   }
   return (
     <>
-      <TopBar phone={phone} />
+      <TopBar phone={phone} onPanel={() => setPanel(true)} />
       <GoneStrip />
+      <RolloutStrip />
       <Screen phone={phone} />
-      {phone && form === null && <PhoneBar />}
+      {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
       <LiveRegion />
+      {patch}
     </>
   );
 }

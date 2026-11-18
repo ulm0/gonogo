@@ -1,7 +1,8 @@
 import type { AgentState, AgentView, PollView } from '../shared/protocol.js';
-import { CLEAN_ROOM_DIR, cleanRoomBranch, MAX_AGENTS, providerInfo, STATE_LABELS } from '../shared/protocol.js';
+import { CLEAN_ROOM_DIR, cleanRoomBranch, HOLD_REASON, MAX_AGENTS, providerInfo, STATE_LABELS } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
+import { reliefAnnouncement } from './relief.js';
 import { sinceText } from './wall.js';
 import type { Legends } from './wall.js';
 
@@ -158,9 +159,16 @@ export const asksForGo = (agent: AgentView): boolean => agent.state === 'needs_y
 /** Redline stopped this agent: the Director resumes it or stops it. */
 export const tripped = (agent: AgentView): boolean => agent.state === 'needs_you' && agent.needsKind === 'redline' && agent.transition === null;
 
-/** `SURGEON ASKS FOR A GO`, `SURGEON HIT THE REDLINE`, or `SURGEON NEEDS YOU` for anything else. */
+/** Hold: the Director put this agent on hold (a Redline trip by hand); RESUME ends it. */
+export const onHold = (agent: AgentView): boolean => tripped(agent) && agent.needsReason === HOLD_REASON;
+
+/** Hold is offered while an agent with hooks runs and is not already held or tripped. */
+export const holdable = (agent: AgentView): boolean =>
+  providerInfo(agent.provider).hooks && agent.transition === null && (agent.state === 'idle' || agent.state === 'working');
+
+/** `SURGEON ASKS FOR A GO`, `SURGEON IS ON HOLD`, `SURGEON HIT THE REDLINE`, or `SURGEON NEEDS YOU` for anything else. */
 export const askTitle = (agent: AgentView, legend: string): string =>
-  asksForGo(agent) ? `${legend} ASKS FOR A GO` : tripped(agent) ? `${legend} HIT THE REDLINE` : `${legend} NEEDS YOU`;
+  asksForGo(agent) ? `${legend} ASKS FOR A GO` : onHold(agent) ? `${legend} IS ON HOLD` : tripped(agent) ? `${legend} HIT THE REDLINE` : `${legend} NEEDS YOU`;
 
 /** The line under the title: the reason, how long it waits, how many messages wait for the answer. */
 export function askDetail(agent: AgentView, now: number): string {
@@ -201,7 +209,7 @@ const NEEDS_WORDS = { startup_dialog: 'STARTUP DIALOG', permission: 'PERMISSION'
 /** The state chip of the panel: `NEEDS YOU 3 M · PERMISSION`, `PRINTING · CUSTOM COMMAND`. */
 export function chipText(agent: AgentView, now: number): string {
   const base = stateText(agent, now);
-  if (agent.state === 'needs_you' && agent.needsKind !== null) return `${base} · ${NEEDS_WORDS[agent.needsKind]}`;
+  if (agent.state === 'needs_you' && agent.needsKind !== null) return `${base} · ${onHold(agent) ? 'HOLD' : NEEDS_WORDS[agent.needsKind]}`;
   return agent.provider === 'claude' ? base : `${base} · ${providerInfo(agent.provider).label.toUpperCase()}`;
 }
 
@@ -235,6 +243,8 @@ export interface Facts {
   unread: number;
   poll: PollView | null;
   limit: number | null;
+  /** Hire requests of the boss that wait for the Director (Relief); absent counts as none. */
+  relief?: number;
 }
 
 /** At most one live-region write per this long. */
@@ -252,15 +262,16 @@ const pollKey = (poll: PollView | null): string => (poll === null ? 'none' : `${
 
 function pollAnnouncement(poll: PollView | null): string | null {
   if (poll === null) return null;
+  const what = poll.subject === undefined ? 'T-minus' : 'Static fire';
   switch (poll.status) {
     case 'open':
-      return 'T-minus: poll started';
+      return poll.subject === undefined ? 'T-minus: poll started' : `Static fire started: ${poll.subject}`;
     case 'go':
-      return 'T-minus: GO';
+      return `${what}: GO`;
     case 'hold':
-      return poll.entries.some((e) => e.vote === 'no-go') ? `T-minus: NO-GO. ${poll.note}` : 'T-minus: HOLD';
+      return poll.entries.some((e) => e.vote === 'no-go') ? `${what}: NO-GO. ${poll.note}` : `${what}: HOLD`;
     case 'aborted':
-      return 'T-minus: poll aborted';
+      return poll.subject === undefined ? 'T-minus: poll aborted' : 'Static fire: aborted';
   }
 }
 
@@ -270,7 +281,7 @@ function pollAnnouncement(poll: PollView | null): string | null {
  * it only sets the baseline. Lines wait for the 500 ms gap since the last write and go out joined: a burst reads as one.
  */
 export function createAnnouncer(write: (text: string) => void, gapMs = ANNOUNCE_GAP_MS): Announcer {
-  let memory: { states: Map<string, AgentState>; unread: number; poll: string; limit: number | null } | null = null;
+  let memory: { states: Map<string, AgentState>; unread: number; poll: string; limit: number | null; relief: number } | null = null;
   const pending: string[] = [];
   let lastWrite = Number.NEGATIVE_INFINITY;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -290,7 +301,7 @@ export function createAnnouncer(write: (text: string) => void, gapMs = ANNOUNCE_
     update(facts, legends) {
       const states = new Map<string, AgentState>();
       for (const a of facts.agents) states.set(a.name, a.state);
-      const next = { states, unread: facts.unread, poll: pollKey(facts.poll), limit: facts.limit };
+      const next = { states, unread: facts.unread, poll: pollKey(facts.poll), limit: facts.limit, relief: facts.relief ?? 0 };
       if (memory === null) {
         if (facts.agents.length > 0) memory = next;
         return;
@@ -303,6 +314,7 @@ export function createAnnouncer(write: (text: string) => void, gapMs = ANNOUNCE_
         else if (a.state === 'stopped' && before !== undefined) pending.push(`${who} stopped`);
       }
       if (facts.unread > memory.unread) pending.push(`${facts.unread} unread in the Downlink`);
+      if (next.relief > memory.relief) pending.push(reliefAnnouncement(next.relief));
       if (next.poll !== memory.poll) {
         const text = pollAnnouncement(facts.poll);
         if (text !== null) pending.push(text);

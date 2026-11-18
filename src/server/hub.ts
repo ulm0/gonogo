@@ -28,6 +28,7 @@ import type {
   GovernorView,
   HeldInfo,
   HireRequest,
+  HookEvent,
   HookInput,
   HookReply,
   Hub,
@@ -65,12 +66,15 @@ import {
   DOING_MAX_CHARS,
   HISTORY_MAX,
   HISTORY_WINDOW_MS,
+  HOLD_REASON,
   HOOK_EVENTS,
+  MODEL_PATTERN,
   PERMISSION_MODES,
   POLL_VOTES,
   PROVIDERS,
   providerInfo,
   RESERVED_NAMES,
+  STATIC_FIRE_POSITIONS,
   STATION_NAME_PATTERN,
 } from '../shared/protocol.js';
 import { POSITION_IDS } from '../shared/positions.js';
@@ -128,6 +132,7 @@ import {
   TITLE_WORKING_CONFIRM_MS,
 } from './constants.js';
 import { parseCleanRoom } from './cleanroom.js';
+import { checkKeys } from './clearance.js';
 import { parsePayload, payloadRefusal } from './payload.js';
 
 export type { InputEffect };
@@ -155,6 +160,9 @@ const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 const payloadKey = (record: AgentRecord): string | null => (record.payload === undefined ? null : JSON.stringify(record.payload));
 /** The Clean Room setting of a record as text, for comparing: null when the agent runs on the host. */
 const cleanRoomKey = (record: AgentRecord): string | null => (record.cleanRoom === undefined ? null : JSON.stringify(record.cleanRoom));
+/** The model and the keys (names and times) of a record as text, for comparing: a key set again has a new time, so a changed value shows as dirty too. */
+const engineKey = (record: AgentRecord): string => JSON.stringify([record.model ?? null, record.keys ?? null]);
+const MODEL_RE = new RegExp(MODEL_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REPLY_ID_RE = /^m\d+$/;
 const REPLY_ID_MAX_CHARS = 40;
@@ -374,7 +382,7 @@ interface Rt {
   /** When a Stop block was last answered: R1 waits for the title to catch up (contract 4.7). */
   lastBlockAt: number | null;
   /** role, dir, mode, command and payload (as JSON text) as of the last spawn, for the `dirty` flag. */
-  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null } | null;
+  running: { role: string; dir: string; mode: PermissionMode; command: string | null; payload: string | null; cleanRoom: string | null; engine: string } | null;
   /** Custom provider only: the output counter at the last sweep, when it last grew, and when the process was spawned. */
   custom: { bytes: number; activeAt: number | null; since: number };
   /** The flag the last start used, null until the launcher answered. */
@@ -619,7 +627,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           running.mode !== record.mode ||
           running.command !== (record.command ?? null) ||
           running.payload !== payloadKey(record) ||
-          running.cleanRoom !== cleanRoomKey(record)),
+          running.cleanRoom !== cleanRoomKey(record) ||
+          running.engine !== engineKey(record)),
       generation: rt.generation,
       exit: rt.exit ? { ...rt.exit } : null,
       position: record.position ?? null,
@@ -627,6 +636,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       command: record.command ?? null,
       payload: record.payload ?? null,
       cleanRoom: record.cleanRoom ?? null,
+      model: record.model ?? null,
+      keys: { ...record.keys },
       doing: rt.doing,
       history: trimHistory(rt.history, io.now()),
     };
@@ -826,7 +837,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   }
 
   function redlineNote(rt: Rt): string {
-    return `held: redline on ${rt.record.name}`;
+    return rt.redline === HOLD_REASON ? `held: ${rt.record.name} is on hold` : `held: redline on ${rt.record.name}`;
   }
 
   function holdNote(rt: Rt): string | null {
@@ -1036,18 +1047,19 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.sentTo.clear();
   }
 
-  /** Trips the breaker: Escape interrupts a turn in progress, the state reads needs_you and the mail waits. */
-  function tripRt(rt: Rt, reason: string): void {
+  /** Trips the breaker: Escape interrupts a turn in progress, the state reads needs_you and the mail waits. A Hold is a trip the Director asked for. */
+  function tripRt(rt: Rt, reason: string, byHand = false): void {
     if (rt.redline !== null || rt.removed || !hooked(rt) || rt.state === 'stopped' || rt.transition !== null) return;
     const wasWorking = rt.state === 'working';
-    rt.redline = `redline: ${reason}`;
-    log.warn(`${rt.record.name} tripped the redline: ${reason}`);
+    rt.redline = byHand ? HOLD_REASON : `redline: ${reason}`;
+    if (byHand) log.info(`${rt.record.name} is on hold`);
+    else log.warn(`${rt.record.name} tripped the redline: ${reason}`);
     if (wasWorking && !io.press?.(rt.record.name, rt.generation, ESC)) {
       log.warn(`could not interrupt ${rt.record.name}`);
     }
     setState(rt, 'needs_you');
     syncHolds(rt);
-    io.notify?.('redline', `${rt.record.name}: ${reason}`);
+    if (!byHand) io.notify?.('redline', `${rt.record.name}: ${reason}`);
   }
 
   /** The automatic detectors trip only when they are on; a Propellant limit trips through Hub.trip either way. */
@@ -1073,6 +1085,19 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     flush(rt);
   }
 
+  function hold(name: string): AgentView {
+    assertOpen();
+    const rt = lookup(name);
+    const who = rt.record.name;
+    if (!hooked(rt)) throw new HubError('conflict', `${who} reports no hooks, so gonogo cannot hold it`);
+    if (rt.redline !== null) throw new HubError('conflict', rt.redline === HOLD_REASON ? `${who} is already on hold` : `${who} has tripped the redline: resume or stop it`);
+    if (rt.state === 'needs_you' && rt.transition === null) throw new HubError('conflict', `${who} needs you: answer it first`);
+    if ((rt.state !== 'idle' && rt.state !== 'working') || rt.transition !== null) throw new HubError('conflict', `${who} is not running`);
+    tripRt(rt, HOLD_REASON, true);
+    flush(rt);
+    return buildView(rt);
+  }
+
   function resume(name: string): AgentView {
     assertOpen();
     const rt = lookup(name);
@@ -1084,6 +1109,15 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
     flush(rt);
     return buildView(rt);
+  }
+
+  /** Telemetry: every tool hook goes to the recorder; a failure there never touches the hub's own handling. */
+  function toolHook(rt: Rt, event: HookEvent, payload: Record<string, unknown>): void {
+    try {
+      io.toolHook?.(rt.record.name, event, payload);
+    } catch (error) {
+      log.warn('telemetry failed', error);
+    }
   }
 
   /** Propellant reads the transcript at most every METER_INTERVAL_MS on a tool hook, and at every Stop. */
@@ -1214,15 +1248,18 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         onPromptSubmit(rt, payload);
         break;
       case 'PreToolUse':
+        toolHook(rt, input.event, payload);
         rt.doing = describeDoing(payload.tool_name, payload.tool_input);
         onToolHook(rt);
         detect(rt, repeatReason(rt, payload));
         meter(rt, payload, false);
         break;
       case 'PostToolUse':
+        toolHook(rt, input.event, payload);
         onToolHook(rt);
         break;
       case 'PostToolUseFailure':
+        toolHook(rt, input.event, payload);
         onToolHook(rt);
         if (countRecent(rt.toolFailAt, io.now(), REDLINE_TOOL_FAILURE_WINDOW_MS) >= REDLINE_TOOL_FAILURES) {
           detect(rt, `error storm: ${rt.toolFailAt.length} failed tool calls in 2 min`);
@@ -1617,7 +1654,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.pointed.clear();
     rt.screenClearSince = null;
     rt.lastBlockAt = null;
-    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record) };
+    rt.running = { role: rt.record.role, dir: rt.record.dir, mode: rt.record.mode, command: rt.record.command ?? null, payload: payloadKey(rt.record), cleanRoom: cleanRoomKey(rt.record), engine: engineKey(rt.record) };
     rt.flag = flag;
     // The browser reacts to a new generation by attaching, so the frame waits until the process exists in the terminal host.
     rt.frameHold = true;
@@ -1728,6 +1765,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       else settlePoll();
       publishPoll();
     }
+    try {
+      await io.keys?.remove(rt.record.name);
+    } catch (error) {
+      log.warn(`could not remove the keys of ${rt.record.name}`, error);
+    }
     // The process is gone (stopped above, or never ran): the terminal's mirror and scrollback can go too.
     try {
       io.forget?.(rt.record.name);
@@ -1822,6 +1864,33 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.payload = from.payload;
     if (from.cleanRoom === undefined) delete target.cleanRoom;
     else target.cleanRoom = from.cleanRoom;
+    if (from.model === undefined) delete target.model;
+    else target.model = from.model;
+    if (from.keys === undefined) delete target.keys;
+    else target.keys = from.keys;
+  }
+
+  /** The model for `--model`: empty text is none. Only an engine that takes one (PROVIDER_INFO.model). A bad value is 400, field model. */
+  function checkModel(provider: Provider, value: unknown): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== 'string') throw new HubError('bad_request', 'model must be text', 'model');
+    const model = value.trim();
+    if (model === '') return undefined;
+    if (providerInfo(provider).model === null) {
+      throw new HubError('bad_request', `${providerInfo(provider).label} takes no model setting`, 'model');
+    }
+    if (!MODEL_RE.test(model)) {
+      throw new HubError('bad_request', 'model must be 1 to 100 letters, digits or . _ : / @ + -, starting with a letter or digit', 'model');
+    }
+    return model;
+  }
+
+  /** The keys of a request: their values to the key store and their names with times for the record. A bad one is 400, field keys. */
+  function checkKeysOf(value: unknown, current: AgentRecord['keys'], hireRequest: boolean): { patch: Record<string, string | null>; names: Record<string, number> | undefined } {
+    const checked = checkKeys(value, current, io.now(), hireRequest);
+    if (!checked.ok) throw new HubError('bad_request', checked.error, 'keys');
+    if (io.keys === undefined && Object.keys(checked.patch).length > 0) throw new HubError('bad_request', 'this server cannot keep keys', 'keys');
+    return { patch: checked.patch, names: Object.keys(checked.names).length === 0 ? undefined : checked.names };
   }
 
   /** The shape of a payload and whether the engine takes it (no disk). A bad value is 400 with the field it names. */
@@ -1907,6 +1976,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     const command = custom ? checkCommand(req.command) : undefined;
     const payload = checkPayload(provider, req.payload);
+    const model = checkModel(provider, req.model);
+    const kept = req.keys === undefined ? undefined : checkKeysOf(req.keys, undefined, true);
     // A CLI without permission modes (a custom command among them): the mode and confirmBypass of the request are ignored.
     const mode = providerInfo(provider).modes ? checkMode(req.mode) : 'default';
     // The name is claimed while the checks and the save await, so two hires cannot take the same name or the same desk.
@@ -1936,8 +2007,17 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       setOptional(record, 'command', command);
       if (payload) record.payload = payload;
       if (cleanRoom) record.cleanRoom = cleanRoom;
+      if (model) record.model = model;
+      if (kept?.names) record.keys = kept.names;
       hiring.set(name, record);
-      await saveRecords(rosterRecords());
+      // The values first, from none (a removed agent of this name may have left some), then the roster; a roster that cannot be saved takes them back.
+      await io.keys?.apply(name, kept?.patch ?? {}, true);
+      try {
+        await saveRecords(rosterRecords());
+      } catch (error) {
+        await io.keys?.remove(name).catch(() => undefined);
+        throw error;
+      }
       hired = makeRt(record);
       agents.set(name, hired);
     } finally {
@@ -1955,13 +2035,14 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'model', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, model, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
     let newName: string | null = null;
+    let keyPatch: Record<string, string | null> | null = null;
     try {
       if (req.name !== undefined) {
         const name = checkName(req.name);
@@ -1996,6 +2077,17 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         if (req.cleanRoom === null) delete next.cleanRoom;
         else next.cleanRoom = await checkCleanRoom(current.provider ?? 'claude', req.cleanRoom, next.dir);
       }
+      if (req.model !== undefined) {
+        const model = checkModel(current.provider ?? 'claude', req.model);
+        if (model) next.model = model;
+        else delete next.model;
+      }
+      if (req.keys !== undefined) {
+        const kept = checkKeysOf(req.keys, current.keys, false);
+        keyPatch = kept.patch;
+        if (kept.names) next.keys = kept.names;
+        else delete next.keys;
+      }
       if (next.mode === 'bypassPermissions' && next.mode !== current.mode && req.confirmBypass !== true) {
         throw new HubError('bad_request', 'bypassPermissions needs confirmBypass: true', 'confirmBypass');
       }
@@ -2014,7 +2106,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         next.position !== current.position ||
         next.command !== current.command ||
         payloadKey(next) !== payloadKey(current) ||
-        cleanRoomKey(next) !== cleanRoomKey(current);
+        cleanRoomKey(next) !== cleanRoomKey(current) ||
+        engineKey(next) !== engineKey(current);
       if (!changed) return buildView(rt);
 
       const oldName = current.name;
@@ -2034,9 +2127,16 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         agents.set(newName, rt);
         renamePollEntry(oldName, newName);
       }
+      // What the keys the edit touches hold now, as a patch that puts them back: a key that was not there goes again (null).
+      const held = io.keys?.values(next.name) ?? {};
+      const putBack = Object.fromEntries(Object.keys(keyPatch ?? {}).map((key) => [key, held[key] ?? null]));
       try {
+        if (keyPatch !== null && Object.keys(keyPatch).length > 0) await io.keys?.apply(next.name, keyPatch);
         await saveRecords(rosterRecords());
       } catch (error) {
+        // The values were written before the roster; they go back first, while the keys are still under the new name.
+        // shortcut: when this write fails as well, the new values stay and the log says so; upgrade if disk errors matter.
+        if (Object.keys(putBack).length > 0) await io.keys?.apply(next.name, putBack).catch((undo: unknown) => log.error('could not put the keys back', undo));
         assignFields(current, previous);
         if (newName !== null) {
           agents.delete(newName);
@@ -2369,7 +2469,12 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     emit({ t: 'poll', poll: pollView() });
     // The inbox hears each result once: a later vote that leaves the status as it is says nothing new.
     const result = pollState === null || pollState.status === 'open' ? '' : `${pollState.id}:${pollState.status}`;
-    if (pollState !== null && result !== '' && result !== pollResult) io.notify?.('tminus', `${pollState.status.toUpperCase()}: ${pollState.note}`);
+    if (pollState !== null && result !== '' && result !== pollResult) {
+      const line = `${pollState.status.toUpperCase()}: ${pollState.note}`;
+      // A static fire is about the answers: they go to the inbox with the result.
+      const answers = pollState.entries.flatMap((entry) => (entry.reason !== '' ? [`${entry.agent}: ${entry.reason}`] : []));
+      io.notify?.('tminus', pollState.subject === undefined ? line : [`Static fire on ${pollState.subject}: ${line}`, ...answers].join(' · '));
+    }
     pollResult = result;
   }
 
@@ -2377,16 +2482,21 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     sendFromUser({ to, subject, body });
   }
 
-  /** An open poll ends in hold at the first no-go and in go when everybody voted go (and then the boss is told). */
+  /**
+   * An open poll ends in hold at the first no-go and in go when everybody voted go (and then the boss is told). A static fire
+   * waits for every answer (the break report and the rollback plan both matter) and tells nobody: the Director reads the result.
+   */
   function settlePoll(): void {
     const poll = pollState;
     if (!poll || (poll.status !== 'open' && !(poll.status === 'hold' && holdBy === 'vote'))) return;
-    if (poll.entries.some((entry) => entry.vote === 'no-go')) {
+    if (poll.subject !== undefined && poll.entries.some((entry) => entry.vote === null)) {
+      poll.status = 'open';
+    } else if (poll.entries.some((entry) => entry.vote === 'no-go')) {
       poll.status = 'hold';
       holdBy = 'vote';
     } else if (poll.entries.length > 0 && poll.entries.every((entry) => entry.vote === 'go')) {
       poll.status = 'go';
-      const boss = bossRt();
+      const boss = poll.subject === undefined ? bossRt() : undefined;
       if (boss) tellFromUser(boss.record.name, 'T-minus: all go', 'Every polled position is go. Proceed.');
     } else {
       poll.status = 'open';
@@ -2435,8 +2545,12 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     const req = asObject(request, 'the request');
     if (pollState !== null) throw new HubError('conflict', 'clear the poll first');
-    const targets = pollTargets(req.agents);
-    if (targets.length === 0) throw new HubError('bad_request', 'nobody to poll');
+    const subject = staticFireSubject(req);
+    const targets =
+      subject === undefined
+        ? pollTargets(req.agents)
+        : pollTargets(undefined).filter((rt) => (STATIC_FIRE_POSITIONS as readonly string[]).includes(rt.record.position ?? ''));
+    if (targets.length === 0) throw new HubError('bad_request', subject === undefined ? 'nobody to poll' : 'no SIMSUP or RETRO is running');
     pollSeq += 1;
     pollState = {
       id: pollSeq,
@@ -2444,16 +2558,41 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       status: 'open',
       entries: targets.map((rt): PollEntry => ({ agent: rt.record.name, vote: null, reason: '', at: null })),
       note: '',
+      ...(subject === undefined ? {} : { subject }),
     };
     for (const rt of targets) {
-      tellFromUser(
-        rt.record.name,
-        'T-minus: go/no-go poll',
-        'The Director is polling for go or no-go. Call go_nogo with your vote and a one-sentence reason.',
-      );
+      if (subject === undefined) {
+        tellFromUser(
+          rt.record.name,
+          'T-minus: go/no-go poll',
+          'The Director is polling for go or no-go. Call go_nogo with your vote and a one-sentence reason.',
+        );
+      } else if (rt.record.position === 'simsup') {
+        tellFromUser(
+          rt.record.name,
+          `Static fire: ${subject}`,
+          `Before this ships, try to break it: ${subject}. Then call go_nogo: go if it held, no-go with what broke in one sentence (write the steps to reproduce to the Mission Log).`,
+        );
+      } else {
+        tellFromUser(
+          rt.record.name,
+          `Static fire: ${subject}`,
+          `Before this ships, write the rollback plan for: ${subject}. Put the plan in the Mission Log with log_write, then call go_nogo: go when it can be rolled back, no-go if it cannot, with a one-sentence reason.`,
+        );
+      }
     }
     publishPoll();
     return pollView() as PollView;
+  }
+
+  /** The subject of a static fire, one clean line; undefined for a T-minus poll. */
+  function staticFireSubject(req: Record<string, unknown>): string | undefined {
+    if (req.subject === undefined) return undefined;
+    if (req.agents !== undefined) throw new HubError('bad_request', 'a static fire picks SIMSUP and RETRO itself', 'agents');
+    const max = SUBJECT_MAX_CHARS - 'Static fire: '.length;
+    const subject = typeof req.subject === 'string' ? collapseWhitespace(req.subject.replace(UNSAFE_IN_REASON, ' ')) : '';
+    if (subject === '' || subject.length > max) throw new HubError('bad_request', `subject must be text of 1 to ${max} characters`, 'subject');
+    return subject;
   }
 
   function holdPoll(): PollView {
@@ -2471,7 +2610,10 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (pollState.status !== 'aborted') {
       pollState.status = 'aborted';
       for (const entry of pollState.entries) {
-        if (entry.vote !== 'no-go') tellFromUser(entry.agent, 'T-minus: aborted', 'The Director aborted the poll. Stand by.');
+        if (entry.vote !== 'no-go') {
+          if (pollState.subject === undefined) tellFromUser(entry.agent, 'T-minus: aborted', 'The Director aborted the poll. Stand by.');
+          else tellFromUser(entry.agent, 'Static fire: aborted', 'The Director aborted the static fire. Stand by.');
+        }
       }
       publishPoll();
     }
@@ -2642,6 +2784,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     sendFromStation,
     sendFromAgent,
     trip,
+    hold,
     resume,
     readMessages,
     rosterFor,

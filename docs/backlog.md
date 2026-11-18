@@ -64,7 +64,9 @@ Plan:
 - [ ] A boss that hires agents by itself.
 - [ ] Waking idle workers that hold unread mail. gonogo already types a pointer into an idle agent; check what
       more the reference does.
-- [ ] Hold button for an agent *(inferred)*.
+- [x] Hold button for an agent *(inferred)*. Built (2026-11-18) as **Hold**: a key in the console panel puts a Claude Code
+      or Gemini CLI agent on hold through Redline's machinery (Escape if working, mail held) until RESUME
+      (`docs/telemetry-spec.md`). Tested with the stand-in agent only.
 - [ ] Workers in git worktrees *(inferred)*.
 - [ ] Phone approvals through Claude Code's `/remote-control`.
 
@@ -87,7 +89,9 @@ Plan:
 - [ ] Cost and usage tracking with pricing.
 - [ ] Telemetry.
 - [ ] Circuit breaker *(what trips it is not known: check the reference)*.
-- [ ] Tool-call waterfall: a timeline of what an agent did *(inferred)*.
+- [x] Tool-call waterfall: a timeline of what an agent did *(inferred)*. Built (2026-11-18) as **Telemetry**: a fold in
+      the console panel with each tool call's start, duration, tool and one line, newest first, from the hooks (Claude Code;
+      Gemini CLI without failures). 200 calls per agent in memory and in `telemetry.jsonl`. Tested with the stand-in agent only.
 
 ## 8. Workspace tools
 
@@ -96,8 +100,8 @@ Plan:
 
 ## 9. App shell
 
-- [ ] Onboarding wizard and a settings screen.
-- [ ] Command bar.
+- [x] Onboarding wizard and a settings screen. Built 2026-11-18 as Commissioning and Flight Rules (`docs/shell-spec.md`).
+- [x] Command bar. Built 2026-11-18 as the Patch Panel (`docs/shell-spec.md`).
 - [ ] Office themes.
 - [ ] Avatars that walk around the floor. This needs art of our own: the reference's tile sets cannot be used.
 - [ ] Auto-update.
@@ -144,8 +148,9 @@ Work:
 - [x] Roster data: the 15 positions with call sign, colour and a full default role text each, as one shared
       constant with tests. The "Here" column above is only the summary of each role text.
 - [x] Hire form: a position picker that fills the name and the role (the position sets the accent colour); "custom" keeps today's free form.
-- [ ] Decide what a second agent in the same position is called (today: the owner picks any free name). Suggestion: positions are presets, not unique
-      seats, so the second backend is `guido-2`.
+- [x] Decide what a second agent in the same position is called. Decided (2026-11-18): positions are presets, not unique
+      seats. Picking a position whose call sign is taken fills the name with the next free `<id>-2`, `-3`, ...
+      (`suggestName` in `src/client/form.ts`); the server stays the judge of unique names.
 - [x] Wording: office, desk, boss, mailbox and envelope get control-room nouns (to be chosen). The verbs on
       buttons stay plain.
 - [x] Floor art: rows of consoles facing a wall display instead of desks, avatars with headsets, the five states
@@ -182,7 +187,7 @@ Ideas from the owner, not designed yet: two real mission-control moments as buil
       until it is cleared or the Director aborts. The pieces are a poll message with a shared tally, a lamp per
       position in the UI, and hold and abort controls. The boss can already poll through the existing messaging;
       the new part is the tally and its display.
-- [x] **Max Q: the peak-load moment.** Built as reading (a), the load governor (2026-11-16); reading (b), the stress ritual, is not built. In a launch, Max Q is the point of greatest stress, and the engines throttle
+- [x] **Max Q: the peak-load moment.** Built as reading (a), the load governor (2026-11-16); reading (b), the stress ritual, is built as **Static fire** (2026-11-18, `docs/static-fire-spec.md`): a T-minus poll with a subject that briefs SIMSUP to break it and RETRO to write the rollback; not run with a real `claude`. In a launch, Max Q is the point of greatest stress, and the engines throttle
       down through it. Two readings, to choose between: (a) a load governor: a limit on how many agents work at
       once, and a throttle that holds new work while too many agents are busy or waiting for the Director;
       (b) a stress ritual: before work ships, SIMSUP tries to break it and RETRO writes the rollback.

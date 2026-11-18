@@ -32,7 +32,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
+  gap: 8px; /* nine keys on one line at 1280 px (Patch Panel, Flight Rules and Livery are round) */
   min-height: 64px;
   padding: 20px 24px 0;
 }
@@ -60,20 +60,16 @@
   filter: invert(1) hue-rotate(180deg);
 }
 
-/* Seven keys, the Livery key and the two round keys of the Plot Board and the Black Box and the long name of the unit do not fit on one line below 1500 px: the name gives way, GN-1 stays, and the gap is 6 px. */
-@media (min-width: 700px) and (max-width: 1499px) {
+/* Nine keys (three of them round) and the long name of the unit do not fit on one line below 1400 px: the name gives way, GN-1 stays. */
+@media (min-width: 700px) and (max-width: 1399px) {
   .mark-unit-long {
     display: none;
   }
-
-  .topbar {
-    column-gap: 6px;
-  }
 }
 
-/* It starts at nothing and grows into the room that is left, up to 24 characters: a top bar with seven keys and two round ones must stay on one line at 1280 px, so the folder gives way first (its gap is 10 px, 6 px below 1500 px, for that). */
+/* It starts small and grows into the room that is left, up to 24 characters: a top bar with nine keys must stay on one line at 1280 px (its gap is 8 px for that). */
 .topbar-dir {
-  flex: 1 1 0;
+  flex: 1 1 6ch;
   min-width: 0;
   max-width: 24ch;
   overflow: hidden;
@@ -100,6 +96,29 @@
   margin: 12px 24px 0;
   padding: 6px 14px;
   color: var(--you-ink);
+  font-size: 12px;
+}
+
+/* Rollout: a quiet note, not an alert; it takes a line under the top bar only while a newer gonogo is out. */
+.rollout-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 12px 24px 0;
+  padding: 2px 8px 2px 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--well);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.rollout-strip code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -360,6 +379,28 @@
   font-size: 11px;
 }
 
+/* Static fire: a subject field and its key under the poll keys. */
+.wall-fire {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wall-fire .input {
+  flex: 1 1 120px;
+  height: 44px;
+}
+
+.wall-fire .btn {
+  flex: none;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.wall-fire .hint {
+  flex: 1 1 100%;
+}
+
 /* Max Q: a knob. The ring is --work as far as the agents working are of the limit (270 degrees = all of them). */
 .wall-maxq {
   align-items: center;
@@ -510,6 +551,68 @@
   cursor: pointer;
 }
 
+/* ---- Telemetry: the tool calls of a console, newest first ---- */
+
+.telemetry {
+  max-height: 320px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 12px;
+}
+
+.telemetry-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.telemetry-row:last-child {
+  border-bottom: 0;
+}
+
+.telemetry-time,
+.telemetry-ms {
+  color: var(--lcd-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.telemetry-tool {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetry-ms[data-failed] {
+  color: var(--lcd-warm);
+}
+
+.telemetry-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 6%);
+}
+
+.telemetry-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--lcd-dim);
+}
+
+.telemetry-detail {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--lcd-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- the room ---- */
 
 .room {
@@ -577,6 +680,9 @@
   position: sticky;
   bottom: 12px;
   z-index: 5;
+  /* three hire requests are tall: the dock scrolls before it hides the matrix */
+  max-height: 55vh;
+  overflow-y: auto;
 }
 
 .need {
@@ -639,6 +745,71 @@
 
 .need .btn[data-kind='primary'][data-size='big'] {
   padding: 0 30px;
+}
+
+/* ---- Relief: a hire request that waits for the Director (docs/relief-spec.md) ---- */
+
+.relief-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 2px 16px;
+  margin: 4px 0 0;
+}
+
+/* the notice of a failed answer: it wraps on the phone too (a .need-detail is one line there), the message is the point */
+.relief-failed {
+  margin: 0;
+  color: var(--you-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.relief-row {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--you-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.relief-row dt {
+  flex: none;
+  font-weight: 600;
+}
+
+.relief-row dt::after {
+  content: ':';
+}
+
+.relief-row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.relief-role-label {
+  margin: 6px 0 0;
+  color: var(--you-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.relief-role {
+  max-height: 11em;
+  margin: 0;
+  padding: 4px 8px;
+  overflow: auto;
+  border: 1px solid var(--you-key);
+  border-radius: var(--radius-key);
+  color: var(--you-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 /* ---- the selected console ---- */
@@ -1042,9 +1213,9 @@
   position: sticky;
   bottom: 0;
   display: flex;
-  gap: 6px;
+  gap: 3px;
   margin-top: auto;
-  padding: 8px 12px 12px;
+  padding: 8px 6px 12px;
   background: var(--body);
 }
 
@@ -1052,7 +1223,7 @@
   position: relative;
   flex: 1 1 0;
   min-height: 48px;
-  padding: 0 2px; /* seven keys must fit in 390 px at 44 px or more each */
+  padding: 0 1px; /* eight keys must fit in 390 px at 44 px or more each (with the gap and the side padding of the bar) */
   border-radius: 9px;
   font-size: 11px;
   letter-spacing: 0;
@@ -1163,6 +1334,14 @@
   flex: none;
   max-height: 132px;
   overflow-y: auto;
+}
+
+.phone-traffic .panel-fuel {
+  padding: 0 12px;
+}
+
+.phone-traffic .telemetry {
+  max-height: none;
 }
 
 .phone-keys {
@@ -1335,7 +1514,7 @@
 
   .topbar {
     flex-wrap: nowrap;
-    gap: 6px;
+    gap: 10px;
     min-height: 52px;
     padding: 4px 8px 4px 14px;
   }
@@ -1344,14 +1523,8 @@
     height: 22px;
   }
 
-  /* Four round keys (Plot Board, Black Box, Livery, Staff) of 44 px must fit in 390 px: the name of the unit goes, and the link lamp is its light alone (its words stay for a screen reader, and a lost link has a strip with words under the bar). */
   .mark-unit {
-    display: none;
-  }
-
-  .lamp {
-    gap: 0;
-    font-size: 0;
+    font-size: 9.5px;
   }
 
   .mark-unit-long,
@@ -1361,6 +1534,10 @@
 
   .gone-strip {
     margin: 6px 12px 0;
+  }
+
+  .rollout-strip {
+    margin: 6px 12px;
   }
 
   /* One module for the whole wall; the sequence is a desktop block. */
@@ -1434,6 +1611,11 @@
 
   .wall-tminus > .label {
     font-size: 10px;
+  }
+
+  .wall-fire {
+    flex: 1 1 100%;
+    order: 6;
   }
 
   .wall-word {
@@ -1559,6 +1741,21 @@
     min-height: 44px;
     padding: 0 14px;
     font-size: 11px;
+  }
+
+  /* a hire request has rows and a role text: it wraps, and its keys take the width */
+  .relief-need {
+    flex-wrap: wrap;
+  }
+
+  .relief-need .need-text,
+  .relief-need .go-buttons {
+    flex: 1 1 100%;
+  }
+
+  .relief-need .go-buttons .btn {
+    flex: 1;
+    padding: 0;
   }
 
   .operations {

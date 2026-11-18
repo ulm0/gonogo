@@ -42,6 +42,7 @@ export const EVENT_CHIPS: Readonly<Record<DownlinkEventKind, { text: string; ton
   uplink: { text: 'UPLINK', tone: 'amber' },
   'flight-plan': { text: 'FLIGHT PLAN', tone: 'quiet' },
   livery: { text: 'LIVERY', tone: 'quiet' },
+  relief: { text: 'RELIEF', tone: 'amber' },
 };
 
 export const unreadText = (n: number): string => `${n} unread`;

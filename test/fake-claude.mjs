@@ -43,6 +43,7 @@ const ALLOWED_TOOLS = [
   'mcp__gonogo__board_read',
   'mcp__gonogo__board_write',
   'mcp__gonogo__livery_submit',
+  'mcp__gonogo__hire_agent',
 ];
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'bypassPermissions'];
 const POINTER_RE = /^gonogo: (\d+) new messages? from (.+)\. Call read_messages\.$/;
@@ -111,6 +112,7 @@ function parseArgv(args) {
     strict: false,
     allowed: null,
     pluginDir: null,
+    model: null,
   };
   const seen = new Set();
   const valueOf = (flag, index) => {
@@ -155,6 +157,10 @@ function parseArgv(args) {
         break;
       case '--plugin-dir':
         out.pluginDir = valueOf(flag, i);
+        i += 1;
+        break;
+      case '--model':
+        out.model = valueOf(flag, i);
         i += 1;
         break;
       case '--allowedTools': {
@@ -308,7 +314,7 @@ function log(entry) {
 }
 
 // before the session check, so that a start that exits 1 is visible too
-log({ e: 'start', plugin, servers: mcpServer.names, argv: process.argv.slice(2), tokenLength: (process.env.GONOGO_TOKEN ?? '').length, cwd: process.cwd(), pid: process.pid });
+log({ e: 'start', plugin, servers: mcpServer.names, argv: process.argv.slice(2), tokenLength: (process.env.GONOGO_TOKEN ?? '').length, cwd: process.cwd(), pid: process.pid, model: opts.model, openaiKey: process.env.OPENAI_API_KEY ?? null });
 
 /* ---- session emulation (9.2) ---- */
 
@@ -812,11 +818,12 @@ async function directive(name, rest) {
       await mcpTool('go_nogo', { vote, reason: reason.join(' ') });
       return 'ok';
     }
-    // `@fake task task_list|task_create|task_update <json>` or `@fake log log_write|log_search|log_read <json>` or `@fake board board_read|board_write <json>` or `@fake livery livery_submit <json>`: a Flight Plan, Mission Log, Plot Board or Livery tool, the JSON being its arguments
+    // `@fake task task_list|task_create|task_update <json>` or `@fake log log_write|log_search|log_read <json>` or `@fake board board_read|board_write <json>` or `@fake livery livery_submit <json>` or `@fake relief hire_agent <json>`: a Flight Plan, Mission Log, Plot Board, Livery or Relief tool, the JSON being its arguments
     case 'task':
     case 'log':
     case 'board':
-    case 'livery': {
+    case 'livery':
+    case 'relief': {
       const [tool = '', ...json] = rest.split(/\s+/);
       await mcpTool(tool, json.length === 0 ? {} : JSON.parse(json.join(' ')));
       return 'ok';

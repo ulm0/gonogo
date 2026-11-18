@@ -17,10 +17,11 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LOG_BODY_MAX_CHARS, LOG_ENTRIES_MAX, LOG_QUERY_MAX_CHARS, LOG_SEARCH_MAX, LOG_TAG_PATTERN, LOG_TAGS_MAX, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
-import type { LogEntry, LogFrame, LogHit, Logger, LogSearch } from '../shared/protocol.js';
+import type { LogChart, LogEntry, LogFrame, LogHit, Logger, LogSearch } from '../shared/protocol.js';
 import { DIR_MODE, FILE_MODE, LOG_DIR } from './constants.js';
 import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
+import { buildChart } from './logchart.js';
 import { createIndex, snippet } from './logsearch.js';
 import { UNSAFE_IN_NAME } from './schedules.js';
 
@@ -46,6 +47,8 @@ export interface MissionLog {
   /** The entries that hold a word of the query, best first; an empty query gives the newest. At most `limit` hits. */
   search(query: string, limit?: number): LogSearch;
   get(id: string): LogEntry;
+  /** Star Chart: the newest entries with their tags, authors and mentions of each other (logchart.ts). */
+  chart(): LogChart;
   /** The input is a JSON value from the wire; a bad one throws a HubError (bad_request, field). The title and the body are required. */
   create(author: string, input: unknown): Promise<LogEntry>;
   /** `by` is the agent that asks, who may change only its own entries; null is the Director. The fields given change; at least one. */
@@ -188,6 +191,8 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
     },
 
     get: (id) => copy(find(id)),
+
+    chart: () => buildChart([...entries.values()]),
 
     create(author, input) {
       return locked(async () => {

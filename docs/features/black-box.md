@@ -2,7 +2,7 @@
 
 <BlackBoxMock class="doc-mock" />
 
-BLACK BOX (round key, top bar) lists the latest events of the room and shows the command that reads the whole record with git. The server writes it into a git repository of its own and is the only committer. Design and limits: [`docs/black-box-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/black-box-spec.md).
+BLACK BOX (open it from the Patch Panel, Cmd+K or Ctrl+K) lists the latest events of the room and shows the command that reads the whole record with git. The server writes it into a git repository of its own and is the only committer. Design and limits: [`docs/black-box-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/black-box-spec.md).
 
 ## What is recorded
 

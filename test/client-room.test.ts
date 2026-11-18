@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActivityItem, AgentView, PollView, StateChange } from '../src/shared/protocol.js';
-import { HISTORY_WINDOW_MS, MAX_AGENTS } from '../src/shared/protocol.js';
+import { HISTORY_WINDOW_MS, HOLD_REASON, MAX_AGENTS } from '../src/shared/protocol.js';
 import { POSITIONS } from '../src/shared/positions.js';
 import {
   ANNOUNCE_GAP_MS,
@@ -12,9 +12,11 @@ import {
   cleanRoomPlace,
   consoleMode,
   createAnnouncer,
+  holdable,
   ledOf,
   legendsOf,
   needingYou,
+  onHold,
   panelDetails,
   reasonText,
   seat,
@@ -30,8 +32,10 @@ import type { Cell } from '../src/client/room.js';
 import {
   briefedText,
   clockText,
+  fireTargets,
   missionOf,
   noteLine,
+  pollHeading,
   pollTargets,
   pollWord,
   sequenceLabel,
@@ -64,6 +68,8 @@ function agent(name: string, desk: number, extra: Partial<AgentView> = {}): Agen
     command: null,
     payload: null,
     cleanRoom: null,
+    model: null,
+    keys: {},
     doing: null,
     history: [],
     ...extra,
@@ -283,6 +289,24 @@ describe('the console panel', () => {
     expect(chipText(agent('a', 1, { state: 'working', stateSince: 0 }), 38_000)).toBe('WORKING 38 S');
   });
 
+  it('Hold: offered to a running agent with hooks; a held one reads ON HOLD, not the redline', () => {
+    const base = agent('a', 1, { state: 'working', stateSince: 0 });
+    expect(holdable(base)).toBe(true);
+    expect(holdable({ ...base, state: 'idle', provider: 'gemini' })).toBe(true);
+    expect(holdable({ ...base, provider: 'codex' })).toBe(false);
+    expect(holdable({ ...base, provider: 'custom' })).toBe(false);
+    expect(holdable({ ...base, state: 'stopped' })).toBe(false);
+    expect(holdable({ ...base, transition: 'restarting' })).toBe(false);
+    const held = { ...base, state: 'needs_you' as const, needsKind: 'redline' as const, needsReason: HOLD_REASON };
+    expect(holdable(held)).toBe(false);
+    expect(onHold(held)).toBe(true);
+    expect(onHold({ ...held, needsReason: 'redline: loop: Bash: ls 5 times in a row' })).toBe(false);
+    expect(askTitle(held, 'FIDO')).toBe('FIDO IS ON HOLD');
+    expect(askTitle({ ...held, needsReason: 'redline: loop' }, 'FIDO')).toBe('FIDO HIT THE REDLINE');
+    expect(chipText(held, 60_000)).toBe('NEEDS YOU 1 M · HOLD');
+    expect(chipText({ ...held, needsReason: 'redline: loop' }, 60_000)).toBe('NEEDS YOU 1 M · REDLINE');
+  });
+
   it('tells about waiting mail and edits that need a restart', () => {
     expect(panelDetails(agent('a', 1))).toEqual([]);
     expect(panelDetails(agent('a', 1, { queued: 2, dirty: true }))).toEqual(['2 messages waiting', 'Restart to apply the changes you saved.']);
@@ -398,6 +422,23 @@ describe('T-minus', () => {
     expect(noteLine(null, [agent('a', 1), agent('b', 2)], legends)).toBe('No poll. 2 consoles can be asked.');
     expect(noteLine(null, [], legends)).toMatch(/Nobody to ask/);
   });
+
+  it('static fire: SIMSUP and RETRO are the crew, the heading and the note name it', () => {
+    const list = [
+      agent('flight', 0, { boss: true }),
+      agent('sim', 1, { position: 'simsup' }),
+      agent('ret', 2, { position: 'retro', state: 'stopped' }),
+      agent('ret-2', 3, { position: 'retro' }),
+      agent('g', 4, { position: 'guido' }),
+    ];
+    expect(fireTargets(list).map((a) => a.name)).toEqual(['sim', 'ret-2']);
+    expect(fireTargets([agent('g', 1, { position: 'guido' })])).toEqual([]);
+    expect(pollHeading(null)).toBe('T-MINUS');
+    expect(pollHeading(poll())).toBe('T-MINUS');
+    expect(pollHeading(poll({ subject: 'login' }))).toBe('STATIC FIRE');
+    const legends = legendsOf(seat([agent('f', 1, { position: 'fido' })]));
+    expect(noteLine(poll({ subject: 'login', entries: [{ agent: 'f', vote: 'no-go', reason: 'broke', at: 1 }] }), [], legends)).toBe('login · waiting for ana · FIDO: broke');
+  });
 });
 
 describe('live region announcer', () => {
@@ -448,6 +489,16 @@ describe('live region announcer', () => {
     announcer.update(facts([agent('a', 1, { state: 'stopped' })], { unread: 2, poll: poll({ status: 'go' }), limit: 3 }), {});
     vi.advanceTimersByTime(ANNOUNCE_GAP_MS);
     expect(writes).toEqual(['A stopped. 2 unread in the Downlink. T-minus: GO. Max Q limit 3']);
+  });
+
+  it('names a static fire: its start with the subject, its result', () => {
+    const { writes, announcer } = setup();
+    announcer.update(facts([agent('a', 1)]), {});
+    announcer.update(facts([agent('a', 1)], { poll: poll({ subject: 'login' }) }), {});
+    vi.advanceTimersByTime(ANNOUNCE_GAP_MS);
+    announcer.update(facts([agent('a', 1)], { poll: poll({ subject: 'login', status: 'go' }) }), {});
+    vi.advanceTimersByTime(ANNOUNCE_GAP_MS);
+    expect(writes).toEqual(['Static fire started: login', 'Static fire: GO']);
   });
 
   it('waits the gap since the last write before the next one', () => {

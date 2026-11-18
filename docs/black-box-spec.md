@@ -62,11 +62,10 @@ the server writes to it, and when git is missing the room works and the page say
   the newest day files only (64 KiB of each, up to 7 files), so a big day costs no more than a small one; a line that is not an
   event is skipped. Without a `blackBox` option the route is 404. There is no tool: no agent can read or write the record through
   gonogo, and no route writes to it.
-- **The screen** is a view of its own, BLACK BOX (`BlackBox.tsx`, `audit.ts`, `records.css`; `store.view` is `blackbox`), reached by a
-  round key of the top bar next to the Plot Board's. The line on the state of git (amber when it is not `ok`), the command in a read-only
+- **The screen** is a view of its own, BLACK BOX (`BlackBox.tsx`, `audit.ts`, `records.css`; `store.view` is `blackbox`), reached from the Patch Panel (a line "Black Box"). The line on the state of git (amber when it is not `ok`), the command in a read-only
   field that selects itself whole, COPY (the page says `Copied.` or that the browser would not, in words and not only for a screen reader), and the events: time in the
   browser's zone, a chip for the kind, the text. The page asks every 5 seconds while the tab is visible.
-- **The top bar** takes this key and the Plot Board's as round keys; see `docs/plot-board-spec.md` for how the bar was made to fit.
+- **No key.** The top bar and the phone bar are full; see `docs/plot-board-spec.md`.
 - **No option and no environment variable.** The limits are constants (`constants.ts`).
 
 ## Decisions

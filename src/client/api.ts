@@ -10,12 +10,15 @@ import type {
   DockView,
   DownlinkView,
   EditRequest,
+  EngineCheck,
   ErrorFrame,
   GovernorRequest,
   GovernorView,
   HireRequest,
+  MemoryView,
   LiveryDesignRequest,
   LiveryView,
+  LogChart,
   LogEntry,
   LogRequest,
   LogSearch,
@@ -23,10 +26,12 @@ import type {
   PollView,
   PropellantRequest,
   PropellantView,
+  ReflectResult,
   RelayForwardRequest,
   RelayService,
   RelayTargetRequest,
   RelayView,
+  ReliefView,
   ScheduleRequest,
   ScheduleView,
   SendResult,
@@ -36,6 +41,7 @@ import type {
   StateSnapshot,
   Task,
   TaskPatch,
+  ToolCall,
   TaskRequest,
   UplinkCreated,
   UplinkPatch,
@@ -196,6 +202,29 @@ function toDownlinkView(value: unknown): DownlinkView {
   return value as DownlinkView;
 }
 
+/** A hire request as the page draws it: every field the block shows must be there. */
+function isReliefRequest(value: unknown): boolean {
+  const r = asRecord(value);
+  return (
+    r !== null &&
+    ['id', 'by', 'name', 'role', 'dir', 'provider', 'mode'].every((key) => typeof r[key] === 'string') &&
+    typeof r.at === 'number' &&
+    typeof r.expiresAt === 'number' &&
+    (r.position === null || typeof r.position === 'string') &&
+    (r.cleanRoom === null || asRecord(r.cleanRoom) !== null)
+  );
+}
+
+const isReliefView = (value: unknown): value is ReliefView => {
+  const requests = asRecord(value)?.requests;
+  return Array.isArray(requests) && requests.every(isReliefRequest);
+};
+
+function toReliefView(value: unknown): ReliefView {
+  if (!isReliefView(value)) throw failure('The server sent an answer gonogo does not understand.');
+  return value;
+}
+
 function toLiveryView(value: unknown): LiveryView {
   const record = asRecord(value);
   if (record === null || typeof record.current !== 'string' || !Array.isArray(record.liveries) || !record.liveries.every((e) => typeof asRecord(e)?.slug === 'string' && asRecord(asRecord(e)?.tokens) !== null)) {
@@ -230,6 +259,27 @@ function toAuditView(value: unknown): AuditView {
   const record = asRecord(value);
   if (record === null || typeof record.git !== 'string' || typeof record.command !== 'string' || !Array.isArray(record.events)) throw failure('The server sent an answer gonogo does not understand.');
   return value as AuditView;
+}
+
+function toLogChart(value: unknown): LogChart {
+  const record = asRecord(value);
+  if (record === null || typeof record.total !== 'number' || !Array.isArray(record.nodes) || !Array.isArray(record.edges)) {
+    throw failure('The server sent an answer gonogo does not understand.');
+  }
+  return value as LogChart;
+}
+
+function toMemoryView(value: unknown): MemoryView {
+  const record = asRecord(value);
+  if (record === null || typeof record.bytes !== 'number' || typeof record.over !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return value as MemoryView;
+}
+
+function toReflectResult(value: unknown): ReflectResult {
+  const record = asRecord(value);
+  if (record === null || asRecord(record.send) === null) throw failure('The server sent an answer gonogo does not understand.');
+  toMemoryView(record.memory);
+  return value as ReflectResult;
 }
 
 function toTask(value: unknown): Task {
@@ -278,6 +328,13 @@ export async function edit(name: string, request: EditRequest): Promise<AgentVie
   return toAgentView(await call('PATCH', agentPath(name), request));
 }
 
+/** Pad Check: where each engine is on the server's PATH and what its `--version` says. */
+export async function engines(): Promise<EngineCheck[]> {
+  const list = await call('GET', '/engines');
+  if (!Array.isArray(list) || !list.every((e) => typeof asRecord(e)?.provider === 'string')) throw failure('The server sent an answer gonogo does not understand.');
+  return list as EngineCheck[];
+}
+
 /** Also starts a stopped agent. */
 export async function restart(name: string): Promise<AgentView> {
   return toAgentView(await call('POST', `${agentPath(name)}/restart`));
@@ -318,6 +375,11 @@ export async function answer(name: string, go: boolean): Promise<AgentView> {
   return toAgentView(await call('POST', `${agentPath(name)}/answer`, request));
 }
 
+/** Relief: the Director's GO or NO-GO on a hire request of the boss. The answer is the list as it is now. */
+export async function answerRelief(id: string, go: boolean): Promise<ReliefView> {
+  return toReliefView(await call('POST', `/relief/${encodeURIComponent(id)}/${go ? 'go' : 'no-go'}`));
+}
+
 /** Max Q: a limit of 1 to MAX_AGENTS, or null to switch it off. */
 export async function setGovernor(request: GovernorRequest): Promise<GovernorView> {
   return toGovernorView(await call('PUT', '/governor', request));
@@ -331,6 +393,18 @@ export async function setPropellant(request: PropellantRequest): Promise<Propell
 /** Clears a Redline trip: the agent gets its mail again. */
 export async function resume(name: string): Promise<AgentView> {
   return toAgentView(await call('POST', `${agentPath(name)}/resume`));
+}
+
+/** Hold: the Director stops the agent's turn and its mail until RESUME. */
+export async function hold(name: string): Promise<AgentView> {
+  return toAgentView(await call('POST', `${agentPath(name)}/hold`));
+}
+
+/** Telemetry: the agent's tool calls, newest first. */
+export async function telemetry(name: string): Promise<ToolCall[]> {
+  const record = asRecord(await call('GET', `${agentPath(name)}/telemetry`));
+  if (record === null || !Array.isArray(record.calls)) throw failure('The server sent an answer gonogo does not understand.');
+  return record.calls as ToolCall[];
 }
 
 /** Launch Window: a schedule that sends a message by itself on a cron rule. The list comes in the state and in `schedules` frames. */
@@ -442,6 +516,20 @@ export async function readBlackBox(): Promise<AuditView> {
   return toAuditView(await call('GET', '/black-box'));
 }
 
+/** Star Chart: the newest entries with their tags, authors and mentions. Asked again when a `log` frame says something changed. */
+export async function logChart(): Promise<LogChart> {
+  return toLogChart(await call('GET', '/log/chart'));
+}
+
+/** Mass Budget: the size of an agent's memory.md, and the request to condense it. No frame: the page asks. */
+export async function agentMemory(name: string): Promise<MemoryView> {
+  return toMemoryView(await call('GET', `${agentPath(name)}/memory`));
+}
+
+export async function reflect(name: string): Promise<ReflectResult> {
+  return toReflectResult(await call('POST', `${agentPath(name)}/reflect`));
+}
+
 /** Downlink: the inbox. It comes in the state and in `downlink` frames; each call answers with it as it is now. */
 export async function markRead(ids: string[]): Promise<DownlinkView> {
   return toDownlinkView(await call('POST', '/downlink/read', { ids }));
@@ -551,7 +639,9 @@ function parseFrame(text: string): ServerFrame | null {
   else if (frame.t === 'uplinks') valid = Array.isArray(frame.uplinks);
   else if (frame.t === 'tasks') valid = Array.isArray(frame.tasks);
   else if (frame.t === 'livery') valid = asRecord(frame.livery) !== null && Array.isArray(asRecord(frame.livery)?.liveries) && typeof asRecord(frame.livery)?.current === 'string';
+  else if (frame.t === 'relief') valid = isReliefView(frame.relief);
   else if (frame.t === 'docking') valid = typeof asRecord(frame.docking)?.station === 'string' && Array.isArray(asRecord(frame.docking)?.docks);
+  else if (frame.t === 'rollout') valid = typeof asRecord(frame.rollout)?.current === 'string';
   else if (frame.t === 'log') valid = Array.isArray(frame.changed) && Array.isArray(frame.removed);
   else if (frame.t === 'downlink') valid = Array.isArray(asRecord(frame.downlink)?.items) && typeof asRecord(frame.downlink)?.unread === 'number';
   else if (frame.t === 'activity') {

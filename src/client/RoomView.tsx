@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, ReactElement, RefObject } from 'react';
-import type { AgentView } from '../shared/protocol.js';
+import type { AgentView, ReliefRequest } from '../shared/protocol.js';
 import { MAX_AGENTS } from '../shared/protocol.js';
 import type { Position } from '../shared/positions.js';
 import { ConsoleTraffic } from './Activity.js';
 import { AgentFuel } from './Propellant.js';
 import { Brief } from './Brief.js';
+import { MassBudget } from './MassBudget.js';
 import * as api from './api.js';
 import {
   askDetail,
@@ -17,9 +18,11 @@ import {
   cleanRoomPlace,
   consoleMode,
   consoleSubtitle,
+  holdable,
   ledOf,
   legendsOf,
   needingYou,
+  onHold,
   panelDetails,
   reasonText,
   seat,
@@ -33,11 +36,13 @@ import {
   voteOf,
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
+import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHire, showLoop, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
+import { AgentTelemetry } from './TelemetryPanel.js';
 
 /* ---- helpers ---- */
 
@@ -118,7 +123,7 @@ function Tile({ cell, selected, phone }: { cell: Cell; selected: boolean; phone:
   const { agent, position } = cell;
   const vote = voteOf(poll, agent.name);
   const [first, second] = tileLines(agent, position);
-  const right = vote ?? (agent.provider === 'custom' ? 'CUSTOM' : agent.held !== null ? `${agent.queued} HELD` : '');
+  const right = vote ?? (agent.provider === 'custom' ? 'CUSTOM' : agent.held !== null ? `${agent.queued} HELD` : onHold(agent) ? 'ON HOLD' : '');
   return (
     <button
       type="button"
@@ -252,17 +257,70 @@ function Need({ agent, legend, phone }: { agent: AgentView; legend: string; phon
   );
 }
 
-/** One amber flood per console that needs the Director. Nothing is drawn when none does. */
+/** Relief: the boss asks to hire. Every parameter is here, and GO is the only way the agent is hired. */
+function ReliefNeed({ request, legend, onFail }: { request: ReliefRequest; legend: string; onFail(text: string): void }): ReactElement {
+  const now = useNow();
+  const { busy, run } = useRun();
+  const title = reliefTitle(request, legend);
+  // the request leaves the list before the hire runs, so this block is gone when a GO fails: the failure is told by `Needs`, which stays
+  const answer = (go: boolean): void => run(() => api.answerRelief(request.id, go).catch((e: unknown) => onFail(reliefFailure(request.name, go, e))));
+  return (
+    <section className="flood need relief-need" data-tone="amber" aria-label={title}>
+      <span className="led need-led" data-on="true" data-blink="true" aria-hidden="true" />
+      <div className="need-text">
+        <h3 className="disp need-title">{title}</h3>
+        <dl className="relief-rows">
+          {reliefRows(request, now).map((row) => (
+            <div key={row.label} className="relief-row">
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="relief-role-label" id={`relief-role-${request.id}`}>
+          {roleLabel(request)}
+        </p>
+        {/* the whole text, in a box that scrolls: the Director decides on what he can read */}
+        <p className="relief-role" role="group" tabIndex={0} aria-labelledby={`relief-role-${request.id}`}>
+          {request.role}
+        </p>
+      </div>
+      <div className="go-buttons">
+        <button type="button" className="btn" data-kind="danger" data-size="big" aria-disabled={busy || undefined} aria-label={`NO-GO: do not hire ${request.name}`} onClick={() => answer(false)}>
+          NO-GO
+        </button>
+        <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={busy || undefined} aria-label={`GO: hire ${request.name}`} onClick={() => answer(true)}>
+          GO
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** One amber flood per console that needs the Director, then one per hire request that waits. Nothing is drawn when none does. */
 export function Needs({ phone }: { phone: boolean }): ReactElement | null {
   const list = useAgentList();
   const { legends } = useSeats();
+  const relief = useStore((s) => s.relief);
+  const [failed, setFailed] = useState<string | null>(null);
   const needing = needingYou(list);
-  if (needing.length === 0) return null;
+  if (needing.length === 0 && relief.length === 0 && failed === null) return null;
   return (
     // On a wide page the floods dock at the foot of the viewport while the matrix is on screen: the wall is tall and the floods sit below the matrix.
     <div className={phone ? 'needs' : 'needs needs-dock'}>
+      {failed !== null && (
+        <section className="flood need" data-tone="nogo" role="alert">
+          <p className="need-text relief-failed">{failed}</p>
+          <button type="button" className="btn" data-size="big" onClick={() => setFailed(null)}>
+            DISMISS
+          </button>
+        </section>
+      )}
       {needing.map((agent) => (
         <Need key={agent.name} agent={agent} legend={legendOf(legends, agent.name)} phone={phone} />
+      ))}
+      {relief.map((request) => (
+        <ReliefNeed key={request.id} request={request} legend={legendOf(legends, request.by)} onFail={setFailed} />
       ))}
     </div>
   );
@@ -288,6 +346,11 @@ function Actions({ agent, onRemove, removeRef, locked, run }: { agent: AgentView
   const mode = consoleMode(agent);
   return (
     <div className="panel-actions">
+      {holdable(agent) && (
+        <button type="button" className="btn" data-kind="quiet" aria-disabled={locked || undefined} onClick={() => !locked && run(() => api.hold(agent.name))}>
+          Hold
+        </button>
+      )}
       {mode !== 'stopped' && (
         <button type="button" className="btn" data-kind="quiet" aria-disabled={locked || undefined} onClick={() => !locked && run(() => api.restart(agent.name))}>
           Restart
@@ -332,10 +395,10 @@ function Foot({ agent, run, locked }: { agent: AgentView; run(action: () => Prom
       <div className="flood foot-ask" data-tone="amber">
         <h3 className="disp">
           <span className="led" data-on="true" data-blink="true" aria-hidden="true" />
-          NEEDS YOU
+          {onHold(agent) ? 'ON HOLD' : tripped(agent) ? 'HIT THE REDLINE' : 'NEEDS YOU'}
         </h3>
         <p className="need-detail">{askDetail(agent, now)}</p>
-        <p className="need-detail">Answer it in the terminal above.</p>
+        {tripped(agent) ? <RedlineButtons agent={agent} size="row" /> : <p className="need-detail">Answer it in the terminal above.</p>}
       </div>
     );
   }
@@ -445,6 +508,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
       )}
       {details.length > 0 && <p className="panel-details">{details.join(' · ')}</p>}
       <CleanRoomLine agent={agent} />
+      <MassBudget agent={agent} />
       {confirming && (
         <Remove
           agent={agent}
@@ -465,6 +529,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
           <AgentFuel name={agent.name} />
         </details>
       )}
+      <AgentTelemetry name={agent.name} />
       <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
     </aside>
   );
@@ -589,6 +654,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
         </button>
       </div>
       {more && <Actions agent={agent} onRemove={() => setConfirming(true)} removeRef={removeRef} locked={locked} run={run} />}
+      {more && <MassBudget agent={agent} />}
       {error !== null && (
         <p className="error" role="alert">
           {error}
@@ -612,6 +678,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
       <TerminalPane agent={agent} />
       <Foot agent={agent} run={run} locked={locked} />
       <div className="phone-traffic">
+        <AgentTelemetry name={agent.name} />
         <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
       </div>
       <div className="phone-keys" role="group" aria-label="Terminal keys">

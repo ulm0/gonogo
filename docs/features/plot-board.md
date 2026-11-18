@@ -2,7 +2,7 @@
 
 <PlotBoardMock class="doc-mock" />
 
-The PLOT BOARD key (round, top bar) opens one page of text: the room's current plan. Every agent can read it; only FLIGHT, the boss, and you can write it. It is not the [Flight Plan](flight-plan.md) (tasks) or the [Mission Log](mission-log.md) (what agents learned). Design and limits: [`docs/plot-board-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/plot-board-spec.md).
+PLOT BOARD (open it from the Patch Panel, Cmd+K or Ctrl+K) shows one page of text: the room's current plan. Every agent can read it; only FLIGHT, the boss, and you can write it. It is not the [Flight Plan](flight-plan.md) (tasks) or the [Mission Log](mission-log.md) (what agents learned). Design and limits: [`docs/plot-board-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/plot-board-spec.md).
 
 ## The plan
 

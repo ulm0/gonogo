@@ -13,7 +13,7 @@ import type {
   ServerInfo,
   StateSnapshot,
 } from '../src/shared/protocol.js';
-import { ACTIVITY_CLIENT_MAX, ENVELOPE_KEEP_MS } from '../src/shared/protocol.js';
+import { ACTIVITY_CLIENT_MAX, AGENT_NAME_PATTERN, ENVELOPE_KEEP_MS } from '../src/shared/protocol.js';
 import {
   applyServerFrame,
   createStore,
@@ -30,6 +30,7 @@ import {
   showLivery,
   showLog,
   showLoop,
+  showParty,
   showRoom,
   showPlan,
   showWindow,
@@ -41,7 +42,7 @@ import type { ClientState } from '../src/client/store.js';
 import { briefSentText, displayName, plainActivityNote, stoppedCardDetail } from '../src/client/wording.js';
 import { choosePosition, editRequest, hireRequest, suggestName, validate } from '../src/client/form.js';
 import type { Values } from '../src/client/form.js';
-import { positionById } from '../src/shared/positions.js';
+import { POSITION_IDS, positionById } from '../src/shared/positions.js';
 import {
   gaugeSegments,
   governorSummary,
@@ -89,6 +90,8 @@ function agent(name: string, desk: number, extra: Partial<AgentView> = {}): Agen
     command: null,
     payload: null,
     cleanRoom: null,
+    model: null,
+    keys: {},
     doing: null,
     history: [],
     ...extra,
@@ -349,6 +352,25 @@ describe('frames the store does not handle', () => {
       { t: 'something-new' },
     ] as unknown as ServerFrame[];
     for (const frame of frames) expect(applyServerFrame(s, frame, 9_999)).toBe(s);
+  });
+});
+
+describe('rollout (the update note)', () => {
+  const view = (over = {}) => ({ enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: 5, newer: true, command: 'pnpm add -g @ulm0/gonogo@latest', ...over });
+
+  it('starts with none, takes the view of the state, and replaces it with each rollout frame', () => {
+    expect(emptyState().rollout).toBeNull();
+    const first = run([{ t: 'state', state: { ...snapshot([agent('flight', 0)]), rollout: view() } }]);
+    expect(first.rollout).toEqual(view());
+    const later = run([{ t: 'rollout', rollout: view({ latest: '0.3.0' }) }], first);
+    expect(later.rollout?.latest).toBe('0.3.0');
+  });
+
+  it('an older server sends none, and a state that has none drops the old view', () => {
+    const { rollout: _none, ...older } = snapshot([agent('flight', 0)]);
+    expect(run([{ t: 'state', state: older as StateSnapshot }]).rollout).toBeNull();
+    const had = run([{ t: 'rollout', rollout: view() }]);
+    expect(run([{ t: 'state', state: older as StateSnapshot }], had).rollout).toBeNull();
   });
 });
 
@@ -626,6 +648,14 @@ describe('position to name', () => {
     expect(suggestName('fido', { fido: 1, 'fido-2': 1 })).toBe('fido-3');
   });
 
+  it('keeps every suggestion within the name rules (positions are presets, not seats)', () => {
+    for (const id of POSITION_IDS) {
+      const taken = Object.fromEntries([id, ...Array.from({ length: 98 }, (_, i) => `${id}-${i + 2}`)].map((n) => [n, 1]));
+      expect(suggestName(id, taken)).toBe(`${id}-100`);
+      expect(suggestName(id, taken)).toMatch(new RegExp(AGENT_NAME_PATTERN));
+    }
+  });
+
   it('is not fooled by a taken name that is a property of Object.prototype', () => {
     expect(suggestName('constructor', {})).toBe('constructor');
   });
@@ -643,6 +673,9 @@ const VALUES: Values = {
   servers: '',
   skills: '',
   cleanRoom: false,
+  model: '',
+  keys: [],
+  keysRemoved: [],
 };
 
 describe('choosePosition keeps what was typed', () => {
@@ -845,6 +878,12 @@ describe('navigation of the shell', () => {
     openConsole('ana');
     showLog();
     expect(store.getState()).toMatchObject({ view: 'log', consoleOpen: false });
+  });
+
+  it('opens Party Line and leaves a console that was open', () => {
+    openConsole('ana');
+    showParty();
+    expect(store.getState()).toMatchObject({ view: 'party', consoleOpen: false });
   });
 
   it('opens the Plot Board and the Black Box and leaves a console that was open', () => {

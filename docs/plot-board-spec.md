@@ -53,16 +53,12 @@ kept in it.
   name (an unknown field too), a stale revision 409. Without a `board` option the route is 404 and the tools say the board is not
   available. No frame and no part of the state snapshot: the page asks.
 - **The screen** is a view of its own, PLOT BOARD (`PlotBoard.tsx`, `board.ts`, `records.css`; `store.view` is `board`), reached by a
-  round key of the top bar (the same on a phone). A labelled box (`Plan`), a line under it (who wrote it, when, the revision, the
+  the Patch Panel (the same on a phone). A labelled box (`Plan`), a line under it (who wrote it, when, the revision, the
   characters used), SAVE and DISCARD TYPING. The page asks the server every 5 seconds while the tab is visible, and when it becomes
   visible. A box nobody typed in follows the board. A box with typing in it keeps the typing; when the board moved on under it the
   page says who wrote which revision, SAVE stays off, and the second key reads LOAD THE LATEST. A refused save (409) shows the same
   and keeps the typing.
-- **The top bar** had to take two more round keys (this one and the Black Box's). From 700 to 1499 px the gap between its keys is
-  6 px (it was 10) and the folder's width starts at nothing and grows into what is left, so that it is one line at 1280 px; the long
-  name of the unit goes below 1500 px (it was 1400). Under 700 px the name of the unit (`GN-1`) is not shown and the link lamp is its
-  light alone (its words stay for a screen reader; a lost link has its strip with words under the bar), so that four keys of 44 px
-  and the logo fit in 390 px (`shell.css`).
+- **No key.** The top bar (nine keys at 1280 px) and the phone bar (eight keys in 390 px) are full, so the Patch Panel opens this page (the line "Plot Board"), as it does the Black Box and Party Line.
 - **The record.** Each write that changes the board tells the Black Box: `<who> wrote the Plot Board: revision N, M characters`
   (see `docs/black-box-spec.md`). The text is not recorded.
 

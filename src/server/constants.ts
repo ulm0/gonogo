@@ -189,6 +189,7 @@ export const ALLOWED_TOOLS = [
   'mcp__gonogo__board_read',
   'mcp__gonogo__board_write',
   'mcp__gonogo__livery_submit',
+  'mcp__gonogo__hire_agent',
 ] as const;
 /** claude's own cross-session messaging tools, denied so agents use gonogo's tools. */
 export const DENIED_TOOLS = ['SendMessage', 'ListAgents'] as const;
@@ -398,8 +399,29 @@ export const SLACK_SIGNATURE_MAX_AGE_MS = 5 * 60_000;
 /** Livery (docs/livery-spec.md): the custom liveries are `<home>/liveries/<slug>.json`; the chosen one is `<home>/livery.json`. */
 export const LIVERY_DIR = 'liveries';
 export const LIVERY_FILE = 'livery.json';
+/**
+ * Relief (docs/relief-spec.md): how many hire requests of the boss may wait for the Director, how many it may make in a
+ * window, and how long one waits. Requests live in memory only.
+ */
+export const RELIEF_PENDING_MAX = 3;
+export const RELIEF_RATE_MAX = 5;
+export const RELIEF_RATE_WINDOW_MS = 10 * 60_000;
+export const RELIEF_TTL_MS = 30 * 60_000;
 /** Propellant (docs/redline-propellant-spec.md): the limits and cursors file; the ledger fuel.jsonl is a log and has no version. */
 export const PROPELLANT_FILE = 'propellant.json';
+/** Clearance (docs/engine-bay-spec.md): the values of the keys set for each agent, mode 0600. The roster keeps their names only. */
+export const KEYS_FILE = 'keys.json';
+/** Pad Check: `<bin> --version` gets this long, and its first line is cut to this many characters. */
+export const ENGINE_VERSION_MS = 5_000;
+export const ENGINE_VERSION_CHARS = 80;
+/** Rollout (docs/rollout-spec.md): the cache of the last check, the one address asked, how often, how long it may take and how much of the answer is read. */
+export const ROLLOUT_FILE = 'rollout.json';
+export const ROLLOUT_URL = 'https://registry.npmjs.org/@ulm0%2Fgonogo/latest';
+export const ROLLOUT_EVERY_MS = 24 * 60 * 60 * 1000;
+export const ROLLOUT_TIMEOUT_MS = 5_000;
+export const ROLLOUT_MAX_BYTES = 256 * 1024;
+/** Rollout is off for a value in this list (GONOGO_UPDATE_CHECK). */
+export const ROLLOUT_OFF_WORDS = ['0', 'off', 'false', 'no'] as const;
 /** Mission Log (docs/mission-log-spec.md): the folder under the home, and how long a snippet of a search result is and how much of the text before the match it shows. */
 export const LOG_DIR = 'mission-log';
 export const LOG_SNIPPET_CHARS = 200;
@@ -416,7 +438,7 @@ export const BLACKBOX_RECENT_MAX = 200;
 export const BLACKBOX_TAIL_BYTES = 65_536;
 export const MCP_DESCRIPTIONS = {
   go_nogo:
-    'Answer a T-minus poll from the Director: vote "go" when you are ready to proceed, or "no-go" with a one-sentence reason. Call it when a message asks for a go/no-go. The result says whether the vote counted.',
+    'Answer a T-minus poll or a Static fire from the Director: vote "go" when you are ready to proceed, or "no-go" with a one-sentence reason. Call it when a message asks for a go/no-go. The result says whether the vote counted.',
   send_message:
     'Send a message to another agent (by name), to the boss ("boss") or to the human owner ("user"). An agent of a docked station is addressed as "name@station". The recipient gets a one-line pointer and reads the text with read_messages. The result tells you at once whether the message was queued or could not be delivered.',
   list_roster: 'List every agent in the operations room with its name, role and current state, and say which one is the boss. Agents of docked stations are listed too, under docked.',
@@ -439,6 +461,8 @@ export const MCP_DESCRIPTIONS = {
     'Write the Plot Board, the one current plan of the room. Only the boss may. Give the whole new text (plain markdown, at most 10000 characters; it replaces the old) and the revision you read with board_read: if the Director or another write changed the board since, the write is refused and says the current revision.',
   livery_submit:
     'Submit a livery, a colour theme for gonogo, when the Director asked you to design one: a name, a one-line description and tokens, an object that holds every token the message named, each a CSS colour (#rgb, #rrggbb, rgb(), hsl() or oklch()). It is checked for colours and for contrast; if it is refused, the answer says what to fix. The Director chooses whether to apply it.',
+  hire_agent:
+    'Boss only. Ask the Director to hire an agent: name (lowercase letters, digits and hyphens), position (a call sign such as guido or surgeon, which gives the role text) and/or role (the role text itself), dir (an absolute folder; a Clean Room boss leaves it out), engine (default claude) and mode (default or acceptEdits; nothing higher is possible). It only makes a request: the Director sees every field and decides, and you are told his answer by message. At most 3 requests wait at once, 5 per 10 minutes, and one expires after 30 minutes.',
 } as const;
 
 /* ---- the tiny logger ---- */

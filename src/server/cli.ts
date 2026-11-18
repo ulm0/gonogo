@@ -38,13 +38,18 @@ import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
+import { createTelemetry } from './telemetry.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
+import { createRelief } from './relief.js';
+import { createMassBudget } from './massbudget.js';
 import { createMissionLog } from './missionlog.js';
 import { createTasks } from './tasks.js';
 import { createUplinks } from './uplinks.js';
-import { installedProviders, onPath } from './providers.js';
+import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
+import { createClearance } from './clearance.js';
+import { cachedLatest, createRollout, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import type { WebServer } from './web.js';
 
 type Env = Record<string, string | undefined>;
@@ -78,6 +83,8 @@ export interface StartOptions {
   checkClaude?: boolean;
   /** What Relay posts with and Docking calls with. Default the global fetch; a test hands in a fake, so that nothing leaves the machine. */
   fetch?: typeof fetch;
+  /** Rollout, the daily check for a newer gonogo. Default false here, so that a test never reaches the registry: `main` turns it on unless GONOGO_UPDATE_CHECK=0 or --no-update-check. */
+  updateCheck?: boolean;
 }
 
 export interface Running {
@@ -95,8 +102,14 @@ export interface Running {
 /* ---------------------------------------------------------------- arguments */
 
 export const USAGE = `Usage: gonogo [options]
+       gonogo doctor
+       gonogo update
 
 Run a mission-control room of Claude Code agents from a browser tab.
+
+Commands:
+  doctor                list the agent CLIs on the PATH with their versions, and the install command of each missing one
+  update                print the command that updates gonogo the way it was installed (it never runs it)
 
 Options:
   --port <n>            listen port (default ${DEFAULT_PORT}; env GONOGO_PORT)
@@ -104,6 +117,7 @@ Options:
   --home <dir>          state directory (default ~/${DEFAULT_HOME_DIRNAME}; env GONOGO_HOME)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list)
+  --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
   -v, --version         show the version
 
@@ -115,11 +129,14 @@ Environment:
   GONOGO_CLEANROOM_IMAGE  Docker image of a Clean Room console (default ghcr.io/ulm0/gonogo)
   GONOGO_LOG_LEVEL        debug, info, warn or error (default info)
   GONOGO_SCRUB_ENV        extra variables to keep out of the agents (comma list; a name ending in _ is a prefix)
+  GONOGO_UPDATE_CHECK     0, off, false or no: do not check for a newer gonogo (default on)
 `;
 
 export type ParsedArgs =
   | { kind: 'help' }
   | { kind: 'version' }
+  | { kind: 'doctor' }
+  | { kind: 'update' }
   | { kind: 'run'; options: StartOptions }
   | { kind: 'error'; message: string };
 
@@ -135,12 +152,17 @@ function parsePort(value: string, label: string): number {
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (argv.includes('--help') || argv.includes('-h')) return { kind: 'help' };
   if (argv.includes('--version') || argv.includes('-v')) return { kind: 'version' };
+  if (argv[0] === 'doctor' || argv[0] === 'update') return argv.length === 1 ? { kind: argv[0] } : { kind: 'error', message: `${argv[0]} takes no arguments` };
   const options: StartOptions = {};
   const allowedHosts: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     if (arg === '--seed-claude') {
       options.seed = true;
+      continue;
+    }
+    if (arg === '--no-update-check') {
+      options.updateCheck = false;
       continue;
     }
     const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
@@ -267,6 +289,16 @@ function packageVersion(): string {
   return '0.0.0';
 }
 
+/** How this gonogo was installed, from where its own file is: in a container, a git checkout, or one of the package managers (Rollout). */
+function installInfo(): { command: string; docker: boolean } {
+  const docker = existsSync('/.dockerenv') || existsSync('/run/.containerenv');
+  const clone = existsSync(fileURLToPath(new URL('../../.git', import.meta.url)));
+  return { docker, command: updateCommand({ file: fileURLToPath(import.meta.url), docker, clone }) };
+}
+
+/** The home as `gonogo --version` and `gonogo update` find it: GONOGO_HOME or the default, with no flag read (they read the cache only). */
+const homeOf = (env: Env): string => resolve(env.GONOGO_HOME || join(homedir(), DEFAULT_HOME_DIRNAME));
+
 /** The host of the printed URL: a wildcard bind is reached on loopback, an IPv6 address needs brackets (contract 0.5 item 14). */
 function displayHost(host: string): string {
   if (['0.0.0.0', '::', '127.0.0.1'].includes(host)) return '127.0.0.1';
@@ -317,12 +349,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       }
     }
 
+    const clearance = createClearance({ dir: home.dir, log: log.child('clearance') });
+    await clearance.load();
     const launcher = createLauncher({
       homeDir: home.dir,
       hubUrl: () => baseUrl,
       seed,
       env,
       agentCmd,
+      keys: (name) => clearance.values(name),
       log: log.child('launcher'),
     });
 
@@ -333,6 +368,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('propellant'),
     });
     await propellant.load();
+    const telemetry = createTelemetry({ dir: home.dir, now: () => Date.now(), log: log.child('telemetry') });
+    await telemetry.load();
     const downlink = createDownlink({
       dir: home.dir,
       now: () => Date.now(),
@@ -391,8 +428,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       logMessage: (r) => home.appendMessage(r),
       renameAgentFiles: async (oldName, newName) => {
         await launcher.renameAgentFiles(oldName, newName);
+        try {
+          await clearance.rename(oldName, newName);
+        } catch (error) {
+          await launcher.renameAgentFiles(newName, oldName).catch(() => undefined);
+          throw error;
+        }
         terminalHost.rename(oldName, newName);
       },
+      keys: clearance,
       spawn: async (req) => {
         const prepared = await launcher.prepareStart(req.agent, { generation: req.generation, flag: req.flag });
         try {
@@ -427,6 +471,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
           }
         });
       },
+      toolHook: (name, event, payload) => telemetry.hook(name, event, payload),
       screen: (name) => terminalHost.screen(name),
       title: (name) => terminalHost.title(name),
       outputBytes: (name) => terminalHost.outputBytes(name),
@@ -514,6 +559,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('mission log'),
     });
     const board = createBoard({ dir: home.dir, now: io.now });
+    const massBudget = createMassBudget({
+      memoryPath: (name) => launcher.memoryPath(name),
+      agent: (name) => hubInstance.views().find((v) => v.name === name),
+      send: (request) => hubInstance.sendFromUser(request),
+      log: log.child('mass budget'),
+    });
     const liveries = createLiveries({
       dir: home.dir,
       send: (request) => hubInstance.sendFromUser(request),
@@ -521,6 +572,27 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('livery'),
     });
+    const relief = createRelief({
+      hub: hubInstance,
+      checkDirectory: io.checkDirectory,
+      now: io.now,
+      setTimer: io.setTimer,
+      clearTimer: io.clearTimer,
+      emit: (frame) => web?.broadcast(frame),
+      notify: tell,
+      log: log.child('relief'),
+    });
+    const rollout = createRollout({
+      dir: home.dir,
+      now: io.now,
+      fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      enabled: options.updateCheck === true,
+      current: version,
+      command: installInfo().command,
+      emit: (view) => web?.broadcast({ t: 'rollout', rollout: view }),
+      log: log.child('rollout'),
+    });
+    await rollout.load();
     const webServer = createWebServer({
       host,
       port,
@@ -534,16 +606,21 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       info,
       isReady: () => ready,
       propellant: audited(propellant, blackBox.record, PROPELLANT_AUDIT),
+      telemetry,
       schedules: audited(schedules, blackBox.record, SCHEDULES_AUDIT),
       uplinks: audited(uplinks, blackBox.record, UPLINKS_AUDIT),
       tasks,
       downlink,
       missionLog,
+      massBudget,
       board: audited(board, blackBox.record, BOARD_AUDIT),
       blackBox,
       liveries: audited(liveries, blackBox.record, LIVERIES_AUDIT),
       relay: audited(relay, blackBox.record, RELAY_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
+      relief,
+      rollout,
+      engines: () => checkEngines(env),
       log: log.child('web'),
     });
     web = webServer;
@@ -573,6 +650,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await uplinks.load();
     ready = true;
     docking.start();
+    rollout.start();
 
     let stopping: Promise<void> | undefined;
     const step = async (what: string, run: () => Promise<void>): Promise<void> => {
@@ -597,9 +675,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       blackBox.record('audit', 'gonogo stopped');
       await step('black box close', () => blackBox.close());
       await step('livery close', () => liveries.close());
+      await step('relief close', async () => relief.close());
       await step('relay close', () => relay.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
+      await step('telemetry close', () => telemetry.close());
+      await step('rollout close', () => rollout.close());
+      await step('clearance close', () => clearance.close());
       await step('home close', () => home.close());
     };
     const stop = (): Promise<void> => {
@@ -717,6 +799,24 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   }
   if (parsed.kind === 'version') {
     process.stdout.write(`gonogo ${packageVersion()}\n`);
+    // From the file the last check left, never from the network; nothing when the check is off.
+    const latest = updateCheckOff(env.GONOGO_UPDATE_CHECK) || argv.includes('--no-update-check') ? null : cachedLatest(homeOf(env));
+    if (latest !== null && isNewer(latest, packageVersion())) process.stdout.write(`${latest} is out. To update, run: gonogo update\n`);
+    exit(0);
+    return;
+  }
+  if (parsed.kind === 'doctor') {
+    const checks = await checkEngines(env);
+    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null));
+    // the same refusal as the start: no claude and nothing in its place
+    exit(checks.find((c) => c.provider === 'claude')?.path === null && !env.GONOGO_AGENT_CMD?.trim() ? 1 : 0);
+    return;
+  }
+  if (parsed.kind === 'update') {
+    const current = packageVersion();
+    const latest = cachedLatest(homeOf(env));
+    const { command, docker } = installInfo();
+    process.stdout.write(updateText(command, docker, { current, latest, newer: latest !== null && isNewer(latest, current) }));
     exit(0);
     return;
   }
@@ -731,7 +831,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   // shortcut: a signal during the start-up (about a second) takes Node's default and ends the process at once; the ptys hang up on their children and the next start replaces the stale lock
   let running: Running;
   try {
-    running = await startGonogo({ ...parsed.options, env, log });
+    running = await startGonogo({ ...parsed.options, updateCheck: parsed.options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env, log });
   } catch (e) {
     process.stderr.write(`gonogo: ${e instanceof Error ? e.message : String(e)}\n`);
     if (level === 'debug' && e instanceof Error && e.stack) process.stderr.write(e.stack + '\n');
