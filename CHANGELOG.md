@@ -2,11 +2,12 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.2.0 (2026-11-18)
+
+Features and fixes since 0.1.2. Each was tried with the stand-in agent only: not verified with a real `claude`, `agy`, Telegram or remote control, and not in a browser.
 
 - **Antigravity CLI.** `agy` joins Engine Bay (issue #28) with its permission modes, `--model` and the role as the first prompt; Gemini CLI stays, marked legacy. For now it has no hooks and no gonogo tools: `agy` reads them only from the project or `~/.gemini`, which gonogo does not write. Checked against its help only, not run against a signed-in `agy` (`docs/facts/antigravity.md`).
 - **Missions.** A named goal with a status (planned, active, paused, done, aborted), a lead, a history and the Flight Plan tasks that serve it (`missionId` on a task). A Missions view from the Patch Panel, the wall's mission block and the brief box; FLIGHT gets the goal when a mission starts, and the Director is told when its last task is done and decides whether to close it. Three tools for agents (`mission_list`; `mission_create` and `mission_update` for the boss). The wall shows the active mission and falls back to the old guess when there is none.
-
 - **Cost.** Propellant can show dollars (an API-equivalent estimate at list prices) with a budget, a chart of the last 14 days and an editable price table (`~/.gonogo/prices.json`, no network). A budget trips Redline like a token limit and warns once at 80 %. New ledger lines keep the model and the token split; older ones show as unpriced.
 - **Container.** The image has the `gh` CLI (2.103.3, checksum verified), and the config of `gh` and of `git config --global` lives in `/state/config`, so a login survives a restart. `POST /api/poll/hold` on a poll already on hold answers "the poll is already on hold".
 - **Worktrees.** An `Own git worktree` box starts an agent in its own git worktree and branch (`~/.gonogo/worktrees/<name>`, `gonogo/<name>`), for every engine; the remove dialog can delete the worktree and branch, and git keeps unsaved or unmerged work.
