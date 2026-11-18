@@ -5,6 +5,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 ## Unreleased
 
 - **Cost.** Propellant can show dollars (an API-equivalent estimate at list prices) with a budget, a chart of the last 14 days and an editable price table (`~/.gonogo/prices.json`, no network). A budget trips Redline like a token limit and warns once at 80 %. New ledger lines keep the model and the token split; older ones show as unpriced.
+- **Container.** The image has the `gh` CLI (2.103.3, checksum verified), and the config of `gh` and of `git config --global` lives in `/state/config`, so a login survives a restart. `POST /api/poll/hold` on a poll already on hold answers "the poll is already on hold".
 
 ## 0.1.2 (2026-11-18)
 

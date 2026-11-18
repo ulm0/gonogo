@@ -1746,7 +1746,7 @@ export interface Hub {
    * go/no-go poll") that tells it to call go_nogo. Emits a PollFrame.
    */
   startPoll(req: PollRequest): PollView;
-  /** The Director forces a hold (status 'hold'). conflict when no poll is open. */
+  /** The Director forces a hold (status 'hold'). conflict when no poll is open, or "the poll is already on hold". */
   holdPoll(): PollView;
   /** Ends the poll with status 'aborted' and tells the polled agents to stand by. conflict when there is no poll. */
   abortPoll(): PollView;

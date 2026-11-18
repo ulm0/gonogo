@@ -44,8 +44,26 @@ ARG NODE_IMAGE=node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b
 ARG DOCKER_CLI_IMAGE=docker:29.10.0-cli
 # The pnpm that installs Claude Code in the runtime stage: the same release as package.json `packageManager`.
 ARG PNPM_VERSION=12.21.0
+# The gh CLI (binary only), pinned; the sha256 of each archive is from gh_<version>_checksums.txt of the release.
+ARG GH_VERSION=2.103.3
+ARG GH_SHA256_AMD64=4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d
+ARG GH_SHA256_ARM64=ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63
 
 FROM ${DOCKER_CLI_IMAGE} AS docker-cli
+
+# Stage: the gh binary, for the architecture of the build. Node fetches the archive (the base image has no curl or CA
+# bundle tool, but node carries its own CAs) and sha256sum checks it against the pin above, so a changed archive fails
+# the build. Works with the classic builder as well as BuildKit.
+FROM ${NODE_IMAGE} AS gh
+ARG GH_VERSION
+ARG GH_SHA256_AMD64
+ARG GH_SHA256_ARM64
+RUN set -eu; \
+    case "$(uname -m)" in x86_64) arch=amd64; sum="$GH_SHA256_AMD64" ;; aarch64) arch=arm64; sum="$GH_SHA256_ARM64" ;; *) echo "no gh for $(uname -m)" >&2; exit 1 ;; esac; \
+    f=gh_${GH_VERSION}_linux_${arch}.tar.gz; \
+    node -e 'fetch(process.argv[1]).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()}).then(b=>require("fs").writeFileSync(process.argv[2],Buffer.from(b)))' "https://github.com/cli/cli/releases/download/v${GH_VERSION}/$f" "/tmp/$f"; \
+    echo "$sum  /tmp/$f" | sha256sum -c -; \
+    mkdir /out; tar -xzf "/tmp/$f" -C /out --strip-components=2 "gh_${GH_VERSION}_linux_${arch}/bin/gh"
 
 # ---------------------------------------------------------------------------
 # Stage 1: build the package tarball exactly as `pnpm publish` would ship it. The runtime stage runs that tarball,
@@ -88,6 +106,8 @@ RUN apt-get update \
  && git config --system --add safe.directory '/projects/*'
 
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+# gh, binary only.
+COPY --from=gh /out/gh /usr/local/bin/gh
 
 # Claude Code, pinned, from the npm registry (the package its docs give for containers), installed by the pinned pnpm
 # through corepack. --allow-build: the postinstall step links the native binary into place, and pnpm skips it
@@ -104,14 +124,19 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global
 COPY --from=build /app /opt/gonogo
 RUN ln -s /opt/gonogo/bin/gonogo.js /usr/local/bin/gonogo
 
-RUN mkdir -p /state /projects \
- && chown node:node /state /projects
+RUN mkdir -p /state /state/config/git /projects \
+ && chown -R node:node /state /projects
 
+# XDG_CONFIG_HOME puts the config of gh ($XDG_CONFIG_HOME/gh, so `gh auth login` survives a restart) and git's global
+# config in the volume; HOME=/home/node is not on one. Git alone would still write `git config --global` to ~/.gitconfig, so
+# GIT_CONFIG_GLOBAL names the file.
 # CLAUDE_CONFIG_DIR keeps Claude's .claude.json (onboarding, folder trust), settings and sessions in the volume.
 # IS_DEMO is not set here: the server gives it to each claude child in seed mode, and an image-wide value would
 # hide the account in every claude started in the container.
 ENV HOME=/home/node \
     CLAUDE_CONFIG_DIR=/state/claude \
+    XDG_CONFIG_HOME=/state/config \
+    GIT_CONFIG_GLOBAL=/state/config/git/config \
     GONOGO_HOME=/state/gonogo \
     GONOGO_SEED_CLAUDE=1 \
     DISABLE_AUTOUPDATER=1 \
@@ -125,6 +150,7 @@ WORKDIR /projects
 # platform package of the pty library, a CommonJS import that only fails in plain Node or a bad bin fails here.
 RUN claude --version \
  && docker --version \
+ && gh --version \
  && gonogo --version \
  && cd /opt/gonogo \
  && node -e 'const pty=require("@lydell/node-pty");const p=pty.spawn("/bin/sh",["-c","echo pty-ok"],{});let o="";p.onData(d=>{o+=d});p.onExit(()=>{console.log(JSON.stringify(o.trim()));process.exit(/pty-ok/.test(o)?0:1)})'
@@ -138,6 +164,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:7777/').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
 
 # -s: tini acts as a subreaper, so reaping also works under Docker's own --init, where tini is not PID 1.
-ENTRYPOINT ["tini", "-s", "--", "gonogo"]
+# mkdir -p: a /state volume made by an older image has no /state/config/git yet, and a named volume is seeded only once.
+ENTRYPOINT ["tini", "-s", "--", "sh", "-c", "mkdir -p /state/config/git; exec gonogo \"$@\"", "gonogo"]
 # Inside the container the server must listen on all interfaces; the home comes from GONOGO_HOME.
 CMD ["--host", "0.0.0.0", "--port", "7777"]
