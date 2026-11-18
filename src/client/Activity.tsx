@@ -3,7 +3,7 @@ import type { FormEvent, ReactElement } from 'react';
 import type { ActivityItem, AgentView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { Brief } from './Brief.js';
-import { chipOf, FILTERS, filterCounts, filterItems, legendOf, noteOf, replyRequest, routeText, subjectOf, trafficOf } from './loop.js';
+import { chipOf, FILTERS, filterCounts, filterItems, legendOf, noteOf, replyRequest, routeText, subjectOf, ofAgent, trafficOf } from './loop.js';
 import type { FilterId } from './loop.js';
 import { useStore } from './store.js';
 import { briefSentText } from './wording.js';
@@ -144,17 +144,23 @@ export function Loop({
   boss,
   onSelect,
   onClose,
+  agent = null,
+  onAgent,
 }: {
   items: readonly ActivityItem[];
   agents: Readonly<Record<string, AgentView>>;
   boss: AgentView | null;
   onSelect(name: string): void;
   onClose(): void;
+  /** The agent the list is filtered to, or null for everyone; with `onAgent` the head shows the picker. */
+  agent?: string | null;
+  onAgent?(name: string | null): void;
 }): ReactElement {
   const [filter, setFilter] = useState<FilterId>('all');
   const [openId, setOpenId] = useState<string | null>(null);
-  const counts = useMemo(() => filterCounts(items), [items]);
-  const rows = useMemo(() => filterItems(items, filter).slice(0, MAX_ROWS), [items, filter]);
+  const mine = useMemo(() => ofAgent(items, agent), [items, agent]);
+  const counts = useMemo(() => filterCounts(mine), [mine]);
+  const rows = useMemo(() => filterItems(mine, filter).slice(0, MAX_ROWS), [mine, filter]);
 
   return (
     <section className="loop" aria-labelledby="loop-title">
@@ -176,13 +182,27 @@ export function Loop({
             </button>
           ))}
         </div>
+        {onAgent !== undefined && (
+          <label className="loop-agent">
+            <span className="label">Agent</span>
+            <select className="input" value={agent ?? ''} onChange={(event) => onAgent(event.target.value === '' ? null : event.target.value)}>
+              <option value="">everyone</option>
+              {agent !== null && !Object.hasOwn(agents, agent) && <option value={agent}>{agent}</option>}
+              {Object.keys(agents).sort().map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button type="button" className="btn loop-room" data-kind="quiet" onClick={onClose}>
           Room
         </button>
       </header>
       <div className="loop-scroll module">
         {rows.length === 0 ? (
-          <p className="loop-empty">{items.length === 0 ? 'No messages yet.' : 'Nothing in this filter.'}</p>
+          <p className="loop-empty">{mine.length === 0 ? 'No messages yet.' : 'Nothing in this filter.'}</p>
         ) : (
           <ol className="loop-list">
             {rows.map((item) => (

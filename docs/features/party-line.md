@@ -2,7 +2,7 @@
 
 <PartyLineMock class="doc-mock" />
 
-PARTY LINE (open it from the Patch Panel, Cmd+K or Ctrl+K) lists the room's messages as conversations, so you read a thread in order instead of hunting for it in the comm loop. Design and limits: [`docs/party-line-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/party-line-spec.md).
+The THREADS tab of [COMMS](./comms.md) (top bar, or `Comms: threads` in the Patch Panel, Cmd+K or Ctrl+K) lists the room's messages as conversations, so you read a thread in order instead of hunting for it in the comm loop. Design and limits: [`docs/party-line-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/party-line-spec.md).
 
 ## What is a thread
 

@@ -8,7 +8,7 @@ The PATCH PANEL is one field that reaches every console, view and common action 
 - **Open it** with Cmd+K or Ctrl+K anywhere on the page, with the round key of nine dots in the top bar (named Patch Panel for a
   screen reader), or with PATCH, the last key of the phone bar. Ctrl+K typed inside a terminal stays in the terminal (it is the
   shell's kill-line); Cmd+K opens the panel there too.
-- **What it holds.** Open each console (by its call sign, or its own name), each view (Room, Loop, Downlink, Launch Window, Flight
+- **What it holds.** Open each console (by its call sign, or its own name), each view (Room, Comms: inbox, Comms: traffic, Comms: threads, Launch Window, Flight
   Plan, Mission Log, Livery, Flight Rules), and the actions the page already has: Docs (the online documentation, in a new tab), Staff a console, Brief FLIGHT, Start a T-minus
   poll (only when a poll can start and somebody can answer it), Mark the Downlink read (only when something is unread) and Apply
   livery for each livery that is not in use. Nothing else: it adds no action of its own.

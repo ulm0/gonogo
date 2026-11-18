@@ -40,7 +40,7 @@ import {
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
 import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
-import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showLoop, useFeature, useNow, useStore } from './store.js';
+import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showTraffic, useFeature, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { DetailChips } from './DetailChips.js';
@@ -604,7 +604,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
         </details>
       )}
       {telemetryOn && <AgentTelemetry name={agent.name} />}
-      <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
+      <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={() => showTraffic(agent.name)} />
     </aside>
   );
 }
@@ -758,7 +758,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
       <Foot agent={agent} run={run} locked={locked} />
       <div className="phone-traffic">
         {telemetryOn && <AgentTelemetry name={agent.name} />}
-        <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={showLoop} />
+        <ConsoleTraffic items={activity} name={agent.name} onOpenLoop={() => showTraffic(agent.name)} />
       </div>
       <div className="phone-keys" role="group" aria-label="Terminal keys">
         {KEYS.map((key) => (

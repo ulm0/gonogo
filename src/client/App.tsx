@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
-import { Loop } from './Activity.js';
+import { Comms } from './Comms.js';
 import { startNotifications } from './notify-browser.js';
 import * as api from './api.js';
 import { BlackBox } from './BlackBox.js';
-import { Downlink } from './Downlink.js';
 import { FlightPlan } from './FlightPlan.js';
 import { Missions } from './Missions.js';
 import { RoomDesktop } from './RoomLayout.js';
@@ -19,12 +18,11 @@ import { PlotBoard } from './PlotBoard.js';
 import { PatchPanel } from './PatchPanel.js';
 import { Commissioning, FlightRules } from './Rules.js';
 import { isPanelKey, VIEW_FEATURE } from './shell.js';
-import { PartyLine } from './PartyLine.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { openConsole, openHire, readStored, showDownlink, showLivery, showLog, showLoop, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
+import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
 import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
@@ -68,7 +66,7 @@ function UnreadCount(): ReactElement | null {
   );
 }
 
-const downlinkName = (unread: number): string => (unread === 0 ? 'Downlink' : `Downlink, ${unreadText(unread)}`);
+const commsName = (unread: number): string => (unread === 0 ? 'Comms' : `Comms, ${unreadText(unread)}`);
 
 function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactElement {
   const list = useAgentList();
@@ -92,14 +90,14 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
       <span className="topbar-grow" />
       <LinkLamp />
       {!phone && (
-        <button type="button" className="btn" data-kind="quiet" aria-current={view === 'loop' ? 'page' : undefined} onClick={showLoop}>
-          Loop
+        <button type="button" className="btn" data-kind="quiet" aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
+          Comms
+          <UnreadCount />
         </button>
       )}
-      {!phone && (
-        <button type="button" className="btn" data-kind="quiet" aria-label={downlinkName(unread)} aria-current={view === 'downlink' ? 'page' : undefined} onClick={showDownlink}>
-          Downlink
-          <UnreadCount />
+      {!phone && !off.includes('missions') && (
+        <button type="button" className="btn" data-kind="quiet" aria-current={view === 'missions' ? 'page' : undefined} onClick={showMissions}>
+          Missions
         </button>
       )}
       {!phone && !off.includes('launch-window') && (
@@ -163,15 +161,12 @@ function PhoneBar({ onPanel }: { onPanel(): void }): ReactElement {
       <button type="button" className="btn" data-kind={view === 'room' ? 'primary' : undefined} aria-current={view === 'room' ? 'page' : undefined} onClick={showRoom}>
         Room
       </button>
-      <button type="button" className="btn" data-kind={view === 'loop' ? 'primary' : undefined} aria-current={view === 'loop' ? 'page' : undefined} onClick={showLoop}>
-        Loop
+      <button type="button" className="btn" data-kind={view === 'comms' ? 'primary' : undefined} aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
+        Comms
+        <UnreadCount />
       </button>
       <button type="button" className="btn" onClick={goBrief}>
         Brief
-      </button>
-      <button type="button" className="btn" data-kind={view === 'downlink' ? 'primary' : undefined} aria-label={downlinkName(unread)} aria-current={view === 'downlink' ? 'page' : undefined} onClick={showDownlink}>
-        Down
-        <UnreadCount />
       </button>
       {!off.includes('launch-window') && (
         <button type="button" className="btn" data-kind={view === 'window' ? 'primary' : undefined} aria-label="Launch Window" aria-current={view === 'window' ? 'page' : undefined} onClick={showWindow}>
@@ -418,12 +413,9 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   const agents = useStore((s) => s.agents);
   const list = useAgentList();
   if (form !== null) return <HireForm />;
-  if (view === 'loop') {
-    return <Loop items={activity} agents={agents} boss={list.find((a) => a.boss) ?? null} onSelect={openConsole} onClose={showRoom} />;
-  }
+  if (view === 'comms') return <Comms />;
   if (view === 'window') return <LaunchWindow />;
   if (view === 'plan') return <FlightPlan />;
-  if (view === 'downlink') return <Downlink />;
   if (view === 'log') return <MissionLog />;
   if (view === 'livery') return <Livery />;
   if (view === 'hangar') return <Hangar />;
@@ -431,7 +423,6 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'board') return <PlotBoard />;
   if (view === 'blackbox') return <BlackBox />;
   if (view === 'rules') return <FlightRules />;
-  if (view === 'party') return <PartyLine />;
   if (view === 'missions') return <Missions />;
   if (phone) {
     return (

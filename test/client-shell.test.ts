@@ -18,7 +18,8 @@ describe('Patch Panel lines', () => {
   it('has every console by its call sign, every view, and the actions that can run', () => {
     const list = commands(input());
     expect(list.find((c) => c.id === 'console:ana')?.label).toBe('Open FIDO');
-    for (const view of Object.keys(VIEW_NAMES)) expect(list.map((c) => c.id)).toContain(`view:${view}`);
+    for (const view of Object.keys(VIEW_NAMES).filter((v) => v !== 'comms')) expect(list.map((c) => c.id)).toContain(`view:${view}`);
+    expect(list.map((c) => c.id)).toEqual(expect.arrayContaining(['comms:inbox', 'comms:traffic', 'comms:threads']));
     expect(ids()).toEqual(expect.arrayContaining(['hire', 'brief', 'poll', 'livery:night-shift', 'livery:low-ink', 'livery:high-contrast']));
     // the livery in use is not offered, nor reading an empty inbox
     expect(ids()).not.toContain('livery:instrument');
@@ -50,7 +51,9 @@ describe('fuzzy match', () => {
     const list = commands(input());
     expect(matchCommands(list, 'fp')[0]?.label).toBe('Flight Plan');
     expect(matchCommands(list, 'ml')[0]?.label).toBe('Mission Log');
-    expect(matchCommands(list, 'down')[0]?.label).toBe('Downlink');
+    expect(matchCommands(list, 'down')[0]?.label).toBe('Comms: inbox');
+    expect(matchCommands(list, 'party')[0]?.label).toBe('Comms: threads');
+    expect(matchCommands(list, 'loop')[0]?.label).toBe('Comms: traffic');
     expect(matchCommands(list, 'settings')[0]?.label).toBe('Flight Rules');
     expect(matchCommands(list, 'ana')[0]?.label).toBe('Open FIDO');
     expect(matchCommands(list, '').length).toBe(list.length);

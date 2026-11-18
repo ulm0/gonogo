@@ -91,6 +91,7 @@ export default defineConfig({
           { text: 'Flight Plan', link: '/features/flight-plan' },
           { text: 'Missions', link: '/features/missions' },
           { text: 'Room editor', link: '/features/room-editor' },
+          { text: 'Comms', link: '/features/comms' },
           { text: 'Downlink', link: '/features/downlink' },
           { text: 'Party Line', link: '/features/party-line' },
           { text: 'Notifications', link: '/features/notifications' },

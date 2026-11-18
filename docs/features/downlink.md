@@ -2,7 +2,7 @@
 
 <DownlinkMock class="doc-mock" />
 
-DOWNLINK (top bar, or DOWN on a phone) is your inbox. Design and limits: [`docs/downlink-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/downlink-spec.md).
+The INBOX tab of [COMMS](./comms.md) (top bar, or COMMS on a phone) is your inbox, once called the Downlink. Design and limits: [`docs/downlink-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/downlink-spec.md).
 
 ## What lands in it
 

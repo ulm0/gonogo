@@ -859,7 +859,7 @@ describe('navigation of the shell', () => {
   afterEach(() => store.setState(emptyState()));
 
   it('opens a console: selects it, opens it full screen and shows the room', () => {
-    store.setState({ ...emptyState(), view: 'loop' });
+    store.setState({ ...emptyState(), view: 'comms' });
     openConsole('ana');
     expect(store.getState()).toMatchObject({ selected: 'ana', consoleOpen: true, view: 'room' });
     closeConsole();
@@ -876,7 +876,7 @@ describe('navigation of the shell', () => {
   it('switches between the room and the loop, and a screen switch closes the console', () => {
     openConsole('ana');
     showLoop();
-    expect(store.getState()).toMatchObject({ view: 'loop', consoleOpen: false });
+    expect(store.getState()).toMatchObject({ view: 'comms', commsTab: 'traffic', consoleOpen: false });
     showRoom();
     expect(store.getState().view).toBe('room');
   });
@@ -899,10 +899,10 @@ describe('navigation of the shell', () => {
     expect(store.getState()).toMatchObject({ view: 'log', consoleOpen: false });
   });
 
-  it('opens Party Line and leaves a console that was open', () => {
+  it('opens Party Line, now the THREADS tab of COMMS, and leaves a console that was open', () => {
     openConsole('ana');
     showParty();
-    expect(store.getState()).toMatchObject({ view: 'party', consoleOpen: false });
+    expect(store.getState()).toMatchObject({ view: 'comms', commsTab: 'threads', consoleOpen: false });
   });
 
   it('opens the Plot Board and the Black Box and leaves a console that was open', () => {
