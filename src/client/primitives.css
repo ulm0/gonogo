@@ -264,6 +264,27 @@ select.input:disabled {
   opacity: 0.6;
 }
 
+/* ---- tabs: keys of a tablist (role=tab on a .btn), the chosen one primary; the count of a tab is a chip and also in its accessible name ---- */
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab {
+  min-height: 44px;
+}
+
+@media (max-width: 760px) {
+  .tabs {
+    width: 100%;
+  }
+
+  .tabs > .tab {
+    flex: 1 1 0;
+  }
+}
+
 /* ---- check, radio and switch: native inputs (keyboard, screen reader and forms for free) drawn in the instrument's look ---- */
 
 .check,

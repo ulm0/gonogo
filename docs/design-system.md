@@ -212,6 +212,16 @@ idle) sets light and surface; `aria-pressed="true"` rings the chosen one. `.room
 `.field`: label, control, `.hint`. `.input`: 46 px on `--key`, `--well` when read-only; `aria-invalid="true"` draws a 2 px
 `--nogo` edge, reason in an `.error` below. `.textarea` is mono.
 
+### Tabs
+
+<div class="ds-frame" :data-livery="look">
+<div class="ds-stack" style="max-width: 420px">
+<span class="tabs" role="tablist" aria-label="Example"><button type="button" role="tab" class="btn tab" data-kind="primary" aria-selected="true" aria-label="INBOX, 2 unread">INBOX <span class="chip" data-tone="amber" aria-hidden="true">2</span></button><button type="button" role="tab" class="btn tab" data-kind="quiet" aria-selected="false" tabindex="-1">TRAFFIC</button><button type="button" role="tab" class="btn tab" data-kind="quiet" aria-selected="false" tabindex="-1">THREADS</button></span>
+</div>
+</div>
+
+`.tabs` holds `.btn.tab` keys with `role="tab"`: the chosen one `data-kind="primary"` and `aria-selected`, the others quiet with `tabindex="-1"`, so that Tab enters the bar once and the arrow keys, Home and End walk it. A count is an amber chip that is `aria-hidden`, and the key's `aria-label` says it in words ("INBOX, 2 unread"). Each key is 44 px; under 700 px they share the width. COMMS uses it.
+
 ### Select, check, radio, switch and icons
 
 Native controls, so the keyboard, the screen reader and the form come for free, drawn in the instrument's look with the livery's tokens. No script and no dependency.

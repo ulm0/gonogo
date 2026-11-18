@@ -28,7 +28,7 @@ describe('no emoji', () => {
 });
 
 describe('the primitives', () => {
-  it.each(['select.input', '.check', '.radio', '.switch', ".icon[data-icon='lock']", ".icon[data-icon='chevron-right']", ".icon[data-icon='chevron-down']", ".icon[data-icon='half']"])('defines %s', (selector) => {
+  it.each(['select.input', '.tabs', '.tab', '.check', '.radio', '.switch', ".icon[data-icon='lock']", ".icon[data-icon='chevron-right']", ".icon[data-icon='chevron-down']", ".icon[data-icon='half']"])('defines %s', (selector) => {
     expect(primitives).toContain(selector);
   });
 });
