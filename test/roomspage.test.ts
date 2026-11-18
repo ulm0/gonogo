@@ -123,7 +123,7 @@ describe('the rooms list page script', () => {
     expect(text(main)).toContain('1 need you · 3 working');
     expect(text(main)).toContain('last activity 4 min ago');
     expect(text(main)).toContain('tab: Ops');
-    expect(main.querySelector('[data-f="open:main"]')?.href).toBe('/r/main/');
+    expect(main.querySelector('[data-f="open:main"]')?.href).toBe('/');
     // main has no rename or remove
     expect(main.querySelector('[data-f="rename:main"]')).toBeNull();
     // a name that is the id shows once as the name and as r/<id>

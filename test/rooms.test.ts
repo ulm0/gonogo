@@ -391,13 +391,13 @@ describe('the supervisor', () => {
       writeFileSync(join(client, 'lockup.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
       mkdirSync(join(client, 'assets'));
       sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '' }, staticDir: client, version: '9.8.7"<b>' });
-      const html = await (await api(sup, '/', null)).text();
+      const html = await (await api(sup, '/rooms', null)).text();
       expect(html).toContain('gonogo 9.8.7&#34;&#60;b&#62;');
       expect(html).not.toContain('<b>');
-      const logo = await api(sup, '/lockup.svg', null);
+      const logo = await api(sup, '/rooms/lockup.svg', null);
       expect([logo.status, logo.headers.get('content-type')]).toEqual([200, 'image/svg+xml']);
       expect(logo.headers.get('content-security-policy')).toBe("default-src 'none'; style-src 'unsafe-inline'; sandbox");
-      expect((await api(sup, '/lockup.png', null)).status).toBe(404);
+      expect((await api(sup, '/rooms/lockup.png', null)).status).toBe(404);
     });
 
     it('the tab name a room reports is cleaned and cut like a room name', async () => {
