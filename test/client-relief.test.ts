@@ -27,7 +27,7 @@ const snapshot = (over: Partial<StateSnapshot> = {}): StateSnapshot => ({
   info: INFO,
   poll: null,
   governor: { limit: null, working: 0, holding: 0 },
-  propellant: { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {} },
+  propellant: { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } },
   schedules: [],
   uplinks: [],
   tasks: [],

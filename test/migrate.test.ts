@@ -155,7 +155,7 @@ describe('migrateHome', () => {
 describe('the formats of this gonogo', () => {
   it('names every versioned file of the home, each at version 1 (no step yet)', () => {
     expect(FORMATS.map((f) => f.file).sort()).toEqual(
-      ['agents.json', 'docking.json', 'downlink.json', 'keys.json', 'liveries/*.json', 'livery.json', 'propellant.json', 'relay.json', 'rollout.json', 'schedules.json', 'station.json', 'tasks.json', 'uplinks.json'].sort(),
+      ['agents.json', 'docking.json', 'downlink.json', 'keys.json', 'liveries/*.json', 'livery.json', 'prices.json', 'propellant.json', 'relay.json', 'rollout.json', 'schedules.json', 'station.json', 'tasks.json', 'uplinks.json'].sort(),
     );
     expect(FORMATS.every((f) => f.steps.length === 0)).toBe(true);
   });

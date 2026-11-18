@@ -235,7 +235,7 @@ describe('Uplink, and what the Director configures', () => {
   it('records the rest of the configuration by its name or id, never by the body', async () => {
     const all = {
       schedules: { create: async (_b: unknown) => ({ id: 's3', name: 'Nightly', body: SECRET }), update: async (id: string, _b: unknown) => ({ id }), remove: async (_id: string): Promise<void> => undefined, run: async (id: string) => ({ id }) },
-      propellant: { setLimits: async (_r: unknown) => ({ room: {} }) },
+      propellant: { setLimits: async (_r: unknown) => ({ room: {} }), setBudget: async (_b: unknown) => ({ room: {} }) },
       relay: { set: async (name: string, _b: unknown) => ({ name }), remove: async (name: string) => ({ name }), forward: async (_b: unknown) => ({}) },
       liveries: { select: async (_b: unknown) => ({}), remove: async (slug: string) => ({ slug }) },
       docking: { createCode: (_b: unknown) => ({ code: SECRET }), pair: async (_b: unknown) => ({ id: 'd1' }), undock: async (id: string) => ({ id }) },

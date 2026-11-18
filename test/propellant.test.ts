@@ -47,14 +47,14 @@ afterEach(async () => {
 describe('lineUsage', () => {
   it('counts input, cache creation and output, not cache reads', () => {
     const line = JSON.stringify({ message: { id: 'msg_1', usage: { input_tokens: 2, cache_creation_input_tokens: 40, cache_read_input_tokens: 9000, output_tokens: 250 } }, timestamp: '2026-11-17T12:00:00Z' });
-    expect(lineUsage(line)).toEqual({ id: 'msg_1', at: NOW, tokens: 292 });
+    expect(lineUsage(line)).toEqual({ id: 'msg_1', at: NOW, tokens: 292, model: null, split: { i: 2, cw: 40, o: 250, cr: 9000 } });
   });
 
   it('ignores lines without usage, broken JSON and negative or odd numbers', () => {
     expect(lineUsage('{"type":"user","message":{"content":"hi"}}')).toBeNull();
     expect(lineUsage('{not json')).toBeNull();
     expect(lineUsage(JSON.stringify({ message: { usage: { output_tokens: 5 } } }))).toBeNull();
-    expect(lineUsage(JSON.stringify({ message: { id: 'm', usage: { output_tokens: -5, input_tokens: '7' } } }))).toEqual({ id: 'm', at: null, tokens: 0 });
+    expect(lineUsage(JSON.stringify({ message: { id: 'm', usage: { output_tokens: -5, input_tokens: '7' } } }))).toEqual({ id: 'm', at: null, tokens: 0, model: null, split: { i: 0, cw: 0, o: 0, cr: 0 } });
   });
 });
 
@@ -124,7 +124,9 @@ describe('Propellant', () => {
     await p.close();
     clock = NOW + 32 * 24 * HOUR;
     const later = await make();
-    expect(later.view()).toEqual({
+    const { cost, ...fuel } = later.view();
+    expect(cost.days).toHaveLength(14);
+    expect(fuel).toEqual({
       room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: { month: 5_000_000 } },
       agents: { ben: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: { day: 10 } } },
     });

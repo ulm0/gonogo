@@ -126,7 +126,11 @@ export const SCHEDULES_AUDIT: Table = {
   remove: ['config', 'Director removed schedule'],
   run: ['config', 'Director ran schedule'],
 };
-export const PROPELLANT_AUDIT: Table = { setLimits: ['config', 'Director changed the Propellant limits'] };
+export const PROPELLANT_AUDIT: Table = {
+  setLimits: ['config', 'Director changed the Propellant limits'],
+  setBudget: ['config', 'Director changed the Propellant budget'],
+};
+export const PRICES_AUDIT: Table = { replace: ['config', 'Director changed the model prices'], remove: ['config', 'Director removed a model price'] };
 export const RELAY_AUDIT: Table = {
   set: ['config', 'Director set up Relay target'],
   remove: ['config', 'Director removed Relay target'],

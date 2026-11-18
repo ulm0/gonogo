@@ -73,6 +73,9 @@ import type { Hangar } from './hangar.js';
 import type { Docking } from './docking.js';
 import { createMcpHandler } from './mcp.js';
 import { parsePropellantRequest } from './propellant.js';
+import { parsePricesRequest } from './prices.js';
+import type { Prices } from './prices.js';
+import { PRICE_PREFIX_PATTERN } from '../shared/prices.js';
 import type { Liveries } from './livery.js';
 import type { MassBudget } from './massbudget.js';
 import type { MissionLog } from './missionlog.js';
@@ -103,7 +106,9 @@ export interface WebOptions {
   /** false until hub.start() has resolved: /api and /ws answer 503 meanwhile. */
   isReady: () => boolean;
   /** Token use and limits; absent in tests that do not need them (the snapshot then shows no use and no limits). */
-  propellant?: Pick<Propellant, 'view' | 'setLimits'>;
+  propellant?: Pick<Propellant, 'view' | 'setLimits' | 'setBudget'>;
+  /** The owner's model prices (docs/cost-spec.md); absent in tests that do not need them (the routes answer 404). */
+  prices?: Pick<Prices, 'view' | 'replace' | 'remove'>;
   /** Telemetry: GET /api/agents/:name/telemetry. Without it the list is empty. */
   telemetry?: Pick<Telemetry, 'calls'>;
   /** Launch Window; absent in tests that do not need it (the snapshot then lists none and the routes answer 404). It tells the browsers itself. */
@@ -143,6 +148,7 @@ export interface WebOptions {
 const NO_PROPELLANT: PropellantView = {
   room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} },
   agents: {},
+  cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null },
 };
 
 export interface WebServer {
@@ -720,9 +726,54 @@ export function createWebServer(options: WebOptions): WebServer {
             sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
             return;
           }
-          const view = await propellant.setLimits(parsed.value);
+          const { budget, ...limits } = parsed.value;
+          let view = propellant.view();
+          if (budget === undefined || Object.keys(limits).length > 0) view = await propellant.setLimits(limits);
+          if (budget !== undefined) view = await propellant.setBudget(budget);
           broadcast({ t: 'propellant', propellant: view });
           sendJson(res, 200, view);
+        },
+      };
+    }
+    if (s[1] === 'prices' && s.length <= 3) {
+      const prices = options.prices;
+      if (!prices) return null;
+      if (s.length === 2) {
+        return {
+          allow: ['GET', 'PUT'],
+          run: async (req, res) => {
+            if (req.method === 'GET') {
+              sendJson(res, 200, prices.view());
+              return;
+            }
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            const parsed = parsePricesRequest(body);
+            if (!parsed.ok) {
+              sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
+              return;
+            }
+            const view = await prices.replace(parsed.models, typeof body.currency === 'string' ? body.currency : undefined);
+            // a price changed: the whole history is priced again
+            if (options.propellant) broadcast({ t: 'propellant', propellant: options.propellant.view() });
+            sendJson(res, 200, view);
+          },
+        };
+      }
+      return {
+        allow: ['DELETE'],
+        run: async (_req, res) => {
+          const prefix = s[2] ?? '';
+          if (!new RegExp(PRICE_PREFIX_PATTERN).test(prefix)) {
+            sendApiError(res, 400, 'invalid prefix', 'bad_request', 'prefix');
+            return;
+          }
+          if (!(await prices.remove(prefix))) {
+            sendApiError(res, 404, `no price of your own for "${prefix}"`, 'not_found');
+            return;
+          }
+          if (options.propellant) broadcast({ t: 'propellant', propellant: options.propellant.view() });
+          sendJson(res, 200, prices.view());
         },
       };
     }

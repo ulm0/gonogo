@@ -755,6 +755,8 @@ function fileMode(path: string): number {
   return statSync(path).mode & 0o777;
 }
 
+const NO_PROPELLANT_VIEW = { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } };
+
 describe('home', () => {
   it('creates the home and agents directories (0700) and a 64 hex browser token (0600) on first open', () => {
     const dir = join(tmpDir(), 'fresh', 'home');
@@ -2704,7 +2706,7 @@ describe('web: REST', () => {
     const res = await api(port, 'GET', '/api/state');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/json');
-    expect(res.json()).toEqual({ agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {} }, schedules: [], uplinks: [], tasks: [], downlink: { unread: 0, items: [] } });
+    expect(res.json()).toEqual({ agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: NO_PROPELLANT_VIEW, schedules: [], uplinks: [], tasks: [], downlink: { unread: 0, items: [] } });
   });
 
   it('puts the current poll and governor in the snapshot', async () => {
@@ -3042,12 +3044,16 @@ describe('web: REST', () => {
 
     it('PUT /api/propellant checks the body, saves the limits and tells every browser', async () => {
       const saved: unknown[] = [];
-      const view = { room: { used: { '5h': 3, day: 3, week: 3, month: 3 }, limits: { day: 10 } }, agents: {} };
+      const view = { room: { used: { '5h': 3, day: 3, week: 3, month: 3 }, limits: { day: 10 } }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } };
       const { port } = await startWeb({
         propellant: {
           view: () => view,
           setLimits: async (request) => {
             saved.push(request);
+            return view;
+          },
+          setBudget: async (budget) => {
+            saved.push({ budget });
             return view;
           },
         },
@@ -3068,6 +3074,59 @@ describe('web: REST', () => {
     it('PUT /api/propellant is 404 without a propellant', async () => {
       const { port } = await startWeb();
       expect((await api(port, 'PUT', '/api/propellant', { room: {} })).status).toBe(404);
+    });
+
+    it('PUT /api/propellant takes a budget alone without touching the limits, and refuses a bad one', async () => {
+      const calls: unknown[] = [];
+      const view = { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } };
+      const { port } = await startWeb({
+        propellant: {
+          view: () => view,
+          setLimits: async (r) => (calls.push(['limits', r]), view),
+          setBudget: async (b) => (calls.push(['budget', b]), view),
+        },
+      });
+      expect((await api(port, 'PUT', '/api/propellant', { budget: { room: { day: 10 } } })).status).toBe(200);
+      expect(calls).toEqual([['budget', { room: { day: 10 } }]]);
+      const bad = await api(port, 'PUT', '/api/propellant', { budget: { room: { day: 0 } } });
+      expect(bad.status).toBe(400);
+      expect(bad.json()).toMatchObject({ code: 'bad_request', field: 'budget' });
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  describe('prices', () => {
+    const price = { input: 1, output: 2, cacheWrite: 3, cacheRead: 4 };
+    const fake = (): { calls: unknown[]; prices: NonNullable<WebOptions['prices']> } => {
+      const calls: unknown[] = [];
+      const view = { currency: 'USD', rows: {} };
+      return {
+        calls,
+        prices: {
+          view: () => view,
+          replace: async (models, currency) => (calls.push(['replace', models, currency]), view),
+          remove: async (prefix) => (calls.push(['remove', prefix]), prefix === 'mine'),
+        },
+      };
+    };
+
+    it('GET, PUT and DELETE /api/prices, strict about the body and the prefix', async () => {
+      const { calls, prices } = fake();
+      const { port } = await startWeb({ prices });
+      expect((await api(port, 'GET', '/api/prices')).json()).toEqual({ currency: 'USD', rows: {} });
+      expect((await api(port, 'PUT', '/api/prices', { models: { mine: price } })).status).toBe(200);
+      expect(calls).toEqual([['replace', { mine: price }, undefined]]);
+      expect((await api(port, 'PUT', '/api/prices', { models: { mine: { ...price, input: -1 } } })).json()).toMatchObject({ code: 'bad_request', field: 'models' });
+      expect((await api(port, 'PUT', '/api/prices', { models: {}, extra: 1 })).json()).toMatchObject({ field: 'extra' });
+      expect((await api(port, 'DELETE', '/api/prices/mine')).status).toBe(200);
+      expect((await api(port, 'DELETE', '/api/prices/other')).status).toBe(404);
+      expect((await api(port, 'DELETE', '/api/prices/a%20b')).status).toBe(400);
+      expect(calls).toHaveLength(3);
+    });
+
+    it('answers 404 without prices', async () => {
+      const { port } = await startWeb();
+      expect((await api(port, 'GET', '/api/prices')).status).toBe(404);
     });
   });
 
@@ -4853,7 +4912,7 @@ describe('web: WebSocket handshake', () => {
     const activity = [{ ...message('m1'), truncated: false }];
     const { port } = await startWeb({}, { views: () => views, activity: () => activity });
     const client = await openWs(port);
-    expect(client.frames[0]).toEqual({ t: 'state', state: { agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {} }, schedules: [], uplinks: [], tasks: [], downlink: { unread: 0, items: [] } } });
+    expect(client.frames[0]).toEqual({ t: 'state', state: { agents: views, activity, info: INFO, poll: null, governor: { limit: null, working: 1, holding: 0 }, propellant: NO_PROPELLANT_VIEW, schedules: [], uplinks: [], tasks: [], downlink: { unread: 0, items: [] } } });
   });
 
   it('answers 401 with the ApiError body when the token is not in the subprotocol, and refuses ?token=', async () => {

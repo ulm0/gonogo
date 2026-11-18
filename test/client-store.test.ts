@@ -123,7 +123,7 @@ const snapshot = (agents: AgentView[], activity: ActivityItem[] = []): StateSnap
   info: INFO,
   poll: null,
   governor: OFF,
-  propellant: { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {} },
+  propellant: { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } },
   schedules: [],
   uplinks: [],
   tasks: [],

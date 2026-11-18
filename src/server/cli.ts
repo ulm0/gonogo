@@ -26,7 +26,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -40,6 +40,7 @@ import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
+import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
@@ -363,8 +364,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('launcher'),
     });
 
+    const prices = createPrices({ dir: home.dir, log: log.child('prices') });
+    await prices.load();
     const propellant = createPropellant({
       dir: home.dir,
+      prices: () => prices.table(),
+      // the 80 % budget warning: the inbox and Relay, not the Black Box (it is not a trip)
+      notify: (kind, text) => {
+        downlink.post(kind, text);
+        relay.event(kind, text);
+      },
       projectsRoot: join(env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude'), 'projects'),
       now: () => Date.now(),
       log: log.child('propellant'),
@@ -615,6 +624,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       info,
       isReady: () => ready,
       propellant: audited(propellant, blackBox.record, PROPELLANT_AUDIT),
+      prices: audited(prices, blackBox.record, PRICES_AUDIT),
       telemetry,
       schedules: audited(schedules, blackBox.record, SCHEDULES_AUDIT),
       uplinks: audited(uplinks, blackBox.record, UPLINKS_AUDIT),
@@ -690,6 +700,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('relay close', () => relay.close());
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
+      await step('prices close', () => prices.close());
       await step('telemetry close', () => telemetry.close());
       await step('rollout close', () => rollout.close());
       await step('clearance close', () => clearance.close());
