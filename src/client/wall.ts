@@ -19,12 +19,12 @@ export interface Mission {
 const firstLine = (text: string): string => text.split('\n').find((line) => line.trim() !== '')?.trim() ?? '';
 
 /**
- * The latest message from the Director to the boss that is not a T-minus poll. Its subject, or the first line of its body
+ * The latest message from the Director to the boss that is not a T-minus poll or a Relief answer. Its subject, or the first line of its body
  * when the subject says nothing ("Brief" is what the brief box sends). `activity` is newest first.
  */
 export function missionOf(activity: readonly ActivityItem[], boss: string | null): Mission | null {
   if (boss === null) return null;
-  const item = activity.find((i) => i.from === 'user' && i.to === boss && !i.subject.startsWith('T-minus:'));
+  const item = activity.find((i) => i.from === 'user' && i.to === boss && !i.subject.startsWith('T-minus:') && !i.subject.startsWith('Relief:'));
   if (item === undefined) return null;
   const subject = item.subject.trim();
   const fromBody = firstLine(item.body);

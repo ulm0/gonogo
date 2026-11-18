@@ -58,6 +58,8 @@ import type {
   Payload,
   PollFrame,
   PollView,
+  ReliefFrame,
+  ReliefView,
   RosterFile,
   RosterResult,
   ScheduleView,
@@ -2261,6 +2263,79 @@ describe('end to end with the stand-in agent', () => {
     expect(tools(b, 'bob', 'send_message').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: 'unknown station "alpha". No station is docked' } });
     expect(await api<ApiError>(a, 'DELETE', `/api/docking/${dockOfB.id}`)).toMatchObject({ status: 404 });
   }, 180_000);
+
+  it('31. Relief: the boss asks to hire, the request waits with every parameter, only the Director\'s go hires, and the limits hold', async () => {
+    const h = await startServer();
+    await hire(h, 'ana');
+    await waitState(h, 'flight', 'idle');
+    const c = await Client.open(h);
+    const mark = c.mark();
+    const reliefFrames = (): ReliefView[] => c.frames.slice(mark).filter((f): f is ReliefFrame => f.t === 'relief').map((f) => f.relief);
+    const tell = async (who: string, request: Record<string, unknown>): Promise<void> => {
+      const sent = await send(h, who, `@fake relief hire_agent ${JSON.stringify(request)}`, 'relief');
+      await itemRead(h, sent.body.id);
+      await waitState(h, who, 'idle');
+    };
+    const asked = { name: 'guido-1', position: 'guido', dir: h.work, mode: 'acceptEdits' };
+
+    // the boss asks: the request waits, the browsers are told, the inbox has the event, and nobody is hired
+    await tell('flight', asked);
+    expect(tools(h, 'flight', 'hire_agent').at(-1)).toMatchObject({ isError: false, result: { ok: true, id: 'h1', status: 'pending' } });
+    await waitFor(() => reliefFrames().length === 1, 5000, 'the relief frame');
+    const waiting = (await getState(h)).relief?.requests ?? [];
+    expect(waiting).toEqual([expect.objectContaining({ id: 'h1', by: 'flight', name: 'guido-1', position: 'guido', dir: h.work, provider: 'claude', mode: 'acceptEdits', cleanRoom: null })]);
+    expect(waiting[0]?.role).toContain('GUIDO');
+    expect(await view(h, 'guido-1')).toBeUndefined();
+    const inbox = (await api<DownlinkView>(h, 'GET', '/api/downlink')).body;
+    expect(inbox.items.find((item) => item.type === 'event' && item.kind === 'relief')).toMatchObject({ text: `flight asks to hire guido-1 as GUIDO: claude, acceptEdits, ${h.work}`, read: false });
+
+    // the limits: nothing above acceptEdits, no field of the tool's own beyond its six, no custom command, a free valid name, a folder that is there
+    const refused = async (who: string, request: Record<string, unknown>): Promise<unknown> => {
+      await tell(who, request);
+      const call = tools(h, who, 'hire_agent').at(-1);
+      expect(call?.isError, JSON.stringify(request)).toBe(true);
+      return call?.result;
+    };
+    expect(await refused('flight', { ...asked, name: 'x1', mode: 'bypassPermissions' })).toMatchObject({ ok: false, error: expect.stringMatching(/default or acceptEdits at most/) });
+    await refused('flight', { ...asked, name: 'x2', mode: 'auto' });
+    await refused('flight', { ...asked, name: 'x3', confirmBypass: true });
+    await refused('flight', { ...asked, name: 'x4', command: 'sh' });
+    await refused('flight', { ...asked, name: 'x5', engine: 'custom' });
+    expect(await refused('flight', { ...asked, name: 'ana' })).toMatchObject({ ok: false, error: expect.stringMatching(/exists already/) });
+    expect(await refused('flight', asked)).toMatchObject({ ok: false, error: expect.stringMatching(/exists already/) });
+    await refused('flight', { ...asked, name: 'Bad Name' });
+    expect(await refused('flight', { ...asked, name: 'x6', dir: join(h.work, 'missing') })).toMatchObject({ ok: false, error: expect.stringMatching(/does not exist/) });
+    expect(await refused('ana', { ...asked, name: 'x7' })).toMatchObject({ ok: false, error: 'only the boss can ask for a hire' });
+    expect((await getState(h)).relief?.requests.map((r) => r.id)).toEqual(['h1']);
+
+    // an agent's token cannot answer, not even the boss's for its own request; a bad id or verdict finds nothing
+    const bossToken = await readToken(h, 'flight');
+    expect((await api(h, 'POST', '/api/relief/h1/go', undefined, bossToken)).status).toBe(401);
+    expect((await api(h, 'POST', '/api/relief/h1/go', undefined, null)).status).toBe(401);
+    expect(await api<ApiError>(h, 'POST', '/api/relief/h9/go')).toMatchObject({ status: 404 });
+    expect((await api(h, 'POST', '/api/relief/h1/maybe')).status).toBe(404);
+    expect((await getState(h)).relief?.requests).toHaveLength(1);
+
+    // GO: the hub staffs it as the form does (the stand-in checks the arguments of a start), and the boss is told
+    const went = await api<ReliefView>(h, 'POST', '/api/relief/h1/go');
+    expect([went.status, went.body.requests]).toEqual([200, []]);
+    const guido = await waitState(h, 'guido-1', 'idle');
+    expect(guido).toMatchObject({ name: 'guido-1', position: 'guido', dir: h.work, mode: 'acceptEdits', provider: 'claude', boss: false });
+    expect((JSON.parse(readFileSync(join(h.home, 'agents.json'), 'utf8')) as RosterFile).agents.find((a) => a.name === 'guido-1')).toMatchObject({ mode: 'acceptEdits', position: 'guido' });
+    const told = (await getState(h)).activity.find((item) => item.to === 'flight' && item.subject === 'Relief: guido-1 is staffed');
+    expect(told).toMatchObject({ from: 'user' });
+    await waitFor(() => reliefFrames().at(-1)?.requests.length === 0, 5000, 'the frame of the answer');
+    expect((await api(h, 'POST', '/api/relief/h1/go')).status).toBe(404);
+
+    // NO-GO: nobody is hired and the boss hears it
+    await tell('flight', { name: 'fido-1', role: 'Reads the plan.', dir: h.work });
+    expect(tools(h, 'flight', 'hire_agent').at(-1)).toMatchObject({ isError: false, result: { id: 'h2' } });
+    expect((await api<ReliefView>(h, 'POST', '/api/relief/h2/no-go')).body.requests).toEqual([]);
+    expect(await view(h, 'fido-1')).toBeUndefined();
+    expect((await getState(h)).activity.some((item) => item.to === 'flight' && item.subject === 'Relief: request for fido-1 refused')).toBe(true);
+    const events = ((await api<DownlinkView>(h, 'GET', '/api/downlink')).body.items.filter((item) => item.type === 'event' && item.kind === 'relief') as Array<{ text: string }>).map((item) => item.text);
+    expect(events).toEqual(expect.arrayContaining(['guido-1 hired (asked by flight)', 'hire of fido-1 refused']));
+  }, 120_000);
 
   it('Clean Room: a console runs through docker on its own worktree and reaches the hub by the name containers use for the host', async () => {
     const aux = await mkdtemp(join(tmpdir(), 'gonogo-'));

@@ -13,6 +13,7 @@ DOWNLINK (top bar, or DOWN on a phone) is your inbox. Design and limits: [`docs/
   - failed Launch Window fire (hub refused it, or it could not be sent)
   - Uplink refused for bad signature more than 3 times in 10 minutes (one line per uplink per 10 minutes, never the secret)
   - task an agent moved to blocked or review (not your own moves)
+  - hire request FLIGHT made, and its end: hired, refused, expired or failed ([Relief](./relief.md))
 
 ## Read state
 

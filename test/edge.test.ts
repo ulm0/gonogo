@@ -2057,6 +2057,120 @@ describe('livery', () => {
   });
 });
 
+describe('relief', () => {
+  const request = { id: 'h1', by: 'flight', at: 5, expiresAt: 9, name: 'guido-1', position: 'guido', role: 'r', dir: '/work', provider: 'claude', mode: 'acceptEdits', cleanRoom: null } as const;
+  const view = { requests: [request] };
+  /** A Relief that records what the routes and the tool ask of it. */
+  function fakeRelief(): { calls: unknown[][]; relief: NonNullable<WebOptions['relief']> } {
+    const calls: unknown[][] = [];
+    return {
+      calls,
+      relief: {
+        view: () => view,
+        request: async (by, input) => {
+          calls.push(['request', by, input]);
+          if ((input as { name?: unknown }).name === 'full') throw new FakeHubError('conflict', 'the operations room is full (24 agents)');
+          return { id: 'h1', status: 'pending', note: 'waiting for the Director' };
+        },
+        decide: async (id, verdict, by) => {
+          calls.push(['decide', id, verdict, by]);
+          if (id === 'h9') throw new FakeHubError('not_found', 'no such hire request: it may have expired or been answered');
+          return { requests: [] };
+        },
+      },
+    };
+  }
+
+  it('lists the requests, and answers GO and NO-GO as the Director', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    expect((await api(port, 'GET', '/api/relief')).json()).toEqual(view);
+    expect((await api(port, 'POST', '/api/relief/h1/go')).json()).toEqual({ requests: [] });
+    expect((await api(port, 'POST', '/api/relief/h1/no-go')).json()).toEqual({ requests: [] });
+    expect((await api(port, 'POST', '/api/relief/h9/go')).json()).toEqual({ error: 'no such hire request: it may have expired or been answered', code: 'not_found' });
+    expect(calls).toEqual([['decide', 'h1', 'go', { kind: 'user' }], ['decide', 'h1', 'no-go', { kind: 'user' }], ['decide', 'h9', 'go', { kind: 'user' }]]);
+  });
+
+  it('puts the requests in the state, and allows only the methods of each route', async () => {
+    const { relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    expect(((await api(port, 'GET', '/api/state')).json() as { relief: unknown }).relief).toEqual(view);
+    expect((await api(port, 'POST', '/api/relief', {})).status).toBe(405);
+    expect((await api(port, 'GET', '/api/relief/h1/go')).status).toBe(405);
+    expect((await api(port, 'PUT', '/api/relief/h1/no-go', {})).status).toBe(405);
+    expect((await api(port, 'POST', '/api/relief/h1/maybe')).status).toBe(404);
+    expect((await api(port, 'POST', '/api/relief/h1')).status).toBe(404);
+    expect((await api(port, 'POST', '/api/relief/h1/go/x')).status).toBe(404);
+  });
+
+  it('an agent token cannot answer, or even list: the boss cannot approve its own request', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    for (const token of [ANA_TOKEN, BEN_TOKEN, 'nope']) {
+      expect((await api(port, 'POST', '/api/relief/h1/go', undefined, token)).status, token).toBe(401);
+      expect((await api(port, 'POST', '/api/relief/h1/no-go', undefined, token)).status, token).toBe(401);
+      expect((await api(port, 'GET', '/api/relief', undefined, token)).status, token).toBe(401);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('has no requests in the state and answers 404 without a Relief', async () => {
+    const none = await startWeb();
+    expect('relief' in ((await api(none.port, 'GET', '/api/state')).json() as object)).toBe(false);
+    expect((await api(none.port, 'GET', '/api/relief')).status).toBe(404);
+    expect((await api(none.port, 'POST', '/api/relief/h1/go')).status).toBe(404);
+  });
+
+  it('gives the agents hire_agent, and the requester is the agent of the token', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const sent = toolOutcome(await ana.callTool({ name: 'hire_agent', arguments: { name: 'guido-1', position: 'guido', dir: '/work', engine: 'claude', mode: 'acceptEdits' } }));
+    expect(sent).toMatchObject({ isError: false, json: { ok: true, id: 'h1', status: 'pending' } });
+    expect(calls).toEqual([['request', { agent: 'ana', generation: 3 }, { name: 'guido-1', position: 'guido', dir: '/work', engine: 'claude', mode: 'acceptEdits' }]]);
+  });
+
+  it('tells the agent why when the request is refused', async () => {
+    const { relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'hire_agent', arguments: { name: 'full', role: 'r', dir: '/work' } }))).toMatchObject({
+      isError: true,
+      text: '{"ok":false,"error":"the operations room is full (24 agents)"}',
+    });
+  });
+
+  it('refuses a field the tool does not have, and a bad shape, before Relief is asked', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const bad = [
+      { name: 'x', role: 'r', dir: '/work', confirmBypass: true },
+      { name: 'x', role: 'r', dir: '/work', command: 'sh' },
+      { name: 'x', role: 'r', dir: '/work', payload: {} },
+      { name: 'x', role: 'r', dir: '/work', cleanRoom: {} },
+      { name: 'x', role: 'r', dir: '/work', provider: 'custom' },
+      { name: '', role: 'r' },
+      { name: 'x'.repeat(33), role: 'r' },
+      { role: 'r' },
+      { name: 'x', role: 'r'.repeat(4001) },
+      { name: 'x', dir: 'd'.repeat(1025) },
+      { name: 'x', mode: 5 },
+    ];
+    for (const args of bad) {
+      const out = await ana.callTool({ name: 'hire_agent', arguments: args }).catch(() => ({ isError: true }));
+      expect((out as { isError?: boolean }).isError, JSON.stringify(args)).toBe(true);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('says Relief is not available when the server has none', async () => {
+    const { port } = await startWeb();
+    const ana = await connectMcp(port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'hire_agent', arguments: { name: 'x', role: 'r', dir: '/work' } }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"Relief is not available"}' });
+  });
+});
+
 describe('downlink', () => {
   const view = {
     unread: 1,

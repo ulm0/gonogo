@@ -9,6 +9,7 @@ import type {
   LiveryView,
   PollView,
   PropellantView,
+  ReliefRequest,
   ScheduleView,
   ServerFrame,
   ServerInfo,
@@ -61,6 +62,8 @@ export interface ClientState {
   livery: LiveryView;
   /** Docking: this station's name and the stations docked with it. */
   docking: DockingView;
+  /** Relief: the hire requests of the boss that wait for the Director's GO. */
+  relief: ReliefRequest[];
 }
 
 export interface Store {
@@ -156,6 +159,7 @@ export function emptyState(): ClientState {
     log: NO_LOG_NEWS,
     livery: defaultView(),
     docking: NO_DOCKING,
+    relief: [],
   };
 }
 
@@ -308,6 +312,8 @@ function applyState(s: ClientState, snapshot: StateSnapshot, now: number): Clien
     livery: snapshot.livery ?? defaultView(),
     // an older server, or one without Docking, sends none
     docking: snapshot.docking ?? NO_DOCKING,
+    // an older server, or one without Relief, sends none
+    relief: snapshot.relief?.requests ?? [],
     // a state is a connect or a reconnect: frames may have been missed, so the view asks again
     log: { rev: s.log.rev + 1, changed: [], removed: [] },
   };
@@ -397,6 +403,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, livery: frame.livery };
     case 'docking':
       return { ...s, docking: frame.docking };
+    case 'relief':
+      return { ...s, relief: frame.relief.requests };
     case 'log':
       return { ...s, log: { rev: s.log.rev + 1, changed: frame.changed, removed: frame.removed } };
     default:

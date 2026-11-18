@@ -25,6 +25,7 @@ import type {
   RelayService,
   RelayTargetRequest,
   RelayView,
+  ReliefView,
   ScheduleRequest,
   ScheduleView,
   SendResult,
@@ -195,6 +196,29 @@ function toDownlinkView(value: unknown): DownlinkView {
   return value as DownlinkView;
 }
 
+/** A hire request as the page draws it: every field the block shows must be there. */
+function isReliefRequest(value: unknown): boolean {
+  const r = asRecord(value);
+  return (
+    r !== null &&
+    ['id', 'by', 'name', 'role', 'dir', 'provider', 'mode'].every((key) => typeof r[key] === 'string') &&
+    typeof r.at === 'number' &&
+    typeof r.expiresAt === 'number' &&
+    (r.position === null || typeof r.position === 'string') &&
+    (r.cleanRoom === null || asRecord(r.cleanRoom) !== null)
+  );
+}
+
+const isReliefView = (value: unknown): value is ReliefView => {
+  const requests = asRecord(value)?.requests;
+  return Array.isArray(requests) && requests.every(isReliefRequest);
+};
+
+function toReliefView(value: unknown): ReliefView {
+  if (!isReliefView(value)) throw failure('The server sent an answer gonogo does not understand.');
+  return value;
+}
+
 function toLiveryView(value: unknown): LiveryView {
   const record = asRecord(value);
   if (record === null || typeof record.current !== 'string' || !Array.isArray(record.liveries) || !record.liveries.every((e) => typeof asRecord(e)?.slug === 'string' && asRecord(asRecord(e)?.tokens) !== null)) {
@@ -303,6 +327,11 @@ export async function clearPoll(): Promise<void> {
 export async function answer(name: string, go: boolean): Promise<AgentView> {
   const request: AnswerRequest = { go };
   return toAgentView(await call('POST', `${agentPath(name)}/answer`, request));
+}
+
+/** Relief: the Director's GO or NO-GO on a hire request of the boss. The answer is the list as it is now. */
+export async function answerRelief(id: string, go: boolean): Promise<ReliefView> {
+  return toReliefView(await call('POST', `/relief/${encodeURIComponent(id)}/${go ? 'go' : 'no-go'}`));
 }
 
 /** Max Q: a limit of 1 to MAX_AGENTS, or null to switch it off. */
@@ -536,6 +565,7 @@ function parseFrame(text: string): ServerFrame | null {
   else if (frame.t === 'uplinks') valid = Array.isArray(frame.uplinks);
   else if (frame.t === 'tasks') valid = Array.isArray(frame.tasks);
   else if (frame.t === 'livery') valid = asRecord(frame.livery) !== null && Array.isArray(asRecord(frame.livery)?.liveries) && typeof asRecord(frame.livery)?.current === 'string';
+  else if (frame.t === 'relief') valid = isReliefView(frame.relief);
   else if (frame.t === 'docking') valid = typeof asRecord(frame.docking)?.station === 'string' && Array.isArray(asRecord(frame.docking)?.docks);
   else if (frame.t === 'log') valid = Array.isArray(frame.changed) && Array.isArray(frame.removed);
   else if (frame.t === 'downlink') valid = Array.isArray(asRecord(frame.downlink)?.items) && typeof asRecord(frame.downlink)?.unread === 'number';

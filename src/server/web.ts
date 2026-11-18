@@ -73,6 +73,7 @@ import type { MissionLog } from './missionlog.js';
 import type { Propellant } from './propellant.js';
 import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
+import type { Relief } from './relief.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
 import type { Uplinks } from './uplinks.js';
@@ -113,6 +114,8 @@ export interface WebOptions {
   relay?: Pick<Relay, 'view' | 'set' | 'remove' | 'forward' | 'test'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
   docking?: Pick<Docking, 'view' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
+  /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
+  relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
   log: Logger;
 }
 
@@ -449,6 +452,7 @@ export function createWebServer(options: WebOptions): WebServer {
     tasks: options.tasks,
     missionLog: options.missionLog,
     liveries: options.liveries,
+    relief: options.relief,
     log: log.child('mcp'),
     version: () => options.info().version,
   });
@@ -531,6 +535,7 @@ export function createWebServer(options: WebOptions): WebServer {
     downlink: options.downlink?.view() ?? { unread: 0, items: [] },
     livery: options.liveries?.view(),
     docking: options.docking?.view(),
+    relief: options.relief?.view(),
   });
 
   const sendHubError = (res: ServerResponse, e: unknown): void => {
@@ -842,6 +847,15 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) sendJson(res, 200, await (name === 'forward' ? relay.forward(body) : relay.set(name, body)));
         },
       };
+    }
+    if (s[1] === 'relief' && s.length <= 4) {
+      const relief = options.relief;
+      if (!relief) return null;
+      if (s.length === 2) return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, relief.view()) };
+      // browser token only, like every /api route: an agent's token never reaches here, so the boss cannot answer its own request
+      if (s.length !== 4 || (s[3] !== 'go' && s[3] !== 'no-go')) return null;
+      const verdict = s[3];
+      return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await relief.decide(s[2] ?? '', verdict, { kind: 'user' })) };
     }
     if (s[1] === 'downlink' && s.length <= 3) {
       const downlink = options.downlink;

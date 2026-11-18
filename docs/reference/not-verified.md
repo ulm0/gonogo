@@ -22,6 +22,7 @@ Update this list when these are run. Most features were tested with unit tests, 
 - **Flight Plan, Downlink, Mission Log:** boards, inboxes or logs of hundreds of items; Downlink between 700 and 999 px and `prefers-reduced-motion` by hand. Mission Log ranking constants are chosen, not tuned.
 - **Relay:** never run against a real Slack, GitHub, Linear or Telegram: real payload shapes, `chat.postMessage` and `sendMessage` replies, Slack's Request URL check, real retries, and the setup menus (from the docs as remembered; Linear's URL being editable afterwards is assumed). TEST not pressed against a saved target.
 - **Livery:** a model designing a livery that passes the check; another engine calling the tool; contrast of error messages, open questions, hover and focus states; `theme-color` on a real phone; a reverse proxy with a Content-Security-Policy.
+- **Relief:** a real `claude` calling `hire_agent` (the tool text and the FLIGHT role line are untried with a model: whether it asks when it should, and with a fitting role), and a GO of a Clean Room request on real Docker. The block was opened in Chrome only against the stand-in agent.
 - **Docking:** between two machines, over HTTPS or a real proxy, a real `claude` reading a message from another station, the 30 s roster pull outside a fake timer.
 - **Proxy recipes:** none of the Caddy, nginx or `tailscale serve` configs in [Exposing gonogo safely](../https.md) and [Security](./security.md#reverse-proxy) was run; ruling out basic auth comes from reading `src/client/api.ts`.
 - **Saved-state upgrades:** every format is still version 1, so no real upgrade has run. Not tested: two gonogos on one home at once, a disk filling between the copy and the write.
@@ -37,6 +38,7 @@ Update this list when these are run. Most features were tested with unit tests, 
 - Mission Log: with two writers the last write wins, without a warning. Hand edits are seen only after a restart. Ids above `l999999` are not handled. Entries are text a model may follow: not for secrets or untrusted agents.
 - Relay: Telegram updates are not deduplicated by `update_id`. A Slack event is marked handled even when the hub then refuses it, so Slack's retry is ignored.
 - Livery: an `oklch` colour outside sRGB is clipped per channel in the check. If removing a custom livery fails on disk after `livery.json` moved back, no livery frame goes out until the next state.
+- Relief: requests are kept in memory, so a restart drops them and FLIGHT is not told. A boss saved before Relief keeps its old role text, which says it cannot hire.
 - Docking: codes and seen nonces live in memory, so a call replayed within 5 minutes across a restart is accepted once. If the other station accepts a hand-off and the local task then fails to move, the remote copy stays. A queued message to a station is marked undelivered at a restart.
 - Engines without the gonogo tools (pi, Qwen, Grok, Crush, Cursor Agent) still get `GONOGO_TOKEN`. gonogo needs `claude` on `PATH` because FLIGHT is always Claude Code.
 - Codex, opencode and Copilot take no payload.
