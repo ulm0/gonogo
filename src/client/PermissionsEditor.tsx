@@ -36,7 +36,7 @@ export function PermissionsEditor({ id, value, onChange, error, inheritedDeny = 
       </label>
       <textarea
         id={`${id}-text`}
-        className="perm-text"
+        className="textarea perm-text"
         rows={4}
         spellCheck={false}
         value={value}

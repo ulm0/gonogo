@@ -74,7 +74,7 @@ export function SubagentsBlock(): ReactElement {
             ))}
           </select>
           {settings.mode === 'limit' && (
-            <input aria-label="Most subagents at once" type="number" min={1} max={SUBAGENT_LIMIT_MAX} value={settings.limit} onChange={(event) => change({ limit: Number(event.target.value) })} />
+            <input className="input" data-fit aria-label="Most subagents at once" type="number" min={1} max={SUBAGENT_LIMIT_MAX} value={settings.limit} onChange={(event) => change({ limit: Number(event.target.value) })} />
           )}
           <p className="hint">
             What a Claude Code console may do with the helpers it starts. A limit is Claude Code's own, and it does not apply while a session runs ultracode. None denies the Agent tool. A helper still uses the console's gonogo tools, as the console. Applies at each console's next start.

@@ -389,7 +389,7 @@ select.input:disabled {
 .radio:disabled,
 .switch:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.6;
 }
 
 .hint {
@@ -713,4 +713,39 @@ select.input:disabled {
 
 .icon[data-icon='half'] {
   --icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20fill-rule%3D%27evenodd%27%20d%3D%27M8%201a7%207%200%201%200%200%2014A7%207%200%200%200%208%201zm0%201.5v11a5.5%205.5%200%200%201%200-11z%27%2F%3E%3C%2Fsvg%3E");
+}
+
+/* ---- Windows forced colours: the system's colours replace the livery's, so the shapes use them too ---- */
+
+@media (forced-colors: active) {
+  .icon {
+    background-color: CanvasText;
+  }
+
+  select.input {
+    background-image: linear-gradient(45deg, transparent 50%, CanvasText 50%), linear-gradient(135deg, CanvasText 50%, transparent 50%);
+    background-color: Field;
+  }
+
+  .radio:checked::after,
+  .switch::after {
+    background: CanvasText;
+  }
+
+  .check:checked,
+  .radio:checked,
+  .switch:checked {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+  }
+
+  .check:checked::after {
+    border-color: Canvas;
+  }
+
+  .radio:checked::after,
+  .switch:checked::after {
+    background: Canvas;
+  }
 }

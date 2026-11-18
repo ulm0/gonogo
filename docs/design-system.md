@@ -242,7 +242,7 @@ Native controls, so the keyboard, the screen reader and the form come for free, 
 </div>
 </div>
 
-`select.input` is the field with a chevron of `--text-2` (4.5:1 and better on `--key`); `data-fit` makes it as wide as its longest option for a select that shares a line. `.check` and `.radio` are 22 px with a 2 px `--muted` edge and, when on, the dark `--go-ink` with a mark in `--key`; `.switch` is a 44 by 26 px track with a thumb, on a native checkbox with `role="switch"`. Give each a `<label>` that fills a 44 px row, so the row is the touch target. `.icon` is a shape drawn in the colour of the text around it (`lock`, `chevron-right`, `chevron-down`, `half`); the app has no emoji, and an icon that carries meaning needs `role="img"` and a label, or a word next to it.
+`select.input` is the field with a chevron of `--text-2` (4.5:1 and better on `--key`); `data-fit` makes it as wide as its longest option for a select that shares a line. `.check` and `.radio` are 22 px with a 2 px `--muted` edge and, when on, the dark `--go-ink` with a mark in `--key`; `.switch` is a 44 by 26 px track with a thumb, on a native checkbox with `role="switch"`. Give each a `<label>` that fills a 44 px row, so the row is the touch target. `.icon` is a shape drawn in the colour of the text around it (`lock`, `chevron-right`, `chevron-down`, `half`); under Windows forced colours the shapes take the system's colours (checked boxes and switches are Highlight with a Canvas mark; that was written from the CSS spec and not run on Windows), the app has no emoji, and an icon that carries meaning needs `role="img"` and a label, or a word next to it.
 
 ### Elements of the feature pages
 

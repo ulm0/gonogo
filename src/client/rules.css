@@ -267,6 +267,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
+  min-height: 44px;
 }
 
 .feat-row[data-off] .feat-name {
@@ -274,6 +275,10 @@
 }
 
 .feat-name {
+  /* the label fills the 44 px of the row, so the whole of it is the touch target */
+  display: flex;
+  align-items: center;
+  align-self: stretch;
   font-weight: 600;
 }
 

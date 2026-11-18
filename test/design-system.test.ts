@@ -34,15 +34,29 @@ describe('the primitives', () => {
 });
 
 describe('the controls of the page', () => {
-  const tags = (text: string, tag: string): string[] => [...text.matchAll(new RegExp(`<${tag}\\b[^>]*?>`, 'gs'))].map((m) => m[0]);
+  /** The opening tags of one element name; a `>` inside braces (an arrow function in an attribute) does not end a tag. */
+  const tags = (text: string, tag: string): string[] =>
+    [...text.matchAll(new RegExp(`<${tag}(?=[\\s/>])`, 'g'))].map((m) => {
+      let depth = 0;
+      let end = m.index;
+      for (; end < text.length; end += 1) {
+        const c = text[end];
+        if (c === '{') depth += 1;
+        else if (c === '}') depth -= 1;
+        else if (c === '>' && depth === 0) break;
+      }
+      return text.slice(m.index, end + 1);
+    });
 
-  it.each(page.filter((f) => f.endsWith('.tsx')))('%s: a checkbox is a .check or a .switch, a radio a .radio, a select an .input', (file) => {
+  it.each(page.filter((f) => f.endsWith('.tsx')))('%s: every control wears a primitive', (file) => {
     const text = readFileSync(file, 'utf8');
     for (const input of tags(text, 'input')) {
       if (/type="checkbox"/.test(input)) expect(input, file).toMatch(/className="(check|switch)"/);
-      if (/type="radio"/.test(input)) expect(input, file).toMatch(/className="radio"/);
+      else if (/type="radio"/.test(input)) expect(input, file).toMatch(/className="radio"/);
+      else expect(input, file).toMatch(/className=(\{[^}]*\binput\b|"[^"]*\b(input|lcd)\b)/);
     }
-    // the start of the tag is enough: an arrow function in an attribute holds a `>`
-    for (const at of text.matchAll(/<select\b/g)) expect(text.slice(at.index, at.index + 400).split('>\n')[0], file).toMatch(/className="[^"]*\binput\b/);
+    for (const select of tags(text, 'select')) expect(select, file).toMatch(/className="[^"]*\binput\b/);
+    // the Hangar's editor is a code surface of its own (hg-text), not a form field
+    for (const area of tags(text, 'textarea').filter((a) => !/\bhg-text\b/.test(a))) expect(area, file).toMatch(/className=(\{[^}]*\btextarea\b|"[^"]*\btextarea\b)/);
   });
 });
