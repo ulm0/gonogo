@@ -171,6 +171,8 @@ async function startServer(options: ServerOptions = {}): Promise<Harness> {
       ptyHost: options.ptyHost,
       env: {
         ...process.env,
+        // hermetic: the host's Docker socket (a dev box, a GitHub runner) must not turn on self-update; a scenario opts in with options.env
+        GONOGO_DOCKER_SOCKET: '/nonexistent',
         CLAUDE_CONFIG_DIR: configDir,
         FAKE_CLAUDE_LOG_DIR: logDir,
         ...(options.sessionDir === true ? { FAKE_CLAUDE_SESSION_DIR: sessions } : {}),
