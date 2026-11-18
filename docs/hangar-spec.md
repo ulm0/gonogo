@@ -34,8 +34,8 @@ lets a path leave the folder.
 - **Save.** `PUT /api/agents/<name>/file` with `{ path, text, etag }`. The file is read again; when its etag is not the
   one sent the answer is 409 (`conflict`, field `etag`) and nothing is written. Otherwise the text is written whole to a
   temporary file beside it (mode of the file) and renamed over it, so a full disk or a crash leaves the old file. A
-  read-only file is 403. A save of a file that changed during the save is a 409. At most 1 MiB of text, no NUL
-  character. shortcut: a write by another process between the last check and the rename is lost; a lock file would close it.
+  read-only file is 403. A save of a file that changed during the save is a 409. Saves of one file run one after the other in the server, so two browsers that save with the same etag at once cannot both win: the second is a 409. At most 1 MiB of text, no NUL
+  character. shortcut: a write by another program (not a second save) between the last check and the rename is lost; a lock file would close it.
 - **Create.** `POST /api/agents/<name>/file` with `{ path, text? }` makes a new file in a folder that exists, mode 0644, with
   `O_EXCL`: a name that exists, a link included (also a dangling one), is a 409 and nothing is written through it. No folder
   is made.

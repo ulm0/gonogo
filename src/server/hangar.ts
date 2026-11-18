@@ -151,6 +151,19 @@ export function createRoots(deps: HangarDeps): Roots {
 }
 
 export function createHangar(roots: Roots): Hangar {
+  /** Saves of one file run one after the other: two browsers saving with the same etag at once would both pass the check, and the first text would be lost. */
+  const saving = new Map<string, Promise<unknown>>();
+  async function serial<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const run = (saving.get(key) ?? Promise.resolve()).then(work);
+    const tail = run.then(() => undefined, () => undefined);
+    saving.set(key, tail);
+    try {
+      return await run;
+    } finally {
+      if (saving.get(key) === tail) saving.delete(key);
+    }
+  }
+
   /** gonogo's home is out of reach, except the Clean Room worktrees below it (an agent's own files). */
   const ownState = (at: Root, real: string): boolean => inside(at.home, real) && !inside(join(at.home, CLEAN_ROOM_DIR), real);
   const guard = (at: Root, real: string): void => {
@@ -185,6 +198,40 @@ export function createHangar(roots: Roots): Hangar {
     } catch (e) {
       await handle.close();
       throw e;
+    }
+  }
+
+  /** The file `real` takes `bytes` when it still has the etag `etag`: written whole beside it, then renamed over it. */
+  async function replace(real: string, leaf: string, bytes: Buffer, etag: string): Promise<void> {
+    const { handle, info } = await openFile(real, fs.O_RDONLY);
+    let temp: string | null = null;
+    try {
+      // the file is replaced by a new one, which a read-only file must not allow
+      await access(real, fs.W_OK).catch((e: unknown) => {
+        throw fsError(e);
+      });
+      const now = info.size > HANGAR_FILE_MAX_BYTES ? null : await readUpTo(handle, HANGAR_FILE_MAX_BYTES + 1);
+      if (now === null || etagOf(now) !== etag) throw new HubError('conflict', 'the file changed on disk since you opened it: nothing was saved', 'etag');
+      // Written whole beside the file and renamed over it, so that a full disk or a crash leaves the old file.
+      temp = join(real, '..', `.${leaf}.gonogo-${randomBytes(4).toString('hex')}.tmp`);
+      const out = await open(temp, 'wx', 0o600).catch((e: unknown) => {
+        temp = null;
+        throw fsError(e);
+      });
+      try {
+        await writeAll(out, bytes);
+        await out.chmod(info.mode & 0o7777);
+      } finally {
+        await out.close();
+      }
+      // shortcut: a write by another process between this check and the rename is lost; take a lock file when two writers matter
+      const after = await lstat(real);
+      if (after.mtimeMs !== info.mtimeMs || after.size !== info.size) throw new HubError('conflict', 'the file changed on disk while it was saved: nothing was saved', 'etag');
+      await rename(temp, real);
+      temp = null;
+    } finally {
+      await handle.close();
+      if (temp !== null) await unlink(temp).catch(() => undefined);
     }
   }
 
@@ -240,37 +287,8 @@ export function createHangar(roots: Roots): Hangar {
       if (typeof etag !== 'string' || etag === '' || etag.length > ETAG_MAX_CHARS) throw bad('etag must be the one the file was read with', 'etag');
       const bytes = textOf(input, true);
       const real = await resolveIn(await roots(name), parts);
-      const { handle, info } = await openFile(real, fs.O_RDONLY);
-      let temp: string | null = null;
-      try {
-        // the file is replaced by a new one, which a read-only file must not allow
-        await access(real, fs.W_OK).catch((e: unknown) => {
-          throw fsError(e);
-        });
-        const now = info.size > HANGAR_FILE_MAX_BYTES ? null : await readUpTo(handle, HANGAR_FILE_MAX_BYTES + 1);
-        if (now === null || etagOf(now) !== etag) throw new HubError('conflict', 'the file changed on disk since you opened it: nothing was saved', 'etag');
-        // Written whole beside the file and renamed over it, so that a full disk or a crash leaves the old file.
-        temp = join(real, '..', `.${parts[parts.length - 1] ?? 'file'}.gonogo-${randomBytes(4).toString('hex')}.tmp`);
-        const out = await open(temp, 'wx', 0o600).catch((e: unknown) => {
-          temp = null;
-          throw fsError(e);
-        });
-        try {
-          await writeAll(out, bytes);
-          await out.chmod(info.mode & 0o7777);
-        } finally {
-          await out.close();
-        }
-        // shortcut: a write by another process between this check and the rename is lost; take a lock file when two writers matter
-        const after = await lstat(real);
-        if (after.mtimeMs !== info.mtimeMs || after.size !== info.size) throw new HubError('conflict', 'the file changed on disk while it was saved: nothing was saved', 'etag');
-        await rename(temp, real);
-        temp = null;
-        return { path: parts.join('/'), size: bytes.length, etag: etagOf(bytes) };
-      } finally {
-        await handle.close();
-        if (temp !== null) await unlink(temp).catch(() => undefined);
-      }
+      await serial(real, () => replace(real, parts[parts.length - 1] ?? 'file', bytes, etag));
+      return { path: parts.join('/'), size: bytes.length, etag: etagOf(bytes) };
     },
 
     async create(name, input) {

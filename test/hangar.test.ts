@@ -228,6 +228,17 @@ describe('save', () => {
     expect((await fails(hangar.save('ana', { path: 'a.txt', text: 'x', etag }))).code).toBe('conflict');
   });
 
+  it('lets one of several saves made at once with the same etag win, and refuses the rest', async () => {
+    await writeFile(join(dir, 'a.txt'), 'old');
+    const { etag } = await hangar.read('ana', 'a.txt');
+    const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => hangar.save('ana', { path: 'a.txt', text: `writer ${i}`, etag })));
+    const won = results.flatMap((r, i) => (r.status === 'fulfilled' ? [i] : []));
+    expect(won).toHaveLength(1);
+    for (const r of results) if (r.status === 'rejected') expect(r.reason).toMatchObject({ code: 'conflict', field: 'etag' });
+    expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe(`writer ${won[0]}`);
+    expect(await readdir(dir)).toEqual(['a.txt']);
+  });
+
   it('keeps the mode of the file', async () => {
     await writeFile(join(dir, 'run.sh'), '#!/bin/sh\n');
     await chmod(join(dir, 'run.sh'), 0o755);
