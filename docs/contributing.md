@@ -32,7 +32,7 @@ One-time setup, by the owner, before the first publish:
 
 1. On npmjs.com, sign in as the account that owns the scope of `@ulm0/gonogo` and create a granular access token (Access Tokens > Generate New Token > Granular Access Token): read and write on packages, limited to the package `@ulm0/gonogo` once it exists (for the first publish, to its scope), with a short expiry.
 2. Add it as the repository secret `NPM_TOKEN` (Settings > Secrets and variables > Actions).
-3. Push the next tag, or run the workflow by hand for a tag that already exists.
+3. Push the next tag, or run the workflow by hand for a tag that already exists. Not `v0.1.0`: that tag is on a commit whose `package.json` still says `gonogo`, so the run stops at the name check.
 
 After the first publish, switch to npm trusted publishing (OIDC), so no token lives in the repository: on npmjs.com, the package's Settings > Trusted Publisher > GitHub Actions, with this repository and the workflow file `release.yml`. Then remove the `NODE_AUTH_TOKEN` line from the publish step, delete the `NPM_TOKEN` secret and revoke the token. The comment at the top of `release.yml` lists the same steps.
 
