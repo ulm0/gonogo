@@ -1,0 +1,622 @@
+/* The home page. Only pairs that livery.ts checks for 4.5:1 carry text: text, text-2 and muted on body, panel, key and well; text and
+   text-2 on the tints; the inks on their tints; panel on text; the LCD texts on the LCD. */
+.lp {
+  --lp-gap: clamp(48px, 8vw, 96px);
+  padding-bottom: 48px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  overflow-x: clip;
+}
+
+.lp-wrap {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+@media (min-width: 640px) {
+  .lp-wrap {
+    padding: 0 32px;
+  }
+}
+
+.lp :focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.lp a:not(.btn) {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.lp code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.lp h2.disp {
+  margin: 6px 0 12px;
+  font-size: clamp(26px, 4vw, 36px);
+}
+
+.lp p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.lp ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lp-row > .label:first-child {
+  margin-right: auto;
+}
+
+.lp-row-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lp-note {
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.lp .btn[aria-pressed='true'] {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
+}
+
+/* ---- hero ---- */
+
+.lp-hero {
+  display: grid;
+  gap: 40px;
+  padding-top: 40px;
+  padding-bottom: var(--lp-gap);
+}
+
+@media (min-width: 1000px) {
+  .lp-hero {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    align-items: center;
+    padding-top: 72px;
+  }
+}
+
+.lp-logo {
+  height: 40px;
+  width: auto;
+  margin-bottom: 24px;
+}
+
+.lp-dark,
+.dark .lp-light {
+  display: none;
+}
+
+.dark .lp-dark {
+  display: block;
+}
+
+.lp-h1 {
+  margin: 8px 0 16px;
+  font-size: clamp(36px, 6vw, 60px);
+}
+
+.lp-pitch {
+  max-width: 34em;
+  color: var(--text-2);
+  font-size: 17px;
+}
+
+.lp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.lp-install {
+  display: grid;
+  gap: 8px;
+  max-width: 440px;
+}
+
+.lp-install li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 14px;
+}
+
+.lp-install code {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.lp-install .btn {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.lp-status {
+  min-height: 1.6em;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* ---- the room ---- */
+
+.lp-room {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-module);
+  background: var(--body);
+  box-shadow: 0 18px 40px -24px rgb(0 0 0 / 45%);
+}
+
+.lp-room-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lp-room-keys {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.lp-room-keys .btn {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.lp-room-keys .btn[data-shape='round'] {
+  width: 32px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.lp-room-keys .chip {
+  padding: 1px 6px;
+}
+
+@media (max-width: 1180px) {
+  .lp-hide-md {
+    display: none !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .lp-hide-sm {
+    display: none !important;
+  }
+}
+
+.lp-room-wall {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .lp-room-wall {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .lp-room-wall > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+.lp-room-mod {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.lp-room-clock {
+  align-self: flex-start;
+  padding: 4px 8px;
+  font-size: 18px;
+}
+
+.lp-room-word {
+  font-size: 24px;
+}
+
+.lp-room-sub {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lp-room-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .lp-room-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.lp-room .tile,
+.lp-static {
+  cursor: default;
+}
+
+.lp-room .tile-lcd,
+.lp-room .tile,
+.lp-room .led {
+  transition:
+    background-color 0.6s ease,
+    color 0.6s ease,
+    border-color 0.6s ease;
+}
+
+.lp-room-vote {
+  display: flex;
+  gap: 4px;
+}
+
+.lp-room-vote .chip {
+  padding: 1px 5px;
+  font-size: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-room .tile-lcd,
+  .lp-room .tile,
+  .lp-room .led {
+    transition: none;
+  }
+}
+
+/* the Propellant bar */
+.lp-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.lp-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--go);
+  transition: width 0.4s ease;
+}
+
+.lp-bar[data-warn='true'] > span {
+  background: var(--you);
+}
+
+.lp-bar-big {
+  height: 12px;
+  border-radius: 6px;
+}
+
+/* ---- features ---- */
+
+.lp-feature {
+  display: grid;
+  gap: 24px;
+  padding-bottom: var(--lp-gap);
+}
+
+@media (min-width: 900px) {
+  .lp-feature {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    align-items: center;
+    gap: 56px;
+  }
+
+  .lp-flip > .lp-copy {
+    order: 2;
+  }
+
+  .lp-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lp-wide > .lp-copy {
+    max-width: 44em;
+  }
+}
+
+.lp-copy p {
+  color: var(--text-2);
+}
+
+.lp-more {
+  display: inline-block;
+  margin-right: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lp-more::after {
+  content: ' \2192';
+}
+
+.lp-visual {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.lp-word {
+  margin: 0;
+  font-size: clamp(40px, 8vw, 64px);
+  text-transform: uppercase;
+}
+
+.lp-votes {
+  display: grid;
+  gap: 8px;
+}
+
+.lp-votes li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lp .lp-list {
+  display: grid;
+  gap: 0;
+  padding: 4px 16px;
+}
+
+.lp-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.lp-list li:last-child {
+  border-bottom: 0;
+}
+
+.lp-list li .legend {
+  flex: 1 1 10em;
+  min-width: 0;
+}
+
+.lp-list li code {
+  white-space: nowrap;
+}
+
+.lp .lp-hits {
+  padding: 0;
+}
+
+.lp-hits li {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.lp-hits .lp-note {
+  margin: 0;
+}
+
+/* Flight Plan */
+.lp-plan {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .lp-plan {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.lp-plan-col {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 10px;
+}
+
+.lp-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  font-size: 14px;
+}
+
+/* Clean Room */
+.lp-nest {
+  padding: 0;
+}
+
+.lp-nest div {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.lp-nest code {
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* Docking */
+.lp-dock {
+  grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr);
+  align-items: center;
+  padding: 0;
+}
+
+.lp-station {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.lp-link {
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--go) 0 6px, transparent 6px 10px);
+}
+
+@media (max-width: 480px) {
+  .lp-dock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lp-link {
+    justify-self: center;
+    width: 2px;
+    height: 24px;
+    background: repeating-linear-gradient(180deg, var(--go) 0 6px, transparent 6px 10px);
+  }
+}
+
+/* Engine Bay */
+.lp-engines {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.lp-engines li {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding: 12px;
+}
+
+.lp-engines code {
+  color: var(--text-2);
+}
+
+/* Livery */
+.lp-liveries {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lp-liveries .tile {
+  justify-content: flex-start;
+  min-height: 120px;
+}
+
+.lp-liveries .tile-state {
+  text-transform: none;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.lp-swatch {
+  display: flex;
+  height: 14px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.lp-swatch span {
+  flex: 1;
+}
+
+/* the small ones */
+.lp-small {
+  padding-bottom: var(--lp-gap);
+}
+
+.lp-small h2 {
+  margin: 0 0 14px;
+}
+
+.lp-small ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 10px;
+}
+
+.lp-small li {
+  padding: 14px;
+}
+
+.lp-small li p {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* closing poll and footer */
+.lp-final {
+  display: grid;
+  gap: 12px;
+  padding: clamp(20px, 5vw, 48px);
+}
+
+.lp-final .lp-actions {
+  margin: 8px 0 0;
+}
+
+.lp-final .lp-word {
+  text-transform: none;
+}
+
+.lp-final .lp-actions .btn {
+  white-space: normal;
+  text-align: center;
+}
+
+.lp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding-top: 32px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

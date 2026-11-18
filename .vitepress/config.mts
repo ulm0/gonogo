@@ -1,4 +1,18 @@
 import { defineConfig } from 'vitepress';
+import { BUILTIN_LIVERIES, schemeOf } from '../src/shared/livery.ts';
+
+// The livery of the site, before the first paint: the one chosen here before (theme/LiverySwitch.vue keeps it), else the one
+// that matches the system's light or dark. `dark` is the class VitePress reads (logo, code), set for a livery with a dark body.
+const liveries = BUILTIN_LIVERIES.map((l) => l.slug);
+const darkLiveries = BUILTIN_LIVERIES.filter((l) => schemeOf(l.tokens) === 'dark').map((l) => l.slug);
+const liveryScript = `(() => {
+  const all = ${JSON.stringify(liveries)}, dark = ${JSON.stringify(darkLiveries)}, d = document.documentElement;
+  const system = matchMedia('(prefers-color-scheme: dark)');
+  const saved = () => { try { const s = localStorage.getItem('gonogo.docs.livery'); return all.includes(s) ? s : null; } catch { return null; } };
+  const put = (s) => { d.dataset.livery = s; d.classList.toggle('dark', dark.includes(s)); };
+  put(saved() ?? (system.matches ? 'night-shift' : 'instrument'));
+  system.addEventListener('change', (e) => { if (!saved()) put(e.matches ? 'night-shift' : 'instrument'); });
+})();`;
 
 // The site is built from docs/ in place; the design notes there (specs, contract, backlog, facts) stay out of it.
 export default defineConfig({
@@ -21,10 +35,17 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
+    ['script', {}, liveryScript],
   ],
+  // The livery key (theme/LiverySwitch.vue) replaces the light/dark switch.
+  appearance: false,
+  // One dark theme: every code block is an LCD, a dark screen in every livery. Its high-contrast colours stay above 6:1 on all four.
+  markdown: { theme: 'github-dark-high-contrast' },
   lastUpdated: false,
   themeConfig: {
-    logo: { light: '/mark.svg', dark: '/mark-dark.svg', alt: '' },
+    // The app's top bar: the two keys and the dot-matrix word, no text title (custom.css turns it on a dark livery, as the app does).
+    logo: { src: '/lockup.svg', alt: 'gonogo' },
+    siteTitle: false,
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Features', link: '/features/engine-bay' },
@@ -65,6 +86,7 @@ export default defineConfig({
           { text: 'Security', link: '/reference/security' },
           { text: 'Troubleshooting', link: '/reference/troubleshooting' },
           { text: 'What was not verified', link: '/reference/not-verified' },
+          { text: 'Design system', link: '/design-system' },
           { text: 'Contributing', link: '/contributing' },
         ],
       },
