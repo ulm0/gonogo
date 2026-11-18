@@ -5,6 +5,7 @@ import type { AgentView, EngineCheck, PermissionMode, Provider } from '../shared
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
+import { modelNote, useModelDefaults } from './models.js';
 import {
   BOSS_POSITION,
   callOf,
@@ -229,6 +230,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [foldOpen, setFoldOpen] = useState(() => values.servers !== '' || values.skills !== '');
   const [keysOpen, setKeysOpen] = useState(false);
   const [checks, setChecks] = useState<EngineCheck[]>([]);
+  const roomModels = useModelDefaults();
   const formRef = useRef<HTMLFormElement | null>(null);
   const bypassTile = useRef<HTMLButtonElement | null>(null);
   const confirmBox = useRef<HTMLInputElement | null>(null);
@@ -483,7 +485,7 @@ function Staff({ form }: { form: Target }): ReactElement {
     <Control
       id={`${id}-model`}
       label="Model"
-      hint={`Passed to ${providerInfo(values.provider).label} as --model. Empty uses its own default.${modelHints.length > 0 ? ` Names it knows: ${modelHints.join(', ')}.` : ''} Any name it accepts works.`}
+      hint={`Passed to ${providerInfo(values.provider).label} as --model. ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label)}${modelHints.length > 0 ? ` Names it knows: ${modelHints.join(', ')}.` : ''} Any name it accepts works.`}
       error={modelError}
     >
       <input
@@ -492,7 +494,7 @@ function Staff({ form }: { form: Target }): ReactElement {
         type="text"
         list={`${id}-models`}
         value={values.model}
-        placeholder="its default"
+        placeholder={roomModels?.models[values.provider] ?? 'its default'}
         autoComplete="off"
         autoCapitalize="none"
         spellCheck={false}

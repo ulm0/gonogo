@@ -6,6 +6,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { currentEntry } from './look.js';
+import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commissioningSteps, loadMarks, saveMarks, showCommissioning } from './shell.js';
 import type { Mark, Step } from './shell.js';
@@ -79,6 +80,7 @@ export function FlightRules(): ReactElement {
           </button>
         </section>
       </div>
+      <ModelDefaultsBlock />
       <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
         <h2 className="label" id={`${titleId}-consoles`}>
           CONSOLES

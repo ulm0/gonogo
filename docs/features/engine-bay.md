@@ -37,6 +37,8 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 
 The MODEL field of the hire and edit form is free text with suggestions; empty means the CLI's own default. It is passed as `--model <name>` and applies at the next start. Names are letters, digits and `. _ : / @ + -`, starting with a letter or digit, at most 100; anything else, and a model for an engine without the field, is refused. The suggestions are hints: the CLI judges the name.
 
+**Default models.** FLIGHT RULES has a DEFAULT MODELS block with one line for each engine that takes a model. A console with no model of its own starts with its engine's room default (every hire, the 15 positions and Relief hires start without one); a console's own model always wins. The defaults are in `<home>/models.json` (names only), `GET /api/models` and `PUT /api/models/<engine>` with `{ "model": "sonnet" }` (`null` clears), and a change applies at each console's next start. The form shows where the value comes from. A `/model` typed inside a console only changes that session: gonogo does not read it, so set the model in the Edit form or here to keep it.
+
 | Engine | Suggestions | Flag checked in |
 |---|---|---|
 | Claude Code | `sonnet`, `opus`, `haiku` | real runs (only `haiku`) |
