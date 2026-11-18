@@ -137,8 +137,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
           child.state = 'running';
           log.info(`room ${child.entry.id} is up on 127.0.0.1:${child.port}`);
         } else if (line.trim() !== '') {
-          // never the ready line: it holds the room's token
-          log.debug(`[${child.entry.id}] ${line}`);
+          // the ready line holds the room's token: if a later version words it so that READY misses it, the token is still not logged
+          log.debug(`[${child.entry.id}] ${line.replace(/#token=\S+/g, '#token=<hidden>')}`);
         }
       }
     });

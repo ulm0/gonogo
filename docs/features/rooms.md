@@ -14,7 +14,7 @@ Until now a second room meant a second deployment. `gonogo rooms` runs **one gon
 supervisor starts each room on a loopback port of its own, lists them at `/`, and proxies `/r/<id>/` to the room. Plain `gonogo`
 does not change: it is one room, as before.
 
-- **Main** is today's home: nothing moves. Other rooms live in `<home>/rooms/<id>/` and start from zero (roster, mail, Flight Plan,
+- **Main** is today's home: nothing moves. Its home is the supervisor's root folder, which also holds `rooms-token`, `rooms.json` and `rooms/<id>/` for the others. Other rooms live in `<home>/rooms/<id>/` and start from zero (roster, mail, Flight Plan,
   Plot Board, Mission Log, Black Box, missions and every setting are per room).
 - **Shared by inheritance**: the binary and its update, and the environment of the supervisor (`CLAUDE_CONFIG_DIR`, the
   agent CLIs' logins, `gh`'s config, `GONOGO_*` flags). **Not shared** in this version: the price table, Clearance keys, Max Q
