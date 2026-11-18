@@ -361,6 +361,23 @@ export interface WorktreeStatus {
 
 /** Remote Control: the agent is started with `--remote-control`, so the Director can approve in the Claude app. No fields yet. Claude Code only, never with a Clean Room. */
 export type RemoteControl = Record<string, never>;
+/**
+ * Tool permissions (docs/features/permissions.md): what an agent's harness may do without asking (`allow`), must ask about (`ask`)
+ * or may never do (`deny`), as Claude Code's own rules (`Bash`, `Edit`, `Bash(git:*)`, `WebFetch(domain:example.com)`). Claude Code only.
+ * Lists are never empty: a list with no entry is absent, and an agent with none has no `permissions`.
+ */
+export const PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const;
+export type PermissionList = (typeof PERMISSION_LISTS)[number];
+export type PermissionRules = Partial<Record<PermissionList, string[]>>;
+/** One rule: a tool name, then an optional specifier in parentheses on one line. A leading `mcp__gonogo` is gonogo's own and is refused. */
+export const PERMISSION_RULE_PATTERN = '^[A-Za-z][A-Za-z0-9_.-]{0,99}(\\([^\\x00-\\x1f\\x7f]{1,200}\\))?$';
+export const PERMISSION_RULES_MAX = 50;
+/** The tools the form lists first. Hints, not a list: any rule that matches the pattern is taken. */
+export const COMMON_TOOLS = ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'] as const;
+/** Flight Rules: the rules of every Claude Code agent that has none of its own. */
+export interface PermissionDefaults {
+  permissions: PermissionRules;
+}
 /** One agent as stored in <home>/agents.json (inside RosterFile). */
 export interface AgentRecord {
   name: string;
@@ -388,6 +405,8 @@ export interface AgentRecord {
   worktree?: Worktree;
   /** Absent means off. */
   remoteControl?: RemoteControl;
+  /** Absent means the room's rules (Flight Rules), or none. Claude Code only. */
+  permissions?: PermissionRules;
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
   model?: string;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
@@ -484,6 +503,8 @@ export interface AgentView {
   worktree: Worktree | null;
   /** Remote Control as stored, or null. */
   remoteControl: RemoteControl | null;
+  /** The agent's own tool rules as stored, or null (the room's apply, if any). */
+  permissions: PermissionRules | null;
   /** The model as stored, or null for the CLI's default. */
   model: string | null;
   /** Clearance: key name to when it was set. Names only: a value is never sent to a browser. */
@@ -1108,6 +1129,8 @@ export interface HireRequest {
   worktree?: Worktree;
   /** Start the agent with --remote-control. Refused (400, field 'remoteControl') for another engine or with cleanRoom. */
   remoteControl?: RemoteControl;
+  /** Tool rules for this agent. Refused (400, field 'permissions') for another engine or a bad rule. */
+  permissions?: PermissionRules;
   /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
   model?: string;
   /** Clearance: key name to value, set for this agent only. Bad name or value: 400, field 'keys'. */
@@ -1132,6 +1155,8 @@ export interface EditRequest {
   worktree?: Worktree | null;
   /** Replaces the Remote Control setting; null turns it off. */
   remoteControl?: RemoteControl | null;
+  /** Replaces the agent's tool rules; null goes back to the room's. */
+  permissions?: PermissionRules | null;
   /** A model name, or null or empty text for the CLI's default. */
   model?: string | null;
   /** Key name to a new value, or to null to remove that key. Keys not named stay as they are. */
@@ -1587,6 +1612,8 @@ export interface LauncherOptions {
   keys?: (name: string) => Record<string, string>;
   /** Default models: the model of a provider that the room sets, used when an agent has no `model` of its own. Default none. */
   defaultModel?: (provider: Provider) => string | undefined;
+  /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
+  defaultPermissions?: () => PermissionRules | undefined;
   log?: Logger;
 }
 

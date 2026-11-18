@@ -5,6 +5,7 @@ import type { AgentView, EngineCheck, PermissionMode, PhoneMode, Provider } from
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
+import { PermissionsEditor } from './PermissionsEditor.js';
 import { modelNote, useModelDefaults } from './models.js';
 import {
   BOSS_POSITION,
@@ -372,6 +373,15 @@ function Staff({ form }: { form: Target }): ReactElement {
   const serversError = shown('payload.mcpServers');
   const skillsError = shown('payload.skills');
   const cleanError = shown('cleanRoom');
+  const rulesError = shown('permissions');
+  const [roomDeny, setRoomDeny] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    api.permissionDefaults().then((found) => live && setRoomDeny(found.permissions.deny ?? []), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const remoteError = shown('remoteControl');
   // offered only when Flight Rules chose a phone path that uses the Claude app (or the agent has it on already)
   const [phoneMode, setPhoneMode] = useState<PhoneMode>('off');
@@ -670,6 +680,17 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
+  // only Claude Code has rules gonogo can set: the others say so
+  const rulesFold = (
+    <details className="staff-fold">
+      <summary className="label">TOOL PERMISSIONS</summary>
+      {values.provider === 'claude' ? (
+        <PermissionsEditor id={`${id}-rules`} value={values.rules} onChange={(next) => change({ rules: next }, 'permissions')} error={rulesError} inheritedDeny={roomDeny} />
+      ) : (
+        <p className="hint">Not supported for {providerInfo(values.provider).label}: only Claude Code has rules gonogo can set.</p>
+      )}
+    </details>
+  );
   const payloadFold = payloadKind !== null && (
     <details className="staff-fold" open={foldOpen} onToggle={(event) => setFoldOpen(event.currentTarget.open)}>
       <summary className="label">PAYLOAD</summary>
@@ -836,6 +857,8 @@ function Staff({ form }: { form: Target }): ReactElement {
               {modes}
               {confirmPanel}
               {payloadFold}
+            {rulesFold}
+              {rulesFold}
               {keysFold}
             </fieldset>
             {alert}

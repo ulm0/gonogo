@@ -2808,6 +2808,7 @@ describe('hire (4.9)', () => {
       worktree: null,
       needSeq: null,
       remoteControl: null,
+      permissions: null,
       model: null,
       keys: {},
       doing: null,
@@ -6216,5 +6217,39 @@ describe('Remote Control: an agent approved in the Claude app (hire and edit)', 
     expect(await h.hub.edit('ana', { remoteControl: null })).toMatchObject({ remoteControl: null });
     await h.hub.edit('ana', { remoteControl: {} });
     await expectHubReject(h.hub.edit('ana', { cleanRoom: {} }), 'bad_request', /Remote Control off first/, 'cleanRoom');
+  });
+});
+
+describe('Tool permissions: the rules of an agent (hire and edit)', () => {
+  const hireWith = (h: Harness, permissions: unknown, patch: Record<string, unknown> = {}): Promise<AgentView> =>
+    h.hub.hire({ name: 'ana', role: 'x', dir: '/work/ana', mode: 'default', permissions, ...patch } as unknown as HireRequest);
+
+  it('stores the rules in the record and the view, and hands them to the launcher; an empty object is no rules', async () => {
+    const h = await started();
+    const view = await hireWith(h, { allow: [' Bash ', 'Bash', 'Read'], deny: ['WebFetch'], ask: [] });
+    expect(view.permissions).toEqual({ allow: ['Bash', 'Read'], deny: ['WebFetch'] });
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')?.permissions).toEqual({ allow: ['Bash', 'Read'], deny: ['WebFetch'] });
+    expect(h.spawns.at(-1)?.agent.permissions).toEqual({ allow: ['Bash', 'Read'], deny: ['WebFetch'] });
+    const none = await hireWith(h, {}, { name: 'ben', dir: '/work/ben' });
+    expect(none.permissions).toBeNull();
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ben')).not.toHaveProperty('permissions');
+  });
+
+  it('refuses a bad rule, gonogo\'s own tools and another engine, naming the field, and creates nothing', async () => {
+    const h = await started();
+    const refuse = (permissions: unknown, message: string | RegExp, patch: Record<string, unknown> = {}): Promise<void> => expectHubReject(hireWith(h, permissions, patch), 'bad_request', message, 'permissions');
+    await refuse([], 'permissions must be an object');
+    await refuse({ allow: ['rm -rf /'] }, /is not a rule/);
+    await refuse({ deny: ['mcp__gonogo__send_message'] }, /gonogo's own tools/);
+    await refuse({ allow: ['Bash'] }, /not supported for Gemini CLI/, { provider: 'gemini' });
+    expect(h.saves.at(-1)?.agents.some((record) => record.name === 'ana') ?? false).toBe(false);
+  });
+
+  it('is changed by an edit, the console is dirty until the restart, and null goes back to the room\'s', async () => {
+    const h = await withAna();
+    expect(await h.hub.edit('ana', { permissions: { allow: ['Bash'] } })).toMatchObject({ permissions: { allow: ['Bash'] }, dirty: true });
+    expect(await h.hub.edit('ana', { permissions: null })).toMatchObject({ permissions: null });
+    expect(h.saves.at(-1)?.agents.find((record) => record.name === 'ana')).not.toHaveProperty('permissions');
+    await expectHubReject(h.hub.edit('ana', { permissions: { allow: ['bad rule'] } }), 'bad_request', /is not a rule/, 'permissions');
   });
 });

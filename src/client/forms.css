@@ -742,3 +742,37 @@
     background: var(--panel);
   }
 }
+
+/* ---- tool permissions: a select for each common tool, then the text of the other rules ---- */
+
+.perm-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.perm-tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 12px;
+}
+
+.perm-tools li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.perm-text {
+  font-family: var(--mono, monospace);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.perm-editor .hint {
+  margin: 0;
+}

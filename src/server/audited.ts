@@ -52,7 +52,7 @@ export function audited<T extends object>(store: T, record: AuditRecord, table: 
 }
 
 /** The fields an edit names: the names of the fields only, never their values. */
-const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl'];
+const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions'];
 const fieldsOf = (value: unknown, allowed: string[]): string[] => (isRecord(value) ? Object.keys(value).filter((key) => allowed.includes(key) && value[key] !== undefined) : []);
 
 const actorName = (actor: unknown): string => {
@@ -164,6 +164,7 @@ export const SCHEDULES_AUDIT: Table = {
   remove: ['config', 'Director removed schedule'],
   run: ['config', 'Director ran schedule'],
 };
+export const PERMISSIONS_AUDIT: Table = { set: ['config', "Director changed the room's tool rules"] };
 export const PROPELLANT_AUDIT: Table = {
   setLimits: ['config', 'Director changed the Propellant limits'],
   setBudget: ['config', 'Director changed the Propellant budget'],

@@ -2646,6 +2646,31 @@ describe('end to end with the stand-in agent', () => {
     expect(logOf<FakeEvent & { action: string }>(h, 'flight', 'dialog').map((event) => event.action)).toHaveLength(4);
   }, 90_000);
 
+  it('Tool permissions: the room\'s rules and an agent\'s own reach its settings.json, a bad rule is a 400, and another engine says it is not supported', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    const settings = (name: string): { permissions: { allow: string[]; deny: string[]; ask?: string[] } } => JSON.parse(readFileSync(join(h.home, 'agents', name, 'settings.json'), 'utf8')) as never;
+    expect((await api(h, 'GET', '/api/permissions')).body).toEqual({ permissions: {} });
+    expect((await api<ApiError>(h, 'PUT', '/api/permissions', { allow: ['rm -rf /'] }))).toMatchObject({ status: 400, body: { field: 'permissions' } });
+    expect((await api(h, 'PUT', '/api/permissions', { allow: ['Glob'], ask: ['Write'] })).body).toEqual({ permissions: { allow: ['Glob'], ask: ['Write'] } });
+    expect(JSON.parse(readFileSync(join(h.home, 'permissions.json'), 'utf8'))).toEqual({ version: 1, permissions: { allow: ['Glob'], ask: ['Write'] } });
+
+    // an agent without rules of its own gets the room's, with gonogo's own denials kept
+    await hire(h, 'ana');
+    expect(settings('ana').permissions).toMatchObject({ allow: expect.arrayContaining(['Glob']), ask: ['Write'], deny: ['SendMessage', 'ListAgents'] });
+    // one with its own rules gets those and not the room's
+    expect((await api<AgentView>(h, 'POST', '/api/agents', { name: 'ben', role: 'x', dir: h.work, mode: 'default', permissions: { allow: ['Bash(git:*)'], deny: ['WebFetch'] } })).status).toBe(201);
+    await waitState(h, 'ben', 'idle');
+    expect(settings('ben').permissions.allow).toContain('Bash(git:*)');
+    expect(settings('ben').permissions.allow).not.toContain('Glob');
+    expect(settings('ben').permissions.deny).toEqual(['SendMessage', 'ListAgents', 'WebFetch']);
+    expect(rosterEntry(h, 'ben')).toMatchObject({ permissions: { allow: ['Bash(git:*)'], deny: ['WebFetch'] } });
+
+    const refused = await api<ApiError>(h, 'POST', '/api/agents', { name: 'cy', role: 'x', dir: h.work, mode: 'default', provider: 'gemini', permissions: { allow: ['Bash'] } });
+    expect(refused).toMatchObject({ status: 400, body: { field: 'permissions', error: expect.stringContaining('not supported for Gemini CLI') } });
+    expect((await api<ApiError>(h, 'PATCH', '/api/agents/ben', { permissions: 'Bash' })).status).toBe(400);
+  }, 60_000);
+
   it('34. Mass Budget and Star Chart: a request to condense is a message, the file is copied and never written by gonogo, and the chart follows the log', async () => {
     const h = await startServer();
     await hire(h, 'ana');

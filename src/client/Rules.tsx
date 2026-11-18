@@ -8,6 +8,7 @@ import type { CSSProperties, ReactElement } from 'react';
 import * as api from './api.js';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
+import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
 import { STATUS_TEXT } from './notify.js';
 import { PHONE_MODES } from '../shared/protocol.js';
@@ -143,6 +144,7 @@ export function FlightRules(): ReactElement {
         </section>
       </div>
       <ModelDefaultsBlock />
+      <PermissionDefaultsBlock />
       <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
         <h2 className="label" id={`${titleId}-consoles`}>
           CONSOLES

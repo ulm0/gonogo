@@ -61,6 +61,8 @@ import type {
   MissionPatch,
   MissionRequest,
   ModelDefaults,
+  PermissionDefaults,
+  PermissionRules,
   Provider,
   ReviewNote,
   ReviewNoteRequest,
@@ -372,6 +374,21 @@ function toModelDefaults(value: unknown): ModelDefaults {
   const models = asRecord(asRecord(value)?.models);
   if (models === null) throw failure('The server sent an answer gonogo does not understand.');
   return value as ModelDefaults;
+}
+
+/** Tool permissions: the room's rules for the Claude Code consoles that have none of their own. */
+export async function permissionDefaults(): Promise<PermissionDefaults> {
+  return toPermissionDefaults(await call('GET', '/permissions'));
+}
+
+/** Replaces the room's rules; `{}` clears them. */
+export async function setPermissionDefaults(permissions: PermissionRules): Promise<PermissionDefaults> {
+  return toPermissionDefaults(await call('PUT', '/permissions', permissions));
+}
+
+function toPermissionDefaults(value: unknown): PermissionDefaults {
+  if (asRecord(asRecord(value)?.permissions) === null) throw failure('The server sent an answer gonogo does not understand.');
+  return value as PermissionDefaults;
 }
 
 export async function engines(): Promise<EngineCheck[]> {

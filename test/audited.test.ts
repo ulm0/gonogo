@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditKind } from '../src/shared/protocol.js';
-import { audited, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from '../src/server/audited.js';
+import { audited, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, pollText, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, SCHEDULES_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from '../src/server/audited.js';
 
 type Told = Array<[AuditKind, string]>;
 
@@ -363,5 +363,16 @@ describe('what the Director answers to Relief', () => {
     const { store, told } = wrapped(relief, RELIEF_AUDIT);
     await store.decide(`x ${SECRET}`, 'go', { kind: 'user' });
     expect(told).toEqual([['answer', 'Director answered hire request ?: go']]);
+  });
+});
+
+describe('what the Director does to the room\'s tool rules', () => {
+  it('records that they changed, never a rule', () => {
+    const { store, told } = wrapped({ set: async (_rules: unknown) => ({ permissions: {} }) }, PERMISSIONS_AUDIT);
+    void store.set({ allow: [`Bash(curl -H "Authorization: ${SECRET}")`] });
+    return Promise.resolve().then(() => {
+      expect(told).toEqual([['config', "Director changed the room's tool rules"]]);
+      expect(JSON.stringify(told)).not.toContain(SECRET);
+    });
   });
 });
