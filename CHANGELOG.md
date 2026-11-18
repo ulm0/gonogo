@@ -2,19 +2,17 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.3.0 (2026-11-18)
 
+Since 0.2.0: subagents, plan quota, feature toggles, tool permissions, mission cost and budget, a room editor, restart recovery, live reload (opt-in), an Update button, Bedrock notes and more. Tried with the stand-in agent only, for most features without a real `claude`; not in a browser; not with a real Telegram, a Docker updater or an AWS run (Bedrock is checked against docs only); `agy` is checked against its help only.
+
+- **`gonogo tui`: a console cannot write your clipboard or title.** The OSC 52 (clipboard) and OSC 0, 1, 2 (title) sequences in a console's output are cut before they reach your terminal, across the pieces the output arrives in.
 - **Subagents.** gonogo sees the helpers a Claude Code agent starts (a `3 SUBAGENTS` chip, from the new SubagentStart and SubagentStop hooks), counts their tokens and dollars under the agent (Propellant reads their transcripts), keeps Redline's loop and error counters for each helper, and says which helper asked at a permission dialog. Flight Rules can allow them, cap how many run at once, or deny them. It cannot veto a helper, and Claude Code's cap does not apply under ultracode.
 - **Engine, model and effort chips.** Each console shows its engine, the model it starts with (its own, its position's or the room's, and which) and its effort, as chips in its panel, the Flight Rules list and the terminal client. Claude Code consoles get an EFFORT field on the hire and edit form (`--effort`: low, medium, high, xhigh, max). No chip is drawn for a value gonogo does not have. The Flight Rules DEFAULTS block now also holds the room's default engine (preselects the hire form; used by Relief and `hire_agent` when no engine is named) and a default effort for Claude Code; the chips say when a model or effort is the room's or the position's.
-
 - **Fix: colours that were never drawn.** The "older diff" line of a review verdict and the near-budget or over-budget spend line of a mission named custom properties that do not exist, so they showed no colour; they use the amber text token now. Two focus rings and the mono font of one field had the same flaw. A test now checks that every `var()` in the page's style sheets names a defined property.
-
 - **Tab name.** Flight Rules has a TAB NAME field: the title of the browser tab becomes `<name> · gonogo` (the unread count stays in front), to tell several gonogo sessions apart. Kept on the server for every browser; default is the station name when `GONOGO_STATION` is set, else `gonogo`.
-- **`gonogo tui`: a console cannot write your clipboard or title.** The OSC 52 (clipboard) and OSC 0, 1, 2 (title) sequences in a console's output are cut before they reach your terminal, across the pieces the output arrives in.
-
 - **Plan quota.** For a claude.ai subscription the Propellant module shows the plan's own 5-hour and weekly use, as Claude Code's status line reports it, with an alert at 80 and 95 %. Your own status line is chained, not replaced. Without a source it says so and the meters stay an estimate. Seen once in a real run (the weekly window only); not tried in a Clean Room or with an API key. At most one report per agent every 10 s; an alert comes again only for a new window (once the told reset has passed); a reset further off than the window is long is refused.
 - **Link to the online docs.** <https://gonogo.ulm0.com/> is in the start-up log (a log line: stdout keeps its one `gonogo ready:` line), `gonogo --help`, `gonogo doctor`, a Docs line in the Patch Panel and the Commissioning checklist. One constant, `DOCS_URL`. The package `homepage` and the README already had it.
-
 - **Feature toggles.** Flight Rules has a FEATURES block: a switch for each feature, with the plan (what else goes off, what loses something) shown first. Off is true on the page, the routes (`404 feature_off`), the agents' tools and the background work; nothing is deleted. Core features are locked; Party Line, Propellant, Cost and Phone approvals are listed but cannot be switched off yet.
 - **Amazon Bedrock.** Checked against the vendors' docs and gonogo's code, not run against AWS: Claude Code is expected to work with the AWS variables as Clearance keys or in the shell (a Clean Room needs keys; it has no `~/.aws`), Bedrock ids fit the model field and show as unpriced until you add a price row. The hire form suggests the Bedrock key names. A Bedrock section in the Engine Bay page and `docs/facts/bedrock.md`.
 - **Tool permissions.** Choose what a Claude Code console's harness may do: allow, ask and deny rules (`Bash(git:*)`, `WebFetch(domain:...)`) in a console's form, with room-wide rules in Flight Rules. They go into the console's own settings file after gonogo's rules, which stay; the mode is unchanged. Other engines say "not supported".
@@ -22,12 +20,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 - **Cost per mission and task.** A reply is counted to the mission and task the agent has on `doing`; the Missions view shows the cost of each mission and each task.
 - **Mission budget.** A dollar budget on a mission: one Downlink warning at 80 %, and Redline stops the agents working on it at 100 %.
 - **Room editor.** EDIT ROOM puts the blocks of the Room view (the wall's five and OPERATIONS) on a 12-column grid: move and resize by pointer or keyboard, hide what you do not use (never OPERATIONS), choose the order of the consoles (drag, or Positions, Needs you first, Name). A saved layout is shared by every browser and read by the phone; a hidden block with something live shows a strip. Without one the page is as it was. Saves name the revision they were made from.
-
 - **Version corner and Update.** The running version shows small in a corner and links to the changelog. Rollout tells how gonogo was installed (container, npm, pnpm, dlx, git checkout) and shows the right update path. With an npm or pnpm global install, or a container with an update hook (`GONOGO_UPDATE_HOOK`), an **Update** button installs the version the check found, then reloads when the agents survive it. Never without that click. The image sets `GONOGO_INSTALL=docker`.
 - **Live reload (opt-in).** `gonogo --pty-host` keeps the agents in a small process of their own, so `gonogo reload` (or Reload in Flight Rules) starts a new gonogo without stopping them: the turn in progress, the screen, and a Hold all survive. Tokens are saved as hashes. Off by default for one release.
-
-## Unreleased
-
 - **Start again after a restart.** A Flight Rules setting (the boss only, the default; every console that was running; nobody) starts the consoles that were running when the server stopped, the boss first and then three at a time. A console you stopped, held or that tripped the Redline stays stopped; a console can opt out; one that was in the middle of a turn is told once to carry on. The boss gets a `start_agent` tool for a stopped console (a Flight Rules switch turns it off), recorded in the Black Box. ALL STOP and ALL RESUME (Flight Rules and the Patch Panel) hold and resume every console at once.
 
 ## 0.2.0 (2026-11-18)
