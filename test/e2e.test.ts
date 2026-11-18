@@ -932,11 +932,11 @@ describe('end to end with the stand-in agent', () => {
     const first = await send(h, 'ben', '@fake sleep 1500', 'work');
     expect(first.body.status).toBe('queued');
     await c.waitFrame((f) => f.t === 'agent' && f.agent.name === 'ben' && f.agent.state === 'working', 10_000, 'ben working', mark);
-    await sleep(200);
+    // its first read_messages must be over: a read after the second send would take that mail too, with no Stop block
+    await itemRead(h, first.body.id);
     const second = await send(h, 'ben', 'one more thing', 'later');
     expect(second.body).toMatchObject({ ok: true, status: 'queued', note: 'waiting: ben is working' });
     await c.waitItem(second.body.id, (item) => item.status === 'read', 20_000, 'to be read', mark);
-    await itemRead(h, first.body.id);
 
     expect(c.statuses(second.body.id, mark)).toEqual(['queued', 'delivered', 'read']);
     expect(c.items(second.body.id, mark).find((item) => item.status === 'delivered')?.note).toBe('handed over when its turn ended');
