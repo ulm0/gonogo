@@ -1,5 +1,7 @@
 # The room
 
+<MailPointerMock class="doc-mock" />
+
 ## The screen
 
 The look is a piece of hardware: modules on a warm grey body, keys, small status lights and dark screens. A console's light is indigo while it works, green when idle and grey when stopped; a dashed console is an open seat. Saffron means an agent needs you, sage is go, raspberry is no-go or danger. The fonts are bundled; the page asks no other host for anything.

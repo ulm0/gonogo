@@ -2,6 +2,8 @@
 
 Update this list when these are run.
 
+<UnverifiedMock class="doc-mock" />
+
 - **Docker.** Built and run on 2026-11-17 with Docker 29.9 in a Lima VM (linux/arm64, Debian bookworm, glibc): the build-time checks pass as uid 1000 (`claude` 2.1.325, `gonogo --version`, a real pty), the image is about 1.06 GB, the `HEALTHCHECK` reports healthy, the port is reachable from the host, and with the stand-in agent mounted in the container the hooks, pointers, `read_messages`, a reply, a custom agent, a T-minus poll to GO and Max Q all worked. `docker stop` with two agents running took 0.4 s with exit code 0, and a restart on the same named volumes kept the roster with its positions and the custom agent. Open: linux/amd64, a real `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` in the container (seed mode with a real `claude`), a bind-mounted `/projects` and its ownership, and the `safe.directory` entries. With the docker CLI added (Docker 29.9.1 client, checked by `docker --version` at every build) the image is about 1.13 GB; the build also needed `docs/brand` back in the build context (`.dockerignore`), where the app's logo lives.
 - **Linux.** Only inside the container above (arm64, glibc). Not run: Linux as a host, amd64, a real `claude` on Linux.
 - **Sign-in in a container.** The recipe behind seed mode was tried by hand on a Mac with fake credentials only. A real `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` in a container was never used, and neither was `apiKeyHelper` with a real key.

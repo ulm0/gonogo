@@ -1,5 +1,7 @@
 # Launch Window: schedules
 
+<LaunchWindowMock class="doc-mock" />
+
 LAUNCH WINDOW (top bar, or LAUNCH in the phone bar) lists schedules: a message that gonogo sends by itself on a rule, as
 if you typed it into the Brief box. Design and limits: [`docs/launch-window-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/launch-window-spec.md).
 

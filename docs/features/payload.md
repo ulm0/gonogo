@@ -1,5 +1,7 @@
 # Payload: MCP servers and skills per agent
 
+<PayloadMock class="doc-mock" />
+
 The PAYLOAD fold of the hire and edit form gives one agent MCP servers and skills of its own, on top of the gonogo
 tools. It sets no flag or environment variable. Design and limits: [`docs/payload-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/payload-spec.md).
 

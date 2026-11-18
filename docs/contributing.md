@@ -1,4 +1,8 @@
-<!--@include: ../CONTRIBUTING.md-->
+<!--@include: ../CONTRIBUTING.md{1,3}-->
+
+<ChecksMock class="doc-mock" />
+
+<!--@include: ../CONTRIBUTING.md{4,}-->
 
 ## Development
 

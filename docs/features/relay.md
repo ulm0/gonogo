@@ -1,5 +1,7 @@
 # Relay: Slack, GitHub, Linear and Telegram
 
+<RelayMock class="doc-mock" />
+
 RELAY (a module under UPLINK in the Launch Window view) connects the four services. They come in through uplinks of their own
 kinds, and what the agents write to you goes out to a Slack channel or a Telegram chat. Design and limits: [`docs/relay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/relay-spec.md).
 **Nothing of it was tried against a real Slack, GitHub, Linear or Telegram** (see [What was not verified](../reference/not-verified.md)).

@@ -1,5 +1,7 @@
 # Troubleshooting
 
+<HeldMock class="doc-mock" />
+
 - **An agent is "needs you".** Its reason is on the agent bar and in the activity strip. Open its terminal. `startup dialog: answer it in the terminal` is a question Claude Code asks once per folder (usually whether you trust it): read it, answer it, and the agent goes on. A permission request is answered in the terminal too.
 - **`held: text in <name>'s input`** means the agent's input box still holds text you typed. Submit it, or clear it with Ctrl-C (or Esc twice) in that terminal; gonogo notices within about two seconds and the mail goes in.
 - **`held: no hook has reached gonogo from <name>; is its folder trusted?`** means Claude Code's hooks are silent for that agent. The usual cause is a folder Claude Code does not trust, because it holds hooks back until it does: outside seed mode answer the trust dialog in the agent's terminal; in seed mode restart the agent, which records the trust again. The other cause is something that blocks the hook URL.

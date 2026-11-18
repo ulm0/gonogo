@@ -1,5 +1,7 @@
 # Clean Room: a sandbox per agent
 
+<CleanRoomMock class="doc-mock" />
+
 The `Clean Room` box of the hire and edit form (Claude Code agents only) runs the agent in a Docker container that holds
 a copy of the project and the agent's own files, and nothing else of your machine. Design and limits:
 [`docs/clean-room-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/clean-room-spec.md). Read its known limits before you rely on it: it ran against real Docker only with gonogo itself in a

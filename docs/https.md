@@ -2,6 +2,8 @@
 
 gonogo speaks plain HTTP and has no TLS of its own. Whoever holds the browser token can hire agents in `bypassPermissions` mode and type into every terminal, so the server runs shells as you for them. Read [Security](./reference/security.md) first. This page is about the one decision that matters: how do you reach it from another device.
 
+<ProxyPathsMock class="doc-mock" />
+
 **None of the recipes below was run against a real Caddy, nginx or Tailscale.** They follow the documentation of each tool and the routes of gonogo's code (see the end).
 
 ## Choose how to reach it
