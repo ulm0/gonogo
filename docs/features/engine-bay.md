@@ -37,6 +37,8 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 
 The MODEL field of the hire and edit form is free text with suggestions; empty means the CLI's own default. It is passed as `--model <name>` and applies at the next start. Names are letters, digits and `. _ : / @ + -`, starting with a letter or digit, at most 100; anything else, and a model for an engine without the field, is refused. The suggestions are hints: the CLI judges the name.
 
+<ModelsMock class="doc-mock" />
+
 **Default models.** FLIGHT RULES has a DEFAULT MODELS block with one line for each engine that takes a model, and a BY POSITION list with one line for each of the 15 positions. A console with no model of its own starts with, in this order: its **position's** model (Claude Code consoles only: a model name does not carry from one engine to another), then its engine's room default; a console's own model always wins. So a reviewer can run on a stronger model than a builder. The defaults are in `<home>/models.json` (names only; `positions` next to `models`), `GET /api/models`, `PUT /api/models/<engine>` and `PUT /api/models/positions/<id>` with `{ "model": "sonnet" }` (`null` clears), and a change applies at each console's next start. The form shows where the value comes from. A `/model` typed inside a console only changes that session: gonogo does not read it, so set the model in the Edit form or here to keep it.
 
 | Engine | Suggestions | Flag checked in |
@@ -50,6 +52,8 @@ The MODEL field of the hire and edit form is free text with suggestions; empty m
 opencode, Copilot CLI, Qwen Code, Grok CLI, Crush and the custom command have no field: no model flag was found in what was read. Set the model in the CLI itself.
 
 ## Amazon Bedrock
+
+<BedrockMock class="doc-mock" />
 
 gonogo has no Bedrock switch: an engine uses Bedrock when its own settings say so, and gonogo passes the environment on. Set the variables as Clearance keys for one agent (the form suggests the names) or in the shell that starts gonogo. Nothing was run against a real AWS account; see `docs/facts/bedrock.md` for sources and for what a real check needs.
 

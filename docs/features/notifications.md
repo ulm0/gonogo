@@ -1,5 +1,7 @@
 # Notifications: be told when the tab is not in front
 
+<NotificationsMock class="doc-mock" />
+
 You miss a message for you when the gonogo tab is in the background. Notifications tell you. They are **off by default and a setting of this browser**: turn them on in [Flight Rules](./flight-rules.md), under THIS BROWSER. The browser asks for permission when you press that key, never when the page loads.
 
 ## What is shown

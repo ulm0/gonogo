@@ -1,5 +1,7 @@
 # Worktrees: a git worktree per agent
 
+<WorktreesMock class="doc-mock" />
+
 The `Own git worktree` box of the hire and edit form starts an agent in its own git worktree and branch of the
 project, on your machine, so that two agents never edit the same checkout. It works for every engine. Design and limits:
 [`docs/worktrees-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/worktrees-spec.md). It was tried with the

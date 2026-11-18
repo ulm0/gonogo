@@ -1,5 +1,7 @@
 # Room editor: where the blocks sit
 
+<RoomEditorMock class="doc-mock" />
+
 The Room view is six blocks: the wall's five (MISSION clock, SEQUENCE, T-MINUS, MAX Q, PROPELLANT) and OPERATIONS, the matrix of consoles. EDIT ROOM moves and resizes them on a 12-column grid, hides the ones you do not use, and chooses the order of the consoles. Without a saved layout the page is exactly as it always was. Design and limits: [`docs/room-editor-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/room-editor-spec.md).
 
 Open it with **Edit room** (a quiet key in the header of OPERATIONS) or from the [Patch Panel](./patch-panel.md) (EDIT ROOM). It needs a pointer and a screen of 900 pixels or more; on a phone it says so. Nothing changes until you press SAVE.

@@ -1,5 +1,7 @@
 # Tool permissions: what an agent's harness may do
 
+<PermissionsMock class="doc-mock" />
+
 The `Tool permissions` fold of the hire and edit forms, and the block of the same name in Flight Rules, set the rules a
 Claude Code agent runs under: tools it may use without asking (`allow`), must ask about (`ask`) or may never use (`deny`).
 They are Claude Code's own `permissions` rules (`Bash`, `Read`, `Edit`, `Bash(git:*)`, `WebFetch(domain:example.com)`,

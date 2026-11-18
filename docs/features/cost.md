@@ -1,5 +1,7 @@
 # Cost: what the tokens would cost
 
+<CostMock class="doc-mock" />
+
 gonogo prices the tokens that [Propellant](propellant.md) counts. The dollars are an **API-equivalent estimate at list prices**: on a Pro or Max subscription nothing is billed per token, and the page says so.
 
 - **Switch.** The meter of Propellant (the wall module, Flight Rules, and each console's PROPELLANT fold) has a TOKENS | DOLLARS switch. In DOLLARS the same windows (5 h, day, week, month) show spend against a **budget**, typed as `10`, `$12.40` or `1.5k`.

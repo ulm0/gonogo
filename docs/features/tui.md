@@ -1,5 +1,7 @@
 # gonogo tui: the room in a terminal
 
+<TuiMock class="doc-mock" />
+
 `gonogo tui` is a second client of the same running server, for the Director who lives in a terminal. It shows the roster, the Downlink with replies, the go and no-go questions, and lets you type into a console. It adds nothing to the server: it uses the same WebSocket and REST as the page, and both can be open at once; an action in one shows in the other. Design and limits: [`docs/tui-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/tui-spec.md).
 
 ```
