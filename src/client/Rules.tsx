@@ -10,6 +10,7 @@ import { DOCS_URL } from '../shared/protocol.js';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
+import { AllStopBlock, StartupBlock } from './StartupRules.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
 import { STATUS_TEXT } from './notify.js';
 import { TabNameBlock } from './TabName.js';
@@ -187,6 +188,8 @@ export function FlightRules(): ReactElement {
       <TabNameBlock />
       <ModelDefaultsBlock />
       <PermissionDefaultsBlock />
+      <StartupBlock />
+      <AllStopBlock />
       <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
         <h2 className="label" id={`${titleId}-consoles`}>
           CONSOLES

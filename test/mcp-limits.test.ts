@@ -200,3 +200,16 @@ describe('go_nogo through the edge', () => {
     expect(office.hub.poll()).toMatchObject({ status: 'go', entries: [{ agent: 'ana', vote: 'go', reason }] });
   });
 });
+
+describe('start_agent through the edge', () => {
+  it('is for the boss only, and counts a call before it waits, so parallel calls cannot pass the limit', async () => {
+    const office = await openOffice(['ana']);
+    await office.hub.stop('ana');
+    const ana = await office.client('ana');
+    expect(outcome(await ana.callTool({ name: 'start_agent', arguments: { name: 'ana' } }))).toMatchObject({ isError: true, json: { error: 'only the boss may start an agent' } });
+    const flight = await office.client('flight');
+    const results = await Promise.all(Array.from({ length: 9 }, () => flight.callTool({ name: 'start_agent', arguments: { name: 'ana' } })));
+    const errors = results.map((r) => String(outcome(r).json.error ?? ''));
+    expect(errors.filter((e) => e.startsWith('at most 6 starts'))).toHaveLength(3);
+  });
+});

@@ -91,6 +91,7 @@ import type { Relay } from './relay.js';
 import type { ModelDefaultsStore } from './models.js';
 import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
+import type { StartupStore } from './startup.js';
 import type { Rollout } from './rollout.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
@@ -170,6 +171,8 @@ export interface WebOptions {
   review?: Pick<Review, 'view' | 'read' | 'addNote' | 'addNotes' | 'update' | 'remove' | 'verdict' | 'ask'>;
   /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
+  /** The startup policy; absent in tests that do not need it (the routes answer 404). */
+  startup?: Pick<StartupStore, 'view' | 'set'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
   rollout?: Pick<Rollout, 'view'>;
   /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
@@ -371,7 +374,7 @@ function commandProblem(command: string): { ok: false; error: string; field: str
 }
 
 function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
-  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, model, keys } = o;
+  const { name, role, dir, mode, confirmBypass, position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, model, keys } = o;
   if (typeof name !== 'string') return fieldError('name', 'a string');
   if (typeof role !== 'string') return fieldError('role', 'a string');
   if (typeof dir !== 'string') return fieldError('dir', 'a string');
@@ -414,6 +417,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
   if (permissions !== undefined) {
     if (typeof permissions !== 'object' || permissions === null || Array.isArray(permissions)) return fieldError('permissions', 'an object');
     value.permissions = permissions as PermissionRules;
+  }
+  if (autostart !== undefined) {
+    if (typeof autostart !== 'boolean') return fieldError('autostart', 'true or false');
+    value.autostart = autostart;
   }
   // The hub reads the text of a model and the inside of keys, and names the field that is wrong.
   if (model !== undefined) {
@@ -498,6 +505,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.permissions !== undefined) {
     if (o.permissions !== null && (typeof o.permissions !== 'object' || Array.isArray(o.permissions))) return fieldError('permissions', 'an object or null');
     value.permissions = o.permissions as PermissionRules | null;
+  }
+  if (o.autostart !== undefined) {
+    if (typeof o.autostart !== 'boolean') return fieldError('autostart', 'true or false');
+    value.autostart = o.autostart;
   }
   if (o.model !== undefined) {
     if (o.model !== null && typeof o.model !== 'string') return fieldError('model', 'a string or null');
@@ -1240,6 +1251,21 @@ export function createWebServer(options: WebOptions): WebServer {
           }
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await (name === 'forward' ? relay.forward(body) : name === 'phone' ? relay.setPhone(body) : relay.set(name, body)));
+        },
+      };
+    }
+    if ((s[1] === 'hold-all' || s[1] === 'resume-all') && s.length === 2) {
+      return { allow: ['POST'], run: (_req, res) => sendJson(res, 200, s[1] === 'hold-all' ? hub.holdAll() : hub.resumeAll()) };
+    }
+    if (s[1] === 'startup' && s.length === 2) {
+      const startup = options.startup;
+      if (!startup) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, startup.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await startup.set(body));
         },
       };
     }

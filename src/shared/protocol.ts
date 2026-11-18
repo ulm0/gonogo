@@ -137,7 +137,7 @@ export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 export const WORKTREE_DIR = 'worktrees';
 /** The online documentation: the one address every install surface (startup, --help, doctor, the page) links to. The site has one version only, so the link is not versioned. */
 export const DOCS_URL = 'https://gonogo.ulm0.com/';
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -236,7 +236,7 @@ export const AUDIT_TEXT_MAX_CHARS = 200;
 /** How a part of the server tells the Black Box of an event: names, ids and words of the server, never a text somebody wrote. */
 export type AuditRecord = (kind: AuditKind, text: string) => void;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
-export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission', 'review'] as const;
+export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission', 'review', 'startup'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
 /** How a part of the server tells the inbox of something the Director should see (`Downlink.post`). */
 /** What a `permission` or `relief` event is about, for the buttons of a phone (docs/phone-approvals-spec.md): the dialog of an agent, or a hire request. */
@@ -380,6 +380,32 @@ export const COMMON_TOOLS = ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'W
 export interface PermissionDefaults {
   permissions: PermissionRules;
 }
+/**
+ * Start again after a server restart (docs/autostart-spec.md): `boss` starts only the boss (the default, as always), `running` starts the
+ * agents that were running when the server stopped (the boss first, then waves), `off` starts nobody. `carryOn` sends one message to an
+ * agent that was cut in the middle of a turn.
+ */
+export const STARTUP_POLICIES = ['boss', 'running', 'off'] as const;
+export type StartupPolicy = (typeof STARTUP_POLICIES)[number];
+export interface StartupSettings {
+  policy: StartupPolicy;
+  carryOn: boolean;
+  /** The boss may start a stopped agent with `start_agent` (default on). */
+  bossMayStart: boolean;
+}
+/** ALL STOP and ALL RESUME: who was held or resumed, and who was left alone (stopped, at a dialog, without hooks). */
+export interface HoldAllResult {
+  held: string[];
+  skipped: string[];
+}
+export interface ResumeAllResult {
+  resumed: string[];
+}
+/** An agent that was running when the server last stopped (run-state.json), and whether it was in a turn. */
+export interface RunEntry {
+  name: string;
+  working: boolean;
+}
 /** One agent as stored in <home>/agents.json (inside RosterFile). */
 export interface AgentRecord {
   name: string;
@@ -409,6 +435,10 @@ export interface AgentRecord {
   remoteControl?: RemoteControl;
   /** Absent means the room's rules (Flight Rules), or none. Claude Code only. */
   permissions?: PermissionRules;
+  /** Absent means it follows the room's startup policy; `false` is never started again by it. */
+  autostart?: false;
+  /** The Director stopped this agent and it has not been started since: FLIGHT's `start_agent` is refused. Cleared by any start. */
+  stoppedBy?: 'director';
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
   model?: string;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
@@ -507,6 +537,8 @@ export interface AgentView {
   remoteControl: RemoteControl | null;
   /** The agent's own tool rules as stored, or null (the room's apply, if any). */
   permissions: PermissionRules | null;
+  /** false: the room's startup policy does not start this agent again. */
+  autostart: boolean;
   /** The model as stored, or null for the CLI's default. */
   model: string | null;
   /** Clearance: key name to when it was set. Names only: a value is never sent to a browser. */
@@ -1175,6 +1207,8 @@ export interface HireRequest {
   remoteControl?: RemoteControl;
   /** Tool rules for this agent. Refused (400, field 'permissions') for another engine or a bad rule. */
   permissions?: PermissionRules;
+  /** false keeps the room's startup policy from starting this agent again; true (the default) follows it. */
+  autostart?: boolean;
   /** Engine Bay: passed as `--model`. Empty text is no model. Refused (400, field 'model') for an engine without PROVIDER_INFO.model or a bad name. */
   model?: string;
   /** Clearance: key name to value, set for this agent only. Bad name or value: 400, field 'keys'. */
@@ -1201,6 +1235,8 @@ export interface EditRequest {
   remoteControl?: RemoteControl | null;
   /** Replaces the agent's tool rules; null goes back to the room's. */
   permissions?: PermissionRules | null;
+  /** false: the startup policy does not start this agent again; true follows the room's. */
+  autostart?: boolean;
   /** A model name, or null or empty text for the CLI's default. */
   model?: string | null;
   /** Key name to a new value, or to null to remove that key. Keys not named stay as they are. */
@@ -1828,6 +1864,12 @@ export interface HubIo {
   checkCleanRoom?(dir: string): Promise<string | null>;
   /** Worktree: null when `dir` is inside a git repository, else the reason (one line). Optional for fakes. */
   checkWorktree?(dir: string): Promise<string | null>;
+  /** Autostart: the room's startup settings, read at each server start. Absent: the boss only, with no carry-on. */
+  startup?(): StartupSettings;
+  /** Autostart: the agents that were running when the server last stopped, or null (no file, too old). */
+  runSet?(): RunEntry[] | null;
+  /** Autostart: an agent's process started or stopped, or its turn began or ended. Never throws, never waits. */
+  markRun?(name: string, running: boolean, working: boolean): void;
   loadRoster(): Promise<RosterFile>;
   saveRoster(file: RosterFile): Promise<void>;
   /** Last `limit` message records, oldest first. */
@@ -1971,6 +2013,12 @@ export interface Hub {
   edit(name: string, req: EditRequest): Promise<AgentView>;
   /** Stop if running, then start. Also starts a stopped agent. */
   restart(name: string): Promise<AgentView>;
+  /** The boss starts a stopped agent (the `start_agent` tool). Refused when it is running or on hold. `by` is the caller's name, for the Black Box. */
+  startAgent(name: string, by: string): Promise<AgentView>;
+  /** ALL STOP: holds every agent that can be held (as `hold` does, one by one); the others are named in `skipped`. */
+  holdAll(): HoldAllResult;
+  /** ALL RESUME: resumes every agent that is on hold (a Redline trip is left for its own Resume). */
+  resumeAll(): ResumeAllResult;
   stop(name: string): Promise<AgentView>;
   /** Stop, drop from the roster. The boss cannot be removed (409). Files on disk are kept. */
   remove(name: string): Promise<void>;

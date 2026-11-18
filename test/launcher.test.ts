@@ -176,6 +176,7 @@ function expectedArgs(
     'mcp__gonogo__board_write',
     'mcp__gonogo__livery_submit',
     'mcp__gonogo__hire_agent',
+    'mcp__gonogo__start_agent',
   ];
 }
 
@@ -385,6 +386,7 @@ describe('buildArgv', () => {
       'mcp__gonogo__board_write',
       'mcp__gonogo__livery_submit',
       'mcp__gonogo__hire_agent',
+      'mcp__gonogo__start_agent',
     ]);
   });
 
@@ -1542,7 +1544,7 @@ describe('Payload: MCP servers and skills', () => {
     expect(buildArgv(input)).toStrictEqual(buildArgv({ ...input, pluginDir: null }));
     const argv = buildArgv({ ...input, pluginDir: '/h/agents/ana/payload-plugin' });
     expect(argv.slice(argv.indexOf('--mcp-config'), argv.indexOf('--append-system-prompt'))).toStrictEqual(['--mcp-config', '/m', '--plugin-dir', '/h/agents/ana/payload-plugin']);
-    expect(argv.slice(argv.indexOf('--allowedTools'))).toStrictEqual(['--allowedTools', ...expectedArgs('--session-id').slice(-14)]);
+    expect(argv.slice(argv.indexOf('--allowedTools'))).toStrictEqual(['--allowedTools', ...expectedArgs('--session-id').slice(-15)]);
   });
 
   it('writes the servers into mcp.json (mode 0600) and the skills as a plugin of symlinks, loaded with --plugin-dir', async () => {

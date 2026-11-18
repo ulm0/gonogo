@@ -52,7 +52,7 @@ export function audited<T extends object>(store: T, record: AuditRecord, table: 
 }
 
 /** The fields an edit names: the names of the fields only, never their values. */
-const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions'];
+const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart'];
 const fieldsOf = (value: unknown, allowed: string[]): string[] => (isRecord(value) ? Object.keys(value).filter((key) => allowed.includes(key) && value[key] !== undefined) : []);
 
 const actorName = (actor: unknown): string => {
@@ -65,11 +65,15 @@ const actorName = (actor: unknown): string => {
 export const HUB_AUDIT: Table = {
   hire: ['crew', 'Director hired'],
   restart: ['crew', 'Director restarted'],
+  // the boss's `start_agent` tool: the caller's name and the agent's, never anything else
+  startAgent: ['crew', (args) => `${plain(args[1]) ?? 'the boss'} started ${plain(args[0]) ?? 'an agent'}`],
   stop: ['crew', 'Director stopped'],
   remove: ['crew', 'Director removed'],
   edit: ['config', (args) => `Director edited ${plain(args[0]) ?? 'an agent'}: ${fieldsOf(args[1], EDIT_FIELDS).join(', ') || 'nothing'}`],
   hold: ['redline', (args) => `Director put ${plain(args[0]) ?? 'an agent'} on hold`],
   resume: ['redline', 'Director resumed'],
+  holdAll: ['redline', (_args, result) => `Director pressed ALL STOP: ${isRecord(result) && Array.isArray(result.held) ? result.held.length : 0} held`],
+  resumeAll: ['redline', (_args, result) => `Director pressed ALL RESUME: ${isRecord(result) && Array.isArray(result.resumed) ? result.resumed.length : 0} resumed`],
   answer: ['answer', (args) => `Director answered ${plain(args[0]) ?? 'an agent'}: ${isRecord(args[1]) && args[1].go === true ? 'go' : 'no-go'}`],
   startPoll: ['poll', 'Director started a T-minus poll'],
   holdPoll: ['poll', 'Director held the poll'],
@@ -176,6 +180,7 @@ export const SCHEDULES_AUDIT: Table = {
   run: ['config', 'Director ran schedule'],
 };
 export const PERMISSIONS_AUDIT: Table = { set: ['config', "Director changed the room's tool rules"] };
+export const STARTUP_AUDIT: Table = { set: ['config', 'Director changed the startup policy'] };
 export const PROPELLANT_AUDIT: Table = {
   setLimits: ['config', 'Director changed the Propellant limits'],
   setBudget: ['config', 'Director changed the Propellant budget'],

@@ -22,6 +22,10 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 - **Version corner and Update.** The running version shows small in a corner and links to the changelog. Rollout tells how gonogo was installed (container, npm, pnpm, dlx, git checkout) and shows the right update path. With an npm or pnpm global install, or a container with an update hook (`GONOGO_UPDATE_HOOK`), an **Update** button installs the version the check found, then reloads when the agents survive it. Never without that click. The image sets `GONOGO_INSTALL=docker`.
 - **Live reload (opt-in).** `gonogo --pty-host` keeps the agents in a small process of their own, so `gonogo reload` (or Reload in Flight Rules) starts a new gonogo without stopping them: the turn in progress, the screen, and a Hold all survive. Tokens are saved as hashes. Off by default for one release.
 
+## Unreleased
+
+- **Start again after a restart.** A Flight Rules setting (the boss only, the default; every console that was running; nobody) starts the consoles that were running when the server stopped, the boss first and then three at a time. A console you stopped, held or that tripped the Redline stays stopped; a console can opt out; one that was in the middle of a turn is told once to carry on. The boss gets a `start_agent` tool for a stopped console (a Flight Rules switch turns it off), recorded in the Black Box. ALL STOP and ALL RESUME (Flight Rules and the Patch Panel) hold and resume every console at once.
+
 ## 0.2.0 (2026-11-18)
 
 Features and fixes since 0.1.2. Each was tried with the stand-in agent only: not verified with a real `claude`, `agy`, Telegram or remote control, and not in a browser.
