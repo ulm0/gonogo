@@ -45,8 +45,15 @@ export function parsePermissions(value: unknown, provider: Provider | undefined)
   return { ok: true, permissions: out };
 }
 
-/** What the rules of an agent come to: its own, else the room's. */
-export const effectiveRules = (own: PermissionRules | undefined, room: PermissionRules | undefined): PermissionRules => own ?? room ?? {};
+/**
+ * What the rules of an agent come to: with none of its own, the room's. With its own, its `allow` and `ask` replace the room's,
+ * but the room's `deny` always applies too, so that one agent's edit cannot drop a room-wide deny.
+ */
+export function effectiveRules(own: PermissionRules | undefined, room: PermissionRules | undefined): PermissionRules {
+  if (own === undefined) return room ?? {};
+  const deny = [...new Set([...(room?.deny ?? []), ...(own.deny ?? [])])];
+  return { ...(own.allow ? { allow: own.allow } : {}), ...(own.ask ? { ask: own.ask } : {}), ...(deny.length > 0 ? { deny } : {}) };
+}
 
 export interface PermissionDefaultsStore {
   load(): Promise<void>;

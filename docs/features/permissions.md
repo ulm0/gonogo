@@ -9,7 +9,8 @@ They are Claude Code's own `permissions` rules (`Bash`, `Read`, `Edit`, `Bash(gi
   Ask or Deny. Below it a text with one rule on each line, `allow Bash(git:*)`, for everything else (the selects read and
   write the lines of a bare tool). A line that is not a rule is named under the field; the server checks again.
 - **The room's rules.** Flight Rules, TOOL PERMISSIONS: the rules of every Claude Code console that has none of its own.
-  **A console's own rules replace the room's; they are not added to them.** Both apply at the console's next start (the
+  **A console's own `allow` and `ask` replace the room's, but the room's `deny` always applies too**, so one console's edit
+  cannot drop a room-wide deny; the form shows the inherited denies, read only. Both apply at the console's next start (the
   console is marked as needing a restart). The room's rules are in `~/.gonogo/permissions.json` (`GET` and `PUT
   /api/permissions`); a console's own are in its record (`permissions` on hire and edit, `null` goes back to the room's).
 - **How they are applied.** gonogo writes them into the settings file it already makes for each console

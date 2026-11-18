@@ -53,8 +53,10 @@ describe('parsePermissions', () => {
     }
   });
 
-  it('the agent\'s rules replace the room\'s, they are not added to them', () => {
-    expect(effectiveRules({ allow: ['Read'] }, { deny: ['Bash'] })).toEqual({ allow: ['Read'] });
+  it('the agent\'s allow and ask replace the room\'s, but the room\'s deny always applies', () => {
+    expect(effectiveRules({ allow: ['Read'] }, { allow: ['Glob'], ask: ['Write'], deny: ['Bash'] })).toEqual({ allow: ['Read'], deny: ['Bash'] });
+    expect(effectiveRules({ allow: ['Read'], deny: ['WebFetch', 'Bash'] }, { deny: ['Bash'] })).toEqual({ allow: ['Read'], deny: ['Bash', 'WebFetch'] });
+    expect(effectiveRules({ ask: ['Edit'] }, undefined)).toEqual({ ask: ['Edit'] });
     expect(effectiveRules(undefined, { deny: ['Bash'] })).toEqual({ deny: ['Bash'] });
     expect(effectiveRules(undefined, undefined)).toEqual({});
   });
@@ -120,7 +122,7 @@ describe('settings.json of a Claude Code agent', () => {
 
 describe('the launcher writes the rules of the agent, else the room\'s, into its own settings file', () => {
   const record = (patch: Partial<AgentRecord> = {}): AgentRecord => ({ name: 'ana', role: 'r', dir, mode: 'default', sessionId: SID, desk: 1, boss: false, createdAt: 1, ...patch });
-  const settingsOf = async (agent: AgentRecord, room?: { allow?: string[] }) => {
+  const settingsOf = async (agent: AgentRecord, room?: { allow?: string[]; deny?: string[] }) => {
     const launcher = createLauncher({ homeDir: dir, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env: { PATH: process.env.PATH ?? '' }, defaultPermissions: room === undefined ? undefined : () => room });
     const { spec } = await launcher.prepareStart(agent, { generation: 1, flag: null });
     const path = spec.args[spec.args.indexOf('--settings') + 1] ?? '';
@@ -129,12 +131,12 @@ describe('the launcher writes the rules of the agent, else the room\'s, into its
     return (JSON.parse(await readFile(path, 'utf8')) as { permissions: { allow: string[]; deny: string[]; ask?: string[] } }).permissions;
   };
 
-  it('uses the room\'s rules for an agent without its own, and the agent\'s own over them', async () => {
+  it('uses the room\'s rules for an agent without its own; with its own, its allow replaces the room\'s and the room\'s deny stays', async () => {
     expect((await settingsOf(record(), { allow: ['Glob'] })).allow).toContain('Glob');
-    const own = await settingsOf(record({ permissions: { allow: ['Bash'], deny: ['WebFetch'] } }), { allow: ['Glob'] });
+    const own = await settingsOf(record({ permissions: { allow: ['Bash'], deny: ['WebFetch'] } }), { allow: ['Glob'], deny: ['Write'] });
     expect(own.allow).toContain('Bash');
     expect(own.allow).not.toContain('Glob');
-    expect(own.deny).toEqual(['SendMessage', 'ListAgents', 'WebFetch']);
+    expect(own.deny).toEqual(['SendMessage', 'ListAgents', 'Write', 'WebFetch']);
   });
 
   it('has only gonogo\'s rules for an agent and a room without any', async () => {

@@ -374,6 +374,14 @@ function Staff({ form }: { form: Target }): ReactElement {
   const skillsError = shown('payload.skills');
   const cleanError = shown('cleanRoom');
   const rulesError = shown('permissions');
+  const [roomDeny, setRoomDeny] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    api.permissionDefaults().then((found) => live && setRoomDeny(found.permissions.deny ?? []), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const remoteError = shown('remoteControl');
   // offered only when Flight Rules chose a phone path that uses the Claude app (or the agent has it on already)
   const [phoneMode, setPhoneMode] = useState<PhoneMode>('off');
@@ -677,7 +685,7 @@ function Staff({ form }: { form: Target }): ReactElement {
     <details className="staff-fold">
       <summary className="label">TOOL PERMISSIONS</summary>
       {values.provider === 'claude' ? (
-        <PermissionsEditor id={`${id}-rules`} value={values.rules} onChange={(next) => change({ rules: next }, 'permissions')} error={rulesError} />
+        <PermissionsEditor id={`${id}-rules`} value={values.rules} onChange={(next) => change({ rules: next }, 'permissions')} error={rulesError} inheritedDeny={roomDeny} />
       ) : (
         <p className="hint">Not supported for {providerInfo(values.provider).label}: only Claude Code has rules gonogo can set.</p>
       )}

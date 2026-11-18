@@ -9,7 +9,7 @@ import { COMMON_TOOLS, setToolState, toolState } from './permissions.js';
 
 const LABEL: Record<'' | PermissionList, string> = { '': 'Default', allow: 'Allow', ask: 'Ask', deny: 'Deny' };
 
-export function PermissionsEditor({ id, value, onChange, error }: { id: string; value: string; onChange(next: string): void; error?: string }): ReactElement {
+export function PermissionsEditor({ id, value, onChange, error, inheritedDeny = [] }: { id: string; value: string; onChange(next: string): void; error?: string; /** The room's deny rules: they apply to this console whatever it says. */ inheritedDeny?: readonly string[] }): ReactElement {
   return (
     <div className="perm-editor" data-invalid={error !== undefined ? '' : undefined}>
       <ul className="perm-tools">
@@ -26,6 +26,11 @@ export function PermissionsEditor({ id, value, onChange, error }: { id: string; 
           </li>
         ))}
       </ul>
+      {inheritedDeny.length > 0 && (
+        <p className="hint" id={`${id}-inherited`}>
+          Denied by the room, always: {inheritedDeny.map((rule) => <code key={rule}>{rule} </code>)}
+        </p>
+      )}
       <label htmlFor={`${id}-text`} className="label">
         RULES
       </label>
