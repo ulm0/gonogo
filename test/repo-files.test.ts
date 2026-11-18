@@ -59,8 +59,10 @@ describe('pnpm-lock.yaml', () => {
   const lock = read('pnpm-lock.yaml');
 
   it('is made by the pnpm that package.json pins, with its checksum', () => {
-    expect(pkg.packageManager).toMatch(/^pnpm@10\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/);
-    expect(lock.startsWith("lockfileVersion: '9.0'\n")).toBe(true);
+    expect(pkg.packageManager).toMatch(/^pnpm@12\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/);
+    // pnpm 12 writes two documents: the pinned pnpm itself, then the project's dependencies.
+    expect(lock.startsWith("---\nlockfileVersion: '9.0'\n")).toBe(true);
+    expect(lock).toContain(`packageManagerDependencies:\n      pnpm:\n        specifier: ${pkg.packageManager.slice(5).split('+')[0]}\n`);
   });
 
   it('describes the dependencies of package.json exactly, so `pnpm install --frozen-lockfile` agrees with the tests', () => {
