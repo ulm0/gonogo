@@ -1,0 +1,45 @@
+# Spec: Mobile app (draft, 0.5.0)
+
+Design by FIDO, 2026-11-18, task t56c. Status: draft, not built. Read on 2026-11-18: the WebKit blog post on Web Push for web apps on iOS, Apple's App Store Review Guidelines, Capacitor's push-notifications plugin page, Tauri's start page, and gonogo's own client (`PhoneConsoleScreen`, `notify.ts`, the phone bar). Nothing was run, and no phone was used.
+
+## What the client already is
+The page is a React 19 + Vite client with a phone layout (under 700 px: one column, a bottom bar, a console opened full screen with `esc`, `tab`, arrows, `^C`, `enter` keys, a permission prompt full screen with GO and NO-GO). The terminal is xterm in the page. So "the same features as web" is not a port: it is the web client. The questions are install, push and who maintains it.
+
+## Facts that decide it
+
+- **Web Push on iOS** (WebKit): from iOS and iPadOS **16.4**, for a web app **added to the Home Screen**; the permission prompt must come from a **user gesture** such as a subscribe key; it uses "the same Apple Push Notification service" through the standard Push API, Notifications API and Service Workers; **no Apple Developer Program membership is needed**; a server that filters push endpoints must allow `*.push.apple.com`. The article names no VAPID, no silent push rule and no regional caveat: **check VAPID on iOS, delivery reliability and any region rule at build time** (not verified).
+- **Native push needs vendor infrastructure.** Capacitor's push plugin uses Firebase Cloud Messaging on Android (needs a Firebase project and `google-services.json`) and the APNs capability on iOS, and does not support iOS silent push. A **self-hosted gonogo cannot ship its own Firebase project or Apple push key to every user**; native push would need a **push relay run by the publisher** that holds those credentials and forwards every user's notifications. That is a service to run, pay for and be trusted with, in a project whose point is that nothing leaves your machine. **Web Push needs none of it**: each gonogo holds its own VAPID key and talks straight to the browser vendor's push service.
+- **App Store review.** Guideline 4.2: an app "should include features, content, and UI that elevate it beyond a repackaged website"; 4.2.2 rules out "web clippings" and "a collection of links". A thin shell around the existing page, whose only extra is push, is the shape this rule targets. 4.2.7 (remote desktop clients: only to the user's own computer, on the local network, all account management on the host) is about screen mirroring and does not clearly apply or exclude a terminal client of a self-hosted server: **a risk to ask Apple about, not an answer**. 5.1.1(v): an app that supports account creation must offer account deletion in the app; a client of a self-hosted server that makes no accounts does not trigger it. 4.8 (login services) does not apply while gonogo's own login is the only one.
+- **Tauri 2 mobile**: the page I read says Tauri builds for "all major desktop and mobile platforms" and uses the system webview; it does not say whether mobile is stable. Not enough to bet on.
+
+## Options
+
+| | PWA first (pick) | Capacitor/Tauri shell | Native per platform | React Native |
+|---|---|---|---|---|
+| Code reuse of the React 19 client | 100% | about 95% (the same page in a webview) | 0% (two rewrites, xterm gone or re-done) | low (React 19 web code, xterm and CSS do not carry) |
+| Install | Add to Home Screen / "Install app" | store or sideload | store | store |
+| Push | Web Push, own VAPID key, **no relay** | FCM and APNs, **needs a publisher relay** | same | same |
+| Store review | none | **4.2 risk** on iOS; Android easy (also sideload, F-Droid) | full review, both | full review, both |
+| Terminal | xterm, as web | xterm in a webview, same | a native terminal view to write | webview anyway |
+| Resource use | the browser's; nothing resident | webview plus a shell binary | lightest, most code | a JS runtime plus bridge |
+| Who maintains | nobody extra: it is the web client | signing, store accounts, native build in CI, OS updates | two codebases | one codebase, a big dependency |
+| Can wait | no | yes | yes | yes |
+
+**Pick: a PWA first.** It is the only option that adds no second codebase, no store, no publisher-run service, and it gets the thing the Director wants on a phone (an icon, full screen, a push when an agent needs a GO) from the web client that already has a phone layout. Revisit a **Capacitor shell, Android first** (sideload/F-Droid, no store review), only if real use shows iOS Web Push is unreliable or native-only features are wanted (biometric unlock, a persistent connection), and decide the push relay at that point. Full native and React Native are rejected: they cost a rewrite and a maintainer for no feature the PWA lacks.
+
+## Design (PWA)
+
+- **Installable.** A web app manifest (name, icons from the livery's mark in 192/512 and a maskable one, `display: standalone`, theme and background colours from the current livery token, `start_url` the room), served by the server; install help in Flight Rules ("on iOS: Share, Add to Home Screen; on Android: Install app") because iOS has no install prompt.
+- **Service worker.** Caches the built client files (they hold no state: `docs/reference/security.md`), never an `/api` response and never the login or session; handles `push` and `notificationclick`. Needs a **secure context**: https or `localhost`. So on plain-http LAN there is no service worker, no push and no install: the page says why and points to `docs/expose/tailscale.md` (Tailscale Serve gives https privately). This ties the app to `docs/expose-spec.md`.
+- **Web Push, server side** (`src/server/push.ts`): a VAPID key pair made at first use and kept in `<home>/push.json` (0600); subscriptions (`endpoint`, keys, device name, session id) stored there, **tied to the login session** and removed when the session is revoked or the push service answers 404/410; sending implements RFC 8030/8291/8292 (payload encryption `aes128gcm` and the VAPID JWT, ES256) with Node's crypto, about 200 lines, or the small `web-push` package if the Director allows one more dependency (builder decides, a second reviewer reads the crypto). The push service only ever sees an encrypted body and the endpoint.
+- **What is pushed.** The same triggers as `notify.ts`, computed on the server so they fire when no page is open: a new message to the Director, a T-minus hold or go, a Relief request, a permission ask, a Redline trip. **The payload is generic by default** ("ana needs you", "1 new message"): a lock screen shows it, and the push vendor handles the metadata; the subject and the 80-character snippet of `notify.ts` become an opt-in per device. **No approving from the notification**: a tap opens the page at the ask, and the dangerous ones go through the login's step-up. Notifications use a `tag` per sender as the page's do, so a burst is one.
+- **Permission and settings.** A "Push to this device" switch in Flight Rules (a user gesture, as iOS requires), per device, default off; the server refuses subscriptions without a session. Phone approvals through Telegram (`docs/phone-approvals-spec.md`) stay as the channel for people who do not use the PWA.
+- **Phone layout.** Already there; the PWA pass checks safe-area insets, the 44 px targets and the keyboard covering the terminal, and the standalone display (no browser bar: a visible BACK on views that rely on it).
+- **Offline.** The shell loads without the network; every screen says "not connected" until the WebSocket is up. No offline data.
+- **Unverified, to try on real devices before release:** iOS Home Screen push delivery and VAPID support, Android Chrome push, a WebSocket surviving a locked phone (it will not: the page reconnects and repaints from a snapshot), and the terminal's soft-keyboard handling.
+
+## Scope of the first PR (after login PR 1 and the expose PR)
+Manifest and icons, service worker (shell cache, push, click), `push.ts` (VAPID, subscriptions, encrypted send, fake push service in tests), the per-device switch and the generic payload, the triggers moved to a server function shared with `notify.ts`'s logic, install help, `docs/features/mobile.md` and the unverified list above. About 700 lines with tests. **Left out:** native shells and store listings, background sync, push action buttons, silent push, a push relay, offline data, iOS-specific install banners.
+
+## Tests
+Manifest fields and icon sizes; the service worker caches the shell and never `/api` or the login; push payload encryption and VAPID signing against the RFC test vectors (the RFC 8291 example); subscription lifecycle (create tied to a session, removed on revoke and on 410); the trigger table (each event, generic payload, opt-in snippet cut and cleaned like `notify.ts`); no subscription without a session; no push when the switch is off. Not testable here: any real push service or phone.
