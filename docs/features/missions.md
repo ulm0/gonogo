@@ -1,5 +1,7 @@
 # Missions: a named goal and the tasks that serve it
 
+<MissionsMock class="doc-mock" />
+
 MISSIONS is a view you open from the [Patch Panel](./patch-panel.md) (Cmd+K or Ctrl+K: "Missions" or "New mission"), from the MISSIONS key of the wall's mission block, or from the **Make this a mission** key that appears beside the brief box once you have typed a brief. It has no top-bar key. Design and limits: [`docs/missions-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/missions-spec.md).
 
 A mission is a goal the Director (or FLIGHT) names: a name of one line (80 characters), a goal (2000), a status, a lead and a history. Its tasks are the tasks of the [Flight Plan](./flight-plan.md) that carry its id, so a task is in one mission at most and a mission's list is never stored twice.

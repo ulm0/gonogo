@@ -1,5 +1,7 @@
 # Live reload: a new gonogo without stopping the agents
 
+<LiveReloadMock class="doc-mock" />
+
 Updating gonogo used to end the process, and every agent's terminal with it: the turn in progress, the screen and the
 tools it was running were gone (Claude agents came back with `--resume`). With **`--pty-host`** the agents' terminals live in
 a small process of their own, `gonogo ptyhost`, and `gonogo reload` starts the new version without touching it. Design:

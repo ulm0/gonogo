@@ -1,5 +1,7 @@
 # Post-Flight Review: notes and a verdict on an agent's diff
 
+<ReviewMock class="doc-mock" />
+
 The [Recorder](./recorder.md) has a section **Post-Flight Review** under its diff. It shows what an agent changed since its last commit, split into files and hunks with line numbers, and lets you review it the way you would a pull request: comment on a line, ask for changes, approve, and have the agent explain its own work or another agent review it. It is native to gonogo: no external program and no extra port. Design and limits: [`docs/review-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/review-spec.md).
 
 ## Using it

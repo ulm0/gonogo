@@ -1,5 +1,7 @@
 # Phone approvals: answer from your phone
 
+<PhoneApprovalsMock class="doc-mock" />
+
 **Claude Code's `/remote-control` cannot carry gonogo's approvals.** It connects a session to Anthropic's servers and the
 Claude app talks to it there; it has no local socket, hook or file that tells another program a request is pending or
 lets it answer one (read from `claude --help` 2.1.325, never run: this machine has no claude.ai login). What you answer in

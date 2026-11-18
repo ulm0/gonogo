@@ -212,6 +212,40 @@ idle) sets light and surface; `aria-pressed="true"` rings the chosen one. `.room
 `.field`: label, control, `.hint`. `.input`: 46 px on `--key`, `--well` when read-only; `aria-invalid="true"` draws a 2 px
 `--nogo` edge, reason in an `.error` below. `.textarea` is mono.
 
+### Elements of the feature pages
+
+Each is built from the keys, chips, lights, modules and fields above, so it follows the livery. The feature pages show them in use.
+
+<div class="ds-frame" :data-livery="look">
+<div class="ds-stack" style="max-width: 460px">
+<span class="label">Verdict line and review note</span>
+<span style="font-weight: 600">Approved 2 minutes ago.</span>
+<span style="font-weight: 600; color: var(--you-ink)">Approved 2 minutes ago: an older diff (the changes have moved on since).</span>
+<div style="display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--edge); border-left: 4px solid var(--you-edge); border-radius: 4px; background: var(--well)"><span style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center"><span class="chip" data-tone="amber">WARNING</span><span style="font-weight: 600">GUIDO</span></span><span>Does urgent mail skip Hold?</span><span style="display: flex; gap: 8px"><span class="btn" data-kind="quiet">Resolve</span><span class="btn" data-kind="quiet">Delete</span></span></div>
+<span class="label">Mission: tasks and cost</span>
+<div style="display: grid; gap: 4px"><span class="label">Tasks</span><span class="lcd-num">3 / 7</span></div>
+<div style="display: grid; gap: 6px"><span class="label">Cost</span><span>$1.20 of $10.00</span><span style="display: flex; gap: 8px; align-items: center"><span class="hint">Budget in dollars</span><span class="input" style="flex: 1; padding: 6px 8px">$10.00</span><span class="btn">Set</span></span></div>
+<span class="label">Worktree line</span>
+<span style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><span class="chip" data-tone="quiet">WORKTREE</span><span class="hint">Branch <code>gonogo/ana</code>, clean, merged into main.</span></span>
+<span class="label">Room editor: card, grip and tray</span>
+<div style="display: grid; gap: 8px"><div class="module" style="position: relative; display: grid; gap: 4px; min-height: 64px; padding: 8px 10px 14px"><span style="display: flex; gap: 8px; align-items: center"><span style="font-family: var(--font-mono); font-weight: 700; letter-spacing: 0.06em">MAX Q</span><span class="hint">2 × 2</span><span class="btn" data-kind="quiet" style="margin-left: auto">Hide</span></span><span aria-hidden="true" style="position: absolute; right: 2px; bottom: 2px; width: 22px; height: 22px; border-right: 3px solid var(--text-2); border-bottom: 3px solid var(--text-2); border-radius: 0 0 4px 0"></span></div><div class="module" style="display: flex; gap: 8px; align-items: center; padding: 8px 10px"><span class="label">Hidden</span><span class="btn">RESTORE SEQUENCE</span></div></div>
+<span class="label">Notifications switch</span>
+<div style="display: flex; gap: 8px; justify-content: space-between; align-items: center"><span class="hint">On in this browser.</span><button type="button" class="btn" aria-pressed="true">Turn notifications off</button></div>
+<span class="label">Terminal frame</span>
+<pre class="lcd" style="margin: 0; font-size: 12px; overflow-x: auto">gonogo   1 ROOM  2 INBOX 1  3 NEEDS 1  4 POLL  connected
+NEEDS 1: ana: permission request: Bash: git push (press 3)
+ROOM
+> * flight      working   flight
+  ! ana         needs you fido      permission request: Bash: git push
+  . guido       idle      guido
+  - retro       stopped</pre>
+<span class="label">Update strip</span>
+<span style="display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 2px 8px 2px 14px; border: 1px solid var(--edge); border-radius: var(--radius-key); background: var(--well); color: var(--text-2); font-size: 12px">gonogo 0.3.0 is out (this is 0.2.0). To update, run: <code style="color: var(--text)">npm install -g @ulm0/gonogo</code><span class="btn" data-kind="quiet">Copy</span></span>
+</div>
+</div>
+
+These are drawn from the app's own rules (Review, Missions, Worktrees, Room editor, Notifications, the terminal client and Rollout): the verdict line is bold text, amber with the tone token when it was of an older diff; a note has a `--edge` border and a left edge in the tone (word on a chip, never colour alone); the room editor's card is a `.module` with a handle row and a corner grip of `--text-2`, and its tray a `.module` with RESTORE keys; the terminal frame is `.lcd` text with a glyph and a word for each state. Only the tokens above colour them, so text keeps 4.5:1 (7:1 in High Contrast). Not drawn here because it is not in the app yet: the version corner, and the feature toggle row of the features PR.
+
 ## Shape, depth and motion
 
 | | Value | Where |
