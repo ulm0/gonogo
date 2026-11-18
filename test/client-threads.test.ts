@@ -78,9 +78,28 @@ describe('groupThreads', () => {
     expect(threads[0]?.who).toEqual(['ana', 'user', 'ben']);
   });
 
+  it('does not let an agent write itself into the conversation of others by naming one of its messages', () => {
+    const a = msg('ana', 'user', 'Build is green');
+    const b = msg('user', 'ana', 'Re: Build is green', { inReplyTo: a.id });
+    const rogue = msg('ben', 'user', 'Re: Build is green', { inReplyTo: b.id });
+    const rogueToo = msg('ben', 'cy', 'anything', { inReplyTo: a.id });
+    const threads = groupThreads(newestFirst(a, b, rogue, rogueToo));
+    expect(threads.map((t) => ids(t.items))).toEqual([[rogueToo.id], [rogue.id], [a.id, b.id]]);
+    // the Director's answer in the thread of ana still goes to ana by default, not to the one who named its message
+    expect(repliers(threads[2]!)).toEqual(['ana']);
+  });
+
+  it('lets the Director answer in any thread, whoever its newest message is between', () => {
+    const a = msg('ana', 'user', 'Build is green');
+    const b = msg('user', 'ben', 'Something else', { inReplyTo: a.id });
+    const c = msg('ben', 'ana', 'Re: Something else', { inReplyTo: b.id });
+    const answer = msg('user', 'ben', 'Re: Something else', { inReplyTo: c.id });
+    expect(groupThreads(newestFirst(a, b, c, answer)).map((t) => ids(t.items))).toEqual([[a.id, b.id, c.id, answer.id]]);
+  });
+
   it('lets a later message with the subject of a reply join it, and a reply to a message that is not in the list fall back to the subject', () => {
     const a = msg('ana', 'user', 'Plan');
-    const reply = msg('ben', 'user', 'Re: Plan', { inReplyTo: a.id });
+    const reply = msg('user', 'ben', 'Re: Plan', { inReplyTo: a.id });
     const later = msg('ben', 'user', 'Plan');
     const orphan = msg('cy', 'user', 'Report', { inReplyTo: 'm9999' });
     const sibling = msg('cy', 'user', 'Re: Report');

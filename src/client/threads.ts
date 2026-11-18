@@ -5,7 +5,9 @@ import { subjectOf } from './loop.js';
 
 /**
  * A conversation. The messages carry no thread id; two things say which belong together:
- * - a reply chain: a message whose `inReplyTo` is a message of the list joins that message's conversation;
+ * - a reply chain: a message whose `inReplyTo` is a message of the list joins that message's conversation, when its sender is the
+ *   Director or one of the two ends of that message (an agent picks its own `inReplyTo`: it may not write itself into the
+ *   conversation of others, where it would also become the one the Director's answer goes to by default);
  * - the same two parties and the same subject (a leading "Re:" or "Fwd:" does not count, case and spacing do not count).
  */
 export interface Thread {
@@ -37,12 +39,15 @@ const keyOf = (item: ActivityItem): string => JSON.stringify([item.from, item.to
  */
 export function groupThreads(items: readonly ActivityItem[]): Thread[] {
   const ofMessage = new Map<string, Thread>();
+  const byId = new Map<string, ActivityItem>();
   const ofKey = new Map<string, Thread>();
   // a Set keeps the order of insertion: a thread that gets a message is taken out and put back, so the newest comes last
   const order = new Set<Thread>();
   for (const item of [...items].reverse()) {
     const key = keyOf(item);
-    let thread = (item.inReplyTo === null ? undefined : ofMessage.get(item.inReplyTo)) ?? ofKey.get(key);
+    const target = item.inReplyTo === null ? undefined : byId.get(item.inReplyTo);
+    const chained = target !== undefined && (item.from === 'user' || item.from === target.from || item.from === target.to);
+    let thread = (chained ? ofMessage.get(target.id) : undefined) ?? ofKey.get(key);
     if (thread === undefined) {
       const subject = stripReplyPrefix(item.subject);
       thread = { id: item.id, subject, title: subject === '' ? subjectOf(item) : subject, who: [], items: [], last: item };
@@ -51,6 +56,7 @@ export function groupThreads(items: readonly ActivityItem[]): Thread[] {
     thread.last = item;
     for (const name of [item.from, item.to]) if (!thread.who.includes(name)) thread.who.push(name);
     ofMessage.set(item.id, thread);
+    byId.set(item.id, item);
     if (!ofKey.has(key)) ofKey.set(key, thread);
     order.delete(thread);
     order.add(thread);

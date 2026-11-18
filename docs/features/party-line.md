@@ -8,7 +8,7 @@ PARTY LINE (open it from the Patch Panel, Cmd+K or Ctrl+K) lists the room's mess
 
 Messages carry no thread id. Two things put messages together:
 
-- **A reply chain.** A message whose `inReplyTo` is a message on the page joins that message's thread, whoever sends it and whatever the subject. Agents set it with the `in_reply_to` field of `send_message`; your answers from the comm loop, [Downlink](./downlink.md) and Party Line set it, and so do replies from Slack or Telegram to a message [Relay](./relay.md) forwarded.
+- **A reply chain.** A message whose `inReplyTo` is a message on the page joins that message's thread, whatever the subject and the other end, when you send it or when the sender is one of the two ends of that message. An agent chooses its own `in_reply_to`: one that names a message of a conversation it is not in is not added to it, so it cannot become the agent your answer goes to by default. Agents set it with the `in_reply_to` field of `send_message`; your answers from the comm loop, [Downlink](./downlink.md) and Party Line set it, and so do replies from Slack or Telegram to a message [Relay](./relay.md) forwarded.
 - **The same two parties and the same subject.** Sender and recipient in either order. A leading `Re:` or `Fwd:` (any number, any case), the case and the spacing do not count.
   - No subject: all messages with no subject between the same two are one thread, titled by the first line of its first message.
   - Your briefs to FLIGHT all have the subject `Brief`, so they are one thread, with FLIGHT's answers when those are titled `Re: Brief` or sent in reply. A [Launch Window](./launch-window.md) schedule or an [Uplink](./uplink.md) uses one subject for all its messages, so for each agent it sends to they are one thread.

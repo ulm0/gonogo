@@ -16,7 +16,9 @@ message already carries.
   to those two, would need a migration of `messages.jsonl` (written one line per record, last line per id wins) and could
   not be given to the old lines. So none is added, and nothing is saved, sent or migrated.
 - **A conversation** (`groupThreads` in `src/client/threads.ts`), over the list in the store, oldest message first:
-  1. a message whose `inReplyTo` is a message of the list joins that message's thread;
+  1. a message whose `inReplyTo` is a message of the list joins that message's thread, when it comes from the Director or from
+     one of the two ends of that message: an agent picks its own `inReplyTo` (the hub only checks its shape), so without this
+     an agent could write itself into the conversation of two others and become the default recipient of the Director's answer;
   2. else it joins the thread that holds the key `{sender, recipient} + subject`: the two names in sorted order, so that
      either direction matches, and the subject without leading `Re:` and `Fwd:` (`stripReplyPrefix`, one anchored pass),
      with spaces folded and in lower case. The key is `JSON.stringify` of that list, so that no choice of names can make
@@ -56,7 +58,7 @@ message already carries.
 
 ## Tests
 
-`test/client-threads.test.ts`: the prefix strip (and a subject of 50000 prefixes), both rules and their order, other
+`test/client-threads.test.ts`: the prefix strip (and a subject of 50000 prefixes), both rules and their order, an agent that names a message of a conversation it is not in, the Director answering in a thread of other parties, other
 parties or subject, no subject, a reply to a message that is not in the list, a message that replies to itself, names that
 look like object keys or hold the separator of a key, 200 messages, the order of the result, the list not changed,
 `repliers` and the answer built for a thread. `test/client-store.test.ts`: `showParty`. Looked at in Chrome, with the
