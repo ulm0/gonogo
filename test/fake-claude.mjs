@@ -28,6 +28,8 @@ const HOOK_EVENTS = [
   'Notification',
   'Stop',
   'StopFailure',
+  'SubagentStart',
+  'SubagentStop',
 ];
 const ALLOWED_TOOLS = [
   'mcp__gonogo__send_message',

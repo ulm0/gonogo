@@ -113,8 +113,8 @@ export const POLL_VOTES = ['go', 'no-go'] as const;
 export type PollVote = (typeof POLL_VOTES)[number];
 
 /**
- * The eight hook events registered in every per-agent settings file, in this order. SessionStart is absent: http hooks
- * cannot use it. PostToolUseFailure is a "working" heartbeat next to PostToolUse (a tool the user allowed may fail).
+ * The hook events registered in every per-agent settings file, in this order. SessionStart is absent: http hooks
+ * cannot use it. SubagentStart and SubagentStop (docs/subagents-spec.md) only tell; neither can block. PostToolUseFailure is a "working" heartbeat next to PostToolUse (a tool the user allowed may fail).
  */
 export const HOOK_EVENTS = [
   'UserPromptSubmit',
@@ -125,6 +125,8 @@ export const HOOK_EVENTS = [
   'Notification',
   'Stop',
   'StopFailure',
+  'SubagentStart',
+  'SubagentStop',
 ] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
@@ -386,6 +388,18 @@ export interface PermissionDefaults {
  * agents that were running when the server stopped (the boss first, then waves), `off` starts nobody. `carryOn` sends one message to an
  * agent that was cut in the middle of a turn.
  */
+/**
+ * Subagents (docs/subagents-spec.md): `allow` leaves Claude Code as it is, `limit` caps the helpers running at once (CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS;
+ * Claude Code does not apply it under ultracode), `none` denies the Agent tool. One setting for the room, Claude Code agents only.
+ */
+export const SUBAGENT_MODES = ['allow', 'limit', 'none'] as const;
+export type SubagentMode = (typeof SUBAGENT_MODES)[number];
+export const SUBAGENT_LIMIT_MAX = 20;
+export interface SubagentSettings {
+  mode: SubagentMode;
+  /** Used when the mode is `limit`; kept when it is not. */
+  limit: number;
+}
 export const STARTUP_POLICIES = ['boss', 'running', 'off'] as const;
 export type StartupPolicy = (typeof STARTUP_POLICIES)[number];
 export interface StartupSettings {
@@ -406,6 +420,12 @@ export interface ResumeAllResult {
 export interface RunEntry {
   name: string;
   working: boolean;
+}
+/** Subagents (docs/subagents-spec.md): what the hooks say of the helpers a Claude Code agent started. `types` is each running one's `agent_type`, by name and count. */
+export interface SubagentsView {
+  running: number;
+  started: number;
+  types: Record<string, number>;
 }
 /** One agent as stored in <home>/agents.json (inside RosterFile). */
 export interface AgentRecord {
@@ -550,6 +570,8 @@ export interface AgentView {
    * first tool call of this process and for a custom agent.
    */
   doing: string | null;
+  /** The subagents of this agent that are running now (SubagentStart without a Stop yet, silent for less than 30 minutes), and how many started in this process. */
+  subagents: SubagentsView;
   /**
    * State changes, oldest first: every change of the last HISTORY_WINDOW_MS plus the one before them (so the chart knows the
    * state at the left edge), at most HISTORY_MAX. Memory only; the last entry is the current state.
@@ -1794,6 +1816,8 @@ export interface LauncherOptions {
   toolsOff?: () => string[];
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
+  /** Subagents: the room's setting, read at each start. Default: allowed. */
+  subagents?: () => SubagentSettings;
   log?: Logger;
 }
 

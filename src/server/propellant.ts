@@ -11,7 +11,7 @@
  * shortcut: subagent (Task tool) transcripts are other files and are not counted; read them too if that spend matters.
  * shortcut: the ledger and the limits are keyed by agent name, so a rename starts from zero; key by record id if renames get common.
  */
-import { appendFile, open, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { appendFile, open, readdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { AGENT_NAME_PATTERN, FUEL_WINDOWS } from '../shared/protocol.js';
@@ -419,6 +419,16 @@ export function createPropellant(options: PropellantOptions): Propellant {
     return real !== null && real.startsWith(projectsReal + sep) ? real : null;
   };
 
+  /**
+   * The files of the subagents of a session (docs/subagents-spec.md): `<session>/subagents/agent-<id>.jsonl` next to `<session>.jsonl`. Their usage
+   * is not in the main file (checked with a real run), so they are counted here, under the parent's name, each with its own cursor.
+   */
+  const subagentFiles = async (transcriptPath: string): Promise<string[]> => {
+    if (!transcriptPath.endsWith('.jsonl')) return [];
+    const dir = join(transcriptPath.slice(0, -'.jsonl'.length), 'subagents');
+    const names = await readdir(dir).catch(() => [] as string[]);
+    return names.filter((name) => /^agent-[A-Za-z0-9_-]{1,64}\.jsonl$/.test(name)).sort().map((name) => join(dir, name));
+  };
   const readNew = async (agent: string, transcriptPath: string): Promise<number> => {
     const path = await inside(transcriptPath);
     if (path === null) {
@@ -567,7 +577,11 @@ export function createPropellant(options: PropellantOptions): Propellant {
       const previous = reading.get(transcriptPath) ?? Promise.resolve(0);
       const run = previous
         .catch(() => 0)
-        .then(() => readNew(agent, transcriptPath))
+        .then(async () => {
+          let total = await readNew(agent, transcriptPath);
+          for (const file of await subagentFiles(transcriptPath)) total += await readNew(agent, file).catch(() => 0);
+          return total;
+        })
         .catch((error: unknown) => {
           log.warn(`propellant could not read the transcript of ${agent}`, error);
           return 0;

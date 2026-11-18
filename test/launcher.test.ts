@@ -48,6 +48,8 @@ const EVENTS = [
   'Notification',
   'Stop',
   'StopFailure',
+  'SubagentStart',
+  'SubagentStop',
 ];
 
 let tmp: string;
@@ -314,7 +316,7 @@ describe('buildSettings', () => {
   const memory = '/h/agents/ana/memory.md';
   const input = { hubUrl: HUB, name: 'ana', mode: 'default', memoryPath: memory, apiKeyHelper: false } as const;
 
-  it('writes the eight http hooks, the pinned keys and the memory rules for default mode', () => {
+  it('writes the ten http hooks, the pinned keys and the memory rules for default mode', () => {
     expect(buildSettings(input)).toStrictEqual(expectedSettings(HUB, 'ana', memory));
     expect(Object.keys(buildSettings(input))).toStrictEqual(['hooks', 'tui', 'promptSuggestionEnabled', 'crossSessionInbound', 'permissions']);
     expect(Object.keys(buildSettings(input).hooks as object)).toStrictEqual(EVENTS);
@@ -828,13 +830,13 @@ describe('prepareStart', () => {
       const shown = hub.replace(/\/$/, '');
       const files = [await text(agentFile('ana', 'settings.json')), await text(agentFile('ana', 'mcp.json'))];
       const urls = files.flatMap((file) => file.match(/"https?:\/\/[^"]*"/g) ?? []);
-      expect(urls).toHaveLength(9);
+      expect(urls).toHaveLength(11);
       for (const found of urls) expect(found.startsWith(`"${shown}/`)).toBe(true);
       expect(JSON.parse(files[1]).mcpServers.gonogo.url).toBe(`${shown}/mcp`);
     }
   });
 
-  it('points every hook at /hook/<name>/<Event> for the eight events and nothing else', async () => {
+  it('points every hook at /hook/<name>/<Event> for the ten events and nothing else', async () => {
     await launcher().prepareStart(agent({ name: 'zed-9' }), START);
     const settings = (await json(agentFile('zed-9', 'settings.json'))) as { hooks: Record<string, { hooks: { url: string; type: string }[] }[]> };
     expect(Object.keys(settings.hooks)).toStrictEqual(EVENTS);

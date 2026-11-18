@@ -72,6 +72,7 @@ export default defineConfig({
           { text: 'Clean Room', link: '/features/clean-room' },
           { text: 'Worktrees', link: '/features/worktrees' },
           { text: 'Feature toggles', link: '/features/features' },
+          { text: 'Subagents', link: '/features/subagents' },
           { text: 'Tool permissions', link: '/features/permissions' },
           { text: 'Start again after a restart', link: '/features/autostart' },
           { text: 'Redline', link: '/features/redline' },

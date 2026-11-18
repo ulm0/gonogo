@@ -8,6 +8,7 @@ import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import type { SubagentSettings } from '../shared/protocol.js';
 import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PROVIDER_INFO } from '../shared/protocol.js';
 import type {
   AgentIdentity,
@@ -28,6 +29,7 @@ import {
   API_KEY_HELPER_COMMAND,
   CLAUDE_BIN,
   CLEAN_ROOM_CREDENTIALS,
+  SUBAGENT_LIMIT_ENV,
   CLEAN_ROOM_ENV,
   CLEAN_ROOM_NOTE,
   WORKTREE_NOTE,
@@ -108,6 +110,11 @@ export async function ownStatusLine(configDir: string): Promise<string | undefin
   } catch {
     return undefined;
   }
+}
+
+/** `none`: the Agent tool (and its old name Task) is denied, next to the Director's own deny rules. */
+export function withNoSubagents(rules: PermissionRules, setting: SubagentSettings): PermissionRules {
+  return setting.mode === 'none' ? { ...rules, deny: [...new Set([...(rules.deny ?? []), 'Agent', 'Task'])] } : rules;
 }
 
 export function buildSettings(input: {
@@ -617,7 +624,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const ownConfig = hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : join(homedir(), '.claude');
       const next = clean === null ? await ownStatusLine(ownConfig) : undefined;
       const statusLine = { node: clean === null ? process.execPath : 'node', ...(next === undefined ? {} : { next }) };
-      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: effectiveRules(agent.permissions, options.defaultPermissions?.()), statusLine });
+      const subagentSetting = options.subagents?.() ?? { mode: 'allow' as const, limit: 4 };
+      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), subagentSetting), statusLine });
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
       await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, agent.payload?.mcpServers), null, 2), FILE_MODE);
       const pluginDir = await writeSkillsPlugin(base, agent.payload?.skills);
@@ -653,6 +661,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
+      if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
       let spec: PreparedStart['spec'];
       if (clean === null) {
         spec = { file, args: [...leading, ...claudeArgs], env: childEnv, cwd: startDir };

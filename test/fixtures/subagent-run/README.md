@@ -1,0 +1,1 @@
+Recorded 2026-11-18 from one run of claude 2.1.325 on haiku (claude -p, one Agent call, general-purpose). Only the fields gonogo reads are kept. The subagent file has isSidechain true and an agentId on each line; its replies are not repeated in the main file (different message ids), so Propellant must read both.

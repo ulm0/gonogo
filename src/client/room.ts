@@ -177,6 +177,7 @@ export function tileLabel(cell: Cell, vote: Vote | null): string {
   if (reason !== null) label += `: ${reason}`;
   if (agent.cleanRoom) label += ', clean room';
   else if (agent.worktree) label += ', own worktree';
+  if (subagentChip(agent) !== '') label += `, ${subagentChip(agent).toLowerCase()}`;
   if (agent.queued > 0) label += `, ${agent.queued} ${agent.queued === 1 ? 'message' : 'messages'} waiting`;
   if (agent.held !== null) label += `, ${agent.held.text}`;
   if (vote !== null) label += `, vote ${vote.toLowerCase()}`;
@@ -262,6 +263,16 @@ export function cleanRoomPlace(agent: Pick<AgentView, 'name' | 'cleanRoom'>, hom
 }
 
 /** Where a console with its own git worktree works (same branch name as a Clean Room), or null. */
+/** The chip text of the helpers an agent has running, or '' (none): `3 SUBAGENTS`. */
+// an older server sends no `subagents`: no chip
+export const subagentChip = (agent: Pick<AgentView, 'subagents'>): string => {
+  const running = agent.subagents?.running ?? 0;
+  return running === 0 ? '' : `${running} ${running === 1 ? 'SUBAGENT' : 'SUBAGENTS'}`;
+};
+
+/** `2 Explore, 1 general-purpose`: what kinds of helper are running. */
+export const subagentTypes = (agent: Pick<AgentView, 'subagents'>): string => Object.entries(agent.subagents?.types ?? {}).map(([type, n]) => `${n} ${type}`).join(', ');
+
 export function worktreePlace(agent: Pick<AgentView, 'name' | 'worktree'>, home: string): { branch: string; worktree: string } | null {
   return !agent.worktree ? null : { branch: cleanRoomBranch(agent.name), worktree: `${home.replace(/\/+$/, '')}/${WORKTREE_DIR}/${agent.name}` };
 }

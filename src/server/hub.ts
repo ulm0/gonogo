@@ -19,6 +19,7 @@ import type {
   AgentState,
   AgentView,
   AnswerRequest,
+  SubagentsView,
   ApiErrorCode,
   CleanRoom,
   RunEntry,
@@ -199,6 +200,17 @@ const READ_MORE_NOTE = 'More messages are waiting: call read_messages again to r
 const REPEAT_SIG_CHARS = 2000;
 
 /** Drops the times older than `windowMs`, adds `now`, and says how many are left. */
+/** Who a tool hook is about: the agent itself, or one of its subagents (Claude Code puts `agent_id` on a tool event inside one). */
+function whoOf(payload: Record<string, unknown>): string {
+  const id = payload.agent_id;
+  return typeof id === 'string' && id !== '' && id.length <= 64 ? id : 'main';
+}
+
+/** A subagent that no hook has mentioned for this long is gone (its Stop was lost). */
+const SUBAGENT_STALE_MS = 30 * 60_000;
+/** Subagent ids kept for one agent: more is a flood, not a team. */
+const SUBAGENTS_MAX = 64;
+
 function countRecent(times: number[], now: number, windowMs: number): number {
   while (times.length > 0 && now - (times[0] ?? now) >= windowMs) times.shift();
   times.push(now);
@@ -439,11 +451,14 @@ interface Rt {
   removed: boolean;
   /** Redline: why the circuit breaker tripped, null when it did not. Held mail and needs_you until the Director resumes. */
   redline: string | null;
-  /** The last tool call (name and input) and how many times in a row it came. */
-  repeat: { sig: string; count: number } | null;
-  /** Times of failed tool calls and of API errors in their windows, oldest first. */
-  toolFailAt: number[];
+  /** The last tool call (name and input) and how many times in a row it came, for the agent itself ('main') and for each subagent by its agent_id (docs/subagents-spec.md). */
+  repeat: Map<string, { sig: string; count: number }>;
+  /** Times of failed tool calls (the same keys) and of API errors in their windows, oldest first. */
+  toolFailAt: Map<string, number[]>;
   apiErrorAt: number[];
+  /** Running subagents by agent_id: their type, when the hook last spoke of them; and how many started in this process. */
+  subagents: Map<string, { type: string; seen: number }>;
+  subagentsStarted: number;
   /** Recipient to the times this agent sent it a message within REDLINE_SEND_WINDOW_MS. */
   sentTo: Map<string, number[]>;
   /** When Propellant last read this agent's transcript on a tool hook. */
@@ -624,8 +639,10 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       lastSig: null,
       removed: false,
       redline: null,
-      repeat: null,
-      toolFailAt: [],
+      repeat: new Map(),
+      toolFailAt: new Map(),
+      subagents: new Map(),
+      subagentsStarted: 0,
       apiErrorAt: [],
       sentTo: new Map(),
       meteredAt: 0,
@@ -695,6 +712,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       model: record.model ?? null,
       keys: { ...record.keys },
       doing: rt.doing,
+      subagents: subagentsOf(rt),
       history: trimHistory(rt.history, io.now()),
     };
   }
@@ -1127,8 +1145,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const had = rt.redline !== null || lostHolds.delete(rt.record.name);
     rt.redline = null;
     if (had) saveHolds();
-    rt.repeat = null;
-    rt.toolFailAt = [];
+    rt.repeat.clear();
+    rt.toolFailAt.clear();
     rt.apiErrorAt = [];
     rt.sentTo.clear();
   }
@@ -1154,6 +1172,16 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (reason !== null && options.redline !== false) tripRt(rt, reason);
   }
 
+  /** The running subagents of an agent, without the ones silent for too long. */
+  function subagentsOf(rt: Rt): SubagentsView {
+    const types: Record<string, number> = {};
+    for (const [id, one] of rt.subagents) {
+      if (io.now() - one.seen >= SUBAGENT_STALE_MS) rt.subagents.delete(id);
+      else types[one.type] = (types[one.type] ?? 0) + 1;
+    }
+    return { running: rt.subagents.size, started: rt.subagentsStarted, types };
+  }
+
   function repeatReason(rt: Rt, payload: Record<string, unknown>): string | null {
     let input = '';
     try {
@@ -1162,8 +1190,13 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       input = '';
     }
     const sig = `${String(payload.tool_name)}\n${input.slice(0, REPEAT_SIG_CHARS)}`;
-    rt.repeat = rt.repeat?.sig === sig ? { sig, count: rt.repeat.count + 1 } : { sig, count: 1 };
-    return rt.repeat.count >= REDLINE_REPEATS ? `loop: ${rt.doing ?? 'the same tool'} ${rt.repeat.count} times in a row` : null;
+    // a loop is the same call over and over by the same agent: the calls of parallel subagents do not break or make one
+    const key = whoOf(payload);
+    const before = rt.repeat.get(key);
+    const now: { sig: string; count: number } = before?.sig === sig ? { sig, count: before.count + 1 } : { sig, count: 1 };
+    rt.repeat.set(key, now);
+    if (rt.repeat.size > SUBAGENTS_MAX) rt.repeat.delete(rt.repeat.keys().next().value as string);
+    return now.count >= REDLINE_REPEATS ? `loop: ${rt.doing ?? 'the same tool'} ${now.count} times in a row${key === 'main' ? '' : ' (a subagent)'}` : null;
   }
 
   function trip(name: string, reason: string): void {
@@ -1233,6 +1266,10 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
 
   /** Telemetry: every tool hook goes to the recorder; a failure there never touches the hub's own handling. */
   function toolHook(rt: Rt, event: HookEvent, payload: Record<string, unknown>): void {
+    // a tool event of a subagent says it is alive
+    const who = whoOf(payload);
+    const one = who === 'main' ? undefined : rt.subagents.get(who);
+    if (one !== undefined) one.seen = io.now();
     try {
       if (io.featureOn?.('telemetry') !== false) io.toolHook?.(rt.record.name, event, payload);
     } catch (error) {
@@ -1381,12 +1418,20 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       case 'PostToolUseFailure':
         toolHook(rt, input.event, payload);
         onToolHook(rt);
-        if (countRecent(rt.toolFailAt, io.now(), REDLINE_TOOL_FAILURE_WINDOW_MS) >= REDLINE_TOOL_FAILURES) {
-          detect(rt, `error storm: ${rt.toolFailAt.length} failed tool calls in 2 min`);
+        {
+          const key = whoOf(payload);
+          const failed = rt.toolFailAt.get(key) ?? [];
+          rt.toolFailAt.set(key, failed);
+          if (rt.toolFailAt.size > SUBAGENTS_MAX) rt.toolFailAt.delete(rt.toolFailAt.keys().next().value as string);
+          if (countRecent(failed, io.now(), REDLINE_TOOL_FAILURE_WINDOW_MS) >= REDLINE_TOOL_FAILURES) {
+            detect(rt, `error storm: ${failed.length} failed tool calls in 2 min${key === 'main' ? '' : ' (a subagent)'}`);
+          }
         }
         break;
       case 'PermissionRequest': {
-        const reason = describePermission(payload.tool_name, payload.tool_input);
+        // a dialog a subagent opened is the parent's to answer: the reason says who asked
+        const asker = typeof payload.agent_type === 'string' && payload.agent_type !== '' ? ` (subagent ${cutText(collapseWhitespace(payload.agent_type), 40)})` : '';
+        const reason = describePermission(payload.tool_name, payload.tool_input) + asker;
         // the same dialog twice (a repeated hook) is one dialog: no new number, no new event
         const repeated = rt.state === 'needs_you' && rt.needsKind === 'permission' && rt.needsReason === reason;
         if (!repeated) rt.needSeq += 1;
@@ -1397,6 +1442,21 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       }
       case 'Notification':
         onNotification(rt, payload);
+        break;
+      case 'SubagentStart': {
+        const id = typeof payload.agent_id === 'string' && payload.agent_id !== '' && payload.agent_id.length <= 64 ? payload.agent_id : null;
+        if (id !== null && (rt.subagents.size < SUBAGENTS_MAX || rt.subagents.has(id))) {
+          // a second start of an id (a resume of the subagent) is the same subagent
+          if (!rt.subagents.has(id)) rt.subagentsStarted += 1;
+          const type = typeof payload.agent_type === 'string' && payload.agent_type !== '' ? cutText(collapseWhitespace(payload.agent_type), 40) : 'agent';
+          rt.subagents.set(id, { type, seen: io.now() });
+        }
+        break;
+      }
+      case 'SubagentStop':
+        // a stop with no start is normal: Claude Code's own helpers (prompt suggestions, /btw) stop without one
+        if (typeof payload.agent_id === 'string') rt.subagents.delete(payload.agent_id);
+        meter(rt, payload, true);
         break;
       case 'Stop':
         reply = onStop(rt);
@@ -1737,6 +1797,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (!info.requested && rt.redline !== null) lostHolds.set(rt.record.name, rt.redline);
     setState(rt, 'stopped');
     pollEntryStopped(name);
+    rt.subagents.clear();
     rt.exit = { code: info.code, signal: info.signal, at: io.now(), requested: info.requested, text: exitText(info) };
     if (!closing) {
       if (rt.transition === 'restarting') {
@@ -1803,6 +1864,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   function beginSpawn(rt: Rt, flag: SessionFlag | null, userInitiated: boolean): number {
     rt.generation += 1;
     clearRedline(rt);
+    rt.subagents.clear();
+    rt.subagentsStarted = 0;
     if (rt.transition === 'restarting') rt.transition = null;
     // The first spawn of an agent that never ran: its history starts at `starting`, not at a `stopped` that lasted no time.
     if (rt.generation === 1) rt.history = [];
