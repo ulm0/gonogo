@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { agentCounts, updateDialogText } from '../src/client/selfupdate.js';
 import { parseArgs } from '../src/server/cli.js';
-import { settleResult, checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
+import { followResult, settleResult, viewOfResult, checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
 import type { DockerCall } from '../src/server/dockerupdate.js';
 import { createUpdater, UpdateError } from '../src/server/updater.js';
 import type { UpdateView } from '../src/shared/protocol.js';
@@ -240,7 +240,7 @@ describe('the helper', () => {
     expect(body.Cmd).toEqual(['self-update', '--target', ME, '--expect', '0.4.0', '--home', '/state/room', '--image', NEW_IMG]);
     expect(body.HostConfig).toEqual({ AutoRemove: true, Init: true, NetworkMode: 'none', Binds: ['/var/run/docker.sock:/var/run/docker.sock', '/srv/gonogo:/state'], GroupAdd: ['999'] });
     expect(body.User).toBe('1000:1000');
-    expect(body.Labels).toEqual({ 'gonogo.helper': '1' });
+    expect(body.Labels).toEqual({ 'gonogo.helper': '1', 'gonogo.helper.target': ME });
   });
 
   it('is refused without the socket or the home as a mount, and starts after it is created', async () => {
@@ -424,6 +424,66 @@ describe('a helper that is killed half way', () => {
     f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1' } });
     expect(await settleResult(f.call, dir, started, ME, 1_000_000 + 60_000)).toBe(started);
     expect((await settleResult(f.call, dir, started, ME, 1_000_000 + 16 * 60_000)).state).toBe('interrupted');
+  });
+
+  it("another gonogo's helper on the same host does not count: only the helper of this target does", async () => {
+    const f = fake();
+    f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1', 'gonogo.helper.target': 'f'.repeat(64) } });
+    expect((await settleResult(f.call, dir, { ...started, target: ME }, ME, 1_000_000 + 60_000)).state).toBe('interrupted');
+    f.boxes.get('d'.repeat(64))!.labels = { 'gonogo.helper': '1', 'gonogo.helper.target': ME };
+    expect((await settleResult(f.call, dir, { ...started, target: ME }, ME, 1_000_000 + 60_000)).state).toBe('started');
+  });
+
+  it('a server that boots during the swap follows update.json: the helper writes ok and the view becomes done with UNDO, without a restart', async () => {
+    const f = fake();
+    f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1', 'gonogo.helper.target': ME } });
+    const first = { ...started, target: ME };
+    await writeResult(dir, first);
+    const changes: UpdateView[] = [];
+    let t = first.at + 1000;
+    let tick = 0;
+    await followResult(f.call, dir, ME, first, {
+      onChange: (r) => changes.push(viewOfResult(r)),
+      stopped: () => false,
+      now: () => t,
+      sleep: async () => {
+        t += 5000;
+        tick += 1;
+        if (tick === 3) await writeResult(dir, { ...first, at: t, state: 'ok', note: 'Updated 0.3.0 to 0.4.0.' });
+      },
+    });
+    expect(tick).toBe(3);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ state: 'done', undo: true, version: '0.4.0' });
+  });
+
+  it('follows a rolled-back end, a helper that dies (interrupted), a stop request and the 15 minute limit', async () => {
+    const f = fake();
+    const first = { ...started, target: ME };
+    let t = first.at;
+    const run = async (extra: Partial<Parameters<typeof followResult>[4]>, write?: (t: number) => Promise<void>): Promise<UpdateView[]> => {
+      await writeResult(dir, first);
+      const out: UpdateView[] = [];
+      t = first.at;
+      await followResult(f.call, dir, ME, first, { onChange: (r) => out.push(viewOfResult(r)), stopped: () => false, now: () => t, sleep: async () => { t += 5000; await write?.(t); }, ...extra });
+      return out;
+    };
+    // no helper at all: interrupted on the first look
+    expect((await run({}))[0]).toMatchObject({ state: 'failed' });
+    expect((await readResult(dir))?.state).toBe('interrupted');
+    // rolled back
+    f.boxes.set('d'.repeat(64), { id: 'd'.repeat(64), name: 'helper', running: true, image: NEW_IMG, labels: { 'gonogo.helper': '1', 'gonogo.helper.target': ME } });
+    const rolled = await run({}, async (at) => writeResult(dir, { ...first, at, state: 'rolled-back', previousImage: '', note: 'unhealthy' }));
+    expect(rolled[0]).toMatchObject({ state: 'failed' });
+    expect(rolled[0]?.note).toContain('did not take');
+    // stopped by the server closing: no change is reported
+    expect(await run({ stopped: () => true })).toEqual([]);
+    // 15 minutes of nothing new: it gives up quietly (the record stays `started` until a restart settles it)
+    let looks = 0;
+    await writeResult(dir, first);
+    t = first.at;
+    await followResult(f.call, dir, ME, first, { onChange: () => undefined, stopped: () => false, now: () => t, sleep: async () => { looks += 1; t += 5 * 60_000; } });
+    expect(looks).toBeLessThanOrEqual(4);
   });
 
   it('any other record is left as it is', async () => {

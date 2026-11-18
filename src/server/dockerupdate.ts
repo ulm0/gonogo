@@ -14,6 +14,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join } from 'node:path';
+import type { UpdateView } from '../shared/protocol.js';
 import { FILE_MODE } from './constants.js';
 
 export const SOCKET_PATH = '/var/run/docker.sock';
@@ -171,7 +172,8 @@ export function helperBody(input: { inspect: Json; image: string; /** The image 
     Image: input.helperImage ?? input.image,
     Cmd: ['self-update', '--target', asText(inspect.Id), '--expect', input.expect, '--home', input.home, '--image', input.image],
     User: asText(asRecord(inspect.Config).User),
-    Labels: { 'gonogo.helper': '1' },
+    // the target id lets a new gonogo tell its own helper from another gonogo's on the same host
+    Labels: { 'gonogo.helper': '1', 'gonogo.helper.target': asText(inspect.Id) },
     // no network: it talks to the socket only
     HostConfig: { AutoRemove: true, Init: true, NetworkMode: 'none', Binds: [socket, home], GroupAdd: Array.isArray(host.GroupAdd) ? host.GroupAdd : [] },
   };
@@ -283,6 +285,8 @@ export interface UpdateResult {
   state: 'started' | 'ok' | 'rolled-back' | 'failed' | 'interrupted';
   from: string;
   to: string;
+  /** The id of the container the helper replaces: the helper's label `gonogo.helper.target` carries it. Absent in an older record. */
+  target?: string;
   /** The image that ran before, for UNDO; empty after an UNDO or a failure. */
   previousImage: string;
   note: string;
@@ -365,7 +369,7 @@ export async function removeLeftovers(call: DockerCall, name: string, target: Js
 export async function swap(call: DockerCall, options: SwapOptions): Promise<UpdateResult> {
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = options.now ?? Date.now;
-  const done = (state: UpdateResult['state'], note: string, from: string, previousImage: string, tail: string[] = []): UpdateResult => ({ version: 1, at: now(), state, from, to: options.expect, previousImage, note, tail });
+  const done = (state: UpdateResult['state'], note: string, from: string, previousImage: string, tail: string[] = []): UpdateResult => ({ version: 1, at: now(), state, from, to: options.expect, target: options.target, previousImage, note, tail });
   if (!CONTAINER_ID.test(options.target)) return done('failed', 'the target is not a container id', '', '');
   let inspect: Json;
   let fresh = '';
@@ -461,6 +465,7 @@ export async function readResult(home: string): Promise<UpdateResult | null> {
       state: raw.state as UpdateResult['state'],
       from: asText(raw.from).slice(0, 40),
       to: asText(raw.to).slice(0, 40),
+      ...(CONTAINER_ID.test(asText(raw.target)) ? { target: asText(raw.target) } : {}),
       previousImage: asText(raw.previousImage).slice(0, 100),
       note: asText(raw.note).slice(0, 400),
       tail: (Array.isArray(raw.tail) ? raw.tail : []).filter((l): l is string => typeof l === 'string').slice(-8).map((l) => l.slice(0, 200)),
@@ -479,7 +484,7 @@ export async function settleResult(call: DockerCall, home: string, last: UpdateR
   if (last.state !== 'started') return last;
   let running = false;
   try {
-    const res = await call('GET', `/containers/json?filters=${encodeURIComponent(JSON.stringify({ label: ['gonogo.helper=1'], status: ['running'] }))}`);
+    const res = await call('GET', `/containers/json?filters=${encodeURIComponent(JSON.stringify({ label: ['gonogo.helper=1', ...(last.target === undefined ? [] : [`gonogo.helper.target=${last.target}`])], status: ['running'] }))}`);
     const list: unknown = JSON.parse(res.text);
     running = Array.isArray(list) && list.length > 0;
   } catch {
@@ -497,4 +502,31 @@ export async function settleResult(call: DockerCall, home: string, last: UpdateR
   const result: UpdateResult = { ...last, at: now, state: 'interrupted', previousImage: '', note: `The update to ${last.to} was interrupted: the helper stopped before it finished. Whatever runs now is this gonogo; check \`docker ps -a\`, and run \`docker compose up -d\` if gonogo is not up.${left} No UNDO is offered.`, tail: [] };
   await writeResult(home, result).catch(() => undefined);
   return result;
+}
+
+/** The page's view of a result: what the strip shows (and UNDO only after a good update with an image to go back to). */
+export function viewOfResult(r: UpdateResult): UpdateView {
+  if (r.state === 'started') return { state: 'handed-off', version: r.to, note: r.note, tail: [], rollback: null };
+  if (r.state === 'ok') return { state: 'done', version: r.to, note: r.note, tail: [], rollback: null, undo: r.previousImage !== '' };
+  return { state: 'failed', version: r.to, note: r.state === 'rolled-back' ? `The update to ${r.to} did not take: ${r.note}` : r.state === 'interrupted' ? r.note : `The update to ${r.to} failed: ${r.note}`, tail: r.tail, rollback: null };
+}
+
+/**
+ * The server that boots DURING the swap reads `started` once and would never see the end: it looks again every 5 s, for at most 15 minutes,
+ * settles what it finds (a helper that died becomes `interrupted`) and calls `onChange` with each new record until there is an end.
+ */
+export async function followResult(call: DockerCall, home: string, hostname: string, first: UpdateResult, options: { onChange(result: UpdateResult): void; stopped(): boolean; sleep?(ms: number): Promise<void>; now?(): number; stepMs?: number; maxMs?: number }): Promise<void> {
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref()));
+  const now = options.now ?? Date.now;
+  const begin = now();
+  let last = first;
+  while (last.state === 'started' && !options.stopped() && now() - begin < (options.maxMs ?? 15 * 60_000)) {
+    await sleep(options.stepMs ?? 5_000);
+    if (options.stopped()) return;
+    const found = await readResult(home);
+    if (found === null) continue;
+    const settled = await settleResult(call, home, found, hostname, now());
+    if (settled.state !== last.state || settled.at !== last.at) options.onChange(settled);
+    last = settled;
+  }
 }
