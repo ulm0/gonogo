@@ -6709,6 +6709,8 @@ describe('refreshLimits: Max Q switched off releases the mail it held', () => {
     h.hub.refreshLimits();
     await h.advance(DELIVERY_SETTLE_MS * 2);
     expect(h.typed.map((t) => t.name)).toContain('cara');
+  });
+});
 
 describe('Subagents: what the hooks say of the helpers of an agent', () => {
   const start = (h: Harness, id: string, type = 'Explore'): void => void h.hook('ana', 'SubagentStart', { agent_id: id, agent_type: type });
