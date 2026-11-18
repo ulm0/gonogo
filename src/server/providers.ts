@@ -177,9 +177,13 @@ export function findOnPath(name: string, pathVar: string | undefined): string | 
 /** Whether `name` is an executable file in one of the PATH directories (moved here from cli.ts). */
 export const onPath = (name: string, pathVar: string | undefined): boolean => findOnPath(name, pathVar) !== null;
 
-/** Pad Check: the first line a program prints for `--version`, with control characters taken out and cut short. */
+// A terminal sequence (colour, title) whole, then what is left of control, C1 and text-direction characters: the line goes to a terminal and a web page.
+const TERMINAL_SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)?)/g;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** Pad Check: the first line a program prints for `--version`, with terminal sequences and control characters taken out and cut short. */
 export const versionLine = (output: string): string | null => {
-  const line = output.split('\n').map((l) => l.replace(/[\u0000-\u001f\u007f]/g, '').trim()).find((l) => l !== '');
+  const line = output.split('\n').map((l) => l.replace(TERMINAL_SEQUENCE, '').replace(CONTROL, '').trim()).find((l) => l !== '');
   return line === undefined ? null : line.slice(0, ENGINE_VERSION_CHARS);
 };
 

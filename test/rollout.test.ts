@@ -241,9 +241,9 @@ describe('the cache file', () => {
 describe('updateCommand: which command, by how gonogo was installed', () => {
   const where = { docker: false, clone: false };
   it.each([
-    ['/Users/me/Library/pnpm/global/5/.pnpm/@ulm0+gonogo@0.1.1/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
+    ['/home/me/.local/share/pnpm/global/5/.pnpm/@ulm0+gonogo@0.1.1/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
     ['/home/me/.local/share/pnpm/global/5/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
-    ['/Users/me/Library/Caches/pnpm/dlx/abc/def/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm dlx @ulm0/gonogo@latest'],
+    ['/home/me/.cache/pnpm/dlx/abc/def/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm dlx @ulm0/gonogo@latest'],
     ['/home/me/.nvm/versions/node/v24.0.0/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', 'npm install -g @ulm0/gonogo@latest'],
     ['/somewhere/else/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
   ])('%s', (file, command) => {

@@ -140,6 +140,8 @@ export function createRollout(options: RolloutOptions): Rollout {
   async function ask(): Promise<RolloutView> {
     try {
       const res = await options.fetch(ROLLOUT_URL, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(ROLLOUT_TIMEOUT_MS) });
+      // a refusal's body is not read: let the connection go
+      if (!res.ok) await res.body?.cancel().catch(() => undefined);
       const text = res.ok ? await readCapped(res, ROLLOUT_MAX_BYTES) : null;
       const doc: unknown = text === null ? null : JSON.parse(text);
       if (isRecord(doc) && typeof doc.version === 'string' && STABLE.test(doc.version)) latest = doc.version;

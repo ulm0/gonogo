@@ -220,7 +220,8 @@ describe('Pad Check', () => {
 
   it('versionLine: the first line with something in it, no control characters, cut to 80', () => {
     expect(versionLine('\n\n 1.2.3 (x)\nmore')).toBe('1.2.3 (x)');
-    expect(versionLine('\u001b[1mpi\u001b[0m 1.5.2')).toBe('[1mpi[0m 1.5.2');
+    expect(versionLine('\u001b[1mpi\u001b[0m 1.5.2')).toBe('pi 1.5.2');
+    expect(versionLine('\u001b]0;title\u0007x 1.0\u009b31m\u202e')).toBe('x 1.031m');
     expect(versionLine('x'.repeat(200))).toHaveLength(80);
     expect(versionLine('')).toBeNull();
     expect(versionLine('\n \n')).toBeNull();
