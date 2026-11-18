@@ -634,6 +634,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       },
       diff: (name) => recorder.reviewDiff(name),
       send: (request) => hubInstance.sendFromUser(request),
+      notify: tell,
       log: log.child('review'),
     }), blackBox.record, REVIEW_AUDIT);
     const relief = createRelief({

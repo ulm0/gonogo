@@ -11,6 +11,7 @@ import * as api from './api.js';
 import { WorkspaceHead, useWorkspaceAgent } from './Hangar.js';
 import { whenText } from './inbox.js';
 import { Review } from './Review.js';
+import { commitGate } from './review.js';
 import { commitProblem, diffLines, fileLabels, shortHash, stagedCount } from './changes.js';
 import './loop.css';
 import './hangar.css';
@@ -30,6 +31,8 @@ function Git({ agent }: { agent: string }): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [made, setMade] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The soft gate: why the Director is asked once more before a commit (open review notes, a verdict that is not an approval of this diff). */
+  const [gate, setGate] = useState<string | null>(null);
   const alive = useRef(true);
   const asked = useRef(0);
 
@@ -77,13 +80,22 @@ function Git({ agent }: { agent: string }): ReactElement {
     loadDiff(path, cached);
   };
 
-  async function commit(event: FormEvent): Promise<void> {
-    event.preventDefault();
+  async function commit(event: FormEvent | null, confirmed = false): Promise<void> {
+    event?.preventDefault();
     if (busy || problem !== null) return;
     setBusy(true);
     setError(null);
     setMade(null);
     try {
+      if (!confirmed) {
+        // a review that cannot be read is not a reason to stop a commit
+        const why = commitGate(await api.reviewView(agent).catch(() => null));
+        if (why !== null) {
+          if (alive.current) setGate(why);
+          return;
+        }
+      }
+      setGate(null);
       const done = await api.gitCommit(agent, { message, scope });
       if (!alive.current) return;
       setMessage('');
@@ -195,6 +207,20 @@ function Git({ agent }: { agent: string }): ReactElement {
           <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || problem !== null || undefined} aria-describedby={problem === null ? undefined : `${id}-why`}>
             Commit
           </button>
+          {gate !== null && (
+            <div className="flood rc-gate" data-tone="amber" role="alert">
+              <p>{`${gate} Commit anyway?`}</p>
+              <p className="hint">This is a question, not a lock: it only covers a commit made from this page, and an agent on the host commits by itself.</p>
+              <div className="rc-gate-keys">
+                <button type="button" className="btn" data-kind="primary" autoFocus aria-disabled={busy || undefined} onClick={() => void commit(null, true)}>
+                  Commit anyway
+                </button>
+                <button type="button" className="btn" data-kind="quiet" onClick={() => setGate(null)}>
+                  Not yet
+                </button>
+              </div>
+            </div>
+          )}
           <p className="hint">No git hook runs for a commit made here. The author is the one in your git config.</p>
           {problem !== null && (
             <p className="hint" id={`${id}-why`}>

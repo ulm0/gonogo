@@ -231,7 +231,7 @@ export const AUDIT_TEXT_MAX_CHARS = 200;
 /** How a part of the server tells the Black Box of an event: names, ids and words of the server, never a text somebody wrote. */
 export type AuditRecord = (kind: AuditKind, text: string) => void;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
-export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission'] as const;
+export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission', 'review'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
 /** How a part of the server tells the inbox of something the Director should see (`Downlink.post`). */
 /** What a `permission` or `relief` event is about, for the buttons of a phone (docs/phone-approvals-spec.md): the dialog of an agent, or a hire request. */
@@ -1979,14 +1979,22 @@ export const REVIEW_SIDES = ['old', 'new'] as const;
 export type ReviewSide = (typeof REVIEW_SIDES)[number];
 export const REVIEW_TONES = ['info', 'warning', 'error'] as const;
 export type ReviewTone = (typeof REVIEW_TONES)[number];
-export const REVIEW_STATUSES = ['open', 'resolved'] as const;
+/** open: waiting for the agent; addressed: the agent answered; resolved: the Director closed it. */
+export const REVIEW_STATUSES = ['open', 'addressed', 'resolved'] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
-export const REVIEW_SUMMARY_MAX_CHARS = 200;
-export const REVIEW_RATIONALE_MAX_CHARS = 1000;
-/** Notes kept for one agent (open and resolved), and notes one review_note call may carry. */
-export const REVIEW_NOTES_MAX = 300;
+export const REVIEW_VERDICTS = ['approved', 'changes'] as const;
+export type ReviewVerdictKind = (typeof REVIEW_VERDICTS)[number];
+export const REVIEW_BODY_MAX_CHARS = 2000;
+/** The anchored line a note keeps, cut to this. */
+export const REVIEW_TEXT_MAX_CHARS = 300;
+/** Notes kept for one reviewed agent (resolved ones are trimmed first), and notes one review_note call may carry. */
+export const REVIEW_NOTES_MAX = 200;
 export const REVIEW_BATCH_MAX = 20;
-export const REVIEW_AGENTS_MAX = 8;
+/** The patch review_read gives on request is cut at this size, and a peer request lasts this long. */
+export const REVIEW_PATCH_MAX_BYTES = 100 * 1024;
+export const REVIEW_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
+/** The mail of REQUEST CHANGES is cut here. */
+export const REVIEW_MAIL_MAX_CHARS = 4000;
 
 /** One line of a diff: what it is, its number in the old and the new file (null on the side it is not on), and its text without the sign. */
 export interface ReviewLine {
@@ -1998,6 +2006,10 @@ export interface ReviewLine {
 export interface ReviewHunk {
   /** The `@@ -a,b +c,d @@` line. */
   header: string;
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
   lines: ReviewLine[];
 }
 export interface ReviewFileDiff {
@@ -2007,54 +2019,69 @@ export interface ReviewFileDiff {
   binary: boolean;
   hunks: ReviewHunk[];
 }
+/** Where a note is in the diff now: exact (same line, same text), moved (its text is at another number on that side), outdated (not found), unknown (a diff cut short did not reach it). */
+export interface ReviewPlace {
+  state: 'exact' | 'moved' | 'outdated' | 'unknown';
+  /** The line to draw it on: the note's own, or where its text moved to. */
+  line: number;
+}
 /** One note on a line of an agent's diff, as the page and the tools get it. */
 export interface ReviewNote {
-  /** n1, n2, ...: never reused for one agent. */
+  /** rn1, rn2, ...: never reused. */
   id: string;
-  file: string;
+  /** The reviewed console. */
+  agent: string;
+  path: string;
   side: ReviewSide;
   line: number;
-  /** One line. */
-  summary: string;
-  /** Why, in more words; may be absent. */
-  rationale?: string;
+  /** The text of the line when the note was made (at most REVIEW_TEXT_MAX_CHARS), copied by the server from the diff. */
+  text: string;
+  body: string;
+  /** Absent on a reply. */
+  tone?: ReviewTone;
   /** "user" (the Director) or the name of the agent that wrote it. */
   author: string;
-  tone: ReviewTone;
+  replyTo?: string;
   status: ReviewStatus;
-  /** The id of the note this answers: a reply sits on the line of its parent. */
-  replyTo: string | null;
-  at: number;
-  /** When the Director's SEND NOTES carried it to the author, or null. */
-  sentAt: number | null;
-  /** The line is not in the diff any more, or its text changed since the note was made. The note is kept. */
-  outdated: boolean;
+  createdAt: number;
+  updatedAt: number;
+  place: ReviewPlace;
 }
-/** What GET /api/agents/<name>/review answers: the diff against the last commit, split into files and hunks, and the notes. */
+export interface ReviewVerdict {
+  verdict: ReviewVerdictKind;
+  at: number;
+  /** A hash of the diff that was judged: when the diff changes the verdict is of an older diff. */
+  diffHash: string;
+  by: 'user';
+}
+/** What GET /api/agents/<name>/review answers: the diff against the last commit, the notes (open first) and the verdict. */
 export interface ReviewView {
-  /** False when the folder is not a git repository (then `reason` says why); the other fields are empty. */
+  /** False when the folder is not a git repository (then `reason` says why); the files are empty. */
   repo: boolean;
   reason?: string;
   files: ReviewFileDiff[];
   truncated: boolean;
+  diffHash: string;
   notes: ReviewNote[];
-  /** Agents the Director asked to review this diff; they may read it and write notes on it. */
-  reviewers: string[];
+  verdict: ReviewVerdict | null;
+  /** The verdict was given on another diff than the one shown. */
+  stale: boolean;
+  /** Agents the Director asked to review this diff and that have not sent their notes yet. */
+  asked: string[];
 }
-/** POST /api/agents/<name>/review/notes (the Director) and one item of review_note. A reply names `replyTo` and takes the file, side and line of its parent. */
+/** POST /api/agents/<name>/review/notes (the Director) and one item of review_note. A reply names `replyTo` and takes the place of its parent. */
 export interface ReviewNoteRequest {
-  file?: string;
+  path?: string;
   side?: ReviewSide;
   line?: number;
-  summary: string;
-  rationale?: string;
+  body: string;
   tone?: ReviewTone;
   replyTo?: string;
 }
-/** What the Director's three actions did: how many notes went, and the id of the message. */
+/** What a verdict or an ask did: the id of the message, and for a verdict how many notes it carried. */
 export interface ReviewSent {
-  sent: number;
   message: string;
+  notes: number;
 }
 export interface RecorderCommitRequest {
   message: string;

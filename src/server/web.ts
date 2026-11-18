@@ -151,7 +151,7 @@ export interface WebOptions {
   worktrees?: { has(name: string): boolean; status(name: string): Promise<WorktreeStatus>; discard(name: string): Promise<WorktreeRemoval> };
   recorder?: Recorder;
   /** Post-Flight Review; absent in tests that do not need it (the routes answer 404 and the two review tools say it is not available). The page asks again; no frame. */
-  review?: Pick<Review, 'view' | 'addNote' | 'addNotes' | 'update' | 'remove' | 'send' | 'walkthrough' | 'peer'>;
+  review?: Pick<Review, 'view' | 'read' | 'addNote' | 'addNotes' | 'update' | 'remove' | 'verdict' | 'ask'>;
   /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
@@ -717,18 +717,14 @@ export function createWebServer(options: WebOptions): WebServer {
           },
         };
       }
-      if (s.length === 5 && (s[4] === 'send' || s[4] === 'walkthrough' || s[4] === 'peer')) {
+      if (s.length === 5 && (s[4] === 'verdict' || s[4] === 'ask')) {
         return {
           allow: ['POST'],
           run: async (req, res) => {
             const name = agentName(res, s[2]);
             if (name === null) return;
-            if (s[4] === 'peer') {
-              const body = await jsonObject(req, res);
-              if (body) sendJson(res, 200, await review.peer(name, body.reviewer));
-              return;
-            }
-            sendJson(res, 200, await (s[4] === 'send' ? review.send(name) : review.walkthrough(name)));
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await (s[4] === 'verdict' ? review.verdict(name, body) : review.ask(name, body)));
           },
         };
       }

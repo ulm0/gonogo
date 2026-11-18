@@ -128,3 +128,18 @@ notes on commits other than the working diff.
 ### Open questions for the Director
 (1) Is the soft gate enough, or should REQUEST CHANGES also move the agent's `review` tasks to `doing`? (2) Is the peer-request
 permission acceptable, or should any agent be allowed to read any diff? (3) Keep `addressed` as a status, or only open/resolved?
+
+## 5. As built (2026-11-18)
+
+Built from section 4 with the Director's answers (soft gate only, a peer reads only on request, `addressed` kept). Where the build chose or differs:
+
+- **File.** `<home>/reviews.json` `{ version: 1, seq, notes, verdicts, requests }`; a test checks that nothing is written under `agents/`. `requests` holds the pending peer requests (`{ agent, reviewer, at }`).
+- **Walkthrough notes.** A note the reviewed agent writes on its own diff (not a reply) is stored `addressed`: it waits for nobody, so it is not in the mail of REQUEST CHANGES.
+- **A reply** is flattened to the root of its thread (a reply to a reply has the root as `replyTo`). A reply has no tone: a tone on a reply is 400.
+- **`locate`** compares the text with all whitespace squeezed, so a re-indented line stays `exact` (or `moved`); a diff cut at the cap says `unknown` for a line it does not reach, not `outdated`. `place` comes with every note.
+- **Peer right.** Pending until the peer sends a `review_note` call, or 24 hours; a peer whose message was refused gets none. Another agent's diff without a request is `forbidden` with the reason.
+- **REQUEST CHANGES** with no open note is a 409 (`no note is open`): there is nothing to carry. APPROVE and REQUEST CHANGES both mail the author; the verdict is stored only when the mail was accepted.
+- **Soft gate.** COMMIT in the Recorder reads the review first; it asks when a root note is open or the last verdict is not an approval of this diff. A review that never started asks nothing. The text says it is a question, not a lock.
+- **Page.** Click a line or `+`; `c` on a focused line; `n` and `p` walk through the notes; filter all, mine, agents, open; an OUTDATED group with the old place and text; the verdict line with "an older diff". On a phone the `+` key of each line is the line picker; there is no range selection. The API takes `body` in a PATCH; the page has no edit key.
+- **Downlink** event `review` for any agent that adds notes (`ben added 2 review notes on ana`, `ana added 1 review note on its own diff`). Black Box lines: ids, names and counts only (tested).
+- **Not seen in a browser** at the time of writing; the parser, the store, the routes, the tools and the page's logic are tested.

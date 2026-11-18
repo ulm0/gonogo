@@ -11,6 +11,65 @@
   gap: 8px;
 }
 
+.rv-verdict {
+  margin: 0;
+  font-weight: 600;
+}
+
+.rv-verdict[data-stale] {
+  color: var(--amber, inherit);
+}
+
+.rv-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-list-head .label {
+  flex: 1 1 100px;
+  margin: 0;
+}
+
+.rv-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rv-list li[data-current] {
+  outline: 1px solid var(--edge);
+  outline-offset: 2px;
+}
+
+.rv-lost {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px dashed var(--edge);
+  border-radius: 4px;
+}
+
+.rv-lost .label,
+.rv-lost .hint {
+  margin: 0;
+}
+
+.rv-lost-place {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.rv-lost .rv-thread {
+  margin-left: 0;
+}
+
+.rv-line {
+  cursor: pointer;
+}
+
 .rv-peer {
   flex: 0 1 220px;
   min-width: 0;
@@ -147,8 +206,12 @@
   margin-left: 16px;
 }
 
-.rv-note[data-resolved] {
+.rv-note[data-status='resolved'] {
   opacity: 0.7;
+}
+
+.rv-note[data-status='addressed'] {
+  border-left-style: dashed;
 }
 
 .rv-note-top,
@@ -200,4 +263,22 @@
   .rv-line {
     grid-template-columns: 3ch 3ch minmax(0, 1fr) 44px;
   }
+}
+
+/* the soft gate of COMMIT */
+.rc-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+
+.rc-gate p {
+  margin: 0;
+}
+
+.rc-gate-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

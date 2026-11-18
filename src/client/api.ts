@@ -65,6 +65,8 @@ import type {
   ReviewNote,
   ReviewNoteRequest,
   ReviewSent,
+  ReviewStatus,
+  ReviewVerdictKind,
   ReviewView,
   UserMessageRequest,
   WorktreeStatus,
@@ -644,7 +646,7 @@ export async function reviewAddNote(agent: string, request: ReviewNoteRequest): 
   return understood(typeof asRecord(value)?.id === 'string', value) as ReviewNote;
 }
 
-export async function reviewSetStatus(agent: string, id: string, status: 'open' | 'resolved'): Promise<ReviewNote> {
+export async function reviewSetStatus(agent: string, id: string, status: ReviewStatus): Promise<ReviewNote> {
   const value = await call('PATCH', `${agentPath(agent)}/review/notes/${encodeURIComponent(id)}`, { status });
   return understood(typeof asRecord(value)?.id === 'string', value) as ReviewNote;
 }
@@ -653,14 +655,15 @@ export async function reviewRemoveNote(agent: string, id: string): Promise<void>
   await call('DELETE', `${agentPath(agent)}/review/notes/${encodeURIComponent(id)}`);
 }
 
-/** SEND NOTES, ASK WALKTHROUGH and PEER REVIEW: each is one message from the Director. */
-export async function reviewAct(agent: string, action: 'send' | 'walkthrough'): Promise<ReviewSent> {
-  const value = await call('POST', `${agentPath(agent)}/review/${action}`);
+/** APPROVE, or REQUEST CHANGES: the open notes go to the agent as one message. */
+export async function reviewVerdict(agent: string, verdict: ReviewVerdictKind): Promise<ReviewSent> {
+  const value = await call('POST', `${agentPath(agent)}/review/verdict`, { verdict });
   return understood(typeof asRecord(value)?.message === 'string', value) as ReviewSent;
 }
 
-export async function reviewPeer(agent: string, reviewer: string): Promise<ReviewSent> {
-  const value = await call('POST', `${agentPath(agent)}/review/peer`, { reviewer });
+/** ASK WALKTHROUGH (the author explains its diff) or PEER REVIEW (`reviewer` is asked to review it). */
+export async function reviewAsk(agent: string, request: { kind: 'walkthrough' } | { kind: 'peer'; reviewer: string }): Promise<ReviewSent> {
+  const value = await call('POST', `${agentPath(agent)}/review/ask`, request);
   return understood(typeof asRecord(value)?.message === 'string', value) as ReviewSent;
 }
 

@@ -8,7 +8,7 @@
  * title, a note, a schedule's text, a secret or a path, so that the record holds nothing a reader of the repository should not see.
  */
 import type { AuditKind, AuditRecord } from '../shared/protocol.js';
-import { MISSION_STATUSES, TASK_STATUSES } from '../shared/protocol.js';
+import { MISSION_STATUSES, REVIEW_STATUSES, TASK_STATUSES } from '../shared/protocol.js';
 import { isRecord } from './hooks.js';
 
 /** A name or an id: letters, digits, dots, dashes, underscores and an at sign, at most 64. */
@@ -98,15 +98,21 @@ export const MISSIONS_AUDIT: Table = {
   remove: ['plan', (args) => `Director removed mission ${plain(args[0]) ?? '?'}${args[1] === true ? ' and unlinked its tasks' : ''}`],
 };
 
-/** Post-Flight Review: who added notes to whose diff and what the Director did with them: ids, names and counts, never a summary, a reason, a path or a line. */
+/** Post-Flight Review: who added notes to whose diff and what the Director did with them: ids, names and counts, never a body, a path or a line. */
 export const REVIEW_AUDIT: Table = {
   addNote: ['plan', (args) => `Director added a review note on ${plain(args[1]) ?? '?'}`],
-  addNotes: ['plan', (args, result) => `${actorName(args[0])} added ${isRecord(result) && Array.isArray(result.added) ? result.added.length : 0} review notes on ${plain(args[1]) ?? '?'}`],
-  update: ['plan', (args) => `Director set review note ${plain(args[1]) ?? '?'} of ${plain(args[0]) ?? '?'} to ${isRecord(args[2]) && args[2].status === 'resolved' ? 'resolved' : 'open'}`],
-  remove: ['plan', (args) => `Director removed review note ${plain(args[1]) ?? '?'} of ${plain(args[0]) ?? '?'}`],
-  send: ['plan', (args, result) => `Director sent ${isRecord(result) && typeof result.sent === 'number' ? result.sent : 0} review notes to ${plain(args[0]) ?? '?'}`],
-  walkthrough: ['plan', (args) => `Director asked ${plain(args[0]) ?? '?'} for a walkthrough of its diff`],
-  peer: ['plan', (args) => `Director asked ${plain(args[1]) ?? '?'} to review the diff of ${plain(args[0]) ?? '?'}`],
+  addNotes: ['plan', (args, result) => `${actorName(args[0])} added ${Array.isArray(result) ? result.length : 0} review notes on ${plain(args[1]) ?? '?'}`],
+  update: [
+    'plan',
+    (args) => {
+      const input = isRecord(args[2]) ? args[2] : {};
+      const status = (REVIEW_STATUSES as readonly unknown[]).includes(input.status) ? ` to ${String(input.status)}` : '';
+      return `Director changed review note ${plain(args[1]) ?? '?'} of ${plain(args[0]) ?? '?'}${status}${input.body !== undefined ? ' (edited)' : ''}`;
+    },
+  ],
+  remove: ['plan', (args) => `Director deleted review note ${plain(args[1]) ?? '?'} of ${plain(args[0]) ?? '?'}`],
+  verdict: ['plan', (args, result) => `Director gave a verdict on ${plain(args[0]) ?? '?'}: ${isRecord(result) && isRecord(result.verdict) && result.verdict.verdict === 'approved' ? 'approved' : 'changes requested'}`],
+  ask: ['plan', (args) => (isRecord(args[1]) && args[1].kind === 'peer' ? `Director asked ${plain(args[1].reviewer) ?? '?'} to review the diff of ${plain(args[0]) ?? '?'}` : `Director asked ${plain(args[0]) ?? '?'} for a walkthrough of its diff`)],
 };
 
 /** Flight Plan: who made or changed a task, and what kind of change (the status and the assignee, never a title, detail or note). */

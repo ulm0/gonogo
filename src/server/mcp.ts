@@ -19,9 +19,8 @@ import {
   TASK_DETAIL_MAX_CHARS,
   MISSION_GOAL_MAX_CHARS,
   REVIEW_BATCH_MAX,
-  REVIEW_RATIONALE_MAX_CHARS,
+  REVIEW_BODY_MAX_CHARS,
   REVIEW_SIDES,
-  REVIEW_SUMMARY_MAX_CHARS,
   REVIEW_TONES,
   MISSION_NAME_MAX_CHARS,
   MISSION_NOTE_MAX_CHARS,
@@ -50,7 +49,7 @@ export interface McpDeps {
   /** Missions; absent in tests that do not need it (the three mission tools then answer that it is not available). */
   missions?: Pick<Missions, 'list' | 'create' | 'update'>;
   /** Post-Flight Review; absent in tests that do not need it (the two review tools then answer that it is not available). */
-  review?: Pick<Review, 'view' | 'addNotes'>;
+  review?: Pick<Review, 'read' | 'addNotes'>;
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update'>;
   /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
   board?: Pick<Board, 'get' | 'write'>;
@@ -252,36 +251,34 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
 
     server.registerTool(
       'review_read',
-      { description: MCP_DESCRIPTIONS.review_read, inputSchema: { agent: z.string().min(1).max(AGENT_NAME_MAX) } },
+      {
+        description: MCP_DESCRIPTIONS.review_read,
+        inputSchema: { agent: z.string().min(1).max(AGENT_NAME_MAX).optional(), patch: z.boolean().optional(), path: z.string().min(1).max(1000).optional() },
+      },
       (args) =>
         guarded('review_read', async () => {
           if (!review) return noReview();
-          const view = await review.view(args.agent, asAgent);
-          // the same cap as read_messages: the files go in order until the size is reached; the first one always goes
-          const files: unknown[] = [];
-          let chars = 0;
-          for (const f of view.files) {
-            const compact = {
-              path: f.path,
-              status: f.status,
-              ...(f.oldPath === undefined ? {} : { from: f.oldPath }),
-              ...(f.binary ? { binary: true } : {}),
-              hunks: f.hunks.map((h) => ({ h: h.header, l: h.lines.map((l) => [l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' ', l.old, l.new, l.text]) })),
-            };
-            chars += JSON.stringify(compact).length;
-            if (files.length > 0 && chars > READ_MAX_CHARS) break;
-            files.push(compact);
-          }
+          // the agent is the caller's own when it is left out
+          const name = args.agent ?? agent;
+          const out = await review.read(name, asAgent, { patch: args.patch === true, path: args.path });
+          const view = out.view;
+          const files = view.files.map((f) => ({
+            path: f.path,
+            status: f.status,
+            ...(f.oldPath === undefined ? {} : { from: f.oldPath }),
+            ...(f.binary ? { binary: true } : {}),
+            hunks: f.hunks.map((h) => ({ h: h.header, old: [h.oldStart, h.oldCount], new: [h.newStart, h.newCount] })),
+          }));
           return toolResult(
             {
-              agent: args.agent,
+              agent: name,
               repo: view.repo,
               ...(view.reason === undefined ? {} : { reason: view.reason }),
               truncated: view.truncated,
               files,
-              ...(files.length < view.files.length ? { remaining: view.files.length - files.length, note: 'more files changed than fit: ask again after the notes on these' } : {}),
-              notes: view.notes,
-              reviewers: view.reviewers,
+              notes: view.notes.map((n) => ({ id: n.id, path: n.path, side: n.side, line: n.place.line, place: n.place.state, ...(n.tone === undefined ? {} : { tone: n.tone }), author: n.author, status: n.status, ...(n.replyTo === undefined ? {} : { replyTo: n.replyTo }), text: n.text, body: n.body })),
+              verdict: view.verdict === null ? null : { verdict: view.verdict.verdict, at: view.verdict.at, current: !view.stale },
+              ...(out.patch === undefined ? {} : { patch: out.patch, ...(out.patchTruncated === true ? { patchTruncated: true } : {}) }),
             },
             false,
           );
@@ -293,15 +290,14 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
       {
         description: MCP_DESCRIPTIONS.review_note,
         inputSchema: {
-          agent: z.string().min(1).max(AGENT_NAME_MAX),
+          agent: z.string().min(1).max(AGENT_NAME_MAX).optional(),
           notes: z
             .array(
               z.strictObject({
-                file: z.string().max(1000).optional(),
+                path: z.string().max(1000).optional(),
                 side: z.enum(REVIEW_SIDES).optional(),
                 line: z.number().int().min(1).optional(),
-                summary: z.string().min(1).max(REVIEW_SUMMARY_MAX_CHARS),
-                rationale: z.string().max(REVIEW_RATIONALE_MAX_CHARS).optional(),
+                body: z.string().min(1).max(REVIEW_BODY_MAX_CHARS),
                 tone: z.enum(REVIEW_TONES).optional(),
                 replyTo: z.string().max(16).optional(),
               }),
@@ -313,9 +309,9 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
       (args) =>
         guarded('review_note', async () => {
           if (!review) return noReview();
-          // the author of a note is the caller's own name, never a field of the call
-          const result = await review.addNotes(asAgent, args.agent, args.notes);
-          return toolResult({ ok: true, added: result.added.map((n) => n.id), rejected: result.rejected }, false);
+          // the author of a note is the caller's own name, never a field of the call; the agent is the caller's own when it is left out
+          const added = await review.addNotes(asAgent, args.agent ?? agent, args.notes);
+          return toolResult({ ok: true, added: added.map((n) => n.id) }, false);
         }),
     );
 

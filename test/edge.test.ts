@@ -7459,9 +7459,10 @@ describe('missions', () => {
 });
 
 describe('post-flight review', () => {
-  const noteView = { id: 'n1', file: 'a.ts', side: 'new', line: 3, summary: 'Why?', author: 'user', tone: 'info', status: 'open', replyTo: null, at: 1, sentAt: null, outdated: false };
-  const file = { path: 'a.ts', status: 'modified', binary: false, hunks: [{ header: '@@ -1 +1,2 @@', lines: [{ kind: 'ctx', old: 1, new: 1, text: 'a' }, { kind: 'del', old: 2, new: null, text: 'b' }, { kind: 'add', old: null, new: 2, text: 'c' }] }] };
-  const view = { repo: true, files: [file], truncated: false, notes: [noteView], reviewers: ['ben'] };
+  const place = { state: 'exact', line: 3 };
+  const noteView = { id: 'rn1', agent: 'ana', path: 'a.ts', side: 'new', line: 3, text: 'c', body: 'Why?', tone: 'info', author: 'user', status: 'open', createdAt: 1, updatedAt: 1, place };
+  const file = { path: 'a.ts', status: 'modified', binary: false, hunks: [{ header: '@@ -1 +1,2 @@', oldStart: 1, oldCount: 1, newStart: 1, newCount: 2, lines: [{ kind: 'ctx', old: 1, new: 1, text: 'a' }, { kind: 'add', old: null, new: 2, text: 'c' }] }] };
+  const view = { repo: true, files: [file], truncated: false, diffHash: 'abc', notes: [noteView, { ...noteView, id: 'rn2', replyTo: 'rn1', tone: undefined, author: 'ana' }], verdict: { verdict: 'changes', at: 1, diffHash: 'abc', by: 'user' }, stale: false, asked: ['ben'] };
   /** A review that records what the routes and the tools ask of it, with the actor. */
   function fakeReview(): { calls: unknown[][]; review: NonNullable<WebOptions['review']> } {
     const calls: unknown[][] = [];
@@ -7471,22 +7472,27 @@ describe('post-flight review', () => {
     return {
       calls,
       review: {
-        view: async (name, as) => {
-          calls.push(['view', name, as]);
+        view: async (name) => {
+          calls.push(['view', name]);
           known(name);
-          if (as !== undefined && as.kind === 'agent' && as.name === 'cat') throw new FakeHubError('forbidden', 'only the author, or an agent the Director asked to review this diff, may read it');
           return view as never;
+        },
+        read: async (name, as, opts) => {
+          calls.push(['read', name, as, opts]);
+          known(name);
+          if (as.kind === 'agent' && as.name === 'cat') throw new FakeHubError('forbidden', 'only the author, or an agent the Director asked to review this diff, may do that');
+          return { view: view as never, ...(opts?.patch === true ? { patch: 'diff --git a/a.ts b/a.ts\n', patchTruncated: true } : {}) };
         },
         addNote: async (actor, name, input) => {
           calls.push(['addNote', actor, name, input]);
           known(name);
-          if ((input as { summary?: unknown }).summary === 'bad') throw new FakeHubError('bad_request', 'summary must be 1 to 200 characters on one line', 'summary');
+          if ((input as { body?: unknown }).body === 'bad') throw new FakeHubError('bad_request', 'body must be text of 1 to 2000 characters', 'body');
           return noteView as never;
         },
         addNotes: async (actor, name, inputs) => {
           calls.push(['addNotes', actor, name, inputs]);
           known(name);
-          return { added: [noteView, { ...noteView, id: 'n2' }], rejected: [{ index: 1, error: 'x' }] } as never;
+          return [noteView, { ...noteView, id: 'rn2' }] as never;
         },
         update: async (name, id, input) => {
           calls.push(['update', name, id, input]);
@@ -7497,112 +7503,110 @@ describe('post-flight review', () => {
           calls.push(['remove', name, id]);
           known(name);
         },
-        send: async (name) => {
-          calls.push(['send', name]);
+        verdict: async (name, input) => {
+          calls.push(['verdict', name, input]);
           known(name);
-          return { sent: 2, message: 'm5' };
+          return { message: 'm5', notes: 2, verdict: view.verdict } as never;
         },
-        walkthrough: async (name) => {
-          calls.push(['walkthrough', name]);
+        ask: async (name, input) => {
+          calls.push(['ask', name, input]);
           known(name);
-          return { sent: 0, message: 'm6' };
-        },
-        peer: async (name, reviewer) => {
-          calls.push(['peer', name, reviewer]);
-          known(name);
-          return { sent: 0, message: 'm7' };
+          return { message: 'm6', notes: 0 };
         },
       },
     };
   }
 
-  it('serves the diff and the notes, and takes, resolves and removes notes as the Director', async () => {
+  it('serves the diff, the notes and the verdict, and takes, resolves and deletes notes as the Director', async () => {
     const { calls, review } = fakeReview();
     const { port } = await startWeb({ review });
     expect((await api(port, 'GET', '/api/agents/ana/review')).json()).toEqual(view);
-    const made = await api(port, 'POST', '/api/agents/ana/review/notes', { file: 'a.ts', side: 'new', line: 3, summary: 'Why?', author: 'ben' });
+    const made = await api(port, 'POST', '/api/agents/ana/review/notes', { path: 'a.ts', side: 'new', line: 3, body: 'Why?', author: 'ben' });
     expect([made.status, made.json()]).toEqual([201, noteView]);
-    expect((await api(port, 'POST', '/api/agents/ana/review/notes', { summary: 'bad' })).json()).toEqual({ error: 'summary must be 1 to 200 characters on one line', code: 'bad_request', field: 'summary' });
-    expect((await api(port, 'PATCH', '/api/agents/ana/review/notes/n1', { status: 'resolved' })).json()).toMatchObject({ status: 'resolved' });
-    expect((await api(port, 'DELETE', '/api/agents/ana/review/notes/n1')).status).toBe(204);
-    expect(calls).toContainEqual(['addNote', { kind: 'user' }, 'ana', { file: 'a.ts', side: 'new', line: 3, summary: 'Why?', author: 'ben' }]);
-    expect(calls).toContainEqual(['update', 'ana', 'n1', { status: 'resolved' }]);
-    expect(calls).toContainEqual(['remove', 'ana', 'n1']);
+    expect((await api(port, 'POST', '/api/agents/ana/review/notes', { body: 'bad' })).json()).toEqual({ error: 'body must be text of 1 to 2000 characters', code: 'bad_request', field: 'body' });
+    expect((await api(port, 'PATCH', '/api/agents/ana/review/notes/rn1', { status: 'resolved' })).json()).toMatchObject({ status: 'resolved' });
+    expect((await api(port, 'DELETE', '/api/agents/ana/review/notes/rn1')).status).toBe(204);
+    expect(calls).toContainEqual(['addNote', { kind: 'user' }, 'ana', { path: 'a.ts', side: 'new', line: 3, body: 'Why?', author: 'ben' }]);
+    expect(calls).toContainEqual(['update', 'ana', 'rn1', { status: 'resolved' }]);
+    expect(calls).toContainEqual(['remove', 'ana', 'rn1']);
   });
 
-  it('sends the notes, asks for a walkthrough and a peer review, and answers 404 for an unknown agent', async () => {
+  it('gives a verdict and asks for a walkthrough or a peer review, and answers 404 for an unknown agent', async () => {
     const { calls, review } = fakeReview();
     const { port } = await startWeb({ review });
-    expect((await api(port, 'POST', '/api/agents/ana/review/send')).json()).toEqual({ sent: 2, message: 'm5' });
-    expect((await api(port, 'POST', '/api/agents/ana/review/walkthrough')).json()).toEqual({ sent: 0, message: 'm6' });
-    expect((await api(port, 'POST', '/api/agents/ana/review/peer', { reviewer: 'ben' })).json()).toEqual({ sent: 0, message: 'm7' });
-    expect(calls.filter((c) => c[0] !== 'view')).toEqual([['send', 'ana'], ['walkthrough', 'ana'], ['peer', 'ana', 'ben']]);
+    expect((await api(port, 'POST', '/api/agents/ana/review/verdict', { verdict: 'changes' })).json()).toMatchObject({ message: 'm5', notes: 2 });
+    expect((await api(port, 'POST', '/api/agents/ana/review/ask', { kind: 'walkthrough' })).json()).toEqual({ message: 'm6', notes: 0 });
+    expect((await api(port, 'POST', '/api/agents/ana/review/ask', { kind: 'peer', reviewer: 'ben' })).json()).toEqual({ message: 'm6', notes: 0 });
+    expect(calls.filter((c) => c[0] === 'verdict' || c[0] === 'ask')).toEqual([['verdict', 'ana', { verdict: 'changes' }], ['ask', 'ana', { kind: 'walkthrough' }], ['ask', 'ana', { kind: 'peer', reviewer: 'ben' }]]);
     expect((await api(port, 'GET', '/api/agents/zed/review')).status).toBe(404);
-    expect((await api(port, 'POST', '/api/agents/zed/review/send')).status).toBe(404);
+    expect((await api(port, 'POST', '/api/agents/zed/review/verdict', { verdict: 'approved' })).status).toBe(404);
+    expect((await api(port, 'POST', '/api/agents/ana/review/verdict', [1])).status).toBe(400);
   });
 
   it('wants a browser token, allows only the right methods, and is 404 without a review', async () => {
     const { review } = fakeReview();
     const { port } = await startWeb({ review });
     expect((await api(port, 'GET', '/api/agents/ana/review', undefined, ANA_TOKEN)).status).toBe(401);
-    expect((await api(port, 'POST', '/api/agents/ana/review/send', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await api(port, 'POST', '/api/agents/ana/review/verdict', { verdict: 'approved' }, ANA_TOKEN)).status).toBe(401);
     expect((await api(port, 'POST', '/api/agents/ana/review')).status).toBe(405);
-    expect((await api(port, 'GET', '/api/agents/ana/review/send')).status).toBe(405);
+    expect((await api(port, 'GET', '/api/agents/ana/review/ask')).status).toBe(405);
     expect((await api(port, 'PUT', '/api/agents/ana/review/notes', {})).status).toBe(405);
-    expect((await api(port, 'GET', '/api/agents/ana/review/other')).status).toBe(404);
-    expect((await api(port, 'GET', '/api/agents/ana/review/notes/n1/more')).status).toBe(404);
+    expect((await api(port, 'GET', '/api/agents/ana/review/send')).status).toBe(404);
+    expect((await api(port, 'GET', '/api/agents/ana/review/notes/rn1/more')).status).toBe(404);
     const none = await startWeb();
     expect((await api(none.port, 'GET', '/api/agents/ana/review')).status).toBe(404);
   });
 
-  it('gives an agent review_read in a compact form, as the agent of its token', async () => {
+  it('gives an agent review_read: its own diff by default, the structure first and the patch only on request', async () => {
     const { calls, review } = fakeReview();
     const { port } = await startWeb({ review });
     const ana = await connectMcp(port, ANA_TOKEN);
-    const out = toolOutcome(await ana.callTool({ name: 'review_read', arguments: { agent: 'ana' } }));
+    const out = toolOutcome(await ana.callTool({ name: 'review_read', arguments: {} }));
     expect(out.isError).toBe(false);
     expect(out.json).toMatchObject({
       agent: 'ana',
       repo: true,
       truncated: false,
-      files: [{ path: 'a.ts', status: 'modified', hunks: [{ h: '@@ -1 +1,2 @@', l: [[' ', 1, 1, 'a'], ['-', 2, null, 'b'], ['+', null, 2, 'c']] }] }],
-      notes: [{ id: 'n1', file: 'a.ts', line: 3 }],
-      reviewers: ['ben'],
+      files: [{ path: 'a.ts', status: 'modified', hunks: [{ h: '@@ -1 +1,2 @@', old: [1, 1], new: [1, 2] }] }],
+      notes: [{ id: 'rn1', path: 'a.ts', line: 3, place: 'exact', tone: 'info', author: 'user', status: 'open', body: 'Why?' }, { id: 'rn2', replyTo: 'rn1', author: 'ana' }],
+      verdict: { verdict: 'changes', current: true },
     });
-    expect(calls[0]).toEqual(['view', 'ana', { kind: 'agent', name: 'ana' }]);
+    expect(JSON.stringify(out.json)).not.toContain('"patch"');
+    expect(calls[0]).toEqual(['read', 'ana', { kind: 'agent', name: 'ana' }, { patch: false, path: undefined }]);
+    const withPatch = toolOutcome(await ana.callTool({ name: 'review_read', arguments: { agent: 'ana', patch: true, path: 'a.ts' } }));
+    expect(withPatch.json).toMatchObject({ patch: 'diff --git a/a.ts b/a.ts\n', patchTruncated: true });
+    expect(calls.at(-1)).toEqual(['read', 'ana', { kind: 'agent', name: 'ana' }, { patch: true, path: 'a.ts' }]);
     expect(toolOutcome(await ana.callTool({ name: 'review_read', arguments: { agent: 'zed' } })).isError).toBe(true);
   });
 
-  it('cuts review_read at the size of read_messages and says how many files are left', async () => {
-    const big = { ...view, files: Array.from({ length: 5 }, (_, i) => ({ ...file, path: `f${i}.ts`, hunks: [{ header: '@@', lines: Array.from({ length: 700 }, () => ({ kind: 'add', old: null, new: 1, text: 'x'.repeat(20) })) }] })) };
+  it('answers forbidden to an agent that was not asked, with the reason', async () => {
     const { review } = fakeReview();
-    const { port } = await startWeb({ review: { ...review, view: async () => big as never } });
-    const out = toolOutcome(await (await connectMcp(port, ANA_TOKEN)).callTool({ name: 'review_read', arguments: { agent: 'ana' } }));
-    const json = out.json as { files: unknown[]; remaining?: number };
-    expect(json.files.length).toBeGreaterThanOrEqual(1);
-    expect(json.files.length).toBeLessThan(5);
-    expect(json.remaining).toBe(5 - json.files.length);
+    const { port } = await startWeb({ review: { ...review, read: async () => Promise.reject(new FakeHubError('forbidden', 'only the author, or an agent the Director asked to review this diff, may do that')) } });
+    const out = toolOutcome(await (await connectMcp(port, BEN_TOKEN)).callTool({ name: 'review_read', arguments: { agent: 'ana' } }));
+    expect(out.isError).toBe(true);
+    expect(out.text).toContain('only the author');
   });
 
-  it('gives an agent review_note, authored by the agent of its token whatever the call says, and refuses a field it does not have', async () => {
+  it('gives an agent review_note, authored by the agent of its token whatever the call says, on its own diff by default, and refuses a field it does not have', async () => {
     const { calls, review } = fakeReview();
     const { port } = await startWeb({ review });
     const ben = await connectMcp(port, BEN_TOKEN);
-    const notes = [{ file: 'a.ts', side: 'new', line: 3, summary: 'Why?', tone: 'warning' }, { replyTo: 'n1', summary: 'ok' }];
+    const notes = [{ path: 'a.ts', side: 'new', line: 3, body: 'Why?', tone: 'warning' }, { replyTo: 'rn1', body: 'ok' }];
     const out = toolOutcome(await ben.callTool({ name: 'review_note', arguments: { agent: 'ana', notes } }));
-    expect(out).toMatchObject({ isError: false, json: { ok: true, added: ['n1', 'n2'], rejected: [{ index: 1, error: 'x' }] } });
+    expect(out).toMatchObject({ isError: false, json: { ok: true, added: ['rn1', 'rn2'] } });
     expect(calls.at(-1)).toEqual(['addNotes', { kind: 'agent', name: 'ben' }, 'ana', notes]);
-    const forged = await ben.callTool({ name: 'review_note', arguments: { agent: 'ana', notes: [{ summary: 'x', author: 'user' }] } }).catch(() => ({ isError: true }));
+    await ben.callTool({ name: 'review_note', arguments: { notes: [{ replyTo: 'rn1', body: 'mine' }] } });
+    expect(calls.at(-1)).toEqual(['addNotes', { kind: 'agent', name: 'ben' }, 'ben', [{ replyTo: 'rn1', body: 'mine' }]]);
+    const forged = await ben.callTool({ name: 'review_note', arguments: { agent: 'ana', notes: [{ body: 'x', author: 'user' }] } }).catch(() => ({ isError: true }));
     expect(forged.isError).toBe(true);
-    const many = await ben.callTool({ name: 'review_note', arguments: { agent: 'ana', notes: Array.from({ length: 21 }, () => ({ summary: 'x' })) } }).catch(() => ({ isError: true }));
+    const many = await ben.callTool({ name: 'review_note', arguments: { agent: 'ana', notes: Array.from({ length: 21 }, () => ({ body: 'x' })) } }).catch(() => ({ isError: true }));
     expect(many.isError).toBe(true);
-    expect(toolOutcome(await ben.callTool({ name: 'review_read', arguments: { agent: 'cat' } })).isError).toBe(true);
   });
 
   it('answers that review is not available without it', async () => {
     const { port } = await startWeb();
     const ana = await connectMcp(port, ANA_TOKEN);
-    expect(toolOutcome(await ana.callTool({ name: 'review_read', arguments: { agent: 'ana' } }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"Post-Flight Review is not available"}' });
-    expect(toolOutcome(await ana.callTool({ name: 'review_note', arguments: { agent: 'ana', notes: [{ summary: 'x' }] } })).isError).toBe(true);
+    expect(toolOutcome(await ana.callTool({ name: 'review_read', arguments: {} }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"Post-Flight Review is not available"}' });
+    expect(toolOutcome(await ana.callTool({ name: 'review_note', arguments: { notes: [{ body: 'x' }] } })).isError).toBe(true);
   });
 });
