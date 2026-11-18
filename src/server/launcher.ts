@@ -661,11 +661,15 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort: agent.effort ?? options.defaultEffort?.(), toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
-      if (claudeArgs.includes('--effort') && !options.agentCmd?.length && (await knowsEffort(file as string, options.env ?? process.env)) === false) {
-        throw new Error(`${file} does not list --effort, so the effort of ${name} cannot be set: update claude, or clear the effort (its own or the room's)`);
+      // Effort: the console's own, else the room's. An old claude exits on an option it does not know: its own effort refuses the start (it asked for it), the room's is dropped with a warning (one setting must not stop every console). A Clean Room runs the image's claude, not the host's, so it is not asked.
+      let effort = agent.effort ?? options.defaultEffort?.();
+      if (effort && clean === null && !options.agentCmd?.length && (await knowsEffort(file as string, options.env ?? process.env)) === false) {
+        if (agent.effort) throw new Error(`${file} does not list --effort, so the effort of ${name} cannot be set: update claude, or clear the effort`);
+        log.warn(`${file} does not list --effort: the room's default effort is not passed to ${name}; update claude`);
+        effort = undefined;
       }
+      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const childEnv = buildChildEnv({ base: env, token, seed, keys });
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
       let spec: PreparedStart['spec'];

@@ -710,6 +710,16 @@ describe('end to end with the stand-in agent', () => {
     expect(everything).not.toContain(h.token);
   });
 
+  it('1b. a change of the room\'s defaults reaches an open page as a models frame', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    const page = await Client.open(h);
+    const from = page.mark();
+    expect((await api(h, 'PUT', '/api/models/effort', { effort: 'high' })).status).toBe(200);
+    const frame = await page.waitFrame((f) => f.t === 'models', 5000, 'the models frame', from);
+    expect(frame).toEqual({ t: 'models', models: { models: {}, positions: {}, effort: 'high' } });
+  });
+
   it('2. terminal: snapshot, binary frames, input, resize, size ownership', async () => {
     const h = await startServer();
     await waitState(h, 'flight', 'idle');

@@ -12,6 +12,7 @@ import { DetailChips } from '../src/client/DetailChips.js';
 import { effortOf, editRequest, hireRequest, initialValues } from '../src/client/form.js';
 import type { Values } from '../src/client/form.js';
 import { publishModelDefaults, resetModelDefaults } from '../src/client/models.js';
+import { nullLogger } from '../src/server/constants.js';
 import { createLauncher } from '../src/server/launcher.js';
 import { checkEngines, formatDoctor, knowsEffort } from '../src/server/providers.js';
 import { render } from '../src/server/tui-render.js';
@@ -167,6 +168,11 @@ describe('a claude that does not know --effort', () => {
     const l = createLauncher({ homeDir: join(dir, 'home'), hubUrl: () => 'http://127.0.0.1:1', seed: false, claudeBin: old, env: { PATH: dir, HOME: join(dir, 'user') } });
     const rec = (effort?: 'high') => ({ name: 'ana', role: 'r', dir: join(dir, 'work'), mode: 'default' as const, sessionId: '0b2f5c1e-6d3a-4f7e-9a1b-2c3d4e5f6a7b', desk: 1, boss: false, createdAt: 1, ...(effort ? { effort } : {}) });
     await expect(l.prepareStart(rec('high'), { generation: 1, flag: null })).rejects.toThrow(/does not list --effort, so the effort of ana cannot be set/);
+    // the room's effort is dropped with a warning, never a refusal: one setting must not stop every console
+    const warned: string[] = [];
+    const room = createLauncher({ homeDir: join(dir, 'home'), hubUrl: () => 'http://127.0.0.1:1', seed: false, claudeBin: old, env: { PATH: dir, HOME: join(dir, 'user') }, defaultEffort: () => 'high', log: { ...nullLogger, warn: (m: string) => void warned.push(m) } });
+    expect((await room.prepareStart(rec(), { generation: 3, flag: null })).spec.args).not.toContain('--effort');
+    expect(warned.join('\n')).toMatch(/room's default effort is not passed to ana/);
     expect((await l.prepareStart(rec(), { generation: 2, flag: null })).spec.args).not.toContain('--effort');
   });
 });

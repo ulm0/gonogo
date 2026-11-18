@@ -131,6 +131,11 @@ export function ModelDefaultsBlock(): ReactElement {
             <Pick label="Default engine" saved={defaults.engine ?? ''} empty="Claude Code" options={PROVIDERS.filter((p) => p !== 'custom' && p !== 'claude').map((p) => ({ value: p, text: providerInfo(p).label }))} set={(engine) => api.setDefaultEngine(engine as Provider | null)} onSaved={saved} />
             <Pick label="Claude Code effort" saved={defaults.effort ?? ''} empty="its own" options={EFFORTS.map((e) => ({ value: e, text: e }))} set={(effort) => api.setDefaultEffort(effort as Effort | null)} onSaved={saved} />
           </ul>
+          {defaults.engine !== undefined && (!providerInfo(defaults.engine).hooks || !providerInfo(defaults.engine).mcp) && (
+            <p className="hint">
+              {providerInfo(defaults.engine).label}: {[providerInfo(defaults.engine).hooks ? null : 'no Redline or Hold', providerInfo(defaults.engine).mcp ? null : 'no gonogo tools'].filter((x) => x !== null).join(', ')}.
+            </p>
+          )}
           <h3 className="label">MODEL BY ENGINE</h3>
         </>
       )}
