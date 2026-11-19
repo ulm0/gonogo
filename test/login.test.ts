@@ -11,6 +11,7 @@ import { authCommand, socketCall } from '../src/server/authcli.js';
 import { createTuiClient } from '../src/server/tui-client.js';
 import { localSocketOf } from '../src/server/tui-cli.js';
 import { startSupervisor } from '../src/server/supervisor.js';
+import { phone } from './push-phone.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
 
@@ -689,6 +690,73 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(closed).toBe(false);
     ws.close();
+  });
+
+  describe('push devices (docs/features/mobile.md)', () => {
+    const device = (): Record<string, unknown> => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/dev', keys: { p256dh: phone().p256dh, auth: phone().auth }, device: 'Phone' });
+    const stored = (): Array<{ session: string }> => (JSON.parse(readFileSync(join(home, 'push.json'), 'utf8')) as { devices: Array<{ session: string }> }).devices;
+
+    it('subscribe, step-up, revoke: the device followed the new session id and goes with it', async () => {
+      const { cookies, secret } = await withTotp();
+      const [h] = json(cookieHeader(cookies), {});
+      expect((await call('PUT', '/api/push/subscription', h, JSON.stringify(device()))).status).toBe(200);
+      expect(stored()).toHaveLength(1);
+      clock += 6 * 60_000;
+      await new Promise((r) => setTimeout(r, 1100));
+      clock += 31_000;
+      const done = await call('POST', '/api/auth/stepup', h, JSON.stringify({ password: PASSWORD, code: codeOf(secret) }));
+      expect(done.status).toBe(200);
+      const fresh = { ...cookies, 'gonogo-session': done.cookies['gonogo-session'] as string };
+      // the device is now the new session's: the list says it is this caller's
+      const view = JSON.parse((await call('GET', '/api/push', cookieHeader(fresh))).text) as { devices: Array<{ mine: boolean }> };
+      expect(view.devices).toMatchObject([{ mine: true }]);
+      // a logout ends the session, and the device goes with it
+      expect((await call('POST', '/api/auth/logout', { ...cookieHeader(fresh), ...origin() })).status).toBeLessThan(400);
+      await until(() => stored().length === 0);
+    });
+
+    it('sends what a room says on its pipe, as the supervisor, to a signed-in device: generic, with the room named, and nothing else the room prints', async () => {
+      const { addRoom } = await import('../src/server/rooms.js');
+      addRoom(home, 'team', 'Team B');
+      await boot();
+      const cookies = await setUp();
+      const p = phone();
+      const [h] = [{ ...cookieHeader(cookies), ...origin(), ...JSONH }];
+      expect((await call('PUT', '/api/push/subscription', h, JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/dev', keys: { p256dh: p.p256dh, auth: p.auth }, device: 'Phone' }))).status).toBe(200);
+      await sup.stop();
+      const sent: Buffer[] = [];
+      const fake = (async (_url: URL, init: RequestInit) => (sent.push(Buffer.from(init.body as Uint8Array)), new Response(null, { status: 201 }))) as unknown as typeof fetch;
+      const lines = [
+        'gonogo-push ' + JSON.stringify({ kind: 'permission', text: 'ana: Bash: rm -rf /' }),
+        'gonogo-push ' + JSON.stringify({ kind: 'nope', text: 'x' }),
+        'gonogo-push not json',
+        'gonogo-pushx ' + JSON.stringify({ kind: 'redline', text: 'x' }),
+        ' gonogo-push ' + JSON.stringify({ kind: 'redline', text: 'x' }),
+      ];
+      await boot({ fetch: fake, env: { PATH: process.env.PATH ?? '', FAKE_ROOM_PUSH: JSON.stringify(lines) } });
+      await until(() => sent.length >= 2);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(sent).toHaveLength(2);
+      const shown = sent.map((b) => JSON.parse(p.receive(b)) as Record<string, string>).sort((x, y) => (x.room ?? '').localeCompare(y.room ?? ''));
+      expect(shown).toEqual([
+        { title: 'gonogo', body: 'An agent needs you', tag: 'gonogo-main-permission', open: 'room', room: 'main' },
+        { title: 'gonogo, Team B', body: 'An agent needs you', tag: 'gonogo-team-permission', open: 'room', room: 'team' },
+      ]);
+    });
+
+    it('a device planted in push.json is gone after the load, and every device goes when the account is reset', async () => {
+      const { makeVapid } = await import('../src/server/push.js');
+      const planted = { id: 'p1', endpoint: 'https://fcm.googleapis.com/fcm/send/planted', p256dh: phone().p256dh, auth: phone().auth, name: 'Planted', snippet: false, session: 'no-such-session', at: 1 };
+      writeFileSync(join(home, 'push.json'), JSON.stringify({ version: 1, vapid: makeVapid(), devices: [planted] }));
+      await boot();
+      expect(stored()).toEqual([]);
+      const cookies = await setUp();
+      const [h] = json(cookieHeader(cookies), {});
+      expect((await call('PUT', '/api/push/subscription', h, JSON.stringify(device()))).status).toBe(200);
+      expect(stored()).toHaveLength(1);
+      resetAuthFiles(home);
+      await until(() => stored().length === 0, 8000);
+    });
   });
 
   it('turning it off needs the password and a code; the account view then says so', async () => {

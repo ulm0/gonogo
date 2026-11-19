@@ -208,6 +208,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const push: Push = createPush({ dir: options.home, now: options.now ?? (() => Date.now()), fetch: options.fetch ?? ((url, init) => fetch(url, init)), log: log.child('push') });
   try {
     await push.load();
+    // a device whose session is not alive (it ended while this server was off, a reset, an entry planted in the file) is not kept
+    await push.prune((id) => auth.alive(id));
   } catch (error) {
     auth.close();
     releaseLock();
@@ -513,7 +515,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   });
   // a socket opened with the old browser token is bound to no session: it ends with the token, when the account is made
   auth.onAccountMade(() => proxy.closeSockets());
-  auth.onReminted((from, to) => proxy.rebind(from, to));
+  auth.onReminted((from, to) => {
+    proxy.rebind(from, to);
+    // a step-up gives the session a new id: its phones follow it, or a later revoke would never find them
+    void push.rebind(from, to);
+  });
 
   /** The write routes need the same Origin rule as a room's: a browser page of another address is refused, a client without one is not. */
   const originOk = (req: http.IncomingMessage): boolean => {
@@ -697,6 +703,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const poll = setInterval(() => {
     currentToken();
     reconcile();
+    // a session that ended unseen (a reset, the tamper alarm, an outside edit of the file) takes its phones with it within a beat
+    void push.prune((id) => auth.alive(id));
   }, POLL_MS);
   // `gonogo rooms add` looks for this file to tell whether anything will act on a change
   writeSupervisorFile(options.home, options.host, (server.address() as { port: number }).port);

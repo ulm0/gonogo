@@ -219,7 +219,11 @@ export interface Push {
   notify(room: PushRoom, ev: PushEvent): void;
   /** These sessions ended (revoked, logged out, expired, password changed): their devices go. */
   dropSessions(ids: readonly string[]): Promise<void>;
-  /** The tamper alarm or a reset: every device goes. */
+  /** A step-up gave the session a new id: its devices follow it, or a later revoke would never find them. */
+  rebind(from: string, to: string): Promise<void>;
+  /** Drops every device whose session is not alive in the login: ids that ended unseen, a reset, the tamper alarm, an entry planted in the file. */
+  prune(alive: (session: string) => boolean): Promise<void>;
+  /** Every device goes. */
   dropAll(): Promise<void>;
   close(): Promise<void>;
 }
@@ -371,6 +375,21 @@ export function createPush(options: PushOptions): Push {
       change(async () => {
         const gone = new Set(ids);
         const kept = devices.filter((d) => !gone.has(d.session));
+        if (kept.length === devices.length) return;
+        devices = kept;
+        await save();
+      }),
+
+    rebind: (from, to) =>
+      change(async () => {
+        if (!devices.some((d) => d.session === from)) return;
+        devices = devices.map((d) => (d.session === from ? { ...d, session: to } : d));
+        await save();
+      }),
+
+    prune: (alive) =>
+      change(async () => {
+        const kept = devices.filter((d) => alive(d.session));
         if (kept.length === devices.length) return;
         devices = kept;
         await save();

@@ -26,7 +26,7 @@ The same things the page's own [notifications](./notifications.md) tell you, but
 
 A burst from the same sender is one notification. **The text is generic by default** ("1 new message", "An agent needs you"), because a lock screen shows it and the push service of your phone's vendor carries it. A device can choose to show **who it is from and the first 80 characters** instead (the check above the key); it is cut and cleaned the way the page's notifications are.
 
-**You cannot approve from the notification.** It has no buttons. A tap opens the app at the ask (the INBOX of Comms for a message, the room for the rest), and a dangerous approval still goes through the login's step-up on the page.
+**A push never asks for a password or links anywhere else; one that does is not from gonogo.** **You cannot approve from the notification.** It has no buttons. A tap opens the app at the ask (the INBOX of Comms for a message, the room for the rest), and a dangerous approval still goes through the login's step-up on the page.
 
 ## What it does not do
 

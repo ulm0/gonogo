@@ -178,6 +178,26 @@ describe('the devices', () => {
     expect(JSON.parse(readFileSync(join(dir, PUSH_FILE), 'utf8')).devices).toEqual([]);
   });
 
+  it('follows a session that was given a new id (step-up), and drops the devices of sessions that are not alive', async () => {
+    const h = harness();
+    await h.push.load();
+    const p = phone();
+    await h.push.subscribe(sub(p, {}, 'https://fcm.googleapis.com/fcm/send/a'), 's1');
+    await h.push.subscribe(sub(p, {}, 'https://fcm.googleapis.com/fcm/send/b'), 's2');
+    await h.push.rebind('s1', 's1b');
+    await h.push.rebind('nobody', 'x');
+    expect(h.push.view('s1b').devices.map((d) => d.mine)).toEqual([true, false]);
+    // a revoke of the new id finds it
+    await h.push.dropSessions(['s1b']);
+    expect(h.push.view('s2').devices.map((d) => d.mine)).toEqual([true]);
+    await h.push.subscribe(sub(p, {}, 'https://fcm.googleapis.com/fcm/send/c'), 'gone');
+    await h.push.prune((id) => id === 's2');
+    expect(h.push.view('s2').devices).toHaveLength(1);
+    expect(JSON.parse(readFileSync(join(dir, PUSH_FILE), 'utf8')).devices).toHaveLength(1);
+    await h.push.prune(() => false);
+    expect(h.push.view('s2').devices).toEqual([]);
+  });
+
   it('removes a device on request, and a device a push service says is gone (404, 410)', async () => {
     const h = harness();
     await h.push.load();

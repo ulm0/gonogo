@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
 import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
 import { startGonogo } from '../src/server/cli.js';
-import { makeVapid, PUSH_FILE } from '../src/server/push.js';
+import { PUSH_FILE } from '../src/server/push.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import { phone } from './push-phone.js';
 import type { Supervisor } from '../src/server/supervisor.js';
@@ -475,32 +475,6 @@ describe('the supervisor', () => {
 
   describe('push to the installed app', () => {
     const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/dev';
-    const device = (p: ReturnType<typeof phone>, session = 's1'): object => ({ id: 'dev1', endpoint: ENDPOINT, p256dh: p.p256dh, auth: p.auth, name: 'Phone', snippet: false, session, at: 1 });
-
-    it('sends what a room says on its pipe, as the supervisor, to the devices: generic, with the room named, and nothing else the room prints', async () => {
-      const p = phone();
-      writeFileSync(join(home, PUSH_FILE), JSON.stringify({ version: 1, vapid: makeVapid(), devices: [device(p)] }));
-      addRoom(home, 'team', 'Team B');
-      const sent: Array<{ url: string; body: Buffer }> = [];
-      const fake = (async (url: URL, init: RequestInit) => (sent.push({ url: String(url), body: Buffer.from(init.body as Uint8Array) }), new Response(null, { status: 201 }))) as unknown as typeof fetch;
-      const lines = [
-        'gonogo-push ' + JSON.stringify({ kind: 'permission', text: 'ana: Bash: rm -rf /' }),
-        'gonogo-push ' + JSON.stringify({ kind: 'nope', text: 'x' }),
-        'gonogo-push not json',
-        'gonogo-pushx ' + JSON.stringify({ kind: 'redline', text: 'x' }),
-        ' gonogo-push ' + JSON.stringify({ kind: 'redline', text: 'x' }),
-      ];
-      sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', FAKE_ROOM_PUSH: JSON.stringify(lines) }, fetch: fake });
-      await until(() => sent.length >= 2, 15_000, 'the two pushes');
-      await new Promise((r) => setTimeout(r, 300));
-      expect(sent).toHaveLength(2);
-      const shown = sent.map((s) => JSON.parse(p.receive(s.body)) as Record<string, string>).sort((a, b) => (a.room ?? '').localeCompare(b.room ?? ''));
-      expect(shown).toEqual([
-        { title: 'gonogo', body: 'An agent needs you', tag: 'gonogo-main-permission', open: 'room', room: 'main' },
-        { title: 'gonogo, Team B', body: 'An agent needs you', tag: 'gonogo-team-permission', open: 'room', room: 'team' },
-      ]);
-      for (const s of sent) expect(s.url).toBe(ENDPOINT);
-    }, 40_000);
 
     it('keeps its devices in the supervisor\'s home, and answers its routes with the login, not through a room', async () => {
       const s = await supervise();
