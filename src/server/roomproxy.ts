@@ -55,6 +55,8 @@ export interface RoomProxyOptions {
   rooms(): ProxyRoom[];
   /** Host names this server may be reached by (besides loopback). */
   allowedNames: ReadonlySet<string>;
+  /** Hooks-only hosts (`--allow-host name:hooks`, docs/expose-spec.md): answered for /uplink/* and /dock/* and nothing else; never the page, the login or a socket. */
+  hooksHosts?: ReadonlySet<string>;
 }
 
 export interface RoomProxy {
@@ -117,7 +119,11 @@ function reservedPath(rest: string): boolean {
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   const hostAllowed = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
-    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name));
+    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name) || (options.hooksHosts?.has(name) ?? false));
+  };
+  const hooksOnly = (header: string | undefined): boolean => {
+    const name = header === undefined ? null : hostName(header);
+    return name !== null && (options.hooksHosts?.has(name) ?? false) && !options.allowedNames.has(name);
   };
 
   /** A browser's Origin must be this very server, as a room demands it of its own address. */
@@ -184,6 +190,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     if (prefixed === null && reservedPath(rest)) return (fail(404, 'not found'), null);
     const kind = kindOf(rest);
     if (kind === 'closed') return (fail(404, 'not found'), null);
+    // a hooks host has no page: the decision is on the decoded first segment, the same one the room routes by
+    if (kind !== 'passthrough' && hooksOnly(req.headers.host)) return (fail(404, 'not found'), null);
     const room = options.rooms().find((r) => r.id === id);
     if (room === undefined) return (fail(404, 'no such room'), null);
     if (room.port === null) return (fail(503, 'the room is not running'), null);

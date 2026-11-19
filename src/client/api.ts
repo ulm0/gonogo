@@ -1208,6 +1208,8 @@ export interface AccountView {
   passkeys: Array<{ id: string; name: string; rpId: string; created: number; last: number | null; backedUp: boolean }>;
   /** The rp id a passkey made here would have, or null where one cannot be made (not a public name). */
   passkeyHere: string | null;
+  /** The names this gonogo answers on (docs/expose-spec.md): page hosts, hooks-only hosts and the public address. */
+  exposure?: { pages: string[]; hooks: string[]; publicUrl: string | null };
 }
 
 /** One call to `/api/auth/...`: the supervisor's own route (a room has none), so the path is absolute and the session cookie is the credential. */

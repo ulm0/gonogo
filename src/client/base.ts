@@ -15,4 +15,9 @@ export const ROOMS_PATH = '/rooms';
 export const withBase = (path: string): string => BASE + path;
 
 /** The address other machines use to reach this room: its origin and its prefix (webhooks and docking calls go there). */
-export const roomOrigin = (): string => location.origin + BASE;
+let publicOrigin: string | null = null;
+/** `--public-url` (docs/expose-spec.md): the address other machines use, when the Director gave one; the page may be open on another name (a LAN address). */
+export const setPublicOrigin = (origin: string | null | undefined): void => {
+  publicOrigin = typeof origin === 'string' && /^https?:\/\/[^/\s]+$/.test(origin) ? origin : null;
+};
+export const roomOrigin = (): string => (publicOrigin ?? location.origin) + BASE;

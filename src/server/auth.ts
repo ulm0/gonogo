@@ -12,6 +12,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, write
 import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
 import { nullLogger } from './constants.js';
+import { normalizeHost } from './hosts.js';
 
 export const AUTH_FILE = 'auth.json';
 export const SETUP_TOKEN_FILE = 'setup-token';
@@ -45,14 +46,14 @@ export const LIFETIME = {
 
 /* ------------------------------------------------------------------ hosts */
 
+
 /** Loopback, private or public, from a Host header (or a bare name): an IP by its range, a name by its shape. */
 export function hostClass(header: string | undefined): HostClass {
   if (header === undefined) return 'public';
-  let name = header.trim().toLowerCase();
-  const bracket = /^\[([^\]]*)\](?::\d+)?$/.exec(name);
-  if (bracket !== null) name = bracket[1] as string;
-  else if ((name.match(/:/g) ?? []).length === 1) name = name.slice(0, name.indexOf(':'));
-  if (name.endsWith('.')) name = name.slice(0, -1);
+  // one normalizer for every Host (docs/expose-spec.md R10); a bare IPv6 address (a peer address, not a Host) is its own name
+  const bare = !header.includes('[') && (header.match(/:/g) ?? []).length >= 2 ? header.trim().toLowerCase() : null;
+  const name = bare ?? normalizeHost(header);
+  if (name === null) return 'public';
   if (name === 'localhost' || name.endsWith('.localhost') || name === '::1' || /^127(\.\d{1,3}){3}$/.test(name)) return 'loopback';
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(name);
   if (v4 !== null) {

@@ -36,6 +36,7 @@ async function boot(over: Partial<Parameters<typeof startSupervisor>[0]> = {}): 
     host: '127.0.0.1',
     port: 0,
     allowedHosts: ['gonogo.example.com', 'nas.local'],
+    exposureCheck: false,
     command: [process.execPath, FAKE],
     env: { PATH: process.env.PATH ?? '' },
     authCosts: COSTS,
@@ -261,6 +262,15 @@ describe('setup, login and the session cookie', () => {
     expect((await bad('1.1.1.1')).status).toBe(429);
     const sessions = await call('GET', '/api/auth/account', { ...cookieHeader(await (async () => ({}))()) });
     expect(sessions.status).toBe(401);
+  });
+
+  it('--client-ip-header cf-connecting-ip: that header names the client, and x-forwarded-for is then not read at all', async () => {
+    await boot({ trustedProxies: ['127.0.0.1'], clientIpHeader: 'cf-connecting-ip' });
+    await setUp();
+    const bad = (headers: Record<string, string>) => call('POST', '/api/auth/login', { ...JSONH, ...origin(), ...headers }, JSON.stringify({ user: 'director', password: 'nope nope nope' }));
+    expect((await bad({ 'cf-connecting-ip': '2.2.2.2', 'x-forwarded-for': '5.5.5.1' })).status).toBe(401);
+    // the same client address with another x-forwarded-for is the same client: its second try waits
+    expect((await bad({ 'cf-connecting-ip': '2.2.2.2', 'x-forwarded-for': '5.5.5.2' })).status).toBe(429);
   });
 
   it('logout ends the session and clears the cookie; the device list names the session', async () => {

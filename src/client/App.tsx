@@ -26,6 +26,7 @@ import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats
 import { createAnnouncer } from './room.js';
 import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
 import { agentCounts, updateDialogText } from './selfupdate.js';
+import { setPublicOrigin } from './base.js';
 import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
@@ -287,6 +288,8 @@ const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
 /** The running version, small, in a corner of the page; it links to the changelog. */
 function VersionCorner(): ReactElement | null {
   const info = useStore((s) => s.info);
+  // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
+  setPublicOrigin(info?.publicUrl);
   if (info === null) return null;
   return (
     <a className="version-corner" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener" aria-label={`gonogo ${info.version}, open the changelog`}>

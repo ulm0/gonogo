@@ -27,6 +27,8 @@ import { createRoomProxy } from './roomproxy.js';
 import { acquireSupervisorLock } from './home.js';
 import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
+import { exposureProblem, parsePublicUrl } from './exposure.js';
+import { splitAllowed } from './hosts.js';
 import { hostName } from './web.js';
 
 const DIRECTOR_TOKEN_FILE = 'token';
@@ -74,7 +76,16 @@ export interface SupervisorOptions {
   host: string;
   /** 0 for any (tests). */
   port: number;
+  /** `--allow-host`: a name is a page host, `name:hooks` a host that serves only /uplink and /dock (docs/expose-spec.md). */
   allowedHosts: string[];
+  /** `--public-url`: where the page is for people outside (an https origin for a public name). */
+  publicUrl?: string;
+  /** The request header that carries the client address when the peer is a trusted proxy: `x-forwarded-for` (default) or `cf-connecting-ip`. */
+  clientIpHeader?: string;
+  /** Tests of the login pages boot on a public name with no account yet, which the start refuses by default (docs/expose-spec.md): they turn the refusal off. Never set outside a test. */
+  exposureCheck?: boolean;
+  /** Inside a container the wildcard bind is normal and says nothing about exposure. */
+  inContainer?: boolean;
   /** The command that starts a gonogo: [node, entry]. */
   command: string[];
   env: NodeJS.ProcessEnv;
@@ -151,6 +162,11 @@ export function directorTokenOf(home: string, otherRooms: readonly string[] = []
 
 export async function startSupervisor(options: SupervisorOptions): Promise<Supervisor> {
   const log = options.log ?? nullLogger;
+  // the names and the public URL are read before anything is held
+  const split = splitAllowed(options.allowedHosts);
+  if (typeof split === 'string') throw new Error(split);
+  const publicUrl = options.publicUrl === undefined ? null : parsePublicUrl(options.publicUrl);
+  if (typeof publicUrl === 'string') throw new Error(publicUrl);
   // one supervisor per home; the lock is released by stop() (and by the process ending, for the stale-pid rule)
   const releaseLock = acquireSupervisorLock(options.home);
   let directorToken: string | null = null;
@@ -172,6 +188,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     else {
       rmSync(join(options.home, DIRECTOR_TOKEN_FILE), { force: true });
       rmSync(join(options.home, 'rooms-token'), { force: true });
+    }
+    // docs/expose-spec.md: gonogo does not start on a name other machines use until the login (and its second factor) stands behind it
+    const problem = exposureProblem({ pages: [...split.pages], hooks: [...split.hooks], bindHost: options.host, inContainer: options.inContainer === true, publicUrl, account: auth.state(), mfa: auth.mfa().enabled });
+    if (problem !== null && options.exposureCheck !== false) {
+      auth.close();
+      throw new Error(problem);
     }
     madeSetupToken = auth.ensureSetupToken();
   } catch (error) {
@@ -216,8 +238,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   let stopping = false;
   const statusCache = new Map<string, { at: number; value: Counts }>();
 
-  const allowedNames = new Set<string>(options.allowedHosts.map((h) => hostName(h) ?? h.trim().toLowerCase()).filter((h) => h !== ''));
+  // page hosts serve everything the login lets in; hooks hosts only the webhooks (the proxy answers 404 to anything else there)
+  const allowedNames = new Set<string>(split.pages);
   if (!['0.0.0.0', '::', ''].includes(options.host)) allowedNames.add(hostName(options.host) ?? options.host.toLowerCase());
+  const hooksNames = split.hooks;
 
   /* ---------------------------------------------------------------- the children */
 
@@ -450,12 +474,15 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     local: localReqs,
     passkeys: createPasskeys(auth, options.now),
     ...(options.trustedProxies === undefined ? {} : { trustedProxies: options.trustedProxies }),
+    ...(options.clientIpHeader === undefined ? {} : { clientIpHeader: options.clientIpHeader }),
+    exposure: { pages: [...split.pages], hooks: [...split.hooks], publicUrl: publicUrl === null ? null : publicUrl.origin },
     log: log.child('login'),
   });
 
   const proxy = createRoomProxy({
     auth: { ...authHttp, alive: (id) => auth.alive(id), touchSession: (id) => auth.touchSession(id) },
     allowedNames,
+    hooksHosts: hooksNames,
     rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, port: c.state === 'running' ? c.port : null, socket: socketOf(c) })),
   });
 
@@ -545,6 +572,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   }
 
   const onRequest = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+    // a hooks-only host (`--allow-host name:hooks`) has no login, no list and no page: the proxy serves its webhooks, everything else is 404
+    const asked = req.headers.host === undefined ? null : hostName(req.headers.host);
+    if (asked !== null && hooksNames.has(asked) && !allowedNames.has(asked)) {
+      if (!proxy.handle(req, res)) sendText(res, 404, 'not found');
+      return;
+    }
     // the login pages and /api/auth are the supervisor's own
     if (authHttp.handle(req, res)) return;
     if (proxy.handle(req, res)) return;
