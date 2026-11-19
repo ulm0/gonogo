@@ -1154,7 +1154,8 @@ describe('the device login of a terminal through the supervisor', () => {
     expect((await typeCode(cookies, flow.user_code)).status).toBe(429);
     // six minutes on the password is asked again; giving it mints a new session id, and the counter is still the old one's
     dclock += 6 * 60_000;
-    const again = await typeCode(cookies, flow.user_code, { password: PASSWORD, totp: totpCode(secret, Math.floor((dclock + 31_000) / 30000)) });
+    dclock += 31_000;
+    const again = await typeCode(cookies, flow.user_code, { password: PASSWORD, totp: totpCode(secret, Math.floor(dclock / 30000)) });
     expect(again.cookies['gonogo-session']).toBeDefined();
     expect(again.cookies['gonogo-session']).not.toBe(cookies['gonogo-session']);
     expect(again.status).toBe(429);
