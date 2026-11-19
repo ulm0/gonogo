@@ -2,7 +2,9 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.5.0 (2026-11-19)
+
+Since 0.4.0: one mode (the supervisor with rooms; **breaking, read "What breaks" below before upgrading**), rooms from the page, a login of your own (password, TOTP, recovery codes, step-up and passkeys, replacing the token), `gonogo expose` for Tailscale, Cloudflare, Caddy, Funnel and ngrok, an installable app with Web Push, Telegram inbound without a public address, and install commands that name the exact version. No fix of a reported vulnerability; the login, expose and push code was reviewed by RSO and RETRO before merge. What was not tried for real is listed in [Not verified](https://gonogo.ulm0.com/reference/not-verified.html).
 
 - **Telegram needs no public address.** With a Telegram target set and no Telegram uplink, gonogo polls `getUpdates` (50 s long poll, offset kept in `telegram-poll.json`, backoff on errors) and hands each update through the same read as a webhook delivery: the chat filter, reply routing and the phone-approval buttons. A webhook set on the bot (409) is said in the RELAY card and never removed. Room main only. The first start hands nothing old on (the newest update id is the starting point); another bot's token starts again the same way; a 409 that means another poller is told apart from a webhook. **Rolling back to 0.4 stops Telegram inbound for a setup that has no uplink** (0.4 has no polling). Not tried against the real Telegram.
 - **Fix: the update command names the exact version.** `pnpm dlx @ulm0/gonogo` and `@latest` ran 0.1.1 for a day after each release where pnpm's `minimumReleaseAge` is set (pnpm 11+ may set a day): it takes only a release at least that old. The pnpm update note, `gonogo update` and the Update button now use `--config.minimum-release-age-exclude=@ulm0/gonogo` and `@<newest version>`; the README and the docs install with `npm i -g @ulm0/gonogo@latest` and name the version for pnpm.
