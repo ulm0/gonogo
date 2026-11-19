@@ -206,6 +206,11 @@ describe('rooms proxy: HTTP', () => {
       expect(res.status === 308 ? res.location : null, path).toBeNull();
     }
     expect((await raw('/x', 'evil.test')).status).toBe(403);
+    // the alias is decided on the decoded path: these are /api/x, /sw.js and /r/main/..., never a page of the old main
+    for (const path of ['/%61pi/x', '/%73w.js', '/%75plink/u1', '/%72/main/x']) {
+      const res = await raw(path);
+      expect(res.status === 308 ? res.location : null, path).toBeNull();
+    }
   });
 
   it('main answers the same at / and at /r/main/, and the room sees no Authorization at either', async () => {
