@@ -58,6 +58,7 @@ describe('every way the page reaches the server keeps the prefix', () => {
     expect(app).toMatch(/<a className="btn"[^>]*href=\{ROOMS_PATH\}>\s*Rooms/);
     expect(app).toMatch(/<\/h1>\s*<VersionMark \/>/);
     expect(app).not.toMatch(/VersionCorner/);
+    expect(app).toMatch(/<RolloutStrip \/>\s*<OtherRoomStrip \/>/);
     expect(readFileSync(new URL('../src/client/shell.css', import.meta.url), 'utf8')).not.toMatch(/version-corner/);
   });
 

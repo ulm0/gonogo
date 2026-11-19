@@ -332,11 +332,43 @@ function VersionMark(): ReactElement | null {
             {newer} out
           </button>
         ) : (
-          <a className="version-new" href={MAIN_PATH} aria-label={`${newer} is out, open the main room to update`}>
+          <a className="version-new" href={`${MAIN_PATH}?update`} aria-label={`${newer} is out, open the main room to update`}>
             {newer} out
           </a>
         ))}
     </span>
+  );
+}
+
+/**
+ * The same note in a room other than main. Its Update key lives in main (it asks before it stops every agent of main, with their count), so
+ * here the key opens main with its strip shown; nothing is updated from this page. Dismissed for that version, like main's, in this browser.
+ */
+function OtherRoomStrip(): ReactElement | null {
+  const info = useStore((s) => s.info);
+  const latest = useNewer();
+  const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
+  if (inMain || latest === null || info === null || dismissed === latest) return null;
+  return (
+    <aside className="rollout-strip" aria-label="Update">
+      <span>
+        gonogo {latest} is out (this is {info.version}). Update it from the main room.
+      </span>
+      <a className="btn" href={`${MAIN_PATH}?update`}>
+        Open main to update
+      </a>
+      <button
+        type="button"
+        className="btn"
+        data-kind="quiet"
+        onClick={() => {
+          writeStored(ROLLOUT_DISMISSED_KEY, latest);
+          setDismissed(latest);
+        }}
+      >
+        Dismiss
+      </button>
+    </aside>
   );
 }
 
@@ -360,6 +392,8 @@ function RolloutStrip(): ReactElement | null {
       setDismissed('');
       requestAnimationFrame(() => strip.current?.focus());
     };
+    // opened from another room's note: show the strip at once
+    if (inMain && location.search === '?update') show();
     window.addEventListener(ROLLOUT_SHOW, show);
     return () => window.removeEventListener(ROLLOUT_SHOW, show);
   }, []);
@@ -565,6 +599,7 @@ function Office(): ReactElement {
       <TopBar phone={phone} onPanel={() => setPanel(true)} />
       <GoneStrip />
       <RolloutStrip />
+      <OtherRoomStrip />
       <Screen phone={phone} />
       {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
       <LiveRegion />
