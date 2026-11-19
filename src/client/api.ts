@@ -35,6 +35,7 @@ import type {
   ReflectResult,
   RelayForwardRequest,
   PhoneMode,
+  PushView,
   RelayService,
   RelayTargetRequest,
   RecorderCommit,
@@ -469,6 +470,25 @@ export async function holdAll(): Promise<HoldAllResult> {
 /** ALL RESUME: resumes every console that is on hold. */
 export async function resumeAll(): Promise<ResumeAllResult> {
   return (await call('POST', '/resume-all')) as ResumeAllResult;
+}
+
+/** Push to the installed app: the key to subscribe with and the devices (docs/features/mobile.md). */
+export async function pushView(): Promise<PushView> {
+  const record = asRecord(await call('GET', '/push'));
+  if (record === null || typeof record.publicKey !== 'string' || !Array.isArray(record.devices)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as PushView;
+}
+
+export async function pushSubscribe(body: { endpoint: string; keys: { p256dh: string; auth: string }; device: string; snippet: boolean }): Promise<PushView> {
+  return (await call('PUT', '/push/subscription', body)) as PushView;
+}
+
+export async function pushUnsubscribe(id: string): Promise<PushView> {
+  return (await call('DELETE', '/push/subscription', { id })) as PushView;
+}
+
+export async function pushTest(id: string): Promise<{ ok: boolean; note: string }> {
+  return (await call('POST', '/push/test', { id })) as { ok: boolean; note: string };
 }
 
 /** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */

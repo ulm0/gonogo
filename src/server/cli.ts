@@ -52,6 +52,7 @@ import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createFeatureStore } from './features.js';
 import { toolsOff } from '../shared/features.js';
+import { createPush } from './push.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
@@ -679,6 +680,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('relay'),
     });
     await relay.load();
+    // push to the installed app (docs/features/mobile.md): its own key and devices in this room's home, sent straight to the browser vendor's push service
+    const push = createPush({ dir: home.dir, now: () => Date.now(), fetch: options.fetch ?? ((url, init) => fetch(url, init)), log: log.child('push') });
+    await push.load();
     const blackBox = createBlackBox({
       dir: home.dir,
       now: () => Date.now(),
@@ -694,6 +698,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const tell: DownlinkNotify = (kind, text, ref) => {
       downlink.post(kind, text);
       if (features.isOn('relay')) relay.event(kind, text);
+      push.event(kind, text);
       if (ref !== undefined) phone?.approval(ref, text);
       if (kind === 'redline') audit('redline', tripText(text));
       else if (kind === 'tminus') audit('poll', pollText(text));
@@ -796,6 +801,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         web?.broadcast(event);
         downlink.observe(event);
         if (features.isOn('relay')) relay.observe(event);
+        push.observe(event);
       },
       notify: tell,
       log: log.child('hub'),
@@ -1043,6 +1049,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       missions,
       room,
       tabName,
+      push,
       downlink,
       missionLog,
       massBudget,
@@ -1151,6 +1158,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('livery close', () => liveries.close());
       await step('relief close', async () => relief.close());
       await step('relay close', () => relay.close());
+      await step('push close', () => push.close());
       await step('models close', () => modelDefaults.close());
       await step('features close', () => features.close());
       await step('permissions close', () => permissionDefaults.close());

@@ -178,6 +178,8 @@ export const MEMORY_FILE = 'memory.md';
 export const AGENT_TOKEN_FILE = 'token';
 export const DIR_MODE = 0o700;
 export const FILE_MODE = 0o600;
+/** The header the supervisor sets, on the room's local socket only, to say which login session made a request (push devices belong to one). It strips any copy a browser sends. */
+export const SESSION_HEADER = 'x-gonogo-session';
 
 /* ---- launching claude ---- */
 /** Seed mode: after writing the trust key, read the file back this many times (spaced by the delay) before giving up (claude rewrites the file on every start, O11). */
