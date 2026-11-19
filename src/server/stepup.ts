@@ -7,8 +7,11 @@
  */
 
 const CHANGES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-/** What an agent may do: changing any of these in an edit is a step-up. */
-const POWER_FIELDS = ['mode', 'command', 'role', 'permissions', 'payload'];
+/**
+ * The fields of an edit that change nothing an agent may DO. An ALLOW-list on purpose: any other field (mode, command, role, permissions, payload,
+ * dir, cleanRoom, confirmBypass, worktree, remoteControl, keys, and one a later version adds) asks for the password again.
+ */
+const PLAIN_EDIT_FIELDS = new Set(['name', 'position', 'autostart', 'coauthor', 'model', 'effort']);
 const UNATTENDED = new Set(['auto', 'bypassPermissions']);
 
 /** The body decides these two (hire; edit of an agent), so the proxy reads it first. */
@@ -24,11 +27,15 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
     if (body === null) return 'hiring an agent';
     if (body.command !== undefined && body.command !== null) return 'hiring an agent with a command of your own';
     if (typeof body.mode === 'string' && UNATTENDED.has(body.mode)) return 'hiring an agent that works without asking';
+    // outside a Clean Room, with a remote control or with keys of its own: more than a plain hire
+    if (body.cleanRoom === false) return 'hiring an agent outside a Clean Room';
+    if (body.remoteControl !== undefined && body.remoteControl !== null && body.remoteControl !== false) return 'hiring an agent with remote control';
+    if (body.keys !== undefined && body.keys !== null) return 'hiring an agent with keys of its own';
     return null;
   }
   if ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path)) {
     if (body === null) return 'editing an agent';
-    return POWER_FIELDS.some((field) => body[field] !== undefined) ? 'changing what an agent may do' : null;
+    return Object.keys(body).some((field) => body[field] !== undefined && !PLAIN_EDIT_FIELDS.has(field)) ? 'changing what an agent may do' : null;
   }
   // Hangar writes and Recorder commits, per agent
   if (/^\/api\/agents\/[^/]+\/file$/.test(path)) return 'writing a file in an agent\'s folder';

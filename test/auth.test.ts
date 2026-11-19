@@ -771,6 +771,18 @@ describe('turning the second factor on and logging in with it', () => {
     expect(JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8')).totp).toBeNull();
   });
 
+  it('a recovery code left in the file is no second factor once TOTP is off', async () => {
+    const { auth, id, recovery } = await withTotp();
+    clock += 20 * 60_000;
+    expect(await auth.mfaDisable(id, who(), { password: PASSWORD, code: recovery[0] as string })).toBe('ok');
+    // the codes are gone with it; a file that still held one (an outside write) would not do either
+    const real = JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8'));
+    expect(real.recovery).toEqual([]);
+    clock += 60_000;
+    expect(await auth.stepUp(id, who(), { password: PASSWORD, code: recovery[1] as string })).toMatchObject({ ok: true });
+    expect(await auth.mfaRecovery(id, who(), { password: PASSWORD, code: recovery[2] as string })).toEqual({ ok: false, reason: 'none' });
+  });
+
   it('survives a restart, and a reset takes it away', async () => {
     const { auth } = await withTotp();
     auth.close();

@@ -749,13 +749,13 @@ export function openAuth(options: AuthOptions): AuthStore {
   const verifySecond = (code: string): boolean => {
     const text = code.trim();
     const totp = data.totp;
-    if (totp !== null && totp.enabled) {
-      const step = matchTotp(Buffer.from(totp.secret, 'base64url'), text.replace(/\s/g, ''), now(), totp.lastStep);
-      if (step !== null) {
-        totp.lastStep = step;
-        save();
-        return true;
-      }
+    // nothing is a second factor while none is on: a recovery code left in the file by an earlier one is not
+    if (totp === null || !totp.enabled) return false;
+    const step = matchTotp(Buffer.from(totp.secret, 'base64url'), text.replace(/\s/g, ''), now(), totp.lastStep);
+    if (step !== null) {
+      totp.lastStep = step;
+      save();
+      return true;
     }
     if (/^[A-Za-z0-9 -]{10,14}$/.test(text) && !/^\d{6}$/.test(text)) {
       const key = recoveryKey(text);

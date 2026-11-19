@@ -451,6 +451,9 @@ describe('rooms proxy: the login', () => {
     expect((await send(stale, 'POST', '/api/agents', { name: 'x', mode: 'default' })).status).toBe(200);
     expect((await send(stale, 'PATCH', '/api/agents/ana', { role: 'new role' })).status).toBe(403);
     expect((await send(stale, 'PATCH', '/api/agents/ana', { model: 'x' })).status).toBe(200);
+    // the edit is an allow-list: a folder, the Clean Room, a worktree, remote control and keys all ask
+    for (const body of [{ cleanRoom: false }, { dir: '/' }, { confirmBypass: true }, { worktree: true }, { remoteControl: true }, { keys: { K: 'v' } }]) expect((await send(stale, 'PATCH', '/api/agents/ana', body)).status, JSON.stringify(body)).toBe(403);
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: false })).status).toBe(403);
     // the body that went through reached the room whole
     expect(main.seen.filter((x) => x.method === 'PATCH').at(-1)?.body).toBe('{"model":"x"}');
     for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);
