@@ -780,10 +780,15 @@ export function openAuth(options: AuthOptions): AuthStore {
   const every = options.tamperEveryMs ?? TAMPER_EVERY_MS;
   if (every > 0) {
     timer = setInterval(() => {
-      checkTamper(true);
-      expiredSweep();
-      // an hour-old setup token is renewed in its file (not printed), so the setup page is never stuck on a token nobody has
-      ensureSetupToken();
+      // a timer must never throw: a home that was removed under a running server is logged, not a crash
+      try {
+        checkTamper(true);
+        expiredSweep();
+        // an hour-old setup token is renewed in its file (not printed), so the setup page is never stuck on a token nobody has
+        ensureSetupToken();
+      } catch (error) {
+        log.error('the login timer failed', error);
+      }
     }, every);
     timer.unref();
   }
