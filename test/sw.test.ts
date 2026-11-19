@@ -6,12 +6,14 @@ import { describe, expect, it } from 'vitest';
 
 type Handler = (event: Record<string, unknown>) => void;
 
-function worker(scope: string, windows: Array<{ url: string; focus(): unknown; postMessage(m: unknown): void }> = []) {
+function worker(scope: string, windows: Array<{ url: string; focus(): unknown; postMessage(m: unknown): void }> = [], page = new Response('x')) {
   const handlers: Record<string, Handler> = {};
   const shown: Array<[string, Record<string, unknown>]> = [];
   const opened: string[] = [];
   const kept = new Map<string, unknown>();
   const put: string[] = [];
+  const keptAssets = new Set<string>();
+  const deleted: string[] = [];
   const self = {
     registration: { scope, showNotification: (title: string, options: Record<string, unknown>) => (shown.push([title, options]), Promise.resolve()) },
     addEventListener: (type: string, fn: Handler) => (handlers[type] = fn),
@@ -19,17 +21,17 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
     clients: { claim: () => Promise.resolve(), matchAll: () => Promise.resolve(windows), openWindow: (url: string) => (opened.push(url), Promise.resolve()) },
   };
   const caches = {
-    open: () => Promise.resolve({ addAll: () => Promise.resolve(), put: (r: { url: string }) => (put.push(r.url), Promise.resolve()) }),
+    open: () => Promise.resolve({ addAll: () => Promise.resolve(), put: (r: { url: string }) => (put.push(r.url), Promise.resolve()), keys: () => Promise.resolve([...keptAssets].map((url) => ({ url }))), delete: (r: { url: string }) => (deleted.push(r.url), keptAssets.delete(r.url), Promise.resolve(true)) }),
     keys: () => Promise.resolve([]),
     match: (r: string | { url: string }) => Promise.resolve(kept.get(typeof r === 'string' ? r : r.url)),
   };
-  vm.runInNewContext(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'), { self, caches, URL, Response, fetch: () => Promise.resolve(new Response('x')) });
+  vm.runInNewContext(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'), { self, caches, URL, Response, fetch: () => Promise.resolve(page) });
   const waits: Array<Promise<unknown>> = [];
   const fire = (type: string, event: Record<string, unknown>): Promise<unknown> => {
     handlers[type]?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => waits.push(Promise.resolve(p).then(() => 'responded')) });
     return Promise.all(waits);
   };
-  return { fire, shown, opened, kept, put, waits };
+  return { fire, shown, opened, kept, put, waits, keptAssets, deleted };
 }
 
 const request = (url: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ request: { url, method: 'GET', mode: 'cors', headers: { has: () => false }, ...extra } });
@@ -67,6 +69,25 @@ describe('the service worker', () => {
     expect(w.waits).toHaveLength(1);
     await w.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
     expect(w.waits).toHaveLength(2);
+  });
+
+  it('forgets the kept assets that the page it just got does not name, and none when the page names none', async () => {
+    // a same-origin answer from the network is of type basic
+    const html = (body: string): Response => Object.defineProperty(new Response(body, { headers: { 'content-type': 'text/html' } }), 'type', { value: 'basic' });
+    const old = 'https://x.test/assets/index-old.js';
+    const fresh = 'https://x.test/assets/index-new.js';
+    const w = worker('https://x.test/', [], html('<script src="./assets/index-new.js"></script><link href="./assets/index-new.css">'));
+    w.keptAssets.add(old).add(fresh).add('https://x.test/assets/index-new.css');
+    await w.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    await new Promise((r) => setTimeout(r, 20));
+    await Promise.all(w.waits);
+    expect(w.deleted).toEqual([old]);
+    // a login page or an error names no file of the build: nothing is forgotten
+    const login = worker('https://x.test/', [], html('<form>login</form>'));
+    login.keptAssets.add(old);
+    await login.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(login.deleted).toEqual([]);
   });
 
   it('shows what the push says, cut, with the room it is from, the room\'s own icon and no buttons, and shows something even for a body it cannot read', async () => {

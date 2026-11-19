@@ -271,9 +271,12 @@ describe('what is pushed', () => {
     const h = harness();
     await h.push.load();
     await h.push.subscribe(sub(phone()), 's1');
-    for (const kind of ['redline', 'tminus', 'relief', 'permission']) h.push.notify(MAIN, { kind: pushKindOf(kind) as PushEvent['kind'], text: 'text' });
+    for (const kind of ['redline', 'tminus', 'relief', 'permission']) h.push.notify(MAIN, { kind: pushKindOf(kind, 'HOLD: text') as PushEvent['kind'], text: 'text' });
     await settle();
     expect(h.sent).toHaveLength(4);
+    // a T-minus result is pushed when it wants a call (HOLD or GO), not when the Director aborted it
+    for (const text of ['HOLD: no-go: ana', 'GO: all go', 'Static fire on the deploy: GO: all go · ana: ok', 'Static fire on x: HOLD: held by the Director']) expect(pushKindOf('tminus', text), text).toBe('tminus');
+    for (const text of ['ABORTED: aborted by the Director', 'Static fire on x: ABORTED: aborted by the Director', 'OPEN: waiting', '', 'GOING: x']) expect(pushKindOf('tminus', text), text).toBeNull();
     for (const kind of ['launch-window', 'uplink', 'flight-plan', 'livery', 'mission', 'review', 'startup', 'nope']) expect(pushKindOf(kind), kind).toBeNull();
     expect(pushEventOfHub({ ...message('ana', 's', 'b'), item: { ...(message('ana', 's', 'b') as unknown as { item: object }).item, to: 'ben' } } as unknown as ActivityFrame)).toBeNull();
     expect(pushEventOfHub({ t: 'tabname' } as never)).toBeNull();

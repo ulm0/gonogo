@@ -44,6 +44,18 @@ function below(url) {
   return url.pathname.slice(SCOPE.pathname.length);
 }
 
+/** Forgets the kept assets that the page just served does not name (the build's files carry a hash: a new release names new ones). */
+async function prune(page) {
+  const named = new Set((await page.text()).match(/assets\/[\w.-]+/g) || []);
+  // a page that names none (a login page, an error) says nothing about the build
+  if (named.size === 0) return;
+  const cache = await caches.open(SHELL);
+  for (const key of await cache.keys()) {
+    const rest = below(new URL(key.url));
+    if (rest !== null && rest.startsWith('assets/') && !named.has(rest)) await cache.delete(key);
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET' || request.headers.has('authorization')) return;
@@ -52,7 +64,14 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     // the page comes from the network when there is one (a login or an update shows at once); the kept shell opens it when there is not
     event.respondWith(
-      fetch(request).catch(async () => (await caches.match(new URL('./', SCOPE).href)) ?? Response.error()),
+      fetch(request).then(
+        (answer) => {
+          // a release names new hashed files: the ones the page no longer names are dropped, so old builds do not pile up
+          if (answer.ok && answer.type === 'basic' && (answer.headers.get('content-type') || '').startsWith('text/html')) event.waitUntil(prune(answer.clone()));
+          return answer;
+        },
+        async () => (await caches.match(new URL('./', SCOPE).href)) ?? Response.error(),
+      ),
     );
     return;
   }

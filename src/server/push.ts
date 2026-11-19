@@ -158,8 +158,15 @@ export function pushNotice(room: PushRoom, ev: PushEvent, snippet: boolean): Pus
   return { tag, title, body: snippet ? cut(ev.text, SNIPPET_CHARS) : base.body, open: base.open, room: room.id };
 }
 
-/** The kind of a Downlink event that is also pushed, or null. */
-export const pushKindOf = (kind: string): PushKind | null => (kind === 'redline' || kind === 'tminus' || kind === 'relief' || kind === 'permission' ? kind : null);
+/**
+ * The kind of a Downlink event that is also pushed, or null. A T-minus event is pushed only for the results that want the Director, as the
+ * page's own notifications do (notify.ts POLL_NEWS): HOLD and GO, not an abort. The hub words them `HOLD: ...`, `GO: ...`, and for a Static
+ * fire `Static fire on <subject>: HOLD: ...`.
+ */
+export const pushKindOf = (kind: string, text = ''): PushKind | null => {
+  if (kind === 'tminus') return /^(?:Static fire on [^\n]*?: )?(?:GO|HOLD):/.test(text) ? 'tminus' : null;
+  return kind === 'redline' || kind === 'relief' || kind === 'permission' ? kind : null;
+};
 
 /** What a hub frame says that is worth a push: a message to the Director. */
 export function pushEventOfHub(event: HubEvent): PushEvent | null {

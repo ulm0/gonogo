@@ -698,7 +698,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const tell: DownlinkNotify = (kind, text, ref) => {
       downlink.post(kind, text);
       if (features.isOn('relay')) relay.event(kind, text);
-      const pushKind = pushKindOf(kind);
+      const pushKind = pushKindOf(kind, text);
       if (pushKind !== null) push.send({ kind: pushKind, text });
       if (ref !== undefined) phone?.approval(ref, text);
       if (kind === 'redline') audit('redline', tripText(text));
