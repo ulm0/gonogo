@@ -44,6 +44,16 @@ describe('a hire', () => {
     expect(hire(null)).not.toBeNull();
   });
 
+  it('asks for a payload or permissions that carry something, not for empty ones', () => {
+    expect(hire({ name: 'x', payload: { env: { A: 'b' } } })).not.toBeNull();
+    expect(hire({ name: 'x', permissions: { allow: ['Bash'] } })).not.toBeNull();
+    expect(hire({ name: 'x', permissions: { allow: ['Bash'], deny: [] } })).not.toBeNull();
+    for (const empty of [{}, [], null, '']) {
+      expect(hire({ name: 'x', payload: empty }), JSON.stringify(empty)).toBeNull();
+      expect(hire({ name: 'x', permissions: empty }), JSON.stringify(empty)).toBeNull();
+    }
+  });
+
   it('lets a plain hire through', () => {
     expect(hire({ name: 'x', role: 'does a thing', mode: 'default', dir: '/work' })).toBeNull();
     expect(hire({ name: 'x', cleanRoom: true })).toBeNull();

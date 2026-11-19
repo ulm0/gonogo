@@ -63,6 +63,7 @@ The client address is the socket's. Behind a reverse proxy it is the proxy's, un
 
 In Flight Rules → LOGIN → SECOND FACTOR, TURN ON makes a secret: add it to an authenticator app (the key is shown as text and as an `otpauth://` address; no QR code is drawn), give the first code, and gonogo shows ten **recovery codes once**. From then on signing in is two steps: the password, then a six-digit code (or a recovery code, which works once).
 
+- **There is no command for it: turn it on in the page, from this machine or your network.** On a headless machine open the page through a tunnel (`ssh -L 8080:127.0.0.1:<port> <host>`, then `http://127.0.0.1:8080`), which counts as this machine.
 - A code works once and is good for its own 30-second step and one either side.
 - A wrong code counts like a wrong password, in the same waits; giving the password again does not clear them.
 - **A public name cannot be signed in to without it.** On this machine or your network a password alone still works, with the plain-http warning.

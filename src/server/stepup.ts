@@ -14,6 +14,9 @@ const CHANGES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const PLAIN_EDIT_FIELDS = new Set(['name', 'position', 'autostart', 'coauthor', 'model', 'effort']);
 const UNATTENDED = new Set(['auto', 'bypassPermissions']);
 
+/** A field that carries something: not missing, null, empty text, an empty object or an empty list. */
+const given = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && value !== false && !(typeof value === 'object' && Object.keys(value as object).length === 0);
+
 /** The body decides these two (hire; edit of an agent), so the proxy reads it first. */
 export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && path === '/api/agents') return true;
@@ -29,8 +32,9 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
     if (typeof body.mode === 'string' && UNATTENDED.has(body.mode)) return 'hiring an agent that works without asking';
     // outside a Clean Room, with a remote control or with keys of its own: more than a plain hire
     if (body.cleanRoom === false) return 'hiring an agent outside a Clean Room';
-    if (body.remoteControl !== undefined && body.remoteControl !== null && body.remoteControl !== false) return 'hiring an agent with remote control';
-    if (body.keys !== undefined && body.keys !== null) return 'hiring an agent with keys of its own';
+    if (given(body.remoteControl)) return 'hiring an agent with remote control';
+    if (given(body.keys)) return 'hiring an agent with keys of its own';
+    if (given(body.payload) || given(body.permissions)) return 'hiring an agent with a payload or permissions of its own';
     return null;
   }
   if ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path)) {

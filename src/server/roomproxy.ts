@@ -368,7 +368,9 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         if (bound !== null && !bound.startsWith('key:')) {
           socket.on('data', (chunk: Buffer) => {
             const opcode = (chunk[0] ?? 0) & 0x0f;
-            if (opcode === 1 || opcode === 2) options.auth.touchSession(bound);
+            // the id it is bound to NOW: a step-up mints the id again and rebind() moves the socket, so the one captured above would be the dead one
+            const now = open.get(socket);
+            if ((opcode === 1 || opcode === 2) && now !== undefined && now !== null && !now.startsWith('key:')) options.auth.touchSession(now);
           });
         }
         const end = (): void => {

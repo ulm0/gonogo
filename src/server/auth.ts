@@ -905,6 +905,11 @@ export function openAuth(options: AuthOptions): AuthStore {
       }
       if (isLocked && !isLocalClass(who.cls)) return refused('locked');
       const device = deviceOf(who.device);
+      // the token belongs to the address and the browser that gave the password: another one holding it is a stranger
+      if (found.address !== who.address || found.device !== (device?.id ?? null)) {
+        pending.delete(id);
+        return refused('wrong');
+      }
       const keys = bucketsFor(who, device);
       const waiting = wait(keys);
       if (waiting > 0) return (tally(who, device), refused('wait', waiting));
@@ -986,6 +991,8 @@ export function openAuth(options: AuthOptions): AuthStore {
       data.sessions = data.sessions.filter((s) => s.id === sessionId);
       save();
       emitEnded(others);
+      // a login that was waiting for its code was started with the old password
+      pending.clear();
       options.alert('the password was changed');
       return 'ok';
     },
@@ -1078,8 +1085,9 @@ export function openAuth(options: AuthOptions): AuthStore {
       const keys = [`step:${sessionId}`];
       if (wait(keys) > 0) return { ok: false, reason: 'wait' };
       const passwordOk = await checkPassword(input.password);
-      // a second factor that is on is asked for here too (a code given again within the same 30 s step is refused: wait for the next one)
-      const secondOk = data.totp?.enabled === true ? verifySecond(input.code) : true;
+      // a second factor that is on is asked for here too (a code given again within the same 30 s step is refused: wait for the next one); only
+      // after a right password, so a wrong one does not use up a code or a recovery code
+      const secondOk = !passwordOk ? false : data.totp?.enabled === true ? verifySecond(input.code) : true;
       if (!passwordOk || !secondOk) {
         fail(keys, who, null);
         return { ok: false, reason: 'wrong' };

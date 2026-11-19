@@ -483,6 +483,11 @@ describe('rooms proxy: the login', () => {
     proxyUnderTest.closeSessions(['s1']);
     await new Promise((r) => setTimeout(r, 50));
     expect(ws.readyState).toBe(WebSocket.OPEN);
+    // and its input counts for the NEW id, not the dead one
+    touched.length = 0;
+    ws.send('type');
+    await vi_waitFor(() => touched.length > 0);
+    expect(touched).toEqual(['s9']);
     const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()));
     proxyUnderTest.closeSessions(['s9']);
     await closed;

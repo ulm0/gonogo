@@ -794,6 +794,58 @@ describe('turning the second factor on and logging in with it', () => {
   });
 });
 
+describe('after review of the second factor', () => {
+  const secretOf = (): Buffer => Buffer.from(JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8')).totp.secret, 'base64url');
+  const codeNow = (): string => totpCode(secretOf(), Math.floor(clock / 1000 / 30));
+  async function on(): Promise<{ auth: AuthStore; id: string; recovery: string[]; device: string }> {
+    const made = await account();
+    const id = made.auth.sessions()[0]?.id as string;
+    made.auth.mfaBegin();
+    const enabled = made.auth.mfaEnable(id, who(), codeNow());
+    if (!enabled.ok) throw new Error('x');
+    clock += 31_000;
+    return { auth: made.auth, id, recovery: enabled.recovery, device: made.device };
+  }
+
+  it('LOW 3: a wrong password with a recovery code in hand does not use the code up', async () => {
+    const { auth, id, recovery } = await on();
+    alerts.length = 0;
+    expect(await auth.stepUp(id, who(), { password: 'not the password', code: recovery[0] as string })).toEqual({ ok: false, reason: 'wrong' });
+    expect(auth.mfa().recoveryLeft).toBe(10);
+    expect(alerts.some((a) => /recovery code was used/.test(a))).toBe(false);
+    // nor does it spend the TOTP step
+    clock += 2000;
+    expect(await auth.stepUp(id, who(), { password: 'not the password', code: codeNow() })).toEqual({ ok: false, reason: 'wrong' });
+    clock += 2000;
+    expect((await auth.stepUp(id, who(), { password: PASSWORD, code: codeNow() })).ok).toBe(true);
+  });
+
+  it('LOW 4: the token of a login belongs to the address and the browser that gave the password', async () => {
+    const { auth, device } = await on();
+    const mine = who({ address: '5.5.5.5', device });
+    const first = await auth.login(mine, { user: 'director', password: PASSWORD });
+    if (first.ok || first.reason !== 'second') throw new Error('x');
+    // another address, and another browser (no device cookie), with the right code: refused, and the token is spent
+    expect(await auth.second(who({ address: '6.6.6.6', device }), first.pending, codeNow())).toEqual({ ok: false, reason: 'wrong' });
+    clock += 40_000;
+    expect(await auth.second(mine, first.pending, codeNow())).toEqual({ ok: false, reason: 'wrong' });
+    clock += 20 * 60_000;
+    const again = await auth.login(mine, { user: 'director', password: PASSWORD });
+    if (again.ok || again.reason !== 'second') throw new Error('x');
+    expect(await auth.second(who({ address: '5.5.5.5' }), again.pending, codeNow())).toEqual({ ok: false, reason: 'wrong' });
+  });
+
+  it('LOW 4: a password change drops the logins that were waiting for their code', async () => {
+    const { auth, id, device } = await on();
+    const w = who({ address: '4.3.2.1', device });
+    const first = await auth.login(w, { user: 'director', password: PASSWORD });
+    if (first.ok || first.reason !== 'second') throw new Error('x');
+    expect(await auth.changePassword(id, PASSWORD, 'another long password')).toBe('ok');
+    clock += 40_000;
+    expect(await auth.second(w, first.pending, codeNow())).toEqual({ ok: false, reason: 'wrong' });
+  });
+});
+
 describe('step-up', () => {
   it('a session is fresh for five minutes after its password check; then the check is asked again, and the id is minted again', async () => {
     const { auth, session } = await account();
