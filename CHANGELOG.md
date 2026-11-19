@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Fix: `gh auth login` and git's global config were lost when the container was recreated.** The image keeps them in `/state/config`, an anonymous volume that a new container (`docker compose up` after a pull, a self-update) replaces with an empty one. `compose.yaml` now points `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL` into the data folder (`gonogo-data/config`; create it with the others). An existing compose file: add the two lines and the folder.
+
 - **The top bar of every room has the version, a ROOMS key and the update note.** The running version moved from the bottom-right corner to the top bar, beside the logo (small, mono, still a link to the changelog). A ROOMS key goes to the list (`/`) from every room, main too, on a phone as well. When a newer gonogo is out, the version gets an amber `0.5.5 out` in every room: in main it shows the update strip again (also one you dismissed for that version), in another room it opens main. The update strip itself now shows in every room; in a room other than main its key is OPEN MAIN TO UPDATE (the Update key stays in main, which asks before it stops main's agents). Only main runs the update check, so a room's page asks the supervisor (`update` in `GET /api/rooms`, read from main's cache; nothing when the check is off). The supervisor now also tells the list page its version. On a phone the unit name GN-1 gives way to keep the bar on one line. Not seen in a browser.
 
 ## 0.5.4 (2026-11-19)
