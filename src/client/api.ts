@@ -513,6 +513,17 @@ export async function pushTest(id: string): Promise<{ ok: boolean; note: string 
   return (await pushCall('POST', '/test', { id })) as { ok: boolean; note: string };
 }
 
+/** The newer version main's check saw, from the supervisor (a room other than main runs no check of its own); null when none, or when it cannot be asked. */
+export async function roomsUpdate(): Promise<string | null> {
+  try {
+    const response = await fetch('/api/rooms', { headers: token === null ? {} : { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    const latest = asRecord(asRecord(await response.json())?.update)?.latest;
+    return response.ok && typeof latest === 'string' ? latest : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */
 export async function coauthorSettings(): Promise<CoauthorSettings> {
   const record = asRecord(await call('GET', '/coauthor'));

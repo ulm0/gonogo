@@ -1,9 +1,8 @@
-# Update from the page, and the version in the corner
+# Update from the page, and the version in the top bar
 
 <SelfUpdateMock class="doc-mock" />
 
-The running version is shown small in the bottom corner of every page (above the phone bar on a phone) and links to the
-changelog. The terminal view (`gonogo tui`) is not built yet, so it has no header to put it in.
+The running version is shown small in the top bar of every room, next to the logo, and links to the changelog; when a newer one is out it adds an amber note ([Rollout](rollout.md)). It used to sit in the bottom corner. The terminal view (`gonogo tui`) is not built yet, so it has no header to put it in.
 
 ## The notice, by install type
 

@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **The top bar of every room has the version, a ROOMS key and the update note.** The running version moved from the bottom-right corner to the top bar, beside the logo (small, mono, still a link to the changelog). A ROOMS key goes to the list (`/`) from every room, main too, on a phone as well. When a newer gonogo is out, the version gets an amber `0.5.5 out` in every room: in main it shows the update strip again (also one you dismissed for that version), in another room it opens main. The update strip itself now shows in every room; in a room other than main its key is OPEN MAIN TO UPDATE (the Update key stays in main, which asks before it stops main's agents). Only main runs the update check, so a room's page asks the supervisor (`update` in `GET /api/rooms`, read from main's cache; nothing when the check is off). The supervisor now also tells the list page its version. On a phone the unit name GN-1 gives way to keep the bar on one line. Not seen in a browser.
+
 ## 0.5.4 (2026-11-19)
 
 The address of the rooms: `/` is now the list of rooms and every room, main too, lives at `/r/<id>/` (read "What breaks" below).

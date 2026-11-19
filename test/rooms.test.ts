@@ -400,6 +400,24 @@ describe('the supervisor', () => {
       expect((await api(sup, '/rooms/lockup.png', null)).status).toBe(404);
     });
 
+    it('the list says what the update check of main saw, only when it is newer and the check is on', async () => {
+      const base = { home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], version: '1.0.0' };
+      const update = async (s: Supervisor): Promise<unknown> => ((await (await api(s, '/api/rooms')).json()) as { update: unknown }).update;
+      const saved = (latest: string): void => writeFileSync(join(home, 'rollout.json'), JSON.stringify({ version: 1, latest, checkedAt: 1 }));
+      saved('1.0.1');
+      sup = await startSupervisor({ ...base, env: { PATH: process.env.PATH ?? '' } });
+      expect(await update(sup)).toEqual({ latest: '1.0.1' });
+      saved('1.0.0');
+      expect(await update(sup)).toBeNull();
+      await sup.stop();
+      saved('1.0.1');
+      sup = await startSupervisor({ ...base, env: { PATH: process.env.PATH ?? '', GONOGO_UPDATE_CHECK: '0' } });
+      expect(await update(sup)).toBeNull();
+      await sup.stop();
+      sup = await startSupervisor({ ...base, env: { PATH: process.env.PATH ?? '' }, roomArgs: ['--no-update-check'] });
+      expect(await update(sup)).toBeNull();
+    });
+
     it('the tab name a room reports is cleaned and cut like a room name', async () => {
       sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', FAKE_TAB: `a\u202eb\nc${'x'.repeat(60)}` } });
       const s = sup;

@@ -1325,6 +1325,7 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
         command: [process.execPath, process.argv[1] ?? 'gonogo'],
         roomArgs: roomArgsOf(parsed.options, settings.publicUrl),
         staticDir: settings.staticDir,
+        version: packageVersion(),
         env,
         log,
       });

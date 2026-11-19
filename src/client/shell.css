@@ -65,6 +65,11 @@
   .mark-unit-long {
     display: none;
   }
+
+  /* the version and the Rooms key came into the bar: its words give back 6 px of padding on each side (never the 44 px height) */
+  .topbar .btn {
+    padding: 0 10px;
+  }
 }
 
 /* It starts small and grows into the room that is left, up to 24 characters: a top bar with nine keys must stay on one line at 1280 px (its gap is 8 px for that). */
@@ -138,24 +143,39 @@
   font-size: 11px;
 }
 
-/* The running version: small, fixed in a corner, never over the content that matters (on a phone it sits above the phone bar). */
-.version-corner {
-  position: fixed;
-  right: 8px;
-  bottom: 4px;
-  z-index: 1;
-  padding: 0 4px;
-  color: var(--text-2);
+/* The running version, by the logo: small, mono; the newer one, when there is one, is amber and a key of its own. */
+.topbar-version {
+  display: inline-flex;
+  align-items: baseline;
+  flex: none;
+  gap: 6px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.4;
-  text-decoration: none;
-  opacity: 0.7;
 }
 
-.version-corner:hover,
-.version-corner:focus-visible {
-  opacity: 1;
+.version-mark,
+.version-new {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.version-mark {
+  color: var(--text-2);
+}
+
+.version-new {
+  color: var(--you-ink);
+}
+
+.version-mark:hover,
+.version-mark:focus-visible,
+.version-new:hover,
+.version-new:focus-visible {
   text-decoration: underline;
 }
 
@@ -1613,11 +1633,6 @@
     --bottom-bar: 68px;
   }
 
-  /* above the phone bar, not over its keys */
-  .version-corner {
-    bottom: 70px;
-  }
-
   .topbar {
     flex-wrap: nowrap;
     gap: 10px;
@@ -1629,8 +1644,10 @@
     height: 22px;
   }
 
-  .mark-unit {
-    font-size: 9.5px;
+  /* the bar must stay on one line: the version and the Rooms key take the room of the unit's name; a newer version replaces the running one */
+  .mark-unit,
+  .topbar-version[data-newer] .version-mark {
+    display: none;
   }
 
   .mark-unit-long,
