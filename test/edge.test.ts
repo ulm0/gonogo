@@ -783,6 +783,14 @@ function fileMode(path: string): number {
 
 const NO_PROPELLANT_VIEW = { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } };
 
+/** A lock a live process of this boot and pid namespace could have written: only a pid with its start time proves it alive. */
+const stampedLock = (pid: number, ticks?: string): string => {
+  const own = existsSync('/proc/self/ns/pid') ? `${readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()}.${readlinkSync('/proc/self/ns/pid')}` : null;
+  if (own === null) return `${pid}\n`;
+  const at = ticks ?? readFileSync(`/proc/${pid}/stat`, 'utf8').split(')').pop()!.trim().split(' ')[19]!;
+  return `${pid}\n${own}.${at}\n`;
+};
+
 describe('home', () => {
   it('creates the home and agents directories (0700) and a 64 hex browser token (0600) on first open', () => {
     const dir = join(tmpDir(), 'fresh', 'home');
@@ -1400,13 +1408,14 @@ describe('home', () => {
 
     it('refuses a directory whose lock names another running process', () => {
       const dir = tmpDir();
-      writeFileSync(join(dir, LOCK_FILE), `${process.ppid}\n`);
+      const lock = stampedLock(process.ppid);
+      writeFileSync(join(dir, LOCK_FILE), lock);
       expect(() => openHome(dir)).toThrowError(/^another gonogo is using .+ \(pid \d+\)\. Stop it, or delete .+server\.lock if none is running\.$/);
-      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(`${process.ppid}\n`);
+      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(lock);
     });
 
     it.each([
-      ['a pid that does not exist', '2147483646\n'],
+      ['a pid that does not exist', stampedLock(2147483646, '5')],
       ['text that is not a number', 'hello\n'],
       ['an empty file', ''],
       ['zero', '0\n'],
@@ -1456,14 +1465,63 @@ describe('home', () => {
         }
       });
 
-      it('replaces an old-form lock (a pid only) that is older than this container, and keeps one written after it', () => {
+      it.each([
+        ['an old-form lock (a pid only)', (): string => `${process.ppid}\n`],
+        ['a lock of another boot (a shared disk)', (): string => `${process.ppid}\n00000000-0000-0000-0000-000000000000.${readlinkSync('/proc/self/ns/pid')}.5\n`],
+      ])('%s is taken at once when its file is old, after two beats when it is quiet', (_what, content) => {
         const old = tmpDir();
-        writeFileSync(join(old, LOCK_FILE), `${process.ppid}\n`);
+        writeFileSync(join(old, LOCK_FILE), content());
         utimesSync(join(old, LOCK_FILE), 1, 1);
+        const at = Date.now();
         expect(openTestHome(old).dir).toBe(old);
-        const fresh = tmpDir();
-        writeFileSync(join(fresh, LOCK_FILE), `${process.ppid}\n`);
-        expect(() => openHome(fresh)).toThrowError(/^another gonogo is using/);
+        expect(Date.now() - at).toBeLessThan(150);
+        const quiet = tmpDir();
+        writeFileSync(join(quiet, LOCK_FILE), content());
+        const from = Date.now();
+        expect(openTestHome(quiet).dir).toBe(quiet);
+        expect(Date.now() - from).toBeGreaterThanOrEqual(190);
+      });
+
+      it('an old-form lock or one of another boot whose file keeps moving is alive', async () => {
+        for (const content of [`${process.ppid}\n`, `${process.ppid}\n00000000-0000-0000-0000-000000000000.pid:[1].5\n`]) {
+          const dir = tmpDir();
+          const path = join(dir, LOCK_FILE);
+          writeFileSync(path, content);
+          const holder = spawn(process.execPath, ['-e', 'const f=require("fs");setInterval(()=>f.utimesSync(process.argv[1],new Date(),new Date()),30)', path], { stdio: 'ignore' });
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(() => openHome(dir)).toThrowError(/^another gonogo is using/);
+          } finally {
+            holder.kill();
+          }
+        }
+      });
+
+      it('a lock of this very process (same pid and start time) that holds no directory here is its own leftover', () => {
+        const dir = tmpDir();
+        writeFileSync(join(dir, LOCK_FILE), stampedLock(process.pid));
+        expect(openTestHome(dir).dir).toBe(dir);
+        // another start time with our pid: an earlier process of an earlier container, which cannot be alive
+        const other = tmpDir();
+        writeFileSync(join(other, LOCK_FILE), stampedLock(process.pid, '1'));
+        expect(openTestHome(other).dir).toBe(other);
+      });
+
+      it('the holder puts its lock back when it was removed, and leaves only when another gonogo made one in its place', async () => {
+        const dir = tmpDir();
+        const path = join(dir, LOCK_FILE);
+        const home = openHome(dir);
+        const content = readFileSync(path, 'utf8');
+        rmSync(path);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        expect(readFileSync(path, 'utf8')).toBe(content);
+        expect(lost).not.toContain(path);
+        rmSync(path);
+        writeFileSync(path, stampedLock(process.ppid));
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        expect(lost).toContain(path);
+        rmSync(path);
+        await home.close();
       });
 
       // another pid namespace: the pid says nothing, only the holder's beat does (the same number as ours included)
@@ -6629,9 +6687,10 @@ describe('cli: startGonogo', () => {
       installFakes();
       const home = join(tmpDir(), 'home');
       mkdirSync(home, { recursive: true });
-      writeFileSync(join(home, LOCK_FILE), `${process.ppid}\n`);
+      const lock = stampedLock(process.ppid);
+      writeFileSync(join(home, LOCK_FILE), lock);
       await expect(startGonogo({ port: 0, home, cwd: tmpDir(), agentCmd: ['x'], staticDir: null, env: {}, log: nullLogger })).rejects.toThrowError(/another gonogo is using/);
-      expect(readFileSync(join(home, LOCK_FILE), 'utf8')).toBe(`${process.ppid}\n`);
+      expect(readFileSync(join(home, LOCK_FILE), 'utf8')).toBe(lock);
       expect(factories.createTerminalHost).not.toHaveBeenCalled();
     });
 

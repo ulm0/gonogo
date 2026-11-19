@@ -166,32 +166,14 @@ function sleepSync(ms: number): void {
 }
 
 /**
- * True when the lock is held by a live gonogo. A stamp of this boot and this pid namespace is judged by the pid and its start time. A stamp of another
- * namespace (another container on the same volume, the host) cannot be judged by a pid, so the holder's heartbeat (it touches the file every beat) is
- * watched for two beats: a file that moves is alive. A lock of the old form (no stamp) is judged by its age: older than pid 1 of this container or boot
- * cannot be ours.
+ * True when the lock is held by a live gonogo. Only a lock PROVEN in our own world is judged by its pid: same boot, same pid namespace, and the pid gone or
+ * started at another time (dead), or the same start time (alive). Anything else (another boot id such as a home on a shared disk, another namespace, no /proc,
+ * a lock of the old form with no stamp) cannot be judged by a pid, so the holder's beat is watched: the file is touched every beat, and one that moves in two
+ * beats is alive. After a real reboot the file is far older than two beats, so it is taken at once.
  */
 function lockOwnerAlive(lock: LockContent, path: string): boolean {
-  if (lock.stamp === null) {
-    if (!isProcessAlive(lock.pid)) return false;
-    try {
-      const first = startTicks(1);
-      const boot = /^btime (\d+)$/m.exec(readFileSync('/proc/stat', 'utf8'))?.[1];
-      // shortcut: assumes 100 clock ticks per second (every Linux we run on); read it from getconf if that ever differs
-      if (first !== null && boot !== undefined && statSync(path).mtimeMs < Number(boot) * 1000 + (first / 100) * 1000) return false;
-    } catch {
-      // no /proc: the pid check stands
-    }
-    return true;
-  }
-  const [boot, ns, ticks] = lock.stamp.split('.');
-  const mine = processStamp(process.pid)?.split('.');
-  if (mine === undefined) return isProcessAlive(lock.pid);
-  if (boot !== mine[0]) return false;
-  if (ns === mine[1] && ticks !== undefined) {
-    if (!isProcessAlive(lock.pid)) return false;
-    return processStamp(lock.pid)?.split('.')[2] === ticks;
-  }
+  const proof = ownWorldVerdict(lock);
+  if (proof !== null) return proof;
   const deadline = Date.now() + 2 * lockHooks.beatMs;
   try {
     const first = statSync(path).mtimeMs;
@@ -206,15 +188,35 @@ function lockOwnerAlive(lock: LockContent, path: string): boolean {
   return false;
 }
 
-/** The holder's side: touch the lock every beat, and leave when the file no longer carries this process's own content (another gonogo took it over). */
+/** alive or dead when the stamp is of this boot and this pid namespace, null when no pid can say. */
+function ownWorldVerdict(lock: LockContent): boolean | null {
+  const mine = processStamp(process.pid)?.split('.');
+  if (lock.stamp === null || mine === undefined) return null;
+  const [boot, ns, ticks] = lock.stamp.split('.');
+  if (boot !== mine[0] || ns !== mine[1] || ticks === undefined) return null;
+  // our own pid: with our start time the file is our own leftover (as after an exec), with another one it is an earlier process that had this pid; neither is alive
+  if (lock.pid === process.pid) return false;
+  return isProcessAlive(lock.pid) && processStamp(lock.pid)?.split('.')[2] === ticks;
+}
+
+/** The holder's side: touch the lock every beat; put it back if it was removed; leave when the file holds another gonogo's content. */
 function keepLock(key: string, path: string, content: string): void {
   const timer = setInterval(() => {
     try {
-      if (readFileSync(path, 'utf8') !== content) return lockHooks.lost(path);
+      let held: string;
+      try {
+        held = readFileSync(path, 'utf8');
+      } catch (e) {
+        if (errCode(e) !== 'ENOENT') throw e;
+        // 'wx': a gonogo that made its own file in the meantime wins, and EEXIST below says so
+        writeFileSync(path, content, { flag: 'wx', mode: FILE_MODE });
+        return;
+      }
+      if (held !== content) return lockHooks.lost(path);
       const now = new Date();
       utimesSync(path, now, now);
     } catch (e) {
-      if (errCode(e) === 'ENOENT') lockHooks.lost(path);
+      if (errCode(e) === 'EEXIST') lockHooks.lost(path);
     }
   }, lockHooks.beatMs);
   timer.unref();

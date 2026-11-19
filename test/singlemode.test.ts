@@ -2,7 +2,7 @@
 // token and port, reload through the supervisor, and `gonogo token rotate`. Stand-in rooms (test/fake-room.mjs) except where a real room
 // (startGonogo with roomChild) is the point.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import http from 'node:http';
@@ -120,6 +120,8 @@ describe('one supervisor per home', () => {
     // a leftover naming a process that is gone
     mkdirSync(join(home, 'run'), { recursive: true });
     writeFileSync(join(home, 'run', 'supervisor.lock'), `${2 ** 22 - 3}\n`);
+    // a lock of the old form is judged by its beat: this one has not moved for a long time
+    utimesSync(join(home, 'run', 'supervisor.lock'), 1, 1);
     const release = acquireSupervisorLock(home);
     expect(readFileSync(join(home, 'run', 'supervisor.lock'), 'utf8').split('\n')[0]).toBe(String(process.pid));
     release();
