@@ -132,7 +132,7 @@ export interface WebOptions {
   /** false until hub.start() has resolved: /api and /ws answer 503 meanwhile. */
   isReady: () => boolean;
   /** Token use and limits; absent in tests that do not need them (the snapshot then shows no use and no limits). */
-  propellant?: Pick<Propellant, 'view' | 'setLimits' | 'setBudget'>;
+  propellant?: Pick<Propellant, 'view' | 'setLimits' | 'setBudget'> & Partial<Pick<Propellant, 'report'>>;
   /** The owner's model prices (docs/cost-spec.md); absent in tests that do not need them (the routes answer 404). */
   prices?: Pick<Prices, 'view' | 'replace' | 'remove'>;
   /** Called after a price or a budget changed, so the budget is checked against the new numbers at once. */
@@ -906,6 +906,20 @@ export function createWebServer(options: WebOptions): WebServer {
           const parsed = parseGovernor(body);
           if (!parsed.ok) sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
           else sendJson(res, 200, hub.setGovernor(parsed.value));
+        },
+      };
+    }
+    if (s.length === 2 && s[1] === 'cost') {
+      // what the ledger says, priced: room, agents and days with the kinds of token apart. An estimate, never a bill (docs/features/cost.md)
+      return {
+        allow: ['GET'],
+        run: (req, res) => {
+          const propellant = options.propellant;
+          if (!propellant?.report) return sendNotFound(res);
+          const asked = new URL(req.url ?? '/', 'http://x').searchParams.get('days');
+          const days = asked === null ? 14 : Number(asked);
+          if (!Number.isInteger(days) || days < 1 || days > 31) return sendApiError(res, 400, 'days is a whole number from 1 to 31', 'bad_request', 'days');
+          sendJson(res, 200, propellant.report(days), { 'Cache-Control': 'no-store' });
         },
       };
     }

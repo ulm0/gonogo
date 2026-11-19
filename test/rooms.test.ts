@@ -120,7 +120,7 @@ describe('the supervisor', () => {
     await until(async () => (await listed(s)).every((r) => r.state === 'running'));
     const rooms = await listed(s);
     expect(rooms.map((r) => r.id)).toEqual(['main', 'team']);
-    expect(rooms[0]).toMatchObject({ agents: 2, needsYou: 1, working: 1, lastActivity: 1_700_000_900_000, tabName: 'Fake tab' });
+    expect(rooms[0]).toMatchObject({ agents: 2, needsYou: 1, working: 1, lastActivity: 1_700_000_900_000, tabName: 'Fake tab', costToday: 1.5 });
     // the room's own settings, not the supervisor's
     const main = JSON.parse(readFileSync(join(home, 'started-with'), 'utf8')) as { args: string[]; home: string; port: string | null; supervisor: string | null; env: string[] };
     expect(main.home).toBe(home);

@@ -116,6 +116,15 @@ const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
 const text = (n: Node | undefined): string => n?.textContent ?? '';
 
 describe('the rooms list page script', () => {
+  it('shows what the room costs today as an estimate, and nothing when it is zero or unknown', async () => {
+    const { byId } = run({ token: 'a'.repeat(64), rooms: [room({ costToday: 2.5 }), room({ id: 'zero', name: 'Zero', costToday: 0 }), room({ id: 'unknown', name: 'Unknown', costToday: null })] });
+    await settle();
+    const [a, b, c] = (byId.rooms?.children ?? []) as [Node, Node, Node];
+    expect(text(a)).toContain('about $2.50 today (estimate)');
+    expect(text(b)).not.toContain('today (estimate)');
+    expect(text(c)).not.toContain('today (estimate)');
+  });
+
   it('draws a card for each room: name, state word, counts, last activity, tab name, and the keys', async () => {
     const { byId } = run({ token: 'a'.repeat(64), rooms: [room({ needsYou: 1, working: 3, lastActivity: Date.now() - 4 * 60_000, tabName: 'Ops' }), room({ id: 'ninah', name: 'ninah', state: 'running', agents: 2, running: 2 }), room({ id: 'old', name: 'Old', state: 'crashed', agents: null, note: 'gonogo: port in use' })] });
     await settle();
@@ -129,6 +138,8 @@ describe('the rooms list page script', () => {
     expect(text(main)).toContain('1 need you · 3 working');
     expect(text(main)).toContain('last activity 4 min ago');
     expect(text(main)).toContain('tab: Ops');
+    // today's estimate, said to be one, only when there is something
+    expect(text(main)).not.toContain('today');
     expect(main.querySelector('[data-f="open:main"]')?.href).toBe('/r/main/');
     // main has no rename or remove
     expect(main.querySelector('[data-f="rename:main"]')).toBeNull();

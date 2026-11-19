@@ -97,6 +97,17 @@ export function costOf(split: TokenSplit, price: ModelPrice): number {
   return (split.i * price.input + split.cw * price.cacheWrite + split.o * price.output + split.cr * price.cacheRead) / 1_000_000;
 }
 
+/** The same dollars kept apart by kind of token. */
+export interface UsdSplit {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+export function costSplit(split: TokenSplit, price: ModelPrice): UsdSplit {
+  return { input: (split.i * price.input) / 1_000_000, output: (split.o * price.output) / 1_000_000, cacheWrite: (split.cw * price.cacheWrite) / 1_000_000, cacheRead: (split.cr * price.cacheRead) / 1_000_000 };
+}
+
 /** Dollars as people read them: $0.42, $12.40, $1.2k. */
 export function moneyText(usd: number): string {
   if (usd < 1000) return `$${usd.toFixed(2)}`;

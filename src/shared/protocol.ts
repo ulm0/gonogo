@@ -688,6 +688,61 @@ export interface SpendOf {
   /** Dollars the mission may spend in all; absent when it has no budget (a task has none). */
   budget?: number;
 }
+/** One scope of GET /api/cost: the room, or one agent, or one day. */
+export interface CostScope {
+  /** Dollars of the priced use, an API-equivalent ESTIMATE at list prices (tokens times price), never a bill. This is the one basis of the headline, the budgets and Redline. */
+  usd: number;
+  /** The same dollars by kind of token. */
+  usdSplit: { input: number; output: number; cacheWrite: number; cacheRead: number };
+  /** The tokens that were priced, by kind. */
+  tokens: { input: number; output: number; cacheWrite: number; cacheRead: number };
+  /** Tokens (all kinds) that could not be priced: an old ledger line or a model with no price. */
+  unpriced: number;
+}
+export interface CostAgentScope extends CostScope {
+  /** Dollars the engine itself reported for its sessions in the window (at least this much), or null when it reported none: Claude Code's status line only. Shown beside the estimate, never added to it. */
+  reported: number | null;
+  /** What the agent has: a reported figure, an estimate only, or neither. */
+  basis: 'reported' | 'estimated' | 'none';
+  /** Sessions the engine reported on in the window. */
+  sessions: number;
+}
+export interface CostRoomScope extends CostScope {
+  /** The sum of the reported dollars of the agents that have any (not the room's total: see reportedAgents), or null when none does. */
+  reported: number | null;
+  reportedAgents: { have: number; of: number };
+}
+export interface CostDay extends CostScope {
+  /** YYYY-MM-DD in the server's local time. */
+  date: string;
+  byAgent: Record<string, number>;
+  /** Reported dollars that arrived that day, or null. */
+  reported: number | null;
+}
+/** GET /api/cost?days=N (docs/features/cost.md): what the ledger says for the last N local calendar days. */
+export interface CostReport {
+  currency: string;
+  /** Always true: nothing here is a bill. */
+  estimate: true;
+  /** A day is a LOCAL calendar day of the server (its time zone), from midnight to midnight. */
+  dayBoundary: 'local';
+  /** First and last day covered (YYYY-MM-DD, local). */
+  from: string;
+  to: string;
+  room: CostRoomScope;
+  agents: Record<string, CostAgentScope>;
+  days: CostDay[];
+  /** Models seen in the window that have no price (their tokens are in `unpriced`, never costed). */
+  unpricedModels: string[];
+  /** True when the ledger was cut inside the window (it keeps 31 days), so the oldest days are short. */
+  partial: boolean;
+  /** Sessions the engines reported on in the window. */
+  sessions: number;
+  /** Epoch ms of the oldest ledger line that carries a model, so it can be priced; null when none does. */
+  pricedSince: number | null;
+  /** When the default prices were copied; the owner's own rows win over them. */
+  priceAsOf: string;
+}
 export interface CostView {
   room: CostGauge;
   agents: Record<string, CostGauge>;
