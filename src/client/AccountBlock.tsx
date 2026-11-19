@@ -6,9 +6,21 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import * as api from './api.js';
 import type { AccountView } from './api.js';
+import { passkeysSupported } from './passkey.js';
+import { exposureText } from './exposure.js';
 
 const when = (at: number | null): string => (at === null ? 'never' : new Date(at).toISOString().slice(0, 16).replace('T', ' '));
 const fail = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Which names this gonogo answers on, and whether the login stands behind them (docs/expose-spec.md). */
+function ExposureLine({ exposure, login, mfa }: { exposure: AccountView['exposure']; login: string; mfa: boolean }): ReactElement {
+  const { line, warn } = exposureText(exposure, login, mfa);
+  return (
+    <p className={warn ? 'error' : 'hint'} role={warn ? 'alert' : undefined}>
+      {line}
+    </p>
+  );
+}
 
 export function AccountBlock(): ReactElement {
   const id = useId();
@@ -29,6 +41,7 @@ export function AccountBlock(): ReactElement {
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const [offPassword, setOffPassword] = useState('');
   const [offCode, setOffCode] = useState('');
+  const [passkeyName, setPasskeyName] = useState('');
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -113,6 +126,7 @@ export function AccountBlock(): ReactElement {
             Signed in as <strong>{account.user}</strong>
             {account.host === 'public' ? '' : account.host === 'private' ? ' (plain http on your network: not encrypted)' : ' (this machine)'}.
           </p>
+          <ExposureLine exposure={account.exposure} login={account.state} mfa={account.mfa.enabled} />
           <h3 className="label">SESSIONS</h3>
           <ul className="rules-list">
             {account.sessions.map((s) => (
@@ -260,6 +274,43 @@ export function AccountBlock(): ReactElement {
                 </button>
               </form>
             </>
+          )}
+          <h3 className="label">PASSKEYS</h3>
+          <ul className="rules-list">
+            {account.passkeys.length === 0 && <li className="hint">No passkeys.</li>}
+            {account.passkeys.map((p) => (
+              <li key={p.id}>
+                <span>
+                  {p.name} · for {p.rpId} · added {when(p.created).slice(0, 10)} · last used {when(p.last)}
+                  {p.backedUp ? ' · synced' : ''}
+                </span>
+                <button type="button" className="btn" data-kind="danger" onClick={() => run(() => api.authPasskeyRemove(p.id, offPassword, offCode), () => {
+                    setOffPassword('');
+                    setOffCode('');
+                  })} aria-label={`Remove the passkey ${p.name}`}>
+                  REMOVE
+                </button>
+              </li>
+            ))}
+          </ul>
+          {account.passkeys.length > 0 && <p className="hint">To remove a passkey, give your password and a code in the fields of the second factor above, then REMOVE.</p>}
+          {account.passkeyHere !== null && passkeysSupported() && !account.mfa.enabled ? (
+            <p className="hint">Turn on the second factor (TOTP) first: it is the way back if the name of this page ever changes and the passkey stops working.</p>
+          ) : account.passkeyHere !== null && passkeysSupported() ? (
+            <form
+              className="rules-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                run(() => api.authPasskeyAdd(passkeyName.trim() || 'passkey'), () => setPasskeyName(''));
+              }}
+            >
+              <input className="input" value={passkeyName} onChange={(e) => setPasskeyName(e.target.value)} placeholder="Name (this laptop, my phone)" aria-label="Passkey name" maxLength={60} />
+              <button type="submit" className="btn">
+                ADD A PASSKEY FOR {account.passkeyHere}
+              </button>
+            </form>
+          ) : (
+            <p className="hint">A passkey is made on a public name opened over https, in a browser that has them: this page is neither, or not both. A passkey works only at the name it was made for, and is the password and the second factor in one step.</p>
           )}
           <h3 className="label">PASSWORD</h3>
           <form className="rules-row" onSubmit={submitPassword}>

@@ -62,6 +62,12 @@ export default defineConfig({
           { text: 'The room', link: '/guide/the-room' },
           { text: 'Running in Docker', link: '/guide/docker' },
           { text: 'Exposing it safely (HTTPS)', link: '/https' },
+          { text: 'Expose: print the config, then check', link: '/features/expose' },
+          { text: 'Expose: Tailscale Serve', link: '/expose/tailscale' },
+          { text: 'Expose: Cloudflare tunnel', link: '/expose/cloudflare' },
+          { text: 'Expose: Caddy', link: '/expose/caddy' },
+          { text: 'Expose: Tailscale Funnel', link: '/expose/funnel' },
+          { text: 'Expose: ngrok', link: '/expose/ngrok' },
         ],
       },
       {

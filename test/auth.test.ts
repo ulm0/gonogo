@@ -268,6 +268,23 @@ describe('login, sessions and devices', () => {
   });
 });
 
+describe('what a newer version wrote', () => {
+  it('fields this version does not know are kept and written back, so a return from a rollback loses nothing', async () => {
+    const { auth } = await account();
+    auth.close();
+    const real = JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8'));
+    writeFileSync(join(home, AUTH_FILE), JSON.stringify({ ...real, aFieldOfLater: { a: [1, 2] }, anotherOne: 'x' }));
+    const again = open();
+    again.addKey('k', 'read', 30, false);
+    const after = JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8'));
+    expect(after.aFieldOfLater).toEqual({ a: [1, 2] });
+    expect(after.anotherOne).toBe('x');
+    expect(after.keys).toHaveLength(1);
+    // a known field is never overridden by an unknown one of the same name
+    expect(after.user).toBe('director');
+  });
+});
+
 describe('after review of the login', () => {
   it('N4: a prefix names one session or key, or none', async () => {
     const { auth, device } = await account();

@@ -4268,7 +4268,7 @@ describe('web: auth, Host and Origin', () => {
       ['evil.example', false],
       ['evil.example:7777', false],
       ['127.0.0.1.evil.example', false],
-      ['localhost.', false],
+      ['localhost.', true], // a trailing dot is the same name (docs/expose-spec.md R10: one normalizer)
       ['localhost.evil.example', false],
       ['0.0.0.0', false],
       ['[::2]', false],
