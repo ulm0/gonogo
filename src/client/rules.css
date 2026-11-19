@@ -336,3 +336,25 @@
 .rules-confirm p {
   margin: 0;
 }
+
+/* the step-up dialog */
+.stepup {
+  width: min(92vw, 380px);
+  padding: 16px;
+  color: inherit;
+}
+
+.stepup-form {
+  display: grid;
+  gap: 10px;
+}
+
+.stepup-form p {
+  margin: 0;
+}
+
+.stepup-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

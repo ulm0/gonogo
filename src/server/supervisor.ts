@@ -460,6 +460,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   closeDirectorSockets = () => proxy.closeSockets();
   // a session that ends (revoked, logged out, expired, password changed, reset, tamper) takes its sockets with it
   auth.onEnded((ids) => proxy.closeSessions(ids));
+  auth.onReminted((from, to) => proxy.rebind(from, to));
 
   /** The write routes need the same Origin rule as a room's: a browser page of another address is refused, a client without one is not. */
   const originOk = (req: http.IncomingMessage): boolean => {

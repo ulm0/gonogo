@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { AUTH_FILE, resetAuthFiles, SETUP_TOKEN_FILE } from '../src/server/auth.js';
+import { AUTH_FILE, resetAuthFiles, SETUP_TOKEN_FILE, totpCode } from '../src/server/auth.js';
 import { authCommand, socketCall } from '../src/server/authcli.js';
 import { createTuiClient } from '../src/server/tui-client.js';
 import { localSocketOf } from '../src/server/tui-cli.js';
@@ -158,7 +158,28 @@ describe('setup, login and the session cookie', () => {
     expect(session).not.toContain('Secure');
     const local = await call('POST', '/api/auth/login', { ...FORM, host: 'nas.local', origin: 'http://nas.local' }, form({ user: 'director', password: PASSWORD }));
     expect(local.setCookie.find((c) => c.startsWith('gonogo-session='))).not.toContain('Secure');
-    const pub = await call('POST', '/api/auth/login', { ...FORM, host: 'gonogo.example.com', origin: 'http://gonogo.example.com' }, form({ user: 'director', password: PASSWORD }));
+    // a public name takes a password only with a second factor on: turn TOTP on from here, then give the code there
+    const begun = JSON.parse((await call('POST', '/api/auth/mfa/begin', { ...cookieHeader(set.cookies), ...origin(), ...JSONH }, '{}')).text) as { secret: string };
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = 0;
+    let value = 0;
+    const bytes: number[] = [];
+    for (const ch of begun.secret) {
+      value = (value << 5) | alphabet.indexOf(ch);
+      bits += 5;
+      if (bits >= 8) {
+        bytes.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    const secret = Buffer.from(bytes);
+    expect((await call('POST', '/api/auth/mfa/enable', { ...cookieHeader(set.cookies), ...origin(), ...JSONH }, JSON.stringify({ code: totpCode(secret, Math.floor(Date.now() / 30000)) }))).status).toBe(200);
+    const publicHeaders = { ...FORM, host: 'gonogo.example.com', origin: 'http://gonogo.example.com' };
+    const step = await call('POST', '/api/auth/login', publicHeaders, form({ user: 'director', password: PASSWORD }));
+    const pendingToken = /name="pending" value="([^"]+)"/.exec(step.text)?.[1] as string;
+    // the same 30-second step as the one that turned it on is spent: the next one
+    const code = totpCode(secret, Math.floor(Date.now() / 30000) + 1);
+    const pub = await call('POST', '/api/auth/second', publicHeaders, form({ pending: pendingToken, code }));
     expect(pub.status).toBe(303);
     const secure = pub.setCookie.find((c) => c.startsWith('__Host-gonogo='));
     expect(secure).toMatch(/; Secure; HttpOnly; SameSite=Strict; Path=\/; Max-Age=604800$/);
@@ -479,7 +500,9 @@ describe('reset, alerts and the tamper alarm through the supervisor', () => {
     await new Promise((r) => setTimeout(r, 1100));
     expect((await socketCall(sup.socketPath, 'POST', '/api/auth/confirm', { password: PASSWORD })).status).toBe(200);
     const after = await call('POST', '/api/auth/login', { ...FORM, host: 'gonogo.example.com', origin: 'http://gonogo.example.com' }, form({ user: 'director', password: PASSWORD }));
-    expect(after.status).toBe(303);
+    // no longer paused (it is now the second-factor rule of a public name that answers)
+    expect(after.status).toBe(403);
+    expect(after.text).toContain('needs a second factor');
   });
 
   it('a damaged auth.json refuses page logins and keeps no TCP token', async () => {
@@ -491,6 +514,148 @@ describe('reset, alerts and the tamper alarm through the supervisor', () => {
     expect((await call('GET', '/login')).status).toBe(503);
     expect((await call('GET', '/api/rooms', { authorization: `Bearer ${'ab'.repeat(32)}` })).status).toBe(401);
     resetAuthFiles(home);
+  });
+});
+
+describe('the second factor and step-up through the supervisor (PR 2)', () => {
+  const fromBase32 = (text: string): Buffer => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = 0;
+    let value = 0;
+    const out: number[] = [];
+    for (const ch of text) {
+      value = (value << 5) | alphabet.indexOf(ch);
+      bits += 5;
+      if (bits >= 8) {
+        out.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    return Buffer.from(out);
+  };
+  let clock = 0;
+  const codeOf = (secret: Buffer, plus = 0): string => totpCode(secret, Math.floor((clock + plus) / 1000 / 30));
+  const json = (c: Record<string, string>, body: unknown): [Record<string, string>, string] => [{ ...c, ...origin(), ...JSONH }, JSON.stringify(body)];
+
+  /** An account with TOTP on, through the page's own routes; returns the session cookies, the secret and the recovery codes. */
+  async function withTotp(): Promise<{ cookies: Record<string, string>; secret: Buffer; recovery: string[] }> {
+    clock = Date.now();
+    await boot({ now: () => clock });
+    const cookies = await setUp();
+    const begun = JSON.parse((await call('POST', '/api/auth/mfa/begin', ...json(cookieHeader(cookies), {}))).text) as { secret: string; uri: string };
+    const secret = fromBase32(begun.secret);
+    const enabled = await call('POST', '/api/auth/mfa/enable', ...json(cookieHeader(cookies), { code: codeOf(secret) }));
+    expect(enabled.status).toBe(200);
+    expect(enabled.headers['cache-control']).toBe('no-store');
+    clock += 31_000;
+    return { cookies, secret, recovery: (JSON.parse(enabled.text) as { recovery: string[] }).recovery };
+  }
+
+  it('turned on through the page: the secret, a first valid code, ten recovery codes once; the account view says so', async () => {
+    const { cookies, recovery } = await withTotp();
+    expect(recovery).toHaveLength(10);
+    const view = JSON.parse((await call('GET', '/api/auth/account', cookieHeader(cookies))).text) as { mfa: { enabled: boolean; recoveryLeft: number } };
+    expect(view.mfa).toEqual({ enabled: true, pending: false, recoveryLeft: 10 });
+    expect(readFileSync(join(home, AUTH_FILE), 'utf8')).not.toContain(recovery[0] as string);
+  });
+
+  it('the login page then asks for the code: a plain form with the pending token, a wrong code says so, the right one signs in', async () => {
+    const { secret } = await withTotp();
+    const first = await call('POST', '/api/auth/login', { ...FORM, ...origin() }, form({ user: 'director', password: PASSWORD }));
+    expect(first.status).toBe(200);
+    expect(first.text).toContain('SECOND FACTOR');
+    expect(first.text).not.toMatch(/<script/i);
+    expect(first.text).not.toContain(PASSWORD);
+    expect(first.setCookie).toEqual([]);
+    const pending = /name="pending" value="([^"]+)"/.exec(first.text)?.[1] as string;
+    const wrong = await call('POST', '/api/auth/second', { ...FORM, ...origin() }, form({ pending, code: '000000' }));
+    expect(wrong.status).toBe(401);
+    expect(wrong.text).toContain('SECOND FACTOR');
+    expect(wrong.text).toContain('Wrong name or password.');
+    await new Promise((r) => setTimeout(r, 1100));
+    clock += 31_000;
+    const done = await call('POST', '/api/auth/second', { ...FORM, ...origin() }, form({ pending, code: codeOf(secret) }));
+    expect(done.status).toBe(303);
+    expect(done.cookies['gonogo-session']).toBeDefined();
+    expect((await call('GET', '/api/state', cookieHeader(done.cookies))).status).toBe(200);
+  });
+
+  it('the JSON way: the first step answers second:true and a token, the second takes the code; a recovery code works once', async () => {
+    const { recovery } = await withTotp();
+    const login = async (): Promise<string> => {
+      const first = await call('POST', '/api/auth/login', { ...JSONH, ...origin() }, JSON.stringify({ user: 'director', password: PASSWORD }));
+      expect(JSON.parse(first.text)).toMatchObject({ ok: false, second: true });
+      return (JSON.parse(first.text) as { pending: string }).pending;
+    };
+    const ok = await call('POST', '/api/auth/second', { ...JSONH, ...origin() }, JSON.stringify({ pending: await login(), code: recovery[0] }));
+    expect(ok.status).toBe(200);
+    expect(ok.cookies['gonogo-session']).toBeDefined();
+    await new Promise((r) => setTimeout(r, 1100));
+    const again = await call('POST', '/api/auth/second', { ...JSONH, ...origin() }, JSON.stringify({ pending: await login(), code: recovery[0] }));
+    expect(again.status).toBe(401);
+  });
+
+  it('a public name: with no second factor "this address needs a second factor"; with one, the code lets in and the cookie is the __Host- one', async () => {
+    clock = Date.now();
+    await boot({ now: () => clock });
+    await setUp();
+    const pub = { ...FORM, host: 'gonogo.example.com', origin: 'http://gonogo.example.com' };
+    const refused = await call('POST', '/api/auth/login', pub, form({ user: 'director', password: PASSWORD }));
+    expect(refused.status).toBe(403);
+    expect(refused.text).toContain('needs a second factor');
+    expect(refused.setCookie).toEqual([]);
+  });
+
+  it('step-up: after five minutes a change from the list is refused with stepUp:true, the password (and code) gives a new cookie, and the sockets keep going', async () => {
+    const { cookies, secret } = await withTotp();
+    const ws = new WebSocket(`ws://127.0.0.1:${sup.port}/ws`, [WS_SUBPROTOCOL], { headers: { ...cookieHeader(cookies), ...origin() } });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    let closed = false;
+    ws.once('close', () => (closed = true));
+    // fresh: the change goes through
+    const [h, b] = json(cookieHeader(cookies), {});
+    expect((await call('PUT', '/api/permissions', h, b)).status).toBe(200);
+    clock += 6 * 60_000;
+    const refused = await call('PUT', '/api/permissions', h, b);
+    expect(refused.status).toBe(403);
+    expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true, second: true });
+    // not behind it: a message, an answer, hold, restart, and any read
+    for (const [method, path] of [['POST', '/api/messages'], ['POST', '/api/agents/ana/hold'], ['POST', '/api/agents/ana/restart'], ['GET', '/api/permissions']] as const) expect((await call(method, path, h, b)).status, path).toBe(200);
+    // the hire is judged by its body
+    const hire = (body: unknown): Promise<Answer> => call('POST', '/api/agents', { ...h }, JSON.stringify(body));
+    expect((await hire({ name: 'x', command: 'sh' })).status).toBe(403);
+    expect((await hire({ name: 'x', mode: 'default' })).status).toBe(200);
+    // the account's own changes too
+    expect((await call('POST', '/api/auth/keys', h, JSON.stringify({ name: 'k', scope: 'read' }))).status).toBe(403);
+    // a wrong password, then the right password and the current code
+    expect((await call('POST', '/api/auth/stepup', h, JSON.stringify({ password: 'not the password', code: codeOf(secret) }))).status).toBe(401);
+    await new Promise((r) => setTimeout(r, 1100));
+    clock += 31_000;
+    const done = await call('POST', '/api/auth/stepup', h, JSON.stringify({ password: PASSWORD, code: codeOf(secret) }));
+    expect(done.status).toBe(200);
+    const fresh = done.cookies['gonogo-session'] as string;
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(cookies['gonogo-session']);
+    // the old value is dead, the new one passes the change, and the socket did not close
+    expect((await call('GET', '/api/state', cookieHeader(cookies))).status).toBe(401);
+    expect((await call('PUT', '/api/permissions', { ...cookieHeader({ ...cookies, 'gonogo-session': fresh }), ...origin(), ...JSONH }, '{}')).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(closed).toBe(false);
+    ws.close();
+  });
+
+  it('turning it off needs the password and a code; the account view then says so', async () => {
+    const { cookies, secret } = await withTotp();
+    const [h] = json(cookieHeader(cookies), {});
+    expect((await call('POST', '/api/auth/mfa/disable', h, JSON.stringify({ password: PASSWORD, code: '000000' }))).status).toBe(401);
+    await new Promise((r) => setTimeout(r, 1100));
+    clock += 31_000;
+    expect((await call('POST', '/api/auth/mfa/disable', h, JSON.stringify({ password: PASSWORD, code: codeOf(secret) }))).status).toBe(200);
+    const view = JSON.parse((await call('GET', '/api/auth/account', cookieHeader(cookies))).text) as { mfa: { enabled: boolean } };
+    expect(view.mfa.enabled).toBe(false);
   });
 });
 

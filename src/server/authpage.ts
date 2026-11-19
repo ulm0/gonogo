@@ -28,7 +28,7 @@ export const authPageHeaders = (): Record<string, string> => ({
   'X-Frame-Options': 'DENY',
 });
 
-export type AuthPageKind = 'login' | 'setup' | 'unset' | 'damaged' | 'locked';
+export type AuthPageKind = 'login' | 'setup' | 'unset' | 'damaged' | 'locked' | 'second';
 
 export interface AuthPageInput {
   kind: AuthPageKind;
@@ -36,6 +36,8 @@ export interface AuthPageInput {
   /** What went wrong, in words the Director can act on; never the reason a login failed beyond "wrong name or password". */
   message?: string;
   user?: string;
+  /** The single-use token of a login that waits for its second factor. */
+  pending?: string;
   /** Whether the connection is plain http to a private name (the page says so: a LAN sniffer sees the password). */
   plain?: boolean;
 }
@@ -58,6 +60,15 @@ export function authPage(input: AuthPageInput): string {
   }
   if (input.kind === 'locked') {
     return `${head}<section class="module lg-form"><h2 class="label">REMOTE LOGINS ARE PAUSED</h2><p>gonogo saw its account file change outside gonogo. Remote logins stay refused until the Director confirms on the machine gonogo runs on (the account block in Flight Rules, or <code>gonogo auth confirm</code>).</p>${error}</section>${tail}`;
+  }
+  if (input.kind === 'second') {
+    return (
+      `${head}<form class="module lg-form" method="post" action="/api/auth/second" autocomplete="off"><h2 class="label">SECOND FACTOR</h2>` +
+      `<p>Give the six-digit code of your authenticator, or one of your recovery codes.</p>` +
+      `<input type="hidden" name="pending" value="${esc(input.pending ?? '')}">` +
+      `<label><span class="label">CODE</span><input class="input" name="code" inputmode="text" autocomplete="one-time-code" required maxlength="20" autofocus spellcheck="false"></label>` +
+      `${error}${plain}<button class="btn" data-kind="primary" type="submit">CONTINUE</button></form>${tail}`
+    );
   }
   if (input.kind === 'setup') {
     return (

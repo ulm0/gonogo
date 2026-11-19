@@ -24,6 +24,11 @@ export function AccountBlock(): ReactElement {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [secret, setSecret] = useState<{ secret: string; uri: string } | null>(null);
+  const [code, setCode] = useState('');
+  const [recovery, setRecovery] = useState<string[] | null>(null);
+  const [offPassword, setOffPassword] = useState('');
+  const [offCode, setOffCode] = useState('');
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -180,6 +185,81 @@ export function AccountBlock(): ReactElement {
                 DONE
               </button>
             </div>
+          )}
+          <h3 className="label">SECOND FACTOR (TOTP)</h3>
+          {!account.mfa.enabled && secret === null && (
+            <>
+              <p className="hint">An authenticator app makes a six-digit code every 30 seconds. With it on, signing in and the changes that matter ask for a code. A public address cannot be signed in to without it.</p>
+              <div className="rules-row">
+                <button type="button" className="btn" onClick={() => run(async () => setSecret(await api.authMfaBegin()))}>
+                  TURN ON
+                </button>
+              </div>
+            </>
+          )}
+          {!account.mfa.enabled && secret !== null && (
+            <form
+              className="rules-confirm flood"
+              data-tone="go"
+              onSubmit={(event) => {
+                event.preventDefault();
+                run(async () => setRecovery(await api.authMfaEnable(code)), () => {
+                  setSecret(null);
+                  setCode('');
+                });
+              }}
+            >
+              <p>Add this to your authenticator (type the key, or open the address as a link on this device), then give the first code.</p>
+              <p className="lcd">{secret.secret}</p>
+              <p className="lcd">{secret.uri}</p>
+              <div className="rules-row">
+                <input className="input" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" aria-label="First code" placeholder="123456" required />
+                <button type="submit" className="btn" data-kind="primary">
+                  CONFIRM
+                </button>
+              </div>
+            </form>
+          )}
+          {recovery !== null && (
+            <div className="flood rules-confirm" data-tone="go" role="status">
+              <p>Keep these recovery codes somewhere safe. Each works once, instead of a code. They are not shown again.</p>
+              <p className="lcd">{recovery.join('  ')}</p>
+              <button type="button" className="btn" onClick={() => setRecovery(null)}>
+                DONE
+              </button>
+            </div>
+          )}
+          {account.mfa.enabled && (
+            <>
+              <p>On. {account.mfa.recoveryLeft} recovery codes left.</p>
+              <form
+                className="rules-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  run(async () => setRecovery(await api.authMfaRecovery(offPassword, offCode)), () => {
+                    setOffPassword('');
+                    setOffCode('');
+                  });
+                }}
+              >
+                <input className="input" type="password" autoComplete="current-password" value={offPassword} onChange={(e) => setOffPassword(e.target.value)} placeholder="Password" aria-label="Password" required />
+                <input className="input" value={offCode} onChange={(e) => setOffCode(e.target.value)} placeholder="Code or recovery code" aria-label="Code or recovery code" autoComplete="one-time-code" required />
+                <button type="submit" className="btn">
+                  NEW RECOVERY CODES
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  data-kind="danger"
+                  onClick={() => run(() => api.authMfaDisable(offPassword, offCode), () => {
+                    setOffPassword('');
+                    setOffCode('');
+                  })}
+                >
+                  TURN OFF
+                </button>
+              </form>
+            </>
           )}
           <h3 className="label">PASSWORD</h3>
           <form className="rules-row" onSubmit={submitPassword}>

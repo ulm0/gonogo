@@ -54,10 +54,25 @@ in ten minutes from unknown devices raise an alert.
 The client address is the socket's. Behind a reverse proxy it is the proxy's, until you tell gonogo which proxies to believe:
 `--trusted-proxy <ip>` (or `GONOGO_TRUSTED_PROXY`, comma list). A forwarded address from anyone else changes nothing.
 
+## Second factor (TOTP)
+
+In Flight Rules → LOGIN → SECOND FACTOR, TURN ON makes a secret: add it to an authenticator app (the key is shown as text and as an `otpauth://` address; no QR code is drawn), give the first code, and gonogo shows ten **recovery codes once**. From then on signing in is two steps: the password, then a six-digit code (or a recovery code, which works once).
+
+- A code works once and is good for its own 30-second step and one either side.
+- A wrong code counts like a wrong password, in the same waits; giving the password again does not clear them.
+- **A public name cannot be signed in to without it.** On this machine or your network a password alone still works, with the plain-http warning.
+- Turning it off, or making new recovery codes, needs your password **and** a code: a stolen session alone cannot. `gonogo auth reset` removes it with the account.
+
+## Confirming again (step-up)
+
+A session whose password was checked more than five minutes ago is asked for it again (and the code) before the changes that matter most: a hire with a command of its own or a mode that works without asking, editing what an agent may do, the room's permissions, Features, the secrets of Uplink, Relay and Docking, the keys of an engine, writing a file in an agent's folder, a commit, a Docker update, and the account's own changes. The page opens CONFIRM IT IS YOU by itself and repeats the change. Confirming mints the session's id again, and its sockets stay open.
+
+**This is a speed bump, not a wall.** Typing into a console, a message to an agent, a GO on a permission dialog, hold, resume and starting or restarting an agent are not behind it, and each of them can make an agent that is allowed to do anything run anything. A stolen session is still shell-equivalent. What protects it is the second factor at login, the short lifetimes, the session list with REVOKE, and the alerts. A key, the local socket and the old token are not asked.
+
 ## Alerts
 
 A `redline` event in the Downlink, forwarded by Relay when it is on, for: the account made, `gonogo auth reset`, the first login from a
-new device, a new API key, a password change, the failure count above, and the tamper alarm. The text has the address and the browser,
+new device, a new API key, a password change, a second factor turned on or off, a recovery code used or new ones made, the failure count above, and the tamper alarm. The text has the address and the browser,
 never a secret.
 
 ## API keys
@@ -96,8 +111,8 @@ setup). Run agents in a Clean Room on an exposed gonogo.
 
 ## What it does not do
 
-- **No second factor yet.** TOTP, recovery codes and the step-up for the quickest routes are the next PR; a session is as strong as the
-  password until then. Passkeys are not built.
+- **No passkeys.** They need a dependency (WebAuthn) that has not been decided, and a name and https to work with.
+- **No QR code** for the authenticator: the key and the address are shown as text.
 - **A change made while gonogo is stopped is not seen** by the alarm; the next start loads the file as it is.
 - **Not exposure.** This page does not publish gonogo; it only makes a login for when you do ([Exposing gonogo safely](../https.md)).
 - Telegram approvals stay a second path that does not use the login (an approval of a permission or a Relief request only).
