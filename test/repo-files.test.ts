@@ -135,6 +135,7 @@ describe('the HOME of the container is persisted as a whole', () => {
     expect(liveDocker).toContain('/src/packaging/docker/entrypoint.sh /usr/local/bin/gonogo-entrypoint');
     expect(liveDocker).toContain('ENTRYPOINT ["tini", "-s", "--", "gonogo-entrypoint"]');
     expect(entry).toContain('cp -rn /etc/skel/.');
+    expect(entry).toContain('[ ! -e "$HOME/.config/gh" ]');
     expect(entry).toContain('cp -rn /state/config/gh');
     expect(entry).toContain('[ ! -e "$HOME/.gitconfig" ]');
     expect(entry).toMatch(/\[ -w "\$HOME" \] \|\| echo .*chown 1000:1000/);
