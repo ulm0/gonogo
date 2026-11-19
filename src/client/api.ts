@@ -1207,6 +1207,8 @@ export interface AccountView {
   sessions: AccountSession[];
   keys: AccountKey[];
   mfa: { enabled: boolean; pending: boolean; recoveryLeft: number };
+  /** The names this gonogo answers on (docs/expose-spec.md): page hosts, hooks-only hosts and the public address. */
+  exposure?: { pages: string[]; hooks: string[]; publicUrl: string | null };
 }
 
 /** One call to `/api/auth/...`: the supervisor's own route (a room has none), so the path is absolute and the session cookie is the credential. */

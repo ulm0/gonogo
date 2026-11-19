@@ -271,6 +271,11 @@ Each is built from the keys, chips, lights, modules and fields above, so it foll
 <div style="display: grid; gap: 6px"><span style="display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center"><span class="legend">WEEK</span><span style="height: 8px; border-radius: 4px; background: var(--key); overflow: hidden"><i style="display: block; width: 82%; height: 100%; background: var(--you)"></i></span></span><span class="lcd-num">82 %, resets in 28 h 0 min</span><span class="hint">from Claude Code: your plan's own number.</span></div>
 <span class="label">Update confirmation</span>
 <div style="display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--edge); border-radius: 4px; background: var(--well)"><span class="hint">2 agents are working and 1 is idle: they will all stop. Autostart is on: they start again by themselves.</span><span style="display: flex; gap: 8px"><span class="btn" data-kind="primary">Update now</span><span class="btn" data-kind="quiet">Cancel</span></span></div>
+<span class="label">Expose check lines</span>
+<pre class="lcd" style="margin: 0; font-size: 12px; overflow-x: auto">pass  /api/state answers 401 with no credential
+FAIL  /hook/x/Stop answered 200: it must be 404</pre>
+<span class="label">Exposed to (Flight Rules, LOGIN)</span>
+<span class="hint">Exposed to: gonogo.example.com (page), hooks.example.com (webhooks only). Login: ready (account and second factor).</span>
 <span class="label">Worktree line</span>
 <span style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><span class="chip" data-tone="quiet">WORKTREE</span><span class="hint">Branch <code>gonogo/ana</code>, clean, merged into main.</span></span>
 <span class="label">Room editor: card, grip and tray</span>

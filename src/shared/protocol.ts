@@ -1123,6 +1123,8 @@ export interface ServerInfo {
   installed: Provider[];
   /** IANA name of the server's time zone: the one Launch Window rules run in. */
   timeZone: string;
+  /** `--public-url`: where the page is for people outside; webhook addresses shown for Uplink and Relay use it. Absent when not set. */
+  publicUrl?: string;
 }
 export interface StateSnapshot {
   agents: AgentView[];

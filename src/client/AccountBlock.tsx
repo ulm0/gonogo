@@ -6,9 +6,20 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import * as api from './api.js';
 import type { AccountView } from './api.js';
+import { exposureText } from './exposure.js';
 
 const when = (at: number | null): string => (at === null ? 'never' : new Date(at).toISOString().slice(0, 16).replace('T', ' '));
 const fail = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Which names this gonogo answers on, and whether the login stands behind them (docs/expose-spec.md). */
+function ExposureLine({ exposure, login, mfa }: { exposure: AccountView['exposure']; login: string; mfa: boolean }): ReactElement {
+  const { line, warn } = exposureText(exposure, login, mfa);
+  return (
+    <p className={warn ? 'error' : 'hint'} role={warn ? 'alert' : undefined}>
+      {line}
+    </p>
+  );
+}
 
 export function AccountBlock(): ReactElement {
   const id = useId();
@@ -113,6 +124,7 @@ export function AccountBlock(): ReactElement {
             Signed in as <strong>{account.user}</strong>
             {account.host === 'public' ? '' : account.host === 'private' ? ' (plain http on your network: not encrypted)' : ' (this machine)'}.
           </p>
+          <ExposureLine exposure={account.exposure} login={account.state} mfa={account.mfa.enabled} />
           <h3 className="label">SESSIONS</h3>
           <ul className="rules-list">
             {account.sessions.map((s) => (
