@@ -135,7 +135,7 @@ jobs:
     needs: publish
     if: ${{ vars.HOMEBREW_TAP == 'true' && !contains(inputs.tag || github.ref_name, '-') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -154,11 +154,11 @@ jobs:
         run: |
           version=${TAG#v}
           url="https://registry.npmjs.org/@${GITHUB_REPOSITORY_OWNER}/gonogo/-/gonogo-$version.tgz"
-          # npm can take a moment to serve a version it just accepted
-          for i in 1 2 3 4 5 6; do
+          # npm can take minutes to serve a version it just accepted (0.5.5 took over 100 s): up to 10 minutes
+          for i in $(seq 1 20); do
             curl -fsSL "$url" -o gonogo.tgz && break
-            [ "$i" = 6 ] && { echo "::error::$url is not served"; exit 1; }
-            sleep 20
+            [ "$i" = 20 ] && { echo "::error::$url is not served"; exit 1; }
+            sleep 30
           done
           sha=$(sha256sum gonogo.tgz | cut -d' ' -f1)
           mkdir -p tap/Formula
