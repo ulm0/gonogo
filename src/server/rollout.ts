@@ -48,7 +48,7 @@ export function updateCommand(where: { file: string; docker: boolean; clone: boo
   const path = where.file.replace(/\\/g, '/');
   if (where.docker) return 'docker compose pull && docker compose up -d';
   if (where.clone) return 'git pull && pnpm install && pnpm build';
-  if (path.includes('/pnpm/dlx/')) return `pnpm dlx ${PNPM_EXCLUDE} @ulm0/gonogo@latest`;
+  if (path.includes('/pnpm/dlx/')) return `pnpm ${PNPM_EXCLUDE} dlx @ulm0/gonogo@latest`;
   if (BREW.test(path)) return 'brew upgrade gonogo';
   if (path.includes('/lib/node_modules/@ulm0/gonogo/')) return 'npm install -g @ulm0/gonogo@latest';
   return `pnpm add -g ${PNPM_EXCLUDE} @ulm0/gonogo@latest`;

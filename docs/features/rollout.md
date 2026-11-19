@@ -28,7 +28,7 @@ gonogo tells you when a newer `@ulm0/gonogo` exists and says which command updat
 |---|---|
 | The Docker image | `docker compose pull && docker compose up -d`, in the folder of your `compose.yaml` |
 | A git checkout | `git pull && pnpm install && pnpm build` |
-| `pnpm dlx` | `pnpm dlx --config.minimum-release-age-exclude=@ulm0/gonogo @ulm0/gonogo@<newest>` |
+| `pnpm dlx` | `pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@<newest>` |
 | Homebrew | `brew upgrade gonogo` |
 | `npm install -g` | `npm install -g @ulm0/gonogo@latest` |
 | `pnpm add -g`, or anything else | `pnpm add -g --config.minimum-release-age-exclude=@ulm0/gonogo @ulm0/gonogo@<newest>` |

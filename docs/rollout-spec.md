@@ -39,7 +39,7 @@ note, and prints the exact command for the way gonogo was installed. Running tha
 |---|---|
 | a container (the image, `compose.yaml`) | `docker compose pull && docker compose up -d`, in the folder of the compose file |
 | a git checkout | `git pull && pnpm install && pnpm build` |
-| `pnpm dlx` | `pnpm dlx --config.minimum-release-age-exclude=@ulm0/gonogo @ulm0/gonogo@<newest>` |
+| `pnpm dlx` | `pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@<newest>` |
 | `npm install -g` (`lib/node_modules/@ulm0/gonogo`) | `npm install -g @ulm0/gonogo@latest` |
 | `pnpm add -g`, and anything not recognised | `pnpm add -g --config.minimum-release-age-exclude=@ulm0/gonogo @ulm0/gonogo@<newest>` |
 
