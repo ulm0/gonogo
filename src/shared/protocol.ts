@@ -1572,6 +1572,23 @@ export interface TabNameView {
   /** The station name when GONOGO_STATION is set, else null: used while `name` is null. */
   fallback: string | null;
 }
+/** Push to the installed app (docs/features/mobile.md): what is pushed, and the devices that get it. */
+export const PUSH_KINDS = ['message', 'redline', 'tminus', 'relief', 'permission'] as const;
+export type PushKind = (typeof PUSH_KINDS)[number];
+export interface PushDevice {
+  id: string;
+  name: string;
+  /** The device chose to see the sender and the first words, not the generic line. */
+  snippet: boolean;
+  at: number;
+  /** It was made by the login session that asks. */
+  mine: boolean;
+}
+export interface PushView {
+  /** The VAPID public key (base64url) that a browser subscribes with. */
+  publicKey: string;
+  devices: PushDevice[];
+}
 /** The tab name changed; carries the whole view. Also inside StateSnapshot. */
 export interface TabNameFrame {
   t: 'tabname';

@@ -43,7 +43,18 @@ export default defineConfig({
   // The livery key (theme/LiverySwitch.vue) replaces the light/dark switch.
   appearance: false,
   // One dark theme: every code block is an LCD, a dark screen in every livery. Its high-contrast colours stay above 6:1 on all four.
-  markdown: { theme: 'github-dark-high-contrast' },
+  markdown: {
+    theme: 'github-dark-high-contrast',
+    // %VERSION% in a page is this build's package.json version (a command that names the exact release: docs/guide/getting-started.md).
+    config: (md) => {
+      md.core.ruler.push('gonogo-version', (state) => {
+        for (const t of state.tokens) {
+          if (t.type === 'fence') t.content = t.content.replaceAll('%VERSION%', version);
+          for (const c of t.children ?? []) c.content = c.content.replaceAll('%VERSION%', version);
+        }
+      });
+    },
+  },
   lastUpdated: false,
   themeConfig: {
     // The app's top bar: the two keys and the dot-matrix word, no text title (custom.css turns it on a dark livery, as the app does).
@@ -104,6 +115,7 @@ export default defineConfig({
           { text: 'Downlink', link: '/features/downlink' },
           { text: 'Party Line', link: '/features/party-line' },
           { text: 'Notifications', link: '/features/notifications' },
+          { text: 'The phone app', link: '/features/mobile' },
           { text: 'Mission Log', link: '/features/mission-log' },
           { text: 'Star Chart', link: '/features/star-chart' },
           { text: 'Mass Budget', link: '/features/mass-budget' },

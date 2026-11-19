@@ -42,4 +42,6 @@ gonogo expose check
 - Not verified for Tunnel: how Host is mapped and WebSocket behaviour; `expose check` shows the Host gonogo sees.
 - Do not use a **Quick Tunnel** (`trycloudflare.com`): it is for testing only, its name changes on every run, so `--allow-host`, the public URL and passkeys break.
 
+- **In Docker with the tunnel or proxy on the host,** gonogo sees it at the Docker bridge gateway (for example `172.17.0.1`: `docker network inspect bridge`), so give `--trusted-proxy` that address, not `127.0.0.1`. With the tunnel in the same container or network namespace, `127.0.0.1` is right.
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

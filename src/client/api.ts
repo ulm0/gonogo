@@ -36,6 +36,7 @@ import type {
   ReflectResult,
   RelayForwardRequest,
   PhoneMode,
+  PushView,
   RelayService,
   RelayTargetRequest,
   RecorderCommit,
@@ -467,6 +468,49 @@ export async function holdAll(): Promise<HoldAllResult> {
 /** ALL RESUME: resumes every console that is on hold. */
 export async function resumeAll(): Promise<ResumeAllResult> {
   return (await call('POST', '/resume-all')) as ResumeAllResult;
+}
+
+/**
+ * Push to the installed app: the key to subscribe with and the devices (docs/features/mobile.md). The supervisor answers these, for every
+ * room, at the root of the address (like the login), so they never carry a room's prefix; the login's session cookie is the credential.
+ */
+async function pushCall(method: string, path: string, body?: unknown): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/push${path}`, { method, headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
+  } catch {
+    throw failure('Could not reach the gonogo server.');
+  }
+  let parsed: unknown = null;
+  try {
+    const text = await response.text();
+    if (text !== '') parsed = JSON.parse(text);
+  } catch {
+    // not JSON: the status says it
+  }
+  if (!response.ok) {
+    const error = asRecord(parsed);
+    throw failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined);
+  }
+  return parsed;
+}
+
+export async function pushView(): Promise<PushView> {
+  const record = asRecord(await pushCall('GET', ''));
+  if (record === null || typeof record.publicKey !== 'string' || !Array.isArray(record.devices)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as PushView;
+}
+
+export async function pushSubscribe(body: { endpoint: string; keys: { p256dh: string; auth: string }; device: string; snippet: boolean }): Promise<PushView> {
+  return (await pushCall('PUT', '/subscription', body)) as PushView;
+}
+
+export async function pushUnsubscribe(id: string): Promise<PushView> {
+  return (await pushCall('DELETE', '/subscription', { id })) as PushView;
+}
+
+export async function pushTest(id: string): Promise<{ ok: boolean; note: string }> {
+  return (await pushCall('POST', '/test', { id })) as { ok: boolean; note: string };
 }
 
 /** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */

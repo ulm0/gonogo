@@ -53,6 +53,8 @@ import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createFeatureStore } from './features.js';
 import { toolsOff } from '../shared/features.js';
+import { pushEventOfHub, pushKindOf, pushLineOf } from './push.js';
+import type { PushEvent } from './push.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
@@ -186,7 +188,7 @@ Options:
   --trusted-proxy <ip>  believe X-Forwarded-For from this reverse proxy's address; repeatable (env GONOGO_TRUSTED_PROXY, comma list)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list).
                         "name:hooks" serves only the webhooks (/uplink, /dock) there: no page, no login
-  --public-url <url>    where the page is for people outside, https for a public name (env GONOGO_PUBLIC_URL)
+  --public-url <url>    the address other machines reach this gonogo by: its page, or for a name:hooks host its webhooks; https for a public name (env GONOGO_PUBLIC_URL)
   --client-ip-header <h>  x-forwarded-for (default) or cf-connecting-ip: the header a trusted proxy puts the client address in (env GONOGO_CLIENT_IP_HEADER)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
@@ -682,6 +684,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('relay'),
     });
     await relay.load();
+    // push to the installed app (docs/features/mobile.md): the supervisor holds the key and the devices; this room only says, on its pipe, what waits for the Director
+    const push = { send: (ev: PushEvent | null): void => void (ev !== null && options.roomChild === true && options.exitWithStdin === true && process.stdout.write(pushLineOf(ev))) };
     const blackBox = createBlackBox({
       dir: home.dir,
       now: () => Date.now(),
@@ -697,6 +701,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const tell: DownlinkNotify = (kind, text, ref) => {
       downlink.post(kind, text);
       if (features.isOn('relay')) relay.event(kind, text);
+      const pushKind = pushKindOf(kind, text);
+      if (pushKind !== null) push.send({ kind: pushKind, text });
       if (ref !== undefined) phone?.approval(ref, text);
       if (kind === 'redline') audit('redline', tripText(text));
       else if (kind === 'tminus') audit('poll', pollText(text));
@@ -799,6 +805,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         web?.broadcast(event);
         downlink.observe(event);
         if (features.isOn('relay')) relay.observe(event);
+        push.send(pushEventOfHub(event));
       },
       notify: tell,
       log: log.child('hub'),

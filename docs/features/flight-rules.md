@@ -18,7 +18,7 @@ settings you can change in the room on one screen. COMMISSIONING is the checklis
   [Docking](./docking.md).
 - **CONSOLES**: every console with its EDIT key (directory, role, engine, permission mode, payload). A console's own Propellant
   limit stays in its panel.
-- **THIS BROWSER**: the [notifications](./notifications.md) switch, and SHOW COMMISSIONING AGAIN.
+- **THIS BROWSER**: the [notifications](./notifications.md) switch, PUSH TO THIS DEVICE ([the phone app](./mobile.md)), and SHOW COMMISSIONING AGAIN.
 
 It adds no setting: each one is the same call as in its own place, kept on the server, so every device shows the same.
 

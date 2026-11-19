@@ -27,6 +27,8 @@ export function relyingParty(host: string | undefined, cls: HostClass): RelyingP
   if (cls !== 'public' || host === undefined) return null;
   const name = hostName(host);
   if (name === null || !DOMAIN.test(name)) return null;
+  // a browser keeps the trailing dot in the origin it signs (`https://name.`) while gonogo reads the name without it: they could never agree, so no passkey is offered on that Host
+  if (host.trim().replace(/:\d{1,5}$/, '').endsWith('.')) return null;
   // a browser writes the origin without the port https has by default
   const port = /:(\d{1,5})$/.exec(host.trim())?.[1];
   return { rpId: name, origin: `https://${name}${port === undefined || port === '443' ? '' : `:${port}`}` };

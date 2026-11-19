@@ -5,6 +5,7 @@ import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/prot
 import { Comms } from './Comms.js';
 import type { StartupPolicy } from '../shared/protocol.js';
 import { startNotifications } from './notify-browser.js';
+import { startWorker } from './push-browser.js';
 import * as api from './api.js';
 import { BlackBox } from './BlackBox.js';
 import { FlightPlan } from './FlightPlan.js';
@@ -525,6 +526,8 @@ function Office(): ReactElement {
 export function App(): ReactElement {
   // browser notifications and the unread count in the tab title: the switch is in Flight Rules, and nothing asks for permission here
   useEffect(() => startNotifications(), []);
+  // the service worker of the installed app (shell and push): only where the browser allows one
+  useEffect(() => startWorker(), []);
   const connection = useStore((s) => s.connection);
   const loading = useStore((s) => s.info === null);
   const gone = useStore((s) => s.failedAttempts >= RECONNECT_SERVER_GONE_AFTER);
