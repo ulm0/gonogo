@@ -8,7 +8,9 @@ import type { Logger } from '../shared/protocol.js';
 import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import { hostClass, isLocalClass, KEY_SCOPES, LIFETIME } from './auth.js';
 import type { AuthStore, HostClass, KeyScope, LoginResult, Who } from './auth.js';
-import { authPage, authPageHeaders } from './authpage.js';
+import { authPage, authPageHeaders, PASSKEY_SCRIPT } from './authpage.js';
+import type { Passkeys } from './passkeys.js';
+import { relyingParty } from './passkeys.js';
 import { bodyMatters, stepUpReason } from './stepup.js';
 import type { AuthPageKind } from './authpage.js';
 import { nullLogger } from './constants.js';
@@ -18,6 +20,8 @@ export const SESSION_COOKIE_PUBLIC = '__Host-gonogo';
 export const SESSION_COOKIE_LOCAL = 'gonogo-session';
 export const DEVICE_COOKIE = 'gonogo-device';
 const FORM_MAX = 8 * 1024;
+/** An assertion or an attestation with its certificates can be a few KiB. */
+const PASSKEY_BODY_MAX = 32 * 1024;
 const YEAR_S = 365 * 24 * 60 * 60;
 
 export interface Grant {
@@ -37,6 +41,8 @@ export interface AuthHttpOptions {
   stylesheet: string | null;
   /** Requests that came by the local unix socket: the file permissions were their credential. */
   local: WeakSet<IncomingMessage>;
+  /** The passkey ceremonies; without it no passkey is offered. */
+  passkeys?: Passkeys;
   /** Addresses of reverse proxies whose X-Forwarded-For is believed (`--trusted-proxy`); none by default. */
   trustedProxies?: readonly string[];
   log?: Logger;
@@ -59,7 +65,7 @@ export interface AuthHttp {
   /** Whether this change by this grant needs the password (and code) again now; `body` is the parsed JSON object, or null. */
   stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
   /** The 403 that tells the page to ask for the password again. */
-  stepUpDenied(res: ServerResponse, reason: string): void;
+  stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string): void;
 }
 
 const sameText = (a: string, b: string): boolean => timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
@@ -182,9 +188,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
   /* ---- bodies ---- */
 
   type Form = Record<string, unknown>;
-  const readForm = async (req: IncomingMessage): Promise<{ form: Form; html: boolean } | null> => {
+  const readForm = async (req: IncomingMessage, limit = FORM_MAX): Promise<{ form: Form; html: boolean } | null> => {
     const type = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
-    const result = await readBody(req, FORM_MAX);
+    const result = await readBody(req, limit);
     if (!result.ok) return null;
     const text = result.body.toString('utf8');
     try {
@@ -200,10 +206,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
   };
   const text = (form: Form, name: string): string => (typeof form[name] === 'string' ? (form[name] as string) : '');
 
-  const html = (res: ServerResponse, status: number, kind: AuthPageKind, extra: { message?: string; user?: string; plain?: boolean; pending?: string } = {}, cacheless = true): void => {
-    res.writeHead(status, authPageHeaders());
+  const html = (res: ServerResponse, status: number, kind: AuthPageKind, extra: { message?: string; user?: string; plain?: boolean; pending?: string; passkey?: boolean } = {}): void => {
+    res.writeHead(status, authPageHeaders(extra.passkey === true));
     res.end(authPage({ kind, stylesheet: options.stylesheet, ...extra }));
-    void cacheless;
   };
   const redirect = (res: ServerResponse, to: string, cookies: string[] = []): void => {
     res.writeHead(303, { Location: to, 'Cache-Control': 'no-store', ...(cookies.length === 0 ? {} : { 'Set-Cookie': cookies }) });
@@ -228,6 +233,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       `${DEVICE_COOKIE}=${ok.device}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${YEAR_S}${isLocalClass(who.cls) ? '' : '; Secure'}`,
     ];
   };
+
+  /** Where a passkey can be offered: a public domain name, with the origin it will be signed for. */
+  const rpOf = (req: IncomingMessage, who: Who) => relyingParty(req.headers.host, who.cls);
 
   const plainHttp = (req: IncomingMessage, who: Who): boolean => isLocalClass(who.cls) && who.cls !== 'loopback' && !(req.socket as { encrypted?: boolean }).encrypted;
 
@@ -276,6 +284,8 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     current: current.sessionId?.slice(0, 16) ?? null,
     sessions: auth.sessions().map((s) => ({ id: s.short, created: s.created, last: s.last, address: s.address, agent: s.agent, kind: s.cls })),
     mfa: auth.mfa(),
+    passkeys: auth.passkeys().map((p) => ({ id: p.id.slice(0, 24), name: p.name, rpId: p.rpId, created: p.created, last: p.last, backedUp: p.backedUp })),
+    passkeyHere: ((rp) => (rp === null ? null : rp.rpId))(rpOf(req, whoOf(req))),
     stepFresh: current.sessionId === undefined ? true : auth.stepFresh(current.sessionId),
     keys: auth.keys().map((k) => ({ id: k.short, name: k.name, scope: k.scope, remote: k.remote, created: k.created, expires: k.expires, last: k.last, lastAddress: k.lastAddress })),
     host: whoOf(req).cls,
@@ -299,6 +309,20 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       if (answer === 'none') return sendJson(res, 200, { ok: true, note: 'nothing to confirm' });
       return sendApiError(res, answer === 'wait' ? 429 : 401, answer === 'wait' ? 'too many tries: wait, then try again' : 'wrong password', answer === 'wait' ? 'rate_limited' : 'unauthorized');
     }
+    // signing in with a passkey: no login yet, so no session; the origin of the page is required and checked, the answer is checked by the library
+    if ((path === '/api/auth/passkey/options' || path === '/api/auth/passkey/login') && method === 'POST' && options.passkeys !== undefined) {
+      const rp = rpOf(req, who);
+      if (rp === null || auth.state() !== 'account' || req.headers.origin !== rp.origin) return sendApiError(res, 404, 'passkeys are not available on this address', 'not_found');
+      if (path.endsWith('options')) {
+        const made = await options.passkeys.loginOptions(rp);
+        return made === null ? sendApiError(res, 404, 'no passkey is set up for this address', 'not_found') : sendJson(res, 200, made, { 'Cache-Control': 'no-store' });
+      }
+      const body = await readForm(req, PASSKEY_BODY_MAX);
+      if (body === null) return sendApiError(res, 400, 'send application/json', 'bad_request');
+      const result = await options.passkeys.loginFinish(who, rp, body.form);
+      if (result.ok) return sendJson(res, 200, { ok: true }, { 'Set-Cookie': cookiesFor(who, result) as unknown as string });
+      return sendApiError(res, result.reason === 'locked' ? 423 : 401, result.reason === 'locked' ? 'remote logins are paused' : 'that passkey was not accepted', result.reason === 'locked' ? 'forbidden' : 'unauthorized');
+    }
     const found = grant(req);
     if (found === null || (found.kind !== 'session' && found.kind !== 'socket')) return sendApiError(res, 401, 'unauthorized', 'unauthorized');
     if (found.kind === 'session' && !csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
@@ -306,11 +330,25 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     const readJson = async (): Promise<Form | null> => (await readForm(req))?.form ?? null;
     // the account's own changes ask the password again when the last check is old (the local socket is the Director on this machine and is not asked)
     const reason = stepUpReason(method, path, null);
-    if (reason !== null && found.kind === 'session' && found.sessionId !== undefined && !auth.stepFresh(found.sessionId)) return stepUpDenied(res, reason);
+    if (reason !== null && found.kind === 'session' && found.sessionId !== undefined && !auth.stepFresh(found.sessionId)) return stepUpDenied(req, res, reason);
+    if (path === '/api/auth/stepup/options' && method === 'POST') {
+      const rp = rpOf(req, who);
+      const made = found.sessionId === undefined || rp === null || options.passkeys === undefined ? null : await options.passkeys.stepOptions(found.sessionId, rp);
+      return made === null ? sendApiError(res, 404, 'no passkey is set up for this address', 'not_found') : sendJson(res, 200, made, { 'Cache-Control': 'no-store' });
+    }
     if (path === '/api/auth/stepup' && method === 'POST') {
       if (found.sessionId === undefined) return sendJson(res, 200, { ok: true });
-      const body = await readJson();
+      const wide = await readForm(req, PASSKEY_BODY_MAX);
+      const body = wide?.form ?? null;
       if (body === null) return sendApiError(res, 400, 'send application/json', 'bad_request');
+      // a passkey is the password and the second factor in one step, and is not slowed: it cannot be guessed
+      if (body.passkey !== undefined) {
+        const rp = rpOf(req, who);
+        const done = rp === null || options.passkeys === undefined ? { ok: false as const } : await options.passkeys.stepFinish(found.sessionId, rp, body.passkey);
+        if (!done.ok) return sendApiError(res, 401, 'that passkey was not accepted', 'unauthorized');
+        const life = LIFETIME[isLocalClass(who.cls) ? 'local' : 'public'].absolute;
+        return sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(who.cls, done.session, Math.floor(life / 1000)) });
+      }
       const answer = await auth.stepUp(found.sessionId, who, { password: text(body, 'password'), code: text(body, 'code') });
       if (answer.ok) {
         const life = LIFETIME[isLocalClass(who.cls) ? 'local' : 'public'].absolute;
@@ -319,6 +357,21 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       if (answer.reason === 'gone') return sendApiError(res, 401, 'unauthorized', 'unauthorized');
       return sendApiError(res, answer.reason === 'wait' ? 429 : 401, answer.reason === 'wait' ? 'too many tries: wait, then try again' : 'wrong password or code', answer.reason === 'wait' ? 'rate_limited' : 'unauthorized');
     }
+    if (path === '/api/auth/passkeys/begin' && method === 'POST') {
+      const rp = rpOf(req, who);
+      if (found.sessionId === undefined || rp === null || options.passkeys === undefined) return sendApiError(res, 409, 'a passkey can be added from a public name opened over https, signed in with a session', 'conflict');
+      return sendJson(res, 200, await options.passkeys.registerOptions(found.sessionId, rp), { 'Cache-Control': 'no-store' });
+    }
+    if (path === '/api/auth/passkeys/finish' && method === 'POST') {
+      const rp = rpOf(req, who);
+      const wide = await readForm(req, PASSKEY_BODY_MAX);
+      if (found.sessionId === undefined || rp === null || options.passkeys === undefined || wide === null) return sendApiError(res, 409, 'a passkey can be added from a public name opened over https, signed in with a session', 'conflict');
+      const answer = await options.passkeys.registerFinish(found.sessionId, who, rp, wide.form.response, text(wide.form, 'name'));
+      if (answer === 'ok') return sendJson(res, 200, { ok: true });
+      return sendApiError(res, answer === 'full' ? 409 : 400, answer === 'full' ? 'there are twenty passkeys already, or this one is one of them' : 'that passkey was not accepted: it must be made for this address, opened over https, with a screen lock or key', answer === 'full' ? 'conflict' : 'bad_request');
+    }
+    const passkey = /^\/api\/auth\/passkeys\/([A-Za-z0-9_-]{8,64})$/.exec(path);
+    if (passkey !== null && method === 'DELETE') return auth.passkeyRemove(passkey[1] as string) ? sendJson(res, 200, { ok: true }) : sendApiError(res, 404, 'no such passkey', 'not_found');
     if (path === '/api/auth/mfa/begin' && method === 'POST') {
       if (auth.mfa().enabled) return sendApiError(res, 409, 'a second factor is already on: turn it off first', 'conflict');
       return sendJson(res, 200, auth.mfaBegin(), { 'Cache-Control': 'no-store' });
@@ -388,10 +441,14 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     return sendApiError(res, 404, 'not found', 'not_found');
   }
 
-  const stepUpDenied = (res: ServerResponse, reason: string): void =>
-    sendJson(res, 403, { error: `Confirm your password${auth.mfa().enabled ? ' and a code' : ''} to do this: ${reason}.`, code: 'forbidden', stepUp: true, second: auth.mfa().enabled });
+  const stepUpDenied = (req: IncomingMessage, res: ServerResponse, reason: string): void => {
+    const rp = rpOf(req, whoOf(req));
+    const passkey = rp !== null && options.passkeys?.has(rp) === true;
+    sendJson(res, 403, { error: `Confirm your password${auth.mfa().enabled ? ' and a code' : ''}${passkey ? ', or use a passkey,' : ''} to do this: ${reason}.`, code: 'forbidden', stepUp: true, second: auth.mfa().enabled, passkey });
+  };
 
-  const isAuthPath = (path: string): boolean => path === '/login' || path === '/setup' || path === '/api/auth' || path.startsWith('/api/auth/');
+  const method0 = (req: IncomingMessage): string => req.method ?? 'GET';
+  const isAuthPath = (path: string): boolean => path === '/login/passkey.js' || path === '/login' || path === '/setup' || path === '/api/auth' || path.startsWith('/api/auth/');
 
   return {
     grant,
@@ -415,6 +472,12 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     handle(req, res) {
       const path = (req.url ?? '').split('?')[0] ?? '';
       if (!isAuthPath(path)) return false;
+      if (path === '/login/passkey.js') {
+        if (method0(req) !== 'GET') return (sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET' }), true);
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+        res.end(PASSKEY_SCRIPT);
+        return true;
+      }
       const method = req.method ?? 'GET';
       if (path === '/login' || path === '/setup') {
         if (method !== 'GET' && method !== 'HEAD') return (sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET, HEAD' }), true);
@@ -424,7 +487,8 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
         if (state === 'damaged') return (html(res, 503, 'damaged'), true);
         if (path === '/login') {
           if (state !== 'account') return (redirect(res, '/setup'), true);
-          return (html(res, 200, auth.locked() && !isLocalClass(who.cls) ? 'locked' : 'login', { plain: plainHttp(req, who) }), true);
+          const rp = rpOf(req, who);
+          return (html(res, 200, auth.locked() && !isLocalClass(who.cls) ? 'locked' : 'login', { plain: plainHttp(req, who), passkey: rp !== null && options.passkeys?.has(rp) === true }), true);
         }
         if (state === 'account') return (redirect(res, '/login'), true);
         return (html(res, isLocalClass(who.cls) ? 200 : 403, isLocalClass(who.cls) ? 'setup' : 'unset', { plain: plainHttp(req, who) }), true);

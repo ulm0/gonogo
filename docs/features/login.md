@@ -69,11 +69,22 @@ In Flight Rules → LOGIN → SECOND FACTOR, TURN ON makes a secret: add it to a
 - **A public name cannot be signed in to without it.** On this machine or your network a password alone still works, with the plain-http warning.
 - Turning it off, or making new recovery codes, needs your password **and** a code: a stolen session alone cannot. `gonogo auth reset` removes it with the account.
 
+## Passkeys
+
+A passkey is the password and the second factor in one step: a fingerprint, a face, a screen lock or a security key. In Flight Rules → LOGIN → PASSKEYS, ADD A PASSKEY makes one for the name the page is open at; the login page then shows **LOG IN WITH A PASSKEY**, and the confirmation dialog of the step-up offers USE A PASSKEY.
+
+- **Only on a public name opened over https.** WebAuthn works in secure contexts only, and its rp id has to be a domain: a browser refuses an IP address, and gonogo does not offer one on this machine, on `localhost` or on your network's names. A passkey works **only at the name it was made for** (the rp id is fixed when it is made); at another name the password stays.
+- gonogo behind a tunnel sees plain http, so https is known from the origin the authenticator signed (`https://` and the Host): a page opened over http signs another origin and is refused.
+- **Not slowed by the failure waits** (a passkey cannot be guessed), but always verified: the signature, the origin, the rp id, a challenge used once within five minutes, and user verification. A counter that does not go up raises an alert (a copy of the passkey may exist) and is refused.
+- Adding or removing one is a change of the account, behind the step-up; each raises an alert. Up to twenty. The list shows the name, the rp id, when it was made and last used, and whether it is synced.
+- **A stolen password cannot use it, and a lost authenticator is removed from the list.** If every way in is lost, `gonogo auth reset` on the machine.
+- It is made with `@simplewebauthn/server` 14.0.3 (MIT), pinned: the cryptography and the checks of the standard are the library's, not gonogo's. Passkeys of all kinds are asked for with attestation `none` and user verification required.
+
 ## Confirming again (step-up)
 
 A session whose password was checked more than five minutes ago is asked for it again (and the code) before the changes that matter most: a hire with a command of its own, a mode that works without asking, no Clean Room, remote control or keys of its own, any edit of an agent except its name, position, autostart, co-author line, model and effort (a field added later is asked about too), the room's permissions, Features, the secrets of Uplink, Relay and Docking, the keys of an engine, writing a file in an agent's folder, a commit, a Docker update, and the account's own changes. The page opens CONFIRM IT IS YOU by itself and repeats the change. Confirming mints the session's id again, and its sockets stay open.
 
-**This is a speed bump, not a wall.** Typing into a console, a message to an agent, a GO on a permission dialog, hold, resume and starting or restarting an agent are not behind it, and each of them can make an agent that is allowed to do anything run anything. A stolen session is still shell-equivalent. What protects it is the second factor at login, the short lifetimes, the session list with REVOKE, and the alerts. A key, the local socket and the old token are not asked.
+**This is a speed bump, not a wall.** Typing into a console, a message to an agent, a GO on a permission dialog, hold, resume and starting or restarting an agent are not behind it, and each of them can make an agent that is allowed to do anything run anything. A stolen session is still shell-equivalent. What protects it is the second factor at login, the short lifetimes, the session list with REVOKE, and the alerts. A passkey confirms instead of a password and a code. A key, the local socket and the old token are not asked.
 
 ## Alerts
 
@@ -117,7 +128,6 @@ setup). Run agents in a Clean Room on an exposed gonogo.
 
 ## What it does not do
 
-- **No passkeys.** They need a dependency (WebAuthn) that has not been decided, and a name and https to work with.
 - **No QR code** for the authenticator: the key and the address are shown as text.
 - **A change made while gonogo is stopped is not seen** by the alarm; the next start loads the file as it is.
 - **Not exposure.** This page does not publish gonogo; it only makes a login for when you do ([Exposing gonogo safely](../https.md)).

@@ -198,6 +198,20 @@ export interface Session {
   /** When the password (and the second factor) was last checked for this session: step-up asks again after 5 minutes. */
   step: number;
 }
+/** A passkey (WebAuthn credential): the public key only, and the rp id it was made for, fixed at its registration. */
+export interface Passkey {
+  /** The credential id (base64url): the browser names the passkey with it. */
+  id: string;
+  /** The COSE public key (base64url). */
+  publicKey: string;
+  counter: number;
+  transports: string[];
+  name: string;
+  rpId: string;
+  created: number;
+  last: number | null;
+  backedUp: boolean;
+}
 export interface Device {
   id: string;
   created: number;
@@ -230,6 +244,7 @@ interface AuthFile {
   totp: { secret: string; enabled: boolean; lastStep: number } | null;
   /** SHA-256 (hex) of the recovery codes not yet used. */
   recovery: string[];
+  passkeys: Passkey[];
 }
 
 const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -294,10 +309,19 @@ function parseAuth(text: string): AuthFile | undefined {
       recovery.push(code);
     }
   }
-  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone, totp, recovery };
+  const passkeys: Passkey[] = [];
+  if (Array.isArray(raw.passkeys)) {
+    for (const p of raw.passkeys) {
+      if (!isObject(p) || !str(p.id) || !str(p.publicKey) || !num(p.counter) || !Array.isArray(p.transports) || !p.transports.every(str) || !str(p.name) || !str(p.rpId) || !num(p.created) || (p.last !== null && !num(p.last)) || typeof p.backedUp !== 'boolean') return undefined;
+      // the sizes of a file are the file's word: a credential id is at most 1023 bytes, a key a few hundred
+      if (p.id.length > 1400 || p.publicKey.length > 4000 || p.name.length > 80 || p.rpId.length > 253 || p.counter < 0) return undefined;
+      passkeys.push({ id: p.id, publicKey: p.publicKey, counter: p.counter, transports: p.transports.slice(0, 8), name: p.name, rpId: p.rpId, created: p.created, last: p.last as number | null, backedUp: p.backedUp });
+    }
+  }
+  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone, totp, recovery, passkeys };
 }
 
-const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone, totp: null, recovery: [] });
+const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone, totp: null, recovery: [], passkeys: [] });
 
 function writeAtomic(path: string, text: string): void {
   const temp = `${path}.${process.pid}.tmp`;
@@ -418,6 +442,16 @@ export interface AuthStore {
   stepFresh(sessionId: string): boolean;
   /** Asks the password (and the code when a second factor is on) again; answers a new cookie value: the id is minted again. */
   stepUp(sessionId: string, who: Who, input: { password: string; code: string }): Promise<{ ok: true; session: string } | { ok: false; reason: 'wrong' | 'wait' | 'gone' }>;
+  /** The passkeys (credentials) of the account, newest last. */
+  passkeys(): Passkey[];
+  passkeyAdd(sessionId: string, who: Who, input: { id: string; publicKey: string; counter: number; transports: string[]; name: string; rpId: string; backedUp: boolean }): boolean;
+  passkeyRemove(short: string): boolean;
+  /** A passkey assertion that was verified: the counter moves, and a session starts (a passkey is both factors; no waits, as a passkey cannot be guessed). */
+  passkeyLogin(who: Who, credentialId: string, counter: number): LoginResult;
+  /** The same for step-up: the session's id is minted again. */
+  passkeyStepUp(sessionId: string, credentialId: string, counter: number): { ok: true; session: string } | { ok: false; reason: 'gone' };
+  /** A counter that did not go up: a copy of the passkey may exist. */
+  passkeyCounterAlert(credentialId: string): void;
   /** Called when a session's id is minted again: its sockets move to the new one. */
   onReminted(listener: (from: string, to: string) => void): void;
   /** The key a Bearer value names (refused on a public Host unless made with --remote), or null. */
@@ -770,6 +804,16 @@ export function openAuth(options: AuthOptions): AuthStore {
     return false;
   };
 
+  /** Mints the id of a session again: whatever knew the old cookie value is of no use. */
+  const remint = (found: Session): string => {
+    const cookie = rand();
+    const next: Session = { ...found, id: sha(cookie), step: now(), last: now() };
+    data.sessions = data.sessions.map((x) => (x === found ? next : x));
+    save();
+    for (const listener of reminted) listener(found.id, next.id);
+    return cookie;
+  };
+
   const finish = (who: Who, alertNew: boolean): LoginResult => {
     const { device, fresh } = knownOrNewDevice(who);
     const { session } = startSession(who, device);
@@ -1093,13 +1137,47 @@ export function openAuth(options: AuthOptions): AuthStore {
         return { ok: false, reason: 'wrong' };
       }
       succeed(keys);
-      // the id is minted again: whatever knew the old cookie value is of no use
-      const cookie = rand();
-      const next: Session = { ...found, id: sha(cookie), step: now(), last: now() };
-      data.sessions = data.sessions.map((x) => (x === found ? next : x));
+      return { ok: true, session: remint(found) };
+    },
+
+    passkeys: () => data.passkeys.map((p) => ({ ...p })),
+    passkeyAdd(sessionId, _who, input) {
+      if (data.passkeys.length >= 20 || data.passkeys.some((p) => p.id === input.id) || !data.sessions.some((s) => s.id === sessionId)) return false;
+      data.passkeys.push({ id: input.id, publicKey: input.publicKey, counter: input.counter, transports: input.transports.slice(0, 8), name: input.name.replace(/[\u0000-\u001f\u007f<>&"'`]/g, '?').slice(0, 60) || 'passkey', rpId: input.rpId, created: now(), last: null, backedUp: input.backedUp });
       save();
-      for (const listener of reminted) listener(found.id, next.id);
-      return { ok: true, session: cookie };
+      options.alert(`a passkey was added (${data.passkeys.at(-1)?.name}, for ${input.rpId})`);
+      return true;
+    },
+    passkeyRemove(short) {
+      if (short.length < 8) return false;
+      const matches = data.passkeys.filter((p) => p.id.startsWith(short));
+      if (matches.length !== 1) return false;
+      const found = matches[0] as Passkey;
+      data.passkeys = data.passkeys.filter((p) => p !== found);
+      save();
+      options.alert(`a passkey was removed (${found.name})`);
+      return true;
+    },
+    passkeyLogin(who, credentialId, counter) {
+      checkTamper();
+      const found = data.passkeys.find((p) => p.id === credentialId);
+      if (found === undefined || state() !== 'account') return refused('wrong');
+      if (isLocked && !isLocalClass(who.cls)) return refused('locked');
+      found.counter = counter;
+      found.last = now();
+      return finish(who, true);
+    },
+    passkeyStepUp(sessionId, credentialId, counter) {
+      const session = data.sessions.find((x) => x.id === sessionId);
+      const found = data.passkeys.find((p) => p.id === credentialId);
+      if (session === undefined || found === undefined) return { ok: false, reason: 'gone' };
+      found.counter = counter;
+      found.last = now();
+      return { ok: true, session: remint(session) };
+    },
+    passkeyCounterAlert(credentialId) {
+      const found = data.passkeys.find((p) => p.id === credentialId);
+      options.alert(`a passkey's counter did not go up (${found?.name ?? 'unknown'}): a copy of it may exist`);
     },
     onReminted: (listener) => void reminted.push(listener),
 

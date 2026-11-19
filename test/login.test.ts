@@ -11,6 +11,7 @@ import { authCommand, socketCall } from '../src/server/authcli.js';
 import { createTuiClient } from '../src/server/tui-client.js';
 import { localSocketOf } from '../src/server/tui-cli.js';
 import { startSupervisor } from '../src/server/supervisor.js';
+import { softKey } from './helpers/softkey.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
 
@@ -690,6 +691,124 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     expect((await call('POST', '/api/auth/mfa/disable', h, JSON.stringify({ password: PASSWORD, code: codeOf(secret) }))).status).toBe(200);
     const view = JSON.parse((await call('GET', '/api/auth/account', cookieHeader(cookies))).text) as { mfa: { enabled: boolean } };
     expect(view.mfa.enabled).toBe(false);
+  });
+});
+
+describe('passkeys through the supervisor', () => {
+  const NAME = 'gonogo.example.com';
+  const ORIGIN = `https://${NAME}`;
+  /** A request as the browser makes it at the public name: the Host, and the https origin of the page. */
+  const at = (cookies: Record<string, string> = {}, extra: Record<string, string> = {}): Record<string, string> => ({ host: NAME, origin: ORIGIN, ...JSONH, ...cookieHeader(cookies), ...extra });
+  const post = (path: string, headers: Record<string, string>, body: unknown = {}): Promise<Answer> => call('POST', path, headers, JSON.stringify(body));
+
+  /** The account, a session from this machine, and one passkey registered at the public name. */
+  let pclock = Date.now();
+  async function withPasskey(): Promise<{ cookies: Record<string, string>; key: ReturnType<typeof softKey> }> {
+    pclock = Date.now();
+    await boot({ now: () => pclock });
+    const cookies = await setUp();
+    const key = softKey();
+    const begun = JSON.parse((await post('/api/auth/passkeys/begin', at(cookies))).text) as { challenge: string };
+    const done = await post('/api/auth/passkeys/finish', at(cookies), { name: 'laptop', response: key.create({ rpId: NAME, origin: ORIGIN, challenge: begun.challenge }) });
+    expect(done.status).toBe(200);
+    return { cookies, key };
+  }
+
+  it('is registered with a session and listed; the account view says where one can be made', async () => {
+    const { cookies } = await withPasskey();
+    const view = JSON.parse((await call('GET', '/api/auth/account', { ...cookieHeader(cookies), host: NAME })).text) as { passkeys: Array<{ id: string; name: string; rpId: string }>; passkeyHere: string | null };
+    expect(view.passkeys).toEqual([expect.objectContaining({ name: 'laptop', rpId: NAME })]);
+    expect(view.passkeyHere).toBe(NAME);
+    // on this machine there is none to be made
+    const here = JSON.parse((await call('GET', '/api/auth/account', cookieHeader(cookies))).text) as { passkeyHere: string | null };
+    expect(here.passkeyHere).toBeNull();
+    expect((await post('/api/auth/passkeys/begin', { ...at(cookies), host: `127.0.0.1:${sup.port}`, origin: `http://127.0.0.1:${sup.port}` })).status).toBe(409);
+    // without a session, or from an address that is only an IP: no
+    expect((await post('/api/auth/passkeys/begin', at())).status).toBe(401);
+    expect((await post('/api/auth/passkeys/begin', at(cookies, { host: '203.0.113.9' }))).status).toBe(403);
+  });
+
+  it('the login page offers it where there is one: the button and the one script it may load, and nowhere else', async () => {
+    await withPasskey();
+    const pub = await call('GET', '/login', { host: NAME });
+    expect(pub.text).toContain('LOG IN WITH A PASSKEY');
+    expect(pub.text).toContain('<script src="/login/passkey.js" defer></script>');
+    expect(pub.headers['content-security-policy']).toMatch(/script-src 'self'; connect-src 'self'/);
+    const local = await call('GET', '/login');
+    expect(local.text).not.toContain('PASSKEY');
+    expect(local.headers['content-security-policy']).not.toMatch(/script-src/);
+    const js = await call('GET', '/login/passkey.js', { host: NAME });
+    expect(js.status).toBe(200);
+    expect(js.headers['content-type']).toMatch(/javascript/);
+    expect(js.text).toContain("/api/auth/passkey/login");
+    expect((await call('POST', '/login/passkey.js', { host: NAME })).status).toBe(405);
+  });
+
+  it('signs in with no password and no code, even though a public name needs a second factor: a session and a device cookie', async () => {
+    const { key } = await withPasskey();
+    const options = await post('/api/auth/passkey/options', at());
+    expect(options.status).toBe(200);
+    const { challenge } = JSON.parse(options.text) as { challenge: string };
+    const login = await post('/api/auth/passkey/login', at(), key.get({ rpId: NAME, origin: ORIGIN, challenge }));
+    expect(login.status).toBe(200);
+    const secure = login.setCookie.find((c) => c.startsWith('__Host-gonogo='));
+    expect(secure).toMatch(/; Secure; HttpOnly; SameSite=Strict; Path=\/; Max-Age=604800$/);
+    expect((await call('GET', '/api/state', { host: NAME, ...cookieHeader(login.cookies) })).status).toBe(200);
+    // the same answer again is a spent challenge
+    expect((await post('/api/auth/passkey/login', at(), key.get({ rpId: NAME, origin: ORIGIN, challenge }))).status).toBe(401);
+  });
+
+  it('the origin of the page must be https at this name: another one, none, or a name that is only an address, is "not available"', async () => {
+    const { key } = await withPasskey();
+    for (const headers of [at({}, { origin: 'http://gonogo.example.com' }), at({}, { origin: 'https://evil.example' }), { host: NAME, ...JSONH }, at({}, { host: '203.0.113.9' }), { ...at(), host: '127.0.0.1' }]) {
+      expect([403, 404], JSON.stringify(headers)).toContain((await post('/api/auth/passkey/options', headers)).status);
+    }
+    expect((await post('/api/auth/passkey/login', at({}, { origin: 'https://evil.example' }), key.get({ rpId: NAME, origin: ORIGIN, challenge: 'x' }))).status).toBe(404);
+  });
+
+  it('a wrong passkey is 401 with no wait, and the right one still works after many', async () => {
+    const { key } = await withPasskey();
+    for (let i = 0; i < 6; i += 1) {
+      const { challenge } = JSON.parse((await post('/api/auth/passkey/options', at())).text) as { challenge: string };
+      expect((await post('/api/auth/passkey/login', at(), softKey().get({ rpId: NAME, origin: ORIGIN, challenge }))).status).toBe(401);
+    }
+    const { challenge } = JSON.parse((await post('/api/auth/passkey/options', at())).text) as { challenge: string };
+    expect((await post('/api/auth/passkey/login', at(), key.get({ rpId: NAME, origin: ORIGIN, challenge }))).status).toBe(200);
+  });
+
+  it('step-up: the refusal says a passkey will do, and the passkey confirms and gives a new cookie', async () => {
+    const { cookies, key } = await withPasskey();
+    // five minutes on, a change of the list is refused, and the refusal says a passkey will do
+    pclock += 6 * 60_000;
+    const refused = await call('PUT', '/api/permissions', at(cookies), '{}');
+    expect(refused.status).toBe(403);
+    expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true, passkey: true });
+    const o = await post('/api/auth/stepup/options', at(cookies));
+    expect(o.status).toBe(200);
+    const { challenge } = JSON.parse(o.text) as { challenge: string };
+    const done = await post('/api/auth/stepup', at(cookies), { passkey: key.get({ rpId: NAME, origin: ORIGIN, challenge }) });
+    expect(done.status).toBe(200);
+    // the cookie is minted again for the name the page is at
+    const fresh = done.cookies['__Host-gonogo'] as string;
+    expect(fresh).toBeDefined();
+    expect((await call('GET', '/api/state', cookieHeader(cookies))).status).toBe(401);
+    expect((await call('GET', '/api/state', { host: NAME, ...cookieHeader({ '__Host-gonogo': fresh }) })).status).toBe(200);
+    // and the change now goes through
+    expect((await call('PUT', '/api/permissions', at({ '__Host-gonogo': fresh }), '{}')).status).toBe(200);
+    // a wrong one is refused
+    const next = { '__Host-gonogo': fresh };
+    const o2 = await post('/api/auth/stepup/options', at(next));
+    const again = JSON.parse(o2.text) as { challenge: string };
+    expect((await post('/api/auth/stepup', at(next), { passkey: softKey().get({ rpId: NAME, origin: ORIGIN, challenge: again.challenge }) })).status).toBe(401);
+  });
+
+  it('removing it is a change of the account: needs a session, the list shows it gone', async () => {
+    const { cookies } = await withPasskey();
+    const view = JSON.parse((await call('GET', '/api/auth/account', { ...cookieHeader(cookies), host: NAME })).text) as { passkeys: Array<{ id: string }> };
+    const id = view.passkeys[0]?.id as string;
+    expect((await call('DELETE', `/api/auth/passkeys/${id}`, { host: NAME, origin: ORIGIN })).status).toBe(401);
+    expect((await call('DELETE', `/api/auth/passkeys/${id}`, at(cookies))).status).toBe(200);
+    expect((await post('/api/auth/passkey/options', at())).status).toBe(404);
   });
 });
 

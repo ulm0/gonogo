@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import * as api from './api.js';
 import type { AccountView } from './api.js';
+import { passkeysSupported } from './passkey.js';
 
 const when = (at: number | null): string => (at === null ? 'never' : new Date(at).toISOString().slice(0, 16).replace('T', ' '));
 const fail = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -29,6 +30,7 @@ export function AccountBlock(): ReactElement {
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const [offPassword, setOffPassword] = useState('');
   const [offCode, setOffCode] = useState('');
+  const [passkeyName, setPasskeyName] = useState('');
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -260,6 +262,37 @@ export function AccountBlock(): ReactElement {
                 </button>
               </form>
             </>
+          )}
+          <h3 className="label">PASSKEYS</h3>
+          <ul className="rules-list">
+            {account.passkeys.length === 0 && <li className="hint">No passkeys.</li>}
+            {account.passkeys.map((p) => (
+              <li key={p.id}>
+                <span>
+                  {p.name} · for {p.rpId} · added {when(p.created).slice(0, 10)} · last used {when(p.last)}
+                  {p.backedUp ? ' · synced' : ''}
+                </span>
+                <button type="button" className="btn" data-kind="danger" onClick={() => run(() => api.authPasskeyRemove(p.id))} aria-label={`Remove the passkey ${p.name}`}>
+                  REMOVE
+                </button>
+              </li>
+            ))}
+          </ul>
+          {account.passkeyHere !== null && passkeysSupported() ? (
+            <form
+              className="rules-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                run(() => api.authPasskeyAdd(passkeyName.trim() || 'passkey'), () => setPasskeyName(''));
+              }}
+            >
+              <input className="input" value={passkeyName} onChange={(e) => setPasskeyName(e.target.value)} placeholder="Name (this laptop, my phone)" aria-label="Passkey name" maxLength={60} />
+              <button type="submit" className="btn">
+                ADD A PASSKEY FOR {account.passkeyHere}
+              </button>
+            </form>
+          ) : (
+            <p className="hint">A passkey is made on a public name opened over https, in a browser that has them: this page is neither, or not both. A passkey works only at the name it was made for, and is the password and the second factor in one step.</p>
           )}
           <h3 className="label">PASSWORD</h3>
           <form className="rules-row" onSubmit={submitPassword}>
