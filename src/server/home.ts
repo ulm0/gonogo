@@ -85,11 +85,42 @@ function lockError(dir: string, pid: number | string, file: string = LOCK_FILE, 
   return new Error(`another ${what} is using ${dir} (pid ${pid}). Stop it, or delete ${join(dir, file)} if none is running.`);
 }
 
-/** The pid in a lock file, or null when the content is not a positive integer. Throws ENOENT when the file is gone. */
-function readLockPid(path: string): number | null {
-  const m = /^\s*(\d+)\s*$/.exec(readFileSync(path, 'utf8'));
+/** A lock file: the pid, and (where /proc exists) the stamp of that process, which tells a pid reused after a container restart from the real owner. */
+interface LockContent {
+  pid: number;
+  stamp: string | null;
+}
+
+/** The lock a file holds, or null when the content is not a positive pid. Throws ENOENT when the file is gone. */
+function readLock(path: string): LockContent | null {
+  const m = /^\s*(\d+)(?:\s+(\S+))?\s*$/.exec(readFileSync(path, 'utf8'));
   const pid = m ? Number(m[1]) : 0;
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+  return Number.isSafeInteger(pid) && pid > 0 ? { pid, stamp: m?.[2] ?? null } : null;
+}
+
+const readLockPid = (path: string): number | null => readLock(path)?.pid ?? null;
+
+/** Start time of a process in clock ticks since boot (field 22 of /proc/<pid>/stat), or null where there is no /proc. */
+function startTicks(pid: number): number | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    // the command name is in parentheses and may hold spaces: count the fields after the last ")"
+    const ticks = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]);
+    return Number.isSafeInteger(ticks) ? ticks : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `<boot id>.<start ticks>` of a process: never the same for a process of an earlier container or boot that had the same pid. Null without /proc (macOS). */
+function processStamp(pid: number): string | null {
+  const ticks = startTicks(pid);
+  if (ticks === null) return null;
+  try {
+    return `${readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()}.${ticks}`;
+  } catch {
+    return null;
+  }
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -100,6 +131,24 @@ function isProcessAlive(pid: number): boolean {
     // EPERM means the process exists but belongs to someone else: still a live owner
     return errCode(e) !== 'ESRCH';
   }
+}
+
+/** True when the process the lock names is still the one that wrote it. A lock of the old form (no stamp) is judged by its age: older than pid 1 of this container or boot cannot be ours. */
+function lockOwnerAlive(lock: LockContent, path: string): boolean {
+  if (!isProcessAlive(lock.pid)) return false;
+  if (lock.stamp !== null) {
+    const now = processStamp(lock.pid);
+    return now === null || now === lock.stamp;
+  }
+  try {
+    const first = startTicks(1);
+    const boot = /^btime (\d+)$/m.exec(readFileSync('/proc/stat', 'utf8'))?.[1];
+    // shortcut: assumes 100 clock ticks per second (every Linux we run on); read it from getconf if that ever differs
+    if (first !== null && boot !== undefined && statSync(path).mtimeMs < Number(boot) * 1000 + (first / 100) * 1000) return false;
+  } catch {
+    // no /proc: the pid check stands
+  }
+  return true;
 }
 
 /**
@@ -136,7 +185,8 @@ function acquireLock(dir: string, key: string, file: string = LOCK_FILE, what = 
     try {
       const fd = openSync(path, 'wx', FILE_MODE);
       try {
-        writeSync(fd, `${process.pid}\n`);
+        const stamp = processStamp(process.pid);
+        writeSync(fd, stamp === null ? `${process.pid}\n` : `${process.pid}\n${stamp}\n`);
       } finally {
         closeSync(fd);
       }
@@ -145,17 +195,17 @@ function acquireLock(dir: string, key: string, file: string = LOCK_FILE, what = 
     } catch (e) {
       if (errCode(e) !== 'EEXIST') throw e;
     }
-    let pid: number | null;
+    let lock: LockContent | null;
     try {
-      pid = readLockPid(path);
+      lock = readLock(path);
     } catch (e) {
       if (errCode(e) === 'ENOENT') continue;
       throw e;
     }
-    if (pid !== null) {
-      lastPid = pid;
+    if (lock !== null) {
+      lastPid = lock.pid;
       // heldDirs does not have this directory, so a lock naming our own pid is a leftover of an earlier run
-      if (pid !== process.pid && isProcessAlive(pid)) throw lockError(dir, pid, file, what);
+      if (lock.pid !== process.pid && lockOwnerAlive(lock, path)) throw lockError(dir, lock.pid, file, what);
     }
     // shortcut: two servers that both find the same stale lock in the same millisecond can both win; use flock if that ever matters
     try {

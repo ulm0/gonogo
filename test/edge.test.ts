@@ -12,6 +12,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  utimesSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -1385,7 +1386,7 @@ describe('home', () => {
     it('writes the pid, refuses a second open of the same directory in this process, and close() removes it', async () => {
       const dir = tmpDir();
       const home = openHome(dir);
-      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(`${process.pid}\n`);
+      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toMatch(new RegExp(`^${process.pid}\n(\\S+\n)?$`));
       expect(fileMode(join(dir, LOCK_FILE))).toBe(0o600);
       expect(() => openHome(dir)).toThrowError(`another gonogo is using ${dir} (pid ${process.pid}). Stop it, or delete ${join(dir, LOCK_FILE)} if none is running.`);
       // the refused open did not take the lock away
@@ -1414,7 +1415,43 @@ describe('home', () => {
       writeFileSync(join(dir, LOCK_FILE), content);
       const home = openTestHome(dir);
       expect(home.dir).toBe(dir);
-      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(`${process.pid}\n`);
+      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toMatch(new RegExp(`^${process.pid}\n`));
+    });
+
+    describe.skipIf(!existsSync('/proc/self/stat') || !existsSync('/proc/sys/kernel/random/boot_id'))('a pid that another process took (containers restart their pids)', () => {
+      const bootId = (): string => readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      const ticksOf = (pid: number): string => readFileSync(`/proc/${pid}/stat`, 'utf8').split(')').pop()!.trim().split(' ')[19]!;
+
+      it('writes the boot id and start time of this process', async () => {
+        const dir = tmpDir();
+        const home = openHome(dir);
+        expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(`${process.pid}\n${bootId()}.${ticksOf(process.pid)}\n`);
+        await home.close();
+      });
+
+      it('refuses when the pid is alive and its stamp is the one in the lock', () => {
+        const dir = tmpDir();
+        writeFileSync(join(dir, LOCK_FILE), `${process.ppid}\n${bootId()}.${ticksOf(process.ppid)}\n`);
+        expect(() => openHome(dir)).toThrowError(/^another gonogo is using/);
+      });
+
+      it('replaces the lock when the pid is alive but started at another time or in another boot', () => {
+        for (const stamp of [`${bootId()}.1`, `00000000-0000-0000-0000-000000000000.${ticksOf(process.ppid)}`]) {
+          const dir = tmpDir();
+          writeFileSync(join(dir, LOCK_FILE), `${process.ppid}\n${stamp}\n`);
+          expect(openTestHome(dir).dir).toBe(dir);
+        }
+      });
+
+      it('replaces an old-form lock (a pid only) that is older than this container, and keeps one written after it', () => {
+        const old = tmpDir();
+        writeFileSync(join(old, LOCK_FILE), `${process.ppid}\n`);
+        utimesSync(join(old, LOCK_FILE), 1, 1);
+        expect(openTestHome(old).dir).toBe(old);
+        const fresh = tmpDir();
+        writeFileSync(join(fresh, LOCK_FILE), `${process.ppid}\n`);
+        expect(() => openHome(fresh)).toThrowError(/^another gonogo is using/);
+      });
     });
 
     it("replaces a lock that names this very process when this process holds no lock on the directory (a container's pids repeat)", () => {

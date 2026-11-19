@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Fix: a lock left by an earlier container no longer blocks the start.** `server.lock` and `run/supervisor.lock` held only a pid, and after a container restart (pids start again) that number could name another live process, so room main refused with "another gonogo is using …" for minutes. The lock now also holds the boot id and the start time of its process (from `/proc`), and a pid that is alive with a different stamp is taken over. A lock of the old form (a pid only) is taken over when it is older than the container or boot (pid 1). Without `/proc` (macOS) the pid check stands as before. Downgrading is safe: 0.5.0 reads the first line.
+
 ## 0.5.0 (2026-11-19)
 
 Since 0.4.0: one mode (the supervisor with rooms; **breaking, read "What breaks" below before upgrading**), rooms from the page, a login of your own (password, TOTP, recovery codes, step-up and passkeys, replacing the token), `gonogo expose` for Tailscale, Cloudflare, Caddy, Funnel and ngrok, an installable app with Web Push, Telegram inbound without a public address, and install commands that name the exact version. No fix of a reported vulnerability; the login, expose and push code was reviewed by RSO and RETRO before merge. What was not tried for real is listed in [Not verified](https://gonogo.ulm0.com/reference/not-verified.html).
