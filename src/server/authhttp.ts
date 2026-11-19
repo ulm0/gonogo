@@ -6,6 +6,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '../shared/protocol.js';
 import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
+import { hostName } from './web.js';
 import { hostClass, isLocalClass, KEY_SCOPES, LIFETIME, TUI_PREFIX } from './auth.js';
 import type { Devices } from './devicelogin.js';
 import type { AuthStore, HostClass, KeyScope, LoginResult, Who } from './auth.js';
@@ -499,7 +500,18 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
   /** The device login is offered only once an account exists, and on a public name only when it has a second factor or a passkey (the gate of the rest). */
   const deviceAllowed = (who: Who): boolean => auth.state() === 'account' && (isLocalClass(who.cls) || auth.mfa().enabled || auth.passkeys().length > 0);
   /** Where the page is: the public address when one is configured, else the one Host that was accepted (https on a public name). */
-  const baseUrl = (req: IncomingMessage, who: Who): string => options.exposure?.publicUrl?.replace(/\/+$/, '') ?? `${isLocalClass(who.cls) ? 'http' : 'https'}://${req.headers.host ?? ''}`;
+  const baseUrl = (req: IncomingMessage, who: Who): string => {
+    const configured = options.exposure?.publicUrl?.replace(/\/+$/, '');
+    if (configured !== undefined && configured !== '') return configured;
+    // never the Host as the sender wrote it: the name and the port of a Host that hostOk accepted, put together again
+    const host = req.headers.host ?? '';
+    const name = hostName(host);
+    const port = /:(\d{1,5})$/.exec(host.trim())?.[1];
+    const shown = name === null ? 'localhost' : name.includes(':') ? `[${name}]` : name;
+    return `${isLocalClass(who.cls) ? 'http' : 'https'}://${shown}${port === undefined || Number(port) > 65535 ? '' : `:${port}`}`;
+  };
+  /** The key of the wrong-code counter: the device cookie of the session (a step-up that mints the session's id again does not give fresh tries). */
+  const approver = (sessionId: string): string => auth.sessions().find((s) => s.id === sessionId)?.device || sessionId;
 
   const stepUpDenied = (req: IncomingMessage, res: ServerResponse, reason: string, tui = false): void => {
     // a Bearer credential never carries a step-up (a key, a terminal): it is told to do this in the browser
@@ -553,18 +565,18 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       res.end(authPage({ kind: 'device', stylesheet: options.stylesheet, message }));
     };
     if (path === '/login/device') {
-      const got = devices.find(sessionId, who, typed);
+      const got = devices.find(approver(sessionId), who, typed);
       if (got === null) return failPage('No terminal is waiting with that code. It may have expired (ten minutes), or been typed wrong.', 404);
       if ('wait' in got) return failPage('Too many wrong codes: wait ten minutes.', 429);
       return answer({ code: typed, label: got.view.label, address: got.view.address, agent: got.view.agent, asked: agoText(got.view.asked), far: got.view.far, again: false });
     }
     // approve or deny: the flow is the one this request's code names, and the step-up was just made or is still fresh
     const approve = text(form, 'action') === 'approve';
-    const got = devices.find(sessionId, who, typed);
+    const got = devices.find(approver(sessionId), who, typed);
     if (got === null) return failPage('No terminal is waiting with that code any more.', 404);
     if ('wait' in got) return failPage('Too many wrong codes: wait ten minutes.', 429);
     if (approve && got.view.far && text(form, 'again') !== '1') return answer({ code: typed, label: got.view.label, address: got.view.address, agent: got.view.agent, asked: agoText(got.view.asked), far: true, again: true });
-    const done = devices.decide(sessionId, who, typed, approve);
+    const done = devices.decide(approver(sessionId), who, typed, approve);
     if (!done.ok) return failPage('That terminal is no longer waiting.', 404);
     res.writeHead(200, { ...authPageHeaders(), ...(cookies.length === 0 ? {} : { 'Set-Cookie': cookies }) });
     res.end(authPage({ kind: 'deviceDone', stylesheet: options.stylesheet, done: approve ? 'APPROVED' : 'DENIED' }));

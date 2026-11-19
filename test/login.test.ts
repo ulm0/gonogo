@@ -1135,6 +1135,36 @@ describe('the device login of a terminal through the supervisor', () => {
     expect(done.text).toContain('APPROVED');
   });
 
+  it('RSO N1: both endpoints check the Host like /login does (403), and the address given back is put together from the accepted name and port, never the raw Host', async () => {
+    await bootDevice({ allowedHosts: ['gonogo.example.com', 'nas.local'] }, true);
+    for (const path of ['/api/auth/device', '/api/auth/device/token']) {
+      expect((await call('POST', path, { ...JSONH, host: 'evil.example' }, '{}')).status, path).toBe(403);
+    }
+    expect((await call('GET', '/login/device', { host: 'evil.example' })).status).toBe(403);
+    const upper = await startFlow({ host: 'GONOGO.Example.COM' });
+    expect(upper.verification_uri).toBe('https://gonogo.example.com/login/device');
+    const withPort = await call('POST', '/api/auth/device', { ...JSONH, host: 'gonogo.example.com:8443' }, '{}');
+    expect((JSON.parse(withPort.text) as { verification_uri: string }).verification_uri).toBe('https://gonogo.example.com:8443/login/device');
+  });
+
+  it('RSO N2: the wrong-code count follows the device cookie, so a step-up that mints the session again gives no fresh tries', async () => {
+    const cookies = await bootDevice({}, true);
+    const flow = await startFlow();
+    for (let i = 0; i < 5; i += 1) expect((await typeCode(cookies, `ZZZZ-ZZZ${i}`)).status).toBe(404);
+    expect((await typeCode(cookies, flow.user_code)).status).toBe(429);
+    // six minutes on the password is asked again; giving it mints a new session id, and the counter is still the old one's
+    dclock += 6 * 60_000;
+    const again = await typeCode(cookies, flow.user_code, { password: PASSWORD, totp: totpCode(secret, Math.floor((dclock + 31_000) / 30000)) });
+    expect(again.cookies['gonogo-session']).toBeDefined();
+    expect(again.cookies['gonogo-session']).not.toBe(cookies['gonogo-session']);
+    expect(again.status).toBe(429);
+    expect(again.text).toContain('Too many wrong codes');
+    expect(again.text).not.toContain('A TERMINAL ASKS TO SIGN IN');
+    // with the new cookie the tries are still the old ones
+    const retry = await typeCode({ ...cookies, 'gonogo-session': again.cookies['gonogo-session'] as string }, flow.user_code);
+    expect(retry.status).toBe(429);
+  });
+
   it('S1: the third waiting terminal from an address is refused with the way around it; wrong or missing device codes are refused', async () => {
     await bootDevice();
     await startFlow();
