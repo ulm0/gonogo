@@ -10,6 +10,26 @@ gonogo tui [--url <address>] [--token <token>] [--home <dir>]
 
 On the machine gonogo runs on it uses the **local socket** `<home>/run/api.sock` when it is there: no token, the file's permissions are the credential ([Login](./login.md)). Otherwise, or with `--url` or `--token`, it finds the browser token in the file `token` of gonogo's home (a fresh install only: an account deletes it; a remote TUI uses an API key as `--token`) (`~/.gonogo`, `--home` or `GONOGO_HOME`), which the same user can read, and the server at `http://127.0.0.1:7777` (the port of `GONOGO_PORT`). For a server elsewhere give `--url` (http or https) and the token in `GONOGO_BROWSER_TOKEN` (`--token` also works, but it shows in `ps`). The token is never printed, and gonogo removes `GONOGO_BROWSER_TOKEN` from the environment of every agent it starts; still, set it only in the shell that runs `gonogo tui`. It needs a terminal on stdin and stdout, Node 24, xterm-compatible escapes, and at least 20 columns by 6 rows; Windows is not supported. `NO_COLOR` turns the colour off.
 
+## Signing in from another machine
+
+`gonogo tui --url https://gonogo.example.com` with no key: the terminal looks for the session it stored for that server (`~/.config/gonogo/tui.json`, directory 0700 and file 0600, a file others can read is refused), and with none it **asks to be signed in**. It prints an address and a code (never in the address):
+
+```
+To sign in this terminal, open  https://gonogo.example.com/login/device  in a browser where you are signed in to gonogo,
+and type this code (it is not in the address):
+
+    ABCD-2345
+```
+
+In the browser you **type the code**, see the terminal's address, its name and its program, confirm your password again if it has been more than five minutes, and approve or deny. The terminal then has a session of its own: it lasts a week without use and 30 days in all, shows in Flight Rules → LOGIN as TERMINAL with REVOKE, and can do what a browser session can **except** what the step-up guards and the account (those say "do this in the browser"). `gonogo tui --logout --url <address>` ends it and forgets it.
+
+**Approve only if you started it, on your own terminal, just now.** Somebody who talks you into entering their code gets a terminal as strong as your browser session. A request you did not start shows as a notice on your open pages before anyone asks you for anything.
+
+- Not offered before an account exists, nor on a public name whose account has no second factor or passkey. At most two terminals wait per address and five in all; one that cannot be approved at once is told to use a key (`gonogo auth key add <name> --scope full --remote`, then `--token`).
+- `http://` to a public name is refused; to a private name the terminal warns that it is not encrypted. There is no flag to skip the certificate check.
+- A redirect is never followed, and the session is sent to the exact address it was made for. The first use from another network than the one it was approved from is a notice.
+- From a script there is no flow: give a key with `--token` or `GONOGO_BROWSER_TOKEN`. Order: `--token`, the environment, the stored session, the device login (terminal only).
+
 ## Screens
 
 The top line starts with the name of the room as the browser tab says it (`gonogo`, or the station, or the [tab name](./flight-rules.md)), then names the screens and the link (`connected`, `reconnecting…`, `token refused`); the second line is always the first thing that waits for you: `NEEDS 2: ana: permission request: Bash: git push (press 3)`. From 100 columns the room is on the left and the inbox, needs or poll on the right; below that one screen at a time. A state is a glyph and a word, so a log of the session still reads: `* working`, `. idle`, `! needs you`, `- stopped`, `on hold`.

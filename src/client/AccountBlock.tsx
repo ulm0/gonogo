@@ -132,7 +132,7 @@ export function AccountBlock(): ReactElement {
             {account.sessions.map((s) => (
               <li key={s.id}>
                 <span>
-                  {s.address} · {s.agent === '' ? 'unknown browser' : s.agent.slice(0, 60)} · last used {when(s.last)}
+                  {s.type === 'tui' ? `TERMINAL ${s.label === '' ? '(no name)' : s.label}` : s.agent === '' ? 'unknown browser' : s.agent.slice(0, 60)} · {s.address} · last used {when(s.last)}
                   {s.id === account.current ? ' · this one' : ''}
                 </span>
                 <button type="button" className="btn" onClick={() => run(() => api.authRevokeSession(s.id))} disabled={s.id === account.current} aria-label={`Revoke the session from ${s.address}`}>

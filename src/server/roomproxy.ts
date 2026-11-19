@@ -49,7 +49,7 @@ export interface ProxyAuth {
   touchSession(sessionId: string): void;
   stepUpBody(method: string, path: string): boolean;
   stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
-  stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string): void;
+  stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string, tui?: boolean): void;
 }
 
 export interface RoomProxyOptions {
@@ -302,7 +302,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           sendText(res, 403, 'this key may not do that');
           return true;
         }
-        if (grant.kind === 'session') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
+        if (grant.kind === 'session' || grant.kind === 'tui') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
       }
       const forward = (buffered: Buffer | null): void => {
         const upstream = http.request(
@@ -331,7 +331,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       const asked = stepUp;
       if (!options.auth.stepUpBody(asked.method, asked.path)) {
         const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, null);
-        if (reason !== null) options.auth.stepUpDenied(req, res, reason);
+        if (reason !== null) options.auth.stepUpDenied(req, res, reason, asked.grant.kind === 'tui');
         else forward(null);
         return true;
       }
@@ -346,7 +346,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           // not JSON: the room answers 400; the strictest reading of a body nobody could read is that it needs the check
         }
         const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed);
-        if (reason !== null) options.auth.stepUpDenied(req, res, reason);
+        if (reason !== null) options.auth.stepUpDenied(req, res, reason, asked.grant.kind === 'tui');
         else forward(got.body);
       });
       return true;
@@ -386,7 +386,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         roomSocket.pipe(socket);
         socket.pipe(roomSocket);
         // a session's socket ends with the session, a key's with the key (revoked or expired)
-        const bound = grant.kind === 'session' ? (grant.sessionId ?? null) : grant.kind === 'key' && grant.keyId !== undefined ? `key:${grant.keyId}` : null;
+        const bound = grant.kind === 'session' || grant.kind === 'tui' ? (grant.sessionId ?? null) : grant.kind === 'key' && grant.keyId !== undefined ? `key:${grant.keyId}` : null;
         open.set(socket, bound);
         socket.once('close', () => open.delete(socket));
         // input to a console is use of the session; output is not, and a pong (the browser's reply to our ping) is neither: only text and binary frames count

@@ -954,6 +954,271 @@ describe('passkeys through the supervisor', () => {
   });
 });
 
+describe('the device login of a terminal through the supervisor', () => {
+  const NAME = 'gonogo.example.com';
+  let dclock = Date.now();
+  let secret: Buffer = Buffer.alloc(0);
+  const unbase32 = (text: string): Buffer => {
+    let bits = 0;
+    let value = 0;
+    const out: number[] = [];
+    for (const ch of text) {
+      value = (value << 5) | 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(ch);
+      bits += 5;
+      if (bits >= 8) {
+        out.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    return Buffer.from(out);
+  };
+  const bootDevice = async (over: Partial<Parameters<typeof startSupervisor>[0]> = {}, totp = false): Promise<Record<string, string>> => {
+    dclock = Date.now();
+    await boot({ now: () => dclock, ...over });
+    const cookies = await setUp();
+    if (totp) {
+      const local = { ...cookieHeader(cookies), ...origin(), ...JSONH };
+      secret = unbase32((JSON.parse((await call('POST', '/api/auth/mfa/begin', local, '{}')).text) as { secret: string }).secret);
+      expect((await call('POST', '/api/auth/mfa/enable', local, JSON.stringify({ code: totpCode(secret, Math.floor(dclock / 30000)) }))).status).toBe(200);
+      dclock += 31_000;
+    }
+    return cookies;
+  };
+  const startFlow = async (headers: Record<string, string> = {}, label = 'laptop'): Promise<{ device_code: string; user_code: string; verification_uri: string }> => {
+    const res = await call('POST', '/api/auth/device', { ...JSONH, ...headers }, JSON.stringify({ label }));
+    expect(res.status, res.text).toBe(200);
+    return JSON.parse(res.text) as { device_code: string; user_code: string; verification_uri: string };
+  };
+  const poll = (deviceCode: string, headers: Record<string, string> = {}): Promise<Answer> => call('POST', '/api/auth/device/token', { ...JSONH, ...headers }, JSON.stringify({ device_code: deviceCode }));
+  const typeCode = (cookies: Record<string, string>, code: string, extra: Record<string, string> = {}, headers: Record<string, string> = {}): Promise<Answer> =>
+    call('POST', '/login/device', { ...FORM, ...origin(), ...cookieHeader(cookies), ...headers }, form({ code, ...extra }));
+  const decide = (cookies: Record<string, string>, code: string, action: string, extra: Record<string, string> = {}, headers: Record<string, string> = {}): Promise<Answer> =>
+    call('POST', '/login/device/decide', { ...FORM, ...origin(), ...cookieHeader(cookies), ...headers }, form({ code, action, ...extra }));
+  const notices = (): string => (existsSync(join(home, 'notices')) ? readFileSync(join(home, 'notices'), 'utf8') : '');
+  const alertsText = (): string => (existsSync(join(home, 'alerts')) ? readFileSync(join(home, 'alerts'), 'utf8') : '');
+
+  it('does not exist before an account does, nor on a public name whose account has no second factor; with one it answers there with an https address', async () => {
+    await boot({ now: () => dclock });
+    expect((await call('POST', '/api/auth/device', JSONH, '{}')).status).toBe(404);
+    expect((await call('POST', '/api/auth/device/token', JSONH, '{}')).status).toBe(404);
+    const cookies = await setUp();
+    expect((await call('POST', '/api/auth/device', { ...JSONH, host: NAME }, '{}')).status).toBe(404);
+    const lan = await call('POST', '/api/auth/device', JSONH, '{}');
+    expect(lan.status).toBe(200);
+    expect((JSON.parse(lan.text) as { verification_uri: string }).verification_uri).toBe(`http://127.0.0.1:${sup.port}/login/device`);
+    const local = { ...cookieHeader(cookies), ...origin(), ...JSONH };
+    secret = unbase32((JSON.parse((await call('POST', '/api/auth/mfa/begin', local, '{}')).text) as { secret: string }).secret);
+    await call('POST', '/api/auth/mfa/enable', local, JSON.stringify({ code: totpCode(secret, Math.floor(Date.now() / 30000)) }));
+    const flow = await startFlow({ host: NAME });
+    expect(flow.verification_uri).toBe(`https://${NAME}/login/device`);
+    expect(flow.verification_uri).not.toContain(flow.user_code);
+    // the page answers 404 where the endpoints do
+    expect((await call('GET', '/login/device', { host: 'evil.example' })).status).toBe(403);
+  });
+
+  it('a full flow: the page never prefills the code, the details are shown as text, approve gives one token, and the open pages and the alert hear of it', async () => {
+    const cookies = await bootDevice();
+    const flow = await startFlow({ 'user-agent': 'gonogo-tui <b>x</b>' }, '<img src=x onerror=alert(1)>');
+    await until(() => notices().includes('is asking to log in'));
+    const page = await call('GET', '/login/device', cookieHeader(cookies));
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('SIGN IN A TERMINAL');
+    expect(page.text).not.toContain(flow.user_code);
+    expect(page.text).not.toMatch(/<script/i);
+    expect(page.text).not.toMatch(/value="[^"]+"/);
+    const details = await typeCode(cookies, flow.user_code.toLowerCase());
+    expect(details.status).toBe(200);
+    expect(details.text).toContain('A TERMINAL ASKS TO SIGN IN');
+    expect(details.text).toContain('127.0.0.1');
+    expect(details.text).toContain('&#60;img src=x onerror=alert(1)&#62;');
+    expect(details.text).not.toContain('<img src=x');
+    expect(details.text).toContain('Approve only if you started this on your own terminal just now');
+    // nothing is approved yet
+    expect(JSON.parse((await poll(flow.device_code)).text)).toEqual({ error: 'authorization_pending' });
+    const done = await decide(cookies, flow.user_code, 'approve');
+    expect(done.text).toContain('APPROVED');
+    dclock += 6000;
+    const got = await poll(flow.device_code);
+    const token = (JSON.parse(got.text) as { token: string }).token;
+    expect(token).toMatch(/^gnt_/);
+    expect((await poll(flow.device_code)).status).toBe(400);
+    await until(() => /TUI session approved/.test(alertsText()));
+    expect(alertsText()).not.toContain(token);
+    expect(alertsText()).not.toContain(flow.device_code);
+    expect(notices()).not.toContain(token);
+    // the token is a Bearer credential: the room and the account
+    const bearer = { authorization: `Bearer ${token}` };
+    expect((await call('GET', '/api/state', bearer)).status).toBe(200);
+    expect((await call('POST', '/api/x', { ...bearer, ...JSONH }, '{}')).status).toBe(200);
+    const view = JSON.parse((await call('GET', '/api/auth/account', cookieHeader(cookies))).text) as { sessions: Array<{ type: string; label: string }> };
+    expect(view.sessions.map((s) => s.type).sort()).toEqual(['browser', 'tui']);
+    expect(readFileSync(join(home, 'auth.json'), 'utf8')).not.toContain(token);
+  });
+
+  it('M3: a cross-origin or originless POST is refused, and so is a cookie-less one; deny ends the flow with access_denied', async () => {
+    const cookies = await bootDevice();
+    const flow = await startFlow();
+    expect((await call('POST', '/login/device', { ...FORM, ...cookieHeader(cookies), origin: 'http://evil.example' }, form({ code: flow.user_code }))).status).toBe(403);
+    expect((await call('POST', '/login/device', { ...FORM, ...cookieHeader(cookies) }, form({ code: flow.user_code }))).status).toBe(403);
+    expect((await call('POST', '/login/device/decide', { ...FORM, ...cookieHeader(cookies), origin: 'http://evil.example' }, form({ code: flow.user_code, action: 'approve' }))).status).toBe(403);
+    expect((await call('POST', '/login/device', { ...FORM, ...origin() }, form({ code: flow.user_code }))).status).toBe(303);
+    expect((await decide(cookies, flow.user_code, 'deny')).text).toContain('DENIED');
+    dclock += 6000;
+    expect(JSON.parse((await poll(flow.device_code)).text)).toEqual({ error: 'access_denied' });
+    // the code is spent
+    expect((await typeCode(cookies, flow.user_code)).status).toBe(404);
+  });
+
+  it('only a browser session approves: a key, a terminal session and a request with no cookie are sent to the login', async () => {
+    const cookies = await bootDevice();
+    const key = String((await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'k', scope: 'full' })).body.key);
+    const first = await startFlow();
+    const approvedFlow = await startFlow();
+    await decide(cookies, approvedFlow.user_code, 'approve');
+    dclock += 6000;
+    const tui = (JSON.parse((await poll(approvedFlow.device_code)).text) as { token: string }).token;
+    for (const auth of [`Bearer ${key}`, `Bearer ${tui}`]) {
+      const res = await call('POST', '/login/device', { ...FORM, ...origin(), authorization: auth }, form({ code: first.user_code }));
+      expect(res.status).toBe(303);
+      expect(res.headers.location).toBe('/login');
+    }
+    expect(JSON.parse((await poll(first.device_code)).text)).toEqual({ error: 'authorization_pending' });
+  });
+
+  it('M1: a forged X-Forwarded-For from an untrusted peer is ignored: the address is the peer\'s', async () => {
+    const cookies = await bootDevice({}, true);
+    const forged = await startFlow({ 'x-forwarded-for': '8.8.8.8' });
+    const near = await typeCode(cookies, forged.user_code);
+    expect(near.text).toContain('127.0.0.1');
+    expect(near.text).not.toContain('8.8.8.8');
+  });
+
+  it('a terminal on another network than the browser: a warning and a second tap', async () => {
+    const cookies = await bootDevice({ trustedProxies: ['127.0.0.1'] }, true);
+    const asBrowser = { 'x-forwarded-for': '198.51.100.9' };
+    const flow = await startFlow({ 'x-forwarded-for': '203.0.113.5' });
+    const details = await typeCode(cookies, flow.user_code, {}, asBrowser);
+    expect(details.text).toContain('203.0.113.5');
+    expect(details.text).toContain('different network');
+    // one tap is not enough
+    const once = await decide(cookies, flow.user_code, 'approve', {}, asBrowser);
+    expect(once.text).toContain('APPROVE ANYWAY');
+    expect(once.text).toContain('second look');
+    expect(JSON.parse((await poll(flow.device_code, { 'x-forwarded-for': '203.0.113.5' })).text)).toEqual({ error: 'authorization_pending' });
+    const twice = await decide(cookies, flow.user_code, 'approve', { again: '1' }, asBrowser);
+    expect(twice.text).toContain('APPROVED');
+    // a terminal on the same network has no warning
+    const same = await startFlow({ 'x-forwarded-for': '198.51.100.40' });
+    const quiet = await typeCode(cookies, same.user_code, {}, asBrowser);
+    expect(quiet.text).not.toContain('different network');
+  });
+
+  it('after five minutes the page asks the password (and the code) again before it shows anything, and mints the session\'s id again', async () => {
+    const cookies = await bootDevice({}, true);
+    const flow = await startFlow();
+    dclock += 6 * 60_000;
+    const stale = await call('GET', '/login/device', cookieHeader(cookies));
+    expect(stale.text).toContain('give it again');
+    expect(stale.text).toContain('name="password"');
+    expect(stale.text).toContain('name="totp"');
+    const wrong = await typeCode(cookies, flow.user_code, { password: 'not the password', totp: '000000' });
+    expect(wrong.status).toBe(401);
+    expect(wrong.text).not.toContain('A TERMINAL ASKS');
+    dclock += 31_000;
+    const right = await typeCode(cookies, flow.user_code, { password: PASSWORD, totp: totpCode(secret, Math.floor(dclock / 30000)) });
+    expect(right.status, right.text).toBe(200);
+    expect(right.text).toContain('A TERMINAL ASKS TO SIGN IN');
+    expect(right.cookies['gonogo-session']).toBeDefined();
+    expect(right.cookies['gonogo-session']).not.toBe(cookies['gonogo-session']);
+    // the new cookie decides at once
+    const done = await decide({ ...cookies, 'gonogo-session': right.cookies['gonogo-session'] as string }, flow.user_code, 'approve');
+    expect(done.text).toContain('APPROVED');
+  });
+
+  it('RSO N1: both endpoints check the Host like /login does (403), and the address given back is put together from the accepted name and port, never the raw Host', async () => {
+    await bootDevice({ allowedHosts: ['gonogo.example.com', 'nas.local'] }, true);
+    for (const path of ['/api/auth/device', '/api/auth/device/token']) {
+      expect((await call('POST', path, { ...JSONH, host: 'evil.example' }, '{}')).status, path).toBe(403);
+    }
+    expect((await call('GET', '/login/device', { host: 'evil.example' })).status).toBe(403);
+    const upper = await startFlow({ host: 'GONOGO.Example.COM' });
+    expect(upper.verification_uri).toBe('https://gonogo.example.com/login/device');
+    const withPort = await call('POST', '/api/auth/device', { ...JSONH, host: 'gonogo.example.com:8443' }, '{}');
+    expect((JSON.parse(withPort.text) as { verification_uri: string }).verification_uri).toBe('https://gonogo.example.com:8443/login/device');
+  });
+
+  it('RSO N2: the wrong-code count follows the device cookie, so a step-up that mints the session again gives no fresh tries', async () => {
+    const cookies = await bootDevice({}, true);
+    const flow = await startFlow();
+    for (let i = 0; i < 5; i += 1) expect((await typeCode(cookies, `ZZZZ-ZZZ${i}`)).status).toBe(404);
+    expect((await typeCode(cookies, flow.user_code)).status).toBe(429);
+    // six minutes on the password is asked again; giving it mints a new session id, and the counter is still the old one's
+    dclock += 6 * 60_000;
+    dclock += 31_000;
+    const again = await typeCode(cookies, flow.user_code, { password: PASSWORD, totp: totpCode(secret, Math.floor(dclock / 30000)) });
+    expect(again.cookies['gonogo-session']).toBeDefined();
+    expect(again.cookies['gonogo-session']).not.toBe(cookies['gonogo-session']);
+    expect(again.status).toBe(429);
+    expect(again.text).toContain('Too many wrong codes');
+    expect(again.text).not.toContain('A TERMINAL ASKS TO SIGN IN');
+    // with the new cookie the tries are still the old ones
+    const retry = await typeCode({ ...cookies, 'gonogo-session': again.cookies['gonogo-session'] as string }, flow.user_code);
+    expect(retry.status).toBe(429);
+  });
+
+  it('S1: the third waiting terminal from an address is refused with the way around it; wrong or missing device codes are refused', async () => {
+    await bootDevice();
+    await startFlow();
+    await startFlow();
+    const third = await call('POST', '/api/auth/device', JSONH, '{}');
+    expect(third.status).toBe(429);
+    expect(third.text).toContain('gonogo auth key add');
+    expect((await poll('nonsense')).status).toBe(400);
+    expect(JSON.parse((await poll('nonsense')).text)).toEqual({ error: 'expired_token' });
+    expect((await call('POST', '/api/auth/device', { ...JSONH, 'content-length': '0' }, 'x'.repeat(5000))).status).toBe(400);
+  });
+
+  it('the session of a terminal opens a console socket, may not do what a step-up guards or touch the account, and ends with a revoke or its own logout', async () => {
+    const cookies = await bootDevice();
+    const flow = await startFlow();
+    await decide(cookies, flow.user_code, 'approve');
+    dclock += 6000;
+    const token = (JSON.parse((await poll(flow.device_code)).text) as { token: string }).token;
+    const bearer = { authorization: `Bearer ${token}`, ...JSONH };
+    // what a step-up guards: always "do this in the browser", however fresh
+    for (const [method, path, body] of [['PUT', '/api/permissions', {}], ['POST', '/api/agents', { name: 'x', command: 'sh' }], ['PUT', '/api/features/relay', {}], ['POST', '/api/update', {}]] as const) {
+      const res = await call(method, path, bearer, JSON.stringify(body));
+      expect(res.status, path).toBe(403);
+      expect(JSON.parse(res.text)).toMatchObject({ stepUpRequired: true });
+      expect(res.text).toContain('do this in the browser');
+    }
+    // not shell-equivalent routes: a plain hire, a message
+    expect((await call('POST', '/api/messages', bearer, '{}')).status).toBe(200);
+    expect((await call('POST', '/api/agents', bearer, JSON.stringify({ name: 'x', mode: 'default' }))).status).toBe(200);
+    // the account is the browser's
+    for (const [method, path] of [['GET', '/api/auth/account'], ['POST', '/api/auth/keys'], ['POST', '/api/auth/password'], ['DELETE', '/api/auth/sessions/abcdef12']] as const) expect((await call(method, path, bearer, method === 'GET' ? undefined : '{}')).status, path).toBe(403);
+    // the socket is bound to the session
+    const ws = new WebSocket(`ws://127.0.0.1:${sup.port}/ws`, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + token]);
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()));
+    const view = JSON.parse((await call('GET', '/api/auth/account', cookieHeader(cookies))).text) as { sessions: Array<{ id: string; type: string }> };
+    const id = view.sessions.find((s) => s.type === 'tui')?.id as string;
+    expect((await call('DELETE', `/api/auth/sessions/${id}`, { ...cookieHeader(cookies), ...origin() })).status).toBe(200);
+    await closed;
+    expect((await call('GET', '/api/state', bearer)).status).toBe(401);
+    // its own logout
+    const second = await startFlow();
+    await decide(cookies, second.user_code, 'approve');
+    dclock += 6000;
+    const token2 = (JSON.parse((await poll(second.device_code)).text) as { token: string }).token;
+    expect((await call('POST', '/api/auth/logout', { authorization: `Bearer ${token2}`, ...JSONH }, '{}')).status).toBe(200);
+    expect((await call('GET', '/api/state', { authorization: `Bearer ${token2}` })).status).toBe(401);
+  });
+});
+
 describe('no secret in any log', () => {
   it('a full login, a reset and a key creation leave no password, cookie, key, token or session id in the log', async () => {
     const lines: string[] = [];

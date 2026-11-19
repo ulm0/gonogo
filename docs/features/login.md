@@ -105,6 +105,10 @@ shown **once**, stored hashed, expiring (90 days by default), with the last use 
   **full:** everything except the account (a `full` key is listed as dangerous). The rooms list is changed by a `full` key only.
 - **A key is refused from a public name unless it was made with `--remote`.** A key never reaches `/api/auth`.
 
+## A terminal on another machine
+
+`gonogo tui --url https://...` signs in with a **device login**: it shows a code, you type it in the browser and approve it ([TUI](tui.md)). The terminal gets a session of its own (a week idle, 30 days in all), listed in LOGIN as TERMINAL, which can do what a browser session can except the step-up routes and the account. It is a Bearer credential kept in `tui.json` on that machine: a stolen file is a stolen session, so revoke it here, and the first use from another network is a notice.
+
 ## On this machine: a unix socket, no token
 
 `gonogo tui`, the `gonogo auth` commands and scripts on the machine talk to **`<home>/run/api.sock`** (directory 0700, socket 0600): the

@@ -31,6 +31,7 @@ const BUCKET_KEEP_MS = 60 * MINUTE;
 const BUCKETS_MAX = 20000;
 const KEY_DEFAULT_DAYS = 90;
 const KEY_PREFIX = 'gnk_';
+export const TUI_PREFIX = 'gnt_';
 export const PASSWORD_MIN = 12;
 export const PASSWORD_MAX = 256;
 const TAMPER_EVERY_MS = 5000;
@@ -40,6 +41,7 @@ const SESSION_WRITE_MS = MINUTE;
 
 /** Lifetimes: a public name is short, a loopback or private one long (spec, sessions). */
 export const LIFETIME = {
+  tui: { idle: 7 * DAY, absolute: 30 * DAY },
   public: { idle: 2 * 60 * MINUTE, absolute: 7 * DAY },
   local: { idle: 12 * 60 * MINUTE, absolute: 30 * DAY },
 } as const;
@@ -198,6 +200,13 @@ export interface Session {
   cls: 'public' | 'local';
   /** When the password (and the second factor) was last checked for this session: step-up asks again after 5 minutes. */
   step: number;
+  /** `browser`: a cookie. `tui`: a terminal that a browser session approved (a Bearer credential, docs/login-spec.md, TUI device login). */
+  kind: 'browser' | 'tui';
+  /** A tui session: the name its terminal gave itself, cleaned (at most 40 characters). */
+  label: string;
+  /** A tui session: the /24 or /64 it was approved from; a first use from another is a notice. */
+  net: string;
+  moved: boolean;
 }
 /** A passkey (WebAuthn credential): the public key only, and the rp id it was made for, fixed at its registration. */
 export interface Passkey {
@@ -286,7 +295,7 @@ function parseAuth(text: string): AuthFile | undefined {
   const sessions: Session[] = [];
   for (const s of raw.sessions) {
     if (!isObject(s) || !str(s.id) || !num(s.created) || !num(s.last) || !str(s.address) || !str(s.agent) || !str(s.device) || (s.cls !== 'public' && s.cls !== 'local')) return undefined;
-    sessions.push({ id: s.id, created: s.created, last: s.last, address: s.address, agent: s.agent, device: s.device, cls: s.cls, step: num(s.step) ? s.step : s.created });
+    sessions.push({ id: s.id, created: s.created, last: s.last, address: s.address, agent: s.agent, device: s.device, cls: s.cls, step: num(s.step) ? s.step : s.created, kind: s.kind === 'tui' ? 'tui' : 'browser', label: str(s.label) ? s.label.slice(0, 40) : '', net: str(s.net) ? s.net.slice(0, 60) : '', moved: s.moved === true });
   }
   const devices: Device[] = [];
   for (const d of raw.devices) {
@@ -388,10 +397,32 @@ function writeSetupToken(home: string): string {
 
 /* ------------------------------------------------------------------ the store */
 
+/** The /24 of an IPv4 address or the /64 of an IPv6 one (what "another network" means), or the address itself when it is neither. */
+export function networkOf(address: string): string {
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/.exec(address.startsWith('::ffff:') ? address.slice(7) : address);
+  if (v4 !== null) return `${v4[1]}.${v4[2]}.${v4[3]}.0/24`;
+  if (address.includes(':')) {
+    const [head = '', tail = ''] = address.toLowerCase().split('::');
+    const front = head === '' ? [] : head.split(':');
+    const back = tail === '' || !address.includes('::') ? [] : tail.split(':');
+    const groups = address.includes('::') ? [...front, ...Array(Math.max(0, 8 - front.length - back.length)).fill('0'), ...back] : front;
+    if (groups.length === 8) return `${groups.slice(0, 4).map((g) => (g === '' ? '0' : g.replace(/^0+(?=.)/, ''))).join(':')}::/64`;
+  }
+  return address;
+}
+
+/** A text from somebody who is not signed in, made safe to show: no control character, no direction mark, no zero-width one, cut at `max`. */
+export function cleanText(value: unknown, max: number): string {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
 export interface AuthOptions {
   home: string;
   /** The Downlink `redline` event and Relay: a text with the address and device, never a secret. */
   alert: (text: string) => void;
+  /** The open pages and the log, not a redline and not Relay: something the Director should see but nobody should be pushed to (docs/login-spec.md, TUI device login). */
+  notice?: (text: string) => void;
   log?: Logger;
   now?: () => number;
   costs?: HashCosts;
@@ -464,6 +495,10 @@ export interface AuthStore {
   passkeyCounterAlert(credentialId: string): void;
   /** Called when a session's id is minted again: its sockets move to the new one. */
   onReminted(listener: (from: string, to: string) => void): void;
+  /** Makes the session of a terminal a browser session approved (the secret is returned once; only its hash is kept). Synchronous: no await between the flow and the session. */
+  tuiStart(input: { address: string; agent: string; label: string }): string;
+  /** The terminal session a Bearer value names, refreshed; null when it is none, expired or revoked. */
+  tuiSession(secret: string, who: Who, touch?: 'api' | 'input' | 'none'): Session | null;
   /** The key a Bearer value names (refused on a public Host unless made with --remote), or null. */
   key(secret: string, who: Who): ApiKey | null;
   deviceOf(cookie: string | undefined): Device | null;
@@ -674,7 +709,7 @@ export function openAuth(options: AuthOptions): AuthStore {
 
   const startSession = (who: Who, device: Device): { session: string; sessionRow: Session } => {
     const session = rand();
-    const row: Session = { id: sha(session), created: now(), last: now(), address: who.address, agent: who.agent.slice(0, 200), device: device.id, cls: isLocalClass(who.cls) ? 'local' : 'public', step: now() };
+    const row: Session = { id: sha(session), created: now(), last: now(), address: who.address, agent: who.agent.slice(0, 200), device: device.id, cls: isLocalClass(who.cls) ? 'local' : 'public', step: now(), kind: 'browser', label: '', net: '', moved: false };
     data.sessions.push(row);
     return { session, sessionRow: row };
   };
@@ -694,7 +729,8 @@ export function openAuth(options: AuthOptions): AuthStore {
   /* ---- sessions ---- */
 
   const expired = (s: Session, t: number): boolean => {
-    const life = LIFETIME[s.cls];
+    // a terminal: a week idle and 30 days in all, on any name (docs/login-spec.md, TUI device login)
+    const life = s.kind === 'tui' ? LIFETIME.tui : LIFETIME[s.cls];
     return t - s.last > life.idle || t - s.created > life.absolute;
   };
   const drop = (ids: string[]): void => {
@@ -993,7 +1029,7 @@ export function openAuth(options: AuthOptions): AuthStore {
       if (cookie === undefined || cookie === '' || state() !== 'account') return null;
       checkTamper();
       const id = sha(cookie);
-      const found = data.sessions.find((s) => s.id === id);
+      const found = data.sessions.find((s) => s.id === id && s.kind === 'browser');
       if (found === undefined) return null;
       const t = now();
       if (expired(found, t)) {
@@ -1005,6 +1041,41 @@ export function openAuth(options: AuthOptions): AuthStore {
         found.last = t;
         const written0 = lastWrite.get(found.id) ?? 0;
         if (t - written0 >= SESSION_WRITE_MS) {
+          lastWrite.set(found.id, t);
+          save();
+        }
+      }
+      return found;
+    },
+
+    tuiStart(input) {
+      const secret = `${TUI_PREFIX}${rand()}`;
+      const t = now();
+      data.sessions.push({ id: sha(secret), created: t, last: t, address: input.address, agent: cleanText(input.agent, 200), device: '', cls: 'public', step: 0, kind: 'tui', label: cleanText(input.label, 40), net: networkOf(input.address), moved: false });
+      save();
+      return secret;
+    },
+
+    tuiSession(secret, who, touch) {
+      if (!secret.startsWith(TUI_PREFIX) || state() !== 'account') return null;
+      checkTamper();
+      const id = sha(secret);
+      const found = data.sessions.find((s) => s.id === id && s.kind === 'tui');
+      if (found === undefined) return null;
+      const t = now();
+      if (expired(found, t)) {
+        drop([found.id]);
+        return null;
+      }
+      // the one signal a stolen tui.json gives: the first use from another network than the one it was approved from
+      if (!found.moved && who.address !== 'socket' && networkOf(who.address) !== found.net) {
+        found.moved = true;
+        save();
+        options.notice?.(`The terminal session "${found.label || 'unnamed'}" was used from a new network (${who.address}); it was approved from ${found.net}`);
+      }
+      if (touch === 'api' || (touch === 'input' && t - found.last >= MINUTE)) {
+        found.last = t;
+        if (t - (lastWrite.get(found.id) ?? 0) >= SESSION_WRITE_MS) {
           lastWrite.set(found.id, t);
           save();
         }

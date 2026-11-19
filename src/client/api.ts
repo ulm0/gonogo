@@ -1280,6 +1280,9 @@ export interface AccountSession {
   address: string;
   agent: string;
   kind: 'public' | 'local';
+  /** A cookie session, or a terminal (`tui`) a browser approved. */
+  type: 'browser' | 'tui';
+  label: string;
 }
 export interface AccountKey {
   id: string;
