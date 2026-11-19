@@ -24,7 +24,7 @@ import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
-import { sendText } from './hooks.js';
+import { readBody, sendText } from './hooks.js';
 import { validRoomId } from './rooms.js';
 import { hostName } from './web.js';
 
@@ -45,6 +45,9 @@ export interface ProxyAuth {
   pageHeaders(): Record<string, string>;
   alive(sessionId: string): boolean;
   touchSession(sessionId: string): void;
+  stepUpBody(method: string, path: string): boolean;
+  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
+  stepUpDenied(res: ServerResponse, reason: string): void;
 }
 
 export interface RoomProxyOptions {
@@ -63,6 +66,8 @@ export interface RoomProxy {
   closeSockets(): void;
   /** Ends the WebSockets bound to these sessions (revoked, logged out, expired, password changed). */
   closeSessions(ids: readonly string[]): void;
+  /** A session's id was minted again (step-up): its sockets stay open, bound to the new id. */
+  rebind(from: string, to: string): void;
   /** Stops the once-a-minute check of the sockets' sessions. */
   close(): void;
 }
@@ -228,6 +233,9 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     closeSockets() {
       for (const socket of [...open.keys()]) socket.destroy();
     },
+    rebind(from, to) {
+      for (const [socket, session] of [...open]) if (session === from) open.set(socket, to);
+    },
     closeSessions(ids) {
       const set = new Set(ids);
       for (const [socket, session] of [...open]) if (session !== null && set.has(session)) socket.destroy();
@@ -252,6 +260,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       }
       // case does not matter to a router that folds it, so API and Ws are asked about too
       const first = target.first.toLowerCase();
+      /** What the step-up asks about this change, when a session makes it: after the body is read when the body decides. */
+      let stepUp: { grant: Grant; method: string; path: string } | null = null;
       if (target.kind === 'browser' && !((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
         const grant = options.auth.grant(req, 'api');
         if (grant === null) {
@@ -267,8 +277,10 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           sendText(res, 403, 'this key may not do that');
           return true;
         }
+        if (grant.kind === 'session') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
       }
-      const upstream = http.request(
+      const forward = (buffered: Buffer | null): void => {
+        const upstream = http.request(
         { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false) },
         (answer) => {
           const headers: http.OutgoingHttpHeaders = {};
@@ -284,7 +296,34 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       );
       upstream.on('error', () => sendText(res, 502, 'the room did not answer'));
       res.on('close', () => upstream.destroy());
-      req.pipe(upstream);
+      if (buffered === null) req.pipe(upstream);
+      else upstream.end(buffered);
+      };
+      if (stepUp === null) {
+        forward(null);
+        return true;
+      }
+      const asked = stepUp;
+      if (!options.auth.stepUpBody(asked.method, asked.path)) {
+        const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, null);
+        if (reason !== null) options.auth.stepUpDenied(res, reason);
+        else forward(null);
+        return true;
+      }
+      // a hire or an edit of an agent: the body says whether it needs the password again, so it is read (64 KiB) and then sent on
+      void readBody(req, 64 * 1024).then((got) => {
+        if (!got.ok) return void sendText(res, got.reason === 'too_large' ? 413 : 400, 'the body could not be read');
+        let parsed: Record<string, unknown> | null = null;
+        try {
+          const value: unknown = JSON.parse(got.body.toString('utf8'));
+          if (typeof value === 'object' && value !== null && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+        } catch {
+          // not JSON: the room answers 400; the strictest reading of a body nobody could read is that it needs the check
+        }
+        const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed);
+        if (reason !== null) options.auth.stepUpDenied(res, reason);
+        else forward(got.body);
+      });
       return true;
     },
 
@@ -329,7 +368,9 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         if (bound !== null && !bound.startsWith('key:')) {
           socket.on('data', (chunk: Buffer) => {
             const opcode = (chunk[0] ?? 0) & 0x0f;
-            if (opcode === 1 || opcode === 2) options.auth.touchSession(bound);
+            // the id it is bound to NOW: a step-up mints the id again and rebind() moves the socket, so the one captured above would be the dead one
+            const now = open.get(socket);
+            if ((opcode === 1 || opcode === 2) && now !== undefined && now !== null && !now.startsWith('key:')) options.auth.touchSession(now);
           });
         }
         const end = (): void => {

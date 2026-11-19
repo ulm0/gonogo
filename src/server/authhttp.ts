@@ -9,6 +9,7 @@ import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import { hostClass, isLocalClass, KEY_SCOPES, LIFETIME } from './auth.js';
 import type { AuthStore, HostClass, KeyScope, LoginResult, Who } from './auth.js';
 import { authPage, authPageHeaders } from './authpage.js';
+import { bodyMatters, stepUpReason } from './stepup.js';
 import type { AuthPageKind } from './authpage.js';
 import { nullLogger } from './constants.js';
 import { bearerToken, readBody, sendApiError, sendJson, sendText } from './hooks.js';
@@ -53,6 +54,12 @@ export interface AuthHttp {
   whoOf(req: IncomingMessage): Who;
   /** The headers every page of the room proxy gets (CSP and friends). */
   pageHeaders(): Record<string, string>;
+  /** True when the body of this change decides whether it needs a step-up (hire, edit of an agent): the proxy reads it first. */
+  stepUpBody(method: string, path: string): boolean;
+  /** Whether this change by this grant needs the password (and code) again now; `body` is the parsed JSON object, or null. */
+  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
+  /** The 403 that tells the page to ask for the password again. */
+  stepUpDenied(res: ServerResponse, reason: string): void;
 }
 
 const sameText = (a: string, b: string): boolean => timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
@@ -193,7 +200,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
   };
   const text = (form: Form, name: string): string => (typeof form[name] === 'string' ? (form[name] as string) : '');
 
-  const html = (res: ServerResponse, status: number, kind: AuthPageKind, extra: { message?: string; user?: string; plain?: boolean } = {}, cacheless = true): void => {
+  const html = (res: ServerResponse, status: number, kind: AuthPageKind, extra: { message?: string; user?: string; plain?: boolean; pending?: string } = {}, cacheless = true): void => {
     res.writeHead(status, authPageHeaders());
     res.end(authPage({ kind, stylesheet: options.stylesheet, ...extra }));
     void cacheless;
@@ -211,6 +218,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     damaged: [503, 'The account file is damaged. Run `gonogo auth reset` on the machine gonogo runs on.'],
     weak: [400, 'The password needs 12 to 256 characters, and the name letters, digits, dots, dashes or spaces (64 at most).'],
     setup: [403, 'Login is not set up: open gonogo from this machine or your local network.'],
+    needmfa: [403, 'This address needs a second factor. Turn on TOTP from this machine or your local network first (Flight Rules, LOGIN).'],
   };
 
   const cookiesFor = (who: Who, ok: Extract<LoginResult, { ok: true }>): string[] => {
@@ -223,7 +231,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
 
   const plainHttp = (req: IncomingMessage, who: Who): boolean => isLocalClass(who.cls) && who.cls !== 'loopback' && !(req.socket as { encrypted?: boolean }).encrypted;
 
-  async function post(req: IncomingMessage, res: ServerResponse, which: 'login' | 'setup'): Promise<void> {
+  async function post(req: IncomingMessage, res: ServerResponse, which: 'login' | 'setup' | 'second'): Promise<void> {
     const who = whoOf(req);
     if (!options.hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
     if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
@@ -233,7 +241,11 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     const user = text(form, 'user');
     const password = text(form, 'password');
     try {
-      const result = which === 'setup' ? await auth.setup(who, { token: text(form, 'token'), user, password }, options.legacyToken()) : await auth.login(who, { user, password });
+      const result = which === 'setup' ? await auth.setup(who, { token: text(form, 'token'), user, password }, options.legacyToken()) : which === 'second' ? await auth.second(who, text(form, 'pending'), text(form, 'code')) : await auth.login(who, { user, password });
+      if (!result.ok && result.reason === 'second') {
+        if (asHtml) return html(res, 200, 'second', { pending: result.pending, plain: plainHttp(req, who) });
+        return sendJson(res, 200, { ok: false, second: true, pending: result.pending });
+      }
       if (result.ok) {
         const cookies = cookiesFor(who, result);
         if (asHtml) return redirect(res, '/', cookies);
@@ -244,6 +256,8 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       if (asHtml) {
         res.setHeader('Retry-After', String(result.retryAfter ?? 0));
         if (result.reason === 'setup') return html(res, status, 'unset');
+        // a wrong second factor shows its own page again (the pending token is still good for a few tries); anything else the form it came from
+        if (which === 'second' && result.reason === 'wrong') return html(res, status, 'second', { message: shown, pending: text(form, 'pending'), plain: plainHttp(req, who) });
         return html(res, status, which === 'setup' && result.reason !== 'off' ? 'setup' : result.reason === 'locked' ? 'locked' : result.reason === 'damaged' ? 'damaged' : 'login', { message: shown, user, plain: plainHttp(req, who) });
       }
       return sendApiError(res, status, shown, status === 429 ? 'rate_limited' : status === 401 ? 'unauthorized' : 'forbidden', undefined, result.retryAfter === undefined ? {} : { 'Retry-After': String(result.retryAfter) });
@@ -261,6 +275,8 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     locked: auth.locked(),
     current: current.sessionId?.slice(0, 16) ?? null,
     sessions: auth.sessions().map((s) => ({ id: s.short, created: s.created, last: s.last, address: s.address, agent: s.agent, kind: s.cls })),
+    mfa: auth.mfa(),
+    stepFresh: current.sessionId === undefined ? true : auth.stepFresh(current.sessionId),
     keys: auth.keys().map((k) => ({ id: k.short, name: k.name, scope: k.scope, remote: k.remote, created: k.created, expires: k.expires, last: k.last, lastAddress: k.lastAddress })),
     host: whoOf(req).cls,
   });
@@ -288,6 +304,47 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     if (found.kind === 'session' && !csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
     if (path === '/api/auth/account' && method === 'GET') return sendJson(res, 200, view(req, found), { 'Cache-Control': 'no-store' });
     const readJson = async (): Promise<Form | null> => (await readForm(req))?.form ?? null;
+    // the account's own changes ask the password again when the last check is old (the local socket is the Director on this machine and is not asked)
+    const reason = stepUpReason(method, path, null);
+    if (reason !== null && found.kind === 'session' && found.sessionId !== undefined && !auth.stepFresh(found.sessionId)) return stepUpDenied(res, reason);
+    if (path === '/api/auth/stepup' && method === 'POST') {
+      if (found.sessionId === undefined) return sendJson(res, 200, { ok: true });
+      const body = await readJson();
+      if (body === null) return sendApiError(res, 400, 'send application/json', 'bad_request');
+      const answer = await auth.stepUp(found.sessionId, who, { password: text(body, 'password'), code: text(body, 'code') });
+      if (answer.ok) {
+        const life = LIFETIME[isLocalClass(who.cls) ? 'local' : 'public'].absolute;
+        return sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(who.cls, answer.session, Math.floor(life / 1000)) });
+      }
+      if (answer.reason === 'gone') return sendApiError(res, 401, 'unauthorized', 'unauthorized');
+      return sendApiError(res, answer.reason === 'wait' ? 429 : 401, answer.reason === 'wait' ? 'too many tries: wait, then try again' : 'wrong password or code', answer.reason === 'wait' ? 'rate_limited' : 'unauthorized');
+    }
+    if (path === '/api/auth/mfa/begin' && method === 'POST') {
+      if (auth.mfa().enabled) return sendApiError(res, 409, 'a second factor is already on: turn it off first', 'conflict');
+      return sendJson(res, 200, auth.mfaBegin(), { 'Cache-Control': 'no-store' });
+    }
+    if (path === '/api/auth/mfa/enable' && method === 'POST') {
+      const body = await readJson();
+      if (body === null) return sendApiError(res, 400, 'send application/json', 'bad_request');
+      const answer = auth.mfaEnable(found.sessionId ?? 'socket', who, text(body, 'code'));
+      if (answer.ok) return sendJson(res, 200, { ok: true, recovery: answer.recovery }, { 'Cache-Control': 'no-store' });
+      if (answer.reason === 'none') return sendApiError(res, 409, 'start with a new secret first', 'conflict');
+      return sendApiError(res, answer.reason === 'wait' ? 429 : 401, answer.reason === 'wait' ? 'too many tries: wait, then try again' : 'wrong code', answer.reason === 'wait' ? 'rate_limited' : 'unauthorized', 'code');
+    }
+    if ((path === '/api/auth/mfa/disable' || path === '/api/auth/mfa/recovery') && method === 'POST') {
+      const body = await readJson();
+      if (body === null) return sendApiError(res, 400, 'send application/json', 'bad_request');
+      const input = { password: text(body, 'password'), code: text(body, 'code') };
+      if (path.endsWith('disable')) {
+        const answer = await auth.mfaDisable(found.sessionId ?? 'socket', who, input);
+        if (answer === 'ok') return sendJson(res, 200, { ok: true });
+        return sendApiError(res, answer === 'wait' ? 429 : 401, answer === 'wait' ? 'too many tries: wait, then try again' : 'wrong password or code', answer === 'wait' ? 'rate_limited' : 'unauthorized');
+      }
+      const answer = await auth.mfaRecovery(found.sessionId ?? 'socket', who, input);
+      if (answer.ok) return sendJson(res, 200, { ok: true, recovery: answer.recovery }, { 'Cache-Control': 'no-store' });
+      if (answer.reason === 'none') return sendApiError(res, 409, 'no second factor is on', 'conflict');
+      return sendApiError(res, answer.reason === 'wait' ? 429 : 401, answer.reason === 'wait' ? 'too many tries: wait, then try again' : 'wrong password or code', answer.reason === 'wait' ? 'rate_limited' : 'unauthorized');
+    }
 
     if (path === '/api/auth/logout' && method === 'POST') {
       if (found.sessionId !== undefined) auth.logout(found.sessionId);
@@ -331,6 +388,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     return sendApiError(res, 404, 'not found', 'not_found');
   }
 
+  const stepUpDenied = (res: ServerResponse, reason: string): void =>
+    sendJson(res, 403, { error: `Confirm your password${auth.mfa().enabled ? ' and a code' : ''} to do this: ${reason}.`, code: 'forbidden', stepUp: true, second: auth.mfa().enabled });
+
   const isAuthPath = (path: string): boolean => path === '/login' || path === '/setup' || path === '/api/auth' || path.startsWith('/api/auth/');
 
   return {
@@ -338,6 +398,12 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     grantUpgrade,
     csrfOk,
     whoOf,
+    stepUpBody: bodyMatters,
+    stepUpNeeded: (grant, method, path, body) => {
+      if (grant.kind !== 'session' || grant.sessionId === undefined || auth.stepFresh(grant.sessionId)) return null;
+      return stepUpReason(method, path, body);
+    },
+    stepUpDenied,
     pageHeaders: () => ({
       // the page of a room and the list: nothing but the server's own files, no inline script, no frame (threat model 3); styles allow the inline rules the terminal and the client write
       // lower case: the room's own headers arrive lower-cased, and these must replace them, not sit beside them
@@ -363,9 +429,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
         if (state === 'account') return (redirect(res, '/login'), true);
         return (html(res, isLocalClass(who.cls) ? 200 : 403, isLocalClass(who.cls) ? 'setup' : 'unset', { plain: plainHttp(req, who) }), true);
       }
-      if (path === '/api/auth/login' || path === '/api/auth/setup') {
+      if (path === '/api/auth/login' || path === '/api/auth/setup' || path === '/api/auth/second') {
         if (method !== 'POST') return (sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'POST' }), true);
-        void post(req, res, path.endsWith('setup') ? 'setup' : 'login').catch((error: unknown) => {
+        void post(req, res, path.endsWith('setup') ? 'setup' : path.endsWith('second') ? 'second' : 'login').catch((error: unknown) => {
           log.error('auth route failed', error);
           sendApiError(res, 500, 'internal error', 'internal');
         });

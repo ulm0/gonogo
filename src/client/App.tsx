@@ -1,3 +1,4 @@
+import { StepUpDialog } from './StepUpDialog.js';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/protocol.js';
@@ -524,5 +525,10 @@ export function App(): ReactElement {
   const connection = useStore((s) => s.connection);
   const loading = useStore((s) => s.info === null);
   const gone = useStore((s) => s.failedAttempts >= RECONNECT_SERVER_GONE_AFTER);
-  return <div className="app">{connection === 'unauthorized' ? <Unauthorized /> : loading ? gone ? <ServerGone /> : <Standby /> : <Office />}</div>;
+  return (
+    <div className="app">
+      {connection === 'unauthorized' ? <Unauthorized /> : loading ? gone ? <ServerGone /> : <Standby /> : <Office />}
+      <StepUpDialog />
+    </div>
+  );
 }

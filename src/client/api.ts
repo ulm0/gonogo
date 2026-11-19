@@ -108,7 +108,7 @@ export interface TerminalListener {
 }
 
 /** An Error from a REST call: the server's message, plus the field it names and the HTTP status. */
-export type ApiFailure = Error & { field?: string; status?: number };
+export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boolean; second?: boolean };
 
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/i;
 
@@ -162,7 +162,7 @@ function failure(message: string, status?: number, field?: string): ApiFailure {
   return Object.assign(new Error(message), { status, field });
 }
 
-async function call(method: string, path: string, body?: unknown): Promise<unknown> {
+async function callOnce(method: string, path: string, body?: unknown): Promise<unknown> {
   // with no token the login's session cookie is the credential (the browser sends it by itself)
   const headers: Record<string, string> = token === null ? {} : { Authorization: `Bearer ${token}` };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -187,10 +187,53 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
   if (!response.ok) {
     const error = asRecord(parsed);
     const message = typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`;
-    throw failure(message, response.status, typeof error?.field === 'string' ? error.field : undefined);
+    throw Object.assign(failure(message, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true } : {});
   }
   return parsed;
 }
+
+/* ---- step-up: a change that wants the password (and the code) again ---- */
+
+export interface StepUpAnswer {
+  password: string;
+  code: string;
+}
+type StepUpHandler = (needsCode: boolean, message: string) => Promise<StepUpAnswer | null>;
+let stepUpHandler: StepUpHandler | null = null;
+
+/** The page registers the dialog that asks; the handler answers null when the person gives up. */
+export function onStepUp(handler: StepUpHandler): () => void {
+  stepUpHandler = handler;
+  return () => {
+    if (stepUpHandler === handler) stepUpHandler = null;
+  };
+}
+
+/** Runs a call; when the server says the password is wanted again, asks, confirms (a new cookie is set) and runs it once more. */
+async function viaStepUp<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    const first = e as ApiFailure;
+    if (first.stepUp !== true || stepUpHandler === null) throw e;
+    let message = first.message;
+    for (;;) {
+      const answer = await stepUpHandler(first.second === true, message);
+      if (answer === null) throw e;
+      try {
+        await authCallOnce('POST', '/stepup', answer);
+        return await run();
+      } catch (again) {
+        const f = again as ApiFailure;
+        // a wrong password or code: ask again; anything else is the answer
+        if (f.status !== 401 && f.status !== 429) throw again;
+        message = f.message;
+      }
+    }
+  }
+}
+
+const call = (method: string, path: string, body?: unknown): Promise<unknown> => viaStepUp(() => callOnce(method, path, body));
 
 function toAgentView(value: unknown): AgentView {
   const record = asRecord(value);
@@ -1163,10 +1206,13 @@ export interface AccountView {
   host: 'loopback' | 'private' | 'public';
   sessions: AccountSession[];
   keys: AccountKey[];
+  mfa: { enabled: boolean; pending: boolean; recoveryLeft: number };
 }
 
 /** One call to `/api/auth/...`: the supervisor's own route (a room has none), so the path is absolute and the session cookie is the credential. */
-async function authCall(method: string, path: string, body?: unknown): Promise<unknown> {
+const authCall = (method: string, path: string, body?: unknown): Promise<unknown> => viaStepUp(() => authCallOnce(method, path, body));
+
+async function authCallOnce(method: string, path: string, body?: unknown): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(`/api/auth${path}`, {
@@ -1187,7 +1233,7 @@ async function authCall(method: string, path: string, body?: unknown): Promise<u
   }
   if (!response.ok) {
     const error = asRecord(parsed);
-    throw failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined);
+    throw Object.assign(failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true } : {});
   }
   return parsed;
 }
@@ -1217,3 +1263,17 @@ export async function authMakeKey(input: { name: string; scope: string; days: nu
   if (record === null || typeof record.key !== 'string' || typeof record.id !== 'string') throw failure('The server sent an answer gonogo does not understand.');
   return { key: record.key, id: record.id };
 }
+
+export async function authMfaBegin(): Promise<{ secret: string; uri: string }> {
+  const record = asRecord(await authCall('POST', '/mfa/begin', {}));
+  if (record === null || typeof record.secret !== 'string' || typeof record.uri !== 'string') throw failure('The server sent an answer gonogo does not understand.');
+  return { secret: record.secret, uri: record.uri };
+}
+async function recoveryOf(call: Promise<unknown>): Promise<string[]> {
+  const record = asRecord(await call);
+  if (record === null || !Array.isArray(record.recovery) || !record.recovery.every((c) => typeof c === 'string')) throw failure('The server sent an answer gonogo does not understand.');
+  return record.recovery as string[];
+}
+export const authMfaEnable = (code: string): Promise<string[]> => recoveryOf(authCall('POST', '/mfa/enable', { code }));
+export const authMfaRecovery = (password: string, code: string): Promise<string[]> => recoveryOf(authCall('POST', '/mfa/recovery', { password, code }));
+export const authMfaDisable = (password: string, code: string): Promise<unknown> => authCall('POST', '/mfa/disable', { password, code });

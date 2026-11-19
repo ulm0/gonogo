@@ -6,7 +6,7 @@
  * Node is older than 24.7), the sessions and API keys are stored as SHA-256 of their secret, and nothing here puts a secret in a log, an alert
  * or a return value other than the one the caller must hand to its owner once.
  */
-import { createHash, createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import * as crypto from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -133,6 +133,57 @@ export async function verifyPassword(password: string, stored: PasswordHash, cos
   return { ok, stale: ok && !same };
 }
 
+/* ------------------------------------------------------------------ the second factor */
+
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+export function base32(bytes: Buffer): string {
+  let bits = 0;
+  let value = 0;
+  let out = '';
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += B32[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
+  return out;
+}
+
+export const TOTP_STEP_S = 30;
+/** RFC 6238 with HMAC-SHA1, six digits: the code of one 30-second step. */
+export function totpCode(secret: Buffer, step: number): string {
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(step));
+  const mac = createHmac('sha1', secret).update(counter).digest();
+  const at = (mac[mac.length - 1] as number) & 0x0f;
+  const binary = (((mac[at] as number) & 0x7f) << 24) | (((mac[at + 1] as number) & 0xff) << 16) | (((mac[at + 2] as number) & 0xff) << 8) | ((mac[at + 3] as number) & 0xff);
+  return String(binary % 1_000_000).padStart(6, '0');
+}
+/** The step a code is valid for, one step either side of now and after `lastStep` (a code works once), or null. */
+export function matchTotp(secret: Buffer, code: string, nowMs: number, lastStep: number): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
+  const center = Math.floor(nowMs / 1000 / TOTP_STEP_S);
+  let found: number | null = null;
+  // all three are compared, so the time taken does not say which one matched
+  for (const step of [center - 1, center, center + 1]) if (safeEqualText(totpCode(secret, step), code) && step > lastStep && (found === null || step > found)) found = step;
+  return found;
+}
+function safeEqualText(a: string, b: string): boolean {
+  return a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/** Ten characters from an alphabet with nothing to mistake for another (no 0, O, 1, I, L). */
+const RECOVERY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export const RECOVERY_COUNT = 10;
+const recoveryCode = (): string => Array.from({ length: 10 }, () => RECOVERY_ALPHABET[randomInt(RECOVERY_ALPHABET.length)]).join('');
+/** What a person types (spaces, dashes and case do not matter), as stored. */
+const recoveryKey = (text: string): string => createHash('sha256').update(text.replace(/[\s-]/g, '').toUpperCase(), 'utf8').digest('hex');
+export const STEP_UP_MS = 5 * 60 * 1000;
+const PENDING_MS = 5 * 60 * 1000;
+
 /* ------------------------------------------------------------------ the file */
 
 export interface Session {
@@ -144,6 +195,8 @@ export interface Session {
   agent: string;
   device: string;
   cls: 'public' | 'local';
+  /** When the password (and the second factor) was last checked for this session: step-up asks again after 5 minutes. */
+  step: number;
 }
 export interface Device {
   id: string;
@@ -173,6 +226,10 @@ interface AuthFile {
   serverKey: string;
   /** Set once an account has existed: kept by a reset, so "no account" after a reset never brings the old token back. */
   tombstone: { created: number } | null;
+  /** The second factor: a TOTP secret (base64url), switched on by a first valid code, and the last step accepted (a code works once). */
+  totp: { secret: string; enabled: boolean; lastStep: number } | null;
+  /** SHA-256 (hex) of the recovery codes not yet used. */
+  recovery: string[];
 }
 
 const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -211,7 +268,7 @@ function parseAuth(text: string): AuthFile | undefined {
   const sessions: Session[] = [];
   for (const s of raw.sessions) {
     if (!isObject(s) || !str(s.id) || !num(s.created) || !num(s.last) || !str(s.address) || !str(s.agent) || !str(s.device) || (s.cls !== 'public' && s.cls !== 'local')) return undefined;
-    sessions.push({ id: s.id, created: s.created, last: s.last, address: s.address, agent: s.agent, device: s.device, cls: s.cls });
+    sessions.push({ id: s.id, created: s.created, last: s.last, address: s.address, agent: s.agent, device: s.device, cls: s.cls, step: num(s.step) ? s.step : s.created });
   }
   const devices: Device[] = [];
   for (const d of raw.devices) {
@@ -225,10 +282,22 @@ function parseAuth(text: string): AuthFile | undefined {
   }
   let tombstone: AuthFile['tombstone'] = null;
   if (isObject(raw.tombstone) && num(raw.tombstone.created)) tombstone = { created: raw.tombstone.created };
-  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone };
+  let totp: AuthFile['totp'] = null;
+  if (isObject(raw.totp)) {
+    if (!str(raw.totp.secret) || typeof raw.totp.enabled !== 'boolean' || !num(raw.totp.lastStep)) return undefined;
+    totp = { secret: raw.totp.secret, enabled: raw.totp.enabled, lastStep: raw.totp.lastStep };
+  }
+  const recovery: string[] = [];
+  if (Array.isArray(raw.recovery)) {
+    for (const code of raw.recovery) {
+      if (!str(code)) return undefined;
+      recovery.push(code);
+    }
+  }
+  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone, totp, recovery };
 }
 
-const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone });
+const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone, totp: null, recovery: [] });
 
 function writeAtomic(path: string, text: string): void {
   const temp = `${path}.${process.pid}.tmp`;
@@ -314,7 +383,9 @@ export interface Who {
 
 export type LoginResult =
   | { ok: true; session: string; device: string; user: string; newDevice: boolean }
-  | { ok: false; reason: 'wrong' | 'wait' | 'locked' | 'off' | 'damaged' | 'weak' | 'setup'; retryAfter?: number };
+  /** The password was right and a second factor is on: the code goes with this single-use, five-minute token. */
+  | { ok: false; reason: 'second'; pending: string }
+  | { ok: false; reason: 'wrong' | 'wait' | 'locked' | 'off' | 'damaged' | 'weak' | 'setup' | 'needmfa'; retryAfter?: number };
 
 interface Bucket {
   fails: number;
@@ -333,6 +404,22 @@ export interface AuthStore {
   login(who: Who, input: { user: string; password: string }): Promise<LoginResult>;
   /** The session a cookie value names, refreshed; null when it is none, expired or revoked. */
   session(cookie: string | undefined, who: Who, touch?: 'api' | 'input' | 'none'): Session | null;
+  /** The second factor: the second step of a login that said 'second'. */
+  second(who: Who, pending: string, code: string): Promise<LoginResult>;
+  mfa(): { enabled: boolean; pending: boolean; recoveryLeft: number };
+  /** Makes a secret (not on yet) and returns it for the authenticator: the text, and the otpauth URI. */
+  mfaBegin(): { secret: string; uri: string };
+  /** The first valid code switches it on, and makes the ten recovery codes, returned once. */
+  mfaEnable(sessionId: string, who: Who, code: string): { ok: true; recovery: string[] } | { ok: false; reason: 'wrong' | 'none' | 'wait' };
+  /** Needs the password and a current code (or a recovery code). */
+  mfaDisable(sessionId: string, who: Who, input: { password: string; code: string }): Promise<'ok' | 'wrong' | 'wait'>;
+  mfaRecovery(sessionId: string, who: Who, input: { password: string; code: string }): Promise<{ ok: true; recovery: string[] } | { ok: false; reason: 'wrong' | 'wait' | 'none' }>;
+  /** True while the session's password check is under five minutes old. */
+  stepFresh(sessionId: string): boolean;
+  /** Asks the password (and the code when a second factor is on) again; answers a new cookie value: the id is minted again. */
+  stepUp(sessionId: string, who: Who, input: { password: string; code: string }): Promise<{ ok: true; session: string } | { ok: false; reason: 'wrong' | 'wait' | 'gone' }>;
+  /** Called when a session's id is minted again: its sockets move to the new one. */
+  onReminted(listener: (from: string, to: string) => void): void;
   /** The key a Bearer value names (refused on a public Host unless made with --remote), or null. */
   key(secret: string, who: Who): ApiKey | null;
   deviceOf(cookie: string | undefined): Device | null;
@@ -386,6 +473,9 @@ export function openAuth(options: AuthOptions): AuthStore {
   const failures: number[] = [];
   let failureAlerted = 0;
   const lastWrite = new Map<string, number>();
+  /** A login whose password was right and which waits for the second factor: id -> who and when. */
+  const pending = new Map<string, { at: number; address: string; device: string | null; tries: number }>();
+  const reminted: Array<(from: string, to: string) => void> = [];
 
   const fileText = (): string | null => {
     try {
@@ -536,7 +626,7 @@ export function openAuth(options: AuthOptions): AuthStore {
 
   const startSession = (who: Who, device: Device): { session: string; sessionRow: Session } => {
     const session = rand();
-    const row: Session = { id: sha(session), created: now(), last: now(), address: who.address, agent: who.agent.slice(0, 200), device: device.id, cls: isLocalClass(who.cls) ? 'local' : 'public' };
+    const row: Session = { id: sha(session), created: now(), last: now(), address: who.address, agent: who.agent.slice(0, 200), device: device.id, cls: isLocalClass(who.cls) ? 'local' : 'public', step: now() };
     data.sessions.push(row);
     return { session, sessionRow: row };
   };
@@ -653,7 +743,32 @@ export function openAuth(options: AuthOptions): AuthStore {
 
   /* ---- the store ---- */
 
-  const refused = (reason: Extract<LoginResult, { ok: false }>['reason'], retryAfter?: number): LoginResult => ({ ok: false, reason, ...(retryAfter === undefined ? {} : { retryAfter }) });
+  const refused = (reason: Exclude<Extract<LoginResult, { ok: false }>['reason'], 'second'>, retryAfter?: number): LoginResult => ({ ok: false, reason, ...(retryAfter === undefined ? {} : { retryAfter }) });
+
+  /** A TOTP code of the current step or a recovery code; a code is used once. The failure counts in the buckets the caller passes (R6). */
+  const verifySecond = (code: string): boolean => {
+    const text = code.trim();
+    const totp = data.totp;
+    // nothing is a second factor while none is on: a recovery code left in the file by an earlier one is not
+    if (totp === null || !totp.enabled) return false;
+    const step = matchTotp(Buffer.from(totp.secret, 'base64url'), text.replace(/\s/g, ''), now(), totp.lastStep);
+    if (step !== null) {
+      totp.lastStep = step;
+      save();
+      return true;
+    }
+    if (/^[A-Za-z0-9 -]{10,14}$/.test(text) && !/^\d{6}$/.test(text)) {
+      const key = recoveryKey(text);
+      const at = data.recovery.findIndex((k) => timingSafeEqual(Buffer.from(k, 'hex'), Buffer.from(key, 'hex')));
+      if (at >= 0) {
+        data.recovery.splice(at, 1);
+        save();
+        options.alert(`a recovery code was used (${data.recovery.length} left)`);
+        return true;
+      }
+    }
+    return false;
+  };
 
   const finish = (who: Who, alertNew: boolean): LoginResult => {
     const { device, fresh } = knownOrNewDevice(who);
@@ -768,6 +883,44 @@ export function openAuth(options: AuthOptions): AuthStore {
         fail(keys, who, device);
         return refused('wrong');
       }
+      if (data.totp?.enabled === true) {
+        // the failure buckets are NOT cleared by a right password: a second factor cannot be guessed round after round by alternating
+        const id = rand();
+        if (pending.size > 200) for (const [k, v] of pending) if (now() - v.at > PENDING_MS) pending.delete(k);
+        pending.set(id, { at: now(), address: who.address, device: device?.id ?? null, tries: 0 });
+        return { ok: false, reason: 'second', pending: id };
+      }
+      // a public name needs a second factor: a password alone is not enough once the page can be reached from the internet
+      if (!isLocalClass(who.cls)) return refused('needmfa');
+      succeed(keys);
+      return finish(who, true);
+    },
+
+    async second(who, id, code) {
+      checkTamper();
+      const found = pending.get(id);
+      if (found === undefined || now() - found.at > PENDING_MS || data.totp?.enabled !== true || state() !== 'account') {
+        pending.delete(id);
+        return refused('wrong');
+      }
+      if (isLocked && !isLocalClass(who.cls)) return refused('locked');
+      const device = deviceOf(who.device);
+      // the token belongs to the address and the browser that gave the password: another one holding it is a stranger
+      if (found.address !== who.address || found.device !== (device?.id ?? null)) {
+        pending.delete(id);
+        return refused('wrong');
+      }
+      const keys = bucketsFor(who, device);
+      const waiting = wait(keys);
+      if (waiting > 0) return (tally(who, device), refused('wait', waiting));
+      if (!verifySecond(code)) {
+        fail(keys, who, device);
+        found.tries += 1;
+        // five wrong codes end this login: the password has to be given again
+        if (found.tries >= 5) pending.delete(id);
+        return refused('wrong');
+      }
+      pending.delete(id);
       succeed(keys);
       return finish(who, true);
     },
@@ -838,6 +991,8 @@ export function openAuth(options: AuthOptions): AuthStore {
       data.sessions = data.sessions.filter((s) => s.id === sessionId);
       save();
       emitEnded(others);
+      // a login that was waiting for its code was started with the old password
+      pending.clear();
       options.alert('the password was changed');
       return 'ok';
     },
@@ -865,6 +1020,88 @@ export function openAuth(options: AuthOptions): AuthStore {
       emitEnded([`key:${found.id}`]);
       return true;
     },
+
+    mfa: () => ({ enabled: data.totp?.enabled === true, pending: data.totp !== null && !data.totp.enabled, recoveryLeft: data.recovery.length }),
+    mfaBegin() {
+      const secret = randomBytes(20);
+      data.totp = { secret: secret.toString('base64url'), enabled: false, lastStep: 0 };
+      save();
+      const text = base32(secret);
+      return { secret: text, uri: `otpauth://totp/gonogo:${encodeURIComponent(data.user)}?secret=${text}&issuer=gonogo&algorithm=SHA1&digits=6&period=${TOTP_STEP_S}` };
+    },
+    mfaEnable(sessionId, who, code) {
+      const totp = data.totp;
+      if (totp === null || totp.enabled) return { ok: false, reason: 'none' };
+      const keys = [`mfa:${sessionId}`];
+      if (wait(keys) > 0) return { ok: false, reason: 'wait' };
+      const step = matchTotp(Buffer.from(totp.secret, 'base64url'), code.trim().replace(/\s/g, ''), now(), 0);
+      if (step === null) {
+        fail(keys, who, null);
+        return { ok: false, reason: 'wrong' };
+      }
+      totp.enabled = true;
+      totp.lastStep = step;
+      const codes = Array.from({ length: RECOVERY_COUNT }, recoveryCode);
+      data.recovery = codes.map(recoveryKey);
+      save();
+      options.alert('a second factor (TOTP) was turned on');
+      return { ok: true, recovery: codes };
+    },
+    async mfaDisable(sessionId, who, input) {
+      const keys = [`mfa:${sessionId}`];
+      if (wait(keys) > 0) return 'wait';
+      // the current password AND the current second factor: a stolen session alone cannot turn it off
+      if (!(await checkPassword(input.password)) || !verifySecond(input.code)) {
+        fail(keys, who, null);
+        return 'wrong';
+      }
+      data.totp = null;
+      data.recovery = [];
+      save();
+      options.alert('the second factor (TOTP) was turned off');
+      return 'ok';
+    },
+    async mfaRecovery(sessionId, who, input) {
+      if (data.totp?.enabled !== true) return { ok: false, reason: 'none' };
+      const keys = [`mfa:${sessionId}`];
+      if (wait(keys) > 0) return { ok: false, reason: 'wait' };
+      if (!(await checkPassword(input.password)) || !verifySecond(input.code)) {
+        fail(keys, who, null);
+        return { ok: false, reason: 'wrong' };
+      }
+      const codes = Array.from({ length: RECOVERY_COUNT }, recoveryCode);
+      data.recovery = codes.map(recoveryKey);
+      save();
+      options.alert('new recovery codes were made; the old ones no longer work');
+      return { ok: true, recovery: codes };
+    },
+    stepFresh(sessionId) {
+      const found = data.sessions.find((x) => x.id === sessionId);
+      return found !== undefined && now() - found.step <= STEP_UP_MS;
+    },
+    async stepUp(sessionId, who, input) {
+      const found = data.sessions.find((x) => x.id === sessionId);
+      if (found === undefined) return { ok: false, reason: 'gone' };
+      const keys = [`step:${sessionId}`];
+      if (wait(keys) > 0) return { ok: false, reason: 'wait' };
+      const passwordOk = await checkPassword(input.password);
+      // a second factor that is on is asked for here too (a code given again within the same 30 s step is refused: wait for the next one); only
+      // after a right password, so a wrong one does not use up a code or a recovery code
+      const secondOk = !passwordOk ? false : data.totp?.enabled === true ? verifySecond(input.code) : true;
+      if (!passwordOk || !secondOk) {
+        fail(keys, who, null);
+        return { ok: false, reason: 'wrong' };
+      }
+      succeed(keys);
+      // the id is minted again: whatever knew the old cookie value is of no use
+      const cookie = rand();
+      const next: Session = { ...found, id: sha(cookie), step: now(), last: now() };
+      data.sessions = data.sessions.map((x) => (x === found ? next : x));
+      save();
+      for (const listener of reminted) listener(found.id, next.id);
+      return { ok: true, session: cookie };
+    },
+    onReminted: (listener) => void reminted.push(listener),
 
     async confirm(who, password) {
       if (!isLocked) return 'none';
