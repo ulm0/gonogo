@@ -336,6 +336,15 @@ describe('PR 2: update under the supervisor', () => {
     expect(JSON.parse(/\{.*\}/.exec(answerOf(home))?.[0] ?? '{}')).toEqual({ busy: null, room: null });
   }, 40_000);
 
+  it('the idle question (auto-update): another room with an agent working or waiting for the Director is busy; the plain busy question does not count them', async () => {
+    addRoom(home, 'team', 'Team B');
+    await supervise({ FAKE_ROOM_ASK: 'gonogo-ask idle', FAKE_ROOM_ASK_ONLY: 'main' });
+    await until(() => answerOf(home).includes('\n'), 15_000, 'the answer');
+    const body = JSON.parse(/\{.*\}/.exec(answerOf(home))?.[0] ?? '{}') as Record<string, unknown>;
+    expect(body.room).toBe('team');
+    expect(body.busy).toMatch(/room "Team B" is not idle \(an agent is working\)/);
+  }, 40_000);
+
   it('no other question exists: another line gets no answer, and /internal/busy is a 404 for any Host', async () => {
     addRoom(home, 'team');
     const s = await supervise({ FAKE_ROOM_ASK: 'gonogo-ask room-token', FAKE_ROOM_ASK_ONLY: 'main' });
@@ -369,6 +378,15 @@ describe('PR 2: update under the supervisor', () => {
 });
 
 describe('PR 2: the room side of the question, and Update from main only', () => {
+  it('createPipeAnswers: the idle question is its own line, answered in the same shape', async () => {
+    const written: string[] = [];
+    const pipe = createPipeAnswers((line) => written.push(line), 150);
+    const asked = pipe.ask(true);
+    expect(written).toEqual(['gonogo-ask idle\n']);
+    pipe.feed('gonogo-answer busy {"busy":"room x is not idle","room":"x"}\n');
+    expect(await asked).toEqual({ busy: 'room x is not idle', room: 'x' });
+  });
+
   it('createPipeAnswers: one answer per question, other lines ignored, no answer in time is busy, a bad answer is busy', async () => {
     const written: string[] = [];
     const pipe = createPipeAnswers((line) => written.push(line), 150);

@@ -13,6 +13,8 @@ A flag beats its environment variable, which beats the default. `--port=7777` an
 | `--home <dir>` | `GONOGO_HOME` | State directory. Default `~/.gonogo`. |
 | `--seed-claude` | `GONOGO_SEED_CLAUDE` (`1` or `true`) | Seed mode (see [Docker](../guide/docker.md)). Off by default. |
 | `--allow-host <name>`, repeatable | `GONOGO_ALLOWED_HOSTS`, comma separated | Extra `Host` names to accept: a reverse proxy's name, and the names Uplink, Relay (GitHub, Linear, Slack, Telegram) and Docking reach this station on. Any `--allow-host` replaces the variable. |
+| (none) | `GONOGO_AUTO_UPDATE` (`1`, `on`, `true` or `yes` turns auto-update on; `0`, `off`, `false` or `no` forces it off; unset: the Flight Rules switch, off by default) | Docker self-update by itself, in a window, patch versions only ([Update](../features/update.md#auto-update-docker-off-unless-you-turn-it-on)). The variable wins over the page. |
+| (none) | `GONOGO_AUTO_UPDATE_WINDOW` (`HH:MM-HH:MM`, comma-separated, up to four; default `02:00-05:00`, local time of the container: set `TZ`) | The windows auto-update may start in; wins over the page. |
 | `--no-update-check` | `GONOGO_UPDATE_CHECK` (`0`, `off`, `false` or `no` turns it off) | Rollout: do not ask the npm registry once a day whether a newer gonogo exists ([Rollout](../features/rollout.md)). Default on; the flag beats the variable. |
 | `-h`, `--help` | | Print usage, exit 0. |
 | `-v`, `--version` | | Print `gonogo <version>`, exit 0. When the last check saw a newer version, a second line says so (from `rollout.json`, no network; the home is `GONOGO_HOME` or the default). |

@@ -189,6 +189,7 @@ export const PAYLOAD_DEFAULTS_AUDIT: Table = {
 };
 export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
+export const AUTOUPDATE_AUDIT: Table = { set: ['config', 'Director changed auto-update'], skip: ['config', 'Director skipped a version for auto-update'] };
 export const STARTUP_AUDIT: Table = { set: ['config', 'Director changed the startup policy'] };
 /** Feature toggles: which features were switched, by id (ids are plain words). */
 export const FEATURES_AUDIT: Table = {

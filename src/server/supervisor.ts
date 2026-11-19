@@ -321,8 +321,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 1);
         // the one question a room may ask: no route, no port, only this pipe; any other line is just output
-        if (line === 'gonogo-ask busy' && child.proc === proc) {
-          void answerBusy(child, proc);
+        if ((line === 'gonogo-ask busy' || line === 'gonogo-ask idle') && child.proc === proc) {
+          void answerBusy(child, proc, line === 'gonogo-ask idle');
           continue;
         }
         // what waits for the Director in this room, to be pushed to the phones (push.ts): checked and cut here, whatever the room sent
@@ -397,16 +397,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     return (child.exited ?? Promise.resolve()).finally(() => clearTimeout(kill));
   }
 
-  /** The answer to `gonogo-ask busy`: whether a room other than the asker has a T-minus poll or Static fire open. One line back, two fields, nothing else. */
-  async function answerBusy(asker: Child, proc: ChildProcess): Promise<void> {
+  /**
+   * The answer to `gonogo-ask busy`: whether a room other than the asker has a T-minus poll or Static fire open. `gonogo-ask idle` (auto-update, nobody
+   * is there to click) asks for more: any agent working, starting or needing the Director in another room. One line back, two fields, nothing else.
+   */
+  async function answerBusy(asker: Child, proc: ChildProcess, strict = false): Promise<void> {
     let busy: string | null = null;
     let room: string | null = null;
     for (const other of children.values()) {
       if (other === asker || other.port === null) continue;
       try {
-        const body = (await askRoom(other, '/api/state', 2000)) as { poll?: { status?: string } | null };
+        const body = (await askRoom(other, '/api/state', 2000)) as { poll?: { status?: string } | null; agents?: Array<{ name?: string; state?: string; queued?: number }> };
         if (body.poll?.status === 'open') {
           busy = `a T-minus poll or Static fire is open in room "${other.entry.name}": wait for its answer, then update`;
+          room = other.entry.id;
+          break;
+        }
+        const active = strict ? (body.agents ?? []).find((a) => a.state === 'working' || a.state === 'needs_you' || a.state === 'starting' || (a.queued ?? 0) > 0) : undefined;
+        if (active !== undefined) {
+          busy = `room "${other.entry.name}" is not idle (an agent is ${active.state === 'needs_you' ? 'waiting for you' : active.state === 'working' ? 'working' : 'starting or has mail queued'})`;
           room = other.entry.id;
           break;
         }

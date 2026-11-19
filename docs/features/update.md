@@ -68,6 +68,22 @@ Limits, stated plainly: a compose file edited since the container was created is
 
 One POST, no redirect followed, 15 s. The URL comes from the environment of the server, never from a request. The Dockerfile sets `GONOGO_INSTALL=docker`.
 
+## Auto-update (Docker, off unless you turn it on)
+
+<AutoUpdateMock class="doc-mock" />
+
+**AUTO-UPDATE** in Flight Rules (room main, a Docker install with the socket and a moving tag; nowhere else) lets gonogo run the Update above **by itself, unattended**. It is **off** until you turn it on in Flight Rules or set `GONOGO_AUTO_UPDATE=1` in the container's environment (the variable wins and the page then shows the switch as set by it; `0` forces it off). It applies the same pull, helper, health check, rollback and UNDO as the click, and only when all of this holds:
+
+- **The next patch only.** The version must have the same major and minor as the one that runs and a higher patch (0.6.1 takes 0.6.2). **A new minor (0.7.0) never installs by itself while gonogo is 0.x**, since a 0.x minor may break; a major or a pre-release never does either. Those wait for your click.
+- **A day old.** Rollout must have seen that version for at least 24 hours (`latestSeenAt` beside `latest` in `rollout.json`); a version it has just learned of starts its day then.
+- **Inside a window.** By default 02:00 to 05:00 in the container's time zone (set `TZ`); one to four windows, `HH:MM-HH:MM`, an end before the start runs over midnight. `GONOGO_AUTO_UPDATE_WINDOW=01:00-02:00,13:00-14:00` sets them from the environment.
+- **Nothing in the way, for 10 minutes running, in every room:** no agent working, starting, waiting for you or with mail queued, and no T-minus poll or Static fire open. Any change starts the 10 minutes again. The Downlink gets an **UPDATE** note when the 10 minutes begin ("Auto-update to 0.6.2 starts at about 03:10 …"), once per version, and Flight Rules shows **SKIP THIS VERSION** while it waits; skipping, or turning the switch off, stops it.
+- **Once per version.** The attempt is recorded before it starts. A version that was rolled back, failed or was interrupted is **never tried again**, and the switch turns itself **off** with the reason (turn it on again after you have read it); a newer patch is then taken as usual. (If the update refused to start at all, because a poll opened in the last second, nothing was touched: it is not an attempt and it tries again at the next quiet moment.)
+
+After the restart the new gonogo says in the Downlink what happened: *updated 0.6.1 to 0.6.2* (the agents start again by themselves per the startup setting; UNDO stays on the strip for a day), or *rolled back: <reason>* with the version marked bad. The record is `<home>/autoupdate.json` (a damaged file means off).
+
+Trust, in one sentence, which the page repeats: **turning it on lets the publisher's next patch run on this machine, with the Docker socket, without you reading it**; the day of cooling and the patch-only rule are the only checks. The npm and pnpm installs have no auto-update.
+
 ## Not tried
 
 The install of a real package from the registry (the tests use a fake installer), **the Docker path against a real daemon, a real pull and a real healthy new image (the tests use a fake Engine API; try it by hand in a throwaway compose project before you rely on it)**, a Watchtower, Windows, and the strip in a browser

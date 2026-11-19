@@ -12,6 +12,7 @@ import type { RawData } from 'ws';
 import { PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
   UpdateView,
+  AutoUpdateView,
   PropellantView,
   AgentIdentity,
   AnswerRequest,
@@ -198,6 +199,8 @@ export interface WebOptions {
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
   /** The startup policy; absent in tests that do not need it (the routes answer 404). */
   startup?: Pick<StartupStore, 'view' | 'set'>;
+  /** Auto-update (room main under Docker): the switch, the windows and SKIP THIS VERSION; absent elsewhere (the routes answer 404). */
+  autoUpdate?: { view(): AutoUpdateView; set(input: unknown): Promise<AutoUpdateView>; skip(version: string): Promise<AutoUpdateView> };
   /** Feature toggles; absent in tests that do not need it (every feature is then on and the routes answer 404). */
   features?: Pick<FeatureStore, 'view' | 'isOn' | 'label' | 'plan' | 'apply'>;
   /** The subagent setting; absent in tests that do not need it (the routes answer 404). */
@@ -1423,6 +1426,27 @@ export function createWebServer(options: WebOptions): WebServer {
           if (req.method === 'GET') return sendJson(res, 200, subagents.view());
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await subagents.set(body));
+        },
+      };
+    }
+    if (s[1] === 'autoupdate' && (s.length === 2 || (s.length === 3 && s[2] === 'skip'))) {
+      const auto = options.autoUpdate;
+      if (!auto) return null;
+      if (s.length === 3) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await auto.skip(typeof body.version === 'string' ? body.version : ''));
+          },
+        };
+      }
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, auto.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await auto.set(body));
         },
       };
     }
