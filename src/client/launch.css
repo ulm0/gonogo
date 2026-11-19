@@ -257,3 +257,51 @@
     max-width: none;
   }
 }
+
+/* The history of triggers (TriggerHistory.tsx): filters in a row, one line each with a note under it. */
+.trg {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.trg-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.trg-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trg-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--edge);
+}
+
+.trg-what,
+.trg-note {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+.trg-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .trg-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}

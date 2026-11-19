@@ -62,6 +62,8 @@ Used by nobody in this room, so still **not run**: Hold on a console and ALL STO
 - **Login:** run with real HTTP, WebSockets and unix sockets in tests (a cookie jar written by hand), not in a real browser: the cookie flags, the step-up dialog, the `__Host-` rule over https, the page's CSP with the built client, the login forms and the Flight Rules block were not seen in one. Not run with a real authenticator or passkey (the passkey ceremonies ran against a software authenticator and the real library; no browser's `navigator.credentials`, no phone, no https tunnel), with a real authenticator app (the codes were checked against the RFC 6238 vectors, not against a phone), behind a real tunnel or reverse proxy (`--trusted-proxy` is tried with a local address only). The argon2id cost is the OWASP minimum, taken from their cheat sheet on the day, not tuned on a small host.
 - **TUI device login:** run with the whole supervisor, real HTTP and WebSockets and a fake clock, and with the terminal's code against a fake server; not run in a real terminal over a real tunnel, nor with the approval pages in a real browser. A passkey cannot confirm on the approval page (it has no script).
 
+- **Reported cost:** one short real run (Claude Code 2.1.325, haiku, a claude.ai subscription) showed `session_id` and `cost.total_cost_usd` in the status line and a new id and a total of 0 after `/clear`. Not run: whether a subagent's spend is inside the total, `--resume`, an API-key account, and the page showing the figures in a real browser.
+
 ## Known limits
 
 - Launch Window: a fire time a DST change skips does not fire that day (in America/Santiago `0 0 * * *` misses the September change). A scheduled message to FLIGHT replaces the wall's MISSION.

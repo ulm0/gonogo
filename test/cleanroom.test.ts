@@ -417,6 +417,20 @@ describe('the launcher starts a Clean Room agent through docker', () => {
   });
 });
 
+describe("the room's Payload defaults and a Clean Room", () => {
+  it('a Clean Room agent gets its own servers and none of the room\'s (their env and headers hold keys); a plain agent gets both', async () => {
+    const roomServer = { command: 'room-server', env: { TOKEN: 'room-secret' } };
+    const own = { command: 'own-server' };
+    const launcher = createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env, payloadDefaults: () => ({ mcpServers: { roomone: roomServer } }) });
+    await launcher.prepareStart(record({ payload: { mcpServers: { own } } }), { generation: 1, flag: null });
+    const text = await readFile(join(home, 'agents', 'ana', 'mcp.json'), 'utf8');
+    expect(Object.keys((JSON.parse(text) as { mcpServers: object }).mcpServers)).toEqual(['own', 'gonogo']);
+    expect(text).not.toContain('room-secret');
+    await launcher.prepareStart(record({ cleanRoom: undefined, payload: { mcpServers: { own } } }), { generation: 2, flag: null });
+    expect(Object.keys((JSON.parse(await readFile(join(home, 'agents', 'ana', 'mcp.json'), 'utf8')) as { mcpServers: object }).mcpServers)).toEqual(['roomone', 'own', 'gonogo']);
+  });
+});
+
 describe('Clean Room under the rooms supervisor', () => {
   it('is refused on Linux outside a container without a network to join, and only for a room of the supervisor', () => {
     const room = { GONOGO_SUPERVISOR_PID: '42' };

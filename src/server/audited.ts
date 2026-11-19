@@ -52,7 +52,7 @@ export function audited<T extends object>(store: T, record: AuditRecord, table: 
 }
 
 /** The fields an edit names: the names of the fields only, never their values. */
-const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor'];
+const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor'];
 const fieldsOf = (value: unknown, allowed: string[]): string[] => (isRecord(value) ? Object.keys(value).filter((key) => allowed.includes(key) && value[key] !== undefined) : []);
 
 const actorName = (actor: unknown): string => {
@@ -180,6 +180,13 @@ export const SCHEDULES_AUDIT: Table = {
   run: ['config', 'Director ran schedule'],
 };
 export const PERMISSIONS_AUDIT: Table = { set: ['config', "Director changed the room's tool rules"] };
+/** Payload defaults: which item changed, by its name (a server name or a folder name) and never a value, an argument or a path. */
+export const PAYLOAD_DEFAULTS_AUDIT: Table = {
+  setServer: ['config', (args) => `Director set the default MCP server ${plain(args[0]) ?? '(unnamed)'}`],
+  removeServer: ['config', (args) => `Director removed the default MCP server ${plain(args[0]) ?? '(unnamed)'}`],
+  addSkill: ['config', 'Director added a default skill folder'],
+  removeSkill: ['config', (args) => `Director removed the default skill ${plain(args[0]) ?? '(unnamed)'}`],
+};
 export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const STARTUP_AUDIT: Table = { set: ['config', 'Director changed the startup policy'] };

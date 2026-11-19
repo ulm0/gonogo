@@ -11,6 +11,7 @@ import { DetailChips } from './DetailChips.js';
 import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { FeaturesBlock } from './Features.js';
+import { PayloadDefaultsBlock } from './PayloadDefaults.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AccountBlock } from './AccountBlock.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
@@ -195,6 +196,7 @@ export function FlightRules(): ReactElement {
       <TabNameBlock />
       <ModelDefaultsBlock />
       <PermissionDefaultsBlock />
+      <PayloadDefaultsBlock />
       <StartupBlock />
       <SubagentsBlock />
       <CoauthorBlock />

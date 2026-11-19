@@ -9,7 +9,7 @@ import type { Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
-import { PERMISSION_MODES, PROVIDERS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
+import { PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
   UpdateView,
   PropellantView,
@@ -91,6 +91,7 @@ import type { Recorder } from './recorder.js';
 import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { ModelDefaultsStore } from './models.js';
+import type { PayloadDefaultsStore } from './payloaddefaults.js';
 import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
 import type { StartupStore } from './startup.js';
@@ -100,6 +101,7 @@ import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
 import type { Rollout } from './rollout.js';
 import { normalizeHost } from './hosts.js';
+import type { Triggers } from './triggers.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
@@ -132,9 +134,11 @@ export interface WebOptions {
   /** false until hub.start() has resolved: /api and /ws answer 503 meanwhile. */
   isReady: () => boolean;
   /** Token use and limits; absent in tests that do not need them (the snapshot then shows no use and no limits). */
-  propellant?: Pick<Propellant, 'view' | 'setLimits' | 'setBudget'>;
+  propellant?: Pick<Propellant, 'view' | 'setLimits' | 'setBudget'> & Partial<Pick<Propellant, 'report'>>;
   /** The owner's model prices (docs/cost-spec.md); absent in tests that do not need them (the routes answer 404). */
   prices?: Pick<Prices, 'view' | 'replace' | 'remove'>;
+  /** The history of triggers; absent in tests that do not need it (the route answers 404). */
+  triggers?: Pick<Triggers, 'list'>;
   /** Called after a price or a budget changed, so the budget is checked against the new numbers at once. */
   spendChanged?: () => void;
   /** Telemetry: GET /api/agents/:name/telemetry. Without it the list is empty. */
@@ -176,6 +180,8 @@ export interface WebOptions {
   statusLine?: (agent: string, body: unknown) => void;
   /** Test clock of the status-line rate limit. */
   statusLineNow?: () => number;
+  /** Payload defaults (docs/payload-spec.md): absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame, and no value is ever sent. */
+  payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
@@ -414,6 +420,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return fieldError('payload', 'an object');
     value.payload = payload;
   }
+  if (o.payloadOff !== undefined) {
+    if (typeof o.payloadOff !== 'object' || o.payloadOff === null || Array.isArray(o.payloadOff)) return fieldError('payloadOff', 'an object');
+    value.payloadOff = o.payloadOff;
+  }
   if (cleanRoom !== undefined) {
     if (typeof cleanRoom !== 'object' || cleanRoom === null || Array.isArray(cleanRoom)) return fieldError('cleanRoom', 'an object');
     value.cleanRoom = cleanRoom;
@@ -510,6 +520,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.payload !== undefined) {
     if (o.payload !== null && (typeof o.payload !== 'object' || Array.isArray(o.payload))) return fieldError('payload', 'an object or null');
     value.payload = o.payload;
+  }
+  if (o.payloadOff !== undefined) {
+    if (o.payloadOff !== null && (typeof o.payloadOff !== 'object' || Array.isArray(o.payloadOff))) return fieldError('payloadOff', 'an object or null');
+    value.payloadOff = o.payloadOff;
   }
   if (o.cleanRoom !== undefined) {
     if (o.cleanRoom !== null && (typeof o.cleanRoom !== 'object' || Array.isArray(o.cleanRoom))) return fieldError('cleanRoom', 'an object or null');
@@ -909,6 +923,20 @@ export function createWebServer(options: WebOptions): WebServer {
         },
       };
     }
+    if (s.length === 2 && s[1] === 'cost') {
+      // what the ledger says, priced: room, agents and days with the kinds of token apart. An estimate, never a bill (docs/features/cost.md)
+      return {
+        allow: ['GET'],
+        run: (req, res) => {
+          const propellant = options.propellant;
+          if (!propellant?.report) return sendNotFound(res);
+          const asked = new URL(req.url ?? '/', 'http://x').searchParams.get('days');
+          const days = asked === null ? 14 : Number(asked);
+          if (!Number.isInteger(days) || days < 1 || days > 31) return sendApiError(res, 400, 'days is a whole number from 1 to 31', 'bad_request', 'days');
+          sendJson(res, 200, propellant.report(days), { 'Cache-Control': 'no-store' });
+        },
+      };
+    }
     if (s.length === 2 && s[1] === 'propellant') {
       return {
         allow: ['PUT'],
@@ -934,6 +962,25 @@ export function createWebServer(options: WebOptions): WebServer {
           }
           broadcast({ t: 'propellant', propellant: view });
           sendJson(res, 200, view);
+        },
+      };
+    }
+    if (s[1] === 'triggers' && s.length === 2) {
+      const triggers = options.triggers;
+      if (!triggers) return null;
+      return {
+        allow: ['GET'],
+        run: async (req, res) => {
+          const q = new URL(req.url ?? '/', 'http://localhost').searchParams;
+          const kind = q.get('kind');
+          const source = q.get('source');
+          const outcome = q.get('outcome');
+          const limit = q.get('limit');
+          if (kind !== null && !(TRIGGER_KINDS as readonly string[]).includes(kind)) return sendApiError(res, 400, `kind is one of ${TRIGGER_KINDS.join(', ')}`, 'bad_request', 'kind');
+          if (source !== null && !/^[A-Za-z0-9_.:@-]{1,40}$/.test(source)) return sendApiError(res, 400, 'source is the id of an uplink, a schedule or a dock', 'bad_request', 'source');
+          if (outcome !== null && !/^[A-Za-z0-9_]{1,20}$/.test(outcome)) return sendApiError(res, 400, 'outcome is one word', 'bad_request', 'outcome');
+          if (limit !== null && !(/^\d{1,3}$/.test(limit) && Number(limit) >= 1 && Number(limit) <= 500)) return sendApiError(res, 400, 'limit is a number from 1 to 500', 'bad_request', 'limit');
+          sendJson(res, 200, { triggers: await triggers.list({ ...(kind === null ? {} : { kind: kind as (typeof TRIGGER_KINDS)[number] }), ...(source === null ? {} : { source }), ...(outcome === null ? {} : { outcome }), ...(limit === null ? {} : { limit: Number(limit) }) }) });
         },
       };
     }
@@ -1293,6 +1340,34 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) sendJson(res, 200, await changed(models.set(s[2] ?? '', body.model)));
         },
       };
+    }
+    // GET /api/payload-defaults; PUT or DELETE /api/payload-defaults/servers/<name> (body: the server); POST /api/payload-defaults/skills (body: path); DELETE /api/payload-defaults/skills/<name>
+    if (s[1] === 'payload-defaults' && s.length <= 4) {
+      const defaults = options.payloadDefaults;
+      if (!defaults) return null;
+      if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, defaults.view()) };
+      if (s[2] === 'servers' && s.length === 4) {
+        const name = s[3] ?? '';
+        return {
+          allow: ['PUT', 'DELETE'],
+          run: async (req, res) => {
+            if (req.method === 'DELETE') return sendJson(res, 200, await defaults.removeServer(name));
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await defaults.setServer(name, body));
+          },
+        };
+      }
+      if (s[2] === 'skills' && s.length === 3) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 201, await defaults.addSkill(body.path));
+          },
+        };
+      }
+      if (s[2] === 'skills' && s.length === 4) return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await defaults.removeSkill(s[3] ?? '')) };
+      return null;
     }
     if (s[1] === 'permissions' && s.length === 2) {
       const rules = options.permissions;

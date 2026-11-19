@@ -20,6 +20,10 @@ import type {
   SpendOf,
   Budget,
   CostGauge,
+  CostAgentScope,
+  CostDay,
+  CostReport,
+  CostScope,
   CostView,
   DayCost,
   DownlinkNotify,
@@ -30,7 +34,8 @@ import type {
   PropellantRequest,
   PropellantView,
 } from '../shared/protocol.js';
-import { moneyText, costOf, mergePrices, priceFor } from '../shared/prices.js';
+import type { Reported } from './reported.js';
+import { moneyText, costOf, costSplit, mergePrices, priceFor, PRICES_AS_OF } from '../shared/prices.js';
 import type { ModelPrice, TokenSplit } from '../shared/prices.js';
 import { tokenText } from '../shared/fuel.js';
 import { BUDGET_MAX_USD, FILE_MODE, FUEL_KEEP_MS, FUEL_LIMIT_MAX, METER_READ_MAX_BYTES, PROPELLANT_FILE as LIMITS_FILE } from './constants.js';
@@ -207,6 +212,8 @@ export interface PropellantOptions {
   plan?: () => PlanQuota | null;
   /** Downlink: a budget has reached 80 %. */
   notify?: DownlinkNotify;
+  /** What the engines reported themselves (src/server/reported.ts): shown beside the estimate in GET /api/cost. */
+  reported?: Pick<Reported, 'window'>;
   /** The mission and task an agent is on now (its `doing` task). Read when its replies are counted and when a mission budget is checked. */
   attribute?: (agent: string) => { mission?: string; task?: string };
 }
@@ -216,6 +223,8 @@ export interface Propellant {
   /** Counts what the transcript gained since the last read. Resolves with the new tokens plus new cache reads (0 when nothing or refused): a reply that only read the cache still costs money, so the caller must check the budget. */
   record(agent: string, transcriptPath: string): Promise<number>;
   view(): PropellantView;
+  /** The last `days` local calendar days (1 to 31), room and per agent and per day, by kind of token. */
+  report(days: number): CostReport;
   setLimits(request: PropellantRequest): Promise<PropellantView>;
   /** The prices or a budget changed: posts the 80 % warning for what is now past it. The caller then checks over(). */
   recheck(): void;
@@ -264,6 +273,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
     const cut = now() - FUEL_KEEP_MS;
     const before = entries.length;
     entries = entries.filter((e) => e.at >= cut);
+    if (entries.length !== before) cutOff = true;
     return entries.length !== before;
   };
 
@@ -357,6 +367,81 @@ export function createPropellant(options: PropellantOptions): Propellant {
       tasks,
       days: days(table),
       pricedSince: modelled.length === 0 ? null : Math.min(...modelled),
+    };
+  };
+
+  const emptyScope = (): CostScope => ({ usd: 0, usdSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, unpriced: 0 });
+  const addTo = (scope: CostScope, e: FuelEntry, table: Record<string, ModelPrice>): void => {
+    const price = e.model === undefined ? null : priceFor(table, e.model);
+    if (price === null) {
+      scope.unpriced += e.tokens;
+      return;
+    }
+    const split = { i: e.i ?? 0, cw: e.cw ?? 0, o: e.o ?? 0, cr: e.cr ?? 0 };
+    const usd = costSplit(split, price);
+    scope.usdSplit.input += usd.input;
+    scope.usdSplit.output += usd.output;
+    scope.usdSplit.cacheWrite += usd.cacheWrite;
+    scope.usdSplit.cacheRead += usd.cacheRead;
+    scope.usd += usd.input + usd.output + usd.cacheWrite + usd.cacheRead;
+    scope.tokens.input += split.i;
+    scope.tokens.output += split.o;
+    scope.tokens.cacheWrite += split.cw;
+    scope.tokens.cacheRead += split.cr;
+  };
+
+  /** Set when a line was cut off the ledger (it keeps 31 days). */
+  let cutOff = false;
+
+  const report = (n: number): CostReport => {
+    const count = Math.min(Math.max(Math.floor(n) || 1, 1), 31);
+    const table = priceTable();
+    const today = new Date(now());
+    const dayList: CostDay[] = [];
+    for (let k = count - 1; k >= 0; k--) dayList.push({ date: dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - k, 12).getTime()), ...emptyScope(), byAgent: {}, reported: null });
+    const byDate = new Map(dayList.map((d) => [d.date, d]));
+    const startMs = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (count - 1)).getTime();
+    const room = emptyScope();
+    const scopes: Record<string, CostScope> = {};
+    const unpricedModels = new Set<string>();
+    for (const e of entries) {
+      const day = byDate.get(dayKey(e.at));
+      if (day === undefined) continue;
+      if (e.model !== undefined && priceFor(table, e.model) === null) unpricedModels.add(e.model);
+      addTo(room, e, table);
+      addTo((scopes[e.agent] ??= emptyScope()), e, table);
+      const before = day.usd;
+      addTo(day, e, table);
+      if (day.usd > before) day.byAgent[e.agent] = (day.byAgent[e.agent] ?? 0) + (day.usd - before);
+    }
+    const got = options.reported?.window(startMs, dayKey) ?? { agents: {}, byDay: {} };
+    for (const [date, perAgent] of Object.entries(got.byDay)) {
+      const day = byDate.get(date);
+      if (day !== undefined) day.reported = Object.values(perAgent).reduce((s, v) => s + v, 0);
+    }
+    const names = [...new Set([...Object.keys(scopes), ...Object.keys(got.agents)])].sort((x, y) => x.localeCompare(y));
+    const agents: Record<string, CostAgentScope> = {};
+    for (const name of names) {
+      const s = scopes[name] ?? emptyScope();
+      const rep = got.agents[name];
+      agents[name] = { ...s, reported: rep === undefined ? null : rep.usd, basis: rep !== undefined ? 'reported' : s.usd > 0 || s.unpriced > 0 ? 'estimated' : 'none', sessions: rep?.sessions ?? 0 };
+    }
+    const have = Object.values(agents).filter((a) => a.reported !== null);
+    const modelled = entries.filter((e) => e.model !== undefined).map((e) => e.at);
+    return {
+      currency: 'USD',
+      estimate: true,
+      dayBoundary: 'local',
+      from: dayList[0]?.date ?? '',
+      to: dayList.at(-1)?.date ?? '',
+      room: { ...room, reported: have.length === 0 ? null : have.reduce((s, a) => s + (a.reported ?? 0), 0), reportedAgents: { have: have.length, of: Object.keys(agents).length } },
+      agents,
+      days: dayList,
+      unpricedModels: [...unpricedModels].sort(),
+      partial: cutOff && startMs < now() - FUEL_KEEP_MS,
+      sessions: have.reduce((s, a) => s + a.sessions, 0),
+      pricedSince: modelled.length === 0 ? null : Math.min(...modelled),
+      priceAsOf: PRICES_AS_OF,
     };
   };
 
@@ -605,6 +690,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
     },
 
     view,
+    report,
 
     async setLimits(request) {
       if (request.room !== undefined) saved.room = { ...request.room };

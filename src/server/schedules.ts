@@ -11,6 +11,7 @@
  * shortcut: `to` is an agent name, so after a rename the schedule writes to the old name and its fires end as
  * "not sent: unknown recipient"; follow renames (key by record id) if renames get common.
  */
+import type { TriggerInput } from './triggers.js';
 import { randomBytes } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -50,6 +51,8 @@ export interface SchedulesOptions {
   enabled?(): boolean;
   /** Downlink: a fire the hub refused or could not take. */
   notify?: DownlinkNotify;
+  /** The history of triggers (docs/features/triggers.md): every run, by the clock or by Run now. */
+  trigger?(entry: TriggerInput): void;
   log: Logger;
 }
 
@@ -175,13 +178,16 @@ export function createSchedules(options: SchedulesOptions): Schedules {
     const s = e.schedule;
     s.lastRunAt = now();
     let failed = false;
+    const what = `${scheduleSubject(s.name, s.subject)}: ${s.body}`;
     try {
       const sent = options.send({ to: s.to, subject: scheduleSubject(s.name, s.subject), body: s.body });
       failed = !sent.ok;
+      options.trigger?.({ kind: 'schedule', source: s.id, name: s.name, outcome: sent.status, what, message: sent.id, agent: sent.to, ...(sent.ok ? {} : { note: sent.note ?? 'undelivered' }) });
       s.lastResult = cut(sent.ok ? `sent ${sent.id}: ${sent.status}${sent.note ? ` (${sent.note})` : ''}` : `undelivered ${sent.id}: ${sent.note ?? 'no reason given'}`);
     } catch (error) {
       failed = true;
       s.lastResult = cut(`not sent: ${error instanceof Error ? error.message : String(error)}`);
+      options.trigger?.({ kind: 'schedule', source: s.id, name: s.name, outcome: 'failed', what, note: s.lastResult });
     }
     if (failed) options.notify?.('launch-window', `${s.name}: ${s.lastResult}`);
   };

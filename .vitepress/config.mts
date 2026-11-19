@@ -102,6 +102,7 @@ export default defineConfig({
           { text: 'Plan quota', link: '/features/quota' },
           { text: 'Telemetry', link: '/features/telemetry' },
           { text: 'Launch Window', link: '/features/launch-window' },
+          { text: 'History of triggers', link: '/features/triggers' },
           { text: 'Uplink', link: '/features/uplink' },
           { text: 'Relay', link: '/features/relay' },
           { text: 'Phone approvals', link: '/features/phone-approvals' },

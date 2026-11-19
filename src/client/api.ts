@@ -44,6 +44,7 @@ import type {
   RecorderDiff,
   RecorderStatus,
   RelayView,
+  TriggerEntry,
   ReliefView,
   ScheduleRequest,
   ScheduleView,
@@ -67,6 +68,7 @@ import type {
   MissionRequest,
   Effort,
   ModelDefaults,
+  PayloadDefaults,
   PermissionDefaults,
   PermissionRules,
   StartupSettings,
@@ -85,6 +87,7 @@ import type {
   TabNameView,
   UserMessageRequest,
   WorktreeStatus,
+  CostReport,
 } from '../shared/protocol.js';
 import { withBase } from './base.js';
 import {
@@ -430,6 +433,29 @@ export async function setDefaultEngine(engine: Provider | null): Promise<ModelDe
   return toModelDefaults(await call('PUT', '/models/engine', { engine }));
 }
 
+/** Payload defaults: what the room gives every agent (docs/payload-spec.md). The answers say what each item is and never a value. */
+const toPayloadDefaults = (value: unknown): PayloadDefaults => {
+  const record = asRecord(value);
+  if (record === null || !Array.isArray(record.mcpServers) || !Array.isArray(record.skills)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as PayloadDefaults;
+};
+export async function payloadDefaults(): Promise<PayloadDefaults> {
+  return toPayloadDefaults(await call('GET', '/payload-defaults'));
+}
+/** Adds the server, or replaces the one of that name whole. */
+export async function setDefaultServer(name: string, server: unknown): Promise<PayloadDefaults> {
+  return toPayloadDefaults(await call('PUT', `/payload-defaults/servers/${encodeURIComponent(name)}`, server));
+}
+export async function removeDefaultServer(name: string): Promise<PayloadDefaults> {
+  return toPayloadDefaults(await call('DELETE', `/payload-defaults/servers/${encodeURIComponent(name)}`));
+}
+export async function addDefaultSkill(path: string): Promise<PayloadDefaults> {
+  return toPayloadDefaults(await call('POST', '/payload-defaults/skills', { path }));
+}
+export async function removeDefaultSkill(name: string): Promise<PayloadDefaults> {
+  return toPayloadDefaults(await call('DELETE', `/payload-defaults/skills/${encodeURIComponent(name)}`));
+}
+
 /** The room's default effort for Claude Code consoles with none of their own; null clears it. */
 export async function setDefaultEffort(effort: Effort | null): Promise<ModelDefaults> {
   return toModelDefaults(await call('PUT', '/models/effort', { effort }));
@@ -647,6 +673,13 @@ export async function setPropellant(request: PropellantRequest): Promise<Propell
 }
 
 /** Cost: the model prices, the defaults with your own rows over them. */
+/** The ledger priced for the last `days` days, by agent and by kind of token (an estimate). */
+export async function getCost(days = 14): Promise<CostReport> {
+  const record = asRecord(await call('GET', `/cost?days=${days}`));
+  if (record === null || record.estimate !== true || asRecord(record.room) === null || !Array.isArray(record.days)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as CostReport;
+}
+
 export async function getPrices(): Promise<PricesView> {
   return toPricesView(await call('GET', '/prices'));
 }
@@ -957,6 +990,13 @@ export async function testUplink(id: string): Promise<UplinkView> {
 }
 
 /** Relay: the targets and what is forwarded. No frame: the page asks again after each change. The token is never in an answer. */
+/** The history of triggers, newest first (docs/features/triggers.md). */
+export async function getTriggers(query: string): Promise<TriggerEntry[]> {
+  const answer = asRecord(await call('GET', `/triggers?${query}`));
+  if (answer === null || !Array.isArray(answer.triggers)) throw failure('The server sent an answer gonogo does not understand.');
+  return answer.triggers as TriggerEntry[];
+}
+
 export async function getRelay(): Promise<RelayView> {
   return toRelayView(await call('GET', '/relay'));
 }

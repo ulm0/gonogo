@@ -2673,6 +2673,41 @@ describe('end to end with the stand-in agent', () => {
     expect(logOf<FakeEvent & { action: string }>(h, 'flight', 'dialog').map((event) => event.action)).toHaveLength(4);
   }, 90_000);
 
+  it("Payload defaults: the room's servers reach every agent's mcp.json, the agent wins and can switch one off, and no value is ever sent to the page", async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    const mcp = (name: string): { mcpServers: Record<string, unknown> } => JSON.parse(readFileSync(join(h.home, 'agents', name, 'mcp.json'), 'utf8')) as never;
+    const SECRET = 'sk-room-secret';
+    expect((await api(h, 'GET', '/api/payload-defaults')).body).toEqual({ mcpServers: [], skills: [] });
+    expect(await api<ApiError>(h, 'PUT', '/api/payload-defaults/servers/gonogo', { command: 'x' })).toMatchObject({ status: 400, body: { field: 'server' } });
+    expect(await api<ApiError>(h, 'POST', '/api/payload-defaults/skills', { path: join(h.home, 'nowhere') })).toMatchObject({ status: 400, body: { field: 'path' } });
+    const set = await api(h, 'PUT', '/api/payload-defaults/servers/files', { command: 'room-files', args: [`--key=${SECRET}`], env: { KEY: SECRET } });
+    expect(set.body).toEqual({ mcpServers: [{ name: 'files', type: 'stdio', target: 'room-files', args: 1, names: ['KEY'] }], skills: [] });
+    expect(JSON.stringify((await api(h, 'GET', '/api/payload-defaults')).body)).not.toContain(SECRET);
+    expect(JSON.parse(readFileSync(join(h.home, 'payload-defaults.json'), 'utf8')).payload.mcpServers.files.env.KEY).toBe(SECRET);
+
+    // an agent without a payload gets the room's server; the page never gets its value back, not even in the roster
+    await hire(h, 'ana');
+    expect(Object.keys(mcp('ana').mcpServers)).toEqual(['files', 'gonogo']);
+    expect(rosterEntry(h, 'ana').payload).toBeUndefined();
+    // its own server of the same name wins, and another can be switched off by name
+    await api(h, 'PUT', '/api/payload-defaults/servers/web', { type: 'http', url: 'https://x.test/mcp' });
+    const own = { command: 'own-files' };
+    expect((await api<AgentView>(h, 'POST', '/api/agents', { name: 'ben', role: 'x', dir: h.work, mode: 'default', payload: { mcpServers: { files: own } }, payloadOff: { mcpServers: ['web'] } })).status).toBe(201);
+    await waitState(h, 'ben', 'idle');
+    expect(mcp('ben').mcpServers.files).toEqual(own);
+    expect(Object.keys(mcp('ben').mcpServers)).toEqual(['files', 'gonogo']);
+    expect(rosterEntry(h, 'ben')).toMatchObject({ payload: { mcpServers: { files: own } }, payloadOff: { mcpServers: ['web'] } });
+    // the switch is a field of the agent, not of its payload: an older gonogo ignores it and still starts
+    expect(JSON.parse(readFileSync(join(h.home, 'agents.json'), 'utf8')).agents.find((a: { name: string }) => a.name === 'ben')).toMatchObject({ payloadOff: { mcpServers: ['web'] } });
+    expect((await api<ApiError>(h, 'PATCH', '/api/agents/ben', { payloadOff: { mcpServers: ['A b'] } })).body).toMatchObject({ field: 'payloadOff' });
+    expect((await api<AgentView>(h, 'PATCH', '/api/agents/ben', { payloadOff: null })).body.payloadOff).toBeNull();
+    // an engine that takes no payload refuses the switches too
+    expect((await api<ApiError>(h, 'POST', '/api/agents', { name: 'cy', role: 'x', dir: h.work, mode: 'default', provider: 'codex', payloadOff: { mcpServers: ['web'] } })).status).toBe(400);
+    expect((await api(h, 'DELETE', '/api/payload-defaults/servers/files')).body).toMatchObject({ mcpServers: [{ name: 'web' }] });
+    expect((await api<ApiError>(h, 'DELETE', '/api/payload-defaults/servers/files')).status).toBe(404);
+  }, 60_000);
+
   it('Tool permissions: the room\'s rules and an agent\'s own reach its settings.json, a bad rule is a 400, and another engine says it is not supported', async () => {
     const h = await startServer();
     await waitState(h, 'flight', 'idle');

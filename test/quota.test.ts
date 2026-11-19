@@ -178,7 +178,7 @@ describe('the status line shim', () => {
     });
   const input = JSON.stringify({ session_id: 's', cwd: '/secret', transcript_path: '/t', cost: { total_cost_usd: 2 }, rate_limits: { seven_day: { used_percentage: 41.4, resets_at: 1795518000 } } });
 
-  it('posts only rate_limits with the token, and prints one short line', async () => {
+  it('posts only rate_limits, the session id and the session\'s total cost, with the token, and prints one short line', async () => {
     const seen: { auth?: string; url?: string; body: string }[] = [];
     const server = createServer((req, res) => {
       let b = '';
@@ -196,8 +196,28 @@ describe('the status line shim', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]?.auth).toBe('Bearer tok');
     expect(seen[0]?.url).toBe('/hook/ana/StatusLine');
-    expect(JSON.parse(seen[0]?.body ?? '{}')).toEqual({ rate_limits: { seven_day: { used_percentage: 41.4, resets_at: 1795518000 } } });
-    expect(seen[0]?.body).not.toMatch(/secret|transcript|cost|session/);
+    expect(JSON.parse(seen[0]?.body ?? '{}')).toEqual({ rate_limits: { seven_day: { used_percentage: 41.4, resets_at: 1795518000 } }, session: 's', total: 2 });
+    // nothing else of the status line leaves the process
+    expect(seen[0]?.body).not.toMatch(/secret|transcript|cwd/);
+  });
+
+  it('without rate_limits (an API key, not a subscription) it still posts the session and total; without a total it posts nothing; a session id is cut at 80', async () => {
+    const bodies: string[] = [];
+    const server = createServer((req, res) => {
+      let b = '';
+      req.on('data', (c: Buffer) => (b += c.toString())).on('end', () => {
+        bodies.push(b);
+        res.end('{}');
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/x`;
+    await run(url, JSON.stringify({ session_id: 'abc', cwd: '/secret', cost: { total_cost_usd: 0.5 } }));
+    await run(url, JSON.stringify({ session_id: 'abc', cwd: '/secret' }));
+    await run(url, JSON.stringify({ session_id: 'x'.repeat(200), cost: { total_cost_usd: 1 } }));
+    await run(url, JSON.stringify({ session_id: 'abc', cost: { total_cost_usd: 'a lot' } }));
+    server.close();
+    expect(bodies.map((b) => JSON.parse(b) as Record<string, unknown>)).toEqual([{ session: 'abc', total: 0.5 }, { session: 'x'.repeat(80), total: 1 }]);
   });
 
   it('prints a line and exits 0 when the hub is down or the input is not JSON', async () => {

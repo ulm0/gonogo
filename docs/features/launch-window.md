@@ -25,3 +25,7 @@ the Brief box. Design and limits: [`docs/launch-window-spec.md`](https://github.
   "body": "Where are you?", "rule": "0 9 * * mon-fri"}` (`enabled` defaults to true), `PATCH /api/schedules/:id` with the
   fields to change, `DELETE /api/schedules/:id`, `POST /api/schedules/:id/run`. The list is also in the state and in a
   `schedules` frame on the WebSocket.
+
+## History
+
+The **History** tab at the top of this view lists every run of every schedule, and every webhook, polled Telegram message and Docking call, newest first, with filters: see [History of triggers](./triggers.md). A schedule's own row has a History link.

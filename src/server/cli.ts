@@ -27,7 +27,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -46,6 +46,7 @@ import { runDir } from './ptyhost.js';
 import { TOKENS_FILE } from './ptyhostproto.js';
 import { createHoldStore, relaunch, requestReload, rotateDirectorToken, runPtyHost, spawnHostProcess } from './reload.js';
 import { createWebServer } from './web.js';
+import { createReported } from './reported.js';
 import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
 import { createTelegramPoll } from './telegrampoll.js';
@@ -68,10 +69,12 @@ import { createReview } from './review.js';
 import { createRoomLayout } from './roomlayout.js';
 import { createTabName } from './tabname.js';
 import { createTasks } from './tasks.js';
+import { createTriggers } from './triggers.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
 import { createModelDefaults } from './models.js';
+import { createPayloadDefaults } from './payloaddefaults.js';
 import { createPermissionDefaults } from './permissions.js';
 import { createRunState } from './runstate.js';
 import { createStartupStore } from './startup.js';
@@ -595,6 +598,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await clearance.load();
     const modelDefaults = createModelDefaults({ dir: home.dir, log: log.child('models') });
     await modelDefaults.load();
+    const payloadDefaults = createPayloadDefaults({ dir: home.dir, log: log.child('payload') });
+    await payloadDefaults.load();
     const permissionDefaults = createPermissionDefaults({ dir: home.dir, log: log.child('permissions') });
     await permissionDefaults.load();
     const runState = createRunState({ dir: home.dir, now: () => Date.now(), log: log.child('run state') });
@@ -617,6 +622,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       toolsOff: () => toolsOff(features.view().off),
       defaultEffort: () => modelDefaults.effort(),
       defaultPermissions: () => permissionDefaults.get(),
+      payloadDefaults: () => payloadDefaults.get(),
       subagents: () => subagentStore.view(),
       coauthor: () => coauthorStore.view(),
       log: log.child('launcher'),
@@ -642,7 +648,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('quota'),
     });
     await quota.load();
+    // what Claude Code itself says a session cost (its status line): kept beside the ledger, never mixed into it
+    const reported = createReported({ dir: home.dir, now: () => Date.now(), log: log.child('reported') });
+    await reported.load();
     const propellant = createPropellant({
+      reported,
       dir: home.dir,
       plan: () => quota.view(),
       attribute: workingOn,
@@ -838,8 +848,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       ...(settings.publicUrl === null ? {} : { publicUrl: settings.publicUrl }),
     });
+    // the history of triggers: what fired by itself or came in from outside (uplinks, polled Telegram, schedules, docking)
+    const triggers = createTriggers({ dir: home.dir, now: io.now, log: log.child('triggers') });
+    await triggers.load();
     const schedules = createSchedules({
       dir: home.dir,
+      trigger: (entry) => triggers.record(entry),
       now: io.now,
       setTimer: io.setTimer,
       clearTimer: io.clearTimer,
@@ -851,6 +865,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     });
     const uplinks = createUplinks({
       dir: home.dir,
+      trigger: (entry) => triggers.record(entry),
       now: io.now,
       send: (request) => hubInstance.sendFromUser(request),
       emit: (list) => web?.broadcast({ t: 'uplinks', uplinks: list }),
@@ -893,6 +908,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     missionsRef = missions;
     const docking = createDocking({
       dir: home.dir,
+      trigger: (entry) => triggers.record(entry),
       name: stationName(env[STATION_ENV], hostname()),
       now: io.now,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
@@ -1048,6 +1064,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     }
     const webServer = createWebServer({
       statusLine: (name, body) => {
+        reported.record(name, body);
         if (quota.report(name, body)) web?.broadcast({ t: 'propellant', propellant: propellant.view() });
       },
       host,
@@ -1065,6 +1082,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       isReady: () => ready,
       propellant: audited(propellant, audit, PROPELLANT_AUDIT),
       prices: audited(prices, audit, PRICES_AUDIT),
+      triggers,
       // a changed price or budget is checked at once, not at the next reply
       spendChanged: () => {
         propellant.recheck();
@@ -1086,6 +1104,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relay: audited(relay, audit, RELAY_AUDIT),
       models: modelDefaults,
       features: audited(features, audit, FEATURES_AUDIT),
+      payloadDefaults: audited(payloadDefaults, blackBox.record, PAYLOAD_DEFAULTS_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
       subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),
@@ -1162,6 +1181,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const shutdown = async (leave: boolean): Promise<void> => {
       // no schedule fires from here on
       await step('schedules close', () => schedules.close());
+      await step('triggers close', () => triggers.close());
       // the hub first: it refuses new lifecycle calls from here on, while hooks, MCP and open sockets keep working so the agents can finish
       // a reload leaves the agents running in the pty host (their holds are in the saved file); an ordinary stop ends them and the host
       if (leave && remote) {
@@ -1189,6 +1209,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('relay close', () => relay.close());
       await step('models close', () => modelDefaults.close());
       await step('features close', () => features.close());
+      await step('payload defaults close', () => payloadDefaults.close());
       await step('permissions close', () => permissionDefaults.close());
       await step('subagents close', () => subagentStore.close());
       await step('coauthor close', () => coauthorStore.close());
@@ -1198,6 +1219,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       });
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
+      await step('reported close', () => reported.close());
       closing = true;
       await step('quota close', () => quota.close());
       await step('prices close', () => prices.close());

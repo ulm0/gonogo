@@ -66,14 +66,16 @@ export interface RoomView {
   working: number | null;
   /** ms epoch of the newest message or state change of the room, or null (none, or it cannot be asked). */
   lastActivity: number | null;
+  /** Dollars the room's ledger prices for today (local day): an estimate, not a bill; null while it cannot be asked. */
+  costToday: number | null;
   /** The tab name of the room (the Director's, else the station's), or null. */
   tabName: string | null;
   /** Why a room that is not running is not (its last error line), or null. */
   note: string | null;
 }
 
-type Counts = Pick<RoomView, 'agents' | 'running' | 'needsYou' | 'working' | 'lastActivity' | 'tabName'>;
-const NO_COUNTS: Counts = { agents: null, running: null, needsYou: null, working: null, lastActivity: null, tabName: null };
+type Counts = Pick<RoomView, 'agents' | 'running' | 'needsYou' | 'working' | 'lastActivity' | 'tabName' | 'costToday'>;
+const NO_COUNTS: Counts = { agents: null, running: null, needsYou: null, working: null, lastActivity: null, tabName: null, costToday: null };
 
 export interface SupervisorOptions {
   /** The root home: room `main`, `rooms.json`, `rooms/<id>/`, the Director token. */
@@ -461,7 +463,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     const cached = statusCache.get(child.entry.id);
     if (cached !== undefined && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
     try {
-      const body = (await askRoom(child, '/api/state', 1500)) as { agents?: Array<{ state?: string; stateSince?: number }>; activity?: Array<{ at?: number }>; tabName?: { name?: string | null; fallback?: string | null } };
+      const body = (await askRoom(child, '/api/state', 1500)) as { agents?: Array<{ state?: string; stateSince?: number }>; activity?: Array<{ at?: number }>; tabName?: { name?: string | null; fallback?: string | null }; propellant?: { cost?: { days?: Array<{ usd?: number }> } } };
       const agents = Array.isArray(body.agents) ? body.agents : [];
       const times = [...agents.map((a) => a.stateSince), body.activity?.[0]?.at].filter((t): t is number => typeof t === 'number' && t > 0);
       const tab = body.tabName?.name ?? body.tabName?.fallback;
@@ -471,6 +473,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         needsYou: agents.filter((a) => a.state === 'needs_you').length,
         working: agents.filter((a) => a.state === 'working').length,
         lastActivity: times.length === 0 ? null : Math.max(...times),
+        // the estimate of the room's local day, from the same state the list already asks for (no second request)
+        costToday: ((usd) => (typeof usd === 'number' && Number.isFinite(usd) && usd >= 0 ? usd : null))(body.propellant?.cost?.days?.at(-1)?.usd),
         tabName: typeof tab === 'string' && roomText(tab) !== '' ? roomText(tab) : null,
       };
       statusCache.set(child.entry.id, { at: Date.now(), value });

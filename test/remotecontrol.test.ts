@@ -41,7 +41,7 @@ describe('the launcher and --remote-control', () => {
 });
 
 describe('the Remote Control box of the form', () => {
-  const EMPTY = { provider: 'claude', position: '', name: 'ana', role: 'does things', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', keys: [], keysRemoved: [] } as unknown as Values;
+  const EMPTY = { provider: 'claude', position: '', name: 'ana', role: 'does things', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', offServers: [], offSkills: [], cleanRoom: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', keys: [], keysRemoved: [] } as unknown as Values;
 
   it('is in the hire request as {} for Claude Code, and not with a Clean Room or another engine', () => {
     expect(hireRequest({ ...EMPTY, remoteControl: true })).toMatchObject({ remoteControl: {} });

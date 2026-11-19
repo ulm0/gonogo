@@ -40,6 +40,7 @@ function agent(name: string, extra: Partial<AgentView> = {}): AgentView {
     provider: 'claude',
     command: null,
     payload: null,
+    payloadOff: null,
     cleanRoom: null,
     worktree: null,
     model: null,
