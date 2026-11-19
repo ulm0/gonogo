@@ -2,7 +2,9 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.5.4 (2026-11-19)
+
+The address of the rooms: `/` is now the list of rooms and every room, main too, lives at `/r/<id>/` (read "What breaks" below).
 
 - **The list of rooms is at `/`, and main is at `/r/main/` like every room.** The supervisor serves the list at `/`; `/rooms` answers 308 to `/` (`/rooms/health` stays: the Docker healthcheck). Main's page and API are at `/r/main/`; a GET or HEAD of any other old path of main (its page, `/assets/...`) answers **308 to `/r/main/...`** with the query kept. These stay at the root as aliases of main, because something outside the page holds them: `/api/...` and `/ws` (scripts, API keys, the TUI, a page left open from before), `/uplink/<id>` (webhooks already registered, Telegram), `/dock/...` (docked stations), and `/sw.js`, `/manifest.webmanifest` and the icons (the installed app: one worker, scope `/`). `/hook` and `/mcp` are 404 on the front as before (agents use their room's loopback port). The page, the Update key (it posts to `/r/main/api/update`), the Rooms line, the service worker (it keeps room main's page at `/r/main/` only; a tap on a push opens `/r/<id>/`) and the rooms list's OPEN follow. After login you land on `/`, the list. New addresses you copy (webhooks, docking) name `/r/main/`.
   **What breaks:** a bookmark of `/` (or `/#token=...`) opens the list, not main (one click to OPEN); a script that GETs main's page or an asset at the root follows a 308 (curl needs `-L`); the installed app's offline shell is rebuilt on its next visit (the worker's cache name changed).
