@@ -113,6 +113,9 @@ export function localSocketOf(home: string | undefined, env: Env, stat: (path: s
 }
 
 /** `gonogo tui`: answers the exit code. */
+const STATE_TRIES = 5;
+const STATE_WAIT_MS = 2000;
+
 export interface TuiDeps {
   flow: FlowIo;
 }
@@ -129,10 +132,16 @@ export async function sessionFor(address: string, env: Env, io: TuiIo, deps: Tui
   if ('error' in found) return { error: found.error };
   if (found.stored !== null) {
     let res: Response;
-    try {
-      res = await deps.flow.fetch(`${origin}/api/state`, { headers: { Authorization: `Bearer ${found.stored.token}` } });
-    } catch {
-      return { error: `could not reach ${origin}` };
+    // a 5xx is a server that is still starting (room main answers 503 until it is up): a few tries, two seconds apart, before giving up
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        res = await deps.flow.fetch(`${origin}/api/state`, { headers: { Authorization: `Bearer ${found.stored.token}` } });
+      } catch {
+        return { error: `could not reach ${origin}` };
+      }
+      if (res.status < 500 || attempt >= STATE_TRIES) break;
+      if (attempt === 1) io.stderr.write(`gonogo tui: ${origin} is not ready yet; waiting for it.\n`);
+      await deps.flow.sleep(STATE_WAIT_MS);
     }
     if (res.status === 200) return { token: found.stored.token };
     if (res.status !== 401) return { error: `${origin} answered ${res.status} (a redirect is not followed)` };

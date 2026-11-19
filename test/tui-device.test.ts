@@ -132,6 +132,29 @@ describe('which credential, and where it goes', () => {
     for (const s of other.seen) expect(JSON.stringify(s.init)).not.toContain(TOKEN);
   });
 
+  it('a 5xx from /api/state (the server is still starting) is retried a few times, two seconds apart, and the stored session is kept; then it gives up', async () => {
+    const path = tuiConfigPath(env);
+    saveStored(path, 'https://s.example', { token: TOKEN, label: 'l', created: 1 });
+    let calls = 0;
+    const starting = deps(() => (++calls < 3 ? json(503, { error: 'starting' }) : json(200, {})));
+    const t0 = starting.clock.t;
+    expect(await sessionFor('https://s.example', env, io(), starting.deps)).toEqual({ token: TOKEN });
+    expect(calls).toBe(3);
+    expect(starting.clock.t - t0).toBe(4000);
+    expect(err.join('')).toContain('not ready yet');
+    let always = 0;
+    const down = deps(() => (++always, json(502, {})));
+    expect(await sessionFor('https://s.example', env, io(), down.deps)).toEqual({ error: expect.stringContaining('502') });
+    expect(always).toBe(5);
+    // a 5xx never clears the stored session
+    expect(readStored(path, 'https://s.example')).toEqual({ stored: expect.objectContaining({ token: TOKEN }) });
+    // a 401 is not retried
+    let denied = 0;
+    const no = deps((url) => (url.endsWith('/api/state') ? (++denied, json(401, {})) : json(404, {})));
+    await sessionFor('https://s.example', env, io(), no.deps);
+    expect(denied).toBe(1);
+  });
+
   it('a 401 clears the stored entry and starts the flow again; the new token is stored 0600', async () => {
     const path = tuiConfigPath(env);
     saveStored(path, 'https://s.example', { token: TOKEN, label: 'l', created: 1 });

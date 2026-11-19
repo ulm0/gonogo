@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Sign in a terminal on another machine.** `gonogo tui --url https://...` with no key shows a code; you type it in the browser you are signed in to, check the terminal's address, confirm your password if it has been a while, and approve. The terminal keeps a session of its own (a week idle, 30 days in all, in `~/.config/gonogo/tui.json`), listed in Flight Rules → LOGIN with REVOKE, and `gonogo tui --logout` ends it. It cannot do what the step-up guards, or touch the account. A device that is asking shows as a notice on the open pages first. **Back to a build without it:** an old build reads a terminal session as a browser session (its `gnt_` secret works there as a cookie, the terminal's Bearer gets 401, and it expires after 2 hours idle); going forward again, every terminal signs in again. [TUI](https://gonogo.ulm0.com/features/tui.html).
+
 ## 0.6.1 (2026-11-19)
 
 The version on the list of rooms sits in its top bar, a real-browser smoke test guards the page in CI, and compose.yaml needs GONOGO_DATA (read "What breaks" if you run it from a UI).
