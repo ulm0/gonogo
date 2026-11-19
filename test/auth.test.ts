@@ -256,6 +256,95 @@ describe('login, sessions and devices', () => {
   });
 });
 
+describe('after review of the login', () => {
+  it('N4: a prefix names one session or key, or none', async () => {
+    const { auth, device } = await account();
+    const w = who({ device });
+    for (let i = 0; i < 3; i += 1) await auth.login(w, { user: 'director', password: PASSWORD });
+    // every id here starts with the same eight characters? none does: but a prefix that fits two is refused, and one that fits one works
+    const ids = auth.sessions().map((s) => s.id);
+    expect(auth.revoke(ids[0]?.slice(0, 7) as string)).toBe(false);
+    expect(auth.sessions()).toHaveLength(ids.length);
+    expect(auth.revoke(ids[0]?.slice(0, 16) as string)).toBe(true);
+    const k1 = auth.addKey('a', 'read', 30, false);
+    expect(auth.revokeKey(k1.key.id.slice(0, 7))).toBe(false);
+    expect(auth.revokeKey(k1.key.id.slice(0, 12))).toBe(true);
+  });
+
+  it('N3: a file with a hash whose cost is huge or odd is damaged, not obeyed', async () => {
+    await account();
+    const real = JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8'));
+    for (const bad of [{ m: 2_000_000_000 }, { t: 1_000_000 }, { p: 500 }, { m: 4 }, { algo: 'scrypt', m: 17, t: 1, p: 1 }, { algo: 'scrypt', m: 2 ** 30, t: 8, p: 1 }, { m: 1.5 }]) {
+      writeFileSync(join(home, AUTH_FILE), JSON.stringify({ ...real, password: { ...real.password, ...bad } }));
+      expect(open().state(), JSON.stringify(bad)).toBe('damaged');
+      rmSync(join(home, `${AUTH_FILE}.bad`), { force: true });
+    }
+  });
+
+  it('RETRO 3: a reset or an outside edit is seen before the next save writes over it', async () => {
+    const { auth, device } = await account();
+    resetAuthFiles(home);
+    // no check has run since: a login (which saves a session) must not write over the reset
+    clock += 2000;
+    const result = await auth.login(who({ device }), { user: 'director', password: PASSWORD });
+    expect(result.ok).toBe(false);
+    expect(auth.state()).toBe('none');
+    expect(JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8')).password).toBeNull();
+    expect(alerts.filter((a) => /^gonogo auth reset/.test(a))).toHaveLength(1);
+  });
+
+  it('RETRO 3: an outside edit, then an own save, is the alarm and not a silent overwrite', async () => {
+    const { auth, session } = await account();
+    const real = JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8'));
+    writeFileSync(join(home, AUTH_FILE), JSON.stringify({ ...real, keys: [{ id: 'e'.repeat(64), name: 'backdoor', scope: 'full', remote: true, created: clock, expires: clock + 1e10, last: null, lastAddress: null }] }));
+    // an own write (a key made) before any check
+    auth.addKey('mine', 'read', 30, false);
+    expect(alerts.some((a) => /changed outside gonogo/.test(a))).toBe(true);
+    expect(auth.keys().map((k) => k.name)).toEqual(['mine']);
+    expect(auth.locked()).toBe(true);
+    expect(auth.session(session, who(), 'none')).not.toBeNull();
+  });
+
+  it('RETRO 4: two setups at once make one account, and the second is turned away', async () => {
+    const auth = open();
+    auth.ensureSetupToken();
+    const token = setupToken();
+    const both = await Promise.all([
+      auth.setup(who({ address: '1.1.1.1' }), { token, user: 'director', password: PASSWORD }, null),
+      auth.setup(who({ address: '2.2.2.2' }), { token, user: 'intruder', password: 'another long password' }, null),
+    ]);
+    expect(both.filter((r) => r.ok)).toHaveLength(1);
+    expect(auth.user()).toBe('director');
+    expect((await auth.login(who({ address: '3.3.3.3' }), { user: 'director', password: PASSWORD })).ok).toBe(true);
+  });
+
+  it('B3: a socket opened by a key is alive while the key is: revoked or expired, it is not', async () => {
+    const { auth } = await account();
+    const ended: string[][] = [];
+    auth.onEnded((ids) => ended.push(ids));
+    const made = auth.addKey('k', 'full', 1, false);
+    const id = `key:${made.key.id}`;
+    expect(auth.alive(id)).toBe(true);
+    expect(auth.revokeKey(made.key.id.slice(0, 12))).toBe(true);
+    expect(ended.at(-1)).toEqual([id]);
+    expect(auth.alive(id)).toBe(false);
+    const again = auth.addKey('k2', 'full', 1, false);
+    clock += 2 * 24 * HOUR;
+    expect(auth.alive(`key:${again.key.id}`)).toBe(false);
+    auth.expiredSweep();
+    expect(ended.at(-1)).toEqual([`key:${again.key.id}`]);
+  });
+
+  it('RETRO 2: setting the account up tells the listener, so a socket of the old token can be closed', async () => {
+    const auth = open();
+    let told = 0;
+    auth.onAccountMade(() => (told += 1));
+    auth.ensureSetupToken();
+    await auth.setup(who(), { token: setupToken(), user: 'director', password: PASSWORD }, null);
+    expect(told).toBe(1);
+  });
+});
+
 describe('failure buckets (R6)', () => {
   const bad = (auth: AuthStore, w: Who) => auth.login(w, { user: 'director', password: 'not the password' });
 
@@ -454,7 +543,9 @@ describe('reset and the tamper alarm', () => {
     auth.checkTamper(true);
     expect(alerts).toEqual([expect.stringMatching(/changed outside gonogo/)]);
     expect(auth.state()).toBe('account');
-    expect(auth.session(session, who(), 'api')).toBeNull(); // nothing in the garbled file matched: no session of the old file survives
+    // the account in memory is the truth: what gonogo made stays, the file is written back
+    expect(auth.session(session, who(), 'api')).not.toBeNull();
+    expect(JSON.parse(readFileSync(join(home, AUTH_FILE), 'utf8')).user).toBe('director');
   });
 
   it('the check runs once a second on a request, and on a timer', async () => {

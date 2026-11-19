@@ -191,6 +191,9 @@ function parseHash(value: unknown): PasswordHash | null | undefined {
   if (value === null) return null;
   if (!isObject(value)) return undefined;
   if ((value.algo !== 'argon2id' && value.algo !== 'scrypt') || !num(value.m) || !num(value.t) || !num(value.p) || !str(value.salt) || !str(value.hash)) return undefined;
+  // the parameters of a file are the file's word, and they decide how much memory and time one login takes: a planted hash must not be able to make it enormous
+  const whole = (n: number, low: number, high: number): boolean => Number.isInteger(n) && n >= low && n <= high;
+  if (value.algo === 'argon2id' ? !(whole(value.p, 1, 16) && whole(value.m, 8 * value.p, 1_048_576) && whole(value.t, 1, 12)) : !(whole(value.m, 2, 1_048_576) && (value.m & (value.m - 1)) === 0 && whole(value.t, 1, 16) && whole(value.p, 1, 16))) return undefined;
   return { algo: value.algo, m: value.m, t: value.t, p: value.p, salt: value.salt, hash: value.hash };
 }
 
@@ -352,6 +355,8 @@ export interface AuthStore {
   checkTamper(force?: boolean): void;
   /** Called with the ids of sessions that ended (revoke, logout, password change, expiry, reset, tamper): sockets bound to them close. */
   onEnded(listener: (ids: string[]) => void): void;
+  /** Called when the account has been made: a socket opened with the old browser token (bound to nothing) must not outlive it. */
+  onAccountMade(listener: () => void): void;
   /** The cookie of a session or device is signed with this. */
   signDevice(id: string): string;
   setupTokenFile(): string;
@@ -373,8 +378,10 @@ export function openAuth(options: AuthOptions): AuthStore {
   let written = '';
   let lastCheck = 0;
   let isLocked = false;
+  let settingUp = false;
   let serverKey = '';
   const ended: Array<(ids: string[]) => void> = [];
+  const madeListeners: Array<() => void> = [];
   const buckets = new Map<string, Bucket>();
   const failures: number[] = [];
   let failureAlerted = 0;
@@ -388,7 +395,13 @@ export function openAuth(options: AuthOptions): AuthStore {
     }
   };
 
+  let inGuard = false;
   const save = (): void => {
+    // a file that changed since this server wrote it (a reset, an outside edit) is looked at before it is written over, or the change would be lost unseen
+    if (!inGuard && written !== '') {
+      const on = fileText();
+      if (on === null || sha(on) !== written) checkTamper(true);
+    }
     const text = `${JSON.stringify(data)}\n`;
     try {
       writeAtomic(path, text);
@@ -556,16 +569,27 @@ export function openAuth(options: AuthOptions): AuthStore {
   const expiredSweep = (): void => {
     const t = now();
     drop(data.sessions.filter((s) => expired(s, t)).map((s) => s.id));
-    const before = data.keys.length;
-    data.keys = data.keys.filter((k) => k.expires > t);
-    if (data.keys.length !== before) save();
+    const gone = data.keys.filter((k) => k.expires <= t);
+    if (gone.length > 0) {
+      data.keys = data.keys.filter((k) => k.expires > t);
+      save();
+      emitEnded(gone.map((k) => `key:${k.id}`));
+    }
   };
 
   /* ---- tamper alarm ---- */
 
-  const memoryCopy = (): AuthFile => structuredClone(data);
-
+  /** One look at a time: what the look itself writes (the file made again, the account emptied) is not looked at again. */
   const checkTamper = (force = false): void => {
+    if (inGuard) return;
+    inGuard = true;
+    try {
+      checkTamperOnce(force);
+    } finally {
+      inGuard = false;
+    }
+  };
+  const checkTamperOnce = (force: boolean): void => {
     const t = now();
     if (!force && t - lastCheck < TAMPER_CHECK_MIN_MS) return;
     lastCheck = t;
@@ -573,13 +597,13 @@ export function openAuth(options: AuthOptions): AuthStore {
     if (text === null) {
       // the file was removed: remade from memory, and the same alarm
       if (written === '') return;
-      tamper('auth.json was removed outside gonogo', undefined);
+      tamper('auth.json was removed outside gonogo');
       return;
     }
     if (sha(text) === written) return;
     if (isResetFile(text)) {
       const parsed = JSON.parse(text) as { tombstone?: { created?: number } };
-      const ids = data.sessions.map((s) => s.id);
+      const ids = [...data.sessions.map((s) => s.id), ...data.keys.map((k) => `key:${k.id}`)];
       data = empty({ created: num(parsed.tombstone?.created) ? parsed.tombstone.created : (data.tombstone?.created ?? t) });
       serverKey = data.serverKey;
       damaged = false;
@@ -590,24 +614,16 @@ export function openAuth(options: AuthOptions): AuthStore {
       options.alert('gonogo auth reset: the account was emptied; every session and key ended; login is off until setup');
       return;
     }
-    tamper('auth.json changed outside gonogo', parseAuth(text));
+    tamper('auth.json changed outside gonogo');
   };
 
-  const tamper = (what: string, found: AuthFile | undefined): void => {
-    // the in-memory record is the truth: from the file only what matches it is kept, and only the Director's password and second factor confirm
-    const before = memoryCopy();
-    const keepSessions = found === undefined ? [] : before.sessions.filter((s) => found.sessions.some((f) => f.id === s.id));
-    const gone = before.sessions.filter((s) => !keepSessions.includes(s)).map((s) => s.id);
-    data = {
-      ...before,
-      sessions: keepSessions,
-      keys: found === undefined ? [] : before.keys.filter((k) => found.keys.some((f) => f.id === k.id)),
-      devices: found === undefined ? [] : before.devices.filter((d) => found.devices.some((f) => f.id === d.id)),
-    };
+  const tamper = (what: string): void => {
+    // the in-memory record is the truth: the file is written back from it. Whatever the outside write added (a session, a key, a device, a password, a
+    // server key) was never loaded, so it is gone; what gonogo made is kept. Only the Director's password and second factor, checked against this
+    // record, lift the pause on remote logins.
     isLocked = true;
     save();
-    emitEnded(gone);
-    options.alert(`${what}: sessions and API keys gonogo did not make ended; remote logins are refused until the Director confirms on this machine`);
+    options.alert(`${what}: sessions, API keys and devices gonogo did not make are gone; remote logins are refused until the Director confirms on this machine`);
   };
 
   /** Makes the setup token when there is no account and none is valid; the token itself is returned only when it was just made. */
@@ -665,6 +681,8 @@ export function openAuth(options: AuthOptions): AuthStore {
     },
     alive(id) {
       checkTamper();
+      // a socket opened by a key: alive while the key is
+      if (id.startsWith('key:')) return data.keys.some((k) => k.id === id.slice(4) && k.expires > now());
       const found = data.sessions.find((s) => s.id === id);
       if (found === undefined) return false;
       if (expired(found, now())) {
@@ -674,6 +692,7 @@ export function openAuth(options: AuthOptions): AuthStore {
       return true;
     },
     onEnded: (listener) => void ended.push(listener),
+    onAccountMade: (listener) => void madeListeners.push(listener),
     locked: () => isLocked,
     expiredSweep,
     close() {
@@ -709,8 +728,18 @@ export function openAuth(options: AuthOptions): AuthStore {
         return refused('wrong');
       }
       if (!validUser(input.user) || input.password.length < PASSWORD_MIN || input.password.length > PASSWORD_MAX) return refused('weak');
+      // the token is good once: a second setup that arrives while this one is hashing is turned away, and the state is looked at again after the wait
+      if (settingUp) return refused('off');
+      settingUp = true;
+      let made: PasswordHash;
+      try {
+        made = await hashPassword(input.password, options.costs);
+      } finally {
+        settingUp = false;
+      }
+      if (state() === 'account') return refused('off');
       data.user = input.user;
-      data.password = await hashPassword(input.password, options.costs);
+      data.password = made;
       data.tombstone = { created: now() };
       data.sessions = [];
       // R1: the old browser token and the setup token die with the account, and nothing replaces them
@@ -718,6 +747,7 @@ export function openAuth(options: AuthOptions): AuthStore {
       rmSync(file, { force: true });
       succeed(keys);
       const result = finish(who, false);
+      for (const listener of madeListeners) listener();
       options.alert('the Director account was created; the old browser token no longer works');
       return result;
     },
@@ -779,9 +809,11 @@ export function openAuth(options: AuthOptions): AuthStore {
 
     logout: (sessionId) => drop([sessionId]),
     revoke(id) {
-      const found = data.sessions.find((s) => s.id === id || s.id.startsWith(id));
-      if (found === undefined || id.length < 8) return false;
-      drop([found.id]);
+      if (id.length < 8) return false;
+      // a prefix names one session or none: two that start alike are not guessed between
+      const matches = data.sessions.filter((s) => s.id === id || s.id.startsWith(id));
+      if (matches.length !== 1) return false;
+      drop([(matches[0] as Session).id]);
       return true;
     },
     logoutEverywhere(exceptId) {
@@ -825,10 +857,12 @@ export function openAuth(options: AuthOptions): AuthStore {
     },
     revokeKey(short) {
       if (short.length < 8) return false;
-      const found = data.keys.find((k) => k.id.startsWith(short));
-      if (found === undefined) return false;
+      const matches = data.keys.filter((k) => k.id.startsWith(short));
+      if (matches.length !== 1) return false;
+      const found = matches[0] as ApiKey;
       data.keys = data.keys.filter((k) => k !== found);
       save();
+      emitEnded([`key:${found.id}`]);
       return true;
     },
 
