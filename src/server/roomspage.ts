@@ -43,7 +43,6 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .rl-confirm{display:grid;gap:8px;padding:10px 12px}
 .rl-confirm p{margin:0}
 .rl-error{padding:10px 12px;margin:0}
-.version-corner{bottom:4px}
 @media (max-width:699px){.rl-main{padding:10px 12px 40px}.rl-keys .btn[data-kind=primary]{flex-basis:100%}}
 `;
 
@@ -231,7 +230,7 @@ export const roomsPage = (stylesheet: string | null, version: string | null = nu
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>rooms · gonogo</title>${
     stylesheet === null ? '' : `<link rel="stylesheet" href="/rooms/assets/${stylesheet}">`
   }<style>${STYLE}</style><script>${LIVERY}</script></head><body>` +
-  `<header class="topbar"><h1 class="mark"><img class="mark-name" src="/rooms/lockup.svg" alt="gonogo"><span class="label mark-unit">ROOMS</span></h1><span class="topbar-grow"></span><button id="new" type="button" class="btn" data-kind="primary" aria-expanded="false" aria-controls="add">NEW ROOM</button></header>` +
+  `<header class="topbar"><h1 class="mark"><img class="mark-name" src="/rooms/lockup.svg" alt="gonogo"><span class="label mark-unit">ROOMS</span></h1>${version === null ? '' : `<span class="topbar-version"><a class="version-mark" href="${CHANGELOG_URL}" target="_blank" rel="noreferrer noopener" aria-label="gonogo ${esc(version)}, open the changelog">${esc(version)}</a></span>`}<span class="topbar-grow"></span><button id="new" type="button" class="btn" data-kind="primary" aria-expanded="false" aria-controls="add">NEW ROOM</button></header>` +
   `<main class="rl-main">` +
   `<div class="rl-head"><h2 id="title" class="label" tabindex="-1">Rooms</h2><span id="sum"></span><span id="live" class="sr-only" role="status"></span></div>` +
   `<section id="gate" class="module rl-gate" hidden><h2 class="label"></h2><p class="hint"></p></section>` +
@@ -239,4 +238,4 @@ export const roomsPage = (stylesheet: string | null, version: string | null = nu
   `<form id="add" class="module rl-form" hidden><span class="label">NEW ROOM</span><div class="rl-fields"><label><span class="label">ID</span><input class="input" name="id" required maxlength="24" pattern="[a-z][a-z0-9-]{0,23}" aria-describedby="idhint" autocomplete="off" spellcheck="false"><span id="idhint" class="hint">Lowercase letters, digits and dashes, like team-a. It is the folder and the address.</span></label><label><span class="label">NAME (OPTIONAL)</span><input class="input" name="name" maxlength="40" autocomplete="off"></label></div><div class="rl-keys"><button class="btn" data-kind="primary" type="submit">ADD ROOM</button><button id="cancel" class="btn" type="button">CANCEL</button></div></form>` +
   `<p id="note" class="error rl-error" role="alert" hidden></p>` +
   `<ul id="rooms" class="rl-cards" aria-labelledby="title"></ul>` +
-  `</main>${version === null ? '' : `<a class="version-corner" href="${CHANGELOG_URL}" target="_blank" rel="noreferrer noopener" aria-label="gonogo ${esc(version)}, open the changelog">gonogo ${esc(version)}</a>`}<script>${SCRIPT}</script></body></html>`;
+  `</main><script>${SCRIPT}</script></body></html>`;

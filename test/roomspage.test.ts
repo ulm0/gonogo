@@ -237,3 +237,14 @@ describe('the rooms list page script', () => {
     expect(byId.sum?.attrs.role).toBeUndefined();
   });
 });
+
+describe('the version on the rooms page', () => {
+  it('sits in the top bar by the logo, as in a room, not in a corner', () => {
+    const page = roomsPage(null, '9.9.9');
+    const bar = page.slice(page.indexOf('<header class="topbar">'), page.indexOf('</header>'));
+    expect(bar).toContain('<span class="topbar-version"><a class="version-mark"');
+    expect(bar).toContain('>9.9.9</a>');
+    expect(page).not.toContain('version-corner');
+    expect(roomsPage(null, null)).not.toContain('topbar-version');
+  });
+});

@@ -2,11 +2,15 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Fix: the version on the list of rooms sat unstyled at the foot of the page.** 0.5.5 moved the version into the top bar of a room and dropped the corner's style; the list page still drew the corner. It now shows the version in its top bar, by the logo, like a room.
+- **A real-browser smoke test in CI.** `browser/smoke.spec.ts` (Playwright, Chromium) runs the built server with the stand-in agent: setup, login with TOTP, console and CSP errors, styles, the room's link lamp and console, the service worker. It runs on pull requests that touch the page, auth or web code, by hand, and before every release publish. See CONTRIBUTING.md.
+
 ## 0.6.0 (2026-11-19)
 
 `gonogo tui` is back (it answered "unknown option tui" since 0.3.0).
 
-- **A real-browser smoke test in CI.** `browser/smoke.spec.ts` (Playwright, Chromium) runs the built server with the stand-in agent: setup, login with TOTP, console and CSP errors, styles, the room's link lamp and console, the service worker. It runs on pull requests that touch the page, auth or web code, by hand, and before every release publish. See CONTRIBUTING.md.
 - **Fix: `gonogo tui` answered "unknown option tui".** The command was dropped from the CLI by mistake in 0.3.0 (#52); the terminal client itself was there all along. It is back, with a test that `gonogo tui` reaches it.
 
 ## 0.5.5 (2026-11-19)
