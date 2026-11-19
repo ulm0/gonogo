@@ -44,6 +44,7 @@ import type {
   RecorderDiff,
   RecorderStatus,
   RelayView,
+  TriggerEntry,
   ReliefView,
   ScheduleRequest,
   ScheduleView,
@@ -86,6 +87,7 @@ import type {
   TabNameView,
   UserMessageRequest,
   WorktreeStatus,
+  CostReport,
 } from '../shared/protocol.js';
 import { withBase } from './base.js';
 import {
@@ -671,6 +673,13 @@ export async function setPropellant(request: PropellantRequest): Promise<Propell
 }
 
 /** Cost: the model prices, the defaults with your own rows over them. */
+/** The ledger priced for the last `days` days, by agent and by kind of token (an estimate). */
+export async function getCost(days = 14): Promise<CostReport> {
+  const record = asRecord(await call('GET', `/cost?days=${days}`));
+  if (record === null || record.estimate !== true || asRecord(record.room) === null || !Array.isArray(record.days)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as CostReport;
+}
+
 export async function getPrices(): Promise<PricesView> {
   return toPricesView(await call('GET', '/prices'));
 }
@@ -981,6 +990,13 @@ export async function testUplink(id: string): Promise<UplinkView> {
 }
 
 /** Relay: the targets and what is forwarded. No frame: the page asks again after each change. The token is never in an answer. */
+/** The history of triggers, newest first (docs/features/triggers.md). */
+export async function getTriggers(query: string): Promise<TriggerEntry[]> {
+  const answer = asRecord(await call('GET', `/triggers?${query}`));
+  if (answer === null || !Array.isArray(answer.triggers)) throw failure('The server sent an answer gonogo does not understand.');
+  return answer.triggers as TriggerEntry[];
+}
+
 export async function getRelay(): Promise<RelayView> {
   return toRelayView(await call('GET', '/relay'));
 }

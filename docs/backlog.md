@@ -96,15 +96,15 @@ tracked. Only what is still missing stays open here.
 - [ ] A tunnel so that outside services can reach the machine *(inferred)*. Not built: gonogo ships none.
       `docs/https.md` and the Uplink page describe your own HTTPS reverse proxy that forwards only `/uplink/`.
 - [x] Triggers. Built 2026-11-17: **Launch Window** (cron schedules) and **Uplink** (webhooks) start work by themselves.
-- [ ] History of triggers. Only part is built: an uplink keeps its last 20 deliveries, but a schedule keeps only its
-      last run and the hub's answer to it.
+- [x] History of triggers. Built (0.7.0): one append-only log per room of every uplink delivery, polled Telegram update,
+      schedule run and Docking call, with a HISTORY tab in Launch Window (`docs/features/triggers.md`).
 - [ ] Integrations registry, skills tab and MCP defaults. Only part is built: **Payload** sets MCP servers and skills
       per agent from text you write. Defaults for every agent are built (Flight Rules, PAYLOAD DEFAULTS). Missing: a list of known servers and skills to pick from, and a skills tab apart from the hire form.
 
 - [ ] Telegram Mini App *(parked by the owner, 2026-11-19)*: a menu button of the Relay bot opens gonogo's page inside Telegram, signed in by the Mini App's `initData` (HMAC with the bot token) for the Director's Telegram user id only. Needs a public https address (`gonogo expose`), an RSO decision on whether `initData` counts as both factors (anyone with the bot token can sign it), a short lifetime and a Downlink note per sign-in. No separate app: the same page, with Telegram's theme.
 ## 7. Cost and safety
 
-- [ ] Cost and usage tracking with pricing.
+- [x] Cost and usage tracking with pricing. Built in 0.3 (the ledger with input, output and cache apart, the price table with its source date and the owner's own rows, the DOLLARS meter, budgets, the 14-day chart, cost per mission and task) and extended in 0.7: `GET /api/cost`, the table by kind of token, the engine's own "reported" figure beside the estimate, a room's estimate for today in the room list. See [Cost](features/cost.md).
 - [x] Telemetry. Built 2026-11-18 (see the tool-call timeline below).
 - [x] Circuit breaker. Built 2026-11-17 as Redline.
 - [x] Tool-call waterfall: a timeline of what an agent did *(inferred)*. Built (2026-11-18) as **Telemetry**: a fold in

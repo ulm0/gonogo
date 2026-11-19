@@ -1,9 +1,9 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { CostDays, FuelMeter } from '../src/client/Propellant.js';
+import { CostByKind, CostDays, CostKindsTable, FuelMeter } from '../src/client/Propellant.js';
 import { commands } from '../src/client/shell.js';
-import type { CostView } from '../src/shared/protocol.js';
+import type { CostReport, CostView } from '../src/shared/protocol.js';
 
 const W = { '5h': 0, day: 0, week: 0, month: 0 };
 const cost: CostView = {
@@ -15,6 +15,50 @@ const cost: CostView = {
   ],
   pricedSince: 1,
 };
+
+const scope = (usd: number, input: number, output: number, cw: number, cr: number) => ({ usd, usdSplit: { input, output, cacheWrite: cw, cacheRead: cr }, tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, unpriced: 0 });
+const report: CostReport = {
+  currency: 'USD',
+  estimate: true,
+  dayBoundary: 'local',
+  from: '2026-11-04',
+  to: '2026-11-17',
+  room: { ...scope(8, 1, 5, 1, 1), reported: 9.5, reportedAgents: { have: 1, of: 2 } },
+  agents: {
+    ana: { ...scope(5, 1, 3, 0.5, 0.5), reported: 6.25, basis: 'reported', sessions: 2 },
+    ben: { ...scope(3, 0, 2, 0.5, 0.5), reported: null, basis: 'estimated', sessions: 0 },
+    idle: { ...scope(0, 0, 0, 0, 0), reported: null, basis: 'none', sessions: 0 },
+  },
+  days: [],
+  unpricedModels: ['claude-mystery-9'],
+  partial: false,
+  sessions: 2,
+  pricedSince: 1,
+  priceAsOf: '2026-11-18',
+};
+
+describe('cost by kind of token', () => {
+  it('shows the estimates by kind, the reported figure beside them as "at least", and says plainly that they are estimates', () => {
+    const html = renderToString(createElement(CostKindsTable, { report }));
+    expect(html).toContain('Estimated dollars, 2026-11-04 to 2026-11-17');
+    expect(html).toContain('<th scope="row">ana</th>');
+    expect(html).toContain('at least $6.25');
+    expect(html).toContain('at least $9.50 (1 of 2 agents)');
+    // an agent with nothing is not listed; one with an estimate only shows a dash for the reported figure
+    expect(html).not.toContain('>idle<');
+    expect(html).toMatch(/<th scope="row">ben<\/th>[^]*?<td data-basis="estimated">—<\/td>/);
+    expect(html).toContain('estimates');
+    expect(html).toContain('not a bill');
+    expect(html).toContain('never added to them');
+    expect(html).toContain('equivalent, not a charge');
+    expect(html).toContain('No price for: claude-mystery-9');
+    expect(html).toMatch(/Prices as of (<!-- -->)?2026-11-18/);
+  });
+
+  it('asks the server when it opens: until then it says it is reading', () => {
+    expect(renderToString(createElement(CostByKind, { spent: 0 }))).toContain('Reading the ledger');
+  });
+});
 
 describe('the cost screens', () => {
   it('draws the chart with a table of the same numbers and the estimate note', () => {

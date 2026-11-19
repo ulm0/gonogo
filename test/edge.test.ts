@@ -3360,6 +3360,39 @@ describe('web: REST', () => {
     });
   });
 
+  describe('cost', () => {
+    const view = { room: { used: { '5h': 0, day: 0, week: 0, month: 0 }, limits: {} }, agents: {}, cost: { room: { usd: { '5h': 0, day: 0, week: 0, month: 0 }, unpriced: { '5h': 0, day: 0, week: 0, month: 0 }, budget: {} }, agents: {}, days: [], pricedSince: null } };
+    const scope = { usd: 0, usdSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, unpriced: 0 };
+
+    it('GET /api/cost asks for 14 days unless told, takes 1 to 31 and answers 400 on anything else, and says it is an estimate', async () => {
+      const asked: number[] = [];
+      const { port } = await startWeb({
+        propellant: {
+          view: () => view as never,
+          setLimits: async () => view as never,
+          setBudget: async () => view as never,
+          report: (days) => (asked.push(days), { currency: 'USD', estimate: true, dayBoundary: 'local', from: '', to: '', room: { ...scope, reported: null, reportedAgents: { have: 0, of: 0 } }, agents: {}, days: [], unpricedModels: [], partial: false, sessions: 0, pricedSince: null, priceAsOf: 'x' }),
+        },
+      });
+      const ok = await api(port, 'GET', '/api/cost');
+      expect(ok.status).toBe(200);
+      expect(ok.json()).toMatchObject({ estimate: true, dayBoundary: 'local' });
+      expect((await api(port, 'GET', '/api/cost?days=31')).status).toBe(200);
+      expect((await api(port, 'GET', '/api/cost?days=1')).status).toBe(200);
+      expect(asked).toEqual([14, 31, 1]);
+      for (const bad of ['0', '32', '-1', '1.5', 'x', '']) expect((await api(port, 'GET', `/api/cost?days=${bad}`)).json(), bad).toMatchObject({ code: 'bad_request', field: 'days' });
+      expect((await api(port, 'POST', '/api/cost', {})).status).toBe(405);
+      expect(asked).toHaveLength(3);
+    });
+
+    it('is 404 without a ledger, and needs the token like every /api route', async () => {
+      const { port } = await startWeb({});
+      expect((await api(port, 'GET', '/api/cost')).status).toBe(404);
+      const none = await fetch(`http://127.0.0.1:${port}/api/cost`);
+      expect(none.status).toBe(401);
+    });
+  });
+
   describe('prices', () => {
     const price = { input: 1, output: 2, cacheWrite: 3, cacheRead: 4 };
     const fake = (): { calls: unknown[]; prices: NonNullable<WebOptions['prices']> } => {
@@ -3374,6 +3407,24 @@ describe('web: REST', () => {
         },
       };
     };
+
+    it('GET /api/triggers passes a checked query to the history and answers newest first; 404 without it', async () => {
+      const asked: unknown[] = [];
+      const triggers = { list: async (query?: unknown) => (asked.push(query), [{ at: 1, kind: 'uplink' as const, source: 'u1', name: 'GitHub', outcome: 'queued', what: 'push' }]) };
+      const { port } = await startWeb({ triggers });
+      expect((await api(port, 'GET', '/api/triggers')).json()).toEqual({ triggers: [{ at: 1, kind: 'uplink', source: 'u1', name: 'GitHub', outcome: 'queued', what: 'push' }] });
+      expect((await api(port, 'GET', '/api/triggers?kind=schedule&source=s1&outcome=failed&limit=20')).status).toBe(200);
+      expect(asked).toEqual([{}, { kind: 'schedule', source: 's1', outcome: 'failed', limit: 20 }]);
+      for (const [query, field] of [['kind=nope', 'kind'], ['source=a%20b', 'source'], ['source=../x', 'source'], ['outcome=a-b', 'outcome'], ['limit=0', 'limit'], ['limit=501', 'limit'], ['limit=x', 'limit']] as const) {
+        const answer = await api(port, 'GET', `/api/triggers?${query}`);
+        expect(answer.status, query).toBe(400);
+        expect(answer.json(), query).toMatchObject({ code: 'bad_request', field });
+      }
+      expect((await api(port, 'POST', '/api/triggers', {})).status).toBe(405);
+      expect(asked).toHaveLength(2);
+      const bare = await startWeb({});
+      expect((await api(bare.port, 'GET', '/api/triggers')).status).toBe(404);
+    });
 
     it('GET, PUT and DELETE /api/prices, strict about the body and the prefix', async () => {
       const { calls, prices } = fake();

@@ -142,6 +142,7 @@ function card(r){
     lcd.append(el('span','tile-sub',r.agents===0?'no agents yet':r.running+' of '+r.agents+' agents running'));
     const parts=[];if(r.needsYou)parts.push(r.needsYou+' need you');if(r.working)parts.push(r.working+' working');
     if(parts.length)lcd.append(el('span','tile-sub',parts.join(' \\u00b7 ')));
+    if(typeof r.costToday==='number'&&r.costToday>0)lcd.append(el('span','tile-sub','about $'+r.costToday.toFixed(2)+' today (estimate)'));
     if(r.lastActivity){const t=el('span','tile-sub','last activity '+ago(r.lastActivity));t.dataset.at=String(r.lastActivity);lcd.append(t)}
   }else if(up)lcd.append(el('span','tile-sub','running'));
   else{lcd.append(el('span','tile-sub',r.state==='crashed'?'crashed, starting again':r.state==='starting'?'starting':'stopped'));if(r.note)lcd.append(el('span','tile-sub',r.note))}
