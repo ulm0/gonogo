@@ -30,12 +30,12 @@ The npm package is `@ulm0/gonogo`; see [What was not verified](../reference/not-
 From npm:
 
 ```
-pnpm dlx @ulm0/gonogo                      # run it once
-pnpm add -g @ulm0/gonogo && gonogo         # or install the gonogo command
+npm i -g @ulm0/gonogo@latest && gonogo     # install the gonogo command
+pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@%VERSION%   # or run it once with pnpm
 brew install ulm0/tap/gonogo               # or with Homebrew (macOS, Linux); update with brew upgrade gonogo
 ```
 
-Use the scoped name: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. [Options](../reference/configuration.md#options) go after the command: `pnpm dlx @ulm0/gonogo --port 7780`.
+With pnpm, name the version and exempt gonogo: where pnpm's `minimumReleaseAge` is set, it refuses a release that is too young or, for `@latest`, picks an older one, for a day after each release. The flag exempts only `@ulm0/gonogo`; its dependencies keep the check. Use the scoped name: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. [Options](../reference/configuration.md#options) go after the command: `pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@%VERSION% --port 7780`.
 
 From a clone (`corepack enable pnpm` installs the pinned pnpm):
 

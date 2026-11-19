@@ -36,6 +36,9 @@ export function isNewer(latest: string, current: string): boolean {
 /** Homebrew keeps a formula under <prefix>/Cellar/gonogo/<version>/; its npm layout would otherwise read as npm, so this is tested first. */
 const BREW = /\/Cellar\/gonogo\//;
 
+/** pnpm's minimumReleaseAge refuses a release that is too young, exact version or not; this exempts gonogo only (its dependencies keep the check). */
+export const PNPM_EXCLUDE = '--config.minimum-release-age-exclude=@ulm0/gonogo';
+
 /**
  * The command that updates the way this gonogo was installed, from the path of its own file. `docker`: it runs in a container;
  * `clone`: its folder is a git checkout. Never run by gonogo.
@@ -45,10 +48,10 @@ export function updateCommand(where: { file: string; docker: boolean; clone: boo
   const path = where.file.replace(/\\/g, '/');
   if (where.docker) return 'docker compose pull && docker compose up -d';
   if (where.clone) return 'git pull && pnpm install && pnpm build';
-  if (path.includes('/pnpm/dlx/')) return 'pnpm dlx @ulm0/gonogo@latest';
+  if (path.includes('/pnpm/dlx/')) return `pnpm ${PNPM_EXCLUDE} dlx @ulm0/gonogo@latest`;
   if (BREW.test(path)) return 'brew upgrade gonogo';
   if (path.includes('/lib/node_modules/@ulm0/gonogo/')) return 'npm install -g @ulm0/gonogo@latest';
-  return 'pnpm add -g @ulm0/gonogo@latest';
+  return `pnpm ${PNPM_EXCLUDE} add -g @ulm0/gonogo@latest`;
 }
 
 /**
@@ -88,15 +91,21 @@ export function installNote(kind: InstallKind, canUpdate: boolean, docker?: { re
   }
 }
 
+/** A pnpm command with the exact version in place of `@latest` (npm is left as it is): pnpm's one-day release age makes `@latest` resolve to an old version just after a release. */
+export function pinCommand(command: string, version: string | null): string {
+  return version === null || !command.startsWith('pnpm ') ? command : command.replace("@ulm0/gonogo@latest", `@ulm0/gonogo@${version}`);
+}
+
 /** The command that installs one exact version for npm or pnpm, and the one that goes back; null for the other kinds. */
 export function installCommand(kind: InstallKind, version: string): { file: string; args: string[] } | null {
   if (kind === 'npm') return { file: 'npm', args: ['install', '-g', `@ulm0/gonogo@${version}`] };
-  if (kind === 'pnpm') return { file: 'pnpm', args: ['add', '-g', `@ulm0/gonogo@${version}`] };
+  if (kind === 'pnpm') return { file: 'pnpm', args: [PNPM_EXCLUDE, 'add', '-g', `@ulm0/gonogo@${version}`] };
   return null;
 }
 
 /** What `gonogo update` prints. */
 export function updateText(command: string, docker: boolean, view: Pick<RolloutView, 'current' | 'latest' | 'newer'>): string {
+  command = pinCommand(command, view.latest);
   const state = view.newer ? `gonogo ${view.latest} is out; this is ${view.current}.` : `This is gonogo ${view.current}${view.latest === null ? '' : `; the newest the last check saw is ${view.latest}`}.`;
   return [state, 'To update, run:', '', `  ${command}`, '', docker ? 'in the folder of your compose.yaml. gonogo never updates itself without your click.' : 'gonogo never updates itself without your click.'].join('\n') + '\n';
 }
@@ -179,7 +188,7 @@ export function createRollout(options: RolloutOptions): Rollout {
     latest,
     checkedAt,
     newer: options.enabled && latest !== null && isNewer(latest, options.current),
-    command: options.command,
+    command: pinCommand(options.command, latest),
     ...(options.install === undefined ? {} : { install: options.install, installNote: options.installNote ?? '', canUpdate: options.enabled && options.canUpdate === true, ...(options.selfUpdate === true ? { selfUpdate: true } : {}) }),
     ...(update === undefined ? {} : { update }),
   });

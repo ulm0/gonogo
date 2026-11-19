@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RolloutView } from '../src/shared/protocol.js';
 import { ROLLOUT_EVERY_MS, ROLLOUT_MAX_BYTES, ROLLOUT_URL } from '../src/server/constants.js';
-import { cachedLatest, createRollout, isNewer, updateCheckOff, updateCommand, updateText } from '../src/server/rollout.js';
+import { cachedLatest, createRollout, installCommand, isNewer, PNPM_EXCLUDE, pinCommand, updateCheckOff, updateCommand, updateText } from '../src/server/rollout.js';
 
 let dir: string;
 beforeEach(async () => {
@@ -85,7 +85,7 @@ describe('the answer', () => {
     const { rollout, emitted, now } = setup();
     expect(rollout.view()).toEqual({ enabled: true, current: '0.1.1', latest: null, checkedAt: null, newer: false, command: 'pnpm add -g @ulm0/gonogo@latest' });
     const view = await rollout.check();
-    expect(view).toEqual({ enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: now(), newer: true, command: 'pnpm add -g @ulm0/gonogo@latest' });
+    expect(view).toEqual({ enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: now(), newer: true, command: 'pnpm add -g @ulm0/gonogo@0.2.0' });
     expect(emitted).toEqual([view]);
     const file = join(dir, 'rollout.json');
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 1, checkedAt: now(), latest: '0.2.0' });
@@ -241,13 +241,13 @@ describe('the cache file', () => {
 describe('updateCommand: which command, by how gonogo was installed', () => {
   const where = { docker: false, clone: false };
   it.each([
-    ['/home/me/.local/share/pnpm/global/5/.pnpm/@ulm0+gonogo@0.1.1/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
-    ['/home/me/.local/share/pnpm/global/5/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
-    ['/home/me/.cache/pnpm/dlx/abc/def/node_modules/@ulm0/gonogo/dist/server/cli.js', 'pnpm dlx @ulm0/gonogo@latest'],
+    ['/home/me/.local/share/pnpm/global/5/.pnpm/@ulm0+gonogo@0.1.1/node_modules/@ulm0/gonogo/dist/server/cli.js', `pnpm ${PNPM_EXCLUDE} add -g @ulm0/gonogo@latest`],
+    ['/home/me/.local/share/pnpm/global/5/node_modules/@ulm0/gonogo/dist/server/cli.js', `pnpm ${PNPM_EXCLUDE} add -g @ulm0/gonogo@latest`],
+    ['/home/me/.cache/pnpm/dlx/abc/def/node_modules/@ulm0/gonogo/dist/server/cli.js', `pnpm ${PNPM_EXCLUDE} dlx @ulm0/gonogo@latest`],
     ['/home/me/.nvm/versions/node/v24.0.0/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', 'npm install -g @ulm0/gonogo@latest'],
     ['/opt/homebrew/Cellar/gonogo/0.4.0/libexec/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', 'brew upgrade gonogo'],
     ['/home/linuxbrew/.linuxbrew/Cellar/gonogo/0.4.0/libexec/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', 'brew upgrade gonogo'],
-    ['/somewhere/else/dist/server/cli.js', 'pnpm add -g @ulm0/gonogo@latest'],
+    ['/somewhere/else/dist/server/cli.js', `pnpm ${PNPM_EXCLUDE} add -g @ulm0/gonogo@latest`],
   ])('%s', (file, command) => {
     expect(updateCommand({ file, ...where })).toBe(command);
   });
@@ -259,7 +259,7 @@ describe('updateCommand: which command, by how gonogo was installed', () => {
   });
 
   it('a Windows style path is read the same way', () => {
-    expect(updateCommand({ file: 'C:\\Users\\me\\AppData\\Local\\pnpm\\dlx\\x\\gonogo\\cli.js', ...where })).toBe('pnpm dlx @ulm0/gonogo@latest');
+    expect(updateCommand({ file: 'C:\\Users\\me\\AppData\\Local\\pnpm\\dlx\\x\\gonogo\\cli.js', ...where })).toBe(`pnpm ${PNPM_EXCLUDE} dlx @ulm0/gonogo@latest`);
   });
 });
 
@@ -267,7 +267,7 @@ describe('updateText', () => {
   it('says what is out and prints the command; it says gonogo never updates itself', () => {
     const text = updateText('pnpm add -g @ulm0/gonogo@latest', false, { current: '0.1.1', latest: '0.2.0', newer: true });
     expect(text).toContain('gonogo 0.2.0 is out; this is 0.1.1.');
-    expect(text).toContain('\n  pnpm add -g @ulm0/gonogo@latest\n');
+    expect(text).toContain('\n  pnpm add -g @ulm0/gonogo@0.2.0\n'); // exact version: @latest would resolve to an old one under pnpm's release age
     expect(text).toContain('gonogo never updates itself without your click.');
   });
 
@@ -276,5 +276,24 @@ describe('updateText', () => {
     expect(up).toContain('This is gonogo 0.2.0; the newest the last check saw is 0.2.0.');
     expect(up).toContain('in the folder of your compose.yaml');
     expect(updateText('x', false, { current: '0.2.0', latest: null, newer: false })).toContain('This is gonogo 0.2.0.');
+  });
+});
+
+describe('pinCommand', () => {
+  it('puts the exact version where @latest was, for pnpm and dlx, and leaves npm and other commands alone', () => {
+    for (const c of ['pnpm dlx', 'pnpm add -g']) expect(pinCommand(`${c} @ulm0/gonogo@latest`, '0.4.1')).toBe(`${c} @ulm0/gonogo@0.4.1`);
+    expect(pinCommand('npm install -g @ulm0/gonogo@latest', '0.4.1')).toBe('npm install -g @ulm0/gonogo@latest');
+    expect(pinCommand('brew upgrade gonogo', '0.4.1')).toBe('brew upgrade gonogo');
+    expect(pinCommand('pnpm dlx @ulm0/gonogo@latest', null)).toBe('pnpm dlx @ulm0/gonogo@latest');
+  });
+});
+
+describe('the three pnpm commands exempt gonogo from minimumReleaseAge and carry the exact version', () => {
+  const where = { docker: false, clone: false };
+  it('dlx and add -g in the note, and the Update button\'s command', () => {
+    const view = (file: string) => pinCommand(updateCommand({ file, ...where }), '0.4.1');
+    expect(view('/h/.cache/pnpm/dlx/a/node_modules/@ulm0/gonogo/dist/server/cli.js')).toBe('pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@0.4.1');
+    expect(view('/h/.local/share/pnpm/global/5/node_modules/@ulm0/gonogo/dist/server/cli.js')).toBe('pnpm --config.minimum-release-age-exclude=@ulm0/gonogo add -g @ulm0/gonogo@0.4.1');
+    expect(installCommand('pnpm', '0.4.1')).toEqual({ file: 'pnpm', args: ['--config.minimum-release-age-exclude=@ulm0/gonogo', 'add', '-g', '@ulm0/gonogo@0.4.1'] });
   });
 });
