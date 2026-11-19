@@ -63,7 +63,7 @@ its own agents within 12 seconds, in parallel, and the supervisor waits 17 befor
 :::
 
 ```
-sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects   # next to compose.yaml
+sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/config   # next to compose.yaml
 export CLAUDE_CODE_OAUTH_TOKEN=...     # or ANTHROPIC_API_KEY, never both
 export DOCKER_GID=$(stat -L -c %g /var/run/docker.sock)   # every compose command reads it
 docker compose up -d                                       # pulls ghcr.io/ulm0/gonogo:latest
