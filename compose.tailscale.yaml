@@ -3,7 +3,7 @@
 # FIRST set the login up (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before.
 # .env (no secret is written in this file):
 #   TS_AUTHKEY=tskey-auth-...           an auth key from the Tailscale admin console (reusable off, ephemeral off)
-#   TAILSCALE_VERSION=v1.x.y            a tag of tailscale/tailscale: pick the current stable from https://hub.docker.com/r/tailscale/tailscale/tags
+#   TAILSCALE_VERSION=v1.x.y            optional: another tag of tailscale/tailscale (the file pins v1.104.4)
 #   GONOGO_PUBLIC_NAME=gonogo.<tailnet>.ts.net     the name Tailscale gives it (tailscale status, or the admin console)
 #   TAILSCALE_MODE=serve                serve (tailnet only, default) or funnel (the public internet)
 #   GONOGO_HOOKS_ONLY=1                 optional: that name serves only /uplink and /dock (name:hooks), no page
@@ -11,7 +11,7 @@
 # Tailscale does not decrypt the traffic (the TLS ends in the sidecar, inside your own host).
 services:
   tailscale:
-    image: tailscale/tailscale:${TAILSCALE_VERSION:?set TAILSCALE_VERSION to a tag of tailscale/tailscale}
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.104.4}
     restart: always
     hostname: ${TS_HOSTNAME:-gonogo}
     environment:

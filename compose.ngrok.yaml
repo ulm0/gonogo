@@ -3,7 +3,7 @@
 # FIRST set the login up (account and second factor): gonogo refuses to start on a public name before.
 # .env (no secret is written in this file):
 #   NGROK_AUTHTOKEN=...                 your ngrok authtoken
-#   NGROK_VERSION=3.x.y                 a tag of ngrok/ngrok: pick one from https://hub.docker.com/r/ngrok/ngrok/tags
+#   NGROK_VERSION=3.x.y-alpine          optional: another tag of ngrok/ngrok (the file pins 3.39.13-alpine)
 #   GONOGO_PUBLIC_NAME=gonogo.example.ngrok.app     your fixed ngrok domain (the free plan has one static domain)
 #   GONOGO_HOOKS_ONLY=1                 optional: that name serves only /uplink and /dock (name:hooks), no page
 #   GONOGO_EDGE_SUBNET / GONOGO_EDGE_PROXY_IP   optional: the private network between ngrok and gonogo (default 172.29.80.0/24 and .2)
@@ -11,7 +11,7 @@
 # an older agent has --domain instead.
 services:
   ngrok:
-    image: ngrok/ngrok:${NGROK_VERSION:?set NGROK_VERSION to a tag of ngrok/ngrok}
+    image: ngrok/ngrok:${NGROK_VERSION:-3.39.13-alpine}
     restart: always
     command: http --url=${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME} gonogo:7777
     environment:

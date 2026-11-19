@@ -43,12 +43,14 @@ describe('the overlays', () => {
         expect(text).toMatch(/^ {2}gonogo:\n(?: {4}.*\n)*? {4}networks:\n {6}- default\n {6}- edge/m);
       });
 
-      it('pins its image: a version tag, or a variable the .env must give; never latest or an untagged name', () => {
+      it('pins its image: a version tag, with an optional override of the same tag; never latest or an untagged name', () => {
         const images = [...text.matchAll(/^ {4}image: (.+)$/gm)].map((m) => m[1] as string);
         expect(images).toHaveLength(1);
         const image = images[0] as string;
         expect(image).not.toMatch(/:latest$|^[^:]+$/);
-        expect(image).toMatch(/:(\d[\w.-]*|\$\{[A-Z_]+_VERSION:\?[^}]+\})$/);
+        // a literal tag Renovate can bump, or ${X_VERSION:-<literal tag>}
+        expect(image).toMatch(/:(v?\d[\w.-]*|\$\{[A-Z_]+_VERSION:-v?\d[\w.-]*\})$/);
+        expect(image).not.toMatch(/\$\{[A-Z_]+_VERSION:\?/);
       });
 
       it('holds no secret: every token, key and password comes from the .env', () => {

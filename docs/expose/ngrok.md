@@ -37,7 +37,7 @@ docker compose -f compose.yaml -f compose.ngrok.yaml up -d
 ```
 
 - **Set the login up first** (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before. So start with `docker compose up -d` alone, do that, then add the overlay.
-- **`.env`** (no secret is in the file; everything comes from here): `NGROK_AUTHTOKEN`, `NGROK_VERSION` (a tag of `ngrok/ngrok`: pick one on Docker Hub; there is no default on purpose), `GONOGO_PUBLIC_NAME` (your fixed ngrok domain).
+- **`.env`** (no secret is in the file; everything comes from here): `NGROK_AUTHTOKEN`, optional `NGROK_VERSION` (another tag of `ngrok/ngrok`; the file pins `3.39.13-alpine`), `GONOGO_PUBLIC_NAME` (your fixed ngrok domain).
 - **Sets for gonogo:** `GONOGO_ALLOWED_HOSTS` (the name; with `GONOGO_HOOKS_ONLY=1` it becomes `name:hooks` and serves only the webhooks), `GONOGO_PUBLIC_URL` (`https://` and the name), `GONOGO_TRUSTED_PROXY` (the sidecar's address on the edge network, `172.29.80.2` unless you set `GONOGO_EDGE_PROXY_IP` and `GONOGO_EDGE_SUBNET`: **not 127.0.0.1**, which is the container itself) and `GONOGO_CLIENT_IP_HEADER`.
 - The command is `http --url=<name> gonogo:7777` (`--url` is ngrok 3.16 and later; an older agent has `--domain`: edit the file).
 - **Not tried:** no real tunnel, certificate or provider was run, and `docker compose config` was not run on these files (no Compose where they were written); the text is checked by tests against `gonogo expose`. Run `gonogo expose check` once it is up.
