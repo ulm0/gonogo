@@ -2,6 +2,7 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+
 ## Unreleased
 - **Fix: the update command names the exact version.** `pnpm dlx @ulm0/gonogo` and `@latest` ran 0.1.1 for a day after each release, because pnpm takes only a release at least a day old by default. The update note and `gonogo update` now print `@<newest version>`, and the install lines in the README and the docs name the version.
 - **Login (0.5.0, PR 1).** An account of your own instead of the token: a name and a password (argon2id), a first-run setup with a one-hour, single-use setup token that is answered on this machine and your network only, sessions in a cookie (`__Host-gonogo` on a public name), a list of sessions and API keys in Flight Rules, WebSockets bound to their session, failure waits per address and per device, alerts in the Downlink, `gonogo auth reset`, and an alarm when an agent changes `auth.json`. **The old browser token dies when the account is made.** `gonogo tui` and `gonogo auth` use a local unix socket (`<home>/run/api.sock`), and a room has no TCP credential for its page (`run/room-token` is gone; rooms answer on `run/room.sock`). A second factor (TOTP with ten recovery codes; a public name cannot be signed in to without it) and a step-up that asks for the password again before the changes that matter after five minutes. Passkeys are not built. [Login](https://gonogo.ulm0.com/features/login.html).
