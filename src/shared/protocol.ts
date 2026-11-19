@@ -700,6 +700,38 @@ export interface CostView {
   pricedSince: number | null;
 }
 
+/** The history of triggers (docs/features/triggers.md): what fired by itself or came in from outside. `uplink` is a webhook delivery, `telegram` an update read by long polling, `schedule` a Launch Window run, `docking` a hand-off to or a call from a station. */
+export const TRIGGER_KINDS = ['uplink', 'telegram', 'schedule', 'docking'] as const;
+export type TriggerKind = (typeof TRIGGER_KINDS)[number];
+export interface TriggerEntry {
+  /** Epoch ms. */
+  at: number;
+  kind: TriggerKind;
+  /** The id of what fired: an uplink (u1), a schedule (s1), a dock, or `telegram`. */
+  source: string;
+  /** Its name at that time. */
+  name: string;
+  /** The service of an uplink (github, slack, linear, telegram, generic). */
+  service?: string;
+  /** How it ended: the status of the message it made (queued, held, delivered, read, undelivered, to_user), or answered, ignored, refused, failed. */
+  outcome: string;
+  /** The first 160 characters of the payload, one line, secrets replaced; never a header or a whole body. */
+  what: string;
+  /** The id of the message it made. */
+  message?: string;
+  /** The agent it was sent to. */
+  agent?: string;
+  /** The reason, for a refusal or a failure (cut, secrets replaced). */
+  note?: string;
+}
+/** GET /api/triggers?kind=&source=&outcome=&limit=. Newest first. */
+export interface TriggerQuery {
+  kind?: TriggerKind;
+  source?: string;
+  outcome?: string;
+  limit?: number;
+}
+
 /** Launch Window: a message sent by itself on a cron rule (docs/launch-window-spec.md). One entry of schedules.json. */
 export interface Schedule {
   /** s1, s2, ... */

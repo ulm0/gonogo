@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from 'react';
+import { filterOf, NO_FILTER } from './triggers.js';
+import type { HistoryFilter } from './triggers.js';
 import type {
   ActivityItem,
   AgentView,
@@ -72,6 +74,9 @@ export interface ClientState {
   editingRoom: boolean;
   /** The mission whose detail the Missions view shows, or null for the list. */
   selectedMission: string | null;
+  /** Launch Window: the schedules and webhooks, or the history of triggers, and what the history is filtered by. */
+  launchTab: 'triggers' | 'history';
+  historyFilter: HistoryFilter;
   /** The Missions view opens on a new-mission form with these fields (from the Patch Panel or the brief box), or null. */
   missionDraft: { name: string; goal: string } | null;
   /** Downlink: the Director's inbox. The server keeps what is read, so every browser shows the same. */
@@ -197,6 +202,8 @@ export function emptyState(): ClientState {
     tabName: { name: null, fallback: null },
     editingRoom: false,
     selectedMission: null,
+    launchTab: 'triggers',
+    historyFilter: NO_FILTER,
     missionDraft: null,
     downlink: NO_DOWNLINK,
     log: NO_LOG_NEWS,
@@ -251,6 +258,10 @@ export const showTraffic = (agent: string): void => showComms('traffic', agent);
 export const showDownlink = (): void => showComms('inbox');
 export const showParty = (): void => showComms('threads');
 export const showWindow = (): void => store.setState((s) => ({ ...s, view: 'window', consoleOpen: false }));
+/** The history of triggers in Launch Window, optionally of one source (a link on an uplink's or a schedule's card). */
+export const showHistory = (patch: Partial<HistoryFilter> = {}): void => store.setState((s) => ({ ...s, view: 'window', consoleOpen: false, launchTab: 'history', historyFilter: filterOf(patch) }));
+export const setLaunchTab = (tab: 'triggers' | 'history'): void => store.setState((s) => ({ ...s, launchTab: tab }));
+export const setHistoryFilter = (patch: Partial<HistoryFilter>): void => store.setState((s) => ({ ...s, historyFilter: filterOf({ ...s.historyFilter, ...patch }) }));
 export const showPlan = (): void => store.setState((s) => ({ ...s, view: 'plan', consoleOpen: false }));
 export const showLog = (): void => store.setState((s) => ({ ...s, view: 'log', consoleOpen: false }));
 export const showLivery = (): void => store.setState((s) => ({ ...s, view: 'livery', consoleOpen: false }));

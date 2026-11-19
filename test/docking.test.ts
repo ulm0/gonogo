@@ -30,6 +30,8 @@ interface Station {
   delivered: Array<{ station: string; message: StationMessage }>;
   created: Array<{ actor: unknown; input: Record<string, unknown> }>;
   handedOff: Array<{ id: string; station: string; assignee: string | null }>;
+  /** What this station told the history of triggers. */
+  triggers: Array<Record<string, unknown>>;
   tasks: Task[];
   views: DockingView[];
   agents: DockedAgent[];
@@ -81,6 +83,7 @@ function world(): World {
         delivered: [],
         created: [],
         handedOff: [],
+        triggers: [],
         tasks: [],
         views: [],
         agents: [{ name: `${name}-ana`, role: `${'x'.repeat(400)}`, state: 'idle', boss: true }],
@@ -98,6 +101,7 @@ function world(): World {
         now: () => clock.now,
         fetch: fetcher,
         deliver: (from, message) => station.hub.deliver(from, message),
+        trigger: (entry) => void station.triggers.push(entry as unknown as Record<string, unknown>),
         roster: () => station.agents,
         tasks: {
           list: () => station.tasks,
@@ -523,6 +527,8 @@ describe('calls between docked stations', () => {
     const { a, b } = await docked();
     const message: StationMessage = { from: 'ana', to: 'bob', subject: 'hello', body: 'from alpha', hops: 2 };
     await expect(a.docking.send('beta', message)).resolves.toEqual({ ok: true, note: 'accepted by beta: queued, waiting: about to type the pointer' });
+    // the station that received it keeps the fact, not the words
+    expect(b.triggers).toEqual([{ kind: 'docking', source: expect.any(String) as string, name: 'alpha', outcome: 'delivered', what: 'from alpha: a message' }]);
     expect(b.delivered).toEqual([{ station: 'alpha', message }]);
     // and back
     await expect(b.docking.send('alpha', { ...message, from: 'bob', to: 'ana', body: 'from beta' })).resolves.toMatchObject({ ok: true });
@@ -834,7 +840,20 @@ describe('handing off a task', () => {
     expect(String(b.created[0]?.input.detail).startsWith('Handed off from alpha (its task t1).\n\nyyy')).toBe(true);
   });
 
-  it('is refused for a task that is not here, is done, or was handed off, and for a dock that is not there', async () => {
+  it('a hand-off is in the history of triggers: delivered here, and received there; a refused one says why', async () => {
+    const { a, b, dock } = await ready();
+    await a.docking.handOff(dock, { task: 't1', assignee: 'bob' });
+    expect(a.triggers).toEqual([{ kind: 'docking', source: dock, name: 'beta', outcome: 'delivered', what: 'hand-off of t1: Task t1', agent: 'bob' }]);
+    expect(b.triggers).toEqual([{ kind: 'docking', source: expect.any(String) as string, name: 'alpha', outcome: 'delivered', what: 'from alpha: a task handed off to this station' }]);
+    a.tasks.push(task('t4'));
+    await expect(a.docking.handOff(dock, { task: 't4', assignee: 'nobody' })).rejects.toThrow();
+    expect(a.triggers.at(-1)).toMatchObject({ kind: 'docking', name: 'beta', outcome: 'failed', what: 'hand-off of t4: Task t4' });
+    expect(String(a.triggers.at(-1)?.note)).not.toBe('');
+    // the payload (the detail) is not in the entries
+    expect(JSON.stringify([...a.triggers, ...b.triggers])).not.toContain('Fix the build');
+  });
+
+  it('refuses a task that is not open here', async () => {
     const { a, b, dock } = await ready();
     await expect(a.docking.handOff(dock, { task: 't7' })).rejects.toMatchObject({ code: 'not_found', field: 'task' });
     await expect(a.docking.handOff(dock, { task: 't2' })).rejects.toMatchObject({ code: 'conflict', field: 'task' });

@@ -10,7 +10,8 @@ import * as api from './api.js';
 import { emptyValues, FIELDS, lastText, nextText, previewOf, recipients, requestOf, toText, validate, valuesOf, zoneNote } from './launch.js';
 import type { Field, Problems, Values } from './launch.js';
 import { useAgentList } from './RoomView.js';
-import { showRoom, useNow, useStore } from './store.js';
+import { setLaunchTab, showHistory, showRoom, useNow, useStore } from './store.js';
+import { TriggerHistory } from './TriggerHistory.js';
 import { DockingPanel } from './DockingPanel.js';
 import { RelayPanel } from './RelayPanel.js';
 import { UplinkPanel } from './UplinkPanel.js';
@@ -238,7 +239,12 @@ function Row({ schedule, now, onEdit, onNotice }: { schedule: ScheduleView; now:
         <span className="sr-only">Next: </span>
         {nextText(schedule, now)}
       </p>
-      <p className="win-last">{lastText(schedule)}</p>
+      <p className="win-last">
+        {lastText(schedule)}{' '}
+        <button type="button" className="btn" data-kind="quiet" aria-label={`History of ${name}`} onClick={() => showHistory({ kind: 'schedule', source: schedule.id })}>
+          History
+        </button>
+      </p>
       <div className="win-buttons">
         <label className="win-switch">
           <input
@@ -302,6 +308,7 @@ function Row({ schedule, now, onEdit, onNotice }: { schedule: ScheduleView; now:
 export function LaunchWindow(): ReactElement {
   const titleId = useId();
   const schedules = useStore((s) => s.schedules);
+  const tab = useStore((s) => s.launchTab);
   const zone = useStore((s) => s.info?.timeZone ?? '');
   const now = useNow();
   const note = zoneNote(zone, browserZoneOf(zone));
@@ -330,9 +337,18 @@ export function LaunchWindow(): ReactElement {
           Room
         </button>
       </header>
-      {zone !== '' && <p className="hint win-zone">{note ?? `Rules run in the server’s time zone: ${zone}.`}</p>}
-      {open && <Editor key={editing} schedule={target} onDone={done} />}
-      <div className="win-list module">
+      <div className="trg-tabs" role="group" aria-label="Launch Window views">
+        <button type="button" className="btn" data-kind={tab === 'triggers' ? 'primary' : 'quiet'} aria-pressed={tab === 'triggers'} onClick={() => setLaunchTab('triggers')}>
+          Triggers
+        </button>
+        <button type="button" className="btn" data-kind={tab === 'history' ? 'primary' : 'quiet'} aria-pressed={tab === 'history'} onClick={() => setLaunchTab('history')}>
+          History
+        </button>
+      </div>
+      {tab === 'history' && <TriggerHistory />}
+      {tab === 'triggers' && zone !== '' && <p className="hint win-zone">{note ?? `Rules run in the server’s time zone: ${zone}.`}</p>}
+      {tab === 'triggers' && open && <Editor key={editing} schedule={target} onDone={done} />}
+      {tab === 'triggers' && <div className="win-list module">
         {schedules.length === 0 ? (
           <p className="loop-empty">No schedules yet. A schedule sends a message by itself on a rule, for example every weekday at 09:00.</p>
         ) : (
@@ -343,9 +359,14 @@ export function LaunchWindow(): ReactElement {
           </ul>
         )}
       </div>
-      <UplinkPanel />
-      <RelayPanel />
-      <DockingPanel />
+      }
+      {tab === 'triggers' && (
+        <>
+          <UplinkPanel />
+          <RelayPanel />
+          <DockingPanel />
+        </>
+      )}
       <p className="sr-only" role="status">
         {notice}
       </p>

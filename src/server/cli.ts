@@ -68,6 +68,7 @@ import { createReview } from './review.js';
 import { createRoomLayout } from './roomlayout.js';
 import { createTabName } from './tabname.js';
 import { createTasks } from './tasks.js';
+import { createTriggers } from './triggers.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
@@ -836,8 +837,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       ...(settings.publicUrl === null ? {} : { publicUrl: settings.publicUrl }),
     });
+    // the history of triggers: what fired by itself or came in from outside (uplinks, polled Telegram, schedules, docking)
+    const triggers = createTriggers({ dir: home.dir, now: io.now, log: log.child('triggers') });
+    await triggers.load();
     const schedules = createSchedules({
       dir: home.dir,
+      trigger: (entry) => triggers.record(entry),
       now: io.now,
       setTimer: io.setTimer,
       clearTimer: io.clearTimer,
@@ -849,6 +854,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     });
     const uplinks = createUplinks({
       dir: home.dir,
+      trigger: (entry) => triggers.record(entry),
       now: io.now,
       send: (request) => hubInstance.sendFromUser(request),
       emit: (list) => web?.broadcast({ t: 'uplinks', uplinks: list }),
@@ -891,6 +897,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     missionsRef = missions;
     const docking = createDocking({
       dir: home.dir,
+      trigger: (entry) => triggers.record(entry),
       name: stationName(env[STATION_ENV], hostname()),
       now: io.now,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
@@ -1063,6 +1070,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       isReady: () => ready,
       propellant: audited(propellant, audit, PROPELLANT_AUDIT),
       prices: audited(prices, audit, PRICES_AUDIT),
+      triggers,
       // a changed price or budget is checked at once, not at the next reply
       spendChanged: () => {
         propellant.recheck();
@@ -1160,6 +1168,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const shutdown = async (leave: boolean): Promise<void> => {
       // no schedule fires from here on
       await step('schedules close', () => schedules.close());
+      await step('triggers close', () => triggers.close());
       // the hub first: it refuses new lifecycle calls from here on, while hooks, MCP and open sockets keep working so the agents can finish
       // a reload leaves the agents running in the pty host (their holds are in the saved file); an ordinary stop ends them and the host
       if (leave && remote) {

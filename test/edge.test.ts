@@ -3374,6 +3374,24 @@ describe('web: REST', () => {
       };
     };
 
+    it('GET /api/triggers passes a checked query to the history and answers newest first; 404 without it', async () => {
+      const asked: unknown[] = [];
+      const triggers = { list: async (query?: unknown) => (asked.push(query), [{ at: 1, kind: 'uplink' as const, source: 'u1', name: 'GitHub', outcome: 'queued', what: 'push' }]) };
+      const { port } = await startWeb({ triggers });
+      expect((await api(port, 'GET', '/api/triggers')).json()).toEqual({ triggers: [{ at: 1, kind: 'uplink', source: 'u1', name: 'GitHub', outcome: 'queued', what: 'push' }] });
+      expect((await api(port, 'GET', '/api/triggers?kind=schedule&source=s1&outcome=failed&limit=20')).status).toBe(200);
+      expect(asked).toEqual([{}, { kind: 'schedule', source: 's1', outcome: 'failed', limit: 20 }]);
+      for (const [query, field] of [['kind=nope', 'kind'], ['source=a%20b', 'source'], ['source=../x', 'source'], ['outcome=a-b', 'outcome'], ['limit=0', 'limit'], ['limit=501', 'limit'], ['limit=x', 'limit']] as const) {
+        const answer = await api(port, 'GET', `/api/triggers?${query}`);
+        expect(answer.status, query).toBe(400);
+        expect(answer.json(), query).toMatchObject({ code: 'bad_request', field });
+      }
+      expect((await api(port, 'POST', '/api/triggers', {})).status).toBe(405);
+      expect(asked).toHaveLength(2);
+      const bare = await startWeb({});
+      expect((await api(bare.port, 'GET', '/api/triggers')).status).toBe(404);
+    });
+
     it('GET, PUT and DELETE /api/prices, strict about the body and the prefix', async () => {
       const { calls, prices } = fake();
       const { port } = await startWeb({ prices });

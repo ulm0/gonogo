@@ -44,6 +44,7 @@ import type {
   RecorderDiff,
   RecorderStatus,
   RelayView,
+  TriggerEntry,
   ReliefView,
   ScheduleRequest,
   ScheduleView,
@@ -957,6 +958,13 @@ export async function testUplink(id: string): Promise<UplinkView> {
 }
 
 /** Relay: the targets and what is forwarded. No frame: the page asks again after each change. The token is never in an answer. */
+/** The history of triggers, newest first (docs/features/triggers.md). */
+export async function getTriggers(query: string): Promise<TriggerEntry[]> {
+  const answer = asRecord(await call('GET', `/triggers?${query}`));
+  if (answer === null || !Array.isArray(answer.triggers)) throw failure('The server sent an answer gonogo does not understand.');
+  return answer.triggers as TriggerEntry[];
+}
+
 export async function getRelay(): Promise<RelayView> {
   return toRelayView(await call('GET', '/relay'));
 }

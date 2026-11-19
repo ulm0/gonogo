@@ -96,8 +96,8 @@ tracked. Only what is still missing stays open here.
 - [ ] A tunnel so that outside services can reach the machine *(inferred)*. Not built: gonogo ships none.
       `docs/https.md` and the Uplink page describe your own HTTPS reverse proxy that forwards only `/uplink/`.
 - [x] Triggers. Built 2026-11-17: **Launch Window** (cron schedules) and **Uplink** (webhooks) start work by themselves.
-- [ ] History of triggers. Only part is built: an uplink keeps its last 20 deliveries, but a schedule keeps only its
-      last run and the hub's answer to it.
+- [x] History of triggers. Built (0.7.0): one append-only log per room of every uplink delivery, polled Telegram update,
+      schedule run and Docking call, with a HISTORY tab in Launch Window (`docs/features/triggers.md`).
 - [ ] Integrations registry, skills tab and MCP defaults. Only part is built: **Payload** sets MCP servers and skills
       per agent from text you write. Missing: a list of known servers and skills to pick from, defaults for new
       agents, and a skills tab apart from the hire form.

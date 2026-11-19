@@ -13,7 +13,7 @@ import type { RelayService, RelayTargetView, RelayView } from '../shared/protoco
 import * as api from './api.js';
 import { FORWARD_LABELS, lastText, parts, SERVICES, TARGET_FIELDS, targetProblems, toggled } from './relay.js';
 import type { ServiceInfo, TargetProblems } from './relay.js';
-import { useNow, useStore } from './store.js';
+import { useNow, useStore, showHistory } from './store.js';
 import { copyText, endpointOf, lastText as deliveryText } from './uplink.js';
 import { Editor, SecretPanel } from './UplinkPanel.js';
 import type { Shown } from './UplinkPanel.js';
@@ -256,7 +256,12 @@ function Card({ info, ...shared }: Shared & { info: ServiceInfo }): ReactElement
                     Copy
                   </button>
                 </div>
-                <p className="win-last">{deliveryText(u, now)}</p>
+                <p className="win-last">
+                  {deliveryText(u, now)}{' '}
+                  <button type="button" className="btn" data-kind="quiet" aria-label={`History of ${u.name}`} onClick={() => showHistory({ source: u.id })}>
+                    History
+                  </button>
+                </p>
               </li>
             );
           })}
