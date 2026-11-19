@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
@@ -11,7 +11,9 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   rmSync,
+  utimesSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -26,7 +28,7 @@ import { networkInterfaces, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import {
   AGENT_NAME_PATTERN,
@@ -105,7 +107,7 @@ vi.mock('node:fs', async (importOriginal) => {
 
 import { USAGE, isTransientError, main, parseArgs, runRoom, resolveSettings, startGonogo } from '../src/server/cli.js';
 import type { Running } from '../src/server/cli.js';
-import { openHome } from '../src/server/home.js';
+import { lockHooks, openHome } from '../src/server/home.js';
 import { createHookHandler } from '../src/server/hooks.js';
 import { createMcpHandler } from '../src/server/mcp.js';
 import { createWebServer, hostName, needsLoopbackTwin } from '../src/server/web.js';
@@ -1385,7 +1387,7 @@ describe('home', () => {
     it('writes the pid, refuses a second open of the same directory in this process, and close() removes it', async () => {
       const dir = tmpDir();
       const home = openHome(dir);
-      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(`${process.pid}\n`);
+      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toMatch(new RegExp(`^${process.pid}\n(\\S+\n)?$`));
       expect(fileMode(join(dir, LOCK_FILE))).toBe(0o600);
       expect(() => openHome(dir)).toThrowError(`another gonogo is using ${dir} (pid ${process.pid}). Stop it, or delete ${join(dir, LOCK_FILE)} if none is running.`);
       // the refused open did not take the lock away
@@ -1414,7 +1416,101 @@ describe('home', () => {
       writeFileSync(join(dir, LOCK_FILE), content);
       const home = openTestHome(dir);
       expect(home.dir).toBe(dir);
-      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(`${process.pid}\n`);
+      expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toMatch(new RegExp(`^${process.pid}\n`));
+    });
+
+    describe.skipIf(!existsSync('/proc/self/stat') || !existsSync('/proc/sys/kernel/random/boot_id'))('a pid that another process took (containers restart their pids)', () => {
+      const bootId = (): string => readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      const ns = (): string => readlinkSync('/proc/self/ns/pid');
+      const ticksOf = (pid: number): string => readFileSync(`/proc/${pid}/stat`, 'utf8').split(')').pop()!.trim().split(' ')[19]!;
+      const stampOf = (pid: number): string => `${bootId()}.${ns()}.${ticksOf(pid)}`;
+      const lost: string[] = [];
+      const saved = { ...lockHooks };
+      beforeEach(() => {
+        lost.length = 0;
+        lockHooks.beatMs = 100;
+        lockHooks.lost = (path) => void lost.push(path);
+      });
+      // homes of the tests above that lost their lock to a later test keep beating until the global cleanup: they must not exit the runner
+      afterEach(() => void (lockHooks.beatMs = saved.beatMs));
+      afterAll(() => void (lockHooks.lost = saved.lost));
+
+      it('writes the boot id, pid namespace and start time of this process', async () => {
+        const dir = tmpDir();
+        const home = openHome(dir);
+        expect(readFileSync(join(dir, LOCK_FILE), 'utf8')).toBe(`${process.pid}\n${stampOf(process.pid)}\n`);
+        await home.close();
+      });
+
+      it('refuses when the pid is alive and its stamp is the one in the lock', () => {
+        const dir = tmpDir();
+        writeFileSync(join(dir, LOCK_FILE), `${process.ppid}\n${stampOf(process.ppid)}\n`);
+        expect(() => openHome(dir)).toThrowError(/^another gonogo is using/);
+      });
+
+      it('replaces the lock when the pid is alive but started at another time or in another boot', () => {
+        for (const stamp of [`${bootId()}.${ns()}.1`, `00000000-0000-0000-0000-000000000000.${ns()}.${ticksOf(process.ppid)}`]) {
+          const dir = tmpDir();
+          writeFileSync(join(dir, LOCK_FILE), `${process.ppid}\n${stamp}\n`);
+          expect(openTestHome(dir).dir).toBe(dir);
+        }
+      });
+
+      it('replaces an old-form lock (a pid only) that is older than this container, and keeps one written after it', () => {
+        const old = tmpDir();
+        writeFileSync(join(old, LOCK_FILE), `${process.ppid}\n`);
+        utimesSync(join(old, LOCK_FILE), 1, 1);
+        expect(openTestHome(old).dir).toBe(old);
+        const fresh = tmpDir();
+        writeFileSync(join(fresh, LOCK_FILE), `${process.ppid}\n`);
+        expect(() => openHome(fresh)).toThrowError(/^another gonogo is using/);
+      });
+
+      // another pid namespace: the pid says nothing, only the holder's beat does (the same number as ours included)
+      const foreign = (): string => `${bootId()}.pid:[1].5`;
+
+      it.each([['another pid', process.ppid], ['this very pid', process.pid]])('a lock of another namespace naming %s whose file keeps moving is alive', async (_what, pid) => {
+        const dir = tmpDir();
+        const path = join(dir, LOCK_FILE);
+        writeFileSync(path, `${pid}\n${foreign()}\n`);
+        // the holder is another process: this one sleeps while it waits, so a timer here would never run
+        const holder = spawn(process.execPath, ['-e', 'const f=require("fs");setInterval(()=>f.utimesSync(process.argv[1],new Date(),new Date()),30)', path], { stdio: 'ignore' });
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          expect(() => openHome(dir)).toThrowError(/^another gonogo is using/);
+        } finally {
+          holder.kill();
+        }
+      });
+
+      it('a lock of another namespace whose file does not move is taken over after two beats, and at once when it is already old', () => {
+        const quiet = tmpDir();
+        writeFileSync(join(quiet, LOCK_FILE), `${process.ppid}\n${foreign()}\n`);
+        const started = Date.now();
+        expect(openTestHome(quiet).dir).toBe(quiet);
+        expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+        const old = tmpDir();
+        writeFileSync(join(old, LOCK_FILE), `${process.ppid}\n${foreign()}\n`);
+        utimesSync(join(old, LOCK_FILE), 1, 1);
+        const again = Date.now();
+        expect(openTestHome(old).dir).toBe(old);
+        expect(Date.now() - again).toBeLessThan(150);
+      });
+
+      it('the holder touches its lock every beat, and says it was lost once the file no longer carries its content', async () => {
+        const dir = tmpDir();
+        const path = join(dir, LOCK_FILE);
+        const home = openHome(dir);
+        utimesSync(path, 1, 1);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        expect(statSync(path).mtimeMs).toBeGreaterThan(1000);
+        expect(lost).not.toContain(path);
+        writeFileSync(path, `${process.ppid}\n${foreign()}\n`);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        expect(lost).toContain(path);
+        rmSync(path);
+        await home.close();
+      });
     });
 
     it("replaces a lock that names this very process when this process holds no lock on the directory (a container's pids repeat)", () => {

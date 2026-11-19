@@ -6,6 +6,8 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readlinkSync,
+  utimesSync,
   readSync,
   realpathSync,
   renameSync,
@@ -67,6 +69,25 @@ const LOCK_ATTEMPTS = 5;
  * the file alone cannot tell "my own lock" from "the lock of a previous run that had my pid".
  */
 const heldDirs = new Set<string>();
+/** The heartbeat of each held lock (see keepLock). */
+const beats = new Map<string, NodeJS.Timeout>();
+/** What each held lock file holds: a release removes the file only when it is still this content (another container's lock may carry the same pid). */
+const contents = new Map<string, string>();
+/** The beat of a held lock, and what a holder does when its lock was taken from it: tests change both. */
+export const lockHooks = {
+  beatMs: 15_000,
+  lost: (path: string): void => {
+    process.stderr.write(`gonogo: the lock ${path} now belongs to another gonogo; this one is stopping so that two never run on one home\n`);
+    // the same way a stop is asked: the server shuts down and leaves the other's lock alone (releases compare the content)
+    process.kill(process.pid, 'SIGTERM');
+  },
+};
+const dropHeld = (key: string): void => {
+  clearInterval(beats.get(key));
+  beats.delete(key);
+  contents.delete(key);
+  heldDirs.delete(key);
+};
 
 function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -85,11 +106,49 @@ function lockError(dir: string, pid: number | string, file: string = LOCK_FILE, 
   return new Error(`another ${what} is using ${dir} (pid ${pid}). Stop it, or delete ${join(dir, file)} if none is running.`);
 }
 
-/** The pid in a lock file, or null when the content is not a positive integer. Throws ENOENT when the file is gone. */
-function readLockPid(path: string): number | null {
-  const m = /^\s*(\d+)\s*$/.exec(readFileSync(path, 'utf8'));
+/** A lock file: the pid, and (where /proc exists) the stamp of that process, which tells a pid reused after a container restart from the real owner. */
+interface LockContent {
+  pid: number;
+  stamp: string | null;
+}
+
+/** The lock a file holds, or null when the content is not a positive pid. Throws ENOENT when the file is gone. */
+function readLock(path: string): LockContent | null {
+  const m = /^\s*(\d+)(?:\s+(\S+))?\s*$/.exec(readFileSync(path, 'utf8'));
   const pid = m ? Number(m[1]) : 0;
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+  return Number.isSafeInteger(pid) && pid > 0 ? { pid, stamp: m?.[2] ?? null } : null;
+}
+
+/** Start time of a process in clock ticks since boot (field 22 of /proc/<pid>/stat), or null where there is no /proc. */
+function startTicks(pid: number): number | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    // the command name is in parentheses and may hold spaces: count the fields after the last ")"
+    const ticks = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]);
+    return Number.isSafeInteger(ticks) ? ticks : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The pid namespace of this process ("pid:[4026531836]"), or "-" where it cannot be read. Containers on one volume (or the host and a container) each have their own pids. */
+function pidNamespace(): string {
+  try {
+    return readlinkSync('/proc/self/ns/pid');
+  } catch {
+    return '-';
+  }
+}
+
+/** `<boot id>.<pid namespace>.<start ticks>` of a process of this namespace: never the same for another container, boot or start that had the same pid. Null without /proc (macOS). */
+function processStamp(pid: number): string | null {
+  const ticks = startTicks(pid);
+  if (ticks === null) return null;
+  try {
+    return `${readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()}.${pidNamespace()}.${ticks}`;
+  } catch {
+    return null;
+  }
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -100,6 +159,67 @@ function isProcessAlive(pid: number): boolean {
     // EPERM means the process exists but belongs to someone else: still a live owner
     return errCode(e) !== 'ESRCH';
   }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * True when the lock is held by a live gonogo. A stamp of this boot and this pid namespace is judged by the pid and its start time. A stamp of another
+ * namespace (another container on the same volume, the host) cannot be judged by a pid, so the holder's heartbeat (it touches the file every beat) is
+ * watched for two beats: a file that moves is alive. A lock of the old form (no stamp) is judged by its age: older than pid 1 of this container or boot
+ * cannot be ours.
+ */
+function lockOwnerAlive(lock: LockContent, path: string): boolean {
+  if (lock.stamp === null) {
+    if (!isProcessAlive(lock.pid)) return false;
+    try {
+      const first = startTicks(1);
+      const boot = /^btime (\d+)$/m.exec(readFileSync('/proc/stat', 'utf8'))?.[1];
+      // shortcut: assumes 100 clock ticks per second (every Linux we run on); read it from getconf if that ever differs
+      if (first !== null && boot !== undefined && statSync(path).mtimeMs < Number(boot) * 1000 + (first / 100) * 1000) return false;
+    } catch {
+      // no /proc: the pid check stands
+    }
+    return true;
+  }
+  const [boot, ns, ticks] = lock.stamp.split('.');
+  const mine = processStamp(process.pid)?.split('.');
+  if (mine === undefined) return isProcessAlive(lock.pid);
+  if (boot !== mine[0]) return false;
+  if (ns === mine[1] && ticks !== undefined) {
+    if (!isProcessAlive(lock.pid)) return false;
+    return processStamp(lock.pid)?.split('.')[2] === ticks;
+  }
+  const deadline = Date.now() + 2 * lockHooks.beatMs;
+  try {
+    const first = statSync(path).mtimeMs;
+    if (Date.now() - first > 2 * lockHooks.beatMs) return false;
+    while (Date.now() < deadline) {
+      sleepSync(Math.min(1000, Math.max(10, lockHooks.beatMs / 4)));
+      if (statSync(path).mtimeMs !== first) return true;
+    }
+  } catch {
+    // the file went away: there is no holder
+  }
+  return false;
+}
+
+/** The holder's side: touch the lock every beat, and leave when the file no longer carries this process's own content (another gonogo took it over). */
+function keepLock(key: string, path: string, content: string): void {
+  const timer = setInterval(() => {
+    try {
+      if (readFileSync(path, 'utf8') !== content) return lockHooks.lost(path);
+      const now = new Date();
+      utimesSync(path, now, now);
+    } catch (e) {
+      if (errCode(e) === 'ENOENT') lockHooks.lost(path);
+    }
+  }, lockHooks.beatMs);
+  timer.unref();
+  beats.set(key, timer);
+  contents.set(key, content);
 }
 
 /**
@@ -135,29 +255,32 @@ function acquireLock(dir: string, key: string, file: string = LOCK_FILE, what = 
   for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt += 1) {
     try {
       const fd = openSync(path, 'wx', FILE_MODE);
+      const stamp = processStamp(process.pid);
+      const content = stamp === null ? `${process.pid}\n` : `${process.pid}\n${stamp}\n`;
       try {
-        writeSync(fd, `${process.pid}\n`);
+        writeSync(fd, content);
       } finally {
         closeSync(fd);
       }
       heldDirs.add(key);
+      keepLock(key, path, content);
       return;
     } catch (e) {
       if (errCode(e) !== 'EEXIST') throw e;
     }
-    let pid: number | null;
+    let lock: LockContent | null;
     try {
-      pid = readLockPid(path);
+      lock = readLock(path);
     } catch (e) {
       if (errCode(e) === 'ENOENT') continue;
       throw e;
     }
-    if (pid !== null) {
-      lastPid = pid;
-      // heldDirs does not have this directory, so a lock naming our own pid is a leftover of an earlier run
-      if (pid !== process.pid && isProcessAlive(pid)) throw lockError(dir, pid, file, what);
+    if (lock !== null) {
+      lastPid = lock.pid;
+      // heldDirs does not have this directory, so a lock naming our own pid is a leftover of an earlier run, or of another container's pid that is the same number
+      if ((lock.pid !== process.pid || lock.stamp !== null) && lockOwnerAlive(lock, path)) throw lockError(dir, lock.pid, file, what);
     }
-    // shortcut: two servers that both find the same stale lock in the same millisecond can both win; use flock if that ever matters
+    // shortcut: between the read and this unlink another server can take over the same stale lock and be unlinked in turn; the one whose lock file is gone leaves at its next beat (keepLock), flock would close it
     try {
       unlinkSync(path);
     } catch (e) {
@@ -176,11 +299,11 @@ export function acquireSupervisorLock(dir: string): () => void {
   acquireLock(root, key, file, 'gonogo supervisor');
   return () => {
     try {
-      if (readLockPid(join(root, file)) === process.pid) unlinkSync(join(root, file));
+      if (readFileSync(join(root, file), 'utf8') === contents.get(key)) unlinkSync(join(root, file));
     } catch {
       // already gone
     }
-    heldDirs.delete(key);
+    dropHeld(key);
   };
 }
 
@@ -439,11 +562,11 @@ export function openHome(dir: string, log: Logger = nullLogger, options: OpenHom
   const lockPath = join(root, LOCK_FILE);
   const releaseLock = (): void => {
     try {
-      if (readLockPid(lockPath) === process.pid) unlinkSync(lockPath);
+      if (readFileSync(lockPath, 'utf8') === contents.get(lockKey)) unlinkSync(lockPath);
     } catch (e) {
       if (errCode(e) !== 'ENOENT') logger.warn(`could not remove ${lockPath}: ${errMessage(e)}`);
     }
-    heldDirs.delete(lockKey);
+    dropHeld(lockKey);
   };
 
   let browserToken: string;

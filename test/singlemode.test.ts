@@ -121,7 +121,7 @@ describe('one supervisor per home', () => {
     mkdirSync(join(home, 'run'), { recursive: true });
     writeFileSync(join(home, 'run', 'supervisor.lock'), `${2 ** 22 - 3}\n`);
     const release = acquireSupervisorLock(home);
-    expect(readFileSync(join(home, 'run', 'supervisor.lock'), 'utf8').trim()).toBe(String(process.pid));
+    expect(readFileSync(join(home, 'run', 'supervisor.lock'), 'utf8').split('\n')[0]).toBe(String(process.pid));
     release();
     expect(existsSync(join(home, 'run', 'supervisor.lock'))).toBe(false);
   });
