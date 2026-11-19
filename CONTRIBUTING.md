@@ -36,6 +36,18 @@ Renovate opens an update only once the release is a day old (`minimumReleaseAge`
 
 It proves gonogo's side only. A change to how a real CLI starts, reports state or receives mail needs a run of that CLI.
 
+## The browser smoke
+
+`browser/smoke.spec.ts` drives Chromium (Playwright) through the built server with the stand-in agent: setup and login with a second factor (real form posts, so the browser sends its own `Origin`), no console or CSP errors, styles and fonts applied, a room whose link lamp comes up and whose console draws text, the service worker. It exists because a browser found bugs that Node clients and jsdom cannot. It spends nothing. It checks a few exact design values (the link lamp's 10.5px font, the logo's 26px height) as a canary for a broken style sheet: change them in the spec together with the design.
+
+```
+pnpm build
+pnpm exec playwright install --with-deps chromium   # once, about 150 MB
+pnpm exec playwright test
+```
+
+CI runs it (`.github/workflows/browser.yml`) on pull requests that touch `src/client`, the auth and web server files, any `.css`, `public/sw.js` or the Vite config, by hand, and before a release publishes. A failure uploads a screenshot and a trace as an artifact.
+
 ## The real smoke
 
 ```

@@ -11,3 +11,4 @@ test/fixtures/tmp
 .vitepress/cache
 .vitepress/dist
 gonogo-data*/
+browser-results
