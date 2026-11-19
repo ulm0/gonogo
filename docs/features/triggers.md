@@ -19,7 +19,7 @@ A bad signature is **not** an entry: anyone who guesses an uplink id could other
 
 ## The tab
 
-**Triggers | History** at the top of Launch Window. History has three filters (kind, source, outcome), Clear filters and Refresh, and refreshes itself every 10 seconds while it is open. Each uplink card, Relay uplink and schedule has a **History** link that opens the tab filtered to that one source. The page asks `GET /api/triggers?kind=&source=&outcome=&limit=` (the page's token, like every route): newest first, `limit` 1 to 500 (default 100), a bad value is 400 with its field.
+**Triggers | History** at the top of Launch Window. History has three filters (kind, source, outcome), Clear filters and Refresh, and refreshes itself every 10 seconds while it is open and the browser tab is visible. Each uplink card, Relay uplink and schedule has a **History** link that opens the tab filtered to that one source. The page asks `GET /api/triggers?kind=&source=&outcome=&limit=` (the page's token, like every route): newest first, `limit` 1 to 500 (default 100), a bad value is 400 with its field.
 
 ## What is kept, and what is not
 

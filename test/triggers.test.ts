@@ -175,6 +175,20 @@ describe('the log', () => {
     expect(all.length).toBe(500);
   });
 
+  it('counts bytes, not characters, for the rotation: a line of multi-byte text moves the size by its bytes', async () => {
+    const t = await make();
+    t.record({ ...base, what: 'é'.repeat(100) });
+    await t.close();
+    const onDisk = (await stat(join(dir, TRIGGERS_FILE))).size;
+    const raw = await readFile(join(dir, TRIGGERS_FILE), 'utf8');
+    expect(onDisk).toBe(Buffer.byteLength(raw));
+    expect(onDisk).toBeGreaterThan(raw.length);
+    // a restart reads the same size from the file, so the two ways of counting agree
+    const again = await make();
+    again.record({ ...base, what: 'x' });
+    expect((await again.list()).length).toBe(2);
+  });
+
   it('is rotated by age too, and a line older than 90 days is not shown', async () => {
     const t = await make();
     t.record({ ...base, what: 'old' });

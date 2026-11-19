@@ -136,12 +136,13 @@ export function createTriggers(options: { dir: string; now: () => number; log?: 
       const entry = cleanEntry(input, options.now());
       if (entry === null) return;
       const line = `${JSON.stringify({ ...entry, at: options.now() })}\n`;
+      const bytes = Buffer.byteLength(line);
       chain = chain
         .then(async () => {
           // by age too: a quiet room's first line may be months old
-          if (size > 0 && (size + line.length > TRIGGERS_ROTATE_BYTES || (firstAt !== null && options.now() - firstAt > TRIGGERS_KEEP_MS))) await rotate();
+          if (size > 0 && (size + bytes > TRIGGERS_ROTATE_BYTES || (firstAt !== null && options.now() - firstAt > TRIGGERS_KEEP_MS))) await rotate();
           await appendFile(path, line, { mode: FILE_MODE });
-          size += line.length;
+          size += bytes;
           firstAt ??= options.now();
         })
         .catch((error: unknown) => log.warn(`the trigger history could not be written (${error instanceof Error ? error.name : 'error'})`));

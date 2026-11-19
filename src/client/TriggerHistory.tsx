@@ -33,8 +33,18 @@ export function TriggerHistory(): ReactElement {
   }, [filter]);
   useEffect(() => {
     load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
+    // only while the tab is on screen: a hidden browser tab does not ask every 10 s
+    const timer = setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_MS);
+    const shown = (): void => {
+      if (!document.hidden) load();
+    };
+    document.addEventListener('visibilitychange', shown);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', shown);
+    };
   }, [load]);
 
   const sources = useMemo(
