@@ -190,7 +190,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       rmSync(join(options.home, 'rooms-token'), { force: true });
     }
     // docs/expose-spec.md: gonogo does not start on a name other machines use until the login (and its second factor) stands behind it
-    const problem = exposureProblem({ pages: [...split.pages], hooks: [...split.hooks], bindHost: options.host, inContainer: options.inContainer === true, publicUrl, account: auth.state(), mfa: auth.mfa().enabled });
+    const problem = exposureProblem({ pages: [...split.pages], hooks: [...split.hooks], bindHost: options.host, port: options.port, inContainer: options.inContainer === true, publicUrl, account: auth.state(), mfa: auth.mfa().enabled });
     if (problem !== null && options.exposureCheck !== false) {
       auth.close();
       throw new Error(problem);

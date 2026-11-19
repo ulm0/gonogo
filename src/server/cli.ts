@@ -183,7 +183,7 @@ Options:
   --trusted-proxy <ip>  believe X-Forwarded-For from this reverse proxy's address; repeatable (env GONOGO_TRUSTED_PROXY, comma list)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list).
                         "name:hooks" serves only the webhooks (/uplink, /dock) there: no page, no login
-  --public-url <url>    where the page is for people outside, https for a public name (env GONOGO_PUBLIC_URL)
+  --public-url <url>    the address other machines reach this gonogo by: its page, or for a name:hooks host its webhooks; https for a public name (env GONOGO_PUBLIC_URL)
   --client-ip-header <h>  x-forwarded-for (default) or cf-connecting-ip: the header a trusted proxy puts the client address in (env GONOGO_CLIENT_IP_HEADER)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help

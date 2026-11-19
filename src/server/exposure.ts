@@ -28,6 +28,8 @@ export interface ExposureInput {
   hooks: readonly string[];
   /** The address gonogo listens on (`--host`). */
   bindHost: string;
+  /** The front port, for the address in the message (0: any, the port gonogo prints). */
+  port: number;
   inContainer: boolean;
   publicUrl: { origin: string; host: string } | null;
   account: AccountState;
@@ -35,7 +37,12 @@ export interface ExposureInput {
 }
 
 const LOOPBACK_BIND = ['127.0.0.1', '::1', 'localhost'];
-const FIRST = 'Set the login up first: open gonogo from this machine (http://127.0.0.1:7777/) or your local network, make the account, and turn on the second factor (Flight Rules, LOGIN). Then start again with this option.';
+
+/** The way out of a refusal: start on this machine alone, make the account and the second factor, then put the option back. */
+function wayOut(input: ExposureInput, drop: string): string {
+  const open = `http://127.0.0.1:${input.port === 0 ? '<the port gonogo prints>' : input.port}/`;
+  return `To fix it: start gonogo without ${drop} (and with --host 127.0.0.1${input.inContainer ? '; in Docker, drop GONOGO_ALLOWED_HOSTS and GONOGO_HOST once' : ''}), open ${open}, make the account and turn on the second factor (Flight Rules, LOGIN), then add the option back.`;
+}
 
 /** The first reason gonogo must not start with these settings, or null. */
 export function exposureProblem(input: ExposureInput): string | null {
@@ -44,8 +51,9 @@ export function exposureProblem(input: ExposureInput): string | null {
     if (hostClass(name) === 'loopback' && input.hooks.includes(name)) return `${name} is this machine: a hooks-only host must be a name other machines use`;
   }
   if (publicPages.length > 0) {
-    if (input.account !== 'account') return `${publicPages[0]} is a public page address, but the login is not set up. ${FIRST}`;
-    if (!input.mfa) return `${publicPages[0]} is a public page address, and a public login needs the second factor (TOTP), which is not on. ${FIRST}`;
+    const drop = `--allow-host ${publicPages[0]}`;
+    if (input.account !== 'account') return `${publicPages[0]} is a public page address, but the login is not set up. ${wayOut(input, drop)}`;
+    if (!input.mfa) return `${publicPages[0]} is a public page address, and a public login needs the second factor (TOTP), which is not on. ${wayOut(input, drop)}`;
     if (input.publicUrl === null || !input.publicUrl.origin.startsWith('https://')) return `${publicPages[0]} is a public page address: give its https address with --public-url https://${publicPages[0]} (gonogo does not guess from headers whether TLS happened).`;
   }
   if (input.publicUrl !== null) {
@@ -56,7 +64,7 @@ export function exposureProblem(input: ExposureInput): string | null {
   }
   // a bind that other machines can reach, outside a container (where the wildcard bind is normal), needs the login
   if (!input.inContainer && !LOOPBACK_BIND.includes(input.bindHost) && input.account !== 'account') {
-    return `gonogo would listen on ${input.bindHost}, which other machines can reach, and the login is not set up. ${FIRST}`;
+    return `gonogo would listen on ${input.bindHost}, which other machines can reach, and the login is not set up. ${wayOut({ ...input, inContainer: false }, `--host ${input.bindHost}`)}`;
   }
   return null;
 }
