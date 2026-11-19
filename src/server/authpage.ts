@@ -22,7 +22,7 @@ const esc = (text: string): string => text.replace(/[&<>"']/g, (c) => `&#${c.cha
 export const authPageHeaders = (script = false): Record<string, string> => ({
   'Content-Type': 'text/html; charset=utf-8',
   'Cache-Control': 'no-store',
-  'Content-Security-Policy': `default-src 'none'; ${script ? "script-src 'self'; connect-src 'self'; " : ''}style-src 'self' ${hash(STYLE)}; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+  'Content-Security-Policy': `default-src 'none'; ${script ? "script-src 'self'; connect-src 'self'; " : ''}style-src 'self' ${hash(STYLE)}; font-src 'self' data:; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
   'X-Content-Type-Options': 'nosniff',
   // not no-referrer: under it a browser sends `Origin: null` on a same-origin POST, and the Origin check refuses the form
   'Referrer-Policy': 'same-origin',
