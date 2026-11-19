@@ -39,6 +39,10 @@ export interface AuthHttpOptions {
   local: WeakSet<IncomingMessage>;
   /** Addresses of reverse proxies whose X-Forwarded-For is believed (`--trusted-proxy`); none by default. */
   trustedProxies?: readonly string[];
+  /** The header a trusted proxy puts the client address in: `x-forwarded-for` (default) or `cf-connecting-ip`. */
+  clientIpHeader?: string;
+  /** Where the page is for people outside, and the names that serve it: shown in the Director's own view of the login. */
+  exposure?: { pages: readonly string[]; hooks: readonly string[]; publicUrl: string | null };
   log?: Logger;
 }
 
@@ -124,7 +128,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     let address = peer;
     if (trusted.has(peer)) {
       // the rightmost forwarded address that is not one of our own proxies: the one the last trusted proxy saw
-      const forwarded = String(req.headers['x-forwarded-for'] ?? '')
+      const forwarded = String(req.headers[options.clientIpHeader ?? 'x-forwarded-for'] ?? '')
         .split(',')
         .map((a) => stripMapped(a.trim()))
         .filter((a) => a !== '');
@@ -279,13 +283,14 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     stepFresh: current.sessionId === undefined ? true : auth.stepFresh(current.sessionId),
     keys: auth.keys().map((k) => ({ id: k.short, name: k.name, scope: k.scope, remote: k.remote, created: k.created, expires: k.expires, last: k.last, lastAddress: k.lastAddress })),
     host: whoOf(req).cls,
+    exposure: options.exposure ?? { pages: [], hooks: [], publicUrl: null },
   });
 
   async function authed(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
     const method = req.method ?? 'GET';
     const who = whoOf(req);
     if (path === '/api/auth/status' && method === 'GET') {
-      return sendJson(res, 200, { state: auth.state(), setup: isLocalClass(who.cls) && ['fresh', 'none'].includes(auth.state()), locked: auth.locked() }, { 'Cache-Control': 'no-store' });
+      return sendJson(res, 200, { state: auth.state(), setup: isLocalClass(who.cls) && ['fresh', 'none'].includes(auth.state()), locked: auth.locked(), host: who.cls }, { 'Cache-Control': 'no-store' });
     }
     if (!options.hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
     // the tamper confirmation: on a loopback or private Host, or through the local socket, with the Director's password

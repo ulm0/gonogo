@@ -99,6 +99,7 @@ import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
 import type { Rollout } from './rollout.js';
+import { normalizeHost } from './hosts.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
@@ -291,22 +292,8 @@ function isPermissionMode(x: unknown): x is PermissionMode {
   return typeof x === 'string' && (PERMISSION_MODES as readonly string[]).includes(x);
 }
 
-/** Host part of a Host header (port stripped, brackets removed, lower-cased), or null when it is not host[:port]. Exported for the tests. */
-export function hostName(value: string): string | null {
-  const v = value.trim().toLowerCase();
-  if (v === '') return null;
-  if (v.startsWith('[')) {
-    const end = v.indexOf(']');
-    if (end < 2) return null;
-    const rest = v.slice(end + 1);
-    return rest === '' || /^:\d{1,5}$/.test(rest) ? v.slice(1, end) : null;
-  }
-  const colon = v.indexOf(':');
-  if (colon === -1) return v;
-  // an IPv6 address without brackets cannot carry a port, so it is not a valid Host value
-  if (v.indexOf(':', colon + 1) !== -1) return null;
-  return /^\d{1,5}$/.test(v.slice(colon + 1)) ? v.slice(0, colon) : null;
-}
+/** Host part of a Host header (docs/expose-spec.md R10: the one normalizer). Exported for the tests. */
+export const hostName = normalizeHost;
 
 /** An allow-list entry or the bind host, in the same form hostName gives for a Host header. */
 function listedHost(entry: string): string {

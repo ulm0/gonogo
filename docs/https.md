@@ -1,5 +1,7 @@
 # Exposing gonogo safely
 
+> **0.5.0:** `gonogo expose <provider>` prints (or writes) the config for each provider below and `gonogo expose check` proves the public address is closed: see [Expose](./features/expose.md). The page on a public name needs the login with its second factor and an https `--public-url`; a webhook-only name is `--allow-host hooks.example.com:hooks`. The recipes on this page are older and were not run.
+
 gonogo speaks plain HTTP, no TLS. The browser token lets its holder run agents in `bypassPermissions` mode and type into every terminal, so read [Security](./reference/security.md) first.
 
 <ProxyPathsMock class="doc-mock" />
@@ -34,7 +36,7 @@ gonogo --allow-host hooks.example.com --allow-host gonogo.example.com
 # or: GONOGO_ALLOWED_HOSTS=hooks.example.com,gonogo.example.com
 ```
 
-In Docker: `-e GONOGO_ALLOWED_HOSTS=hooks.example.com`. The proxy must pass the client's `Host`: Caddy does; nginx needs `Host $http_host`.
+A name that should serve **only** the webhooks is `--allow-host hooks.example.com:hooks`: gonogo itself answers `/uplink/*` and `/dock/*` there and 404 to everything else (no page, no login), so even a proxy that forwards too much opens nothing. In Docker: `-e GONOGO_ALLOWED_HOSTS=hooks.example.com:hooks`. The proxy must pass the client's `Host`: Caddy does; nginx needs `Host $http_host`.
 
 ## Webhooks and docking on a public name
 
