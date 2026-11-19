@@ -24,6 +24,9 @@ import { sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy } from './roomproxy.js';
 import { acquireSupervisorLock } from './home.js';
+import { createPush, PUSH_LINE, parsePushLine } from './push.js';
+import type { Push } from './push.js';
+import { isPushPath, pushApi } from './pushhttp.js';
 import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { exposureProblem, parsePublicUrl } from './exposure.js';
@@ -92,6 +95,8 @@ export interface SupervisorOptions {
   roomArgs?: string[];
   /** The running version, shown in the corner of the list page. */
   version?: string;
+  /** What a push is sent with (tests give a stand-in for the browser vendors' push services). */
+  fetch?: typeof fetch;
   /** The built client (dist/client): its stylesheet dresses the list page, served from /assets/. Absent or without a build: plain styles. */
   staticDir?: string | null;
   /** Addresses of reverse proxies whose X-Forwarded-For is believed (`--trusted-proxy`); none by default. */
@@ -199,6 +204,15 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     releaseLock();
     throw error;
   }
+  // push to the installed app (docs/features/mobile.md): one key and the devices of the login's sessions, in the supervisor's home
+  const push: Push = createPush({ dir: options.home, now: options.now ?? (() => Date.now()), fetch: options.fetch ?? ((url, init) => fetch(url, init)), log: log.child('push') });
+  try {
+    await push.load();
+  } catch (error) {
+    auth.close();
+    releaseLock();
+    throw error;
+  }
   let reloading = false;
   let mainReadyOnce = false;
   let markMainReady: () => void = () => undefined;
@@ -296,6 +310,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         // the one question a room may ask: no route, no port, only this pipe; any other line is just output
         if (line === 'gonogo-ask busy' && child.proc === proc) {
           void answerBusy(child, proc);
+          continue;
+        }
+        // what waits for the Director in this room, to be pushed to the phones (push.ts): checked and cut here, whatever the room sent
+        if (line.startsWith(PUSH_LINE) && child.proc === proc) {
+          const event = parsePushLine(line.slice(PUSH_LINE.length));
+          if (event !== null) push.notify({ id: child.entry.id, name: child.entry.name }, event);
           continue;
         }
         const ready = READY.exec(line);
@@ -486,7 +506,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   closeDirectorSockets = () => proxy.closeSockets();
   // a session that ends (revoked, logged out, expired, password changed, reset, tamper) takes its sockets with it
-  auth.onEnded((ids) => proxy.closeSessions(ids));
+  auth.onEnded((ids) => {
+    proxy.closeSessions(ids);
+    // the phones of these sessions go with them (push.ts)
+    void push.dropSessions(ids);
+  });
   // a socket opened with the old browser token is bound to no session: it ends with the token, when the account is made
   auth.onAccountMade(() => proxy.closeSockets());
   auth.onReminted((from, to) => proxy.rebind(from, to));
@@ -610,6 +634,15 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }
       return;
     }
+    if (isPushPath(path)) {
+      const grant = authHttp.grant(req, 'api');
+      if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
+      if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
+      // a device is tied to a login session; a key, the old token and the local socket have none
+      void pushApi(push, req, res, path, grant.kind === 'session' ? (grant.sessionId ?? null) : null);
+      return;
+    }
     const rooms = /^\/api\/rooms(?:\/([^/]+))?$/.exec(path);
     if (rooms !== null) {
       const grant = authHttp.grant(req, 'api');
@@ -710,6 +743,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       auth.close();
       proxy.close();
       await Promise.all([...children.values()].map((c) => halt(c)));
+      await push.close();
       releaseLock();
     },
   };

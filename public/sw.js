@@ -5,14 +5,16 @@
  *     page says "not connected" until its own socket is up. There is no offline data.
  *  2. show a push. The payload is generic unless the device chose more (push.ts); a notification has no buttons, so nothing is
  *     approved from it: a tap opens the page at the ask.
- *  3. take a tap to the page: an open window is focused and told where to go, else one is opened.
- * Plain script, no build step: it is copied as it is next to index.html, so a room under /r/<id>/ gets its own copy and scope.
+ *  3. take a tap to the page of the room the push came from: an open window of that room is focused and told where to go, else one
+ *     is opened (`/r/<id>/`, `/` for main).
+ * Plain script, no build step: it is copied as it is next to index.html and served at /sw.js, so its scope is the whole address:
+ * ONE worker and one installed app for every room (the supervisor sends the pushes, push.ts).
  */
 const SHELL = 'gonogo-shell-1';
 const SCOPE = new URL(self.registration.scope);
 
 /** Paths below the scope that are never kept: the live parts, the other rooms and the list of rooms. */
-const NEVER = /^(api|ws|hook|mcp|uplink|dock|r|rooms)(\/|$)/;
+const NEVER = /^(api|ws|hook|mcp|uplink|dock|r|rooms|login|setup|internal)(\/|$)/;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(['./', 'favicon.svg', 'icon-192.png'])).then(() => self.skipWaiting()));
@@ -21,6 +23,20 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(caches.keys().then((names) => Promise.all(names.filter((n) => n !== SHELL).map((n) => caches.delete(n)))).then(() => self.clients.claim()));
 });
+
+/** The id of a room, as the supervisor makes it: a letter, then up to 23 letters, digits or dashes. */
+const roomOf = (value) => (typeof value === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(value) ? value : 'main');
+
+/** Where the page of a room is: main at the root, the others under /r/<id>/. */
+const pathOf = (room) => (room === 'main' ? '/' : `/r/${room}/`);
+
+/** Whether a window shows a page of this room. */
+function inRoom(url, room) {
+  const u = new URL(url);
+  if (u.origin !== SCOPE.origin) return false;
+  if (room !== 'main') return u.pathname === `/r/${room}` || u.pathname.startsWith(`/r/${room}/`);
+  return !/^\/(r|rooms)(\/|$)/.test(u.pathname);
+}
 
 /** The part of the address below the scope, or null for an address that is not ours. */
 function below(url) {
@@ -72,25 +88,24 @@ self.addEventListener('push', (event) => {
       tag: text(data.tag, 80, 'gonogo'),
       icon: 'icon-192.png',
       badge: 'icon-192.png',
-      data: { open: data.open === 'downlink' ? 'downlink' : 'room' },
+      data: { open: data.open === 'downlink' ? 'downlink' : 'room', room: roomOf(data.room) },
     }),
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const open = event.notification.data && event.notification.data.open === 'downlink' ? 'downlink' : 'room';
+  const data = event.notification.data || {};
+  const open = data.open === 'downlink' ? 'downlink' : 'room';
+  const room = roomOf(data.room);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-      const mine = windows.find((w) => {
-        const rest = below(new URL(w.url));
-        return rest !== null && !NEVER.test(rest);
-      });
+      const mine = windows.find((w) => inRoom(w.url, room));
       if (mine !== undefined) {
-        mine.postMessage({ t: 'open', open });
+        mine.postMessage({ t: 'open', open, room });
         return mine.focus();
       }
-      return self.clients.openWindow(`${SCOPE.href}?open=${open}`);
+      return self.clients.openWindow(new URL(`${pathOf(room)}?open=${open}`, SCOPE.origin).href);
     }),
   );
 });

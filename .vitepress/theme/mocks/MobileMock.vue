@@ -4,10 +4,10 @@ import '../landing/landing.css';
 </script>
 
 <template>
-  <div class="module lp-visual mb" role="img" aria-label="A phone's lock screen shows a gonogo notification: an agent needs you. Below, the Flight Rules block PUSH TO THIS DEVICE: on for this device, a check to show who it is from, and a list with the device My phone, Android Chrome, with Test and Remove.">
+  <div class="module lp-visual mb" role="img" aria-label="A phone's lock screen shows a gonogo notification for the room Team B: an agent needs you. Below, the Flight Rules block PUSH TO THIS DEVICE: on for this device, a check to show who it is from, and a list with the device My phone, Android Chrome, with Test and Remove.">
     <div class="mb-lock">
       <span class="label">Lock screen</span>
-      <div class="flood mb-note" data-tone="lit"><span class="legend">gonogo</span><span>An agent needs you</span></div>
+      <div class="flood mb-note" data-tone="lit"><span class="legend">gonogo, Team B</span><span>An agent needs you</span></div>
       <span class="hint">Generic by default: the push service only carries this line, encrypted.</span>
     </div>
     <div class="mb-rules">

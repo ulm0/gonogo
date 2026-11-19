@@ -1,7 +1,8 @@
 /**
  * Web Push for the installed app (docs/mobile-spec.md, docs/features/mobile.md): a push to the Director's phone when something waits
- * for them, with no relay of ours. Each room holds its own VAPID key pair and its own subscriptions in <home>/push.json (0600) and
- * talks straight to the browser vendor's push service; that service only ever sees an encrypted body and the endpoint.
+ * for them, with no relay of ours. The supervisor holds ONE VAPID key pair and the subscriptions in <home>/push.json (0600), next to
+ * the login sessions they belong to, and talks straight to the browser vendor's push service; that service only ever sees an encrypted
+ * body and the endpoint. A room (a child process) only says what happened, on its pipe to the supervisor (supervisor.ts).
  *
  * What it does, in order of care:
  * - the endpoint of a subscription is the one place a session can make the server send a request, so it is checked when it is stored
@@ -18,6 +19,7 @@ import type { ECDH } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DOCS_URL } from '../shared/protocol.js';
+import { PUSH_KINDS } from '../shared/protocol.js';
 import type { HubEvent, Logger, PushDevice, PushKind, PushView } from '../shared/protocol.js';
 import { FILE_MODE } from './constants.js';
 import { isRecord } from './hooks.js';
@@ -109,38 +111,78 @@ export function encryptPayload(plain: Uint8Array, p256dh: string, authSecret: st
 
 /* ---------------------------------------------------------------- what is pushed */
 
-/** One push: what the lock screen shows, and where a tap goes. */
+/** One push: what the lock screen shows, and where a tap goes (the page of `room`, at the inbox or at the room itself). */
 export interface PushNotice {
   tag: string;
   title: string;
   body: string;
   open: 'downlink' | 'room';
+  /** The id of the room it came from: the tap opens `/r/<room>/` (`/` for main). */
+  room: string;
+}
+
+/** What a room says happened, as it travels its pipe: the kind, the text (cut), and the sender of a message. */
+export interface PushEvent {
+  kind: PushKind;
+  text: string;
+  from?: string;
 }
 
 const oneLine = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').trim();
 const cut = (text: string, max: number): string => cutText(oneLine(text), max);
 
-const GENERIC: Record<PushKind, { title: string; body: string; open: PushNotice['open'] }> = {
-  message: { title: 'gonogo', body: '1 new message', open: 'downlink' },
-  redline: { title: 'gonogo', body: 'A limit tripped (Redline)', open: 'room' },
-  tminus: { title: 'gonogo', body: 'A T-minus poll wants a call', open: 'room' },
-  relief: { title: 'gonogo', body: 'A hire request waits for your GO', open: 'room' },
-  permission: { title: 'gonogo', body: 'An agent needs you', open: 'room' },
+const GENERIC: Record<PushKind, { body: string; open: PushNotice['open'] }> = {
+  message: { body: '1 new message', open: 'downlink' },
+  redline: { body: 'A limit tripped (Redline)', open: 'room' },
+  tminus: { body: 'A T-minus poll wants a call', open: 'room' },
+  relief: { body: 'A hire request waits for your GO', open: 'room' },
+  permission: { body: 'An agent needs you', open: 'room' },
 };
 
+/** The room a push comes from: its id (where a tap goes) and its name (said in the title when it is not main). */
+export interface PushRoom {
+  id: string;
+  name: string;
+}
+
 /**
- * The notice of one event for one device. Generic unless the device chose to see more; then the sender and subject (a message) or the
- * first words of the event text, cut and cleaned. `from` is an agent name for a message and the kind's own label otherwise.
+ * The notice of one event for one device. Generic unless the device chose to see more: the title says the room when it is not main
+ * ("gonogo, Team B"), the body is a fixed line for the kind. With the opt-in the title is the sender of a message and the body the first
+ * words of the text, cut and cleaned. One notification for a kind of a room (and a sender), so a burst is one.
  */
-export function pushNotice(kind: PushKind, text: string, snippet: boolean, from?: string): PushNotice {
-  const base = GENERIC[kind];
-  const tag = from === undefined ? `gonogo-${kind}` : `gonogo-${kind}-${cut(from, 40)}`;
-  if (!snippet) return { tag, title: base.title, body: base.body, open: base.open };
-  return { tag, title: from === undefined ? 'gonogo' : cut(from, 40), body: cut(text, SNIPPET_CHARS), open: base.open };
+export function pushNotice(room: PushRoom, ev: PushEvent, snippet: boolean): PushNotice {
+  const base = GENERIC[ev.kind];
+  const where = room.id === 'main' ? '' : `, ${cut(room.name, 40)}`;
+  const tag = `gonogo-${room.id}-${ev.kind}${ev.from === undefined ? '' : `-${cut(ev.from, 40)}`}`;
+  const title = snippet && ev.from !== undefined ? `${cut(ev.from, 40)}${where}` : `gonogo${where}`;
+  return { tag, title, body: snippet ? cut(ev.text, SNIPPET_CHARS) : base.body, open: base.open, room: room.id };
 }
 
 /** The kind of a Downlink event that is also pushed, or null. */
 export const pushKindOf = (kind: string): PushKind | null => (kind === 'redline' || kind === 'tminus' || kind === 'relief' || kind === 'permission' ? kind : null);
+
+/** What a hub frame says that is worth a push: a message to the Director. */
+export function pushEventOfHub(event: HubEvent): PushEvent | null {
+  if (event.t !== 'activity' || event.item.to !== 'user') return null;
+  return { kind: 'message', text: `${event.item.subject === '' ? '' : `${event.item.subject}: `}${event.item.body}`, from: event.item.from };
+}
+
+/** The line a room writes on its pipe (supervisor.ts reads it). */
+export const PUSH_LINE = 'gonogo-push ';
+export const pushLineOf = (ev: PushEvent): string => `${PUSH_LINE}${JSON.stringify({ kind: ev.kind, text: cut(ev.text, 200), ...(ev.from === undefined ? {} : { from: cut(ev.from, 40) }) })}\n`;
+
+/** A line from a room's pipe, checked: anything that is not a push event of a known kind is null. The text is cut again, here, whatever the room sent. */
+export function parsePushLine(json: string): PushEvent | null {
+  if (json.length > 1000) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || typeof value.kind !== 'string' || !(PUSH_KINDS as readonly string[]).includes(value.kind) || typeof value.text !== 'string') return null;
+  return { kind: value.kind as PushKind, text: cut(value.text, 200), ...(typeof value.from === 'string' ? { from: cut(value.from, 40) } : {}) };
+}
 
 /* ---------------------------------------------------------------- the store */
 
@@ -157,7 +199,7 @@ interface Device {
 }
 
 export interface PushOptions {
-  /** The room's home: push.json lives here. */
+  /** The supervisor's home: push.json lives here. */
   dir: string;
   now(): number;
   fetch: typeof fetch;
@@ -173,10 +215,8 @@ export interface Push {
   unsubscribe(input: unknown, session: string | null): Promise<PushView>;
   /** Sends a generic test to one device (the key in Flight Rules); resolves with what the push service said. */
   test(input: unknown, session: string | null): Promise<{ ok: boolean; note: string }>;
-  /** Every frame the hub emits: a message to the Director is pushed. */
-  observe(event: HubEvent): void;
-  /** What the server tells the inbox: the kinds that wait for the Director are pushed. */
-  event(kind: string, text: string): void;
+  /** Something happened in a room that waits for the Director: every device is told. */
+  notify(room: PushRoom, ev: PushEvent): void;
   /** These sessions ended (revoked, logged out, expired, password changed): their devices go. */
   dropSessions(ids: readonly string[]): Promise<void>;
   /** The tamper alarm or a reset: every device goes. */
@@ -217,7 +257,7 @@ export function createPush(options: PushOptions): Push {
   async function deliver(device: Device, notice: PushNotice): Promise<{ ok: boolean; note: string; gone: boolean }> {
     const checked = checkEndpoint(device.endpoint);
     if (!checked.ok || vapid === null) return { ok: false, note: checked.ok ? 'no key' : checked.reason, gone: !checked.ok };
-    const plain = Buffer.from(JSON.stringify({ title: notice.title, body: notice.body, tag: notice.tag, open: notice.open }));
+    const plain = Buffer.from(JSON.stringify({ title: notice.title, body: notice.body, tag: notice.tag, open: notice.open, room: notice.room }));
     if (plain.length > PAYLOAD_MAX) return { ok: false, note: 'payload too long', gone: false };
     try {
       const res = await options.fetch(checked.url, {
@@ -242,10 +282,10 @@ export function createPush(options: PushOptions): Push {
     }
   }
 
-  function send(kind: PushKind, text: string, from?: string): void {
+  function send(room: PushRoom, ev: PushEvent): void {
     if (devices.length === 0 || vapid === null) return;
     for (const device of [...devices]) {
-      const job = deliver(device, pushNotice(kind, text, device.snippet, from)).then(async (result) => {
+      const job = deliver(device, pushNotice(room, ev, device.snippet)).then(async (result) => {
         if (!result.ok) log.warn(`push: ${device.name}: ${result.note}`);
         if (result.gone) await change(async () => void ((devices = devices.filter((d) => d.id !== device.id)), await save().catch(() => undefined)));
       });
@@ -321,19 +361,11 @@ export function createPush(options: PushOptions): Push {
     test: async (input, session) => {
       if (session === null) throw new HubError('forbidden', 'push needs a login session');
       const device = find(input);
-      const result = await deliver(device, { tag: 'gonogo-test', title: 'gonogo', body: 'Test: this device gets pushes.', open: 'room' });
+      const result = await deliver(device, { tag: 'gonogo-test', title: 'gonogo', body: 'Test: this device gets pushes.', open: 'room', room: 'main' });
       return { ok: result.ok, note: result.note };
     },
 
-    observe(event) {
-      if (event.t !== 'activity' || event.item.to !== 'user') return;
-      send('message', `${event.item.subject === '' ? '' : `${event.item.subject}: `}${event.item.body}`, event.item.from);
-    },
-
-    event(kind, text) {
-      const push = pushKindOf(kind);
-      if (push !== null) send(push, text);
-    },
+    notify: send,
 
     dropSessions: (ids) =>
       change(async () => {

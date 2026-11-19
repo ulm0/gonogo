@@ -113,7 +113,7 @@ function suspicious(rest: string): boolean {
 function reservedPath(rest: string): boolean {
   const segments = rest.split('/').map((segment) => decodeURIComponent(segment));
   const first = segments[1] ?? '';
-  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth'));
+  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push'));
 }
 
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {

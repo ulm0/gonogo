@@ -43,7 +43,6 @@ import type {
 import {
   AGENT_NAME_PATTERN,
   CLEAN_ROOM_HOST,
-  SESSION_HEADER,
   MAX_COLS,
   MAX_REST_BODY_BYTES,
   MAX_ROWS,
@@ -108,7 +107,6 @@ import type { Missions } from './missions.js';
 import type { Review } from './review.js';
 import type { RoomLayoutStore } from './roomlayout.js';
 import type { TabNameStore } from './tabname.js';
-import type { Push } from './push.js';
 import { manifestOf } from './manifest.js';
 import type { Uplinks } from './uplinks.js';
 
@@ -153,8 +151,6 @@ export interface WebOptions {
   room?: Pick<RoomLayoutStore, 'view' | 'save' | 'reset'>;
   /** Tab name; absent in tests that do not need it (the route answers 404 and the snapshot has none). It tells the browsers itself. */
   tabName?: Pick<TabNameStore, 'view' | 'set'>;
-  /** Push to the installed app (push.ts); absent in tests that do not need it: the routes answer 404. */
-  push?: Pick<Push, 'view' | 'subscribe' | 'unsubscribe' | 'test' | 'dropSessions'>;
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
@@ -1112,50 +1108,6 @@ export function createWebServer(options: WebOptions): WebServer {
         },
       };
     }
-    if (s[1] === 'push') {
-      const push = options.push;
-      if (!push) return null;
-      // the login's session of the caller: only the supervisor can say it (a header it sets on the local socket and strips from the browser's own), so a request that did not come that way has none
-      const sessionOf = (req: IncomingMessage): string | null => {
-        const value = req.headers[SESSION_HEADER];
-        return viaSocket.has(req) && typeof value === 'string' && /^[\w-]{1,128}$/.test(value) ? value : null;
-      };
-      if (s.length === 2) return { allow: ['GET'], run: (req, res) => sendJson(res, 200, push.view(sessionOf(req))) };
-      if (s.length === 3 && s[2] === 'subscription') {
-        return {
-          allow: ['PUT', 'DELETE'],
-          run: async (req, res) => {
-            const body = await jsonObject(req, res);
-            if (!body) return;
-            const session = sessionOf(req);
-            sendJson(res, 200, req.method === 'PUT' ? await push.subscribe(body, session) : await push.unsubscribe(body, session));
-          },
-        };
-      }
-      if (s.length === 3 && s[2] === 'test') {
-        return {
-          allow: ['POST'],
-          run: async (req, res) => {
-            const body = await jsonObject(req, res);
-            if (body) sendJson(res, 200, await push.test(body, sessionOf(req)));
-          },
-        };
-      }
-      // the supervisor tells the room which sessions ended; a browser cannot reach this (roomproxy.ts refuses it)
-      if (s.length === 3 && s[2] === 'ended') {
-        return {
-          allow: ['POST'],
-          run: async (req, res) => {
-            const body = await jsonObject(req, res);
-            if (!body || !viaSocket.has(req) || !Array.isArray(body.ids) || !body.ids.every((id) => typeof id === 'string')) return void (body && sendApiError(res, 400, 'ids must be a list of session ids', 'bad_request'));
-            await push.dropSessions(body.ids as string[]);
-            res.writeHead(204);
-            res.end();
-          },
-        };
-      }
-      return null;
-    }
     if (s[1] === 'tab-name' && s.length === 2) {
       const tabName = options.tabName;
       if (!tabName) return null;
@@ -1665,7 +1617,7 @@ export function createWebServer(options: WebOptions): WebServer {
     const relative = segments.join('/');
     // the manifest of the installed app: the name and the colours are the room's own, so it is made here and not kept as a file
     if (relative === 'manifest.webmanifest') {
-      const body = Buffer.from(JSON.stringify(manifestOf(options.tabName?.view() ?? null, options.liveries?.view() ?? null)));
+      const body = Buffer.from(JSON.stringify(manifestOf(options.liveries?.view() ?? null)));
       res.writeHead(200, { 'Content-Type': MIME['.webmanifest'] as string, 'Content-Length': body.length, 'Cache-Control': 'no-cache' });
       res.end(method === 'HEAD' ? undefined : body);
       return;

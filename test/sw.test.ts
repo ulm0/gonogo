@@ -35,51 +35,49 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
 const request = (url: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ request: { url, method: 'GET', mode: 'cors', headers: { has: () => false }, ...extra } });
 
 describe('the service worker', () => {
-  it('keeps hashed assets and falls back to the kept page offline, but never touches the live parts, other rooms, a non-GET or an authorized request', async () => {
-    const w = worker('https://x.test/r/a/');
+  it('keeps hashed assets and falls back to the kept page offline, but never touches the live parts, the login, the rooms or a non-GET or authorized request', async () => {
+    const w = worker('https://x.test/');
     const touched: string[] = [];
     for (const [url, extra] of [
-      ['https://x.test/r/a/api/state', {}],
-      ['https://x.test/r/a/ws', {}],
-      ['https://x.test/r/a/hook/x/Stop', {}],
-      ['https://x.test/r/a/mcp', {}],
-      ['https://x.test/r/a/uplink/u1', {}],
-      ['https://x.test/r/a/dock/hello', {}],
-      ['https://x.test/r/a/assets/app.js', { method: 'POST' }],
-      ['https://x.test/r/a/assets/app.js', { headers: { has: (h: string) => h === 'authorization' } }],
-      ['https://other.test/r/a/assets/app.js', {}],
-      ['https://x.test/r/b/assets/app.js', {}],
+      ['https://x.test/api/state', {}],
+      ['https://x.test/api/push', {}],
+      ['https://x.test/ws', {}],
+      ['https://x.test/hook/x/Stop', {}],
+      ['https://x.test/mcp', {}],
+      ['https://x.test/uplink/u1', {}],
+      ['https://x.test/dock/hello', {}],
+      ['https://x.test/login', {}],
+      ['https://x.test/setup', {}],
+      ['https://x.test/internal/busy', {}],
+      ['https://x.test/rooms', {}],
+      ['https://x.test/rooms/assets/x.css', {}],
+      ['https://x.test/r/team/', { mode: 'navigate' }],
+      ['https://x.test/r/team/assets/app.js', {}],
+      ['https://x.test/assets/app.js', { method: 'POST' }],
+      ['https://x.test/assets/app.js', { headers: { has: (h: string) => h === 'authorization' } }],
+      ['https://other.test/assets/app.js', {}],
     ] as const) {
       const before = w.waits.length;
       await w.fire('fetch', request(url, extra));
       if (w.waits.length !== before) touched.push(url);
     }
     expect(touched).toEqual([]);
-    // an asset of this room is answered by the worker
-    await w.fire('fetch', request('https://x.test/r/a/assets/app-1a2b.js'));
+    // a file of the built client is answered by the worker, and so is the page itself
+    await w.fire('fetch', request('https://x.test/assets/app-1a2b.js'));
     expect(w.waits).toHaveLength(1);
-    // a navigation is answered, from the network or else from the kept page
-    await w.fire('fetch', request('https://x.test/r/a/', { mode: 'navigate' }));
+    await w.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
     expect(w.waits).toHaveLength(2);
   });
 
-  it('the main room, at the root, leaves /r/ and /rooms to the rooms and the supervisor', async () => {
+  it('shows what the push says, cut, with the room it is from, the room\'s own icon and no buttons, and shows something even for a body it cannot read', async () => {
     const w = worker('https://x.test/');
-    for (const url of ['https://x.test/r/a/assets/app.js', 'https://x.test/rooms', 'https://x.test/rooms/assets/x.css', 'https://x.test/api/state']) await w.fire('fetch', request(url));
-    expect(w.waits).toHaveLength(0);
-    await w.fire('fetch', request('https://x.test/assets/app-1.js'));
-    expect(w.waits).toHaveLength(1);
-  });
-
-  it('shows what the push says, cut, with the room\'s own icon and no buttons, and shows something even for a body it cannot read', async () => {
-    const w = worker('https://x.test/');
-    await w.fire('push', { data: { json: () => ({ title: 'gonogo', body: '1 new message', tag: 'gonogo-message-ana', open: 'downlink' }) } });
+    await w.fire('push', { data: { json: () => ({ title: 'gonogo, Team B', body: '1 new message', tag: 'gonogo-team-message-ana', open: 'downlink', room: 'team' }) } });
+    expect(w.shown[0]).toEqual(['gonogo, Team B', { body: '1 new message', tag: 'gonogo-team-message-ana', icon: 'icon-192.png', badge: 'icon-192.png', data: { open: 'downlink', room: 'team' } }]);
     const long = worker('https://x.test/');
-    await long.fire('push', { data: { json: () => ({ title: 'T'.repeat(300), body: 'b'.repeat(500), open: 'evil' }) } });
-    expect(w.shown[0]).toEqual(['gonogo', { body: '1 new message', tag: 'gonogo-message-ana', icon: 'icon-192.png', badge: 'icon-192.png', data: { open: 'downlink' } }]);
+    await long.fire('push', { data: { json: () => ({ title: 'T'.repeat(300), body: 'b'.repeat(500), open: 'evil', room: '../evil' }) } });
     expect(long.shown[0]?.[0]).toHaveLength(100);
     expect((long.shown[0]?.[1].body as string).length).toBe(200);
-    expect((long.shown[0]?.[1].data as { open: string }).open).toBe('room');
+    expect(long.shown[0]?.[1].data).toEqual({ open: 'room', room: 'main' });
     const bad = worker('https://x.test/');
     await bad.fire('push', { data: { json: () => { throw new Error('not json'); } } });
     expect(bad.shown[0]?.[0]).toBe('gonogo');
@@ -88,26 +86,30 @@ describe('the service worker', () => {
     expect(empty.shown).toHaveLength(1);
   });
 
-  it('a tap focuses a window of this room and tells it where to go, else opens one with ?open=', async () => {
+  it('a tap goes to the room the push came from: its open window is focused and told, else a window of that room is opened with ?open=', async () => {
     const told: unknown[] = [];
     let focused = 0;
-    const here = { url: 'https://x.test/r/a/', focus: () => void focused++, postMessage: (m: unknown) => void told.push(m) };
-    const other = { url: 'https://x.test/r/b/', focus: () => void focused++, postMessage: (m: unknown) => void told.push(m) };
-    const closed: string[] = [];
-    const click = (open: string) => ({ notification: { close: () => void closed.push(open), data: { open } } });
-    const w = worker('https://x.test/r/a/', [other, here]);
-    await w.fire('notificationclick', click('downlink'));
-    expect(told).toEqual([{ t: 'open', open: 'downlink' }]);
+    const window = (url: string) => ({ url, focus: () => void focused++, postMessage: (m: unknown) => void told.push(m) });
+    const mainWin = window('https://x.test/');
+    const teamWin = window('https://x.test/r/team/');
+    const listWin = window('https://x.test/rooms');
+    const click = (open: string, room: string) => ({ notification: { close: () => undefined, data: { open, room } } });
+    const w = worker('https://x.test/', [listWin, mainWin, teamWin]);
+    await w.fire('notificationclick', click('downlink', 'team'));
+    expect(told).toEqual([{ t: 'open', open: 'downlink', room: 'team' }]);
     expect(focused).toBe(1);
     expect(w.opened).toEqual([]);
-    // only a window of another room: a new window of this one
-    const lone = worker('https://x.test/r/a/', [other]);
-    await lone.fire('notificationclick', click('room'));
-    expect(lone.opened).toEqual(['https://x.test/r/a/?open=room']);
-    // the main room does not take a window of a room as its own
-    const main = worker('https://x.test/', [other]);
-    await main.fire('notificationclick', click('room'));
+    // main's page is the root, not the list of rooms and not a room
+    const main = worker('https://x.test/', [listWin, teamWin]);
+    await main.fire('notificationclick', click('room', 'main'));
     expect(main.opened).toEqual(['https://x.test/?open=room']);
-    expect(closed).toEqual(['downlink', 'room', 'room']);
+    // a room with no window open gets one, at its own address
+    const none = worker('https://x.test/', [mainWin]);
+    await none.fire('notificationclick', click('room', 'team'));
+    expect(none.opened).toEqual(['https://x.test/r/team/?open=room']);
+    // a room id that is not one is main
+    const odd = worker('https://x.test/', []);
+    await odd.fire('notificationclick', click('room', '../x'));
+    expect(odd.opened).toEqual(['https://x.test/?open=room']);
   });
 });

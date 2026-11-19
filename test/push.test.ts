@@ -1,14 +1,15 @@
 // Web Push (src/server/push.ts): the payload encryption against the example of RFC 8291, the VAPID signature, the endpoint check (R9),
 // the lifecycle of a device tied to a session, and what each event pushes. No real push service and no phone: a stand-in `fetch` plays
 // the service and a receiver written from the RFC reads what it was sent.
-import { createDecipheriv, createECDH, createPublicKey, hkdfSync, verify } from 'node:crypto';
+import { createECDH, createPublicKey, verify } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkEndpoint, createPush, encryptPayload, makeVapid, PUSH_DEVICES_MAX, PUSH_FILE, pushNotice, vapidHeader } from '../src/server/push.js';
-import type { Push } from '../src/server/push.js';
+import { checkEndpoint, createPush, encryptPayload, makeVapid, parsePushLine, PUSH_DEVICES_MAX, PUSH_FILE, pushEventOfHub, pushKindOf, pushLineOf, pushNotice, vapidHeader } from '../src/server/push.js';
+import type { Push, PushEvent, PushRoom } from '../src/server/push.js';
 import type { ActivityFrame, Logger } from '../src/shared/protocol.js';
+import { phone } from './push-phone.js';
 
 const quiet: Logger = { debug() {}, info() {}, warn() {}, error() {}, child: () => quiet } as unknown as Logger;
 let dir: string;
@@ -18,34 +19,6 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const b64 = (b: Buffer): string => b.toString('base64url');
-
-/** What a browser holds for one subscription: its key pair and its auth secret. */
-function phone(): { p256dh: string; auth: string; receive(body: Buffer): string } {
-  const ua = createECDH('prime256v1');
-  ua.generateKeys();
-  const auth = Buffer.from('0123456789abcdef');
-  return {
-    p256dh: b64(ua.getPublicKey()),
-    auth: b64(auth),
-    // RFC 8291 section 3.4, the receiving side
-    receive(body) {
-      const salt = body.subarray(0, 16);
-      expect(body.readUInt32BE(16)).toBe(4096);
-      const idlen = body.readUInt8(20);
-      const asPublic = body.subarray(21, 21 + idlen);
-      const secret = ua.computeSecret(asPublic);
-      const ikm = Buffer.from(hkdfSync('sha256', secret, auth, Buffer.concat([Buffer.from('WebPush: info\0'), ua.getPublicKey(), asPublic]), 32));
-      const cek = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
-      const nonce = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
-      const rest = body.subarray(21 + idlen);
-      const decipher = createDecipheriv('aes-128-gcm', cek, nonce);
-      decipher.setAuthTag(rest.subarray(rest.length - 16));
-      const plain = Buffer.concat([decipher.update(rest.subarray(0, rest.length - 16)), decipher.final()]);
-      expect(plain[plain.length - 1]).toBe(2);
-      return plain.subarray(0, plain.length - 1).toString('utf8');
-    },
-  };
-}
 
 describe('the payload and the signature', () => {
   it('encrypts the example of RFC 8291 byte for byte', () => {
@@ -131,6 +104,13 @@ const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/device-1';
 const sub = (p: ReturnType<typeof phone>, extra: Record<string, unknown> = {}, endpoint = ENDPOINT): Record<string, unknown> => ({ endpoint, keys: { p256dh: p.p256dh, auth: p.auth }, device: 'My phone', ...extra });
 const message = (from: string, subject: string, body: string): ActivityFrame => ({ t: 'activity', item: { id: 'm1', from, to: 'user', subject, body, inReplyTo: null, hops: 1, at: 1, truncated: false } }) as unknown as ActivityFrame;
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 20));
+const MAIN: PushRoom = { id: 'main', name: 'Main' };
+const TEAM: PushRoom = { id: 'team', name: 'Team B' };
+/** What the supervisor does with a message to the Director of a room. */
+const said = (h: { push: Push }, room: PushRoom, frame: ActivityFrame): void => {
+  const ev = pushEventOfHub(frame);
+  if (ev !== null) h.push.notify(room, ev);
+};
 
 describe('the devices', () => {
   it('makes a key pair on first use, in a file only the owner reads, and keeps it', async () => {
@@ -207,7 +187,7 @@ describe('the devices', () => {
     expect((await h.push.unsubscribe({ id: v.devices[0]?.id }, 's1')).devices).toEqual([]);
     await h.push.subscribe(sub(p), 's1');
     h.status(410);
-    h.push.event('permission', 'x');
+    h.push.notify(MAIN, { kind: 'permission', text: 'x' });
     await settle();
     await settle();
     expect(h.push.view('s1').devices).toEqual([]);
@@ -240,7 +220,7 @@ describe('what is pushed', () => {
     await h.push.load();
     const p = phone();
     await h.push.subscribe(sub(p), 's1');
-    h.push.observe(message('ana', 'Deploy', 'the secret plan'));
+    said(h, MAIN, message('ana', 'Deploy', 'the secret plan'));
     await settle();
     expect(h.sent).toHaveLength(1);
     const req = h.sent[0] as Sent;
@@ -250,7 +230,7 @@ describe('what is pushed', () => {
     expect(req.headers.Authorization).toMatch(/^vapid t=.+, k=.+$/);
     // generic: nothing of the message is on the lock screen
     const shown = JSON.parse(p.receive(req.body)) as Record<string, string>;
-    expect(shown).toEqual({ title: 'gonogo', body: '1 new message', tag: 'gonogo-message-ana', open: 'downlink' });
+    expect(shown).toEqual({ title: 'gonogo', body: '1 new message', tag: 'gonogo-main-message-ana', open: 'downlink', room: 'main' });
   });
 
   it('shows the sender and the first words only to a device that chose it, cut and cleaned', async () => {
@@ -258,7 +238,7 @@ describe('what is pushed', () => {
     await h.push.load();
     const p = phone();
     await h.push.subscribe(sub(p, { snippet: true }), 's1');
-    h.push.observe(message('ana‮', 'Deploy', `line one\nline two ${'x'.repeat(200)}`));
+    said(h, MAIN, message('ana‮', 'Deploy', `line one\nline two ${'x'.repeat(200)}`));
     await settle();
     const shown = JSON.parse(p.receive((h.sent[0] as Sent).body)) as Record<string, string>;
     expect(shown.title).toBe('ana');
@@ -267,23 +247,47 @@ describe('what is pushed', () => {
     expect(shown.body).not.toMatch(/[\n‮]/);
   });
 
-  it('pushes the events that wait for the Director and no others, and a message to anyone else not at all', async () => {
+  it('pushes the kinds that wait for the Director and no others, and a message to anyone else not at all', async () => {
     const h = harness();
     await h.push.load();
     await h.push.subscribe(sub(phone()), 's1');
-    for (const kind of ['redline', 'tminus', 'relief', 'permission']) h.push.event(kind, 'text');
+    for (const kind of ['redline', 'tminus', 'relief', 'permission']) h.push.notify(MAIN, { kind: pushKindOf(kind) as PushEvent['kind'], text: 'text' });
     await settle();
     expect(h.sent).toHaveLength(4);
-    for (const kind of ['launch-window', 'uplink', 'flight-plan', 'livery', 'mission', 'review', 'startup', 'nope']) h.push.event(kind, 'text');
-    h.push.observe({ ...message('ana', 's', 'b'), item: { ...(message('ana', 's', 'b') as unknown as { item: object }).item, to: 'ben' } } as unknown as ActivityFrame);
+    for (const kind of ['launch-window', 'uplink', 'flight-plan', 'livery', 'mission', 'review', 'startup', 'nope']) expect(pushKindOf(kind), kind).toBeNull();
+    expect(pushEventOfHub({ ...message('ana', 's', 'b'), item: { ...(message('ana', 's', 'b') as unknown as { item: object }).item, to: 'ben' } } as unknown as ActivityFrame)).toBeNull();
+    expect(pushEventOfHub({ t: 'tabname' } as never)).toBeNull();
+  });
+
+  it('says which room a push is from: the title for a room that is not main, the tag and the tap\'s room always', async () => {
+    const h = harness();
+    await h.push.load();
+    const p = phone();
+    await h.push.subscribe(sub(p), 's1');
+    h.push.notify(TEAM, { kind: 'permission', text: 'ana: Bash' });
     await settle();
-    expect(h.sent).toHaveLength(4);
+    expect(JSON.parse(p.receive((h.sent[0] as Sent).body))).toEqual({ title: 'gonogo, Team B', body: 'An agent needs you', tag: 'gonogo-team-permission', open: 'room', room: 'team' });
+    expect(pushNotice(MAIN, { kind: 'tminus', text: '' }, false)).toMatchObject({ title: 'gonogo', tag: 'gonogo-main-tminus', room: 'main' });
+    expect(pushNotice(TEAM, { kind: 'message', text: 'hello there', from: 'ben' }, true)).toMatchObject({ title: 'ben, Team B', body: 'hello there', open: 'downlink', room: 'team' });
+  });
+
+  it('the line a room writes is read back by the supervisor, cut, and nothing else is believed', () => {
+    const line = pushLineOf({ kind: 'message', text: `a\nb ${'x'.repeat(500)}`, from: 'ana' });
+    expect(line.startsWith('gonogo-push ')).toBe(true);
+    expect(line.endsWith('\n')).toBe(true);
+    const ev = parsePushLine(line.slice('gonogo-push '.length).trim()) as PushEvent;
+    expect(ev.kind).toBe('message');
+    expect(ev.text).toHaveLength(200);
+    expect(ev.from).toBe('ana');
+    for (const bad of ['', 'nope', '[]', '{}', '{"kind":"nope","text":"x"}', '{"kind":"message"}', '{"kind":"message","text":5}', JSON.stringify({ kind: 'message', text: 'x'.repeat(2000) })]) expect(parsePushLine(bad), bad).toBeNull();
+    // a hand-written line is cleaned and cut again
+    expect(parsePushLine(JSON.stringify({ kind: 'redline', text: 'a\u202eb\nc', from: 'x'.repeat(100) }))).toEqual({ kind: 'redline', text: 'a b c', from: 'x'.repeat(40) });
   });
 
   it('sends nothing when no device is subscribed, and a test only to a device of a session', async () => {
     const h = harness();
     await h.push.load();
-    h.push.event('permission', 'x');
+    h.push.notify(MAIN, { kind: 'permission', text: 'x' });
     await settle();
     expect(h.sent).toHaveLength(0);
     const v = await h.push.subscribe(sub(phone()), 's1');
@@ -292,11 +296,12 @@ describe('what is pushed', () => {
   });
 
   it('the notice of each kind: generic by default, the text when asked', () => {
-    expect(pushNotice('permission', 'ana: Bash: rm -rf /', false)).toMatchObject({ title: 'gonogo', body: 'An agent needs you', open: 'room' });
-    expect(pushNotice('permission', 'ana: Bash: rm -rf /', true)).toMatchObject({ body: 'ana: Bash: rm -rf /' });
-    expect(pushNotice('tminus', 'x', false).body).toBe('A T-minus poll wants a call');
-    expect(pushNotice('redline', 'x', false).body).toBe('A limit tripped (Redline)');
-    expect(pushNotice('relief', 'x', false).body).toBe('A hire request waits for your GO');
-    expect(pushNotice('message', 'x', false).open).toBe('downlink');
+    const n = (kind: PushEvent['kind'], text: string, snippet: boolean) => pushNotice(MAIN, { kind, text }, snippet);
+    expect(n('permission', 'ana: Bash: rm -rf /', false)).toMatchObject({ title: 'gonogo', body: 'An agent needs you', open: 'room' });
+    expect(n('permission', 'ana: Bash: rm -rf /', true)).toMatchObject({ body: 'ana: Bash: rm -rf /' });
+    expect(n('tminus', 'x', false).body).toBe('A T-minus poll wants a call');
+    expect(n('redline', 'x', false).body).toBe('A limit tripped (Redline)');
+    expect(n('relief', 'x', false).body).toBe('A hire request waits for your GO');
+    expect(n('message', 'x', false).open).toBe('downlink');
   });
 });

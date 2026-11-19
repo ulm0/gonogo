@@ -9,7 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
 import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
 import { startGonogo } from '../src/server/cli.js';
+import { makeVapid, PUSH_FILE } from '../src/server/push.js';
 import { startSupervisor } from '../src/server/supervisor.js';
+import { phone } from './push-phone.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
 const FAKE = new URL('./fake-room.mjs', import.meta.url).pathname;
@@ -468,6 +470,54 @@ describe('the supervisor', () => {
       await supervise();
       expect(await run('rooms', 'add', 'ninah', '--home', home)).not.toContain('no gonogo is running');
       expect(await run('rooms', 'remove', 'ninah', '--home', home)).not.toContain('no gonogo is running');
+    }, 40_000);
+  });
+
+  describe('push to the installed app', () => {
+    const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/dev';
+    const device = (p: ReturnType<typeof phone>, session = 's1'): object => ({ id: 'dev1', endpoint: ENDPOINT, p256dh: p.p256dh, auth: p.auth, name: 'Phone', snippet: false, session, at: 1 });
+
+    it('sends what a room says on its pipe, as the supervisor, to the devices: generic, with the room named, and nothing else the room prints', async () => {
+      const p = phone();
+      writeFileSync(join(home, PUSH_FILE), JSON.stringify({ version: 1, vapid: makeVapid(), devices: [device(p)] }));
+      addRoom(home, 'team', 'Team B');
+      const sent: Array<{ url: string; body: Buffer }> = [];
+      const fake = (async (url: URL, init: RequestInit) => (sent.push({ url: String(url), body: Buffer.from(init.body as Uint8Array) }), new Response(null, { status: 201 }))) as unknown as typeof fetch;
+      const lines = [
+        'gonogo-push ' + JSON.stringify({ kind: 'permission', text: 'ana: Bash: rm -rf /' }),
+        'gonogo-push ' + JSON.stringify({ kind: 'nope', text: 'x' }),
+        'gonogo-push not json',
+        'gonogo-pushx ' + JSON.stringify({ kind: 'redline', text: 'x' }),
+        ' gonogo-push ' + JSON.stringify({ kind: 'redline', text: 'x' }),
+      ];
+      sup = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', FAKE_ROOM_PUSH: JSON.stringify(lines) }, fetch: fake });
+      await until(() => sent.length >= 2, 15_000, 'the two pushes');
+      await new Promise((r) => setTimeout(r, 300));
+      expect(sent).toHaveLength(2);
+      const shown = sent.map((s) => JSON.parse(p.receive(s.body)) as Record<string, string>).sort((a, b) => (a.room ?? '').localeCompare(b.room ?? ''));
+      expect(shown).toEqual([
+        { title: 'gonogo', body: 'An agent needs you', tag: 'gonogo-main-permission', open: 'room', room: 'main' },
+        { title: 'gonogo, Team B', body: 'An agent needs you', tag: 'gonogo-team-permission', open: 'room', room: 'team' },
+      ]);
+      for (const s of sent) expect(s.url).toBe(ENDPOINT);
+    }, 40_000);
+
+    it('keeps its devices in the supervisor\'s home, and answers its routes with the login, not through a room', async () => {
+      const s = await supervise();
+      await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+      expect(statSync(join(home, PUSH_FILE)).mode & 0o777).toBe(0o600);
+      // no credential at all is 401, as for the other routes; a room's own address is not these routes
+      expect((await api(s, '/api/push', null)).status).toBe(401);
+      expect((await api(s, '/api/push/subscription', null, { method: 'PUT' })).status).toBe(401);
+      const viaToken = await api(s, '/api/push');
+      // the old token is a credential but owns no device: reading is fine, subscribing is not
+      if (viaToken.status === 200) {
+        const key = ((await viaToken.json()) as { publicKey: string }).publicKey;
+        expect(Buffer.from(key, 'base64url')).toHaveLength(65);
+        const p = phone();
+        const put = await api(s, '/api/push/subscription', s.directorToken, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint: ENDPOINT, keys: { p256dh: p.p256dh, auth: p.auth } }) });
+        expect(put.status).toBe(403);
+      }
     }, 40_000);
   });
 

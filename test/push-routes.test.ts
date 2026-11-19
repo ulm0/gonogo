@@ -1,27 +1,33 @@
-// The push routes of a room and the manifest of the installed app (docs/features/mobile.md), through a real web server with its local
-// socket (the door the supervisor uses) and over TCP with the token; and the shell files the build ships for the app.
+// The push routes of the supervisor (src/server/pushhttp.ts) behind a stand-in for its login, the manifest of the installed app, and the
+// files the build ships for it. The login itself (a session, a key, the token) is the supervisor's and is tried in rooms.test.ts.
 import { createECDH } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { manifestOf } from '../src/server/manifest.js';
 import { createPush } from '../src/server/push.js';
+import type { Push } from '../src/server/push.js';
+import { isPushPath, pushApi } from '../src/server/pushhttp.js';
 import { createWebServer } from '../src/server/web.js';
 import type { WebServer } from '../src/server/web.js';
 import { INSTRUMENT } from '../src/shared/livery.js';
 import type { Hub, LiveryView, Logger, ServerInfo, TerminalHost } from '../src/shared/protocol.js';
 
 const quiet: Logger = { debug() {}, info() {}, warn() {}, error() {}, child: () => quiet } as unknown as Logger;
-const TOKEN = 'b'.repeat(64);
 let dir: string;
+let front: http.Server | null = null;
 let web: WebServer | null = null;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'gng-pushr-'));
 });
 afterEach(async () => {
+  front?.closeAllConnections();
+  await new Promise<void>((r) => (front ? front.close(() => r()) : r()));
+  front = null;
   await web?.close();
   web = null;
   rmSync(dir, { recursive: true, force: true });
@@ -31,97 +37,86 @@ const ua = createECDH('prime256v1');
 ua.generateKeys();
 const subscription = (endpoint = 'https://fcm.googleapis.com/fcm/send/abc'): Record<string, unknown> => ({ endpoint, keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: Buffer.from('0123456789abcdef').toString('base64url') }, device: 'Phone' });
 
-async function start(extra: Record<string, unknown> = {}): Promise<{ port: number; sock: string; sent: string[] }> {
+/** A server that answers the push routes the way the supervisor does, with the session named by the `x-test-session` header standing in for the login. */
+async function start(): Promise<{ base: string; push: Push; sent: string[] }> {
   const sent: string[] = [];
   const push = createPush({ dir, now: () => 1, fetch: (async (url: URL) => (sent.push(String(url)), new Response(null, { status: 201 }))) as unknown as typeof fetch, log: quiet });
   await push.load();
-  const sock = join(dir, 's.sock');
-  web = createWebServer({ host: '127.0.0.1', port: 0, browserToken: TOKEN, allowedHosts: [], staticDir: null, hub: {} as Hub, terminals: {} as TerminalHost, resolveToken: () => null, info: () => ({}) as ServerInfo, isReady: () => true, push, localSocket: sock, log: quiet, ...extra });
-  return { port: (await web.listen()).port, sock, sent };
+  front = http.createServer((req, res) => {
+    const path = (req.url ?? '').split('?')[0] ?? '';
+    if (!isPushPath(path)) return void res.writeHead(404).end();
+    const session = req.headers['x-test-session'];
+    void pushApi(push, req, res, path, typeof session === 'string' ? session : null);
+  });
+  await new Promise<void>((r) => front?.listen(0, '127.0.0.1', r));
+  return { base: `http://127.0.0.1:${(front?.address() as AddressInfo).port}`, push, sent };
 }
 
-/** A request on the local socket, with the session header the supervisor would set. */
-const viaSocket = (sock: string, method: string, path: string, body?: unknown, session?: string): Promise<{ status: number; json: Record<string, unknown> }> =>
-  new Promise((resolve, reject) => {
-    const text = body === undefined ? undefined : JSON.stringify(body);
-    const req = http.request({ socketPath: sock, method, path, headers: { host: '127.0.0.1:1', ...(text === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) }), ...(session === undefined ? {} : { 'x-gonogo-session': session }) } }, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (c: Buffer) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, json: chunks.length === 0 ? {} : (JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>) }));
-    });
-    req.on('error', reject);
-    req.end(text);
-  });
+const call = async (base: string, method: string, path: string, body?: unknown, session?: string): Promise<{ status: number; json: Record<string, unknown> }> => {
+  const res = await fetch(base + path, { method, headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(session === undefined ? {} : { 'x-test-session': session }) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await res.text();
+  return { status: res.status, json: text === '' ? {} : (JSON.parse(text) as Record<string, unknown>) };
+};
 
 describe('the push routes', () => {
-  it('subscribe for the session the supervisor names, list the devices, and unsubscribe', async () => {
-    const { sock } = await start();
-    const none = await viaSocket(sock, 'GET', '/api/push', undefined, 's1');
+  it('know their own paths and no others', () => {
+    for (const path of ['/api/push', '/api/push/subscription', '/api/push/test']) expect(isPushPath(path), path).toBe(true);
+    for (const path of ['/api/push/', '/api/push/x', '/api/pushx', '/api/rooms', '/api/push/subscription/1', '/push']) expect(isPushPath(path), path).toBe(false);
+  });
+
+  it('subscribe for the session of the login, list the devices, test one and unsubscribe', async () => {
+    const { base } = await start();
+    const none = await call(base, 'GET', '/api/push', undefined, 's1');
     expect(none.status).toBe(200);
     expect(Buffer.from(none.json.publicKey as string, 'base64url')).toHaveLength(65);
-    const made = await viaSocket(sock, 'PUT', '/api/push/subscription', subscription(), 's1');
+    const made = await call(base, 'PUT', '/api/push/subscription', subscription(), 's1');
     expect(made.status).toBe(200);
     const devices = made.json.devices as Array<{ id: string; mine: boolean; name: string }>;
     expect(devices).toMatchObject([{ name: 'Phone', mine: true }]);
-    expect((await viaSocket(sock, 'GET', '/api/push', undefined, 's2')).json.devices).toMatchObject([{ mine: false }]);
-    const test = await viaSocket(sock, 'POST', '/api/push/test', { id: devices[0]?.id }, 's1');
-    expect(test.json).toEqual({ ok: true, note: 'push service answered 201' });
-    const gone = await viaSocket(sock, 'DELETE', '/api/push/subscription', { id: devices[0]?.id }, 's1');
-    expect(gone.json.devices).toEqual([]);
+    expect((await call(base, 'GET', '/api/push', undefined, 's2')).json.devices).toMatchObject([{ mine: false }]);
+    expect((await call(base, 'POST', '/api/push/test', { id: devices[0]?.id }, 's1')).json).toEqual({ ok: true, note: 'push service answered 201' });
+    expect((await call(base, 'DELETE', '/api/push/subscription', { id: devices[0]?.id }, 's1')).json.devices).toEqual([]);
   });
 
-  it('refuse a subscription with no session, a bad session header, or an endpoint that is not a vendor push host', async () => {
-    const { sock } = await start();
-    expect((await viaSocket(sock, 'PUT', '/api/push/subscription', subscription())).status).toBe(403);
-    expect((await viaSocket(sock, 'PUT', '/api/push/subscription', subscription(), 'bad session!')).status).toBe(403);
+  it('refuse a subscription from a caller with no session (a key, the old token, the local socket), and an endpoint that is not a vendor push host', async () => {
+    const { base, sent } = await start();
+    expect((await call(base, 'PUT', '/api/push/subscription', subscription())).status).toBe(403);
+    expect((await call(base, 'POST', '/api/push/test', { id: 'x' })).status).toBe(403);
     for (const endpoint of ['http://fcm.googleapis.com/x', 'https://127.0.0.1/x', 'https://fcm.googleapis.com.evil.test/x']) {
-      const res = await viaSocket(sock, 'PUT', '/api/push/subscription', subscription(endpoint), 's1');
+      const res = await call(base, 'PUT', '/api/push/subscription', subscription(endpoint), 's1');
       expect([res.status, res.json.field], endpoint).toEqual([400, 'endpoint']);
     }
-    expect((await viaSocket(sock, 'GET', '/api/push', undefined, 's1')).json.devices).toEqual([]);
+    expect((await call(base, 'GET', '/api/push', undefined, 's1')).json.devices).toEqual([]);
+    expect(sent).toEqual([]);
   });
 
-  it('take the session from the socket only: over TCP with the token a header means nothing', async () => {
-    const { port } = await start();
-    const res = await fetch(`http://127.0.0.1:${port}/api/push/subscription`, { method: 'PUT', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', 'x-gonogo-session': 's1' }, body: JSON.stringify(subscription()) });
-    // with a local socket the room accepts no token on TCP at all; either way nothing is stored
-    expect([401, 403]).toContain(res.status);
-  });
-
-  it('ended: only the socket may say which sessions ended, and their devices go', async () => {
-    const { sock } = await start();
-    await viaSocket(sock, 'PUT', '/api/push/subscription', subscription('https://fcm.googleapis.com/fcm/send/1'), 's1');
-    await viaSocket(sock, 'PUT', '/api/push/subscription', subscription('https://fcm.googleapis.com/fcm/send/2'), 's2');
-    expect((await viaSocket(sock, 'POST', '/api/push/ended', { ids: 'nope' })).status).toBe(400);
-    expect((await viaSocket(sock, 'POST', '/api/push/ended', { ids: ['s1'] })).status).toBe(204);
-    expect((await viaSocket(sock, 'GET', '/api/push', undefined, 's2')).json.devices).toMatchObject([{ mine: true }]);
-  });
-
-  it('are 404 without a push store, and a wrong method is 405', async () => {
-    const { sock } = await start({ push: undefined });
-    expect((await viaSocket(sock, 'GET', '/api/push')).status).toBe(404);
-    await web?.close();
-    const second = await start();
-    expect((await viaSocket(second.sock, 'POST', '/api/push')).status).toBe(405);
+  it('answer a wrong method with 405 and its Allow, a body that is not JSON with 400, and a missing device with 404', async () => {
+    const { base } = await start();
+    const wrong = await fetch(`${base}/api/push`, { method: 'POST', headers: { 'x-test-session': 's1', 'content-type': 'application/json' }, body: '{}' });
+    expect([wrong.status, wrong.headers.get('allow')]).toEqual([405, 'GET']);
+    expect((await fetch(`${base}/api/push/subscription`, { method: 'PUT', headers: { 'x-test-session': 's1' }, body: '{}' })).status).toBe(400);
+    expect((await fetch(`${base}/api/push/subscription`, { method: 'PUT', headers: { 'x-test-session': 's1', 'content-type': 'application/json' }, body: '[1]' })).status).toBe(400);
+    expect((await fetch(`${base}/api/push/subscription`, { method: 'PUT', headers: { 'x-test-session': 's1', 'content-type': 'application/json' }, body: JSON.stringify({ x: 'a'.repeat(5000) }) })).status).toBe(400);
+    expect((await call(base, 'DELETE', '/api/push/subscription', { id: 'nope' }, 's1')).status).toBe(404);
   });
 });
 
 describe('the manifest', () => {
-  it('is the room\'s own: its tab name, its livery\'s body colour, relative addresses, and the three icons', () => {
-    expect(manifestOf(null, null)).toMatchObject({ name: 'gonogo', short_name: 'gonogo', display: 'standalone', start_url: './', scope: './', id: './', background_color: INSTRUMENT.tokens['--body'], theme_color: INSTRUMENT.tokens['--body'] });
+  it('is one app for every room: the root as scope and start, absolute addresses, the livery\'s colour, the three icons', () => {
+    expect(manifestOf(null)).toMatchObject({ name: 'gonogo', display: 'standalone', start_url: '/', scope: '/', id: '/', background_color: INSTRUMENT.tokens['--body'], theme_color: INSTRUMENT.tokens['--body'] });
     const night: LiveryView = { current: 'night', liveries: [{ slug: 'night', name: 'Night', description: '', builtin: false, author: null, tokens: { ...INSTRUMENT.tokens, '--body': 'rgb(16, 20, 24)' } }] } as unknown as LiveryView;
-    const m = manifestOf({ name: 'Ops room with a long name', fallback: null }, night);
-    expect(m).toMatchObject({ name: 'Ops room with a long name · gonogo', short_name: 'Ops room wit', background_color: '#101418' });
-    expect(m.icons.map((i) => [i.src, i.sizes, i.purpose])).toEqual([['icon-192.png', '192x192', 'any'], ['icon-512.png', '512x512', 'any'], ['icon-maskable-512.png', '512x512', 'maskable']]);
-    for (const icon of m.icons) expect(icon.src.startsWith('/') || icon.src.includes(':')).toBe(false);
+    const m = manifestOf(night);
+    expect(m).toMatchObject({ background_color: '#101418', theme_color: '#101418' });
+    expect(m.icons.map((i) => [i.src, i.sizes, i.purpose])).toEqual([['/icon-192.png', '192x192', 'any'], ['/icon-512.png', '512x512', 'any'], ['/icon-maskable-512.png', '512x512', 'maskable']]);
   });
 
-  it('is served with its own type, with no login and no cache, from the static root', async () => {
+  it('is served by a room with its own type, with no login and no cache', async () => {
     writeFileSync(join(dir, 'index.html'), '<html></html>');
-    const { port } = await start({ staticDir: dir });
+    web = createWebServer({ host: '127.0.0.1', port: 0, browserToken: 'b'.repeat(64), allowedHosts: [], staticDir: dir, hub: {} as Hub, terminals: {} as TerminalHost, resolveToken: () => null, info: () => ({}) as ServerInfo, isReady: () => true, log: quiet });
+    const { port } = await web.listen();
     const res = await fetch(`http://127.0.0.1:${port}/manifest.webmanifest`);
     expect([res.status, res.headers.get('content-type'), res.headers.get('cache-control')]).toEqual([200, 'application/manifest+json; charset=utf-8', 'no-cache']);
-    expect(((await res.json()) as { name: string }).name).toBe('gonogo');
+    expect(((await res.json()) as { scope: string }).scope).toBe('/');
   });
 });
 
@@ -138,8 +133,8 @@ describe('the files the build ships for the app', () => {
 
   it('has a service worker that keeps the shell only, and shows a push with nothing to approve', () => {
     const sw = readFileSync(new URL('sw.js', root), 'utf8');
-    // the live parts and the other rooms are never kept
-    expect(sw).toMatch(/NEVER = \/\^\(api\|ws\|hook\|mcp\|uplink\|dock\|r\|rooms\)/);
+    // the live parts, the login, the other rooms and the list of rooms are never kept
+    expect(sw).toMatch(/NEVER = \/\^\(api\|ws\|hook\|mcp\|uplink\|dock\|r\|rooms\|login\|setup\|internal\)/);
     expect(sw).toContain("request.method !== 'GET'");
     expect(sw).toContain("request.headers.has('authorization')");
     // only the hashed assets are cached at run time; no put of anything else

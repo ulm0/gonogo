@@ -542,34 +542,3 @@ async function vi_waitFor(check: () => boolean, ms = 4000): Promise<void> {
     await new Promise((r) => setTimeout(r, 20));
   }
 }
-
-describe('rooms proxy: push (docs/features/mobile.md)', () => {
-  it('tells a room which login session made a request to its push routes, and nothing from a key, the token or a copy the browser sends', async () => {
-    await get('/r/a/api/push', { cookie: 'gonogo-session=s1' });
-    await get('/r/a/api/push', { cookie: 'gonogo-session=s1', 'x-gonogo-session': 'forged' });
-    await get('/r/a/api/push', { authorization: 'Bearer gnk_full', 'x-gonogo-session': 'forged' });
-    await get('/r/a/api/push', { ...director, 'x-gonogo-session': 'forged' });
-    expect(a.seen.map((s) => s.headers['x-gonogo-session'])).toEqual(['s1', 's1', undefined, undefined]);
-    expect(JSON.stringify(a.seen)).not.toContain('forged');
-  });
-
-  it('refuses a browser the route the supervisor uses to end devices, in any case or encoding', async () => {
-    for (const path of ['/r/a/api/push/ended', '/r/a/API/push/ENDED', '/r/a/%61pi/push/ended', '/api/push/ended']) {
-      const res = await get(path, { ...director, origin: base }, 'POST', JSON.stringify({ ids: ['s1'] }));
-      expect(res.status, path).toBe(404);
-    }
-    expect(a.seen).toEqual([]);
-    expect(main.seen).toEqual([]);
-  });
-
-  it('tells every running room which sessions ended, over its own socket', async () => {
-    proxyUnderTest.closeSessions(['s1', 's2']);
-    await new Promise((r) => setTimeout(r, 100));
-    for (const room of [a, b, main]) {
-      const told = room.seen.find((s) => s.url === '/api/push/ended');
-      expect(told, 'room').toMatchObject({ method: 'POST' });
-      expect(JSON.parse(told?.body ?? '{}')).toEqual({ ids: ['s1', 's2'] });
-      expect(told?.headers.host).toBe(`127.0.0.1:${room.port}`);
-    }
-  });
-});

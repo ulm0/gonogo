@@ -7,6 +7,7 @@ import { useSyncExternalStore } from 'react';
 import { pushSubscribe, pushUnsubscribe, pushView } from './api.js';
 import { deviceId, deviceName, emptyPush, keyBytes, openTarget, pushStatus, subscriptionBody } from './push.js';
 import type { PushStatus } from './push.js';
+import { BASE } from './base.js';
 import { showDownlink, showRoom } from './store.js';
 import type { PushView } from '../shared/protocol.js';
 
@@ -96,6 +97,9 @@ export const removeDevice = async (id: string): Promise<void> => {
   await refreshPush();
 };
 
+/** The id of the room this page is, from its address: `main` at `/`, else the one under `/r/<id>/`. */
+const thisRoom = (): string => BASE.slice('/r/'.length) || 'main';
+
 /** Registers the worker, and takes a tap on a notification to the ask. Once, at start; it does nothing where a worker is refused. */
 export function startWorker(): () => void {
   if (!secure() || !('serviceWorker' in navigator)) return () => undefined;
@@ -112,11 +116,14 @@ export function startWorker(): () => void {
     window.history.replaceState(null, '', url.pathname + url.search + url.hash);
   }
   const onMessage = (event: MessageEvent): void => {
-    if (event.data !== null && typeof event.data === 'object' && (event.data as { t?: unknown }).t === 'open') go((event.data as { open?: unknown }).open);
+    // the worker focuses a window of the room the push came from; a window of another room leaves it alone
+    const data: unknown = event.data;
+    if (data !== null && typeof data === 'object' && (data as { t?: unknown }).t === 'open' && ((data as { room?: unknown }).room ?? 'main') === thisRoom()) go((data as { open?: unknown }).open);
   };
   navigator.serviceWorker.addEventListener('message', onMessage);
   void navigator.serviceWorker
-    .register('./sw.js')
+    // one worker for every room: at the root, so its scope is the whole address (the installed app is one app)
+    .register('/sw.js', { scope: '/' })
     .then(() => refreshPush())
     .catch(() => undefined);
   return () => navigator.serviceWorker.removeEventListener('message', onMessage);
