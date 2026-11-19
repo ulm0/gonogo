@@ -64,17 +64,19 @@ its own agents within 12 seconds, in parallel, and the supervisor waits 17 befor
 
 ```
 sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/config   # next to compose.yaml
+printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env   # next to compose.yaml; compose reads it for every command
 export CLAUDE_CODE_OAUTH_TOKEN=...     # or ANTHROPIC_API_KEY, never both
-export DOCKER_GID=$(stat -L -c %g /var/run/docker.sock)   # every compose command reads it
 docker compose up -d                                       # pulls ghcr.io/ulm0/gonogo:latest
 docker compose logs gonogo
 ```
+
+`GONOGO_DATA` has no default: **every** compose command (`up`, `logs`, `ps`, `down`, and the `docker compose pull && docker compose up -d` of an update) stops with "set GONOGO_DATA to the absolute path of the data folder" when it is missing. The `.env` file above covers a shell and a UI alike (a stack in ZimaOS, Portainer or Dockge has no shell and no `$PWD`: put the same two lines in the stack's environment or `.env`, with a path that exists on the host). The alternative is `export GONOGO_DATA=...` and `export DOCKER_GID=...` in the shell that runs compose.
 
 It runs the published image (amd64, arm64) with `restart: always`. Update: `docker compose pull && docker compose up -d`. To use your own build, tag it first: `docker build -t ghcr.io/ulm0/gonogo:latest .`.
 
 Second instance on the same host: own project name, port and data folder, e.g. `GONOGO_PORT=7778 GONOGO_DATA=$PWD/gonogo-data-2 docker compose -p gonogo-2 up -d` (create `gonogo-data-2` and its `projects/` as above).
 
-- **Same paths.** The host's Docker resolves `-v` paths on the host, so gonogo's home must have the same path inside gonogo's container as on the host. `compose.yaml` mounts one data folder at its own path (`GONOGO_DATA`, default `${PWD}/gonogo-data`; run compose from that folder) holding `state/`, `claude/` and `projects/`. It must belong to uid 1000 and its path must not contain a colon. Otherwise each Clean Room start refuses with `gonogo's home ... is not mounted into the container ... from the same path of the host`. "The host" is where the daemon runs: in a Lima or Docker Desktop VM, that is the VM.
+- **Same paths.** The host's Docker resolves `-v` paths on the host, so gonogo's home must have the same path inside gonogo's container as on the host. `compose.yaml` mounts one data folder at its own path (`GONOGO_DATA`, required, an absolute path) holding `state/`, `claude/` and `projects/`. It must belong to uid 1000 and its path must not contain a colon. Otherwise each Clean Room start refuses with `gonogo's home ... is not mounted into the container ... from the same path of the host`. "The host" is where the daemon runs: in a Lima or Docker Desktop VM, that is the VM.
 - **Network.** `GONOGO_CLEANROOM_NETWORK=container:self` starts each Clean Room with `--network container:<gonogo's container>` (found by host name; `container:<name>` names it explicitly), sharing gonogo's network and hosts file. `extra_hosts` maps `host.docker.internal` to `127.0.0.1` there; the server accepts that name for the hook and tool endpoints only, and each start refuses if it does not resolve to `127.0.0.1`. A Clean Room on this network can reach any port gonogo's container listens on, including a loopback server started by another agent. Recreating the gonogo container breaks it (restart the console). Other networks are refused.
 - **The socket.** `group_add` gives the container user the socket's group; `DOCKER_GID` is required because it differs between hosts. Docker Desktop may need another value or `0` (not tried).
 - The image's `/state` and `/projects` volumes are unused here (Docker still makes two empty anonymous volumes; `docker compose down -v` removes them). The default Clean Room image is `ghcr.io/ulm0/gonogo`.

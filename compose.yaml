@@ -1,7 +1,9 @@
 # gonogo in Docker, with Clean Room. Once, as root on the Docker host (the image runs as uid 1000):
 #   install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/config    # next to this file
-# Then, with CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported in your shell:
-#   export DOCKER_GID=$(stat -L -c %g /var/run/docker.sock)    # every compose command reads it
+# Then make a file named .env next to this one (compose reads it for every command, from a shell or from a UI such as ZimaOS or Portainer):
+#   GONOGO_DATA=/absolute/path/to/gonogo-data                  # the folder above, by its ABSOLUTE path; every compose command stops without it
+#   DOCKER_GID=<the output of: stat -L -c %g /var/run/docker.sock>
+# (or export both in your shell, and then every compose command must see them). With CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported:
 #   docker compose up -d           # pulls the published image the first time
 #   docker compose logs gonogo     # the `gonogo ready:` line is the URL, token included
 # Update to the latest release: docker compose pull && docker compose up -d
@@ -12,8 +14,8 @@
 # that do not run in a Clean Room. Hire only agents you would let run as root on this machine.
 #
 # The host's Docker mounts a Clean Room's folders by their host paths, so the data folder is mounted at the same path
-# inside: ./gonogo-data, by its absolute path ($PWD, so run compose from this folder). Another folder: export
-# GONOGO_DATA=/absolute/path (no colon in it).
+# inside, by its absolute path: GONOGO_DATA is required, with no default (a default built on $PWD is empty when compose runs from a UI such as
+# ZimaOS or Portainer, and every path below would silently break). No colon in the path.
 services:
   gonogo:
     image: ghcr.io/ulm0/gonogo:latest
@@ -27,24 +29,24 @@ services:
       # No value: forwarded from your shell, so the secret is not written here.
       CLAUDE_CODE_OAUTH_TOKEN:
       ANTHROPIC_API_KEY:
-      GONOGO_HOME: ${GONOGO_DATA:-${PWD}/gonogo-data}/state
-      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:-${PWD}/gonogo-data}/claude
+      GONOGO_HOME: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/state
+      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/claude
       # gh's login and git's global config: in the data folder, not in the image's anonymous /state volume, which a new container
       # (docker compose up after a pull, a self-update) replaces with an empty one
-      XDG_CONFIG_HOME: ${GONOGO_DATA:-${PWD}/gonogo-data}/config
-      GIT_CONFIG_GLOBAL: ${GONOGO_DATA:-${PWD}/gonogo-data}/config/gitconfig
+      XDG_CONFIG_HOME: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/config
+      GIT_CONFIG_GLOBAL: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/config/gitconfig
       # A Clean Room joins this container's network (self: found by its host name, so no fixed container name).
       GONOGO_CLEANROOM_NETWORK: container:self
     # The Clean Room shares this hosts file: its hook URLs name host.docker.internal, which the server limits to hooks and MCP.
     extra_hosts:
       - host.docker.internal:127.0.0.1
     # The boss's first working directory, where your projects go.
-    working_dir: ${GONOGO_DATA:-${PWD}/gonogo-data}/projects
+    working_dir: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/projects
     group_add:
       - ${DOCKER_GID:?set DOCKER_GID to the group id of the Docker socket, stat -L -c %g /var/run/docker.sock}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${GONOGO_DATA:-${PWD}/gonogo-data}:${GONOGO_DATA:-${PWD}/gonogo-data}
+      - ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}:${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}
     # gonogo is a supervisor and one process per room: every room stops its own agents within 12 seconds (in parallel) and the
     # supervisor waits 17 for the slowest before it kills one, so Docker must wait longer than that.
     stop_grace_period: 60s
