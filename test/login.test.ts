@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { AUTH_FILE, resetAuthFiles, SETUP_TOKEN_FILE } from '../src/server/auth.js';
 import { authCommand, socketCall } from '../src/server/authcli.js';
+import { createTuiClient } from '../src/server/tui-client.js';
+import { localSocketOf } from '../src/server/tui-cli.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
@@ -329,6 +331,25 @@ describe('the local socket (R2) and the API keys', () => {
     ws.close();
   });
 
+  it('the TUI uses it: no token, the socket found in the home, a WebSocket and REST over it, a room under /r/<id>', async () => {
+    await boot();
+    await setUp();
+    expect(localSocketOf(home, {})).toBe(sup.socketPath);
+    expect(localSocketOf(join(home, 'nowhere'), {})).toBeNull();
+    const links: string[] = [];
+    const frames: unknown[] = [];
+    const client = createTuiClient({ url: 'http://localhost', token: '', socketPath: sup.socketPath, onFrame: (f) => void frames.push(f), onOutput: () => undefined, onLink: (l) => void links.push(l) });
+    client.start();
+    await until(() => links.includes('open'));
+    await expect(client.hold('ana')).resolves.toBeUndefined();
+    await expect(client.sendMessage({ to: 'ana', subject: 's', body: 'b' })).resolves.toBeUndefined();
+    client.stop();
+    const room = createTuiClient({ url: 'http://localhost/r/main', token: '', socketPath: sup.socketPath, onFrame: () => undefined, onOutput: () => undefined, onLink: (l) => void links.push(l) });
+    room.start();
+    await until(() => links.filter((l) => l === 'open').length === 2);
+    room.stop();
+  });
+
   it('works on a fresh install too, and goes away with the supervisor', async () => {
     await boot();
     expect((await call('GET', '/api/state', {}, undefined, { socket: sup.socketPath })).status).toBe(200);
@@ -473,6 +494,30 @@ describe('reset, alerts and the tamper alarm through the supervisor', () => {
   });
 });
 
+describe('no secret in any log', () => {
+  it('a full login, a reset and a key creation leave no password, cookie, key, token or session id in the log', async () => {
+    const lines: string[] = [];
+    const record = (level: string) => (...args: unknown[]): void => void lines.push(`${level} ${args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`);
+    const logger = { debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error'), child: () => logger };
+    await boot({ log: logger as never });
+    const token = sup.directorToken as string;
+    const setup = setupToken();
+    const cookies = await setUp();
+    const login = await call('POST', '/api/auth/login', { ...FORM, ...origin() }, form({ user: 'director', password: PASSWORD }));
+    const made = await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'ci', scope: 'read' });
+    await call('POST', '/api/auth/login', { ...FORM, ...origin() }, form({ user: 'director', password: 'a wrong password' }));
+    resetAuthFiles(home);
+    await new Promise((r) => setTimeout(r, 1100));
+    await call('GET', '/api/state', cookieHeader(cookies));
+    const secrets = [PASSWORD, 'a wrong password', token, setup, String(made.body.key), cookies['gonogo-session'] as string, cookies['gonogo-device'] as string, login.cookies['gonogo-session'] as string];
+    const text = lines.join('\n');
+    for (const secret of secrets) expect(text, secret.slice(0, 8)).not.toContain(secret);
+    // not the hash of a session either: the id in the file is the only place it is
+    expect(text).not.toMatch(/[0-9a-f]{64}/);
+    expect(text).toMatch(/gonogo auth reset/);
+  });
+});
+
 describe('what stays as it was', () => {
   it('the webhook and docking paths still pass with no login, the agents\' paths stay closed, and a page gets the strict CSP', async () => {
     await boot();
@@ -485,6 +530,8 @@ describe('what stays as it was', () => {
     expect(page.status).toBe(200);
     expect(page.headers['content-security-policy']).toMatch(/default-src 'self'.*script-src 'self'.*frame-ancestors 'none'/);
     expect(page.headers['x-frame-options']).toBe('DENY');
+    // one of each: the room's own header is replaced, not joined
+    expect(page.headers['x-content-type-options']).toBe('nosniff');
     // the room list keeps its own policy, and is not served without being asked for
     const list = await call('GET', '/rooms');
     expect(list.headers['content-security-policy']).toMatch(/frame-ancestors 'none'/);

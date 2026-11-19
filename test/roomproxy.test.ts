@@ -40,7 +40,7 @@ async function fakeRoom(name: string): Promise<Fake> {
     req.on('end', () => {
       seen.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers, body: Buffer.concat(chunks).toString('utf8') });
       if (req.url === '/page') {
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': 'default-src *', connection: 'close' });
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': 'default-src *', 'x-content-type-options': 'nosniff', connection: 'close' });
         return res.end('<p>room</p>');
       }
       if (req.url === '/redirect') {
@@ -102,7 +102,7 @@ const fakeAuth = {
     return fakeAuth.grant(req);
   },
   csrfOk: (req: http.IncomingMessage) => req.method === 'GET' || req.headers.origin !== undefined,
-  pageHeaders: () => ({ 'content-security-policy': "default-src 'self'" }),
+  pageHeaders: () => ({ 'content-security-policy': "default-src 'self'", 'x-content-type-options': 'nosniff' }),
   alive: (id: string) => aliveSessions.has(id),
   touchSession: (id: string) => void touched.push(id),
 };
@@ -411,6 +411,8 @@ describe('rooms proxy: the login', () => {
   it('puts its own CSP on a page of a room, whatever the room said', async () => {
     const res = await get('/page');
     expect(res.headers.get('content-security-policy')).toBe("default-src 'self'");
+    // replaced, not joined: one nosniff, not "nosniff, nosniff"
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(await res.text()).toBe('<p>room</p>');
     // not on an answer that is not a page
     expect((await get('/api/state', director)).headers.get('content-security-policy')).toBeNull();

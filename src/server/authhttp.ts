@@ -317,10 +317,11 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     whoOf,
     pageHeaders: () => ({
       // the page of a room and the list: nothing but the server's own files, no inline script, no frame (threat model 3); styles allow the inline rules the terminal and the client write
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
-      'X-Frame-Options': 'DENY',
+      // lower case: the room's own headers arrive lower-cased, and these must replace them, not sit beside them
+      'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
+      'x-frame-options': 'DENY',
     }),
     handle(req, res) {
       const path = (req.url ?? '').split('?')[0] ?? '';

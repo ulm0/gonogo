@@ -295,7 +295,7 @@ describe('after review of #85', () => {
         ws.once('error', reject);
         ws.once('unexpected-response', (_req, res) => reject(new Error(`status ${res.statusCode}`)));
       });
-    const old = s.directorToken;
+    const old = s.directorToken as string;
     const socket = await connect(old);
     const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
     rotateDirectorToken(home);

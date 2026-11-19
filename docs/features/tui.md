@@ -8,7 +8,7 @@
 gonogo tui [--url <address>] [--token <token>] [--home <dir>]
 ```
 
-It finds the browser token in the file `token` of gonogo's home (`~/.gonogo`, `--home` or `GONOGO_HOME`), which the same user can read, and the server at `http://127.0.0.1:7777` (the port of `GONOGO_PORT`). For a server elsewhere give `--url` (http or https) and the token in `GONOGO_BROWSER_TOKEN` (`--token` also works, but it shows in `ps`). The token is never printed, and gonogo removes `GONOGO_BROWSER_TOKEN` from the environment of every agent it starts; still, set it only in the shell that runs `gonogo tui`. It needs a terminal on stdin and stdout, Node 24, xterm-compatible escapes, and at least 20 columns by 6 rows; Windows is not supported. `NO_COLOR` turns the colour off.
+On the machine gonogo runs on it uses the **local socket** `<home>/run/api.sock` when it is there: no token, the file's permissions are the credential ([Login](./login.md)). Otherwise, or with `--url` or `--token`, it finds the browser token in the file `token` of gonogo's home (a fresh install only: an account deletes it; a remote TUI uses an API key as `--token`) (`~/.gonogo`, `--home` or `GONOGO_HOME`), which the same user can read, and the server at `http://127.0.0.1:7777` (the port of `GONOGO_PORT`). For a server elsewhere give `--url` (http or https) and the token in `GONOGO_BROWSER_TOKEN` (`--token` also works, but it shows in `ps`). The token is never printed, and gonogo removes `GONOGO_BROWSER_TOKEN` from the environment of every agent it starts; still, set it only in the shell that runs `gonogo tui`. It needs a terminal on stdin and stdout, Node 24, xterm-compatible escapes, and at least 20 columns by 6 rows; Windows is not supported. `NO_COLOR` turns the colour off.
 
 ## Screens
 

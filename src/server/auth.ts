@@ -329,7 +329,7 @@ export interface AuthStore {
   setup(who: Who, input: { token: string; user: string; password: string }, legacyToken: string | null): Promise<LoginResult>;
   login(who: Who, input: { user: string; password: string }): Promise<LoginResult>;
   /** The session a cookie value names, refreshed; null when it is none, expired or revoked. */
-  session(cookie: string | undefined, who: Who, touch?: 'api' | 'input'): Session | null;
+  session(cookie: string | undefined, who: Who, touch?: 'api' | 'input' | 'none'): Session | null;
   /** The key a Bearer value names (refused on a public Host unless made with --remote), or null. */
   key(secret: string, who: Who): ApiKey | null;
   deviceOf(cookie: string | undefined): Device | null;
@@ -610,12 +610,27 @@ export function openAuth(options: AuthOptions): AuthStore {
     options.alert(`${what}: sessions and API keys gonogo did not make ended; remote logins are refused until the Director confirms on this machine`);
   };
 
+  /** Makes the setup token when there is no account and none is valid; the token itself is returned only when it was just made. */
+  function ensureSetupToken(): string | null {
+    if (state() === 'account' || state() === 'damaged') return null;
+    const file = join(options.home, SETUP_TOKEN_FILE);
+    try {
+      const age = now() - statSync(file).mtimeMs;
+      if (age < SETUP_TOKEN_MS && /^[0-9a-f]{64}$/.test(readFileSync(file, 'utf8').trim())) return null;
+    } catch {
+      // none yet
+    }
+    return writeSetupToken(options.home);
+  }
+
   let timer: NodeJS.Timeout | null = null;
   const every = options.tamperEveryMs ?? TAMPER_EVERY_MS;
   if (every > 0) {
     timer = setInterval(() => {
       checkTamper(true);
       expiredSweep();
+      // an hour-old setup token is renewed in its file (not printed), so the setup page is never stuck on a token nobody has
+      ensureSetupToken();
     }, every);
     timer.unref();
   }
@@ -665,17 +680,7 @@ export function openAuth(options: AuthOptions): AuthStore {
       if (timer !== null) clearInterval(timer);
     },
 
-    ensureSetupToken() {
-      if (state() === 'account' || state() === 'damaged') return null;
-      const file = join(options.home, SETUP_TOKEN_FILE);
-      try {
-        const age = now() - statSync(file).mtimeMs;
-        if (age < SETUP_TOKEN_MS && /^[0-9a-f]{64}$/.test(readFileSync(file, 'utf8').trim())) return null;
-      } catch {
-        // none yet
-      }
-      return writeSetupToken(options.home);
-    },
+    ensureSetupToken,
 
     async setup(who, input, legacyToken) {
       checkTamper();
