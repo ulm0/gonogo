@@ -31,14 +31,14 @@ A burst from the same sender is one notification. **The text is generic by defau
 ## What it does not do
 
 - **No relay.** gonogo does not send your events to a server of ours. The supervisor (the process behind the one port, which also holds the login) holds one VAPID key pair and the list of devices in `push.json` in gonogo's home (mode 0600), and sends a push straight to the push service of your browser's vendor (Google, Apple, Mozilla or Microsoft). That service sees an encrypted body and the device's address, nothing else. The body is encrypted for the device (RFC 8291) and signed with the key (RFC 8292). A room only tells the supervisor, on the pipe it already has to it, that something waits for you.
-- **No offline data.** The service worker keeps only the built page (its hashed files and icons), so the app opens with no network and then says "not connected" until its socket is up. It never keeps an answer of the API, a login or a terminal.
+- **No offline data.** The service worker keeps only the built page of room main (`/r/main/`: its hashed files and icons; the list of rooms and the other rooms always come from the network), so the app opens with no network and then says "not connected" until its socket is up. It never keeps an answer of the API, a login or a terminal.
 - **Not for approving from Telegram.** [Phone approvals](./phone-approvals.md) through Telegram stay as the channel for people who do not install the app.
 
 ## Security
 
 - **A device belongs to a login session.** The supervisor refuses a subscription without one (a key, the old token and the local socket have none), ties each device to the session that made it, and drops the device when that session ends (you sign out, revoke it, it expires, the password changes, a reset, the tamper alarm).
 - **The address a push goes to is checked** (it is the one place a session can make the server send a request): `https` only, the standard port, no credentials, and a host on a short list of the vendors' push hosts (`fcm.googleapis.com`, `*.push.apple.com`, `*.push.services.mozilla.com`, `*.notify.windows.com`). It is checked when it is stored and again at every send, a redirect is never followed, and the answer is never shown, so a session cannot make gonogo post to `127.0.0.1` or to your LAN. At most 20 devices.
-- **One app for every room.** There is one manifest, one service worker (at `/sw.js`, scope `/`) and one list of devices for the whole gonogo, whichever room's page you install from, so the phone holds one icon (iOS ties a Home Screen app to one scope). The title of a push says the room when it is not main ("gonogo, Team B"), and a tap opens that room's page (`/r/<id>/`, or `/` for main). The manifest takes the colour of the livery.
+- **One app for every room.** There is one manifest, one service worker (at `/sw.js`, scope `/`) and one list of devices for the whole gonogo, whichever room's page you install from, so the phone holds one icon (iOS ties a Home Screen app to one scope). The title of a push says the room when it is not main ("gonogo, Team B"), and a tap opens that room's page (`/r/<id>/`, main's too: `/` is the list of rooms). The manifest takes the colour of the livery.
 
 ## Not verified
 

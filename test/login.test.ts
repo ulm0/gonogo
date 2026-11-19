@@ -986,16 +986,19 @@ describe('what stays as it was', () => {
     expect((await call('POST', '/dock/hello', { ...JSONH }, '{}')).status).toBe(200);
     expect((await call('POST', '/hook/ana/Stop', { ...JSONH }, '{}')).status).toBe(404);
     expect((await call('POST', '/mcp', { ...JSONH }, '{}')).status).toBe(404);
-    const page = await call('GET', '/');
+    const page = await call('GET', '/r/main/');
     expect(page.status).toBe(200);
     expect(page.headers['content-security-policy']).toMatch(/default-src 'self'.*script-src 'self'.*frame-ancestors 'none'/);
     expect(page.headers['x-frame-options']).toBe('DENY');
     // one of each: the room's own header is replaced, not joined
     expect(page.headers['x-content-type-options']).toBe('nosniff');
     // the room list keeps its own policy, and is not served without being asked for
-    const list = await call('GET', '/rooms');
+    const list = await call('GET', '/');
     expect(list.headers['content-security-policy']).toMatch(/frame-ancestors 'none'/);
+    // 0.5.0's address of the list is moved
+    const old = await call('GET', '/rooms?x=1');
+    expect([old.status, old.headers.location]).toEqual([308, '/?x=1']);
     // no room can set a cookie on the shared address
-    expect((await call('GET', '/cookie')).setCookie).toEqual([]);
+    expect((await call('GET', '/r/main/cookie')).setCookie).toEqual([]);
   });
 });

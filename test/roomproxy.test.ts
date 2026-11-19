@@ -164,18 +164,48 @@ const raw = (path: string, headers: Record<string, string>): Promise<number> =>
   });
 
 describe('rooms proxy: HTTP', () => {
-  it('leaves the supervisor its own reserved paths, and sends every other path to room main', async () => {
-    for (const path of ['/rooms', '/rooms/', '/rooms/health', '/rooms/assets/x.css', '/api/rooms', '/api/rooms/team', '/internal', '/internal/busy', '/internal/x/y']) {
+  it('leaves the supervisor its own reserved paths (the list of rooms is "/"), keeps the root aliases of main, and moves every other GET of the old main to /r/main/', async () => {
+    for (const path of ['/', '/?x=1', '/rooms', '/rooms/', '/rooms/health', '/rooms/assets/x.css', '/api/rooms', '/api/rooms/team', '/internal', '/internal/busy', '/internal/x/y']) {
       expect(await (await get(path)).text(), path).toBe('supervisor');
     }
     expect(main.seen).toEqual([]);
-    expect(await (await get('/')).text()).toBe('room main GET /');
-    expect(await (await get('/assets/app.js')).text()).toBe('room main GET /assets/app.js');
-    expect(main.seen.map((x) => x.url).slice(0, 2)).toEqual(['/', '/assets/app.js']);
-    // a prefix that merely starts like a reserved name is main's
-    expect(await (await get('/roomsx')).text()).toBe('room main GET /roomsx');
-    expect(await (await get('/api/roomsx', director)).text()).toBe('room main GET /api/roomsx');
+    // the aliases: what a script, a webhook, a peer station or the installed app was given keeps reaching main at the root
     expect(await (await get('/api/state', director)).text()).toBe('room main GET /api/state');
+    expect(await (await get('/api/roomsx', director)).text()).toBe('room main GET /api/roomsx');
+    for (const path of ['/sw.js', '/manifest.webmanifest', '/icon-192.png', '/apple-touch-icon.png', '/favicon.svg', '/lockup.svg']) expect(await (await get(path)).text(), path).toBe(`room main GET ${path}`);
+    // every other GET or HEAD of the old main is moved: the query stays, the fragment never leaves the browser
+    for (const [path, to] of [
+      ['/assets/app.js', '/r/main/assets/app.js'],
+      ['/index.html?x=1&y=2', '/r/main/index.html?x=1&y=2'],
+      ['/roomsx', '/r/main/roomsx'],
+      ['/some/page/', '/r/main/some/page/'],
+    ] as const) {
+      for (const method of ['GET', 'HEAD']) {
+        const moved = await fetch(`${base}${path}`, { method, redirect: 'manual' });
+        expect([moved.status, moved.headers.get('location')], `${method} ${path}`).toEqual([308, to]);
+      }
+    }
+    // not a page: a change at the old root is not moved, it reaches main as it always did
+    expect((await fetch(`${base}/assets/app.js`, { method: 'POST', redirect: 'manual', headers: { authorization: `Bearer ${DIRECTOR}` } })).status).toBe(200);
+    expect(main.seen.map((x) => x.url)).toEqual(['/api/state', '/api/roomsx', '/sw.js', '/manifest.webmanifest', '/icon-192.png', '/apple-touch-icon.png', '/favicon.svg', '/lockup.svg', '/assets/app.js']);
+  });
+
+  it('a redirect never leaves the path it was asked to leave: a dot segment, a double slash, an encoded slash or another host are no redirect', async () => {
+    // raw request lines: fetch would tidy these paths before they left
+    const raw = (path: string, host?: string): Promise<{ status: number; location: string | undefined }> =>
+      new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port: new URL(base).port, path, method: 'GET', headers: host === undefined ? {} : { host } }, (res) => {
+          res.resume();
+          resolve({ status: res.statusCode ?? 0, location: res.headers.location });
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    for (const path of ['/a/../b', '/a/%2e%2e/b', '//evil.test/x', '/a%2fb', '/r', '/r/']) {
+      const res = await raw(path);
+      expect(res.status === 308 ? res.location : null, path).toBeNull();
+    }
+    expect((await raw('/x', 'evil.test')).status).toBe(403);
   });
 
   it('main answers the same at / and at /r/main/, and the room sees no Authorization at either', async () => {
@@ -212,14 +242,15 @@ describe('rooms proxy: HTTP', () => {
     expect(await raw('/%72ooms/health', {})).toBe(200);
   });
 
-  it('S2: no Set-Cookie from any room, at / or under /r/<id>/; a redirect of main at / gets no /r/main prefix, one under /r/a does get its prefix', async () => {
-    for (const path of ['/cookie', '/r/a/cookie', '/r/main/cookie']) {
+  it('S2: no Set-Cookie from any room, at / or under /r/<id>/; a redirect of a room gets its /r/<id> prefix (main too)', async () => {
+    for (const path of ['/api/cookie', '/r/a/cookie', '/r/main/cookie']) {
       const res = await get(path, director);
       expect(res.headers.get('set-cookie'), path).toBeNull();
       expect(res.headers.get('x-room')).not.toBeNull();
     }
+    // main at the old root is moved, not proxied; a redirect of the room itself keeps the room's prefix
     const here = await fetch(`${base}/redirect`, { redirect: 'manual' });
-    expect(here.headers.get('location')).toBe('/elsewhere');
+    expect([here.status, here.headers.get('location')]).toEqual([308, '/r/main/redirect']);
     const there = await fetch(`${base}/r/a/redirect`, { redirect: 'manual' });
     expect(there.headers.get('location')).toBe('/r/a/elsewhere');
     const viaMain = await fetch(`${base}/r/main/redirect`, { redirect: 'manual' });

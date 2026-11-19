@@ -180,6 +180,8 @@ describe('a hooks-only host serves the webhooks and nothing else', () => {
       expect((await ask(host, '/mcp', 'POST')).status, host).toBe(404);
     }
     expect((await ask('host.docker.internal', '/hook/ana/Stop', 'POST')).status).toBe(403);
+    // a hooks host has no page: the old main's paths are no redirect there, and neither is the list at /
+    for (const path of ['/assets/x.js', '/', '/index.html']) expect((await ask('hooks.example.com', path)).status, path).toBe(404);
   });
 });
 

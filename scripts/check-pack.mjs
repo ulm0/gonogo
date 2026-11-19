@@ -276,11 +276,11 @@ async function main() {
     console.log(`ok 3 pnpm add with no build script run, start: ${parsed.origin}`);
 
     // 4. what only a built run shows.
-    const index = await ask(port, '/');
-    if (index.status !== 200 || !/^text\/html/.test(index.headers['content-type'] ?? '')) fail('http', `GET / answered ${index.status} ${index.headers['content-type']}, expected 200 text/html`);
+    const index = await ask(port, '/r/main/');
+    if (index.status !== 200 || !/^text\/html/.test(index.headers['content-type'] ?? '')) fail('http', `GET /r/main/ answered ${index.status} ${index.headers['content-type']}, expected 200 text/html`);
     const wanted = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin', 'x-frame-options': 'DENY' };
     for (const [name, value] of Object.entries(wanted)) {
-      if (index.headers[name] !== value) fail('http', `GET / header ${name} is ${JSON.stringify(index.headers[name])}, expected ${value}`);
+      if (index.headers[name] !== value) fail('http', `GET /r/main/ header ${name} is ${JSON.stringify(index.headers[name])}, expected ${value}`);
     }
     const noToken = await ask(port, '/api/state');
     if (noToken.status !== 401) fail('http', `GET /api/state without a token answered ${noToken.status}, expected 401`);

@@ -621,7 +621,13 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       res.end(req.method === 'HEAD' ? undefined : up ? 'ok' : 'main is not ready yet');
       return;
     }
+    // 0.5.0's address of the list: moved to "/" (the query stays)
     if ((path === ROOMS_PATH || path === `${ROOMS_PATH}/`) && get) {
+      res.writeHead(308, { Location: `/${(req.url ?? '').includes('?') ? `?${(req.url ?? '').split('?').slice(1).join('?')}` : ''}`, 'Content-Length': 0 });
+      res.end();
+      return;
+    }
+    if (path === '/' && get) {
       res.writeHead(200, roomsPageHeaders());
       res.end(req.method === 'HEAD' ? undefined : roomsPage(stylesheet, options.version ?? null));
       return;
