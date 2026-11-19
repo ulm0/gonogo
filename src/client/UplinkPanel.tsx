@@ -11,7 +11,7 @@ import type { UplinkKind, UplinkView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { recipients, toText } from './launch.js';
 import { useAgentList } from './RoomView.js';
-import { useNow, useStore } from './store.js';
+import { useNow, useStore, showHistory } from './store.js';
 import { atText, copyText, emptyValues, endpointOf, FIELDS, lastText, needsSecret, requestOf, secretProblem, toneOf, validate, valuesOf } from './uplink.js';
 import type { Field, Problems, Values } from './uplink.js';
 import { useRun } from './WallView.js';
@@ -247,7 +247,12 @@ function Row({ uplink, now, onEdit, onNotice, onSecret }: { uplink: UplinkView; 
           Copy
         </button>
       </div>
-      <p className="win-last">{lastText(uplink, now)}</p>
+      <p className="win-last">
+        {lastText(uplink, now)}{' '}
+        <button type="button" className="btn" data-kind="quiet" aria-label={`History of ${name}`} onClick={() => showHistory({ source: uplink.id })}>
+          History
+        </button>
+      </p>
       {uplink.deliveries.length > 0 && (
         <details className="up-log">
           <summary>Deliveries ({uplink.deliveries.length})</summary>

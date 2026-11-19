@@ -17,6 +17,7 @@
  * shortcut: a docking code and the nonces seen live in memory; a restart forgets them (a code stops working, a replay of a
  * call from the last 5 minutes before the restart would be accepted once).
  */
+import type { TriggerInput } from './triggers.js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import type { IncomingHttpHeaders } from 'node:http';
@@ -136,6 +137,8 @@ export interface DockingOptions {
   /** The agents of this station, for the pull of the other side. */
   roster(): DockedAgent[];
   tasks: Pick<Tasks, 'list' | 'create' | 'handOff'>;
+  /** The history of triggers (docs/features/triggers.md): a hand-off to a station and every call that came in from one. */
+  trigger?(entry: TriggerInput): void;
   /** The view changed (a dock was made or removed, a pull saw something new). */
   emit(view: DockingView): void;
   /** Calls `fn` every `ms` until the function that comes back is called. Default: setInterval, which does not keep the process alive. */
@@ -429,6 +432,30 @@ export function createDocking(options: DockingOptions): Docking {
     return { ok: true, id: task.id };
   }
 
+  /** An inbound call from a station, kept in the history of triggers with how it ended (the payload is not kept). */
+  function traced<T>(dock: Dock, what: string, run: () => T): T {
+    const done = (outcome: string, error?: unknown): void =>
+      options.trigger?.({ kind: 'docking', source: dock.id, name: dock.name, outcome, what: `from ${dock.name}: ${what}`, ...(error === undefined ? {} : { note: error instanceof Error ? error.message : 'failed' }) });
+    const failed = (error: unknown): void => done(error instanceof HubError && error.code !== 'internal' ? 'refused' : 'failed', error);
+    try {
+      const result = run();
+      if (result instanceof Promise) {
+        return result.then(
+          (value) => (done('delivered'), value),
+          (error: unknown) => {
+            failed(error);
+            throw error;
+          },
+        ) as T;
+      }
+      done('delivered');
+      return result;
+    } catch (error) {
+      failed(error);
+      throw error;
+    }
+  }
+
   /* ---------------------------------------------------------------- the public API */
 
   return {
@@ -578,9 +605,15 @@ export function createDocking(options: DockingOptions): Docking {
       const assignee = input.assignee ?? null;
       if (assignee !== null && (typeof assignee !== 'string' || !NAME_RE.test(assignee))) throw bad('assignee must be the name of an agent of that station, or null', 'assignee');
       handing.add(task.id);
+      const trace = (outcome: string, note?: string): void => options.trigger?.({ kind: 'docking', source: dock.id, name: dock.name, outcome, what: `hand-off of ${task.id}: ${task.title}`, ...(assignee === null ? {} : { agent: assignee as string }), ...(note === undefined ? {} : { note }) });
       try {
         await call(dock, 'POST', 'task', { id: task.id, title: task.title, detail: task.detail, assignee });
-        return await options.tasks.handOff(task.id, dock.name, assignee);
+        const handed = await options.tasks.handOff(task.id, dock.name, assignee);
+        trace('delivered');
+        return handed;
+      } catch (error) {
+        trace('failed', error instanceof Error ? error.message : 'hand-off failed');
+        throw error;
       } finally {
         handing.delete(task.id);
       }
@@ -596,9 +629,9 @@ export function createDocking(options: DockingOptions): Docking {
         case 'roster':
           return { station: { id, name: options.name }, agents: options.roster() };
         case 'message':
-          return acceptMessage(dock, readObject(body));
+          return traced(dock, 'a message', () => acceptMessage(dock, readObject(body)));
         case 'task':
-          return acceptTask(dock, readObject(body));
+          return traced(dock, 'a task handed off to this station', () => acceptTask(dock, readObject(body)));
         default: {
           // undock: gone from here too, and the answer is the last thing this dock gets
           docks = docks.filter((d) => d !== dock);

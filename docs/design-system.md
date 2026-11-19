@@ -276,6 +276,8 @@ Each is built from the keys, chips, lights, modules and fields above, so it foll
 FAIL  /hook/x/Stop answered 200: it must be 404</pre>
 <span class="label">Exposed to (Flight Rules, LOGIN)</span>
 <span class="hint">Exposed to: gonogo.example.com (page), hooks.example.com (webhooks only). Login: ready (account and second factor).</span>
+<span class="label">History row (Launch Window)</span>
+<div style="display: grid; grid-template-columns: auto auto 1fr auto; gap: 4px 10px; align-items: center"><span class="lcd-num">08:12</span><span class="chip" data-tone="quiet">Webhook</span><b>Deploys</b><span class="chip" data-tone="nogo">refused</span><span class="hint" style="grid-column: 1 / -1">deploy finished · ana is not in the room</span></div>
 <span class="label">Worktree line</span>
 <span style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><span class="chip" data-tone="quiet">WORKTREE</span><span class="hint">Branch <code>gonogo/ana</code>, clean, merged into main.</span></span>
 <span class="label">Room editor: card, grip and tray</span>

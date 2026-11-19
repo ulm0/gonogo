@@ -34,6 +34,7 @@ import { FILE_MODE, UPLINK_BAD_MAX, UPLINK_BAD_WINDOW_MS, UPLINK_NOTE_MAX_CHARS,
 import { HubError } from './hub.js';
 import { bearerToken, isRecord } from './hooks.js';
 import { RELAY_KINDS } from './relaykinds.js';
+import type { TriggerInput } from './triggers.js';
 import { UNSAFE_IN_NAME } from './schedules.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -60,6 +61,8 @@ export interface UplinksOptions {
   inbound?: Inbound;
   /** Phone approvals: a button was pressed. Gets the secret of the uplink (it signed the button); never throws, never waits for. */
   press?(secret: string, press: ButtonPress): void;
+  /** The history of triggers (docs/features/triggers.md): every delivery that proved itself, a polled Telegram update included. */
+  trigger?(entry: TriggerInput): void;
   log: Logger;
 }
 
@@ -248,7 +251,9 @@ export function createUplinks(options: UplinksOptions): Uplinks {
     return u;
   };
 
-  const record = (u: Uplink, status: UplinkDelivery['status'], note: string): void => {
+  const record = (u: Uplink, status: UplinkDelivery['status'], note: string, extra: { what?: string; message?: string; agent?: string } = {}): void => {
+    // the history of triggers keeps what a delivery did; the reason only when it did not go
+    options.trigger?.({ kind: u === POLLED ? 'telegram' : 'uplink', source: u === POLLED ? 'telegram' : u.id, name: u.name, service: u.kind, outcome: status, what: extra.what ?? '', ...(extra.message === undefined ? {} : { message: extra.message }), ...(extra.agent === undefined ? {} : { agent: extra.agent }), ...(status === 'refused' || status === 'undelivered' || status === 'answered' ? { note } : {}) });
     if (u === POLLED) return;
     u.deliveries = [{ at: now(), status, note: cut(note) }, ...u.deliveries].slice(0, UPLINK_DELIVERIES_MAX);
     void changed().catch(() => undefined);
@@ -290,10 +295,10 @@ export function createUplinks(options: UplinksOptions): Uplinks {
         if (message.to === undefined || !(error instanceof HubError && error.code === 'not_found')) throw error;
         sent = options.send({ ...request, to: u.to });
       }
-      record(u, sent.status, `${label}${sent.id}${sent.note ? `: ${sent.note}` : ''}${message.cut ? ' (cut)' : ''}`);
+      record(u, sent.status, `${label}${sent.id}${sent.note ? `: ${sent.note}` : ''}${message.cut ? ' (cut)' : ''}`, { what: `${label}${message.text}`, message: sent.id, agent: sent.to });
       return sent;
     } catch (error) {
-      record(u, 'refused', `${label}not sent: ${messageOf(error)}`);
+      record(u, 'refused', `${label}not sent: ${messageOf(error)}`, { what: `${label}${message.text}` });
       // not "not found": that answer is for an uplink that does not exist
       throw new HubError('conflict', messageOf(error));
     }

@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **History of triggers.** One append-only log per room (`triggers.jsonl`, mode 0600, rotated at 1 MiB or 90 days) of everything that fired by itself or came in from outside: an uplink delivery (Relay's GitHub, Slack, Linear and Telegram included), a Telegram update read by polling, a Launch Window run and a Docking hand-off or call. Each entry has the time, the source, what it did (the message id and the agent) and how it ended, with the payload cut to one line and secrets replaced. A HISTORY tab in Launch Window filters by kind, source and outcome, and each uplink and schedule card links to its own; `GET /api/triggers`. A bad signature is not logged. Redaction is a pattern list, not a proof.
+
 ## 0.6.1 (2026-11-19)
 
 The version on the list of rooms sits in its top bar, a real-browser smoke test guards the page in CI, and compose.yaml needs GONOGO_DATA (read "What breaks" if you run it from a UI).

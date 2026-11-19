@@ -9,7 +9,7 @@ import type { Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
-import { PERMISSION_MODES, PROVIDERS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
+import { PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
   UpdateView,
   PropellantView,
@@ -100,6 +100,7 @@ import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
 import type { Rollout } from './rollout.js';
 import { normalizeHost } from './hosts.js';
+import type { Triggers } from './triggers.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
@@ -135,6 +136,8 @@ export interface WebOptions {
   propellant?: Pick<Propellant, 'view' | 'setLimits' | 'setBudget'> & Partial<Pick<Propellant, 'report'>>;
   /** The owner's model prices (docs/cost-spec.md); absent in tests that do not need them (the routes answer 404). */
   prices?: Pick<Prices, 'view' | 'replace' | 'remove'>;
+  /** The history of triggers; absent in tests that do not need it (the route answers 404). */
+  triggers?: Pick<Triggers, 'list'>;
   /** Called after a price or a budget changed, so the budget is checked against the new numbers at once. */
   spendChanged?: () => void;
   /** Telemetry: GET /api/agents/:name/telemetry. Without it the list is empty. */
@@ -948,6 +951,25 @@ export function createWebServer(options: WebOptions): WebServer {
           }
           broadcast({ t: 'propellant', propellant: view });
           sendJson(res, 200, view);
+        },
+      };
+    }
+    if (s[1] === 'triggers' && s.length === 2) {
+      const triggers = options.triggers;
+      if (!triggers) return null;
+      return {
+        allow: ['GET'],
+        run: async (req, res) => {
+          const q = new URL(req.url ?? '/', 'http://localhost').searchParams;
+          const kind = q.get('kind');
+          const source = q.get('source');
+          const outcome = q.get('outcome');
+          const limit = q.get('limit');
+          if (kind !== null && !(TRIGGER_KINDS as readonly string[]).includes(kind)) return sendApiError(res, 400, `kind is one of ${TRIGGER_KINDS.join(', ')}`, 'bad_request', 'kind');
+          if (source !== null && !/^[A-Za-z0-9_.:@-]{1,40}$/.test(source)) return sendApiError(res, 400, 'source is the id of an uplink, a schedule or a dock', 'bad_request', 'source');
+          if (outcome !== null && !/^[A-Za-z0-9_]{1,20}$/.test(outcome)) return sendApiError(res, 400, 'outcome is one word', 'bad_request', 'outcome');
+          if (limit !== null && !(/^\d{1,3}$/.test(limit) && Number(limit) >= 1 && Number(limit) <= 500)) return sendApiError(res, 400, 'limit is a number from 1 to 500', 'bad_request', 'limit');
+          sendJson(res, 200, { triggers: await triggers.list({ ...(kind === null ? {} : { kind: kind as (typeof TRIGGER_KINDS)[number] }), ...(source === null ? {} : { source }), ...(outcome === null ? {} : { outcome }), ...(limit === null ? {} : { limit: Number(limit) }) }) });
         },
       };
     }
