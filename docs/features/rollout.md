@@ -31,7 +31,7 @@ gonogo tells you when a newer `@ulm0/gonogo` exists and says which command updat
 | `pnpm dlx` | `pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@<newest>` |
 | Homebrew | `brew upgrade gonogo` |
 | `npm install -g` | `npm install -g @ulm0/gonogo@latest` |
-| `pnpm add -g`, or anything else | `pnpm add -g --config.minimum-release-age-exclude=@ulm0/gonogo @ulm0/gonogo@<newest>` |
+| `pnpm add -g`, or anything else | `pnpm --config.minimum-release-age-exclude=@ulm0/gonogo add -g @ulm0/gonogo@<newest>` |
 
 For pnpm, `<newest>` is the version the last check saw, written out, never `@latest`, and the flag exempts gonogo from pnpm's `minimumReleaseAge` (where it is set, a young release is refused and `@latest` picks an older one). Dependencies keep the check.
 

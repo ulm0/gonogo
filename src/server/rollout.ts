@@ -51,7 +51,7 @@ export function updateCommand(where: { file: string; docker: boolean; clone: boo
   if (path.includes('/pnpm/dlx/')) return `pnpm ${PNPM_EXCLUDE} dlx @ulm0/gonogo@latest`;
   if (BREW.test(path)) return 'brew upgrade gonogo';
   if (path.includes('/lib/node_modules/@ulm0/gonogo/')) return 'npm install -g @ulm0/gonogo@latest';
-  return `pnpm add -g ${PNPM_EXCLUDE} @ulm0/gonogo@latest`;
+  return `pnpm ${PNPM_EXCLUDE} add -g @ulm0/gonogo@latest`;
 }
 
 /**
@@ -99,7 +99,7 @@ export function pinCommand(command: string, version: string | null): string {
 /** The command that installs one exact version for npm or pnpm, and the one that goes back; null for the other kinds. */
 export function installCommand(kind: InstallKind, version: string): { file: string; args: string[] } | null {
   if (kind === 'npm') return { file: 'npm', args: ['install', '-g', `@ulm0/gonogo@${version}`] };
-  if (kind === 'pnpm') return { file: 'pnpm', args: ['add', '-g', PNPM_EXCLUDE, `@ulm0/gonogo@${version}`] };
+  if (kind === 'pnpm') return { file: 'pnpm', args: [PNPM_EXCLUDE, 'add', '-g', `@ulm0/gonogo@${version}`] };
   return null;
 }
 

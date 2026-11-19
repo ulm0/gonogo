@@ -26,7 +26,7 @@ describe('which install is this', () => {
 
   it('builds the install of one exact version for npm and pnpm only', () => {
     expect(installCommand('npm', '1.2.3')).toEqual({ file: 'npm', args: ['install', '-g', '@ulm0/gonogo@1.2.3'] });
-    expect(installCommand('pnpm', '1.2.3')).toEqual({ file: 'pnpm', args: ['add', '-g', PNPM_EXCLUDE, '@ulm0/gonogo@1.2.3'] });
+    expect(installCommand('pnpm', '1.2.3')).toEqual({ file: 'pnpm', args: [PNPM_EXCLUDE, 'add', '-g', '@ulm0/gonogo@1.2.3'] });
     for (const kind of ['docker', 'brew', 'dlx', 'clone', 'other'] as const) expect(installCommand(kind, '1.2.3')).toBeNull();
   });
 
