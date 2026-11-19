@@ -88,9 +88,9 @@ export function installNote(kind: InstallKind, canUpdate: boolean, docker?: { re
   }
 }
 
-/** The command with the exact version in place of `@latest`: pnpm's one-day release age makes `@latest` resolve to an old version just after a release. */
+/** A pnpm command with the exact version in place of `@latest` (npm is left as it is): pnpm's one-day release age makes `@latest` resolve to an old version just after a release. */
 export function pinCommand(command: string, version: string | null): string {
-  return version === null ? command : command.replace("@ulm0/gonogo@latest", `@ulm0/gonogo@${version}`);
+  return version === null || !command.startsWith('pnpm ') ? command : command.replace("@ulm0/gonogo@latest", `@ulm0/gonogo@${version}`);
 }
 
 /** The command that installs one exact version for npm or pnpm, and the one that goes back; null for the other kinds. */

@@ -280,8 +280,9 @@ describe('updateText', () => {
 });
 
 describe('pinCommand', () => {
-  it('puts the exact version where @latest was, for npm, pnpm and dlx, and leaves other commands alone', () => {
-    for (const c of ['pnpm dlx', 'pnpm add -g', 'npm install -g']) expect(pinCommand(`${c} @ulm0/gonogo@latest`, '0.4.1')).toBe(`${c} @ulm0/gonogo@0.4.1`);
+  it('puts the exact version where @latest was, for pnpm and dlx, and leaves npm and other commands alone', () => {
+    for (const c of ['pnpm dlx', 'pnpm add -g']) expect(pinCommand(`${c} @ulm0/gonogo@latest`, '0.4.1')).toBe(`${c} @ulm0/gonogo@0.4.1`);
+    expect(pinCommand('npm install -g @ulm0/gonogo@latest', '0.4.1')).toBe('npm install -g @ulm0/gonogo@latest');
     expect(pinCommand('brew upgrade gonogo', '0.4.1')).toBe('brew upgrade gonogo');
     expect(pinCommand('pnpm dlx @ulm0/gonogo@latest', null)).toBe('pnpm dlx @ulm0/gonogo@latest');
   });

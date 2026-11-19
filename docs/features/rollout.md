@@ -30,9 +30,9 @@ gonogo tells you when a newer `@ulm0/gonogo` exists and says which command updat
 | A git checkout | `git pull && pnpm install && pnpm build` |
 | `pnpm dlx` | `pnpm dlx @ulm0/gonogo@<newest>` |
 | Homebrew | `brew upgrade gonogo` |
-| `npm install -g` | `npm install -g @ulm0/gonogo@<newest>` |
+| `npm install -g` | `npm install -g @ulm0/gonogo@latest` |
 | `pnpm add -g`, or anything else | `pnpm add -g @ulm0/gonogo@<newest>` |
 
-`<newest>` is the version the last check saw, written out, never `@latest`: pnpm's one-day release age makes `@latest` resolve to an older version just after a release.
+For pnpm, `<newest>` is the version the last check saw, written out, never `@latest`: pnpm's one-day release age makes `@latest` resolve to an older version just after a release.
 
 The way gonogo was installed is guessed from where its own file is. If you started the image with `docker run` instead of compose, pull the image and start it again yourself.

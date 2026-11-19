@@ -30,12 +30,12 @@ The npm package is `@ulm0/gonogo`; see [What was not verified](../reference/not-
 From npm:
 
 ```
-pnpm dlx @ulm0/gonogo@%VERSION%            # run it once
-pnpm add -g @ulm0/gonogo@%VERSION% && gonogo   # or install the gonogo command
+npm i -g @ulm0/gonogo@latest && gonogo     # install the gonogo command
+pnpm dlx @ulm0/gonogo@%VERSION%            # or run it once with pnpm
 brew install ulm0/tap/gonogo               # or with Homebrew (macOS, Linux); update with brew upgrade gonogo
 ```
 
-Name the version: pnpm takes only a release at least a day old by default (`minimumReleaseAge`), so a bare `pnpm dlx @ulm0/gonogo` or `@latest` runs an older gonogo for a day after each release. Use the scoped name: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. [Options](../reference/configuration.md#options) go after the command: `pnpm dlx @ulm0/gonogo@%VERSION% --port 7780`.
+With pnpm, name the version: it takes only a release at least a day old by default (`minimumReleaseAge`), so a bare `pnpm dlx @ulm0/gonogo` or `@latest` runs an older gonogo for a day after each release. Use the scoped name: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. [Options](../reference/configuration.md#options) go after the command: `pnpm dlx @ulm0/gonogo@%VERSION% --port 7780`.
 
 From a clone (`corepack enable pnpm` installs the pinned pnpm):
 
