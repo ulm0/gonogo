@@ -29,6 +29,10 @@ Quick Tunnels (`trycloudflare.com`) are for testing only: the name changes on ev
 
 The Flight Rules LOGIN block says which names gonogo answers on and whether the login stands behind them.
 
+## The client address header
+
+The proxy must **overwrite** the header named by `--client-ip-header`, not pass through what the client sent: `x-forwarded-for` is set to the address the proxy saw (Caddy: `header_up X-Forwarded-For {remote_host}`, as the written Caddyfile does). A proxy that appends to, or forwards, the client's own header lets a stranger pick the address gonogo rate-limits and logs. `cf-connecting-ip` is right **only behind Cloudflare** (Cloudflare sets it and replaces a client's value); behind any other proxy it is a header any client can write, so use `x-forwarded-for` there. gonogo reads the header only from a peer listed in `--trusted-proxy`.
+
 ## `gonogo expose check`
 
 Run it on the machine after you did the provider's steps. It refuses while the login is not set up, then makes one set of requests to your public address and prints one line each:
@@ -36,14 +40,14 @@ Run it on the machine after you did the provider's steps. It refuses while the l
 - **TLS:** https, and an answer.
 - **the login:** `/api/auth/status` says an account exists, and that gonogo sees this request as **public** (the proxy kept the public Host; a proxy that rewrites it to 127.0.0.1 would make a remote client look local).
 - **`/api/state` answers 401** with no credential.
-- **The old local token gets 401** through the public address, while a token file still exists: a tunnel can make remote traffic look local, which is why no token works on TCP once an account exists.
+- **A token is refused on TCP:** it sends a **made-up** 64-hex token (new every run, never one of yours: a typo in the address or a hop without TLS must not leak a credential) and requires 401. A tunnel can make remote traffic look local; once an account exists no token works on TCP, whoever holds it.
 - **`/hook` and `/mcp` are 404**; **a WebSocket upgrade with no credential is 401** (so the path and the upgrade pass the proxy); **the login page has its Content-Security-Policy**.
 
 It exits 1 when a line fails. It cannot see an idle WebSocket close, a certificate that is about to expire or what the provider logs.
 
 ## What a tunnel does and does not hide
 
-A tunnel hides nothing the login does not cover. Cloudflare Tunnel, Cloudflare Access and ngrok **end the TLS at the provider**: it can see passwords, cookies, TOTP codes and every terminal byte. Tailscale Serve and Funnel do not decrypt. Every client behind a tunnel has one address (the device buckets of the login handle that), and a tunnel can make remote traffic look local, which is why `expose check` sends the old token through the public address. Every proxy config `expose` writes sets `X-Forwarded-For` and keeps the public `Host`.
+A tunnel hides nothing the login does not cover. Cloudflare Tunnel, Cloudflare Access and ngrok **end the TLS at the provider**: it can see passwords, cookies, TOTP codes and every terminal byte. Tailscale Serve and Funnel do not decrypt. Every client behind a tunnel has one address (the device buckets of the login handle that), and a tunnel can make remote traffic look local, which is why `expose check` sends a made-up token through the public address and requires 401. Every proxy config `expose` writes sets `X-Forwarded-For` and keeps the public `Host`.
 
 ## Not tried
 

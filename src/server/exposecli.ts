@@ -8,7 +8,8 @@
  */
 import http from 'node:http';
 import https from 'node:https';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { authStateOf } from './auth.js';
 import { hostClass } from './auth.js';
@@ -165,8 +166,8 @@ export interface CheckLine {
 
 export interface CheckOptions {
   url: string;
-  /** The old browser token file's contents, when one is there. */
-  legacyToken: string | null;
+  /** The made-up token the probe sends (default: 64 random hex characters). Never a real credential: a typo in the address, a stale DNS record or a plain-http hop would hand it to a stranger. */
+  probeToken?: string;
   timeoutMs?: number;
 }
 
@@ -244,12 +245,12 @@ export async function checkExposure(options: CheckOptions): Promise<CheckLine[]>
     const a = await ask(url, 'GET', '/api/state', {}, timeoutMs);
     add(a.status === 401, a.status === 401 ? '/api/state answers 401 with no credential' : `/api/state answered ${a.status} with no credential: it must be 401`);
   });
-  if (options.legacyToken !== null) {
-    await step('the old token', async () => {
-      const a = await ask(url, 'GET', '/api/state', { authorization: `Bearer ${options.legacyToken}` }, timeoutMs);
-      add(a.status === 401, a.status === 401 ? 'the old local token gets 401 through the public address' : `the old local token was accepted through the public address (${a.status}): a tunnel makes remote traffic look local; keep the proxy from dropping its forwarding headers, and run gonogo auth reset`);
-    });
-  }
+  // a token shaped like the old browser token, made up for this probe: once an account exists no token works on TCP, whoever holds it
+  await step('a token', async () => {
+    const probe = options.probeToken ?? randomBytes(32).toString('hex');
+    const a = await ask(url, 'GET', '/api/state', { authorization: `Bearer ${probe}` }, timeoutMs);
+    add(a.status === 401, a.status === 401 ? 'a token is refused on TCP: a made-up 64-hex token gets 401 through the public address' : `a made-up token was accepted through the public address (${a.status}): a tunnel can make remote traffic look local; keep the proxy from dropping its forwarding headers, and run gonogo auth reset`);
+  });
   await step('/hook', async () => {
     const a = await ask(url, 'POST', '/hook/x/Stop', { 'content-type': 'application/json' }, timeoutMs, '{}');
     add(a.status === 404, a.status === 404 ? '/hook is 404 off this machine' : `/hook/x/Stop answered ${a.status}: it must be 404`);
@@ -286,13 +287,8 @@ export async function exposeCommand(args: readonly string[], home: string, env: 
   if (first === 'check') {
     if (options.publicUrl === '') return (io.err('gonogo expose check: give --public-url (or set GONOGO_PUBLIC_URL)\n'), 2);
     if (authStateOf(home) !== 'account') return (io.err('gonogo expose check: the login is not set up on this home, so nothing should be published yet. Set it up first (docs: login).\n'), 1);
-    let legacy: string | null = null;
-    try {
-      legacy = (await readFile(join(home, 'token'), 'utf8')).trim() || null;
-    } catch {
-      // no old token file: the account made it go away
-    }
-    const lines = await checkExposure({ url: options.publicUrl, legacyToken: legacy });
+    // nothing of this home is read for the probe: the address may be a typo, a stale record or a hop that is not encrypted
+    const lines = await checkExposure({ url: options.publicUrl });
     for (const line of lines) io.out(`${line.ok ? 'pass' : 'FAIL'}  ${line.text}\n`);
     const failed = lines.filter((l) => !l.ok).length;
     io.out(failed === 0 ? '\nAll checks passed. (Nothing was changed.)\n' : `\n${failed} check${failed === 1 ? '' : 's'} failed. Nothing was changed.\n`);

@@ -35,4 +35,6 @@ gonogo expose check
 - Not verified: WebSocket proxying details on the Caddy page read; `gonogo expose check` opens one.
 - Webhooks only? Do not give the page a name at all: `--allow-host hooks.example.com:hooks` serves only `/uplink/*` and `/dock/*` there (see [Exposing gonogo safely](../https.md)).
 
+- The proxy must **overwrite** `X-Forwarded-For` with the address it saw, never pass the client's own through; do not use `cf-connecting-ip` here (it is a header any client can write unless Cloudflare is in front).
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

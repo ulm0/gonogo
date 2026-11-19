@@ -23,4 +23,6 @@ gonogo expose check
 
 - Needs a `funnel` node attribute for this machine and HTTPS certificates; only ports 443, 8443 and 10000; only `<machine>.<tailnet>.ts.net` names; the bandwidth limits are not configurable.
 
+- The proxy must **overwrite** `X-Forwarded-For` with the address it saw, never pass the client's own through; do not use `cf-connecting-ip` here (it is a header any client can write unless Cloudflare is in front).
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

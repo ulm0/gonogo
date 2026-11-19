@@ -23,4 +23,6 @@ gonogo expose check
 - Check `ngrok http --help` for your version: the flag for a fixed name has changed over time.
 - Free-plan features, WebSocket support and any interstitial page were not read: `gonogo expose check` is the proof.
 
+- The proxy must **overwrite** `X-Forwarded-For` with the address it saw, never pass the client's own through; do not use `cf-connecting-ip` here (it is a header any client can write unless Cloudflare is in front).
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

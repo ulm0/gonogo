@@ -270,20 +270,20 @@ describe('gonogo expose check', () => {
     server.closeAllConnections();
     await new Promise<void>((r) => server.close(() => r()));
   });
-  const failed = async (legacy: string | null = 'a'.repeat(64)): Promise<string[]> => (await checkExposure({ url, legacyToken: legacy })).filter((l) => !l.ok).map((l) => l.text);
+  const failed = async (): Promise<string[]> => (await checkExposure({ url })).filter((l) => !l.ok).map((l) => l.text);
 
-  it('passes when the address is closed as it should be: 401 with no credential, the old token refused, /hook and /mcp 404, the socket 401, the CSP there', async () => {
-    const lines = await checkExposure({ url, legacyToken: 'a'.repeat(64) });
+  it('passes when the address is closed as it should be: 401 with no credential, a token refused, /hook and /mcp 404, the socket 401, the CSP there', async () => {
+    const lines = await checkExposure({ url });
     expect(lines.filter((l) => !l.ok)).toEqual([]);
     const text = lines.map((l) => l.text).join('\n');
-    expect(text).toMatch(/old local token gets 401/);
+    expect(text).toMatch(/a token is refused on TCP/);
     expect(text).toMatch(/\/hook is 404/);
     expect(text).toMatch(/WebSocket upgrade with no credential answers 401/);
   });
 
-  it('fails when the old local token is accepted through the public address (a tunnel that made remote traffic look local)', async () => {
+  it('fails when a token is accepted through the public address (a tunnel that made remote traffic look local)', async () => {
     mode.legacy = 200;
-    expect((await failed()).join('\n')).toMatch(/old local token was accepted/);
+    expect((await failed()).join('\n')).toMatch(/made-up token was accepted/);
   });
 
   it('fails on each open door: /api/state with no credential, /hook, /mcp, a socket that opens, a dropped upgrade, no CSP', async () => {
@@ -308,9 +308,28 @@ describe('gonogo expose check', () => {
     expect((await failed()).join('\n')).toMatch(/no answer/);
   });
 
-  it('a bad URL is one failed line, and an old token is only tried when there is one', async () => {
-    expect(await checkExposure({ url: 'nonsense', legacyToken: null })).toEqual([{ ok: false, text: expect.stringContaining('not a URL') as string }]);
-    expect((await checkExposure({ url, legacyToken: null })).some((l) => /old local token/.test(l.text))).toBe(false);
+  it('a bad URL is one failed line', async () => {
+    expect(await checkExposure({ url: 'nonsense' })).toEqual([{ ok: false, text: expect.stringContaining('not a URL') as string }]);
+  });
+
+  it('never sends a credential of this gonogo: the probe is a made-up 64-hex token, new every run, and nothing reads <home>/token', async () => {
+    const seen: string[] = [];
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      if (req.headers.authorization !== undefined) seen.push(req.headers.authorization);
+      res.writeHead(401).end();
+    });
+    await checkExposure({ url });
+    await checkExposure({ url });
+    expect(seen).toHaveLength(2);
+    for (const header of seen) expect(header).toMatch(/^Bearer [0-9a-f]{64}$/);
+    expect(seen[0]).not.toBe(seen[1]);
+    // the probe a test gives is the probe sent; no other source of a token exists in the module
+    seen.length = 0;
+    await checkExposure({ url, probeToken: 'f'.repeat(64) });
+    expect(seen).toEqual(['Bearer ' + 'f'.repeat(64)]);
+    const text = readFileSync(new URL('../src/server/exposecli.ts', import.meta.url), 'utf8');
+    expect(text).not.toMatch(/readFile|readFileSync|'token'|"token"|\/token/);
   });
 });
 

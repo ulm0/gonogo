@@ -37,6 +37,7 @@ cloudflared tunnel --config <home>/expose/cloudflare/config.yml run gonogo
 gonogo expose check
 ```
 
+- `--client-ip-header cf-connecting-ip` is right **only behind Cloudflare**, which sets it and replaces a client's value; with any other proxy use `x-forwarded-for`.
 - Cloudflare closes idle WebSockets after a time it does not state. gonogo pings every 20 seconds (checked in the code), which is shorter than any idle limit Cloudflare documents, but `expose check` cannot see an idle close (not verified).
 - Not verified for Tunnel: how Host is mapped and WebSocket behaviour; `expose check` shows the Host gonogo sees.
 - Do not use a **Quick Tunnel** (`trycloudflare.com`): it is for testing only, its name changes on every run, so `--allow-host`, the public URL and passkeys break.

@@ -25,4 +25,6 @@ gonogo expose check
 - Not verified: whether Serve puts the client address in X-Forwarded-For. If it does not, gonogo sees every client as 127.0.0.1 and one shared rate-limit bucket does the work.
 - A `.ts.net` name is a public name by its shape, so gonogo asks for the login and its second factor and an https public URL, as for any public name.
 
+- The proxy must **overwrite** `X-Forwarded-For` with the address it saw, never pass the client's own through; do not use `cf-connecting-ip` here (it is a header any client can write unless Cloudflare is in front).
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.
