@@ -21,6 +21,8 @@ export const AUTOUPDATE_FILE = 'autoupdate.json';
 export const AUTO_LEAD_MS = 10 * 60_000;
 export const AUTO_COOL_MS = 24 * 3_600_000;
 const TICK_MS = 60_000;
+const SETTLE_EVERY_MS = 5_000;
+const SETTLE_FOLLOW_MS = 15 * 60_000;
 const MAX_WINDOWS = 4;
 const STABLE = /^(\d{1,6})\.(\d{1,6})\.(\d{1,6})$/;
 const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -208,6 +210,8 @@ export interface AutoUpdater {
   view(): AutoUpdateView;
   /** One look at the conditions; exposed for tests (the timer calls it). */
   tick(): Promise<void>;
+  /** One look at how the last update ended; true when nothing is left to wait for. Exposed for tests (start() follows it). */
+  settle(): Promise<boolean>;
   close(): void;
 }
 
@@ -224,6 +228,7 @@ export function createAutoUpdater(options: AutoUpdaterOptions): AutoUpdater {
   let waiting: string | null = null;
   let timer: NodeJS.Timeout | undefined;
   let ticking = false;
+  let retry: NodeJS.Timeout | undefined;
 
   /** Why it is not time (null when it is). */
   async function why(): Promise<string | null> {
@@ -296,27 +301,57 @@ export function createAutoUpdater(options: AutoUpdaterOptions): AutoUpdater {
     }
   }
 
-  /** The record an earlier process left: did the update it started end well? */
-  async function settle(): Promise<void> {
+  /**
+   * The record an earlier process left: did the update it started end well? Judged by the helper's own result (update.json), never by the version
+   * alone: the new container runs for a moment before its health check passes, and a failed one is torn down and the old one comes back. Returns true
+   * when there is nothing left to wait for (this process may be either of the two).
+   */
+  async function settleOnce(): Promise<boolean> {
     const pending = options.store.state().pending;
-    if (pending === null) return;
+    if (pending === null) return true;
     const result = await options.readResult();
+    const mine = result !== null && result.to === pending.version ? result : null;
+    const bad = mine !== null && (mine.state === 'rolled-back' || mine.state === 'failed' || mine.state === 'interrupted');
     if (options.current === pending.version) {
-      options.notify(`Auto-update: updated ${pending.from} to ${pending.version}. The agents that were running start again by themselves (the startup setting); UNDO is on the update strip for a day.`);
-    } else if (result !== null && result.to === pending.version && (result.state === 'rolled-back' || result.state === 'failed' || result.state === 'interrupted')) {
-      const reason = result.state === 'interrupted' ? 'the helper stopped half way' : result.note === '' ? result.state : result.note.slice(0, 160);
-      await options.store.trip(pending.version, reason);
-      options.notify(`Auto-update to ${pending.version} ${result.state === 'rolled-back' ? 'was rolled back' : 'failed'}: ${reason}. gonogo is running ${options.current} as before. ${pending.version} is not tried again and auto-update is off until you turn it on.`);
-      return;
-    } else if (result !== null && result.state === 'started') {
-      return;
+      // the new container: only the helper's "ok" says it stayed; "started" is the health wait, and a rolled-back one is about to be removed
+      if (mine?.state === 'ok') {
+        await options.store.settle();
+        options.notify(`Auto-update: updated ${pending.from} to ${pending.version}. The agents that were running start again by themselves (the startup setting); UNDO is on the update strip for a day.`);
+        return true;
+      }
+      return bad;
     }
-    await options.store.settle();
+    if (bad) {
+      const reason = mine.state === 'interrupted' ? 'the helper stopped half way' : mine.note === '' ? mine.state : mine.note.slice(0, 160);
+      await options.store.trip(pending.version, reason);
+      options.notify(`Auto-update to ${pending.version} ${mine.state === 'rolled-back' ? 'was rolled back' : 'failed'}: ${reason}. gonogo is running ${options.current} as before. ${pending.version} is not tried again and auto-update is off until you turn it on.`);
+      return true;
+    }
+    // no record of this update, or a helper still at work: this process is the old one waiting for it; with no record at all there is nothing to learn
+    if (mine === null) {
+      await options.store.settle();
+      return true;
+    }
+    return false;
+  }
+
+  /** Follows the record every few seconds for a quarter of an hour (the helper's health wait is minutes), then lets it be. */
+  function follow(since: number): void {
+    retry = setTimeout(() => {
+      settleOnce().then(
+        (done) => {
+          if (!done && options.now() - since < SETTLE_FOLLOW_MS) follow(since);
+        },
+        (error: unknown) => log.warn(`could not read how the last auto-update ended: ${error instanceof Error ? error.message : String(error)}`),
+      );
+    }, SETTLE_EVERY_MS);
+    retry.unref();
   }
 
   return {
     async start() {
-      await settle().catch((error: unknown) => log.warn(`could not read how the last auto-update ended: ${error instanceof Error ? error.message : String(error)}`));
+      const done = await settleOnce().catch((error: unknown) => (log.warn(`could not read how the last auto-update ended: ${error instanceof Error ? error.message : String(error)}`), true));
+      if (!done) follow(options.now());
       timer = setInterval(() => void tick(), TICK_MS);
       timer.unref();
     },
@@ -338,8 +373,10 @@ export function createAutoUpdater(options: AutoUpdaterOptions): AutoUpdater {
       };
     },
     tick,
+    settle: settleOnce,
     close() {
       clearInterval(timer);
+      clearTimeout(retry);
     },
   };
 }

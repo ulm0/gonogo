@@ -286,6 +286,36 @@ describe('the controller', () => {
       expect(r.store.state().note).toMatch(/rolled back/);
     });
 
+    it('the NEW container is not told "updated" until the helper says ok: it runs a moment before its health check, and a failed one is removed', async () => {
+      const r = await rig({ current: '0.6.2', latest: null, result: result('started') });
+      await r.store.attempt('0.6.2', '0.6.1', START);
+      expect(await r.auto.settle()).toBe(false);
+      expect(r.notes).toEqual([]);
+      expect(r.store.state().pending).not.toBeNull();
+    });
+
+    it('the NEW container whose update was rolled back (it is about to be removed) says nothing and trips nothing; the old one that comes back does', async () => {
+      const rolled = result('rolled-back', 'the new container reported unhealthy');
+      const gone = await rig({ current: '0.6.2', latest: null, result: rolled });
+      await gone.store.attempt('0.6.2', '0.6.1', START);
+      expect(await gone.auto.settle()).toBe(true);
+      expect(gone.notes).toEqual([]);
+      expect(gone.store.state().pending).not.toBeNull();
+      const back = await rig({ current: '0.6.1', result: rolled });
+      await back.store.attempt('0.6.2', '0.6.1', START);
+      expect(await back.auto.settle()).toBe(true);
+      expect(back.notes[0]).toMatch(/was rolled back: the new container reported unhealthy/);
+      expect(back.store.state()).toMatchObject({ enabled: false, pending: null, tried: ['0.6.2'] });
+    });
+
+    it('with no record of the update at all there is nothing to learn, and the pending note is dropped', async () => {
+      const r = await rig({ current: '0.6.1', result: null });
+      await r.store.attempt('0.6.2', '0.6.1', START);
+      expect(await r.auto.settle()).toBe(true);
+      expect(r.store.state().pending).toBeNull();
+      expect(r.notes).toEqual([]);
+    });
+
     it('a helper that is still working leaves the record for the next start, and one that was killed is a failure', async () => {
       const waiting = await rig({ current: '0.6.1', result: result('started') });
       await waiting.store.attempt('0.6.2', '0.6.1', START);
