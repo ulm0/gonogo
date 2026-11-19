@@ -55,3 +55,17 @@ describe('the custom properties of the style sheets', () => {
     }
   });
 });
+
+// A lost `}` (a merge kept one side of a rule) makes the bundler nest every later file's rules under that selector: the page
+// loads with no error and the whole layout falls apart (0.5.1, `.stepup-row`).
+describe('style sheets', () => {
+  it.each(css)('%s closes every brace it opens', (f) => {
+    let depth = 0;
+    for (const ch of read(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '')) {
+      if (ch === '{') depth += 1;
+      if (ch === '}') depth -= 1;
+      expect(depth).toBeGreaterThanOrEqual(0);
+    }
+    expect(depth).toBe(0);
+  });
+});

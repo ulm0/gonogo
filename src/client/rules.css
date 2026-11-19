@@ -357,6 +357,8 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
 /* Push to this device: the check on its own row, and the devices that get a push, each with its keys. */
 .rules-push {
   margin-top: 12px;
