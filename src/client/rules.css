@@ -357,4 +357,42 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+/* Push to this device: the check on its own row, and the devices that get a push, each with its keys. */
+.rules-push {
+  margin-top: 12px;
+}
+
+.rules-push .check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.rules-push .check-row label {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.rules-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules-devices li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.rules-devices .rules-name {
+  flex: 1 1 12em;
 }

@@ -107,6 +107,7 @@ import type { Missions } from './missions.js';
 import type { Review } from './review.js';
 import type { RoomLayoutStore } from './roomlayout.js';
 import type { TabNameStore } from './tabname.js';
+import { manifestOf } from './manifest.js';
 import type { Uplinks } from './uplinks.js';
 
 export interface WebOptions {
@@ -246,6 +247,7 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
   '.map': 'application/json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 
 const STATUS_TEXT: Record<number, string> = {
@@ -1613,6 +1615,13 @@ export function createWebServer(options: WebOptions): WebServer {
       return;
     }
     const relative = segments.join('/');
+    // the manifest of the installed app: the name and the colours are the room's own, so it is made here and not kept as a file
+    if (relative === 'manifest.webmanifest') {
+      const body = Buffer.from(JSON.stringify(manifestOf(options.liveries?.view() ?? null)));
+      res.writeHead(200, { 'Content-Type': MIME['.webmanifest'] as string, 'Content-Length': body.length, 'Cache-Control': 'no-cache' });
+      res.end(method === 'HEAD' ? undefined : body);
+      return;
+    }
     const file = resolvePath(staticRoot, relative === '' ? 'index.html' : relative);
     // shortcut: a symlink inside the static directory is followed; the directory is the client build, which holds none
     if (!file.startsWith(staticRoot + sep)) {

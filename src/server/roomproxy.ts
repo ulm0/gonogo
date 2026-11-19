@@ -113,7 +113,7 @@ function suspicious(rest: string): boolean {
 function reservedPath(rest: string): boolean {
   const segments = rest.split('/').map((segment) => decodeURIComponent(segment));
   const first = segments[1] ?? '';
-  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth'));
+  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push'));
 }
 
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
@@ -292,8 +292,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false) },
         (answer) => {
           const headers: http.OutgoingHttpHeaders = {};
-          // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2)
-          for (const [name, value] of Object.entries(answer.headers)) if (!HOP.has(name) && name !== 'set-cookie') headers[name] = value;
+          // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2); no Service-Worker-Allowed: a room's script cannot widen its scope
+          for (const [name, value] of Object.entries(answer.headers)) if (!HOP.has(name) && name !== 'set-cookie' && name !== 'service-worker-allowed') headers[name] = value;
           // the CSP of the room's pages is the supervisor's, not the room's (threat model 3)
           if (target.kind === 'browser' && String(headers['content-type'] ?? '').startsWith('text/html')) Object.assign(headers, options.auth.pageHeaders());
           // a redirect to a path of the room stays inside its prefix; room main at / has none

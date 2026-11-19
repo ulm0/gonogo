@@ -9,7 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
 import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
 import { startGonogo } from '../src/server/cli.js';
+import { PUSH_FILE } from '../src/server/push.js';
 import { startSupervisor } from '../src/server/supervisor.js';
+import { phone } from './push-phone.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
 const FAKE = new URL('./fake-room.mjs', import.meta.url).pathname;
@@ -468,6 +470,28 @@ describe('the supervisor', () => {
       await supervise();
       expect(await run('rooms', 'add', 'ninah', '--home', home)).not.toContain('no gonogo is running');
       expect(await run('rooms', 'remove', 'ninah', '--home', home)).not.toContain('no gonogo is running');
+    }, 40_000);
+  });
+
+  describe('push to the installed app', () => {
+    const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/dev';
+
+    it('keeps its devices in the supervisor\'s home, and answers its routes with the login, not through a room', async () => {
+      const s = await supervise();
+      await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+      expect(statSync(join(home, PUSH_FILE)).mode & 0o777).toBe(0o600);
+      // no credential at all is 401, as for the other routes; a room's own address is not these routes
+      expect((await api(s, '/api/push', null)).status).toBe(401);
+      expect((await api(s, '/api/push/subscription', null, { method: 'PUT' })).status).toBe(401);
+      const viaToken = await api(s, '/api/push');
+      // the old token is a credential but owns no device: reading is fine, subscribing is not
+      if (viaToken.status === 200) {
+        const key = ((await viaToken.json()) as { publicKey: string }).publicKey;
+        expect(Buffer.from(key, 'base64url')).toHaveLength(65);
+        const p = phone();
+        const put = await api(s, '/api/push/subscription', s.directorToken, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint: ENDPOINT, keys: { p256dh: p.p256dh, auth: p.auth } }) });
+        expect(put.status).toBe(403);
+      }
     }, 40_000);
   });
 
