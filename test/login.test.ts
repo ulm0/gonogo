@@ -117,6 +117,29 @@ describe('a fresh install', () => {
     expect(setupToken()).toBe(sup.setupToken);
   });
 
+  it('B2: Host 127.0.0.1 with a forwarding header is a request somebody passed on: setup is refused as from a public name', async () => {
+    await boot();
+    const forwarded = { 'x-forwarded-for': '8.8.8.8' };
+    const page = await call('GET', '/setup', forwarded);
+    expect(page.status).toBe(403);
+    expect(page.text).toContain('LOGIN IS NOT SET UP');
+    const post = await call('POST', '/api/auth/setup', { ...FORM, ...origin(), ...forwarded }, form({ token: setupToken(), user: 'director', password: PASSWORD }));
+    expect(post.status).toBe(403);
+    expect(existsSync(join(home, 'token'))).toBe(true);
+  });
+
+  it('RETRO 2: a socket opened with the old browser token ends when the account is made', async () => {
+    await boot();
+    const ws = new WebSocket(`ws://127.0.0.1:${sup.port}/ws`, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + (sup.directorToken as string)]);
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()));
+    await setUp();
+    await closed;
+  });
+
   it('refuses the setup page to a public name: "login is not set up", and never takes a token there', async () => {
     await boot();
     const page = await call('GET', '/setup', { host: 'gonogo.example.com' });
@@ -396,19 +419,30 @@ describe('the local socket (R2) and the API keys', () => {
     expect((await call('POST', '/api/agents', { authorization: `Bearer ${act}`, ...JSONH }, '{}')).status).toBe(403);
     // never the account
     expect((await call('GET', '/api/auth/account', { authorization: `Bearer ${remote}` })).status).toBe(401);
-    // a public name needs --remote
+    // a public name needs --remote, and so does a request that something in front passed on, whatever Host it names
+    expect((await call('GET', '/api/state', { authorization: `Bearer ${read}`, 'x-forwarded-for': '8.8.8.8' })).status).toBe(401);
     expect((await call('GET', '/api/state', { authorization: `Bearer ${read}`, host: 'gonogo.example.com' })).status).toBe(401);
     expect((await call('GET', '/api/state', { authorization: `Bearer ${remote}`, host: 'gonogo.example.com' })).status).toBe(200);
     // the rooms API wants a full key for a change
     expect((await call('GET', '/api/rooms', { authorization: `Bearer ${read}` })).status).toBe(200);
     expect((await call('POST', '/api/rooms', { authorization: `Bearer ${read}`, ...JSONH }, '{"id":"x"}')).status).toBe(403);
-    // a key opens a WebSocket by the subprotocol
-    const ws = new WebSocket(`ws://127.0.0.1:${sup.port}/ws`, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + read]);
-    await new Promise<void>((resolve, reject) => {
-      ws.once('open', () => resolve());
-      ws.once('error', reject);
-    });
-    ws.close();
+    // a socket is a console: only a full key opens one, by the subprotocol; a read or act key is refused
+    const open = (key: string): Promise<WebSocket> =>
+      new Promise((resolve, reject) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${sup.port}/ws`, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + key]);
+        ws.once('open', () => resolve(ws));
+        ws.once('error', reject);
+        ws.once('unexpected-response', (_req, res) => reject(new Error(`status ${res.statusCode}`)));
+      });
+    await expect(open(read)).rejects.toThrow(/403/);
+    await expect(open(act)).rejects.toThrow(/403/);
+    const full = await make('full', 'full');
+    const ws = await open(full);
+    // and it ends with its key: revoked, the socket closes
+    const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()));
+    const keyId = ((await socketCall(sup.socketPath, 'GET', '/api/auth/account')).body.keys as Array<{ id: string; name: string }>).find((k) => k.name === 'full')?.id as string;
+    expect((await socketCall(sup.socketPath, 'DELETE', `/api/auth/keys/${keyId}`)).status).toBe(200);
+    await closed;
     const list = await socketCall(sup.socketPath, 'GET', '/api/auth/account');
     expect(JSON.stringify(list.body)).not.toContain(read);
     expect((list.body.keys as unknown[]).length).toBe(3);

@@ -139,6 +139,10 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     id: string;
     /** Reached under `/r/<id>/`: a redirect of the room is put back under that prefix. */
     prefixed: boolean;
+    /** The first segment of the path inside the room, DECODED: every decision (the login, a key's scope, the agents' routes) is made on this and on `decoded`, never on the raw text. */
+    first: string;
+    /** The path inside the room, decoded once and joined again (no query): what the checks look at. */
+    decoded: string;
   }
 
   /** Splits a url into path and query; null when it is not an origin-form path. */
@@ -183,7 +187,19 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     const room = options.rooms().find((r) => r.id === id);
     if (room === undefined) return (fail(404, 'no such room'), null);
     if (room.port === null) return (fail(503, 'the room is not running'), null);
-    return { room: { ...room, port: room.port }, path: rest + (prefixed === null ? parts.query : (prefixed[3] ?? '')), kind, id, prefixed: prefixed !== null };
+    // decoded once, per segment (suspicious() has made sure each one decodes and holds no slash, dot segment or NUL); the room is sent the path
+    // built again from exactly these segments, so it routes what was checked here: %61pi is api in both places or in neither
+    const segments = rest.split('/').map((segment) => decodeURIComponent(segment));
+    const canonical = segments.map((segment, index) => (index === 0 ? '' : encodeURIComponent(segment))).join('/');
+    return {
+      room: { ...room, port: room.port },
+      path: canonical + (prefixed === null ? parts.query : (prefixed[3] ?? '')),
+      kind,
+      id,
+      prefixed: prefixed !== null,
+      first: segments[1] ?? '',
+      decoded: segments.join('/'),
+    };
   }
 
   /** The headers for the room: no secret of the browser; the socket is the credential. */
@@ -242,7 +258,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         sendText(res, 403, 'forbidden origin');
         return true;
       }
-      const first = target.path.split('/')[1]?.split('?')[0] ?? '';
+      // case does not matter to a router that folds it, so API and Ws are asked about too
+      const first = target.first.toLowerCase();
       /** What the step-up asks about this change, when a session makes it: after the body is read when the body decides. */
       let stepUp: { grant: Grant; method: string; path: string } | null = null;
       if (target.kind === 'browser' && !((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
@@ -256,11 +273,11 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           sendText(res, 403, 'forbidden origin');
           return true;
         }
-        if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', target.path.split('?')[0] ?? '')) {
+        if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', target.decoded)) {
           sendText(res, 403, 'this key may not do that');
           return true;
         }
-        if (grant.kind === 'session') stepUp = { grant, method: req.method ?? 'GET', path: target.path.split('?')[0] ?? '' };
+        if (grant.kind === 'session') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
       }
       const forward = (buffered: Buffer | null): void => {
         const upstream = http.request(
@@ -317,11 +334,12 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       };
       const target = resolve(req, refuse);
       if (target === null) return true;
-      const first = target.path.split('/')[1]?.split('?')[0] ?? '';
-      if (target.kind !== 'browser' || first !== 'ws') return (refuse(404, 'not found'), true);
+      if (target.kind !== 'browser' || target.first !== 'ws') return (refuse(404, 'not found'), true);
       if (!originOk(req)) return (refuse(403, 'forbidden origin'), true);
       const grant = options.auth.grantUpgrade(req);
       if (grant === null) return (refuse(401, 'unauthorized'), true);
+      // a socket is a console: only a session, the local socket, the old token or a full key may open one (a read or act key may not type)
+      if (grant.kind === 'key' && grant.scope !== 'full') return (refuse(403, 'this key may not open a console'), true);
       // a cookie opens the socket only from a page: an upgrade with no Origin is refused (cross-site WebSocket hijack)
       if (grant.kind === 'session' && req.headers.origin === undefined) return (refuse(403, 'forbidden origin'), true);
       // no token entry goes on: the room's socket takes none
@@ -342,11 +360,12 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         if (head.length > 0) roomSocket.write(head);
         roomSocket.pipe(socket);
         socket.pipe(roomSocket);
-        const bound = grant.kind === 'session' ? (grant.sessionId ?? null) : null;
+        // a session's socket ends with the session, a key's with the key (revoked or expired)
+        const bound = grant.kind === 'session' ? (grant.sessionId ?? null) : grant.kind === 'key' && grant.keyId !== undefined ? `key:${grant.keyId}` : null;
         open.set(socket, bound);
         socket.once('close', () => open.delete(socket));
         // input to a console is use of the session; output is not, and a pong (the browser's reply to our ping) is neither: only text and binary frames count
-        if (bound !== null) {
+        if (bound !== null && !bound.startsWith('key:')) {
           socket.on('data', (chunk: Buffer) => {
             const opcode = (chunk[0] ?? 0) & 0x0f;
             if (opcode === 1 || opcode === 2) options.auth.touchSession(bound);

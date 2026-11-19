@@ -24,6 +24,8 @@ prints a **setup token** once, and writes it to `<home>/setup-token` (0600): one
 - The password is stored as argon2id (Node's own; scrypt on a Node older than 24.7), at the current OWASP minimum cost, made again at the
   next login if the cost rises. A wrong name and a wrong password get the same answer in the same time.
 
+**After setup, remote scripts and TUIs need a key.** The old token is what they used; once the account exists it opens nothing. On this machine `gonogo tui` and scripts use the local socket; from another machine make a key with `gonogo auth key add <name> --remote` (or in Flight Rules) and send it as `Authorization: Bearer gnk_...`.
+
 ## Sessions
 
 Signing in sets a cookie (`HttpOnly`, `SameSite=Strict`): on a public name `__Host-gonogo` (`Secure`), on a loopback or private name
@@ -42,7 +44,8 @@ a minute); the terminal's output does not.
   revoked, logged out, expired, or the password changes.
 - **A change needs this page's `Origin`.** A request that changes something and is authenticated by the cookie, without an `Origin` of
   this address, is refused (CSRF); so is a WebSocket from another site.
-- **A page of gonogo carries a strict policy** (`script-src 'self'`, no frames).
+- **A page of gonogo carries a strict policy** (`script-src 'self'`, `connect-src 'self'`, no frames).
+- **A socket is a console**, so only a session, the local socket, the old token or a `full` key may open one; a `read` or `act` key is refused. A socket opened with a key ends when the key is revoked or expires, and every socket opened with the old token ends when the account is made.
 
 ## Too many tries
 
@@ -50,6 +53,8 @@ Failures wait 1, 2, 4 ... seconds, up to 15 minutes, **per client address, per k
 know**. A known device carries a signed cookie set after a full login; it has its own bucket, so a stranger guessing, or the many clients
 behind one tunnel address, cannot keep you out. There is no lock: the way back is `gonogo auth reset` on the machine. Twenty failures
 in ten minutes from unknown devices raise an alert.
+
+**A request is local only when the Host it names and the address it came from are both local.** `Host: 127.0.0.1` from the internet is public, and so is a request that carries a forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP`, ...) from a peer that is not a trusted proxy. That class decides setup, the cookie and its lifetime, the keys that may be used, and who may lift the pause after a tamper alarm. **What it cannot see:** a proxy on this machine that drops its forwarding headers and rewrites the Host looks local: put its address in `--trusted-proxy` so the forwarded client address decides.
 
 The client address is the socket's. Behind a reverse proxy it is the proxy's, until you tell gonogo which proxies to believe:
 `--trusted-proxy <ip>` (or `GONOGO_TRUSTED_PROXY`, comma list). A forwarded address from anyone else changes nothing.

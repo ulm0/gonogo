@@ -398,6 +398,24 @@ describe('rooms proxy: the login', () => {
     expect((await get('/api/state', session)).status).toBe(401);
   });
 
+  it('B1: an encoded name does not skip the login: every decision is made on the decoded path, and the room is sent the path built again from it', async () => {
+    for (const path of ['/%61pi/state', '/%41PI/state', '/API/state', '/r/a/%61pi/state', '/r/main/%61%70i/state', '/api%2Fstate', '/%77s', '/%57S', '/r/a/%77s', '/%61pi/%73tate?x=1']) {
+      const status = (await get(path)).status;
+      expect([400, 401, 404], path).toContain(status);
+    }
+    expect(a.seen).toEqual([]);
+    expect(main.seen).toEqual([]);
+    // with a login the room sees the ordinary spelling, not the one that was sent
+    expect((await get('/%61pi/%73tate?x=1', session)).status).toBe(200);
+    expect(main.seen.at(-1)?.url).toBe('/api/state?x=1');
+    expect((await get('/r/a/%61pi/state', session)).status).toBe(200);
+    expect(a.seen.at(-1)?.url).toBe('/api/state');
+    // a key is held to its scope on the decoded path too
+    for (const path of ['/api/%74erminal/x', '/%61pi/%74erminal/x', '/api/%63learance', '/api/%6beys']) expect((await get(path, { authorization: 'Bearer gnk_read' })).status, path).toBe(403);
+    expect((await get('/api/%6dessages', { authorization: 'Bearer gnk_read' }, 'POST', '{}')).status).toBe(403);
+    expect((await get('/%61pi/%6dessages', { authorization: 'Bearer gnk_act' }, 'POST', '{}')).status).toBe(401);
+  });
+
   it('the page and its assets need no login and no cookie reaches the room', async () => {
     expect((await get('/assets/app.js', session)).status).toBe(200);
     expect(main.seen.at(-1)?.headers.cookie).toBeUndefined();
@@ -436,6 +454,8 @@ describe('rooms proxy: the login', () => {
     // the body that went through reached the room whole
     expect(main.seen.filter((x) => x.method === 'PATCH').at(-1)?.body).toBe('{"model":"x"}');
     for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);
+    // an encoded spelling of a listed route is the same route
+    for (const path of ['/api/%70ermissions', '/%61pi/permissions', '/r/a/api/%66eatures/relay']) expect((await send(stale, 'PUT', path, {})).status, path).toBe(403);
     // shell-equivalent already, and not behind it: a message, an answer, hold, resume, restart, a fresh session for all of it
     for (const [method, path] of [['POST', '/api/messages'], ['POST', '/api/agents/ana/answer'], ['POST', '/api/agents/ana/hold'], ['POST', '/api/agents/ana/restart']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(200);
     expect((await send(fresh, 'POST', '/api/agents', { name: 'x', command: 'sh' })).status).toBe(200);

@@ -24,6 +24,8 @@ export interface Grant {
   kind: 'session' | 'key' | 'socket' | 'token';
   sessionId?: string;
   scope?: KeyScope;
+  /** The id (hash) of the key, so a socket it opened can be closed when the key is revoked or expires. */
+  keyId?: string;
 }
 
 export interface AuthHttpOptions {
@@ -83,6 +85,10 @@ const subprotocolToken = (header: string | string[] | undefined): string | null 
   return null;
 };
 
+/** Headers a proxy in front adds: a request that carries one did not come straight from the machine's own network, whatever its Host says. */
+const FORWARDING = ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-real-ip', 'forwarded', 'via', 'cf-connecting-ip', 'true-client-ip', 'x-client-ip'];
+const RANK: Record<HostClass, number> = { loopback: 0, private: 1, public: 2 };
+
 const stripMapped = (address: string): string => (address.startsWith('::ffff:') ? address.slice(7) : address);
 
 /** What the browser is told about its own session: the cookie, by the class of the name it used. */
@@ -98,6 +104,21 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
   const log = options.log ?? nullLogger;
   const trusted = new Set(options.trustedProxies ?? []);
 
+  /**
+   * Local means BOTH the Host the request names AND the address it came from are local (loopback or private): a Host header is whatever the sender
+   * wrote, so `Host: 127.0.0.1` from the internet is public. A request with a forwarding header from a peer that is not a trusted proxy was passed
+   * on by something in front of gonogo, so it is public too. Not covered: a proxy on this machine that drops its forwarding headers and rewrites
+   * Host looks local; `--trusted-proxy` is the answer (docs/features/login.md).
+   */
+  const classOf = (req: IncomingMessage, address: string, viaTrusted: boolean): HostClass => {
+    if (local.has(req)) return 'loopback';
+    const looksLikeAddress = /^[0-9a-f:.]+$/i.test(address) && /[.:]/.test(address);
+    const byAddress: HostClass = looksLikeAddress ? hostClass(address) : 'public';
+    if (!viaTrusted && FORWARDING.some((name) => req.headers[name] !== undefined)) return 'public';
+    const byHost = hostClass(req.headers.host);
+    return RANK[byHost] >= RANK[byAddress] ? byHost : byAddress;
+  };
+
   const whoOf = (req: IncomingMessage): Who => {
     const peer = local.has(req) ? 'socket' : stripMapped(req.socket.remoteAddress ?? 'unknown');
     let address = peer;
@@ -111,7 +132,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       if (real !== undefined) address = real;
     }
     const cookies = parseCookies(req.headers.cookie);
-    return { address, agent: String(req.headers['user-agent'] ?? '').slice(0, 200), cls: hostClass(req.headers.host), device: cookies[DEVICE_COOKIE] };
+    // a user agent is shown on a page and put in an alert: no control character, no markup
+    const agent = String(req.headers['user-agent'] ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029<>&"'`]/g, '?').slice(0, 200);
+    return { address, agent, cls: classOf(req, address, trusted.has(peer)), device: cookies[DEVICE_COOKIE] };
   };
 
   const originOk = (req: IncomingMessage): boolean => {
@@ -136,7 +159,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     if (bearer !== null && bearer !== '') {
       if (bearer.startsWith('gnk_')) {
         const key = auth.key(bearer, who);
-        if (key !== null) return { kind: 'key', scope: key.scope };
+        if (key !== null) return { kind: 'key', scope: key.scope, keyId: key.id };
       } else if (auth.tokenAllowed()) {
         const legacy = options.legacyToken();
         if (legacy !== null && sameText(bearer, legacy)) return { kind: 'token' };
@@ -384,7 +407,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     pageHeaders: () => ({
       // the page of a room and the list: nothing but the server's own files, no inline script, no frame (threat model 3); styles allow the inline rules the terminal and the client write
       // lower case: the room's own headers arrive lower-cased, and these must replace them, not sit beside them
-      'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
       'x-frame-options': 'DENY',
