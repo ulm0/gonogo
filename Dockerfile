@@ -123,6 +123,8 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global
 
 COPY --from=build /app /opt/gonogo
 RUN ln -s /opt/gonogo/bin/gonogo.js /usr/local/bin/gonogo
+# The entrypoint script is not in the npm tarball (/app), so it comes from the build stage's source.
+COPY --from=build --chmod=0755 /src/packaging/docker/entrypoint.sh /usr/local/bin/gonogo-entrypoint
 
 RUN mkdir -p /state /projects \
  && chown -R node:node /state /projects
@@ -164,7 +166,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:7777/rooms/health').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
 
 # -s: tini acts as a subreaper, so reaping also works under Docker's own --init, where tini is not PID 1.
-# packaging/docker/entrypoint.sh: fills a new, empty home from /etc/skel, carries over gh's login and git's config from a 0.5.x /state/config, warns when the home is not writable, then execs gonogo with the CMD.
-ENTRYPOINT ["tini", "-s", "--", "sh", "/opt/gonogo/packaging/docker/entrypoint.sh"]
+# gonogo-entrypoint (packaging/docker/entrypoint.sh): fills a new, empty home from /etc/skel, carries over gh's login and git's config from a 0.5.x /state/config, warns when the home is not writable, then execs gonogo with the CMD.
+ENTRYPOINT ["tini", "-s", "--", "gonogo-entrypoint"]
 # Inside the container the server must listen on all interfaces; the home comes from GONOGO_HOME.
 CMD ["--host", "0.0.0.0", "--port", "7777"]

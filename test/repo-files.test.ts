@@ -132,7 +132,8 @@ describe('the HOME of the container is persisted as a whole', () => {
     }
     // a new, empty home gets the skeleton, never over a file that exists
     const entry = read('packaging', 'docker', 'entrypoint.sh');
-    expect(liveDocker).toContain('packaging/docker/entrypoint.sh"]');
+    expect(liveDocker).toContain('/src/packaging/docker/entrypoint.sh /usr/local/bin/gonogo-entrypoint');
+    expect(liveDocker).toContain('ENTRYPOINT ["tini", "-s", "--", "gonogo-entrypoint"]');
     expect(entry).toContain('cp -rn /etc/skel/.');
     expect(entry).toContain('cp -rn /state/config/gh');
     expect(entry).toContain('[ ! -e "$HOME/.gitconfig" ]');
