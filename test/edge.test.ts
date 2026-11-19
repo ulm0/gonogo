@@ -1709,7 +1709,7 @@ describe('hooks', () => {
     const { port } = await startWeb();
     const res = await postHook(port, '/hook/ana/Stop');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
-    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.headers['referrer-policy']).toBe('same-origin');
     expect(res.headers['x-frame-options']).toBe('DENY');
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
@@ -2673,7 +2673,7 @@ describe('mcp', () => {
     for (const res of [list, notification]) {
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.headers['x-content-type-options']).toBe('nosniff');
-      expect(res.headers['referrer-policy']).toBe('no-referrer');
+      expect(res.headers['referrer-policy']).toBe('same-origin');
       expect(res.headers['x-frame-options']).toBe('DENY');
     }
   });
@@ -4168,7 +4168,7 @@ describe('web: REST', () => {
       ];
       for (const res of answers) {
         expect(res.headers['x-content-type-options']).toBe('nosniff');
-        expect(res.headers['referrer-policy']).toBe('no-referrer');
+        expect(res.headers['referrer-policy']).toBe('same-origin');
         expect(res.headers['x-frame-options']).toBe('DENY');
         expect(res.headers['set-cookie']).toBeUndefined();
         expect(Object.keys(res.headers).filter((h) => h.startsWith('access-control-'))).toEqual([]);
@@ -4607,7 +4607,7 @@ describe('web: static files', () => {
       expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
       expect(res.headers['cache-control']).toBe('no-cache');
       expect(res.headers['x-content-type-options']).toBe('nosniff');
-      expect(res.headers['referrer-policy']).toBe('no-referrer');
+      expect(res.headers['referrer-policy']).toBe('same-origin');
       expect(res.headers['x-frame-options']).toBe('DENY');
       expect(res.body).toBe(readFileSync(join(dir, 'index.html'), 'utf8'));
     }

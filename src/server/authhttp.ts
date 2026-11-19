@@ -491,7 +491,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       // lower case: the room's own headers arrive lower-cased, and these must replace them, not sit beside them
       'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
       'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
+      'referrer-policy': 'same-origin',
       'x-frame-options': 'DENY',
     }),
     handle(req, res) {

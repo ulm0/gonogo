@@ -222,7 +222,7 @@ export const roomsPageHeaders = (): Record<string, string> => ({
   'Cache-Control': 'no-store',
   'Content-Security-Policy': `default-src 'none'; script-src ${hash(LIVERY)} ${hash(SCRIPT)}; style-src 'self' ${hash(STYLE)}; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
+  'Referrer-Policy': 'same-origin',
 });
 
 const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
