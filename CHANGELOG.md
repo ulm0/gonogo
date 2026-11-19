@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Fix: the login and setup forms answered "forbidden origin" in a browser.** The pages were sent with `Referrer-Policy: no-referrer`, under which a browser sends `Origin: null` on a same-origin POST, and the Origin check refused it; the same held for every change made with a session cookie. The policy is now `same-origin` (no referrer leaves the site).
+
 ## 0.5.0 (2026-11-19)
 
 Since 0.4.0: one mode (the supervisor with rooms; **breaking, read "What breaks" below before upgrading**), rooms from the page, a login of your own (password, TOTP, recovery codes, step-up and passkeys, replacing the token), `gonogo expose` for Tailscale, Cloudflare, Caddy, Funnel and ngrok, an installable app with Web Push, Telegram inbound without a public address, and install commands that name the exact version. No fix of a reported vulnerability; the login, expose and push code was reviewed by RSO and RETRO before merge. What was not tried for real is listed in [Not verified](https://gonogo.ulm0.com/reference/not-verified.html).

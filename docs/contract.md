@@ -511,7 +511,7 @@ Checks run in this order for every request and upgrade; the first failure answer
    - Static files need no token (a browser cannot attach a header to a navigation or a module script; the files hold no state).
 4. **Ready, route, method, body.** While `isReady()` is false every `/api` route and `/ws` answer `503 {"error":"starting","code":"unavailable"}` (after the token check, so a stranger learns nothing). 404 / 405 / 415 / 413 / 400 as in 3.3.
 
-Always sent: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`. On API, hook and MCP
+Always sent: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`. On API, hook and MCP
 responses also `Cache-Control: no-store`. No cookies, no sessions, no CORS headers.
 
 **Hostile input (builder E follows these and tests each).** Any web page can make a browser send `GET http://127.0.0.1:7777//`, an `Origin: null` preflight or a WebSocket handshake before any token is checked, and an uncaught exception ends every agent (2.8). So:
