@@ -163,6 +163,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
        gonogo reload
+       gonogo tui [--room <id>] [--url <address>] [--token <token>] [--home <dir>]
        gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
        gonogo token rotate [--home <dir>]
        gonogo auth reset | status | key add|list|revoke | confirm [--home <dir>]
@@ -177,6 +178,7 @@ Commands:
   auth                  the login account: reset it, make API keys, confirm after a tamper alarm (gonogo auth --help)
   expose                print (or write) the config that publishes gonogo through a tunnel or proxy, and check the public address (docs: Expose); it runs nothing
   reload                hand over to the installed gonogo without stopping the agents (needs --pty-host; not in Docker)
+  tui                   a terminal client of a running gonogo: the room, the inbox, go and no-go, and a console (gonogo tui --help)
   update                print the command that updates gonogo the way it was installed (it never runs it)
 
 Options:
@@ -1436,6 +1438,13 @@ function installProcessHandlers(running: Running, log: Logger, argv: string[] = 
 
 export async function main(argv: string[], env: Env = process.env): Promise<void> {
   guardStreams();
+
+  // `gonogo tui` is a client of a server that runs already: it starts nothing here
+  if (argv[0] === 'tui') {
+    const { tuiMain } = await import('./tui-cli.js');
+    exit(await tuiMain(argv.slice(1), env));
+    return;
+  }
 
   const parsed = parseArgs(argv);
   if (parsed.kind === 'help') {
