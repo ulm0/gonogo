@@ -61,9 +61,11 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET' || request.headers.has('authorization')) return;
   const rest = below(new URL(request.url));
-  // only room main's page and files are kept: the list of rooms at the root and every other room come from the network
-  if (rest === null || !rest.startsWith(MAIN)) return;
-  const local = rest.slice(MAIN.length);
+  // only room main's page and files are kept: every other room comes from the network. The root (the list of rooms, where the installed app starts) is a
+  // navigation like the others: network first, and with no network the kept page of main, which says "not connected"
+  const list = rest === '' && request.mode === 'navigate';
+  if (rest === null || !(rest.startsWith(MAIN) || list)) return;
+  const local = list ? '' : rest.slice(MAIN.length);
   if (NEVER.test(local)) return;
   if (request.mode === 'navigate') {
     // the page comes from the network when there is one (a login or an update shows at once); the kept shell opens it when there is not
@@ -71,7 +73,8 @@ self.addEventListener('fetch', (event) => {
       fetch(request).then(
         (answer) => {
           // a release names new hashed files: the ones the page no longer names are dropped, so old builds do not pile up
-          if (answer.ok && answer.type === 'basic' && (answer.headers.get('content-type') || '').startsWith('text/html')) event.waitUntil(prune(answer.clone()));
+          // (the list of rooms names the supervisor's own stylesheet, not the build's files: only main's page says what the build holds)
+          if (!list && answer.ok && answer.type === 'basic' && (answer.headers.get('content-type') || '').startsWith('text/html')) event.waitUntil(prune(answer.clone()));
           return answer;
         },
         async () => (await caches.match(new URL(MAIN, SCOPE).href)) ?? Response.error(),

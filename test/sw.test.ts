@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 type Handler = (event: Record<string, unknown>) => void;
 
-function worker(scope: string, windows: Array<{ url: string; focus(): unknown; postMessage(m: unknown): void }> = [], page = new Response('x')) {
+function worker(scope: string, windows: Array<{ url: string; focus(): unknown; postMessage(m: unknown): void }> = [], page: Response | null = new Response('x')) {
   const handlers: Record<string, Handler> = {};
   const shown: Array<[string, Record<string, unknown>]> = [];
   const opened: string[] = [];
@@ -14,6 +14,8 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
   const put: string[] = [];
   const keptAssets = new Set<string>();
   const deleted: string[] = [];
+  const fetched: string[] = [];
+  const matched: string[] = [];
   const self = {
     registration: { scope, showNotification: (title: string, options: Record<string, unknown>) => (shown.push([title, options]), Promise.resolve()) },
     addEventListener: (type: string, fn: Handler) => (handlers[type] = fn),
@@ -23,15 +25,15 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
   const caches = {
     open: () => Promise.resolve({ addAll: () => Promise.resolve(), put: (r: { url: string }) => (put.push(r.url), Promise.resolve()), keys: () => Promise.resolve([...keptAssets].map((url) => ({ url }))), delete: (r: { url: string }) => (deleted.push(r.url), keptAssets.delete(r.url), Promise.resolve(true)) }),
     keys: () => Promise.resolve([]),
-    match: (r: string | { url: string }) => Promise.resolve(kept.get(typeof r === 'string' ? r : r.url)),
+    match: (r: string | { url: string }) => (matched.push(typeof r === 'string' ? r : r.url), Promise.resolve(kept.get(typeof r === 'string' ? r : r.url))),
   };
-  vm.runInNewContext(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'), { self, caches, URL, Response, fetch: () => Promise.resolve(page) });
+  vm.runInNewContext(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'), { self, caches, URL, Response, fetch: (r: { url: string }) => (fetched.push(r.url), page === null ? Promise.reject(new Error('offline')) : Promise.resolve(page)) });
   const waits: Array<Promise<unknown>> = [];
   const fire = (type: string, event: Record<string, unknown>): Promise<unknown> => {
     handlers[type]?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => waits.push(Promise.resolve(p).then(() => 'responded')) });
     return Promise.all(waits);
   };
-  return { fire, shown, opened, kept, put, waits, keptAssets, deleted };
+  return { fire, shown, opened, kept, put, waits, keptAssets, deleted, fetched, matched };
 }
 
 const request = (url: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ request: { url, method: 'GET', mode: 'cors', headers: { has: () => false }, ...extra } });
@@ -51,8 +53,8 @@ describe('the service worker', () => {
       ['https://x.test/login', {}],
       ['https://x.test/setup', {}],
       ['https://x.test/internal/busy', {}],
-      ['https://x.test/', { mode: 'navigate' }],
       ['https://x.test/assets/app.js', {}],
+      ['https://x.test/', {}],
       ['https://x.test/rooms', {}],
       ['https://x.test/rooms/assets/x.css', {}],
       ['https://x.test/r/team/', { mode: 'navigate' }],
@@ -73,6 +75,22 @@ describe('the service worker', () => {
     expect(w.waits).toHaveLength(1);
     await w.fire('fetch', request('https://x.test/r/main/', { mode: 'navigate' }));
     expect(w.waits).toHaveLength(2);
+  });
+
+  it('the list of rooms at the root, where the installed app starts, is a navigation: network first, the kept page of main when offline, and it never prunes the kept build', async () => {
+    const html = (body: string): Response => Object.defineProperty(new Response(body, { headers: { 'content-type': 'text/html' } }), 'type', { value: 'basic' });
+    const online = worker('https://x.test/', [], html('<link rel="stylesheet" href="/rooms/assets/list.css">'));
+    online.keptAssets.add('https://x.test/r/main/assets/index-old.js');
+    await online.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(online.waits).toHaveLength(1);
+    expect(online.deleted).toEqual([]);
+    // no network: the answer is the kept page of main, not the browser's error page
+    const offline = worker('https://x.test/', [], null);
+    await offline.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    expect(offline.waits).toHaveLength(1);
+    expect(offline.fetched).toEqual(['https://x.test/']);
+    expect(offline.matched).toEqual(['https://x.test/r/main/']);
   });
 
   it('forgets the kept assets that the page it just got does not name, and none when the page names none', async () => {
