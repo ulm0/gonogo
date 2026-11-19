@@ -99,7 +99,11 @@ describe('the public URL and the start-up rules', () => {
     expect(text).not.toContain('7777');
     expect(text).toMatch(/make the account and turn on the second factor.*then add the option back/);
     expect(exposureProblem({ ...base, port: 0 })).toContain('<the port gonogo prints>');
-    expect(exposureProblem({ ...base, inContainer: true })).toContain('in Docker, drop GONOGO_ALLOWED_HOSTS and GONOGO_HOST once');
+    // inside a container --host 127.0.0.1 would cut off the published port: the text keeps the image's 0.0.0.0
+    const docker = exposureProblem({ ...base, inContainer: true }) as string;
+    expect(docker).toContain("keep the image's --host 0.0.0.0, drop GONOGO_ALLOWED_HOSTS once, and open http://127.0.0.1:<the published port>/ on the host");
+    expect(docker).not.toContain('--host 127.0.0.1');
+    expect(docker).not.toContain('GONOGO_HOST');
     expect(exposureProblem({ ...ok, bindHost: '0.0.0.0', account: 'fresh', port: 9000 })).toMatch(/start gonogo without --host 0\.0\.0\.0 \(and with --host 127\.0\.0\.1\).*http:\/\/127\.0\.0\.1:9000\//);
   });
 

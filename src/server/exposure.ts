@@ -40,8 +40,12 @@ const LOOPBACK_BIND = ['127.0.0.1', '::1', 'localhost'];
 
 /** The way out of a refusal: start on this machine alone, make the account and the second factor, then put the option back. */
 function wayOut(input: ExposureInput, drop: string): string {
+  // inside a container --host 127.0.0.1 would make gonogo unreachable through the published port (the healthcheck, inside, would still say healthy)
+  if (input.inContainer) {
+    return `To fix it: start gonogo without ${drop}: keep the image's --host 0.0.0.0, drop GONOGO_ALLOWED_HOSTS once, and open http://127.0.0.1:<the published port>/ on the host (the port you gave -p, the same as in the compose file). Make the account, turn on the second factor (Flight Rules, LOGIN), then add the option back.`;
+  }
   const open = `http://127.0.0.1:${input.port === 0 ? '<the port gonogo prints>' : input.port}/`;
-  return `To fix it: start gonogo without ${drop} (and with --host 127.0.0.1${input.inContainer ? '; in Docker, drop GONOGO_ALLOWED_HOSTS and GONOGO_HOST once' : ''}), open ${open}, make the account and turn on the second factor (Flight Rules, LOGIN), then add the option back.`;
+  return `To fix it: start gonogo without ${drop} (and with --host 127.0.0.1), open ${open}, make the account and turn on the second factor (Flight Rules, LOGIN), then add the option back.`;
 }
 
 /** The first reason gonogo must not start with these settings, or null. */
