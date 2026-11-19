@@ -106,9 +106,9 @@ function derive(algo: PasswordHash['algo'], password: string, salt: Buffer, m: n
   });
 }
 
-export async function hashPassword(password: string, costs: HashCosts = {}): Promise<PasswordHash> {
+export async function hashPassword(password: string, costs: HashCosts = {}, algo: PasswordHash['algo'] = argon2Available ? 'argon2id' : 'scrypt'): Promise<PasswordHash> {
   const salt = randomBytes(16);
-  if (argon2Available) {
+  if (algo === 'argon2id') {
     const c = costs.argon2 ?? DEFAULT_COSTS.argon2;
     return { algo: 'argon2id', m: c.memory, t: c.passes, p: c.parallelism, salt: salt.toString('base64'), hash: (await derive('argon2id', password, salt, c.memory, c.passes, c.parallelism)).toString('base64') };
   }
@@ -479,6 +479,17 @@ export function openAuth(options: AuthOptions): AuthStore {
     }
     return seconds;
   };
+  /** A failed try from a device gonogo does not know, answered or turned away by the wait: twenty in ten minutes is an alert (once per window). */
+  const tally = (who: Who, device: Device | null): void => {
+    if (device !== null) return;
+    const t = now();
+    failures.push(t);
+    while (failures.length > 0 && (failures[0] as number) < t - FAILURE_ALERT.windowMs) failures.shift();
+    if (failures.length >= FAILURE_ALERT.count && t - failureAlerted > FAILURE_ALERT.windowMs) {
+      failureAlerted = t;
+      options.alert(`${failures.length} failed logins in 10 minutes from devices gonogo does not know (last from ${who.address})`);
+    }
+  };
   const fail = (keys: string[], who: Who, device: Device | null): void => {
     const t = now();
     for (const key of keys) {
@@ -488,14 +499,7 @@ export function openAuth(options: AuthOptions): AuthStore {
       b.until = t + Math.min(BACKOFF_MAX_S, 2 ** (b.fails - 1)) * 1000;
       buckets.set(key, b);
     }
-    if (device === null) {
-      failures.push(t);
-      while (failures.length > 0 && (failures[0] as number) < t - FAILURE_ALERT.windowMs) failures.shift();
-      if (failures.length >= FAILURE_ALERT.count && t - failureAlerted > FAILURE_ALERT.windowMs) {
-        failureAlerted = t;
-        options.alert(`${failures.length} failed logins in 10 minutes from devices gonogo does not know (last from ${who.address})`);
-      }
-    }
+    tally(who, device);
     prune();
   };
   const succeed = (keys: string[]): void => {
@@ -683,7 +687,7 @@ export function openAuth(options: AuthOptions): AuthStore {
       const device = deviceOf(who.device);
       const keys = bucketsFor(who, device);
       const waiting = wait(keys);
-      if (waiting > 0) return refused('wait', waiting);
+      if (waiting > 0) return (tally(who, device), refused('wait', waiting));
       let ok = false;
       const file = join(options.home, SETUP_TOKEN_FILE);
       try {
@@ -722,7 +726,7 @@ export function openAuth(options: AuthOptions): AuthStore {
       const device = deviceOf(who.device);
       const keys = bucketsFor(who, device);
       const waiting = wait(keys);
-      if (waiting > 0) return refused('wait', waiting);
+      if (waiting > 0) return (tally(who, device), refused('wait', waiting));
       const userOk = safeEqual(input.user, data.user);
       const passwordOk = await checkPassword(input.password);
       if (!userOk || !passwordOk) {

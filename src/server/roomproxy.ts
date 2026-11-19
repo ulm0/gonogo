@@ -6,7 +6,7 @@
  * It is on the security path, so it is small and says no by default:
  * - The browser is let in by the login (docs/login-spec.md): a session cookie, an API key, or, on a fresh install with no account, the old
  *   Director token; the local unix socket needs none. The proxy asks `auth` who a request is, then reaches the room over the room's own
- *   `run/api.sock`, which has no token: no secret of the browser, no cookie and no X-Forwarded header of the request goes to a room.
+ *   `run/room.sock`, which has no token: no secret of the browser, no cookie and no X-Forwarded header of the request goes to a room.
  * - Without a grant only a plain GET or HEAD outside `/api` and `/ws` goes through (the page and its assets, which a room serves without
  *   a token anyway), with no Authorization at all. A cookie-authenticated change needs a matching Origin (CSRF), a key is held to its scope,
  *   and a WebSocket is bound to its session: it closes when the session ends.
@@ -32,7 +32,7 @@ export interface ProxyRoom {
   id: string;
   /** The loopback port of the room's gonogo, or null while it is not running. */
   port: number | null;
-  /** The room's own unix socket (`<room home>/run/api.sock`): the only way in, and it takes no token. */
+  /** The room's own unix socket (`<room home>/run/room.sock`): the only way in, and it takes no token. */
   socket: string;
 }
 

@@ -108,7 +108,7 @@ function ago(at){
   if(s<45)return 'just now';if(s<3300)return Math.round(s/60)+' min ago';if(s<84600)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago';
 }
 async function call(method,path,body){
-  const res=await fetch(path,{method,headers:Object.assign({Authorization:'Bearer '+token},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,cache:'no-store'});
+  const res=await fetch(path,{method,headers:Object.assign(token?{Authorization:'Bearer '+token}:{},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,cache:'no-store'});
   const data=await res.json().catch(()=>({}));
   if(!res.ok)throw new Error(data.error||('error '+res.status));
   return data;
@@ -186,10 +186,10 @@ function showForm(){form.hidden=false;$('new').setAttribute('aria-expanded','tru
 function hideForm(){form.hidden=true;form.reset();$('new').setAttribute('aria-expanded','false');$('new').focus()}
 function tick(){for(const t of list.querySelectorAll('[data-at]'))t.textContent='last activity '+ago(Number(t.dataset.at))}
 async function load(){
-  if(!token)return shut('Open this page with the address gonogo printed','That address ends in #token=. It keeps the token in this browser, so the next visit needs no token.');
   try{
-    const res=await fetch('/api/rooms',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
-    if(res.status===401)return shut('That token is not this server\\u2019s','Use the address gonogo printed when it started.');
+    const res=await fetch('/api/rooms',{headers:token?{Authorization:'Bearer '+token}:{},cache:'no-store'});
+    // no token, or one that no longer opens anything: the login (which says "set up" on an install with no account yet)
+    if(res.status===401){location.replace('/login');return}
     const next=(await res.json()).rooms||[],text=JSON.stringify(next);
     rooms=next;
     // while a name is being typed the cards stay as they are; the next poll draws what changed

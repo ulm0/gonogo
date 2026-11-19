@@ -204,9 +204,13 @@ function Unauthorized(): ReactElement {
           NOT SIGNED IN
         </p>
         <h1 className="disp system-word">NO-GO</h1>
-        <p className="system-lead">This tab has no key.</p>
-        <p className="system-text">Open the address gonogo printed when it started. The part after # is your key.</p>
-        <p className="lcd system-address">{`${location.origin}/#token=[YOUR TOKEN]`}</p>
+        <p className="system-lead">This tab is not signed in.</p>
+        <p className="system-text">Log in with your account. Before an account is set up, open the address gonogo printed when it started: the part after # is the key.</p>
+        <p className="system-actions">
+          <a className="btn" data-kind="primary" href="/login">
+            LOG IN
+          </a>
+        </p>
       </section>
     </main>
   );

@@ -10,7 +10,7 @@ const args = process.argv.slice(2);
 const home = args[args.indexOf('--home') + 1];
 mkdirSync(home, { recursive: true });
 mkdirSync(join(home, 'run'), { recursive: true, mode: 0o700 });
-const sockPath = join(home, 'run', 'api.sock');
+const sockPath = join(home, 'run', 'room.sock');
 fs.rmSync(sockPath, { force: true });
 writeFileSync(join(home, 'started-with'), JSON.stringify({ args, home: process.env.GONOGO_HOME, port: process.env.GONOGO_PORT ?? null, supervisor: process.env.GONOGO_SUPERVISOR_PID ?? null, reloaded: process.env.GONOGO_RELOADED ?? null, env: Object.keys(process.env).filter((k) => /token/i.test(k)) }));
 

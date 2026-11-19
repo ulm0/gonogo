@@ -163,7 +163,8 @@ function failure(message: string, status?: number, field?: string): ApiFailure {
 }
 
 async function call(method: string, path: string, body?: unknown): Promise<unknown> {
-  const headers: Record<string, string> = { Authorization: `Bearer ${token ?? ''}` };
+  // with no token the login's session cookie is the credential (the browser sends it by itself)
+  const headers: Record<string, string> = token === null ? {} : { Authorization: `Bearer ${token}` };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let response: Response;
   try {
@@ -1004,7 +1005,7 @@ function lost(wasOpen: boolean): void {
 
 function openSocket(): void {
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${scheme}//${location.host}${withBase(WS_PATH)}`, [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + (token ?? '')]);
+  const ws = new WebSocket(`${scheme}//${location.host}${withBase(WS_PATH)}`, token === null ? [WS_SUBPROTOCOL] : [WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX + token]);
   ws.binaryType = 'arraybuffer';
   socket = ws;
   let opened = false;
@@ -1033,11 +1034,11 @@ function openSocket(): void {
 
 /** One attempt: the state over REST first (it tells 401 and "starting" apart), then the socket. */
 async function connect(): Promise<void> {
-  if (attempting || token === null) return;
+  if (attempting) return;
   attempting = true;
   clearTimeout(retryTimer);
   try {
-    const response = await fetch(withBase(`${API_PREFIX}/state`), { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    const response = await fetch(withBase(`${API_PREFIX}/state`), { headers: token === null ? {} : { Authorization: `Bearer ${token}` }, cache: 'no-store' });
     if (response.status === 401) {
       attempting = false;
       token = null;
@@ -1065,11 +1066,8 @@ export function start(): void {
   window.addEventListener('hashchange', () => {
     if (new URLSearchParams(location.hash.slice(1)).has(TOKEN_FRAGMENT_KEY)) location.reload();
   });
+  // no token: the page tries the session cookie of the login; a 401 then says "log in"
   token = findToken();
-  if (token === null) {
-    store.setState((s) => ({ ...s, connection: 'unauthorized' }));
-    return;
-  }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && store.getState().connection === 'reconnecting') void connect();
   });
@@ -1135,4 +1133,87 @@ export function input(agent: string, data: string, binary = false): void {
 
 export function resize(agent: string, cols: number, rows: number): void {
   send({ t: 'resize', agent, cols, rows });
+}
+
+/* ---- the login (docs/login-spec.md): the account of the supervisor, never under a room's prefix ---- */
+
+export interface AccountSession {
+  id: string;
+  created: number;
+  last: number;
+  address: string;
+  agent: string;
+  kind: 'public' | 'local';
+}
+export interface AccountKey {
+  id: string;
+  name: string;
+  scope: 'read' | 'act' | 'full';
+  remote: boolean;
+  created: number;
+  expires: number;
+  last: number | null;
+  lastAddress: string | null;
+}
+export interface AccountView {
+  user: string;
+  state: string;
+  locked: boolean;
+  current: string | null;
+  host: 'loopback' | 'private' | 'public';
+  sessions: AccountSession[];
+  keys: AccountKey[];
+}
+
+/** One call to `/api/auth/...`: the supervisor's own route (a room has none), so the path is absolute and the session cookie is the credential. */
+async function authCall(method: string, path: string, body?: unknown): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/auth${path}`, {
+      method,
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store',
+    });
+  } catch {
+    throw failure('Could not reach the gonogo server.');
+  }
+  let parsed: unknown = null;
+  try {
+    const text = await response.text();
+    if (text !== '') parsed = JSON.parse(text);
+  } catch {
+    // not JSON: the status says it
+  }
+  if (!response.ok) {
+    const error = asRecord(parsed);
+    throw failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined);
+  }
+  return parsed;
+}
+
+/** Whether an account exists (public, no login needed). */
+export async function authStatus(): Promise<{ state: string; setup: boolean; locked: boolean }> {
+  const record = asRecord(await authCall('GET', '/status'));
+  if (record === null || typeof record.state !== 'string') throw failure('The server sent an answer gonogo does not understand.');
+  return { state: record.state, setup: record.setup === true, locked: record.locked === true };
+}
+
+/** The account as the logged-in session sees it; a 401 means this page is not signed in with an account. */
+export async function authAccount(): Promise<AccountView> {
+  const record = asRecord(await authCall('GET', '/account'));
+  if (record === null || typeof record.user !== 'string' || !Array.isArray(record.sessions) || !Array.isArray(record.keys)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as AccountView;
+}
+
+export const authLogout = (): Promise<unknown> => authCall('POST', '/logout', {});
+export const authLogoutAll = (): Promise<unknown> => authCall('POST', '/logout-all', {});
+export const authRevokeSession = (id: string): Promise<unknown> => authCall('DELETE', `/sessions/${encodeURIComponent(id)}`);
+export const authChangePassword = (current: string, next: string): Promise<unknown> => authCall('POST', '/password', { current, next });
+export const authRevokeKey = (id: string): Promise<unknown> => authCall('DELETE', `/keys/${encodeURIComponent(id)}`);
+export const authConfirm = (password: string): Promise<unknown> => authCall('POST', '/confirm', { password });
+export async function authMakeKey(input: { name: string; scope: string; days: number | null; remote: boolean }): Promise<{ key: string; id: string }> {
+  const record = asRecord(await authCall('POST', '/keys', { name: input.name, scope: input.scope, remote: input.remote, ...(input.days === null ? {} : { days: input.days }) }));
+  if (record === null || typeof record.key !== 'string' || typeof record.id !== 'string') throw failure('The server sent an answer gonogo does not understand.');
+  return { key: record.key, id: record.id };
 }

@@ -128,7 +128,7 @@ describe('the supervisor', () => {
     const team = JSON.parse(readFileSync(join(home, 'rooms', 'team', 'started-with'), 'utf8')) as { args: string[] };
     expect(team.args).toContain('--no-update-check');
     // one browser token (a fresh install with no account), the Director's <home>/token; a room has none, only its own socket (docs/login-spec.md R8)
-    for (const folder of [home, join(home, 'rooms', 'team')]) expect(lstatSync(join(folder, 'run', 'api.sock')).isSocket()).toBe(true);
+    for (const folder of [home, join(home, 'rooms', 'team')]) expect(lstatSync(join(folder, 'run', 'room.sock')).isSocket()).toBe(true);
     expect(existsSync(join(home, 'run', 'room-token'))).toBe(false);
     expect(readFileSync(join(home, 'token'), 'utf8').trim()).toBe(s.directorToken);
     expect(statSync(join(home, 'token')).mode & 0o777).toBe(0o600);
@@ -292,7 +292,7 @@ describe('the supervisor', () => {
       expect(await made.json()).toMatchObject({ id: 'team-a', name: 'Team A' });
       await until(() => running(s, 'team-a'), 15_000, 'the new room');
       expect(statSync(join(home, ROOMS_FILE)).mode & 0o777).toBe(0o600);
-      expect(existsSync(join(home, 'rooms', 'team-a', 'run', 'api.sock'))).toBe(true);
+      expect(existsSync(join(home, 'rooms', 'team-a', 'run', 'room.sock'))).toBe(true);
       const again = await send(s, 'POST', '/api/rooms', { id: 'team-a' });
       expect(again.status).toBe(409);
       expect(await (await send(s, 'GET', '/api/rooms')).json()).toMatchObject({ rooms: [{ id: 'main' }, { id: 'team-a', name: 'Team A' }] });

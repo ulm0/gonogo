@@ -296,3 +296,43 @@
   flex-basis: 100%;
   margin: 0;
 }
+
+/* the login block: lists of sessions and keys, and the rows of its forms */
+.rules-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.rules-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  overflow-wrap: anywhere;
+}
+
+.rules-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rules-row .input {
+  flex: 1 1 10em;
+  min-width: 0;
+}
+
+.rules-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.rules-confirm p {
+  margin: 0;
+}

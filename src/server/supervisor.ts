@@ -33,6 +33,8 @@ const RELOAD_EXIT = 75;
 const READY = /gonogo ready: http:\/\/[^\s/:]+:(\d{1,5})\//;
 /** The socket the supervisor itself answers on, for the TUI, the CLI and scripts on this machine (docs/login-spec.md R2). */
 export const API_SOCKET = join('run', 'api.sock');
+/** The socket each room answers on (room main's home is the root home, so it cannot also be `api.sock`). */
+export const ROOM_SOCKET = join('run', 'room.sock');
 /** Alerts that wait for room main to be up (a start that finds the account reset, for one). */
 const ALERTS_KEPT = 20;
 const POLL_MS = 2000;
@@ -218,7 +220,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   /* ---------------------------------------------------------------- the children */
 
-  const socketOf = (child: Child): string => join(roomHome(options.home, child.entry.id), API_SOCKET);
+  const socketOf = (child: Child): string => join(roomHome(options.home, child.entry.id), ROOM_SOCKET);
 
   /** GET a JSON answer from a room over its local socket (no token: the file permissions are the credential). */
   const askRoom = (child: Child, path: string, timeoutMs: number): Promise<unknown> =>

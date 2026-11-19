@@ -12,6 +12,7 @@ import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { FeaturesBlock } from './Features.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
+import { AccountBlock } from './AccountBlock.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
 import { STATUS_TEXT } from './notify.js';
@@ -196,6 +197,7 @@ export function FlightRules(): ReactElement {
       <StartupBlock />
       <SubagentsBlock />
       <CoauthorBlock />
+      <AccountBlock />
       <AllStopBlock />
       <FeaturesBlock />
       <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>

@@ -233,7 +233,7 @@ describe('a real room (roomChild)', () => {
   const start = (over: Record<string, unknown> = {}) =>
     startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home }, roomChild: true, ...over });
 
-  it('has no TCP credential for its page: it answers on run/api.sock only, and never reads or accepts <home>/token', async () => {
+  it('has no TCP credential for its page: it answers on run/room.sock only, and never reads or accepts <home>/token', async () => {
     const director = 'd4'.repeat(32);
     writeFileSync(join(home, 'token'), `${director}\n`, { mode: 0o600 });
     const first = await start();
@@ -244,7 +244,7 @@ describe('a real room (roomChild)', () => {
     // not even the token the room made for itself in memory
     expect(await open(first.browserToken)).toBe(401);
     expect((await fetch(`http://127.0.0.1:${first.port}/api/state`)).status).toBe(401);
-    const socket = join(home, 'run', 'api.sock');
+    const socket = join(home, 'run', 'room.sock');
     expect(statSync(socket).mode & 0o777).toBe(0o600);
     expect(statSync(join(home, 'run')).mode & 0o777).toBe(0o700);
     expect((await viaSocket(socket, '/api/state')).status).toBe(200);
@@ -404,7 +404,7 @@ describe('PR 2: the room side of the question, and Update from main only', () =>
   const start = (room: string, over: Record<string, unknown> = {}) =>
     startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: room, GONOGO_INSTALL: 'docker' }, ...over });
   const rolloutOf = async (_running: { port: number; browserToken: string }): Promise<{ install?: string; canUpdate?: boolean; installNote?: string }> => {
-    const res = await viaSocket(join(home, 'run', 'api.sock'), '/api/state');
+    const res = await viaSocket(join(home, 'run', 'room.sock'), '/api/state');
     return (JSON.parse(res.text) as { rollout: { install?: string; canUpdate?: boolean; installNote?: string } }).rollout;
   };
 
@@ -444,7 +444,7 @@ describe('PR 2: after review', () => {
   it('a room other than main has no update route: 409, hook or not', async () => {
     const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: 'team', GONOGO_UPDATE_HOOK: 'http://hook.example/x' } });
     try {
-      const call = (path: string): Promise<{ status: number; text: string }> => viaSocket(join(home, 'run', 'api.sock'), path, 'POST', JSON.stringify({ version: '9.9.9' }));
+      const call = (path: string): Promise<{ status: number; text: string }> => viaSocket(join(home, 'run', 'room.sock'), path, 'POST', JSON.stringify({ version: '9.9.9' }));
       expect((await call('/api/update')).status).toBe(409);
       expect((await call('/api/update/undo')).status).toBe(409);
     } finally {

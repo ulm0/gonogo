@@ -995,7 +995,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       port: listenPort,
       browserToken: home.browserToken,
       // a room of the supervisor has no TCP credential for its page: the supervisor reaches it by this socket (docs/login-spec.md R8)
-      ...(options.roomChild === true ? { localSocket: join(home.dir, 'run', 'api.sock') } : {}),
+      ...(options.roomChild === true ? { localSocket: join(home.dir, 'run', 'room.sock') } : {}),
       allowedHosts,
       staticDir,
       // what the Director does through the browser is told to the Black Box by these copies

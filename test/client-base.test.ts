@@ -31,14 +31,16 @@ describe('every way the page reaches the server keeps the prefix', () => {
     const api = text('api.ts');
     const calls = [...api.matchAll(/\bfetch\s*\(([^,)]*)/g)].map((m) => m[1] ?? '');
     expect(calls.length).toBeGreaterThanOrEqual(2);
-    for (const arg of calls) expect(arg, `fetch(${arg})`).toContain('withBase(');
+    // the login belongs to the supervisor and is one for every room: /api/auth is reserved there (roomproxy.ts) and is reached at the root, never under /r/<id>/
+    for (const arg of calls) if (!/^`\/api\/auth\$\{path\}`$/.test(arg.trim())) expect(arg, `fetch(${arg})`).toContain('withBase(');
     expect(api).toMatch(/new WebSocket\(`[^`]*\$\{withBase\(WS_PATH\)\}`/);
   });
 
   it('no absolute URL path in the client source: links and assets are relative or built with the prefix', () => {
     for (const f of files) {
       const src = text(f);
-      expect(src, `${f}: a link or image to an absolute path`).not.toMatch(/(?:href|src|action)=\{?["'`]\/(?!\/)/);
+      // /login and /setup are the supervisor's pages (one login for every room), linked at the root on purpose
+      expect(src.replace(/href="\/(?:login|setup)"/g, ''), `${f}: a link or image to an absolute path`).not.toMatch(/(?:href|src|action)=\{?["'`]\/(?!\/)/);
       expect(src, `${f}: url(/...)`).not.toMatch(/url\(\s*["']?\/(?!\/)/);
     }
   });
