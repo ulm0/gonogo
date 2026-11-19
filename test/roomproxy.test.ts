@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRoomProxy } from '../src/server/roomproxy.js';
+import { bodyMatters, stepUpReason } from '../src/server/stepup.js';
 import { validRoomId } from '../src/server/rooms.js';
 import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
 
@@ -103,6 +104,10 @@ const fakeAuth = {
   },
   csrfOk: (req: http.IncomingMessage) => req.method === 'GET' || req.headers.origin !== undefined,
   pageHeaders: () => ({ 'content-security-policy': "default-src 'self'", 'x-content-type-options': 'nosniff' }),
+  // session s2 has not been checked for a while: the step-up asks about it
+  stepUpBody: bodyMatters,
+  stepUpNeeded: (grant: { kind: string; sessionId?: string }, method: string, path: string, body: Record<string, unknown> | null) => (grant.kind === 'session' && grant.sessionId === 's2' ? stepUpReason(method, path, body) : null),
+  stepUpDenied: (res: http.ServerResponse, reason: string) => void res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ stepUp: true, reason })),
   alive: (id: string) => aliveSessions.has(id),
   touchSession: (id: string) => void touched.push(id),
 };
@@ -436,6 +441,34 @@ describe('rooms proxy: the login', () => {
     expect((await get('/api/state', director)).headers.get('content-security-policy')).toBeNull();
   });
 
+  it('step-up: a session not checked for five minutes is asked again for the listed changes, the body decides a hire and an edit, and what is not listed passes', async () => {
+    const stale = { cookie: 'gonogo-session=s2', origin: base, host: new URL(base).host, 'content-type': 'application/json' };
+    const fresh = { ...stale, cookie: 'gonogo-session=s1' };
+    const send = (headers: Record<string, string>, method: string, path: string, body: unknown) => get(path, headers, method, JSON.stringify(body));
+    // a hire with a command of its own, or an unattended mode, and an edit of mode, command or role
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', command: 'sh' })).status).toBe(403);
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', mode: 'bypassPermissions' })).status).toBe(403);
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', mode: 'default' })).status).toBe(200);
+    expect((await send(stale, 'PATCH', '/api/agents/ana', { role: 'new role' })).status).toBe(403);
+    expect((await send(stale, 'PATCH', '/api/agents/ana', { model: 'x' })).status).toBe(200);
+    // the edit is an allow-list: a folder, the Clean Room, a worktree, remote control and keys all ask
+    for (const body of [{ cleanRoom: false }, { dir: '/' }, { confirmBypass: true }, { worktree: true }, { remoteControl: true }, { keys: { K: 'v' } }]) expect((await send(stale, 'PATCH', '/api/agents/ana', body)).status, JSON.stringify(body)).toBe(403);
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: false })).status).toBe(403);
+    // the body that went through reached the room whole
+    expect(main.seen.filter((x) => x.method === 'PATCH').at(-1)?.body).toBe('{"model":"x"}');
+    for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);
+    // an encoded spelling of a listed route is the same route
+    for (const path of ['/api/%70ermissions', '/%61pi/permissions', '/r/a/api/%66eatures/relay']) expect((await send(stale, 'PUT', path, {})).status, path).toBe(403);
+    // shell-equivalent already, and not behind it: a message, an answer, hold, resume, restart, a fresh session for all of it
+    for (const [method, path] of [['POST', '/api/messages'], ['POST', '/api/agents/ana/answer'], ['POST', '/api/agents/ana/hold'], ['POST', '/api/agents/ana/restart']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(200);
+    expect((await send(fresh, 'POST', '/api/agents', { name: 'x', command: 'sh' })).status).toBe(200);
+    expect((await send(fresh, 'PUT', '/api/permissions', {})).status).toBe(200);
+    // a read is never asked about
+    expect((await get('/api/permissions', { cookie: 'gonogo-session=s2' })).status).toBe(200);
+    // and a key or the old token is not a session: the check is the session's
+    expect((await send({ authorization: 'Bearer gnk_full', 'content-type': 'application/json' }, 'PUT', '/api/permissions', {})).status).toBe(200);
+  });
+
   const openAs = (path: string, headers: Record<string, string>, protocols: string[] = [WS_SUBPROTOCOL]): Promise<WebSocket> =>
     new Promise((resolve, reject) => {
       const ws = new WebSocket(`ws://127.0.0.1:${new URL(base).port}${path}`, protocols, { headers });
@@ -443,6 +476,22 @@ describe('rooms proxy: the login', () => {
       ws.once('error', reject);
       ws.once('unexpected-response', (_req, res) => reject(new Error(`status ${res.statusCode}`)));
     });
+
+  it('rebind: a session whose id was minted again keeps its socket, now bound to the new id', async () => {
+    const ws = await openAs('/ws', { ...session, origin: base });
+    proxyUnderTest.rebind('s1', 's9');
+    proxyUnderTest.closeSessions(['s1']);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    // and its input counts for the NEW id, not the dead one
+    touched.length = 0;
+    ws.send('type');
+    await vi_waitFor(() => touched.length > 0);
+    expect(touched).toEqual(['s9']);
+    const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()));
+    proxyUnderTest.closeSessions(['s9']);
+    await closed;
+  });
 
   it('a cookie opens a socket only from a page (Origin), and the socket is bound to its session', async () => {
     await expect(openAs('/ws', session)).rejects.toThrow(/403/);
