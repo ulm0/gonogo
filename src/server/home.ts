@@ -194,8 +194,8 @@ function ownWorldVerdict(lock: LockContent): boolean | null {
   if (lock.stamp === null || mine === undefined) return null;
   const [boot, ns, ticks] = lock.stamp.split('.');
   if (boot !== mine[0] || ns !== mine[1] || ticks === undefined) return null;
-  // this very process (the same pid and start time) holds no lock on the directory here: the file is its own leftover, as after an exec
-  if (lock.pid === process.pid) return ticks !== mine[2];
+  // our own pid: with our start time the file is our own leftover (as after an exec), with another one it is an earlier process that had this pid; neither is alive
+  if (lock.pid === process.pid) return false;
   return isProcessAlive(lock.pid) && processStamp(lock.pid)?.split('.')[2] === ticks;
 }
 

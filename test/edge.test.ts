@@ -1501,6 +1501,10 @@ describe('home', () => {
         const dir = tmpDir();
         writeFileSync(join(dir, LOCK_FILE), stampedLock(process.pid));
         expect(openTestHome(dir).dir).toBe(dir);
+        // another start time with our pid: an earlier process of an earlier container, which cannot be alive
+        const other = tmpDir();
+        writeFileSync(join(other, LOCK_FILE), stampedLock(process.pid, '1'));
+        expect(openTestHome(other).dir).toBe(other);
       });
 
       it('the holder puts its lock back when it was removed, and leaves only when another gonogo made one in its place', async () => {
