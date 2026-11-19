@@ -48,6 +48,7 @@ import { createHoldStore, relaunch, requestReload, rotateDirectorToken, runPtyHo
 import { createWebServer } from './web.js';
 import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
+import { createTelegramPoll } from './telegrampoll.js';
 import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createFeatureStore } from './features.js';
@@ -917,7 +918,27 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('relief'),
     });
-    phone = createPhone({ hub: audited(hubInstance, blackBox.record, HUB_AUDIT), relief, relay, secret: () => uplinks.secretOf('telegram'), now: io.now, log: log.child('phone') });
+    // Telegram inbound by long polling (no public address): room main's process only, one loop per gonogo, off while a Telegram uplink exists
+    const telegramPoll = options.roomChild !== true || env.GONOGO_ROOM === 'main' ? createTelegramPoll({
+      dir: home.dir,
+      target: () => relay.telegramTarget(),
+      hasUplink: () => uplinks.secretOf('telegram') !== null,
+      deliver: (update, secret) => uplinks.deliverPolled(update, secret),
+      fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      sleep: (ms, signal) => new Promise<void>((done) => {
+        const timer = setTimeout(done, ms);
+        timer.unref();
+        signal.addEventListener('abort', () => (clearTimeout(timer), done()), { once: true });
+      }),
+      now: io.now,
+      log: log.child('telegram'),
+    }) : null;
+    if (telegramPoll !== null) {
+      await telegramPoll.load();
+      relay.setInbound(() => telegramPoll.state());
+    }
+    // the buttons of phone approvals are signed by the uplink's secret, or by the polling secret when there is no uplink
+    phone = createPhone({ hub: audited(hubInstance, blackBox.record, HUB_AUDIT), relief, relay, secret: () => uplinks.secretOf('telegram') ?? telegramPoll?.secret() ?? null, now: io.now, log: log.child('phone') });
     // Update from the page: npm or pnpm global installs, or a container with an update hook (GONOGO_UPDATE_HOOK, optional GONOGO_UPDATE_HOOK_TOKEN)
     const installed = installInfo(env);
     const hookUrl = (env.GONOGO_UPDATE_HOOK ?? '').trim();
@@ -1090,6 +1111,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     ready = true;
     docking.start();
     rollout.start();
+    telegramPoll?.start();
 
     let stopping: Promise<void> | undefined;
     const step = async (what: string, run: () => Promise<void>): Promise<void> => {
@@ -1125,6 +1147,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('black box close', () => blackBox.close());
       await step('livery close', () => liveries.close());
       await step('relief close', async () => relief.close());
+      await step('telegram polling close', async () => telegramPoll?.stop());
       await step('relay close', () => relay.close());
       await step('models close', () => modelDefaults.close());
       await step('features close', () => features.close());

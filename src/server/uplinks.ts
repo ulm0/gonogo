@@ -82,6 +82,8 @@ export interface Uplinks {
    * `answer` is a body for the sender (a ping, a challenge, an event that is not for the agents) and no message was made.
    */
   deliver(id: string, raw: Buffer, headers: IncomingHttpHeaders): Pick<SendResult, 'ok' | 'id' | 'status'> | { ok: true; answer: unknown };
+  /** Telegram long polling: one update from getUpdates, read as a webhook delivery is (the chat filter, reply routing, dedup, buttons), for the boss. `secret` signs the buttons. Never throws. */
+  deliverPolled(update: Buffer, secret: string): void;
   close(): Promise<void>;
 }
 
@@ -117,6 +119,9 @@ export interface KindDef {
   /** What the body means; throws a HubError (bad_request) for one it cannot read. `cut` says the text was shortened to fit. */
   read(raw: Buffer, headers: IncomingHttpHeaders, inbound: Inbound): Made;
 }
+
+/** The stand-in uplink of polled Telegram updates: not saved, not listed, not recorded (the message in the inbox is the trace). */
+const POLLED: Uplink = { id: 'u0', name: 'Telegram', kind: 'telegram', to: 'boss', secret: '', enabled: true, createdAt: 0, deliveries: [] };
 
 const NO_INBOUND: Inbound = { find: () => undefined, seen: () => false, telegramChat: () => null };
 /** The answer to a request that was good and not for the agents. */
@@ -244,6 +249,7 @@ export function createUplinks(options: UplinksOptions): Uplinks {
   };
 
   const record = (u: Uplink, status: UplinkDelivery['status'], note: string): void => {
+    if (u === POLLED) return;
     u.deliveries = [{ at: now(), status, note: cut(note) }, ...u.deliveries].slice(0, UPLINK_DELIVERIES_MAX);
     void changed().catch(() => undefined);
   };
@@ -436,6 +442,20 @@ export function createUplinks(options: UplinksOptions): Uplinks {
       if (made.once !== undefined && inbound.seen(made.once)) return IGNORED;
       const sent = receive(u, made, '');
       return { ok: sent.ok, id: sent.id, status: sent.status };
+    },
+
+    deliverPolled(update, secret) {
+      try {
+        const made = KINDS.telegram.read(update, {}, inbound);
+        if (made === null) return;
+        if ('callback' in made) return options.press?.(secret, made.callback);
+        if ('answer' in made) return;
+        if (!takeSlot(POLLED)) return log.warn(`telegram polling: more than ${UPLINK_RATE_MAX} messages in a minute: the rest are dropped`);
+        if (made.once !== undefined && inbound.seen(made.once)) return;
+        receive(POLLED, { ...made, subject: made.subject ?? 'Telegram' }, '');
+      } catch (error) {
+        log.warn(`telegram polling: an update was not delivered: ${messageOf(error)}`);
+      }
     },
 
     close() {

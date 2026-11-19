@@ -779,6 +779,11 @@ export interface ModelDefaults {
   effort?: Effort;
 }
 
+/** Telegram inbound (docs/features/relay.md): by long polling, by a webhook (uplink or one set on the bot), or off. `note` never holds a token. */
+export interface TelegramInbound {
+  mode: 'off' | 'polling' | 'webhook' | 'uplink' | 'error';
+  note: string;
+}
 export interface RelayView {
   slack: RelayTargetView | null;
   telegram: RelayTargetView | null;
@@ -786,6 +791,8 @@ export interface RelayView {
   forward: RelayForwardKind[];
   /** Phone approvals: where permissions and hire requests go (default off). */
   phone: PhoneMode;
+  /** How Telegram messages reach gonogo. Absent from an older server. */
+  telegramInbound?: TelegramInbound;
 }
 /** PUT /api/relay/slack and /api/relay/telegram. `token` may be left out to keep the one saved. */
 export interface RelayTargetRequest {

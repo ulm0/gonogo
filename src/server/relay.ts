@@ -48,6 +48,8 @@ export interface RelayOptions {
   log: Logger;
 }
 
+import type { TelegramInbound } from '../shared/protocol.js';
+
 export interface Relay extends Inbound {
   load(): Promise<void>;
   view(): RelayView;
@@ -63,6 +65,10 @@ export interface Relay extends Inbound {
   /** One message with buttons to the Telegram target; resolves with its key when it went. */
   sendButtons(text: string, markup: unknown): Promise<boolean>;
   /** One call of the Telegram bot API (answerCallbackQuery, editMessageReplyMarkup); true when it was accepted. Never throws, never says the token. */
+  /** The Telegram target for the long-polling loop (the token stays in this process); null when there is none. */
+  telegramTarget(): { token: string; to: string } | null;
+  /** Where Telegram inbound stands (long polling, webhook, uplink, off), asked at each `view()`. */
+  setInbound(read: () => TelegramInbound): void;
   telegramCall(method: 'answerCallbackQuery' | 'editMessageReplyMarkup', body: Record<string, unknown>): Promise<boolean>;
   /** Sends one test message, one try, and waits for the answer. A refusal is in `last`, not thrown. */
   test(service: string): Promise<RelayView>;
@@ -186,9 +192,10 @@ export function createRelay(options: RelayOptions): Relay {
     });
   };
 
+  let inboundOf: (() => TelegramInbound) | null = null;
   const view = (): RelayView => {
     const of = (service: RelayService) => (targets[service] ? { to: targets[service].to, last: last[service] ?? null } : null);
-    return { slack: of('slack'), telegram: of('telegram'), forward: RELAY_FORWARD_KINDS.filter((k) => forwarded.has(k)), phone };
+    return { slack: of('slack'), telegram: of('telegram'), forward: RELAY_FORWARD_KINDS.filter((k) => forwarded.has(k)), phone, ...(inboundOf === null ? {} : { telegramInbound: inboundOf() }) };
   };
 
   /** One message to one service: the id the service gave it, or why it did not go. Never throws, never says the token. */
@@ -391,6 +398,8 @@ export function createRelay(options: RelayOptions): Relay {
     },
 
     telegramChat: () => targets.telegram?.to ?? null,
+    telegramTarget: () => (targets.telegram === undefined ? null : { token: targets.telegram.token, to: targets.telegram.to }),
+    setInbound: (read) => void (inboundOf = read),
 
     close() {
       closing.abort();
