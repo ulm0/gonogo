@@ -33,7 +33,7 @@ real Docker with the stand-in agent, and since 0.2.0 by RSO and SIMSUP, real Cla
   `--network container:<name>` instead and shares gonogo's network, where `host.docker.internal` is `127.0.0.1`.
 - **Edit.** The box applies at the next start. A Clean Room console cannot be renamed; untick the box in the same edit to
   rename it. Propellant does not count its tokens. Payload MCP servers run inside the container; skill folders are not
-  visible there.
+  visible there. The room's [Payload defaults](payload.md) never reach a Clean Room console: only what is in its own Payload.
 - **Risk.** Claude Code 2.1.325 refuses HTTP hooks to private addresses, and `host.docker.internal` usually is one. If
   so, hooks do not arrive and the console does not follow the agent's work. Unproven either way; see the spec. With
   `GONOGO_CLEANROOM_NETWORK` the name is the loopback `127.0.0.1`, which Claude Code allows (not tried with a real

@@ -47,6 +47,7 @@ import type {
   MessageRecord,
   NeedsKind,
   Payload,
+  PayloadOff,
   PermissionMode,
   PollEntry,
   PollRequest,
@@ -149,7 +150,7 @@ import { parseWorktree } from './worktree.js';
 import { parseRemoteControl } from './remotecontrol.js';
 import { parsePermissions } from './permissions.js';
 import { checkKeys } from './clearance.js';
-import { parsePayload, payloadRefusal } from './payload.js';
+import { parsePayload, parsePayloadOff, payloadRefusal } from './payload.js';
 
 export type { InputEffect };
 
@@ -173,7 +174,7 @@ export class HubError extends Error {
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 /** The payload of a record as text, for comparing: null when it has none. */
-const payloadKey = (record: AgentRecord): string | null => (record.payload === undefined ? null : JSON.stringify(record.payload));
+const payloadKey = (record: AgentRecord): string | null => (record.payload === undefined && record.payloadOff === undefined ? null : JSON.stringify([record.payload, record.payloadOff]));
 /** The tool rules of a record as text, for comparing. */
 /** The co-author setting of a record as text, for comparing (it applies at the next start). */
 const coauthorKey = (record: AgentRecord): string => (record.coauthor === false ? 'off' : 'follows');
@@ -710,6 +711,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       provider: record.provider ?? 'claude',
       command: record.command ?? null,
       payload: record.payload ?? null,
+      payloadOff: record.payloadOff ?? null,
       cleanRoom: record.cleanRoom ?? null,
       worktree: record.worktree ?? null,
       remoteControl: record.remoteControl ?? null,
@@ -2113,6 +2115,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     setOptional(target, 'command', from.command);
     if (from.payload === undefined) delete target.payload;
     else target.payload = from.payload;
+    if (from.payloadOff === undefined) delete target.payloadOff;
+    else target.payloadOff = from.payloadOff;
     if (from.cleanRoom === undefined) delete target.cleanRoom;
     else target.cleanRoom = from.cleanRoom;
     if (from.worktree === undefined) delete target.worktree;
@@ -2171,6 +2175,14 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const refused = checked.payload && payloadRefusal(provider, checked.payload);
     if (refused) throw new HubError('bad_request', refused.error, refused.field);
     return checked.payload;
+  }
+
+  /** The room defaults an agent switches off: names only, and only for an engine that takes a payload. A bad value is 400, field payloadOff. */
+  function checkPayloadOff(provider: Provider, value: unknown): PayloadOff | undefined {
+    const checked = parsePayloadOff(value);
+    if (!checked.ok) throw new HubError('bad_request', checked.error, 'payloadOff');
+    if (checked.off && providerInfo(provider).payload === null) throw new HubError('bad_request', `${providerInfo(provider).label} takes no payload`, 'payloadOff');
+    return checked.off;
   }
 
   /** Tool rules: lists of Claude Code rules, Claude Code only. A bad one is 400, field permissions. */
@@ -2278,6 +2290,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     const command = custom ? checkCommand(req.command) : undefined;
     const payload = checkPayload(provider, req.payload);
+    const payloadOff = checkPayloadOff(provider, req.payloadOff);
     const model = checkModel(provider, req.model);
     const effort = checkEffort(provider, req.effort);
     const kept = req.keys === undefined ? undefined : checkKeysOf(req.keys, undefined, true);
@@ -2314,6 +2327,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (provider !== 'claude') record.provider = provider;
       setOptional(record, 'command', command);
       if (payload) record.payload = payload;
+      if (payloadOff) record.payloadOff = payloadOff;
       if (cleanRoom) record.cleanRoom = cleanRoom;
       if (worktree) record.worktree = worktree;
       if (remoteControl) record.remoteControl = remoteControl;
@@ -2349,9 +2363,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'model', 'effort', 'keys'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'model', 'effort', 'keys'];
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor, model, effort, keys');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, payloadOff, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor, model, effort, keys');
     }
     const current = rt.record;
     const next: AgentRecord = { ...current };
@@ -2389,6 +2403,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         await checkSkills(payload);
         if (payload) next.payload = payload;
         else delete next.payload;
+      }
+      if (req.payloadOff !== undefined) {
+        const off = checkPayloadOff(current.provider ?? 'claude', req.payloadOff);
+        if (off) next.payloadOff = off;
+        else delete next.payloadOff;
       }
       if (req.cleanRoom !== undefined) {
         if (req.cleanRoom === null) delete next.cleanRoom;

@@ -54,7 +54,7 @@ import { parseWorktree } from './worktree.js';
 import { parseRemoteControl } from './remotecontrol.js';
 import { parsePermissions } from './permissions.js';
 import { keyNameProblem } from './clearance.js';
-import { parsePayload, payloadRefusal } from './payload.js';
+import { parsePayload, parsePayloadOff, payloadRefusal } from './payload.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -326,7 +326,7 @@ function parseAgent(a: unknown): AgentRecord | string {
   if (typeof boss !== 'boolean') return `${name}: boss must be true or false`;
   if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) return `${name}: createdAt must be a number`;
   const record: AgentRecord = { name, role, dir, mode, sessionId, desk, boss, createdAt };
-  const { position, provider, command, payload, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor } = a;
+  const { position, provider, command, payload, payloadOff, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor } = a;
   if (position !== undefined) {
     if (typeof position !== 'string' || !POSITION_IDS.includes(position)) return `${name}: unknown position`;
     record.position = position;
@@ -354,6 +354,11 @@ function parseAgent(a: unknown): AgentRecord | string {
     const refused = checked.payload && payloadRefusal(record.provider, checked.payload);
     if (refused) return `${name}: ${refused.error}`;
     if (checked.payload) record.payload = checked.payload;
+  }
+  if (payloadOff !== undefined) {
+    const checked = parsePayloadOff(payloadOff);
+    if (!checked.ok) return `${name}: ${checked.error}`;
+    if (checked.off) record.payloadOff = checked.off;
   }
   if (cleanRoom !== undefined) {
     const checked = parseCleanRoom(cleanRoom, record.provider);

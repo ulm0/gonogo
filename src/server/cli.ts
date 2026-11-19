@@ -27,7 +27,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -74,6 +74,7 @@ import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
 import { createModelDefaults } from './models.js';
+import { createPayloadDefaults } from './payloaddefaults.js';
 import { createPermissionDefaults } from './permissions.js';
 import { createRunState } from './runstate.js';
 import { createStartupStore } from './startup.js';
@@ -595,6 +596,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await clearance.load();
     const modelDefaults = createModelDefaults({ dir: home.dir, log: log.child('models') });
     await modelDefaults.load();
+    const payloadDefaults = createPayloadDefaults({ dir: home.dir, log: log.child('payload') });
+    await payloadDefaults.load();
     const permissionDefaults = createPermissionDefaults({ dir: home.dir, log: log.child('permissions') });
     await permissionDefaults.load();
     const runState = createRunState({ dir: home.dir, now: () => Date.now(), log: log.child('run state') });
@@ -617,6 +620,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       toolsOff: () => toolsOff(features.view().off),
       defaultEffort: () => modelDefaults.effort(),
       defaultPermissions: () => permissionDefaults.get(),
+      payloadDefaults: () => payloadDefaults.get(),
       subagents: () => subagentStore.view(),
       coauthor: () => coauthorStore.view(),
       log: log.child('launcher'),
@@ -1098,6 +1102,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relay: audited(relay, audit, RELAY_AUDIT),
       models: modelDefaults,
       features: audited(features, audit, FEATURES_AUDIT),
+      payloadDefaults: audited(payloadDefaults, blackBox.record, PAYLOAD_DEFAULTS_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
       subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),
@@ -1202,6 +1207,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('relay close', () => relay.close());
       await step('models close', () => modelDefaults.close());
       await step('features close', () => features.close());
+      await step('payload defaults close', () => payloadDefaults.close());
       await step('permissions close', () => permissionDefaults.close());
       await step('subagents close', () => subagentStore.close());
       await step('coauthor close', () => coauthorStore.close());

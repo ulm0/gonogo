@@ -2819,6 +2819,7 @@ describe('hire (4.9)', () => {
       provider: 'claude',
       command: null,
       payload: null,
+      payloadOff: null,
       cleanRoom: null,
       worktree: null,
       needSeq: null,

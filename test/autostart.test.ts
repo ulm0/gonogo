@@ -139,7 +139,7 @@ describe('the startup policy', () => {
 });
 
 describe('the Start with gonogo box of the form', () => {
-  const EMPTY = { provider: 'claude', position: '', name: 'ana', role: 'does things', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', keys: [], keysRemoved: [] } as unknown as Values;
+  const EMPTY = { provider: 'claude', position: '', name: 'ana', role: 'does things', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', offServers: [], offSkills: [], cleanRoom: false, worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', keys: [], keysRemoved: [] } as unknown as Values;
   it('says nothing when ticked, and false when not; an edit sends it only when it changes', () => {
     expect(hireRequest(EMPTY)).not.toHaveProperty('autostart');
     expect(hireRequest({ ...EMPTY, autostart: false })).toMatchObject({ autostart: false });

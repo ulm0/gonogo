@@ -99,8 +99,7 @@ tracked. Only what is still missing stays open here.
 - [x] History of triggers. Built (0.7.0): one append-only log per room of every uplink delivery, polled Telegram update,
       schedule run and Docking call, with a HISTORY tab in Launch Window (`docs/features/triggers.md`).
 - [ ] Integrations registry, skills tab and MCP defaults. Only part is built: **Payload** sets MCP servers and skills
-      per agent from text you write. Missing: a list of known servers and skills to pick from, defaults for new
-      agents, and a skills tab apart from the hire form.
+      per agent from text you write. Defaults for every agent are built (Flight Rules, PAYLOAD DEFAULTS). Missing: a list of known servers and skills to pick from, and a skills tab apart from the hire form.
 
 - [ ] Telegram Mini App *(parked by the owner, 2026-11-19)*: a menu button of the Relay bot opens gonogo's page inside Telegram, signed in by the Mini App's `initData` (HMAC with the bot token) for the Director's Telegram user id only. Needs a public https address (`gonogo expose`), an RSO decision on whether `initData` counts as both factors (anyone with the bot token can sign it), a short lifetime and a Downlink note per sign-in. No separate app: the same page, with Telegram's theme.
 ## 7. Cost and safety

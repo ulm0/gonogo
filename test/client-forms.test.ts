@@ -17,6 +17,8 @@ import {
   needsBypassConfirm,
   cleanRoomOf,
   payloadOf,
+  payloadOffOf,
+  payloadRows,
   positionShort,
   positionTag,
   submitLabel,
@@ -70,7 +72,7 @@ function item(id: string, from: string, to: string, extra: Partial<ActivityItem>
   };
 }
 
-const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', cleanRoom: false, worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
+const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', offServers: [], offSkills: [], cleanRoom: false, worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
 
 describe('staffing a seat, no position or a custom command', () => {
   it('picking a position after a custom command makes the agent a Claude one and replaces the placeholder role', () => {
@@ -567,5 +569,49 @@ describe('the worktree box', () => {
     const on = agent('ana', 1, { role: 'does things', dir: '/work', worktree: {} });
     expect(editRequest({ ...values, worktree: false }, on, false)).toEqual({ worktree: null });
     expect(editRequest({ ...values, worktree: true }, on, false)).toBeNull();
+  });
+});
+
+describe('Payload fold: what a console starts with and where each item comes from', () => {
+  const room = {
+    mcpServers: [
+      { name: 'files', type: 'stdio' as const, target: 'npx', args: 2, names: [] },
+      { name: 'web', type: 'http' as const, target: 'https://x.test', args: 0, names: ['Authorization'] },
+    ],
+    skills: [{ name: 'review', path: '/s/review' }],
+  };
+  const rowsOf = (extra: Partial<Values>, defaults: typeof room | null = room): string[] =>
+    payloadRows(defaults, { ...EMPTY, ...extra }).map((r) => `${r.from}:${r.kind}:${r.name}:${r.on ? 'on' : 'off'}${r.canSwitch || r.from === 'agent' ? '' : ':fixed'}${r.note === '' ? '' : `:${r.note}`}`);
+
+  it('lists the room items on, then the console\'s own; the console wins by name', () => {
+    expect(rowsOf({})).toEqual(['room:server:files:on', 'room:server:web:on', 'room:skill:review:on']);
+    expect(rowsOf({ servers: '{"files":{"command":"mine"},"extra":{"command":"x"}}', skills: '/mine/review/' })).toEqual([
+      "room:server:files:off:fixed:replaced by this agent's own",
+      'room:server:web:on',
+      "room:skill:review:off:fixed:replaced by this agent's own",
+      'agent:server:files:on',
+      'agent:server:extra:on',
+      'agent:skill:review:on',
+    ]);
+  });
+  it('a switched-off item says so and can be switched back', () => {
+    expect(rowsOf({ offServers: ['web'], offSkills: ['review'] })).toEqual(['room:server:files:on', 'room:server:web:off:switched off for this agent', 'room:skill:review:off:switched off for this agent']);
+  });
+  it('a Clean Room console gets none of the room\'s, an engine with servers only no skills, one with no payload nothing', () => {
+    expect(rowsOf({ cleanRoom: true, servers: '{"a":{"command":"x"}}' })).toEqual(['agent:server:a:on']);
+    expect(rowsOf({ provider: 'gemini' })).toEqual(['room:server:files:on', 'room:server:web:on']);
+    expect(rowsOf({ provider: 'codex' })).toEqual([]);
+    expect(rowsOf({}, null)).toEqual([]);
+  });
+  it('the switches are their own field, never part of the payload, and only for what the engine takes', () => {
+    expect(payloadOf({ ...EMPTY, offServers: ['web'], offSkills: ['review'] })).toBeNull();
+    expect(payloadOffOf({ ...EMPTY, offServers: ['web'], offSkills: ['review'] })).toEqual({ mcpServers: ['web'], skills: ['review'] });
+    expect(payloadOffOf({ ...EMPTY, provider: 'gemini', offServers: ['web'], offSkills: ['review'] })).toEqual({ mcpServers: ['web'] });
+    expect(payloadOffOf({ ...EMPTY, provider: 'codex', offServers: ['web'] })).toBeNull();
+    expect(payloadOffOf(EMPTY)).toBeNull();
+    expect(hireRequest({ ...EMPTY, name: 'ana', role: 'r', offServers: ['web'] })).toMatchObject({ payloadOff: { mcpServers: ['web'] } });
+  });
+  it('a name switched off that the room no longer has is still listed, so it can be switched back', () => {
+    expect(rowsOf({ offServers: ['old'], offSkills: ['older'] })).toEqual(['room:server:files:on', 'room:server:web:on', 'room:skill:review:on', "room:server:old:off:switched off, but the room's defaults no longer have it", "room:skill:older:off:switched off, but the room's defaults no longer have it"]);
   });
 });

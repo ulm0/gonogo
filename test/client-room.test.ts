@@ -72,6 +72,7 @@ function agent(name: string, desk: number, extra: Partial<AgentView> = {}): Agen
     provider: 'claude',
     command: null,
     payload: null,
+    payloadOff: null,
     cleanRoom: null,
     worktree: null,
     model: null,

@@ -1,5 +1,5 @@
 import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
-import type { AgentView, CleanRoom, Effort, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, PayloadDefaults, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { parseRulesText, rulesOf, rulesToText } from './permissions.js';
 import { positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -32,6 +32,9 @@ export interface Values {
   /** Payload: the MCP servers as JSON text ('' is none) and the skill folders, one per line. */
   servers: string;
   skills: string;
+  /** The room's Payload defaults this agent switches off, by server name and skill folder name (docs/payload-spec.md). */
+  offServers: string[];
+  offSkills: string[];
   /** Clean Room: run the agent in a container on its own worktree. Claude Code only. */
   cleanRoom: boolean;
   /** Worktree: the agent starts in its own git worktree on the host. Any engine; not with a Clean Room, which has one. */
@@ -175,6 +178,8 @@ export function initialValues(
     command: current?.command ?? '',
     servers: current?.payload?.mcpServers === undefined ? '' : JSON.stringify(current.payload.mcpServers, null, 2),
     skills: (current?.payload?.skills ?? []).join('\n'),
+    offServers: current?.payloadOff?.mcpServers ?? [],
+    offSkills: current?.payloadOff?.skills ?? [],
     cleanRoom: Boolean(current?.cleanRoom),
     worktree: Boolean(current?.worktree),
     remoteControl: Boolean(current?.remoteControl),
@@ -275,6 +280,56 @@ export function payloadOf(values: Values): Payload | null {
   const skills = kind === 'all' ? readSkills(values.skills) : [];
   if (skills.length > 0) payload.skills = skills;
   return Object.keys(payload).length === 0 ? null : payload;
+}
+
+/** The room defaults the form switches off: only what the engine takes, and null when none is. */
+export function payloadOffOf(values: Values): PayloadOff | null {
+  const kind = providerInfo(values.provider).payload;
+  if (kind === null) return null;
+  const off: PayloadOff = {};
+  if (values.offServers.length > 0) off.mcpServers = values.offServers;
+  if (kind === 'all' && values.offSkills.length > 0) off.skills = values.offSkills;
+  return Object.keys(off).length === 0 ? null : off;
+}
+
+/** One line of the Payload fold: an item, where it comes from (the room's defaults or this agent's own), and whether it is in effect. */
+export interface PayloadRow {
+  kind: 'server' | 'skill';
+  name: string;
+  from: 'room' | 'agent';
+  on: boolean;
+  /** Only a room item that this agent does not replace can be switched off. */
+  canSwitch: boolean;
+  note: string;
+}
+
+/**
+ * What the agent starts with, item by item, and where each item comes from (docs/payload-spec.md): the room's defaults, each on, switched off or replaced by an
+ * item of the agent's own of the same name, then the agent's own. The agent wins. A Clean Room agent, and an engine with no payload, get none of the room's.
+ */
+export function payloadRows(defaults: PayloadDefaults | null, values: Values): PayloadRow[] {
+  const kind = providerInfo(values.provider).payload;
+  if (kind === null) return [];
+  const ownServers = Object.keys(readServers(values.servers) ?? {});
+  const ownSkills = kind === 'all' ? readSkills(values.skills).map((path) => path.replace(/\/+$/, '').split('/').pop() ?? path) : [];
+  const room = values.provider === 'claude' && values.cleanRoom ? null : defaults;
+  const rows: PayloadRow[] = [];
+  const roomRow = (item: 'server' | 'skill', name: string, mine: string[], off: string[]): PayloadRow => {
+    const replaced = mine.includes(name);
+    const switched = off.includes(name);
+    return { kind: item, name, from: 'room', on: !replaced && !switched, canSwitch: !replaced, note: replaced ? "replaced by this agent's own" : switched ? 'switched off for this agent' : '' };
+  };
+  for (const s of room?.mcpServers ?? []) rows.push(roomRow('server', s.name, ownServers, values.offServers));
+  if (kind === 'all') for (const s of room?.skills ?? []) rows.push(roomRow('skill', s.name, ownSkills, values.offSkills));
+  // a name switched off that the room no longer has: shown so that it can be switched back, which drops it
+  const gone = (item: 'server' | 'skill', off: string[], there: string[]): void => {
+    for (const name of off) if (!there.includes(name)) rows.push({ kind: item, name, from: 'room', on: false, canSwitch: true, note: "switched off, but the room's defaults no longer have it" });
+  };
+  gone('server', values.offServers, (room?.mcpServers ?? []).map((x) => x.name));
+  if (kind === 'all') gone('skill', values.offSkills, (room?.skills ?? []).map((x) => x.name));
+  for (const name of ownServers) rows.push({ kind: 'server', name, from: 'agent', on: true, canSwitch: false, note: '' });
+  for (const name of ownSkills) rows.push({ kind: 'skill', name, from: 'agent', on: true, canSwitch: false, note: '' });
+  return rows;
 }
 
 /** The Clean Room the form describes: only for Claude Code, and a setting made through the API (an image) stays when the box stays ticked. */
@@ -395,6 +450,8 @@ export function hireRequest(values: Values): HireRequest {
   if (values.position !== '') request.position = values.position;
   const payload = payloadOf(values);
   if (payload !== null) request.payload = payload;
+  const payloadOff = payloadOffOf(values);
+  if (payloadOff !== null) request.payloadOff = payloadOff;
   const cleanRoom = cleanRoomOf(values, null);
   if (cleanRoom !== null) request.cleanRoom = cleanRoom;
   if (worktreeOf(values) !== null) request.worktree = {};
@@ -425,6 +482,8 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     if (values.position !== (original.position ?? '')) changes.position = values.position === '' ? null : values.position;
     const payload = payloadOf(values);
     if (JSON.stringify(payload) !== JSON.stringify(original.payload ?? null)) changes.payload = payload;
+    const payloadOff = payloadOffOf(values);
+    if (JSON.stringify(payloadOff) !== JSON.stringify(original.payloadOff ?? null)) changes.payloadOff = payloadOff;
     const cleanRoom = cleanRoomOf(values, original);
     if (JSON.stringify(cleanRoom) !== JSON.stringify(original.cleanRoom ?? null)) changes.cleanRoom = cleanRoom;
     const model = modelOf(values);

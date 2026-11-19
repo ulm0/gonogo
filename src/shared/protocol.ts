@@ -353,6 +353,35 @@ export interface Payload {
   /** Absolute paths of skill folders (each holds a SKILL.md). Claude Code agents only. */
   skills?: string[];
 }
+/**
+ * The room's Payload defaults an agent switches off (docs/payload-spec.md): server names and skill folder names. An agent-level field of its own, not part of
+ * `Payload`, so that an older gonogo reading agents.json (it ignores a field it does not know) still starts after a downgrade.
+ */
+export interface PayloadOff {
+  mcpServers?: string[];
+  skills?: string[];
+}
+/** One MCP server of the room's Payload defaults as the page may see it: never an argument, a value of env or headers, or a query. */
+export interface PayloadDefaultServer {
+  name: string;
+  type: 'stdio' | 'http' | 'sse';
+  /** The command of a stdio server, or the origin (scheme and host) of a remote one. */
+  target: string;
+  /** How many arguments a stdio server has (their text can hold a token, so it is not shown). */
+  args: number;
+  /** The names of its env variables or headers (never their values). */
+  names: string[];
+}
+export interface PayloadDefaultSkill {
+  /** The folder's name: what an agent's own skill of the same name replaces and what it switches off. */
+  name: string;
+  path: string;
+}
+/** The room's Payload defaults for the page (Flight Rules, and the Payload fold of an agent). */
+export interface PayloadDefaults {
+  mcpServers: PayloadDefaultServer[];
+  skills: PayloadDefaultSkill[];
+}
 /** Clean Room: the agent runs in a container on its own git worktree. `image` replaces GONOGO_CLEANROOM_IMAGE for this agent. */
 export interface CleanRoom {
   image?: string;
@@ -460,6 +489,8 @@ export interface AgentRecord {
   command?: string;
   /** Absent means none. Never an empty object. */
   payload?: Payload;
+  /** Room Payload defaults this agent switches off. Absent means none. */
+  payloadOff?: PayloadOff;
   /** Absent means the agent runs on the host. Claude Code agents only. */
   cleanRoom?: CleanRoom;
   /** Absent means the agent starts in `dir`. Never together with cleanRoom. */
@@ -566,6 +597,8 @@ export interface AgentView {
   command: string | null;
   /** The payload as stored (env and header values included), or null. */
   payload: Payload | null;
+  /** The room's Payload defaults this agent switches off, or null. */
+  payloadOff: PayloadOff | null;
   /** The Clean Room as stored, or null: the branch and the worktree path follow from the name (cleanRoomBranch, CLEAN_ROOM_DIR). */
   cleanRoom: CleanRoom | null;
   /** The worktree setting as stored, or null: the branch and the path follow from the name (worktreeBranch, worktreePath). */
@@ -1368,6 +1401,8 @@ export interface HireRequest {
   command?: string;
   /** MCP servers and skills. Bad value: 400, field 'payload', 'payload.mcpServers' or 'payload.skills'. */
   payload?: Payload;
+  /** Room Payload defaults to switch off for this agent (names only). Bad value: 400, field 'payloadOff'. */
+  payloadOff?: PayloadOff;
   /** Run the agent in a container on its own worktree. Refused (400, field 'cleanRoom') for another engine, a bad image, no Docker or a directory outside a git repository. */
   cleanRoom?: CleanRoom;
   /** Start the agent in its own git worktree. Refused (400, field 'worktree') with cleanRoom, or for a directory outside a git repository. */
@@ -1400,6 +1435,8 @@ export interface EditRequest {
   command?: string;
   /** Replaces the whole payload; null removes it. */
   payload?: Payload | null;
+  /** Replaces the room defaults this agent switches off; null brings them all back. */
+  payloadOff?: PayloadOff | null;
   /** Replaces the Clean Room setting; null turns it off. */
   cleanRoom?: CleanRoom | null;
   /** Replaces the worktree setting; null turns it off (the worktree and branch are kept). */
@@ -1975,6 +2012,8 @@ export interface LauncherOptions {
   defaultEffort?: () => Effort | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
+  /** Payload defaults: the room's MCP servers and skills for an agent outside a Clean Room, merged under the agent's own at each start (the agent wins). Default none. */
+  payloadDefaults?: () => Payload | undefined;
   /** Co-author: the room's setting, read at each start. Default: on. */
   coauthor?: () => CoauthorSettings;
   /** Subagents: the room's setting, read at each start. Default: allowed. */
