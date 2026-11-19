@@ -16,6 +16,7 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
   const deleted: string[] = [];
   const fetched: string[] = [];
   const matched: string[] = [];
+  const responses: Response[] = [];
   const self = {
     registration: { scope, showNotification: (title: string, options: Record<string, unknown>) => (shown.push([title, options]), Promise.resolve()) },
     addEventListener: (type: string, fn: Handler) => (handlers[type] = fn),
@@ -30,10 +31,10 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
   vm.runInNewContext(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'), { self, caches, URL, Response, fetch: (r: { url: string }) => (fetched.push(r.url), page === null ? Promise.reject(new Error('offline')) : Promise.resolve(page)) });
   const waits: Array<Promise<unknown>> = [];
   const fire = (type: string, event: Record<string, unknown>): Promise<unknown> => {
-    handlers[type]?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => waits.push(Promise.resolve(p).then(() => 'responded')) });
+    handlers[type]?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => waits.push(Promise.resolve(p).then((answer) => (responses.push(answer as Response), 'responded'))) });
     return Promise.all(waits);
   };
-  return { fire, shown, opened, kept, put, waits, keptAssets, deleted, fetched, matched };
+  return { fire, shown, opened, kept, put, waits, keptAssets, deleted, fetched, matched, responses };
 }
 
 const request = (url: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ request: { url, method: 'GET', mode: 'cors', headers: { has: () => false }, ...extra } });
@@ -90,7 +91,15 @@ describe('the service worker', () => {
     await offline.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
     expect(offline.waits).toHaveLength(1);
     expect(offline.fetched).toEqual(['https://x.test/']);
-    expect(offline.matched).toEqual(['https://x.test/r/main/']);
+    expect(offline.responses[0]).toMatchObject({ status: 302 });
+    expect(offline.responses[0]?.headers.get('location')).toBe('https://x.test/r/main/');
+    // and there the page and its relative files come from the kept shell
+    const main = worker('https://x.test/', [], null);
+    main.kept.set('https://x.test/r/main/', new Response('kept page'));
+    main.kept.set('https://x.test/r/main/assets/x.js', new Response('kept file'));
+    await main.fire('fetch', request('https://x.test/r/main/', { mode: 'navigate' }));
+    await main.fire('fetch', request('https://x.test/r/main/assets/x.js'));
+    expect(main.matched).toEqual(['https://x.test/r/main/', 'https://x.test/r/main/assets/x.js']);
   });
 
   it('forgets the kept assets that the page it just got does not name, and none when the page names none', async () => {

@@ -77,7 +77,8 @@ self.addEventListener('fetch', (event) => {
           if (!list && answer.ok && answer.type === 'basic' && (answer.headers.get('content-type') || '').startsWith('text/html')) event.waitUntil(prune(answer.clone()));
           return answer;
         },
-        async () => (await caches.match(new URL(MAIN, SCOPE).href)) ?? Response.error(),
+        // the list has no kept page of its own: it sends the app to main's address, where the kept page finds its relative files (served as "/" its ./assets/ would be /assets/, which is not kept)
+        async () => (list ? Response.redirect(new URL(MAIN, SCOPE).href, 302) : (await caches.match(new URL(MAIN, SCOPE).href)) ?? Response.error()),
       ),
     );
     return;
