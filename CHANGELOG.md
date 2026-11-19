@@ -2,7 +2,9 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.6.0 (2026-11-19)
+
+`gonogo tui` is back (it answered "unknown option tui" since 0.3.0).
 
 - **Fix: `gonogo tui` answered "unknown option tui".** The command was dropped from the CLI by mistake in 0.3.0 (#52); the terminal client itself was there all along. It is back, with a test that `gonogo tui` reaches it.
 
