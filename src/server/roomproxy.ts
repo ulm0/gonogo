@@ -269,7 +269,9 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       // an old address of main's page or assets: moved to /r/main/ (the query stays, the #fragment stays in the browser)
       if ((req.method === 'GET' || req.method === 'HEAD') && PREFIX.exec(req.url ?? '') === null) {
         const old = split(req.url ?? '');
-        if (old !== null && old.path.length > 1 && !old.path.startsWith('//') && !old.path.startsWith('/r/') && old.path !== '/r' && !suspicious(old.path) && !ROOT_ALIASES.test(old.path) && hostAllowed(req.headers.host) && !hooksOnly(req.headers.host)) {
+        // decided on the decoded path, as the room routes it: /%61pi/x is the alias /api/x, not a page
+        const plain = old !== null && !suspicious(old.path) ? old.path.split('/').map((segment) => decodeURIComponent(segment)).join('/') : null;
+        if (old !== null && plain !== null && old.path.length > 1 && !old.path.startsWith('//') && !plain.startsWith('/r/') && plain !== '/r' && !ROOT_ALIASES.test(plain) && hostAllowed(req.headers.host) && !hooksOnly(req.headers.host)) {
           res.writeHead(308, { Location: `/r/main${old.path}${old.query}`, 'Content-Length': 0 });
           res.end();
           return true;
