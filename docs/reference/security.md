@@ -21,6 +21,7 @@
   - Per-agent keys (Clearance, for example `OPENAI_API_KEY`): `keys.json`. Write-only in the page, which gets the names and the time they were set. Never logged, never in a message, Downlink item, Relay post, answer or error, and never in `agents.json`. Each agent's process gets only its own keys; in a Clean Room they pass by name (`docker run -e NAME`), never on a command line. The agent itself can read its keys (`env`).
   - Payload env and header values (tokens, API keys): `agents.json` and the agent's `mcp.json`; the page receives them so Edit can show them. To keep one out, write `${NAME}` and Claude Code expands it from the agent's environment (gonogo's minus the scrubbed variables; from Claude Code's docs, not tried).
 - A payload server is code or a service you chose; its tools run with the agent's permission mode.
+  - The room's Payload defaults (`payload-defaults.json`, 0600, plain text) are servers started by every agent outside a Clean Room, so changing them asks for the password again and the Black Box notes the name. The page is never sent a value, an argument or a url's query, only names and counts. **A Clean Room agent gets none of them** (their env and headers hold keys), so a default cannot widen what a Clean Room agent runs or can read. An agent outside a Clean Room can read the file.
 
 ## Mass Budget
 

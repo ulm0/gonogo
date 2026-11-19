@@ -22,11 +22,13 @@ import {
   initialValues,
   needsBypassConfirm,
   positionShort,
+  payloadRows,
   positionTag,
   submitLabel,
   validate,
 } from './form.js';
-import type { EngineNote, Field, Problems, Values } from './form.js';
+import type { EngineNote, Field, PayloadRow, Problems, Values } from './form.js';
+import type { PayloadDefaults } from '../shared/protocol.js';
 import { legendOf } from './loop.js';
 import { store, useStore } from './store.js';
 import { copyText } from './uplink.js';
@@ -214,6 +216,14 @@ function Page({ title, count, children }: { title: string; count: number | null;
 }
 
 function Staff({ form }: { form: Target }): ReactElement {
+  const [roomDefaults, setRoomDefaults] = useState<PayloadDefaults | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.payloadDefaults().then((found) => live && setRoomDefaults(found), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const id = useId();
   const agents = useStore((s) => s.agents);
   const info = useStore((s) => s.info);
@@ -743,10 +753,42 @@ function Staff({ form }: { form: Target }): ReactElement {
       )}
     </details>
   );
+  const rows = payloadRows(roomDefaults, values);
+  const toggle = (row: PayloadRow, on: boolean): void => {
+    const key = row.kind === 'server' ? 'offServers' : 'offSkills';
+    const rest = values[key].filter((name) => name !== row.name);
+    change({ [key]: on ? rest : [...rest, row.name] }, 'payload.mcpServers');
+  };
+  const roomPayload = rows.length > 0 && (
+    <div className="staff-room" role="group" aria-label="In this console's Payload">
+      <p className="hint">
+        What this console starts with, and where each item comes from. The room&apos;s defaults (Flight Rules) are in it unless you switch one off here; an item of this console&apos;s own with the same name replaces the room&apos;s. This console wins.
+      </p>
+      <ul className="staff-room-list">
+        {rows.map((row) => (
+          <li key={`${row.from}-${row.kind}-${row.name}`}>
+            {row.from === 'room' ? (
+              <label>
+                <input type="checkbox" role="switch" className="switch" checked={row.on} disabled={!row.canSwitch} onChange={(event) => toggle(row, event.target.checked)} /> {row.name}
+              </label>
+            ) : (
+              <span>{row.name}</span>
+            )}{' '}
+            <span className="chip" data-tone="quiet">
+              {row.from === 'room' ? 'ROOM' : 'THIS CONSOLE'} · {row.kind}
+            </span>
+            {row.note !== '' && <span className="hint"> {row.note}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
   const payloadFold = payloadKind !== null && (
     <details className="staff-fold" open={foldOpen} onToggle={(event) => setFoldOpen(event.currentTarget.open)}>
       <summary className="label">PAYLOAD</summary>
       <div className="staff-fold-body">
+        {values.provider === 'claude' && values.cleanRoom && roomDefaults !== null && (roomDefaults.mcpServers.length > 0 || roomDefaults.skills.length > 0) && <p className="hint">A Clean Room console gets none of the room's Payload defaults: their env and headers hold keys. Only what is written below.</p>}
+        {roomPayload}
         <Control
           id={`${id}-servers`}
           label="MCP servers"

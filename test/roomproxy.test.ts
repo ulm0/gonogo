@@ -492,7 +492,7 @@ describe('rooms proxy: the login', () => {
     expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: false })).status).toBe(403);
     // the body that went through reached the room whole
     expect(main.seen.filter((x) => x.method === 'PATCH').at(-1)?.body).toBe('{"model":"x"}');
-    for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);
+    for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/payload-defaults/servers/x'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);
     // an encoded spelling of a listed route is the same route
     for (const path of ['/api/%70ermissions', '/%61pi/permissions', '/r/a/api/%66eatures/relay']) expect((await send(stale, 'PUT', path, {})).status, path).toBe(403);
     // shell-equivalent already, and not behind it: a message, an answer, hold, resume, restart, a fresh session for all of it

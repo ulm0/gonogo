@@ -764,3 +764,19 @@
 .perm-editor .hint {
   margin: 0;
 }
+
+/* The Payload fold: the items this console starts with, the room's and its own, one line each (a word says where it comes from, never the colour). */
+.staff-room-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-room-list label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}

@@ -8,7 +8,7 @@ import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import type { SubagentSettings } from '../shared/protocol.js';
+import type { Payload, Provider, SubagentSettings } from '../shared/protocol.js';
 import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PROVIDER_INFO } from '../shared/protocol.js';
 import type {
   AgentIdentity,
@@ -60,6 +60,7 @@ import type { WorktreePlace } from './worktree.js';
 import { coauthorEnv, ensureHooksDir, realHookNames } from './coauthor.js';
 import { remoteControlName } from './remotecontrol.js';
 import { effectiveRules } from './permissions.js';
+import { mergePayload } from './payload.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { isRecord } from './hooks.js';
@@ -574,13 +575,17 @@ export function createLauncher(options: LauncherOptions): Launcher {
   /** A plain worktree (not a Clean Room's): made or found, and the folder the agent starts in; null when the agent starts in its own folder. */
   const plainWorktree = async (agent: AgentRecord, from: Record<string, string | undefined>): Promise<WorktreePlace | null> => (agent.worktree === undefined || agent.cleanRoom !== undefined ? null : prepareWorktree(agent, homeDir, from));
 
+  /** What the agent starts with: the room's Payload defaults under its own payload. A Clean Room agent gets its own only: the room's servers (their env and headers hold keys) never reach a container the Director chose to keep keys out of. */
+  const payloadOf = (agent: AgentRecord, provider: Provider): Payload | undefined =>
+    mergePayload(agent.cleanRoom === undefined ? options.payloadDefaults?.() : undefined, agent.payload, PROVIDER_INFO[provider].payload);
+
   const prepareOther = async (agent: AgentRecord, provider: OtherProvider, base: string, hubUrl: string, memoryPath: string, token: string): Promise<PreparedStart> => {
     const ctx = {
       name: agent.name,
       mode: agent.mode,
       role: agent.role.trim(),
       roleText: buildRoleText(agent.name, agent.role, memoryPath),
-      servers: agent.payload?.mcpServers,
+      servers: payloadOf(agent, provider)?.mcpServers,
       hubUrl,
       agentDir: base,
       tokenFile: join(base, AGENT_TOKEN_FILE),
@@ -650,8 +655,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const subagentSetting = options.subagents?.() ?? { mode: 'allow' as const, limit: 4 };
       const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), subagentSetting), statusLine });
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
-      await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, agent.payload?.mcpServers), null, 2), FILE_MODE);
-      const pluginDir = await writeSkillsPlugin(base, agent.payload?.skills);
+      await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, payloadOf(agent, 'claude')?.mcpServers), null, 2), FILE_MODE);
+      const pluginDir = await writeSkillsPlugin(base, payloadOf(agent, 'claude')?.skills);
 
       const configDir = hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : null;
       const startDir = plain?.cwd ?? dir;

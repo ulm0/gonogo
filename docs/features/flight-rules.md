@@ -42,3 +42,5 @@ PUT AWAY hides it. It also goes as soon as a second console is staffed.
 `gonogo.commissioning`. It is a convenience like the selected console: no state file on the server, no migration, and a second
 device that shows the checklist once more costs one press of PUT AWAY. A private window or blocked site data shows it on every
 visit; nothing else breaks.
+
+**PAYLOAD DEFAULTS** sets MCP servers and skill folders that every agent gets; an agent's own Payload wins and can switch one off ([Payload](payload.md)). No value is shown after it is saved.

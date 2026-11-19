@@ -352,6 +352,29 @@ export interface Payload {
   mcpServers?: Record<string, McpServer>;
   /** Absolute paths of skill folders (each holds a SKILL.md). Claude Code agents only. */
   skills?: string[];
+  /** Room defaults this agent switches off (docs/payload-spec.md): server names and skill folder names. Only the names of room items mean anything here. */
+  off?: { mcpServers?: string[]; skills?: string[] };
+}
+/** One MCP server of the room's Payload defaults as the page may see it: never an argument, a value of env or headers, or a query. */
+export interface PayloadDefaultServer {
+  name: string;
+  type: 'stdio' | 'http' | 'sse';
+  /** The command of a stdio server, or the origin (scheme and host) of a remote one. */
+  target: string;
+  /** How many arguments a stdio server has (their text can hold a token, so it is not shown). */
+  args: number;
+  /** The names of its env variables or headers (never their values). */
+  names: string[];
+}
+export interface PayloadDefaultSkill {
+  /** The folder's name: what an agent's own skill of the same name replaces and what it switches off. */
+  name: string;
+  path: string;
+}
+/** The room's Payload defaults for the page (Flight Rules, and the Payload fold of an agent). */
+export interface PayloadDefaults {
+  mcpServers: PayloadDefaultServer[];
+  skills: PayloadDefaultSkill[];
 }
 /** Clean Room: the agent runs in a container on its own git worktree. `image` replaces GONOGO_CLEANROOM_IMAGE for this agent. */
 export interface CleanRoom {
@@ -1888,6 +1911,8 @@ export interface LauncherOptions {
   defaultEffort?: () => Effort | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
+  /** Payload defaults: the room's MCP servers and skills for an agent outside a Clean Room, merged under the agent's own at each start (the agent wins). Default none. */
+  payloadDefaults?: () => Payload | undefined;
   /** Co-author: the room's setting, read at each start. Default: on. */
   coauthor?: () => CoauthorSettings;
   /** Subagents: the room's setting, read at each start. Default: allowed. */

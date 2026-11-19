@@ -449,6 +449,8 @@ export const BUDGET_MAX_USD = 1_000_000;
 export const KEYS_FILE = 'keys.json';
 /** Default models (docs/engine-bay-spec.md): the room's model for each engine, `{ version: 1, models: { claude: 'sonnet' } }`. */
 export const MODELS_FILE = 'models.json';
+/** Payload defaults (docs/payload-spec.md): the room's MCP servers and skill folders every agent gets, `{ version: 1, payload: { mcpServers, skills } }`, mode 0600 (env and header values are in it). */
+export const PAYLOAD_DEFAULTS_FILE = 'payload-defaults.json';
 export const QUOTA_FILE = 'quota.json';
 /** Feature toggles (docs/features-spec.md): `{ version: 1, off: ['static-fire'] }`, only the off ids. */
 export const FEATURES_FILE = 'features.json';

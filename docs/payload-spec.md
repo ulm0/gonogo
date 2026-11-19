@@ -56,6 +56,16 @@ agent to have a GitHub server, another a filesystem server, a third a skill fold
   these values from the agent's environment, so a secret can stay in gonogo's own environment and out of the file
   (from its documentation; not tried with a payload server). `docs/reference/security.md` says so.
 
+## Room defaults (0.7.0)
+
+- **Shape.** `payload-defaults.json` in the room's home: `{ "version": 1, "payload": { "mcpServers", "skills" } }`, mode 0600, the same reader (`parsePayload`) as an agent's own, so the same rules and limits. It holds values in plain text. `off` in the file is refused (the file is kept as `.bad` and the room has no defaults).
+- **Agent side.** `AgentRecord.payload.off?: { mcpServers?: string[], skills?: string[] }`: the names of room defaults this agent switches off. A payload may hold only `off`. Names are server names and skill folder names; an engine that takes no payload refuses any payload, `off` too.
+- **Precedence: the agent wins.** `mergePayload(room, own, kind)`: the room's servers minus the agent's `off.mcpServers`, then the agent's servers on top (same name: the agent's, whole; no field is merged). Skills: the room's minus `off.skills` and minus any folder name the agent has itself, then the agent's. `kind` is the engine's `PROVIDER_INFO.payload`: `servers` drops the skills, `null` gives nothing. The launcher merges at every start (`launcher.ts`, `payloadOf`), for the servers of Claude, Gemini and Kimi and for the skills plugin.
+- **Clean Room.** The merge gets no room for an agent with `cleanRoom`, so `mcp.json` and the plugin hold the agent's own items only. The room's servers carry env and headers (keys) that a Clean Room is meant to keep out of the container, and the room's skill folders are not mounted there. A default can therefore never widen what a Clean Room agent runs. Test: `test/cleanroom.test.ts`.
+- **API.** `GET /api/payload-defaults` answers `{ mcpServers: [{ name, type, target, args, names }], skills: [{ name, path }] }`: `target` is the command or the origin of the url, `args` a count, `names` the env or header names. Never a value, an argument, a path or a query of a url. `PUT /api/payload-defaults/servers/<name>` (the server as the body) sets one, `DELETE` of it removes it, `POST /api/payload-defaults/skills` (`{ path }`, an existing folder) adds a folder, `DELETE /api/payload-defaults/skills/<name>` removes it. A refusal is a 400 with the field `server`, `name` or `path`, a missing item a 404. Every change is step-up (`stepup.ts`) and recorded in the Black Box by name.
+- **Page.** Flight Rules, PAYLOAD DEFAULTS (`PayloadDefaults.tsx`); the Payload fold (`HireForm.tsx`, `payloadRows` in `form.ts`) lists the items with ROOM or THIS CONSOLE and the switches.
+- **Not done (shortcuts).** A change of the defaults does not mark running agents as needing a restart (their frame does not carry the merge). The agent's `off` of an item the room no longer has stays until the agent is edited. No order among the room's items. The fold and the block were not seen in a browser.
+
 ## Decisions the first request left open
 
 - Field names of the 400 answers are the dotted paths above, so the client can put the message under the right box.

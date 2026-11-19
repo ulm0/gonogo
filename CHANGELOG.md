@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Payload defaults for the room.** Flight Rules has PAYLOAD DEFAULTS: MCP servers and skill folders that every agent gets (Claude Code both, Gemini CLI and Kimi CLI servers). An agent's own Payload wins: a server or skill of the same name replaces the room's one whole, and the agent can switch any of them off (`payload.off`). The agent's Payload fold lists what it starts with and says where each item comes from (ROOM or THIS CONSOLE). The page is never sent an argument, env or header value, or url query of a default: it shows names and counts, and a server is changed by setting it again. **A Clean Room agent gets none of the room's defaults.** A change asks for the password again, is noted in the Black Box by name, and applies at each agent's next start. New: `GET /api/payload-defaults`, `PUT|DELETE /api/payload-defaults/servers/<name>`, `POST /api/payload-defaults/skills`, `DELETE /api/payload-defaults/skills/<name>`; file `payload-defaults.json`. Not seen in a browser.
+
 ## 0.6.1 (2026-11-19)
 
 The version on the list of rooms sits in its top bar, a real-browser smoke test guards the page in CI, and compose.yaml needs GONOGO_DATA (read "What breaks" if you run it from a UI).

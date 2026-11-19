@@ -1612,6 +1612,28 @@ describe('Payload: MCP servers and skills', () => {
     expect(await exists(join(triage, 'SKILL.md'))).toBe(true);
   });
 
+  it("the room's defaults go in under the agent's own: the agent wins by name, off leaves one out, and the skills come as the same plugin", async () => {
+    const review = await makeSkill('review');
+    const triage = await makeSkill('triage');
+    const l = launcher({ payloadDefaults: () => ({ mcpServers: { files, remote }, skills: [review, triage] }) });
+    await l.prepareStart(agent(), START);
+    expect(Object.keys((await mcpOf()).mcpServers)).toEqual(['files', 'remote', 'gonogo']);
+    expect(await readdir(join(home, 'agents', 'ana', 'payload-plugin', 'skills'))).toEqual(['review', 'triage']);
+    const mine = { command: 'mine' };
+    await l.prepareStart(agent({ payload: { mcpServers: { files: mine }, off: { mcpServers: ['remote'], skills: ['triage'] } } }), START);
+    const config = (await mcpOf()).mcpServers;
+    expect(Object.keys(config)).toEqual(['files', 'gonogo']);
+    expect(config.files).toEqual(mine);
+    expect(await readdir(join(home, 'agents', 'ana', 'payload-plugin', 'skills'))).toEqual(['review']);
+  });
+
+  it("the room's defaults never reach an engine that takes no payload", async () => {
+    const l = launcher({ payloadDefaults: () => ({ mcpServers: { files } }) });
+    const other = await l.prepareStart(agent({ provider: 'codex' }), START);
+    expect(JSON.stringify(other.spec)).not.toContain('server-files');
+    // the Clean Room side is in test/cleanroom.test.ts, with its fake docker
+  });
+
   it('a skill folder that is gone or has no SKILL.md fails the start with its path, and revokes the token', async () => {
     await mkdir(skill('empty'), { recursive: true });
     const l = launcher();

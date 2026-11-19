@@ -686,6 +686,8 @@ const VALUES: Values = {
   command: '',
   servers: '',
   skills: '',
+  offServers: [],
+  offSkills: [],
   cleanRoom: false,
   worktree: false,
   remoteControl: false,

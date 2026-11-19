@@ -5,7 +5,7 @@
  */
 import { isAbsolute, basename, resolve } from 'node:path';
 import { MCP_SERVER_NAME, providerInfo } from '../shared/protocol.js';
-import type { McpServer, Payload, Provider } from '../shared/protocol.js';
+import type { McpServer, Payload, PayloadDefaults, Provider } from '../shared/protocol.js';
 import {
   DIR_MAX_CHARS,
   PAYLOAD_MAX_CHARS,
@@ -135,13 +135,30 @@ function skills(value: unknown): string[] {
   return [...paths];
 }
 
+/** The room defaults an agent switches off: server names and skill folder names, nothing else. */
+function offOf(value: unknown): NonNullable<Payload['off']> {
+  if (!isRecord(value)) throw new Fault('payload', 'off must be an object');
+  for (const key of Object.keys(value)) if (key !== 'mcpServers' && key !== 'skills') throw new Fault('payload', `off has no field "${key}"`);
+  const out: NonNullable<Payload['off']> = {};
+  for (const [key, max, ok] of [
+    ['mcpServers', PAYLOAD_MAX_SERVERS, (n: string) => NAME_RE.test(n)],
+    ['skills', PAYLOAD_MAX_SKILLS, (n: string) => n.length <= 255 && !n.includes('/') && !n.includes('\u0000')],
+  ] as const) {
+    const list = value[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list) || list.length > max || !list.every((n) => typeof n === 'string' && n !== '' && ok(n))) throw new Fault('payload', `off.${key} must be a list of at most ${max} names`);
+    if (list.length > 0) out[key] = [...new Set(list as string[])];
+  }
+  return out;
+}
+
 /** `undefined` and `null` are no payload; an empty `mcpServers` or `skills` is dropped, and a payload left empty is none. */
 export function parsePayload(value: unknown): PayloadCheck {
   try {
     if (value === undefined || value === null) return { ok: true, payload: undefined };
     if (!isRecord(value)) throw new Fault('payload', 'payload must be an object');
     for (const key of Object.keys(value)) {
-      if (key !== 'mcpServers' && key !== 'skills') throw new Fault('payload', `payload has no field "${key}"`);
+      if (key !== 'mcpServers' && key !== 'skills' && key !== 'off') throw new Fault('payload', `payload has no field "${key}"`);
     }
     const payload: Payload = {};
     if (value.mcpServers !== undefined) {
@@ -151,6 +168,10 @@ export function parsePayload(value: unknown): PayloadCheck {
     if (value.skills !== undefined) {
       const found = skills(value.skills);
       if (found.length > 0) payload.skills = found;
+    }
+    if (value.off !== undefined) {
+      const found = offOf(value.off);
+      if (Object.keys(found).length > 0) payload.off = found;
     }
     if (JSON.stringify(payload).length > PAYLOAD_MAX_CHARS) throw new Fault('payload', `payload must be at most ${PAYLOAD_MAX_CHARS} characters of JSON`);
     return { ok: true, payload: Object.keys(payload).length === 0 ? undefined : payload };
@@ -168,4 +189,41 @@ export function payloadRefusal(provider: Provider | undefined, payload: Payload)
     return { field: 'payload.skills', error: `skills need Claude Code; ${info.label} takes MCP servers only` };
   }
   return null;
+}
+
+const skillName = (path: string): string => basename(path);
+
+/**
+ * What an agent starts with: the room's defaults (`room`), then the agent's own payload on top. The agent wins: a server or a skill folder of the same name
+ * replaces the room's, and the names in the agent's `off` leave the room's out. A skill takes only an engine of kind `all`. Never merged inside a server:
+ * the agent's server of that name is used whole. Pass no `room` for a Clean Room agent (the room's defaults never reach it).
+ */
+export function mergePayload(room: Payload | undefined, own: Payload | undefined, kind: 'all' | 'servers' | null): Payload | undefined {
+  if (kind === null) return undefined;
+  const off = own?.off;
+  const servers = { ...Object.fromEntries(Object.entries(room?.mcpServers ?? {}).filter(([name]) => !off?.mcpServers?.includes(name))), ...own?.mcpServers };
+  const mine = new Set((own?.skills ?? []).map(skillName));
+  const skills = kind === 'all' ? [...(room?.skills ?? []).filter((path) => !off?.skills?.includes(skillName(path)) && !mine.has(skillName(path))), ...(own?.skills ?? [])] : [];
+  const out: Payload = {};
+  if (Object.keys(servers).length > 0) out.mcpServers = servers;
+  if (skills.length > 0) out.skills = skills;
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/** The defaults as the page may show them: what each server is, never an argument, a value or a query (they can hold a token). */
+export function defaultsView(payload: Payload | undefined): PayloadDefaults {
+  return {
+    mcpServers: Object.entries(payload?.mcpServers ?? {}).map(([name, s]) => {
+      let target = s.command ?? '';
+      if (s.url !== undefined) {
+        try {
+          target = new URL(s.url).origin;
+        } catch {
+          target = '';
+        }
+      }
+      return { name, type: s.type ?? 'stdio', target, args: s.args?.length ?? 0, names: Object.keys(s.env ?? s.headers ?? {}) };
+    }),
+    skills: (payload?.skills ?? []).map((path) => ({ name: skillName(path), path })),
+  };
 }

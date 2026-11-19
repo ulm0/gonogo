@@ -91,6 +91,7 @@ import type { Recorder } from './recorder.js';
 import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { ModelDefaultsStore } from './models.js';
+import type { PayloadDefaultsStore } from './payloaddefaults.js';
 import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
 import type { StartupStore } from './startup.js';
@@ -176,6 +177,8 @@ export interface WebOptions {
   statusLine?: (agent: string, body: unknown) => void;
   /** Test clock of the status-line rate limit. */
   statusLineNow?: () => number;
+  /** Payload defaults (docs/payload-spec.md): absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame, and no value is ever sent. */
+  payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
@@ -1293,6 +1296,34 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) sendJson(res, 200, await changed(models.set(s[2] ?? '', body.model)));
         },
       };
+    }
+    // GET /api/payload-defaults; PUT or DELETE /api/payload-defaults/servers/<name> (body: the server); POST /api/payload-defaults/skills (body: path); DELETE /api/payload-defaults/skills/<name>
+    if (s[1] === 'payload-defaults' && s.length <= 4) {
+      const defaults = options.payloadDefaults;
+      if (!defaults) return null;
+      if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, defaults.view()) };
+      if (s[2] === 'servers' && s.length === 4) {
+        const name = s[3] ?? '';
+        return {
+          allow: ['PUT', 'DELETE'],
+          run: async (req, res) => {
+            if (req.method === 'DELETE') return sendJson(res, 200, await defaults.removeServer(name));
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await defaults.setServer(name, body));
+          },
+        };
+      }
+      if (s[2] === 'skills' && s.length === 3) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 201, await defaults.addSkill(body.path));
+          },
+        };
+      }
+      if (s[2] === 'skills' && s.length === 4) return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await defaults.removeSkill(s[3] ?? '')) };
+      return null;
     }
     if (s[1] === 'permissions' && s.length === 2) {
       const rules = options.permissions;
