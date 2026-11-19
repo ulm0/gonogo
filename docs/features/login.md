@@ -80,7 +80,7 @@ A passkey is the password and the second factor in one step: a fingerprint, a fa
 - Adding one is a change of the account, behind the step-up. **Removing one asks your password and a code (or a passkey)**, as turning TOTP off does: a fresh session alone cannot. Each raises an alert. Up to twenty. The list shows the name, the rp id, when it was made and last used, and whether it is synced.
 - **A stolen password cannot use it, and a lost authenticator is removed from the list.**
 - **Discoverable passkeys.** A passkey is made to be kept on the authenticator (`residentKey: required`), so the sign-in options name no credential: whoever asks for them learns nothing of yours. A security key with no room for passkeys cannot be used; a phone, a laptop or a recent key can.
-- **Anonymous requests cost nothing.** A sign-in challenge is not stored: it is a nonce, the time and a keyed hash of them and the name, checked when the answer comes and marked used only after an answer verified, so any number of requests cannot push your own out.
+- **Anonymous requests cost nothing.** A sign-in challenge is not stored: it is a nonce, the time and a keyed hash of them and the name, checked when the answer comes and taken when an answer is checked and put back if it fails, so two copies of one answer cannot both pass and any number of requests cannot push your own out.
 - It is made with `@simplewebauthn/server` 14.0.3 (MIT), pinned: the cryptography and the checks of the standard are the library's, not gonogo's. Passkeys of all kinds are asked for with attestation `none` and user verification required.
 
 ## Confirming again (step-up)

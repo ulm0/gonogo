@@ -111,7 +111,9 @@ export function createPasskeys(auth: AuthStore, now: () => number = Date.now): P
         response,
         expectedChallenge: (challenge) => {
           if (kind === 'step') return consume(challenge, 'step', rp.rpId, session);
+          // check and set in one step: two requests that carry the same assertion at once cannot both pass; it is put back below if this one fails
           nonce = loginChallengeOk(challenge, rp.rpId);
+          if (nonce !== null) spent.set(nonce, now() + CHALLENGE_MS);
           return nonce !== null;
         },
         expectedOrigin: rp.origin,
@@ -119,11 +121,14 @@ export function createPasskeys(auth: AuthStore, now: () => number = Date.now): P
         credential: credentialOf(found),
         requireUserVerification: true,
       });
-      if (!verified.verified) return null;
-      // used only now that it verified: a challenge that failed stays good for its owner
-      if (nonce !== null) spent.set(nonce, now() + CHALLENGE_MS);
+      if (!verified.verified) {
+        if (nonce !== null) spent.delete(nonce);
+        return null;
+      }
       return { passkey: found, counter: verified.authenticationInfo.newCounter };
     } catch (error) {
+      // a challenge that failed stays good for its owner
+      if (nonce !== null) spent.delete(nonce);
       // a counter that did not go up says the credential was copied
       if (error instanceof Error && /counter/i.test(error.message)) auth.passkeyCounterAlert(found.id);
       return null;

@@ -198,6 +198,15 @@ describe('signing in with a passkey', () => {
     expect((await keys.loginFinish(who(), rp, key.get({ rpId: rp.rpId, origin: rp.origin, challenge }))).ok).toBe(false);
   });
 
+  it('RSO: the same assertion sent twice at once passes once (the nonce is taken before the check and put back only if it fails)', async () => {
+    const { key } = await enrol();
+    const challenge = options((await keys.loginOptions(rp)) as Record<string, unknown>).challenge;
+    const answer = key.get({ rpId: rp.rpId, origin: rp.origin, challenge });
+    const results = await Promise.all(Array.from({ length: 8 }, () => keys.loginFinish(who(), rp, answer)));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(auth.sessions().filter((s) => s.address === '203.0.113.7')).toHaveLength(1);
+  });
+
   it('a login challenge that was not made here, was changed, is for another name or is old is refused', async () => {
     const { key } = await enrol();
     const good = options((await keys.loginOptions(rp)) as Record<string, unknown>).challenge;
