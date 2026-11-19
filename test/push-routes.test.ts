@@ -139,7 +139,7 @@ describe('the files the build ships for the app', () => {
     expect(sw).toContain("request.headers.has('authorization')");
     // only the hashed assets are cached at run time; no put of anything else
     expect(sw.match(/cache\.put\(/g)).toHaveLength(1);
-    expect(sw).toContain("rest.startsWith('assets/')");
+    expect(sw).toContain("local.startsWith('assets/')");
     // a notification has no action buttons
     expect(sw).not.toMatch(/actions\s*:/);
     expect(() => new Function(sw)).not.toThrow();
