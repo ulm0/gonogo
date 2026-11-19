@@ -27,7 +27,7 @@ import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats
 import { createAnnouncer } from './room.js';
 import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
 import { agentCounts, updateDialogText } from './selfupdate.js';
-import { setPublicOrigin } from './base.js';
+import { BASE, MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
 import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
@@ -87,6 +87,7 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
           GN-1<span className="mark-unit-long"> · OPERATIONS UNIT</span>
         </span>
       </h1>
+      <VersionMark />
       {!phone && dir !== null && (
         <span className="topbar-dir" title={dir}>
           {dir}
@@ -94,6 +95,9 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
       )}
       <span className="topbar-grow" />
       <LinkLamp />
+      <a className="btn" data-kind="quiet" href={ROOMS_PATH}>
+        Rooms
+      </a>
       {!phone && (
         <button type="button" className="btn" data-kind="quiet" aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
           Comms
@@ -284,18 +288,55 @@ function GoneStrip(): ReactElement | null {
 
 const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
 
+/** The version by the logo says a newer one is out and asks the strip to show itself, even one dismissed for that version. */
+const ROLLOUT_SHOW = 'gonogo:rollout-show';
+
 const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
 
-/** The running version, small, in a corner of the page; it links to the changelog. */
-function VersionCorner(): ReactElement | null {
+/** The main room is the one that checks for a newer gonogo and updates it (a room under /r/<other>/ links there). */
+const inMain = BASE === '' || BASE === '/r/main';
+
+/** The newer version the check saw, or null. Main has it in its own rollout; any other room runs no check, so the supervisor says what main saw. */
+function useNewer(): string | null {
+  const rollout = useStore((s) => s.rollout);
+  const [other, setOther] = useState<string | null>(null);
+  useEffect(() => {
+    if (inMain) return undefined;
+    let alive = true;
+    const ask = (): void => void api.roomsUpdate().then((v) => alive && setOther(v));
+    ask();
+    const timer = setInterval(ask, 30 * 60_000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+  return inMain ? (rollout?.newer === true ? rollout.latest : null) : other;
+}
+
+/** The running version by the logo, small; it links to the changelog. When a newer one is out it says so, in every room (the strip itself is main's: that is where Update lives). */
+function VersionMark(): ReactElement | null {
   const info = useStore((s) => s.info);
+  const newer = useNewer();
   // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
   setPublicOrigin(info?.publicUrl);
   if (info === null) return null;
   return (
-    <a className="version-corner" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener" aria-label={`gonogo ${info.version}, open the changelog`}>
-      gonogo {info.version}
-    </a>
+    <span className="topbar-version" data-newer={newer !== null ? 'true' : undefined}>
+      <a className="version-mark" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener" aria-label={`gonogo ${info.version}, open the changelog`}>
+        {info.version}
+      </a>
+      {newer !== null &&
+        (inMain ? (
+          <button type="button" className="version-new" onClick={() => window.dispatchEvent(new Event(ROLLOUT_SHOW))}>
+            {newer} out
+          </button>
+        ) : (
+          <a className="version-new" href={MAIN_PATH} aria-label={`${newer} is out, open the main room to update`}>
+            {newer} out
+          </a>
+        ))}
+    </span>
   );
 }
 
@@ -312,6 +353,16 @@ function RolloutStrip(): ReactElement | null {
   const [confirming, setConfirming] = useState(false);
   const [policy, setPolicy] = useState<StartupPolicy | null>(null);
   const agents = useStore((s) => s.agents);
+  const strip = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const show = (): void => {
+      writeStored(ROLLOUT_DISMISSED_KEY, '');
+      setDismissed('');
+      requestAnimationFrame(() => strip.current?.focus());
+    };
+    window.addEventListener(ROLLOUT_SHOW, show);
+    return () => window.removeEventListener(ROLLOUT_SHOW, show);
+  }, []);
   const update = rollout?.update;
   const busy = update !== undefined && (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off');
   // what the last Docker self-update left (done, rolled back) is shown after the restart, when the new version is no longer "newer"
@@ -333,7 +384,7 @@ function RolloutStrip(): ReactElement | null {
     api.startupSettings().then((found) => setPolicy(found.policy), () => setPolicy(null));
   };
   return (
-    <aside className="rollout-strip" aria-label="Update">
+    <aside className="rollout-strip" aria-label="Update" ref={strip} tabIndex={-1}>
       {rollout.newer && (
         <span>
           gonogo {latest} is out (this is {rollout.current}).{rollout.canUpdate === true ? '' : ' To update, run:'}
@@ -514,7 +565,6 @@ function Office(): ReactElement {
       <TopBar phone={phone} onPanel={() => setPanel(true)} />
       <GoneStrip />
       <RolloutStrip />
-      <VersionCorner />
       <Screen phone={phone} />
       {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
       <LiveRegion />

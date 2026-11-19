@@ -32,7 +32,8 @@ describe('every way the page reaches the server keeps the prefix', () => {
     const calls = [...api.matchAll(/\bfetch\s*\(([^,)]*)/g)].map((m) => m[1] ?? '');
     expect(calls.length).toBeGreaterThanOrEqual(2);
     // the login and the devices of the installed app belong to the supervisor and are one for every room: /api/auth and /api/push are reserved there (roomproxy.ts) and are reached at the root, never under /r/<id>/
-    for (const arg of calls) if (!/^`\/api\/(auth|push)\$\{path\}`$/.test(arg.trim())) expect(arg, `fetch(${arg})`).toContain('withBase(');
+    // and the one question a room other than main asks of the supervisor: what main's update check saw (the other rooms run none)
+    for (const arg of calls) if (!/^(`\/api\/(auth|push)\$\{path\}`|'\/api\/rooms')$/.test(arg.trim())) expect(arg, `fetch(${arg})`).toContain('withBase(');
     expect(api).toMatch(/new WebSocket\(`[^`]*\$\{withBase\(WS_PATH\)\}`/);
   });
 
@@ -50,6 +51,14 @@ describe('every way the page reaches the server keeps the prefix', () => {
       if (f === 'base.ts' || f === 'App.tsx') continue; // App.tsx shows the address of the supervisor, where the token is, as text
       expect(text(f), f).not.toMatch(/location\.origin/);
     }
+  });
+
+  it('the top bar has the Rooms key and the version in every room; no version in a corner', () => {
+    const app = text('App.tsx');
+    expect(app).toMatch(/<a className="btn"[^>]*href=\{ROOMS_PATH\}>\s*Rooms/);
+    expect(app).toMatch(/<\/h1>\s*<VersionMark \/>/);
+    expect(app).not.toMatch(/VersionCorner/);
+    expect(readFileSync(new URL('../src/client/shell.css', import.meta.url), 'utf8')).not.toMatch(/version-corner/);
   });
 
   it('the page and its assets are built with relative paths', () => {

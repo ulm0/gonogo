@@ -19,6 +19,7 @@ gonogo tells you when a newer `@ulm0/gonogo` exists and says which command updat
 | Where | What |
 |---|---|
 | The page | A strip under the top bar while a newer version is out: `gonogo 0.2.0 is out (this is 0.1.1). To update, run: <command>`, with COPY and DISMISS. Dismiss is kept in this browser for that version; a newer one shows again. |
+| The version in the top bar | In every room, an amber `0.2.0 out` next to the running version while a newer one is out. In main it shows the strip again (also one dismissed for that version); in another room it opens main. Only main runs the check, so another room's page asks the supervisor what main saw (`update` in `GET /api/rooms`, read from main's `rollout.json`); nothing shows when the check is off. A phone shows the amber note in place of the running version. |
 | `gonogo --version` | `gonogo 0.1.1`, and a second line `0.2.0 is out. To update, run: gonogo update` when the last check saw a newer one. It reads the file, never the network, and finds the home from `GONOGO_HOME` or the default. |
 | `gonogo update` | The state and the command below. It runs nothing and asks nothing. |
 

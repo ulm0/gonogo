@@ -6,6 +6,7 @@
 
 Lights: indigo working, green idle, grey stopped, dashed open seat. Saffron: needs you. Sage: go. Raspberry: no-go or danger. The page loads nothing from another host.
 
+- **The top bar**: the logo, the running version beside it (small, mono; it links to the changelog) and the ROOMS key, which goes to the list of every room, in every room and on a phone. When a newer gonogo is out the version gets an amber `0.5.5 out` next to it, in every room: in main it shows the update note under the bar, in another room it opens main, where Update lives ([Rollout](../features/rollout.md)).
 - **The wall** (top): the mission (your last brief to FLIGHT) and its clock, a 10-minute activity chart (saffron where an agent waited for you), the T-minus poll (STANDBY, POLLING, HOLD, NO-GO, GO) and Max Q.
 - **The room**: a fixed matrix. The 15 positions keep their cells; agents without a position, a second agent of a position and custom commands take spare cells after them. A tile shows call sign, last tool call, why it waits, state and poll vote. Click an open cell to staff it.
 - **Your console** (under the room): a saffron block per agent that needs you, and one per hire request from FLIGHT ([Relief](../features/relief.md)). For a permission prompt, GO and NO-GO press Enter or Escape in that agent's terminal. Then the box to brief FLIGHT.

@@ -22,6 +22,7 @@ import { createAuthHttp } from './authhttp.js';
 import { createPasskeys } from './passkeys.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
+import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy } from './roomproxy.js';
 import { acquireSupervisorLock } from './home.js';
@@ -558,13 +559,19 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       req.on('error', () => reject(new RoomsError('the body could not be read')));
     });
 
+  /** What main's daily check saw, when it is newer than this version: the other rooms run no check of their own, and their pages ask here. Nothing when the check is off. */
+  const newerNow = (): { latest: string } | null => {
+    const latest = updateCheckOff(options.env.GONOGO_UPDATE_CHECK) || options.roomArgs?.includes('--no-update-check') === true ? null : cachedLatest(roomHome(options.home, MAIN_ROOM));
+    return latest !== null && options.version !== undefined && isNewer(latest, options.version) ? { latest } : null;
+  };
+
   const roomView = async (id: string): Promise<RoomView | undefined> => (await viewsNow()).find((r) => r.id === id);
 
   /** GET lists; POST adds; PATCH renames; DELETE takes a room off the list (its folder stays). The Director token was checked. */
   async function roomsApi(req: http.IncomingMessage, res: http.ServerResponse, rawId: string | undefined): Promise<void> {
     try {
       const method = req.method ?? '';
-      if (method === 'GET' && rawId === undefined) return sendJson(res, 200, { rooms: await viewsNow() }, { 'Cache-Control': 'no-store' });
+      if (method === 'GET' && rawId === undefined) return sendJson(res, 200, { rooms: await viewsNow(), update: newerNow() }, { 'Cache-Control': 'no-store' });
       const allow = rawId === undefined ? 'GET, POST' : 'PATCH, DELETE';
       if (!(rawId === undefined ? method === 'POST' : method === 'PATCH' || method === 'DELETE')) return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: allow });
       if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');

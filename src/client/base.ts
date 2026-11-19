@@ -12,6 +12,9 @@ export const BASE = baseOf(typeof location === 'undefined' ? '/' : location.path
 /** The list of rooms, the supervisor's page at the root (every room, main too, is under /r/<id>/). */
 export const ROOMS_PATH = '/';
 
+/** The main room: it checks for a newer gonogo and is where Update lives. */
+export const MAIN_PATH = '/r/main/';
+
 export const withBase = (path: string): string => BASE + path;
 
 /** The address other machines use to reach this room: its origin and its prefix (webhooks and docking calls go there). */
