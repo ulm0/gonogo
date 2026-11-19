@@ -107,7 +107,7 @@ const fakeAuth = {
   // session s2 has not been checked for a while: the step-up asks about it
   stepUpBody: bodyMatters,
   stepUpNeeded: (grant: { kind: string; sessionId?: string }, method: string, path: string, body: Record<string, unknown> | null) => (grant.kind === 'session' && grant.sessionId === 's2' ? stepUpReason(method, path, body) : null),
-  stepUpDenied: (res: http.ServerResponse, reason: string) => void res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ stepUp: true, reason })),
+  stepUpDenied: (_req: http.IncomingMessage, res: http.ServerResponse, reason: string) => void res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ stepUp: true, reason })),
   alive: (id: string) => aliveSessions.has(id),
   touchSession: (id: string) => void touched.push(id),
 };

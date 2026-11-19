@@ -56,5 +56,6 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (path === '/api/auth/keys' && method === 'POST') return 'making an API key';
   if (path === '/api/auth/logout-all' || /^\/api\/auth\/sessions\//.test(path)) return 'ending sessions';
   if (path === '/api/auth/mfa/begin' || path === '/api/auth/mfa/enable') return 'turning on a second factor';
+  if (path === '/api/auth/passkeys/begin' || path === '/api/auth/passkeys/finish' || /^\/api\/auth\/passkeys\//.test(path)) return 'adding or removing a passkey';
   return null;
 }

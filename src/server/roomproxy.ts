@@ -47,7 +47,7 @@ export interface ProxyAuth {
   touchSession(sessionId: string): void;
   stepUpBody(method: string, path: string): boolean;
   stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
-  stepUpDenied(res: ServerResponse, reason: string): void;
+  stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string): void;
 }
 
 export interface RoomProxyOptions {
@@ -314,7 +314,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       const asked = stepUp;
       if (!options.auth.stepUpBody(asked.method, asked.path)) {
         const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, null);
-        if (reason !== null) options.auth.stepUpDenied(res, reason);
+        if (reason !== null) options.auth.stepUpDenied(req, res, reason);
         else forward(null);
         return true;
       }
@@ -329,7 +329,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           // not JSON: the room answers 400; the strictest reading of a body nobody could read is that it needs the check
         }
         const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed);
-        if (reason !== null) options.auth.stepUpDenied(res, reason);
+        if (reason !== null) options.auth.stepUpDenied(req, res, reason);
         else forward(got.body);
       });
       return true;

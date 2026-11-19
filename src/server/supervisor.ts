@@ -19,6 +19,7 @@ import type { Logger } from '../shared/protocol.js';
 import { keyMayDo, openAuth } from './auth.js';
 import type { AuthStore, HashCosts } from './auth.js';
 import { createAuthHttp } from './authhttp.js';
+import { createPasskeys } from './passkeys.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
@@ -471,6 +472,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     hostOk,
     stylesheet,
     local: localReqs,
+    passkeys: createPasskeys(auth, options.now),
     ...(options.trustedProxies === undefined ? {} : { trustedProxies: options.trustedProxies }),
     ...(options.clientIpHeader === undefined ? {} : { clientIpHeader: options.clientIpHeader }),
     exposure: { pages: [...split.pages], hooks: [...split.hooks], publicUrl: publicUrl === null ? null : publicUrl.origin },
