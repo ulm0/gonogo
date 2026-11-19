@@ -2,7 +2,9 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.6.1 (2026-11-19)
+
+The version on the list of rooms sits in its top bar, a real-browser smoke test guards the page in CI, and compose.yaml needs GONOGO_DATA (read "What breaks" if you run it from a UI).
 
 - **`compose.yaml` no longer falls back to `${PWD}/gonogo-data`.** Run from a UI (ZimaOS, Portainer) compose has no shell, so `${PWD}` was empty and every path built on it (the data folder, `GONOGO_HOME`, `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`, the bind mount) pointed at `/gonogo-data` without a word. `GONOGO_DATA` is now required, like `DOCKER_GID`: `docker compose` stops and says so. **What breaks:** every compose command (`up`, `logs`, `ps`, `down`, and an update's `pull` and `up`) now stops until `GONOGO_DATA` is set: make an `.env` file next to `compose.yaml` with `GONOGO_DATA=/absolute/path/gonogo-data` (compose reads it by itself, from a shell or a UI), or export it. **If you ran compose from a UI before, your data is in `/gonogo-data` on the host (the empty `$PWD`): set `GONOGO_DATA=/gonogo-data` (or move that folder and point at the new place), or gonogo starts empty.** A Docker self-update is not affected: it copies the running container's settings and does not read `compose.yaml`.
 - **Fix: the version on the list of rooms sat unstyled at the foot of the page.** 0.5.5 moved the version into the top bar of a room and dropped the corner's style; the list page still drew the corner. It now shows the version in its top bar, by the logo, like a room.
