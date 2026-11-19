@@ -106,6 +106,17 @@ describe('Dockerfile', () => {
   });
 });
 
+describe('compose.yaml', () => {
+  it('requires GONOGO_DATA and never builds a path on ${PWD} (a UI runs compose with no shell, so PWD is empty and every path broke silently)', () => {
+    const compose = read('compose.yaml');
+    const live = compose.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+    expect(live).not.toContain('PWD');
+    expect(live).not.toMatch(/\$\{GONOGO_DATA(?!:\?)/);
+    expect(live.match(/\$\{GONOGO_DATA:\?[^}]+\}/g)?.length).toBeGreaterThanOrEqual(6);
+    expect(read('docs', 'guide', 'docker.md')).toContain('export GONOGO_DATA=');
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [
