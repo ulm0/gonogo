@@ -13,7 +13,8 @@ import { exposureProblem, parsePublicUrl } from '../src/server/exposure.js';
 import { normalizeHost, splitAllowed } from '../src/server/hosts.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
-import { parseArgs } from '../src/server/cli.js';
+import { parseArgs, USAGE } from '../src/server/cli.js';
+const USAGE_TEXT = (): string => USAGE;
 
 const FAKE = new URL('./fake-room.mjs', import.meta.url).pathname;
 const COSTS = { argon2: { memory: 16, passes: 1, parallelism: 1 }, scrypt: { N: 16, r: 1, p: 1 } };
@@ -62,7 +63,7 @@ describe('the one Host normalizer (R10)', () => {
 });
 
 describe('the public URL and the start-up rules', () => {
-  const ok = { pages: [] as string[], hooks: [] as string[], bindHost: '127.0.0.1', inContainer: false, publicUrl: null, account: 'account' as const, mfa: true };
+  const ok = { pages: [] as string[], hooks: [] as string[], bindHost: '127.0.0.1', port: 7777, inContainer: false, publicUrl: null, account: 'account' as const, mfa: true };
 
   it('is an origin: https or http, no path, query, fragment or password', () => {
     expect(parsePublicUrl('https://Gonogo.Example.com/')).toEqual({ origin: 'https://gonogo.example.com', host: 'gonogo.example.com' });
@@ -87,6 +88,23 @@ describe('the public URL and the start-up rules', () => {
     expect(exposureProblem({ ...ok, pages: ['nas.local'], publicUrl: parsePublicUrl('http://nas.local') as { origin: string; host: string } })).toBeNull();
     expect(exposureProblem({ ...ok, pages: ['nas.local'], publicUrl: parsePublicUrl('https://other.example.com') as { origin: string; host: string } })).toMatch(/not an allowed host/);
     expect(exposureProblem({ ...ok, hooks: ['localhost'] })).toMatch(/this machine/);
+  });
+
+  it('a refusal names what to drop, the real port and the way out (RETRO)', () => {
+    const pub = parsePublicUrl('https://gonogo.example.com') as { origin: string; host: string };
+    const base = { ...ok, pages: ['gonogo.example.com'], publicUrl: pub, account: 'fresh' as const, port: 8123 };
+    const text = exposureProblem(base) as string;
+    expect(text).toContain('start gonogo without --allow-host gonogo.example.com (and with --host 127.0.0.1)');
+    expect(text).toContain('http://127.0.0.1:8123/');
+    expect(text).not.toContain('7777');
+    expect(text).toMatch(/make the account and turn on the second factor.*then add the option back/);
+    expect(exposureProblem({ ...base, port: 0 })).toContain('<the port gonogo prints>');
+    // inside a container --host 127.0.0.1 would cut off the published port: the text keeps the image's 0.0.0.0
+    const docker = exposureProblem({ ...base, inContainer: true }) as string;
+    expect(docker).toContain("keep the image's --host 0.0.0.0, drop GONOGO_ALLOWED_HOSTS once, and open http://127.0.0.1:<the published port>/ on the host");
+    expect(docker).not.toContain('--host 127.0.0.1');
+    expect(docker).not.toContain('GONOGO_HOST');
+    expect(exposureProblem({ ...ok, bindHost: '0.0.0.0', account: 'fresh', port: 9000 })).toMatch(/start gonogo without --host 0\.0\.0\.0 \(and with --host 127\.0\.0\.1\).*http:\/\/127\.0\.0\.1:9000\//);
   });
 
   it('a bind other machines can reach, outside a container, needs the account; in a container the wildcard is normal', () => {
@@ -374,5 +392,64 @@ describe('the pages say what the command prints', () => {
   it('the overview names every provider and the requirements it enforces', () => {
     const text = readFileSync(new URL('../docs/features/expose.md', import.meta.url), 'utf8');
     for (const part of ['tailscale.md', 'cloudflare.md', 'caddy.md', 'funnel.md', 'ngrok.md', ':hooks', '--public-url', '--client-ip-header', 'default deny', 'second factor']) expect(text, part).toContain(part);
+  });
+});
+
+describe('the Director\'s own container still starts (RETRO 7)', () => {
+  it('gonogo rooms with GONOGO_HOST=0.0.0.0, GONOGO_PORT=7777 and four private names, in Docker, with no account yet: the settings read and the supervisor starts', async () => {
+    const { resolveSettings } = await import('../src/server/cli.js');
+    const env = { GONOGO_INSTALL: 'docker', GONOGO_HOST: '0.0.0.0', GONOGO_PORT: '7777', GONOGO_ALLOWED_HOSTS: 'zimaos,zimaos.local,192.168.86.28,192.168.86.67', PATH: process.env.PATH ?? '' };
+    const parsed = parseArgs(['rooms']);
+    // `rooms` alone is still gonogo, kept for one release: the same run as no argument
+    expect(parsed).toEqual({ kind: 'run', options: {} });
+    expect(parseArgs([])).toEqual({ kind: 'run', options: {} });
+    expect(parseArgs(['rooms', '--port', '7777', '--allow-host', 'zimaos'])).toEqual({ kind: 'run', options: { port: 7777, allowedHosts: ['zimaos'] } });
+    const settings = resolveSettings({ ...(parsed as { options: Parameters<typeof resolveSettings>[0] }).options, env });
+    expect(settings.host).toBe('0.0.0.0');
+    expect(settings.port).toBe(7777);
+    expect(settings.allowedHosts).toEqual(['zimaos', 'zimaos.local', '192.168.86.28', '192.168.86.67']);
+    // every name is private: no account, no second factor and no public URL are asked for
+    for (const name of settings.allowedHosts) expect(hostClass(name), name).toBe('private');
+    expect(exposureProblem({ pages: [...settings.allowedHosts], hooks: [], bindHost: settings.host, port: settings.port, inContainer: true, publicUrl: null, account: 'fresh', mfa: false })).toBeNull();
+    // and the real start, on a free port (7777 may be taken here)
+    sup = await startSupervisor({ home, host: settings.host, port: 0, allowedHosts: settings.allowedHosts, inContainer: true, command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '' }, authCosts: COSTS, tamperEveryMs: 0 });
+    expect(sup.port).toBeGreaterThan(0);
+    // outside a container the same bind with no account is the refusal the CHANGELOG describes
+    await sup.stop();
+    sup = undefined;
+    await expect(startSupervisor({ home, host: settings.host, port: 0, allowedHosts: settings.allowedHosts, inContainer: false, command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '' }, authCosts: COSTS, tamperEveryMs: 0 })).rejects.toThrow(/other machines can reach/);
+  });
+
+  it('every private name answers the page on the real front port in that config', async () => {
+    sup = await startSupervisor({ home, host: '0.0.0.0', port: 0, allowedHosts: ['zimaos', 'zimaos.local', '192.168.86.28', '192.168.86.67'], inContainer: true, command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '' }, authCosts: COSTS, tamperEveryMs: 0 });
+    await sup.whenReady(15_000);
+    for (const host of ['zimaos', 'zimaos.local:7777', '192.168.86.28', '192.168.86.67:7777']) {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port: (sup as Supervisor).port, path: '/login', headers: { host } }, (res) => (res.resume(), resolve(res.statusCode ?? 0)));
+        req.on('error', reject);
+        req.end();
+      });
+      expect([200, 303], host).toContain(status);
+    }
+  });
+});
+
+describe('RETRO\'s small ones', () => {
+  it('no passkey is offered on a Host with a trailing dot (the browser signs the dot, gonogo reads the name without it)', async () => {
+    const { relyingParty } = await import('../src/server/passkeys.js');
+    expect(relyingParty('gonogo.example.com', 'public')).toMatchObject({ rpId: 'gonogo.example.com', origin: 'https://gonogo.example.com' });
+    expect(relyingParty('gonogo.example.com:8443', 'public')).toMatchObject({ origin: 'https://gonogo.example.com:8443' });
+    expect(relyingParty('gonogo.example.com.', 'public')).toBeNull();
+    expect(relyingParty('gonogo.example.com.:8443', 'public')).toBeNull();
+  });
+
+  it('ngrok prints --domain next to --url, and every provider says what the proxy address is in Docker', () => {
+    const ngrok = exposePlan('ngrok', { publicUrl: 'https://g.ngrok.app', host: 'g.ngrok.app', port: 7777 });
+    expect(ngrok.steps.join('\n')).toMatch(/--url=g\.ngrok\.app[\s\S]*--domain=g\.ngrok\.app.*before 3\.16/);
+    for (const provider of EXPOSE_PROVIDERS) expect(exposePlan(provider, { publicUrl: 'https://g.example.com', host: 'g.example.com', port: 7777 }).notes.join('\n'), provider).toMatch(/Docker.*bridge gateway.*172\.17\.0\.1.*not 127\.0\.0\.1/);
+  });
+
+  it('the help names --public-url once, for a page or a hooks-only host', () => {
+    expect(USAGE_TEXT()).toMatch(/--public-url <url>\s+the address other machines reach this gonogo by: its page, or for a name:hooks host its webhooks/);
   });
 });

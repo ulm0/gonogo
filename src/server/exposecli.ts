@@ -50,7 +50,15 @@ export interface ExposePlan {
   notes: string[];
 }
 
+/** What every provider needs said about a gonogo in Docker: the tunnel's address as gonogo sees it is not 127.0.0.1 when the tunnel runs on the host. */
+const DOCKER_NOTE = 'In Docker with the tunnel or proxy on the HOST, gonogo sees it at the bridge gateway (for example 172.17.0.1: `docker network inspect bridge`), so give --trusted-proxy that address, not 127.0.0.1; with the tunnel in the same container or network namespace, 127.0.0.1 is right.';
+
 export function exposePlan(provider: ExposeProvider, input: { publicUrl: string; host: string; port: number }): ExposePlan {
+  const plan = planOf(provider, input);
+  return { ...plan, notes: [...plan.notes, DOCKER_NOTE] };
+}
+
+function planOf(provider: ExposeProvider, input: { publicUrl: string; host: string; port: number }): ExposePlan {
   const { host, port } = input;
   const origin = `http://127.0.0.1:${port}`;
   const flags = (header: string): string[] => [`--allow-host ${host}`, `--public-url ${input.publicUrl}`, '--trusted-proxy 127.0.0.1', `--client-ip-header ${header}`];
@@ -130,7 +138,7 @@ export function exposePlan(provider: ExposeProvider, input: { publicUrl: string;
         reach: 'anyone who has the address',
         sees: 'ngrok ends the TLS: it can see every password, cookie, TOTP code and terminal byte that passes.',
         gonogo: flags('x-forwarded-for'),
-        steps: [`ngrok http --url=${host} ${origin}`, 'Check `ngrok http --help` for your version: the flag for a fixed name has changed over time.', verify],
+        steps: [`ngrok http --url=${host} ${origin}`, `ngrok http --domain=${host} ${origin}    # the same for an ngrok agent before 3.16, which has --domain`, 'Check `ngrok http --help` for your version: the flag for a fixed name has changed over time.', verify],
         files: {},
         notes: ['Free-plan features, WebSocket support and any interstitial page were not read: `gonogo expose check` is the proof.'],
       };

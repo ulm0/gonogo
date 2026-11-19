@@ -17,6 +17,7 @@ Then, in order:
 
 ```
 ngrok http --url=gonogo.example.ngrok.app http://127.0.0.1:7777
+ngrok http --domain=gonogo.example.ngrok.app http://127.0.0.1:7777    # the same for an ngrok agent before 3.16, which has --domain
 gonogo expose check
 ```
 
@@ -24,5 +25,7 @@ gonogo expose check
 - Free-plan features, WebSocket support and any interstitial page were not read: `gonogo expose check` is the proof.
 
 - The proxy must **overwrite** `X-Forwarded-For` with the address it saw, never pass the client's own through; do not use `cf-connecting-ip` here (it is a header any client can write unless Cloudflare is in front).
+
+- **In Docker with the tunnel or proxy on the host,** gonogo sees it at the Docker bridge gateway (for example `172.17.0.1`: `docker network inspect bridge`), so give `--trusted-proxy` that address, not `127.0.0.1`. With the tunnel in the same container or network namespace, `127.0.0.1` is right.
 
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.
