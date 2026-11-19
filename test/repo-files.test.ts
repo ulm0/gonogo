@@ -118,6 +118,25 @@ describe('compose.yaml', () => {
   });
 });
 
+describe('the HOME of the container is persisted as a whole', () => {
+  it('compose binds <data>/home on /home/node, the image and the compose file point no XDG or git config elsewhere, and nothing reads /state/config', () => {
+    const compose = read('compose.yaml');
+    const live = compose.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+    expect(live).toMatch(/- \$\{GONOGO_DATA:\?[^}]+\}\/home:\/home\/node\n/);
+    const docker = read('Dockerfile');
+    const liveDocker = docker.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+    for (const text of [live, liveDocker]) {
+      expect(text).not.toContain('XDG_CONFIG_HOME');
+      expect(text).not.toContain('GIT_CONFIG_GLOBAL');
+      expect(text).not.toContain('/state/config');
+    }
+    // a new, empty home gets the skeleton, never over a file that exists
+    expect(liveDocker).toContain('cp -rn /etc/skel/.');
+    expect(compose).toContain('gonogo-data/home');
+    expect(read('docs', 'guide', 'docker.md')).toContain('gonogo-data/home');
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [

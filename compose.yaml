@@ -1,5 +1,5 @@
 # gonogo in Docker, with Clean Room. Once, as root on the Docker host (the image runs as uid 1000):
-#   install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/config    # next to this file
+#   install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home    # next to this file
 # Then make a file named .env next to this one (compose reads it for every command, from a shell or from a UI such as ZimaOS or Portainer):
 #   GONOGO_DATA=/absolute/path/to/gonogo-data                  # the folder above, by its ABSOLUTE path; every compose command stops without it
 #   DOCKER_GID=<the output of: stat -L -c %g /var/run/docker.sock>
@@ -31,10 +31,6 @@ services:
       ANTHROPIC_API_KEY:
       GONOGO_HOME: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/state
       CLAUDE_CONFIG_DIR: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/claude
-      # gh's login and git's global config: in the data folder, not in the image's anonymous /state volume, which a new container
-      # (docker compose up after a pull, a self-update) replaces with an empty one
-      XDG_CONFIG_HOME: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/config
-      GIT_CONFIG_GLOBAL: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/config/gitconfig
       # A Clean Room joins this container's network (self: found by its host name, so no fixed container name).
       GONOGO_CLEANROOM_NETWORK: container:self
     # The Clean Room shares this hosts file: its hook URLs name host.docker.internal, which the server limits to hooks and MCP.
@@ -47,6 +43,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}:${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}
+      # The whole HOME of the container (the image's /home/node holds only dotfiles): gh's login, ~/.gitconfig, ~/.aws and the rest survive a
+      # new container (docker compose up after a pull, a self-update, which keeps this bind)
+      - ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/home:/home/node
     # gonogo is a supervisor and one process per room: every room stops its own agents within 12 seconds (in parallel) and the
     # supervisor waits 17 for the slowest before it kills one, so Docker must wait longer than that.
     stop_grace_period: 60s
