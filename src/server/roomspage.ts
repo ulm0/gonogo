@@ -220,7 +220,7 @@ export function clientStylesheet(staticDir: string | null): string | null {
 export const roomsPageHeaders = (): Record<string, string> => ({
   'Content-Type': 'text/html; charset=utf-8',
   'Cache-Control': 'no-store',
-  'Content-Security-Policy': `default-src 'none'; script-src ${hash(LIVERY)} ${hash(SCRIPT)}; style-src 'self' ${hash(STYLE)}; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+  'Content-Security-Policy': `default-src 'none'; script-src ${hash(LIVERY)} ${hash(SCRIPT)}; style-src 'self' ${hash(STYLE)}; font-src 'self' data:; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'same-origin',
 });
