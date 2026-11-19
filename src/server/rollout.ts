@@ -36,6 +36,9 @@ export function isNewer(latest: string, current: string): boolean {
 /** Homebrew keeps a formula under <prefix>/Cellar/gonogo/<version>/; its npm layout would otherwise read as npm, so this is tested first. */
 const BREW = /\/Cellar\/gonogo\//;
 
+/** pnpm's minimumReleaseAge refuses a release that is too young, exact version or not; this exempts gonogo only (its dependencies keep the check). */
+export const PNPM_EXCLUDE = '--config.minimum-release-age-exclude=@ulm0/gonogo';
+
 /**
  * The command that updates the way this gonogo was installed, from the path of its own file. `docker`: it runs in a container;
  * `clone`: its folder is a git checkout. Never run by gonogo.
@@ -45,10 +48,10 @@ export function updateCommand(where: { file: string; docker: boolean; clone: boo
   const path = where.file.replace(/\\/g, '/');
   if (where.docker) return 'docker compose pull && docker compose up -d';
   if (where.clone) return 'git pull && pnpm install && pnpm build';
-  if (path.includes('/pnpm/dlx/')) return 'pnpm dlx @ulm0/gonogo@latest';
+  if (path.includes('/pnpm/dlx/')) return `pnpm dlx ${PNPM_EXCLUDE} @ulm0/gonogo@latest`;
   if (BREW.test(path)) return 'brew upgrade gonogo';
   if (path.includes('/lib/node_modules/@ulm0/gonogo/')) return 'npm install -g @ulm0/gonogo@latest';
-  return 'pnpm add -g @ulm0/gonogo@latest';
+  return `pnpm add -g ${PNPM_EXCLUDE} @ulm0/gonogo@latest`;
 }
 
 /**
@@ -96,7 +99,7 @@ export function pinCommand(command: string, version: string | null): string {
 /** The command that installs one exact version for npm or pnpm, and the one that goes back; null for the other kinds. */
 export function installCommand(kind: InstallKind, version: string): { file: string; args: string[] } | null {
   if (kind === 'npm') return { file: 'npm', args: ['install', '-g', `@ulm0/gonogo@${version}`] };
-  if (kind === 'pnpm') return { file: 'pnpm', args: ['add', '-g', `@ulm0/gonogo@${version}`] };
+  if (kind === 'pnpm') return { file: 'pnpm', args: ['add', '-g', PNPM_EXCLUDE, `@ulm0/gonogo@${version}`] };
   return null;
 }
 

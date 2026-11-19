@@ -2,7 +2,7 @@
 // that nothing runs without the version the check found. No network, no installer: fakes for both.
 import { describe, expect, it, vi } from 'vitest';
 import type { RolloutView, UpdateView } from '../src/shared/protocol.js';
-import { installCommand, installKind, installNote } from '../src/server/rollout.js';
+import { installCommand, PNPM_EXCLUDE, installKind, installNote } from '../src/server/rollout.js';
 import { createUpdater, installerEnv, tailOf, UpdateError } from '../src/server/updater.js';
 import type { RunResult } from '../src/server/updater.js';
 
@@ -26,7 +26,7 @@ describe('which install is this', () => {
 
   it('builds the install of one exact version for npm and pnpm only', () => {
     expect(installCommand('npm', '1.2.3')).toEqual({ file: 'npm', args: ['install', '-g', '@ulm0/gonogo@1.2.3'] });
-    expect(installCommand('pnpm', '1.2.3')).toEqual({ file: 'pnpm', args: ['add', '-g', '@ulm0/gonogo@1.2.3'] });
+    expect(installCommand('pnpm', '1.2.3')).toEqual({ file: 'pnpm', args: ['add', '-g', PNPM_EXCLUDE, '@ulm0/gonogo@1.2.3'] });
     for (const kind of ['docker', 'brew', 'dlx', 'clone', 'other'] as const) expect(installCommand(kind, '1.2.3')).toBeNull();
   });
 

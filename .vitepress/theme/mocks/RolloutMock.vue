@@ -9,7 +9,7 @@ import '../landing/landing.css';
     <span class="label">Rollout · a newer gonogo</span>
     <div class="ro-strip">
       <span>gonogo 0.2.0 is out (this is 0.1.1). To update, run:</span>
-      <code>pnpm add -g @ulm0/gonogo@0.2.0</code>
+      <code>pnpm add -g --config.minimum-release-age-exclude=@ulm0/gonogo @ulm0/gonogo@0.2.0</code>
       <span class="lp-row-keys"><span class="btn" data-kind="quiet">Copy</span><span class="btn" data-kind="quiet">Dismiss</span></span>
     </div>
     <pre class="ro-term">$ gonogo --version
