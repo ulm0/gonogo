@@ -257,6 +257,7 @@ describe('the first start (no replay of what Telegram still holds)', () => {
     expect(t.calls[0]?.body).toMatchObject({ offset: -1, timeout: 0, allowed_updates: ['message', 'callback_query'] });
     expect(t.calls[1]?.body).toMatchObject({ offset: 91, timeout: 50 });
     expect(delivered.map((d) => d.update.update_id)).toEqual([91]);
+    await poll.stop(); // the offset is written after the hand-on: stop waits for it
     expect(JSON.parse(await readFile(join(dir, TELEGRAM_POLL_FILE), 'utf8'))).toMatchObject({ offset: 92, bot: '123456' });
   });
 
