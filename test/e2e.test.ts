@@ -1334,7 +1334,7 @@ describe('end to end with the stand-in agent', () => {
     expect(page.status).toBe(200);
     expect(page.headers.get('content-type')).toContain('text/html');
     expect(page.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(page.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(page.headers.get('referrer-policy')).toBe('same-origin');
     expect(page.headers.get('x-frame-options')).toBe('DENY');
     expect(page.headers.get('cache-control')).toContain('no-cache');
     expect(await page.text()).toContain('<div id="root"></div>');

@@ -576,7 +576,7 @@ function rejectUpgrade(socket: Duplex, status: number, contentType: string, body
     `Content-Type: ${contentType}`,
     `Content-Length: ${Buffer.byteLength(body)}`,
     'X-Content-Type-Options: nosniff',
-    'Referrer-Policy: no-referrer',
+    'Referrer-Policy: same-origin',
     'X-Frame-Options: DENY',
     ...extra,
   ];
@@ -1716,7 +1716,7 @@ export function createWebServer(options: WebOptions): WebServer {
 
   const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
     // A Clean Room agent reaches the hooks and MCP by the host's name for containers: no other route may be reached by it.
     const viaContainer = !hostAllowed(req.headers.host) && hostName(req.headers.host ?? '') === CLEAN_ROOM_HOST;

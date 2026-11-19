@@ -6,6 +6,12 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 - **Fix: a lock left by an earlier container no longer blocks the start.** `server.lock` and `run/supervisor.lock` held only a pid, and after a container restart (pids start again) that number could name another live process, so room main refused with "another gonogo is using …" for minutes. The lock now also holds the boot id and the start time of its process (from `/proc`), and a pid that is alive with a different stamp is taken over. A lock of the old form (a pid only) is taken over when it is older than the container or boot (pid 1). Without `/proc` (macOS) the pid check stands as before. The stamp also holds the pid namespace, and a gonogo touches its lock every 15 s: a lock of another namespace (two containers on one volume, or the host and a container) counts as alive while its file keeps moving, and is taken over only after 30 s without a beat. A gonogo whose lock file no longer carries its own content leaves, so two never run on one home. **Do not run 0.5.0 next to 0.5.1 or later on one home**: 0.5.0 reads only the first line of the lock and takes over a lock it cannot tell from a stale one.
 
+## 0.5.1 (2026-11-19)
+
+A fix for 0.5.0: in a real browser the setup and login forms answered "forbidden origin", so no account could be made. Upgrade from 0.5.0 before running setup.
+
+- **Fix: the login and setup forms answered "forbidden origin" in a browser.** The pages were sent with `Referrer-Policy: no-referrer`, under which a browser sends `Origin: null` on a same-origin POST, and the Origin check refused it; the same held for every change made with a session cookie. The policy is now `same-origin` (no referrer leaves the site).
+
 ## 0.5.0 (2026-11-19)
 
 Since 0.4.0: one mode (the supervisor with rooms; **breaking, read "What breaks" below before upgrading**), rooms from the page, a login of your own (password, TOTP, recovery codes, step-up and passkeys, replacing the token), `gonogo expose` for Tailscale, Cloudflare, Caddy, Funnel and ngrok, an installable app with Web Push, Telegram inbound without a public address, and install commands that name the exact version. No fix of a reported vulnerability; the login, expose and push code was reviewed by RSO and RETRO before merge. What was not tried for real is listed in [Not verified](https://gonogo.ulm0.com/reference/not-verified.html).
