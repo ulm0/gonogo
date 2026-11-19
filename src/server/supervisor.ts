@@ -19,6 +19,7 @@ import type { Logger } from '../shared/protocol.js';
 import { keyMayDo, openAuth } from './auth.js';
 import type { AuthStore, HashCosts } from './auth.js';
 import { createAuthHttp } from './authhttp.js';
+import { createDevices } from './devicelogin.js';
 import { createPasskeys } from './passkeys.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
@@ -185,10 +186,16 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     if (main?.proc != null && main.state === 'running' && main.proc.stdin !== null && !main.proc.stdin.destroyed) main.proc.stdin.write(`gonogo-alert ${JSON.stringify(text)}\n`);
     else if (alertsWaiting.length < ALERTS_KEPT) alertsWaiting.push(text);
   };
+  /** The open pages of room main hear it (its Downlink), nobody is pushed to: not Relay, not a redline. */
+  const notice = (text: string): void => {
+    log.info(`login: ${text}`);
+    const main = children.get(MAIN_ROOM);
+    if (main?.proc != null && main.state === 'running' && main.proc.stdin !== null && !main.proc.stdin.destroyed) main.proc.stdin.write(`gonogo-notice ${JSON.stringify(text)}\n`);
+  };
   let auth: AuthStore;
   let madeSetupToken: string | null = null;
   try {
-    auth = openAuth({ home: options.home, alert: tell, log: log.child('auth'), ...(options.authCosts === undefined ? {} : { costs: options.authCosts }), ...(options.tamperEveryMs === undefined ? {} : { tamperEveryMs: options.tamperEveryMs }), ...(options.now === undefined ? {} : { now: options.now }) });
+    auth = openAuth({ home: options.home, alert: tell, notice, log: log.child('auth'), ...(options.authCosts === undefined ? {} : { costs: options.authCosts }), ...(options.tamperEveryMs === undefined ? {} : { tamperEveryMs: options.tamperEveryMs }), ...(options.now === undefined ? {} : { now: options.now }) });
     // once an account has existed no browser token comes back, and an old home's token file is gone (R1)
     if (auth.tokenAllowed()) directorToken = directorTokenOf(options.home, loadRooms(options.home).filter((r) => r.id !== MAIN_ROOM).map((r) => r.id));
     else {
@@ -496,6 +503,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     stylesheet,
     local: localReqs,
     passkeys: createPasskeys(auth, options.now),
+    devices: createDevices({ auth, now: options.now ?? Date.now, alert: tell, notice }),
     ...(options.trustedProxies === undefined ? {} : { trustedProxies: options.trustedProxies }),
     ...(options.clientIpHeader === undefined ? {} : { clientIpHeader: options.clientIpHeader }),
     exposure: { pages: [...split.pages], hooks: [...split.hooks], publicUrl: publicUrl === null ? null : publicUrl.origin },

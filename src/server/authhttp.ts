@@ -6,9 +6,11 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '../shared/protocol.js';
 import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
-import { hostClass, isLocalClass, KEY_SCOPES, LIFETIME } from './auth.js';
+import { hostClass, isLocalClass, KEY_SCOPES, LIFETIME, TUI_PREFIX } from './auth.js';
+import type { Devices } from './devicelogin.js';
 import type { AuthStore, HostClass, KeyScope, LoginResult, Who } from './auth.js';
 import { authPage, authPageHeaders, PASSKEY_SCRIPT } from './authpage.js';
+import type { AuthPageExtra } from './authpage.js';
 import type { Passkeys } from './passkeys.js';
 import { relyingParty } from './passkeys.js';
 import { bodyMatters, stepUpReason } from './stepup.js';
@@ -25,7 +27,7 @@ const PASSKEY_BODY_MAX = 32 * 1024;
 const YEAR_S = 365 * 24 * 60 * 60;
 
 export interface Grant {
-  kind: 'session' | 'key' | 'socket' | 'token';
+  kind: 'session' | 'key' | 'socket' | 'token' | 'tui';
   sessionId?: string;
   scope?: KeyScope;
   /** The id (hash) of the key, so a socket it opened can be closed when the key is revoked or expires. */
@@ -41,6 +43,8 @@ export interface AuthHttpOptions {
   stylesheet: string | null;
   /** Requests that came by the local unix socket: the file permissions were their credential. */
   local: WeakSet<IncomingMessage>;
+  /** The device login of a terminal (docs/login-spec.md): without it the endpoints and the page do not exist. */
+  devices?: Devices;
   /** The passkey ceremonies; without it no passkey is offered. */
   passkeys?: Passkeys;
   /** Addresses of reverse proxies whose X-Forwarded-For is believed (`--trusted-proxy`); none by default. */
@@ -69,7 +73,7 @@ export interface AuthHttp {
   /** Whether this change by this grant needs the password (and code) again now; `body` is the parsed JSON object, or null. */
   stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
   /** The 403 that tells the page to ask for the password again. */
-  stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string): void;
+  stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string, tui?: boolean): void;
 }
 
 const sameText = (a: string, b: string): boolean => timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
@@ -170,6 +174,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       if (bearer.startsWith('gnk_')) {
         const key = auth.key(bearer, who);
         if (key !== null) return { kind: 'key', scope: key.scope, keyId: key.id };
+      } else if (bearer.startsWith(TUI_PREFIX)) {
+        const tui = auth.tuiSession(bearer, who, touch === 'none' ? undefined : touch);
+        if (tui !== null) return { kind: 'tui', sessionId: tui.id };
       } else if (auth.tokenAllowed()) {
         const legacy = options.legacyToken();
         if (legacy !== null && sameText(bearer, legacy)) return { kind: 'token' };
@@ -210,7 +217,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
   };
   const text = (form: Form, name: string): string => (typeof form[name] === 'string' ? (form[name] as string) : '');
 
-  const html = (res: ServerResponse, status: number, kind: AuthPageKind, extra: { message?: string; user?: string; plain?: boolean; pending?: string; passkey?: boolean } = {}): void => {
+  const html = (res: ServerResponse, status: number, kind: AuthPageKind, extra: AuthPageExtra = {}): void => {
     res.writeHead(status, authPageHeaders(extra.passkey === true));
     res.end(authPage({ kind, stylesheet: options.stylesheet, ...extra }));
   };
@@ -286,7 +293,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     state: auth.state(),
     locked: auth.locked(),
     current: current.sessionId?.slice(0, 16) ?? null,
-    sessions: auth.sessions().map((s) => ({ id: s.short, created: s.created, last: s.last, address: s.address, agent: s.agent, kind: s.cls })),
+    sessions: auth.sessions().map((s) => ({ id: s.short, created: s.created, last: s.last, address: s.address, agent: s.agent, kind: s.cls, type: s.kind, label: s.label })),
     mfa: auth.mfa(),
     passkeys: auth.passkeys().map((p) => ({ id: p.id.slice(0, 24), name: p.name, rpId: p.rpId, created: p.created, last: p.last, backedUp: p.backedUp })),
     passkeyHere: ((rp) => (rp === null ? null : rp.rpId))(rpOf(req, whoOf(req))),
@@ -314,6 +321,21 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       if (answer === 'none') return sendJson(res, 200, { ok: true, note: 'nothing to confirm' });
       return sendApiError(res, answer === 'wait' ? 429 : 401, answer === 'wait' ? 'too many tries: wait, then try again' : 'wrong password', answer === 'wait' ? 'rate_limited' : 'unauthorized');
     }
+    // a terminal asking for a session (docs/login-spec.md, TUI device login): anonymous, small, counted; they do not exist until an account does, and on a public name until it has a second factor
+    if ((path === '/api/auth/device' || path === '/api/auth/device/token') && method === 'POST' && options.devices !== undefined) {
+      if (!deviceAllowed(who)) return sendApiError(res, 404, 'not found', 'not_found');
+      const body = await readForm(req, 2048);
+      if (body === null) return sendApiError(res, 400, 'send application/json, under 2 KiB', 'bad_request');
+      if (path === '/api/auth/device') {
+        const started = options.devices.start(who, body.form.label, `${baseUrl(req, who)}/login/device`);
+        if (started.ok) return sendJson(res, 200, started.flow, { 'Cache-Control': 'no-store' });
+        return sendApiError(res, 429, started.reason === 'cap' ? 'too many terminals are waiting: use `gonogo auth key add --scope full --remote` on the machine gonogo runs on, then give the key with --token' : 'too many tries: wait, then try again', 'rate_limited', undefined, { 'Retry-After': '600' });
+      }
+      const polled = options.devices.poll(who, body.form.device_code);
+      if ('token' in polled) return sendJson(res, 200, { token: polled.token }, { 'Cache-Control': 'no-store' });
+      if ('rate' in polled) return sendApiError(res, 429, 'too many polls: wait, then try again', 'rate_limited', undefined, { 'Retry-After': '60' });
+      return sendJson(res, 400, { error: polled.error }, { 'Cache-Control': 'no-store' });
+    }
     // signing in with a passkey: no login yet, so no session; the origin of the page is required and checked, the answer is checked by the library
     if ((path === '/api/auth/passkey/options' || path === '/api/auth/passkey/login') && method === 'POST' && options.passkeys !== undefined) {
       const rp = rpOf(req, who);
@@ -329,6 +351,14 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       return sendApiError(res, result.reason === 'locked' ? 423 : 401, result.reason === 'locked' ? 'remote logins are paused' : 'that passkey was not accepted', result.reason === 'locked' ? 'forbidden' : 'unauthorized');
     }
     const found = grant(req);
+    // a terminal may end its own session and nothing else of the account: the rest is done in the browser
+    if (found?.kind === 'tui') {
+      if (path === '/api/auth/logout' && method === 'POST' && found.sessionId !== undefined) {
+        auth.logout(found.sessionId);
+        return sendJson(res, 200, { ok: true });
+      }
+      return stepUpDenied(req, res, 'the account', true);
+    }
     if (found === null || (found.kind !== 'session' && found.kind !== 'socket')) return sendApiError(res, 401, 'unauthorized', 'unauthorized');
     if (found.kind === 'session' && !csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
     if (path === '/api/auth/account' && method === 'GET') return sendJson(res, 200, view(req, found), { 'Cache-Control': 'no-store' });
@@ -466,14 +496,82 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     return sendApiError(res, 404, 'not found', 'not_found');
   }
 
-  const stepUpDenied = (req: IncomingMessage, res: ServerResponse, reason: string): void => {
+  /** The device login is offered only once an account exists, and on a public name only when it has a second factor or a passkey (the gate of the rest). */
+  const deviceAllowed = (who: Who): boolean => auth.state() === 'account' && (isLocalClass(who.cls) || auth.mfa().enabled || auth.passkeys().length > 0);
+  /** Where the page is: the public address when one is configured, else the one Host that was accepted (https on a public name). */
+  const baseUrl = (req: IncomingMessage, who: Who): string => options.exposure?.publicUrl?.replace(/\/+$/, '') ?? `${isLocalClass(who.cls) ? 'http' : 'https'}://${req.headers.host ?? ''}`;
+
+  const stepUpDenied = (req: IncomingMessage, res: ServerResponse, reason: string, tui = false): void => {
+    // a Bearer credential never carries a step-up (a key, a terminal): it is told to do this in the browser
+    if (tui) return sendJson(res, 403, { error: `step_up_required: do this in the browser (${reason}).`, code: 'forbidden', stepUpRequired: true });
     const rp = rpOf(req, whoOf(req));
     const passkey = rp !== null && options.passkeys?.has(rp) === true;
     sendJson(res, 403, { error: `Confirm your password${auth.mfa().enabled ? ' and a code' : ''}${passkey ? ', or use a passkey,' : ''} to do this: ${reason}.`, code: 'forbidden', stepUp: true, second: auth.mfa().enabled, passkey });
   };
 
+  const agoText = (at: number): string => {
+    const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+    return s < 90 ? `${s} seconds ago` : `${Math.round(s / 60)} minutes ago`;
+  };
+
+  /**
+   * The page the Director types a terminal's code into, and where they approve or deny it. A browser session only (a key or a terminal cannot approve),
+   * with the password asked again when the last check is old; the flow acted on is the one the code typed in THAT request names.
+   */
+  async function devicePage(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    const method = req.method ?? 'GET';
+    if (!options.hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
+    const who = whoOf(req);
+    const devices = options.devices;
+    if (devices === undefined || !deviceAllowed(who)) return sendText(res, 404, 'not found');
+    if (method !== 'GET' && method !== 'POST') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET, POST' });
+    const found = grant(req, method === 'GET' ? 'none' : 'api');
+    if (found?.kind !== 'session' || found.sessionId === undefined) return redirect(res, '/login');
+    if (method === 'GET') return html(res, 200, 'device', { plain: plainHttp(req, who), ...(auth.stepFresh(found.sessionId) ? {} : { stepUp: { code: auth.mfa().enabled } }) });
+    // the same Origin rule as the other forms of /login, and a cookie that is the one of this page
+    if (!originOk(req) || !csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+    const body = await readForm(req);
+    if (body === null || !body.html) return sendApiError(res, 400, 'send the form of the page', 'bad_request');
+    const form = body.form;
+    const cookies: string[] = [];
+    let sessionId = found.sessionId;
+    if (!auth.stepFresh(sessionId)) {
+      // the password again (and the code): this page has no script, so it asks here and mints the session's id again like the step-up route does
+      const done = await auth.stepUp(sessionId, who, { password: text(form, 'password'), code: text(form, 'totp') });
+      if (!done.ok) return html(res, done.reason === 'wait' ? 429 : 401, 'device', { message: done.reason === 'wait' ? 'Too many tries: wait, then try again.' : 'Wrong password or code.', stepUp: { code: auth.mfa().enabled } });
+      cookies.push(sessionCookie(who.cls, done.session, Math.floor(LIFETIME[isLocalClass(who.cls) ? 'local' : 'public'].absolute / 1000)));
+      // the id the new cookie names: its hash, as the store keeps it
+      sessionId = createHash('sha256').update(done.session, 'utf8').digest('hex');
+    }
+    const typed = text(form, 'code');
+    const answer = (view: NonNullable<Parameters<typeof authPage>[0]['device']>, status = 200): void => {
+      res.writeHead(status, { ...authPageHeaders(), ...(cookies.length === 0 ? {} : { 'Set-Cookie': cookies }) });
+      res.end(authPage({ kind: 'deviceDetails', stylesheet: options.stylesheet, device: view }));
+    };
+    const failPage = (message: string, status: number): void => {
+      res.writeHead(status, { ...authPageHeaders(), ...(cookies.length === 0 ? {} : { 'Set-Cookie': cookies }) });
+      res.end(authPage({ kind: 'device', stylesheet: options.stylesheet, message }));
+    };
+    if (path === '/login/device') {
+      const got = devices.find(sessionId, who, typed);
+      if (got === null) return failPage('No terminal is waiting with that code. It may have expired (ten minutes), or been typed wrong.', 404);
+      if ('wait' in got) return failPage('Too many wrong codes: wait ten minutes.', 429);
+      return answer({ code: typed, label: got.view.label, address: got.view.address, agent: got.view.agent, asked: agoText(got.view.asked), far: got.view.far, again: false });
+    }
+    // approve or deny: the flow is the one this request's code names, and the step-up was just made or is still fresh
+    const approve = text(form, 'action') === 'approve';
+    const got = devices.find(sessionId, who, typed);
+    if (got === null) return failPage('No terminal is waiting with that code any more.', 404);
+    if ('wait' in got) return failPage('Too many wrong codes: wait ten minutes.', 429);
+    if (approve && got.view.far && text(form, 'again') !== '1') return answer({ code: typed, label: got.view.label, address: got.view.address, agent: got.view.agent, asked: agoText(got.view.asked), far: true, again: true });
+    const done = devices.decide(sessionId, who, typed, approve);
+    if (!done.ok) return failPage('That terminal is no longer waiting.', 404);
+    res.writeHead(200, { ...authPageHeaders(), ...(cookies.length === 0 ? {} : { 'Set-Cookie': cookies }) });
+    res.end(authPage({ kind: 'deviceDone', stylesheet: options.stylesheet, done: approve ? 'APPROVED' : 'DENIED' }));
+  }
+
   const method0 = (req: IncomingMessage): string => req.method ?? 'GET';
-  const isAuthPath = (path: string): boolean => path === '/login/passkey.js' || path === '/login' || path === '/setup' || path === '/api/auth' || path.startsWith('/api/auth/');
+  const isAuthPath = (path: string): boolean => path === '/login/passkey.js' || path === '/login/device' || path === '/login/device/decide' || path === '/login' || path === '/setup' || path === '/api/auth' || path.startsWith('/api/auth/');
 
   return {
     grant,
@@ -482,6 +580,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     whoOf,
     stepUpBody: bodyMatters,
     stepUpNeeded: (grant, method, path, body) => {
+      if (grant.kind === 'tui') return stepUpReason(method, path, body);
       if (grant.kind !== 'session' || grant.sessionId === undefined || auth.stepFresh(grant.sessionId)) return null;
       return stepUpReason(method, path, body);
     },
@@ -504,6 +603,13 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
         return true;
       }
       const method = req.method ?? 'GET';
+      if (path === '/login/device' || path === '/login/device/decide') {
+        void devicePage(req, res, path).catch((error: unknown) => {
+          log.error('device page failed', error);
+          sendText(res, 500, 'internal error');
+        });
+        return true;
+      }
       if (path === '/login' || path === '/setup') {
         if (method !== 'GET' && method !== 'HEAD') return (sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET, HEAD' }), true);
         if (!options.hostOk(req.headers.host)) return (sendText(res, 403, 'forbidden host'), true);

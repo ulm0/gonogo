@@ -29,14 +29,20 @@ export const authPageHeaders = (script = false): Record<string, string> => ({
   'X-Frame-Options': 'DENY',
 });
 
-export type AuthPageKind = 'login' | 'setup' | 'unset' | 'damaged' | 'locked' | 'second';
+export type AuthPageKind = 'login' | 'setup' | 'unset' | 'damaged' | 'locked' | 'second' | 'device' | 'deviceDetails' | 'deviceDone';
 
+export type AuthPageExtra = Omit<AuthPageInput, 'kind' | 'stylesheet'>;
 export interface AuthPageInput {
   kind: AuthPageKind;
   stylesheet: string | null;
   /** What went wrong, in words the Director can act on; never the reason a login failed beyond "wrong name or password". */
   message?: string;
   user?: string;
+  /** The device-login pages: whether the session must confirm its password (and a code) first, and what the terminal said about itself. */
+  stepUp?: { code: boolean };
+  device?: { code: string; label: string; address: string; agent: string; asked: string; far: boolean; again: boolean };
+  /** The pages' own line after an approval or a denial. */
+  done?: string;
   /** Offer a passkey: the page loads /login/passkey.js (the one script it may load) and shows its button. */
   passkey?: boolean;
   /** The single-use token of a login that waits for its second factor. */
@@ -63,6 +69,30 @@ export function authPage(input: AuthPageInput): string {
   }
   if (input.kind === 'locked') {
     return `${head}<section class="module lg-form"><h2 class="label">REMOTE LOGINS ARE PAUSED</h2><p>gonogo saw its account file change outside gonogo. Remote logins stay refused until the Director confirms on the machine gonogo runs on (the account block in Flight Rules, or <code>gonogo auth confirm</code>).</p>${error}</section>${tail}`;
+  }
+  if (input.kind === 'device') {
+    return (
+      `${head}<form class="module lg-form" method="post" action="/login/device" autocomplete="off"><h2 class="label">SIGN IN A TERMINAL</h2>` +
+      `<p>Type the code your terminal shows. <strong>A link or a message cannot carry it</strong>: if somebody else is asking you for this code, do not give it.</p>` +
+      `<label><span class="label">CODE</span><input class="input" name="code" autocomplete="off" required maxlength="12" spellcheck="false" autocapitalize="characters" autofocus></label>` +
+      (input.stepUp === undefined ? '' : `<p class="hint">It is more than five minutes since you gave your password: give it again.</p><label><span class="label">PASSWORD</span><input class="input" name="password" type="password" autocomplete="current-password" required maxlength="256"></label>${input.stepUp.code ? '<label><span class="label">CODE FROM YOUR AUTHENTICATOR</span><input class="input" name="totp" autocomplete="one-time-code" required maxlength="20" spellcheck="false"></label>' : ''}`) +
+      `${error}<button class="btn" data-kind="primary" type="submit">FIND IT</button></form>${tail}`
+    );
+  }
+  if (input.kind === 'deviceDetails' && input.device !== undefined) {
+    const d = input.device;
+    const warn = d.far ? `<p class="error lg-warn" role="alert">${d.again ? 'This is the second look: approve only if you are sure.' : 'This terminal is on a different network than this browser.'} A terminal on another network is the usual sign of somebody else asking.</p>` : '';
+    const buttons = `<input type="hidden" name="code" value="${esc(d.code)}"><button class="btn" data-kind="primary" type="submit" name="action" value="approve">${d.far && d.again ? 'APPROVE ANYWAY' : 'APPROVE'}</button> <button class="btn" type="submit" name="action" value="deny">DENY</button>${d.far && d.again ? '<input type="hidden" name="again" value="1">' : ''}`;
+    return (
+      `${head}<form class="module lg-form" method="post" action="/login/device/decide"><h2 class="label">A TERMINAL ASKS TO SIGN IN</h2>` +
+      `<table class="fuel-table"><tbody><tr><th scope="row">Name it gave</th><td>${esc(d.label || '(none)')}</td></tr><tr><th scope="row">Address</th><td>${esc(d.address)}</td></tr><tr><th scope="row">Program</th><td>${esc(d.agent || '(none)')}</td></tr><tr><th scope="row">Asked</th><td>${esc(d.asked)}</td></tr></tbody></table>` +
+      `<p>The name and the program are what the terminal says about itself: nothing checked them.</p>` +
+      `<p><strong>Approve only if you started this on your own terminal just now.</strong> A terminal session can type into every console: it is as strong as this browser session.</p>` +
+      `${warn}${error}${buttons}</form>${tail}`
+    );
+  }
+  if (input.kind === 'deviceDone') {
+    return `${head}<section class="module lg-form"><h2 class="label">${esc(input.done ?? 'DONE')}</h2><p>You can close this page and go back to your terminal.</p></section>${tail}`;
   }
   if (input.kind === 'second') {
     return (

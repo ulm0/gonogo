@@ -68,7 +68,7 @@ process.on('SIGUSR2', () => {
 // --exit-with-stdin: the supervisor's end of the pipe closing is a graceful stop, as for a real room
 if (args.includes('--exit-with-stdin')) {
   // the supervisor's alerts come as `gonogo-alert "text"` lines: kept for the tests to read
-  process.stdin.on('data', (d) => { for (const line of String(d).split('\n')) if (line.startsWith('gonogo-alert ')) fs.appendFileSync(join(home, 'alerts'), line.slice(13) + '\n'); });
+  process.stdin.on('data', (d) => { for (const line of String(d).split('\n')) { if (line.startsWith('gonogo-alert ')) fs.appendFileSync(join(home, 'alerts'), line.slice(13) + '\n'); if (line.startsWith('gonogo-notice ')) fs.appendFileSync(join(home, 'notices'), line.slice(14) + '\n'); } });
   process.stdin.on('end', () => process.kill(process.pid, 'SIGTERM'));
   process.stdin.resume();
 }

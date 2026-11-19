@@ -144,6 +144,8 @@ export function createTuiClient(options: TuiClientOptions): TuiClient {
     try {
       response = await fetch(`${options.url.replace(/\/+$/, '')}${path}`, {
         method,
+        // a redirect is never followed: the token goes to the origin it was made for, and nowhere else
+        redirect: 'manual',
         headers: { Authorization: `Bearer ${options.token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
         body: body === undefined ? undefined : JSON.stringify(body),
       });

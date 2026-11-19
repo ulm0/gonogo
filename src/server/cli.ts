@@ -151,6 +151,8 @@ export interface Running {
   home: string;
   /** A login alert of the supervisor (docs/login-spec.md R4): the Director's inbox and Relay, as a `redline` event. */
   alert(text: string): void;
+  /** The open pages hear it (the room's Downlink), and nothing else: no Relay, no phone, no Black Box. */
+  notice(text: string): void;
   /** Idempotent graceful shutdown. */
   stop(): Promise<void>;
   /** Live reload: ends this server and leaves the agents running in the pty host (a hold stays saved). Only with ptyHost; else it stops. */
@@ -1233,6 +1235,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       browserToken: home.browserToken,
       home: home.dir,
       alert: (text) => tell('redline', text.slice(0, 300)),
+      notice: (text) => downlink.post('redline', text.slice(0, 300)),
       stop,
       release,
     };
@@ -1572,7 +1575,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
  * `gonogo-ask busy` on stdout, the supervisor answers one line `gonogo-answer busy {"busy":<text|null>,"room":<id|null>}` on stdin. One answer per
  * question; a second question while one is out waits for it. No answer in 5 s is "busy", so an update never goes ahead on a guess.
  */
-export function createPipeAnswers(write: (line: string) => void, timeoutMs = 5000, onAlert: (text: string) => void = () => undefined) {
+export function createPipeAnswers(write: (line: string) => void, timeoutMs = 5000, onAlert: (text: string) => void = () => undefined, onNotice: (text: string) => void = () => undefined) {
   let waiting: Array<(answer: { busy: string | null; room: string | null }) => void> = [];
   let buffer = '';
   const none = { busy: 'the supervisor did not answer whether another room is busy: try again', room: null };
@@ -1583,6 +1586,16 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
       while ((at = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, at).trim();
         buffer = buffer.slice(at + 1);
+        const notice = /^gonogo-notice (".*")$/.exec(line);
+        if (notice !== null) {
+          try {
+            const text: unknown = JSON.parse(notice[1] as string);
+            if (typeof text === 'string') onNotice(text);
+          } catch {
+            // not a line of ours
+          }
+          continue;
+        }
         const alert = /^gonogo-alert (".*")$/.exec(line);
         if (alert !== null) {
           try {
@@ -1623,7 +1636,8 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
   };
 }
 let onSupervisorAlert: (text: string) => void = () => undefined;
-const pipeAnswers = createPipeAnswers((line) => process.stdout.write(line), 5000, (text) => onSupervisorAlert(text));
+let onSupervisorNotice: (text: string) => void = () => undefined;
+const pipeAnswers = createPipeAnswers((line) => process.stdout.write(line), 5000, (text) => onSupervisorAlert(text), (text) => onSupervisorNotice(text));
 
 /** One room: what `gonogo` was before it became the supervisor. `gonogo __room` runs it; the tests run it directly with fakes. */
 export async function runRoom(options: StartOptions, env: Env): Promise<void> {
@@ -1652,6 +1666,7 @@ export async function runRoom(options: StartOptions, env: Env): Promise<void> {
     }
   }
   onSupervisorAlert = (text) => running.alert(text);
+  onSupervisorNotice = (text) => running.notice(text);
   installProcessHandlers(running, log, process.argv.slice(2), process.argv[1], options.roomChild === true);
   if (options.exitWithStdin === true) {
     // the supervisor holds the other end of this pipe: when it dies, for any reason, this ends and the room stops as for SIGTERM
