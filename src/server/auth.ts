@@ -12,6 +12,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, write
 import { join } from 'node:path';
 import type { Logger } from '../shared/protocol.js';
 import { nullLogger } from './constants.js';
+import { normalizeHost } from './hosts.js';
 
 export const AUTH_FILE = 'auth.json';
 export const SETUP_TOKEN_FILE = 'setup-token';
@@ -45,14 +46,14 @@ export const LIFETIME = {
 
 /* ------------------------------------------------------------------ hosts */
 
+
 /** Loopback, private or public, from a Host header (or a bare name): an IP by its range, a name by its shape. */
 export function hostClass(header: string | undefined): HostClass {
   if (header === undefined) return 'public';
-  let name = header.trim().toLowerCase();
-  const bracket = /^\[([^\]]*)\](?::\d+)?$/.exec(name);
-  if (bracket !== null) name = bracket[1] as string;
-  else if ((name.match(/:/g) ?? []).length === 1) name = name.slice(0, name.indexOf(':'));
-  if (name.endsWith('.')) name = name.slice(0, -1);
+  // one normalizer for every Host (docs/expose-spec.md R10); a bare IPv6 address (a peer address, not a Host) is its own name
+  const bare = !header.includes('[') && (header.match(/:/g) ?? []).length >= 2 ? header.trim().toLowerCase() : null;
+  const name = bare ?? normalizeHost(header);
+  if (name === null) return 'public';
   if (name === 'localhost' || name.endsWith('.localhost') || name === '::1' || /^127(\.\d{1,3}){3}$/.test(name)) return 'loopback';
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(name);
   if (v4 !== null) {
@@ -198,6 +199,20 @@ export interface Session {
   /** When the password (and the second factor) was last checked for this session: step-up asks again after 5 minutes. */
   step: number;
 }
+/** A passkey (WebAuthn credential): the public key only, and the rp id it was made for, fixed at its registration. */
+export interface Passkey {
+  /** The credential id (base64url): the browser names the passkey with it. */
+  id: string;
+  /** The COSE public key (base64url). */
+  publicKey: string;
+  counter: number;
+  transports: string[];
+  name: string;
+  rpId: string;
+  created: number;
+  last: number | null;
+  backedUp: boolean;
+}
 export interface Device {
   id: string;
   created: number;
@@ -230,6 +245,9 @@ interface AuthFile {
   totp: { secret: string; enabled: boolean; lastStep: number } | null;
   /** SHA-256 (hex) of the recovery codes not yet used. */
   recovery: string[];
+  passkeys: Passkey[];
+  /** Top-level fields this version does not know (a newer gonogo wrote them): kept and written back, so a rollback and a return lose nothing. */
+  extra: Record<string, unknown>;
 }
 
 const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -294,10 +312,21 @@ function parseAuth(text: string): AuthFile | undefined {
       recovery.push(code);
     }
   }
-  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone, totp, recovery };
+  const passkeys: Passkey[] = [];
+  if (Array.isArray(raw.passkeys)) {
+    for (const p of raw.passkeys) {
+      if (!isObject(p) || !str(p.id) || !str(p.publicKey) || !num(p.counter) || !Array.isArray(p.transports) || !p.transports.every(str) || !str(p.name) || !str(p.rpId) || !num(p.created) || (p.last !== null && !num(p.last)) || typeof p.backedUp !== 'boolean') return undefined;
+      // the sizes of a file are the file's word: a credential id is at most 1023 bytes, a key a few hundred
+      if (p.id.length > 1400 || p.publicKey.length > 4000 || p.name.length > 80 || p.rpId.length > 253 || p.counter < 0) return undefined;
+      passkeys.push({ id: p.id, publicKey: p.publicKey, counter: p.counter, transports: p.transports.slice(0, 8), name: p.name, rpId: p.rpId, created: p.created, last: p.last as number | null, backedUp: p.backedUp });
+    }
+  }
+  const KNOWN = ['version', 'user', 'password', 'sessions', 'devices', 'keys', 'serverKey', 'tombstone', 'totp', 'recovery', 'passkeys', 'reset'];
+  const extra = Object.fromEntries(Object.entries(raw).filter(([key]) => !KNOWN.includes(key)));
+  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone, totp, recovery, passkeys, extra };
 }
 
-const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone, totp: null, recovery: [] });
+const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone, totp: null, recovery: [], passkeys: [], extra: {} });
 
 function writeAtomic(path: string, text: string): void {
   const temp = `${path}.${process.pid}.tmp`;
@@ -418,6 +447,21 @@ export interface AuthStore {
   stepFresh(sessionId: string): boolean;
   /** Asks the password (and the code when a second factor is on) again; answers a new cookie value: the id is minted again. */
   stepUp(sessionId: string, who: Who, input: { password: string; code: string }): Promise<{ ok: true; session: string } | { ok: false; reason: 'wrong' | 'wait' | 'gone' }>;
+  /** The passkeys (credentials) of the account, newest last. */
+  passkeys(): Passkey[];
+  passkeyAdd(sessionId: string, who: Who, input: { id: string; publicKey: string; counter: number; transports: string[]; name: string; rpId: string; backedUp: boolean }): boolean;
+  /** Takes a passkey off the list: asks the password and a code (or a recovery code), as turning TOTP off does. */
+  passkeyRemove(sessionId: string, who: Who, short: string, input: { password: string; code: string }): Promise<'ok' | 'wrong' | 'wait' | 'none'>;
+  /** The same, when a passkey assertion that verified stands for both (the caller checked it). */
+  passkeyRemoveConfirmed(short: string, credentialId: string, counter: number): boolean;
+  /** Whether a first passkey may be made: there has to be a second way in that does not depend on the name. */
+  passkeysMayStart(): boolean;
+  /** A passkey assertion that was verified: the counter moves, and a session starts (a passkey is both factors; no waits, as a passkey cannot be guessed). */
+  passkeyLogin(who: Who, credentialId: string, counter: number): LoginResult;
+  /** The same for step-up: the session's id is minted again. */
+  passkeyStepUp(sessionId: string, credentialId: string, counter: number): { ok: true; session: string } | { ok: false; reason: 'gone' };
+  /** A counter that did not go up: a copy of the passkey may exist. */
+  passkeyCounterAlert(credentialId: string): void;
   /** Called when a session's id is minted again: its sockets move to the new one. */
   onReminted(listener: (from: string, to: string) => void): void;
   /** The key a Bearer value names (refused on a public Host unless made with --remote), or null. */
@@ -446,6 +490,8 @@ export interface AuthStore {
   onAccountMade(listener: () => void): void;
   /** The cookie of a session or device is signed with this. */
   signDevice(id: string): string;
+  /** A keyed hash of a text (HMAC-SHA-256 with the server key, base64url): for tokens that need no memory. */
+  mac(text: string): string;
   setupTokenFile(): string;
   /** Makes the setup token when there is no account and none valid; returns it only when it was just made. */
   ensureSetupToken(): string | null;
@@ -492,7 +538,9 @@ export function openAuth(options: AuthOptions): AuthStore {
       const on = fileText();
       if (on === null || sha(on) !== written) checkTamper(true);
     }
-    const text = `${JSON.stringify(data)}\n`;
+    const { extra, ...known } = data;
+    // what this version does not know goes back as it was; what it does know wins
+    const text = `${JSON.stringify({ ...extra, ...known })}\n`;
     try {
       writeAtomic(path, text);
       written = sha(text);
@@ -733,10 +781,15 @@ export function openAuth(options: AuthOptions): AuthStore {
   const every = options.tamperEveryMs ?? TAMPER_EVERY_MS;
   if (every > 0) {
     timer = setInterval(() => {
-      checkTamper(true);
-      expiredSweep();
-      // an hour-old setup token is renewed in its file (not printed), so the setup page is never stuck on a token nobody has
-      ensureSetupToken();
+      // a timer must never throw: a home that was removed under a running server is logged, not a crash
+      try {
+        checkTamper(true);
+        expiredSweep();
+        // an hour-old setup token is renewed in its file (not printed), so the setup page is never stuck on a token nobody has
+        ensureSetupToken();
+      } catch (error) {
+        log.error('the login timer failed', error);
+      }
     }, every);
     timer.unref();
   }
@@ -770,6 +823,16 @@ export function openAuth(options: AuthOptions): AuthStore {
     return false;
   };
 
+  /** Mints the id of a session again: whatever knew the old cookie value is of no use. */
+  const remint = (found: Session): string => {
+    const cookie = rand();
+    const next: Session = { ...found, id: sha(cookie), step: now(), last: now() };
+    data.sessions = data.sessions.map((x) => (x === found ? next : x));
+    save();
+    for (const listener of reminted) listener(found.id, next.id);
+    return cookie;
+  };
+
   const finish = (who: Who, alertNew: boolean): LoginResult => {
     const { device, fresh } = knownOrNewDevice(who);
     const { session } = startSession(who, device);
@@ -786,6 +849,7 @@ export function openAuth(options: AuthOptions): AuthStore {
     tokenAllowed: () => state() === 'fresh',
     setupTokenFile: () => join(options.home, SETUP_TOKEN_FILE),
     signDevice: sign,
+    mac: (text) => createHmac('sha256', serverKey).update(text).digest('base64url'),
     deviceOf,
     touchSession(id) {
       const found = data.sessions.find((s) => s.id === id);
@@ -1093,13 +1157,69 @@ export function openAuth(options: AuthOptions): AuthStore {
         return { ok: false, reason: 'wrong' };
       }
       succeed(keys);
-      // the id is minted again: whatever knew the old cookie value is of no use
-      const cookie = rand();
-      const next: Session = { ...found, id: sha(cookie), step: now(), last: now() };
-      data.sessions = data.sessions.map((x) => (x === found ? next : x));
+      return { ok: true, session: remint(found) };
+    },
+
+    passkeys: () => data.passkeys.map((p) => ({ ...p })),
+    passkeyAdd(sessionId, _who, input) {
+      if (data.passkeys.length >= 20 || data.passkeys.some((p) => p.id === input.id) || !data.sessions.some((s) => s.id === sessionId)) return false;
+      data.passkeys.push({ id: input.id, publicKey: input.publicKey, counter: input.counter, transports: input.transports.slice(0, 8), name: input.name.replace(/[\u0000-\u001f\u007f<>&"'`]/g, '?').slice(0, 60) || 'passkey', rpId: input.rpId, created: now(), last: null, backedUp: input.backedUp });
       save();
-      for (const listener of reminted) listener(found.id, next.id);
-      return { ok: true, session: cookie };
+      options.alert(`a passkey was added (${data.passkeys.at(-1)?.name}, for ${input.rpId})`);
+      return true;
+    },
+    passkeysMayStart: () => data.totp?.enabled === true,
+    async passkeyRemove(sessionId, who, short, input) {
+      if (short.length < 8) return 'none';
+      const matches = data.passkeys.filter((p) => p.id.startsWith(short));
+      if (matches.length !== 1) return 'none';
+      const keys = [`pk:${sessionId}`];
+      if (wait(keys) > 0) return 'wait';
+      // the password and the second factor, as turning TOTP off asks: a stolen session alone cannot take a passkey away
+      if (!(await checkPassword(input.password)) || !verifySecond(input.code)) {
+        fail(keys, who, null);
+        return 'wrong';
+      }
+      const found = matches[0] as Passkey;
+      data.passkeys = data.passkeys.filter((p) => p !== found);
+      save();
+      options.alert(`a passkey was removed (${found.name})`);
+      return 'ok';
+    },
+    passkeyRemoveConfirmed(short, credentialId, counter) {
+      const used = data.passkeys.find((p) => p.id === credentialId);
+      if (used !== undefined) {
+        used.counter = counter;
+        used.last = now();
+      }
+      const matches = data.passkeys.filter((p) => p.id.startsWith(short));
+      if (short.length < 8 || matches.length !== 1) return false;
+      const found = matches[0] as Passkey;
+      data.passkeys = data.passkeys.filter((p) => p !== found);
+      save();
+      options.alert(`a passkey was removed (${found.name})`);
+      return true;
+    },
+    passkeyLogin(who, credentialId, counter) {
+      checkTamper();
+      const found = data.passkeys.find((p) => p.id === credentialId);
+      if (found === undefined || state() !== 'account') return refused('wrong');
+      if (isLocked && !isLocalClass(who.cls)) return refused('locked');
+      found.counter = counter;
+      found.last = now();
+      return finish(who, true);
+    },
+    passkeyStepUp(sessionId, credentialId, counter) {
+      const session = data.sessions.find((x) => x.id === sessionId);
+      const found = data.passkeys.find((p) => p.id === credentialId);
+      if (session === undefined || found === undefined) return { ok: false, reason: 'gone' };
+      found.counter = counter;
+      found.last = now();
+      return { ok: true, session: remint(session) };
+    },
+    passkeyCounterAlert(credentialId) {
+      const found = data.passkeys.find((p) => p.id === credentialId);
+      options.alert(`a passkey's counter did not go up (${found?.name ?? 'unknown'}): a copy of it may exist`);
     },
     onReminted: (listener) => void reminted.push(listener),
 

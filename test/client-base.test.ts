@@ -31,8 +31,8 @@ describe('every way the page reaches the server keeps the prefix', () => {
     const api = text('api.ts');
     const calls = [...api.matchAll(/\bfetch\s*\(([^,)]*)/g)].map((m) => m[1] ?? '');
     expect(calls.length).toBeGreaterThanOrEqual(2);
-    // the login belongs to the supervisor and is one for every room: /api/auth is reserved there (roomproxy.ts) and is reached at the root, never under /r/<id>/
-    for (const arg of calls) if (!/^`\/api\/auth\$\{path\}`$/.test(arg.trim())) expect(arg, `fetch(${arg})`).toContain('withBase(');
+    // the login and the devices of the installed app belong to the supervisor and are one for every room: /api/auth and /api/push are reserved there (roomproxy.ts) and are reached at the root, never under /r/<id>/
+    for (const arg of calls) if (!/^`\/api\/(auth|push)\$\{path\}`$/.test(arg.trim())) expect(arg, `fetch(${arg})`).toContain('withBase(');
     expect(api).toMatch(/new WebSocket\(`[^`]*\$\{withBase\(WS_PATH\)\}`/);
   });
 

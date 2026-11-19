@@ -7,9 +7,11 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import * as api from './api.js';
 import type { StepUpAnswer } from './api.js';
+import { passkeysSupported } from './passkey.js';
 
 interface Asking {
   needsCode: boolean;
+  passkey: boolean;
   message: string;
   resolve(answer: StepUpAnswer | null): void;
 }
@@ -20,8 +22,9 @@ export function StepUpDialog(): ReactElement {
   const [asking, setAsking] = useState<Asking | null>(null);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => api.onStepUp((needsCode, message) => new Promise<StepUpAnswer | null>((resolve) => setAsking({ needsCode, message, resolve }))), []);
+  useEffect(() => api.onStepUp((needsCode, message, passkey) => new Promise<StepUpAnswer | null>((resolve) => setAsking({ needsCode, passkey: passkey && passkeysSupported(), message, resolve }))), []);
   useEffect(() => {
     const d = dialog.current;
     if (d === null) return;
@@ -35,6 +38,13 @@ export function StepUpDialog(): ReactElement {
     setPassword('');
     setCode('');
   };
+  const usePasskey = (): void => {
+    setProblem(null);
+    api.passkeyStepUpAnswer().then(
+      (answer) => finish(answer),
+      (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)),
+    );
+  };
   const submit = (event: FormEvent): void => {
     event.preventDefault();
     finish({ password, code });
@@ -47,7 +57,17 @@ export function StepUpDialog(): ReactElement {
           CONFIRM IT IS YOU
         </h2>
         <p>{asking?.message ?? ''}</p>
-        <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" placeholder="Password" required autoFocus />
+        {asking?.passkey === true && (
+          <button type="button" className="btn" onClick={usePasskey}>
+            USE A PASSKEY
+          </button>
+        )}
+        {problem !== null && (
+          <p className="error" role="alert">
+            {problem}
+          </p>
+        )}
+        <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" placeholder="Password" autoFocus={asking?.passkey !== true} required />
         {asking?.needsCode === true && <input className="input" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Code from your authenticator, or a recovery code" placeholder="Code or recovery code" autoComplete="one-time-code" required spellCheck={false} />}
         <div className="stepup-row">
           <button type="button" className="btn" onClick={() => finish(null)}>

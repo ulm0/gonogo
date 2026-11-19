@@ -99,6 +99,7 @@ import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
 import type { Rollout } from './rollout.js';
+import { normalizeHost } from './hosts.js';
 import { UpdateError } from './updater.js';
 import type { Schedules } from './schedules.js';
 import type { Tasks } from './tasks.js';
@@ -106,6 +107,7 @@ import type { Missions } from './missions.js';
 import type { Review } from './review.js';
 import type { RoomLayoutStore } from './roomlayout.js';
 import type { TabNameStore } from './tabname.js';
+import { manifestOf } from './manifest.js';
 import type { Uplinks } from './uplinks.js';
 
 export interface WebOptions {
@@ -245,6 +247,7 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
   '.map': 'application/json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 
 const STATUS_TEXT: Record<number, string> = {
@@ -291,22 +294,8 @@ function isPermissionMode(x: unknown): x is PermissionMode {
   return typeof x === 'string' && (PERMISSION_MODES as readonly string[]).includes(x);
 }
 
-/** Host part of a Host header (port stripped, brackets removed, lower-cased), or null when it is not host[:port]. Exported for the tests. */
-export function hostName(value: string): string | null {
-  const v = value.trim().toLowerCase();
-  if (v === '') return null;
-  if (v.startsWith('[')) {
-    const end = v.indexOf(']');
-    if (end < 2) return null;
-    const rest = v.slice(end + 1);
-    return rest === '' || /^:\d{1,5}$/.test(rest) ? v.slice(1, end) : null;
-  }
-  const colon = v.indexOf(':');
-  if (colon === -1) return v;
-  // an IPv6 address without brackets cannot carry a port, so it is not a valid Host value
-  if (v.indexOf(':', colon + 1) !== -1) return null;
-  return /^\d{1,5}$/.test(v.slice(colon + 1)) ? v.slice(0, colon) : null;
-}
+/** Host part of a Host header (docs/expose-spec.md R10: the one normalizer). Exported for the tests. */
+export const hostName = normalizeHost;
 
 /** An allow-list entry or the bind host, in the same form hostName gives for a Host header. */
 function listedHost(entry: string): string {
@@ -1626,6 +1615,13 @@ export function createWebServer(options: WebOptions): WebServer {
       return;
     }
     const relative = segments.join('/');
+    // the manifest of the installed app: the name and the colours are the room's own, so it is made here and not kept as a file
+    if (relative === 'manifest.webmanifest') {
+      const body = Buffer.from(JSON.stringify(manifestOf(options.liveries?.view() ?? null)));
+      res.writeHead(200, { 'Content-Type': MIME['.webmanifest'] as string, 'Content-Length': body.length, 'Cache-Control': 'no-cache' });
+      res.end(method === 'HEAD' ? undefined : body);
+      return;
+    }
     const file = resolvePath(staticRoot, relative === '' ? 'index.html' : relative);
     // shortcut: a symlink inside the static directory is followed; the directory is the client build, which holds none
     if (!file.startsWith(staticRoot + sep)) {

@@ -47,7 +47,7 @@ export interface ProxyAuth {
   touchSession(sessionId: string): void;
   stepUpBody(method: string, path: string): boolean;
   stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
-  stepUpDenied(res: ServerResponse, reason: string): void;
+  stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string): void;
 }
 
 export interface RoomProxyOptions {
@@ -55,6 +55,8 @@ export interface RoomProxyOptions {
   rooms(): ProxyRoom[];
   /** Host names this server may be reached by (besides loopback). */
   allowedNames: ReadonlySet<string>;
+  /** Hooks-only hosts (`--allow-host name:hooks`, docs/expose-spec.md): answered for /uplink/* and /dock/* and nothing else; never the page, the login or a socket. */
+  hooksHosts?: ReadonlySet<string>;
 }
 
 export interface RoomProxy {
@@ -111,13 +113,17 @@ function suspicious(rest: string): boolean {
 function reservedPath(rest: string): boolean {
   const segments = rest.split('/').map((segment) => decodeURIComponent(segment));
   const first = segments[1] ?? '';
-  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth'));
+  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push'));
 }
 
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   const hostAllowed = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
-    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name));
+    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name) || (options.hooksHosts?.has(name) ?? false));
+  };
+  const hooksOnly = (header: string | undefined): boolean => {
+    const name = header === undefined ? null : hostName(header);
+    return name !== null && (options.hooksHosts?.has(name) ?? false) && !options.allowedNames.has(name);
   };
 
   /** A browser's Origin must be this very server, as a room demands it of its own address. */
@@ -184,6 +190,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     if (prefixed === null && reservedPath(rest)) return (fail(404, 'not found'), null);
     const kind = kindOf(rest);
     if (kind === 'closed') return (fail(404, 'not found'), null);
+    // a hooks host has no page: the decision is on the decoded first segment, the same one the room routes by
+    if (kind !== 'passthrough' && hooksOnly(req.headers.host)) return (fail(404, 'not found'), null);
     const room = options.rooms().find((r) => r.id === id);
     if (room === undefined) return (fail(404, 'no such room'), null);
     if (room.port === null) return (fail(503, 'the room is not running'), null);
@@ -284,8 +292,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false) },
         (answer) => {
           const headers: http.OutgoingHttpHeaders = {};
-          // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2)
-          for (const [name, value] of Object.entries(answer.headers)) if (!HOP.has(name) && name !== 'set-cookie') headers[name] = value;
+          // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2); no Service-Worker-Allowed: a room's script cannot widen its scope
+          for (const [name, value] of Object.entries(answer.headers)) if (!HOP.has(name) && name !== 'set-cookie' && name !== 'service-worker-allowed') headers[name] = value;
           // the CSP of the room's pages is the supervisor's, not the room's (threat model 3)
           if (target.kind === 'browser' && String(headers['content-type'] ?? '').startsWith('text/html')) Object.assign(headers, options.auth.pageHeaders());
           // a redirect to a path of the room stays inside its prefix; room main at / has none
@@ -306,7 +314,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       const asked = stepUp;
       if (!options.auth.stepUpBody(asked.method, asked.path)) {
         const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, null);
-        if (reason !== null) options.auth.stepUpDenied(res, reason);
+        if (reason !== null) options.auth.stepUpDenied(req, res, reason);
         else forward(null);
         return true;
       }
@@ -321,7 +329,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           // not JSON: the room answers 400; the strictest reading of a body nobody could read is that it needs the check
         }
         const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed);
-        if (reason !== null) options.auth.stepUpDenied(res, reason);
+        if (reason !== null) options.auth.stepUpDenied(req, res, reason);
         else forward(got.body);
       });
       return true;

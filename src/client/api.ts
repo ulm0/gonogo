@@ -1,3 +1,4 @@
+import { creationOptions, credentialJson, requestOptions } from './passkey.js';
 import type { FeaturePlan } from '../shared/features.js';
 import type {
   AgentView,
@@ -35,6 +36,7 @@ import type {
   ReflectResult,
   RelayForwardRequest,
   PhoneMode,
+  PushView,
   RelayService,
   RelayTargetRequest,
   RecorderCommit,
@@ -108,7 +110,7 @@ export interface TerminalListener {
 }
 
 /** An Error from a REST call: the server's message, plus the field it names and the HTTP status. */
-export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boolean; second?: boolean };
+export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boolean; second?: boolean; passkey?: boolean };
 
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/i;
 
@@ -187,18 +189,15 @@ async function callOnce(method: string, path: string, body?: unknown): Promise<u
   if (!response.ok) {
     const error = asRecord(parsed);
     const message = typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`;
-    throw Object.assign(failure(message, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true } : {});
+    throw Object.assign(failure(message, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true, passkey: error.passkey === true } : {});
   }
   return parsed;
 }
 
 /* ---- step-up: a change that wants the password (and the code) again ---- */
 
-export interface StepUpAnswer {
-  password: string;
-  code: string;
-}
-type StepUpHandler = (needsCode: boolean, message: string) => Promise<StepUpAnswer | null>;
+export type StepUpAnswer = { password: string; code: string } | { passkey: unknown };
+type StepUpHandler = (needsCode: boolean, message: string, passkey: boolean) => Promise<StepUpAnswer | null>;
 let stepUpHandler: StepUpHandler | null = null;
 
 /** The page registers the dialog that asks; the handler answers null when the person gives up. */
@@ -218,7 +217,7 @@ async function viaStepUp<T>(run: () => Promise<T>): Promise<T> {
     if (first.stepUp !== true || stepUpHandler === null) throw e;
     let message = first.message;
     for (;;) {
-      const answer = await stepUpHandler(first.second === true, message);
+      const answer = await stepUpHandler(first.second === true, message, first.passkey === true);
       if (answer === null) throw e;
       try {
         await authCallOnce('POST', '/stepup', answer);
@@ -469,6 +468,49 @@ export async function holdAll(): Promise<HoldAllResult> {
 /** ALL RESUME: resumes every console that is on hold. */
 export async function resumeAll(): Promise<ResumeAllResult> {
   return (await call('POST', '/resume-all')) as ResumeAllResult;
+}
+
+/**
+ * Push to the installed app: the key to subscribe with and the devices (docs/features/mobile.md). The supervisor answers these, for every
+ * room, at the root of the address (like the login), so they never carry a room's prefix; the login's session cookie is the credential.
+ */
+async function pushCall(method: string, path: string, body?: unknown): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/push${path}`, { method, headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
+  } catch {
+    throw failure('Could not reach the gonogo server.');
+  }
+  let parsed: unknown = null;
+  try {
+    const text = await response.text();
+    if (text !== '') parsed = JSON.parse(text);
+  } catch {
+    // not JSON: the status says it
+  }
+  if (!response.ok) {
+    const error = asRecord(parsed);
+    throw failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined);
+  }
+  return parsed;
+}
+
+export async function pushView(): Promise<PushView> {
+  const record = asRecord(await pushCall('GET', ''));
+  if (record === null || typeof record.publicKey !== 'string' || !Array.isArray(record.devices)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as PushView;
+}
+
+export async function pushSubscribe(body: { endpoint: string; keys: { p256dh: string; auth: string }; device: string; snippet: boolean }): Promise<PushView> {
+  return (await pushCall('PUT', '/subscription', body)) as PushView;
+}
+
+export async function pushUnsubscribe(id: string): Promise<PushView> {
+  return (await pushCall('DELETE', '/subscription', { id })) as PushView;
+}
+
+export async function pushTest(id: string): Promise<{ ok: boolean; note: string }> {
+  return (await pushCall('POST', '/test', { id })) as { ok: boolean; note: string };
 }
 
 /** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */
@@ -1207,6 +1249,11 @@ export interface AccountView {
   sessions: AccountSession[];
   keys: AccountKey[];
   mfa: { enabled: boolean; pending: boolean; recoveryLeft: number };
+  passkeys: Array<{ id: string; name: string; rpId: string; created: number; last: number | null; backedUp: boolean }>;
+  /** The rp id a passkey made here would have, or null where one cannot be made (not a public name). */
+  passkeyHere: string | null;
+  /** The names this gonogo answers on (docs/expose-spec.md): page hosts, hooks-only hosts and the public address. */
+  exposure?: { pages: string[]; hooks: string[]; publicUrl: string | null };
 }
 
 /** One call to `/api/auth/...`: the supervisor's own route (a room has none), so the path is absolute and the session cookie is the credential. */
@@ -1233,7 +1280,7 @@ async function authCallOnce(method: string, path: string, body?: unknown): Promi
   }
   if (!response.ok) {
     const error = asRecord(parsed);
-    throw Object.assign(failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true } : {});
+    throw Object.assign(failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true, passkey: error.passkey === true } : {});
   }
   return parsed;
 }
@@ -1277,3 +1324,33 @@ async function recoveryOf(call: Promise<unknown>): Promise<string[]> {
 export const authMfaEnable = (code: string): Promise<string[]> => recoveryOf(authCall('POST', '/mfa/enable', { code }));
 export const authMfaRecovery = (password: string, code: string): Promise<string[]> => recoveryOf(authCall('POST', '/mfa/recovery', { password, code }));
 export const authMfaDisable = (password: string, code: string): Promise<unknown> => authCall('POST', '/mfa/disable', { password, code });
+
+/** Makes a passkey on this device: the server's options, the browser's ceremony, the server's check. */
+export async function authPasskeyAdd(name: string): Promise<void> {
+  const options = asRecord(await authCall('POST', '/passkeys/begin', {}));
+  if (options === null) throw failure('The server sent an answer gonogo does not understand.');
+  let credential: Credential | null;
+  try {
+    credential = await navigator.credentials.create({ publicKey: creationOptions(options) });
+  } catch (e) {
+    throw failure(e instanceof Error && e.name === 'NotAllowedError' ? 'The passkey was not made.' : e instanceof Error ? e.message : 'The passkey was not made.');
+  }
+  if (credential === null) throw failure('The passkey was not made.');
+  await authCall('POST', '/passkeys/finish', { response: credentialJson(credential as PublicKeyCredential), name });
+}
+/** Taking one away asks the password and a code, as turning the second factor off does. */
+export const authPasskeyRemove = (id: string, password: string, code: string): Promise<unknown> => authCall('DELETE', `/passkeys/${encodeURIComponent(id)}`, { password, code });
+
+/** For a step-up: the browser signs the server's challenge; the answer is what POST /api/auth/stepup takes. */
+export async function passkeyStepUpAnswer(): Promise<{ passkey: unknown }> {
+  const options = asRecord(await authCallOnce('POST', '/stepup/options', {}));
+  if (options === null) throw failure('The server sent an answer gonogo does not understand.');
+  let credential: Credential | null;
+  try {
+    credential = await navigator.credentials.get({ publicKey: requestOptions(options) });
+  } catch {
+    throw failure('The passkey was not given.');
+  }
+  if (credential === null) throw failure('The passkey was not given.');
+  return { passkey: credentialJson(credential as PublicKeyCredential) };
+}

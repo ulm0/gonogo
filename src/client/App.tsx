@@ -5,6 +5,7 @@ import { RECONNECT_DELAYS_MS, RECONNECT_SERVER_GONE_AFTER } from '../shared/prot
 import { Comms } from './Comms.js';
 import type { StartupPolicy } from '../shared/protocol.js';
 import { startNotifications } from './notify-browser.js';
+import { startWorker } from './push-browser.js';
 import * as api from './api.js';
 import { BlackBox } from './BlackBox.js';
 import { FlightPlan } from './FlightPlan.js';
@@ -26,6 +27,7 @@ import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats
 import { createAnnouncer } from './room.js';
 import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
 import { agentCounts, updateDialogText } from './selfupdate.js';
+import { setPublicOrigin } from './base.js';
 import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
@@ -287,6 +289,8 @@ const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
 /** The running version, small, in a corner of the page; it links to the changelog. */
 function VersionCorner(): ReactElement | null {
   const info = useStore((s) => s.info);
+  // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
+  setPublicOrigin(info?.publicUrl);
   if (info === null) return null;
   return (
     <a className="version-corner" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener" aria-label={`gonogo ${info.version}, open the changelog`}>
@@ -522,6 +526,8 @@ function Office(): ReactElement {
 export function App(): ReactElement {
   // browser notifications and the unread count in the tab title: the switch is in Flight Rules, and nothing asks for permission here
   useEffect(() => startNotifications(), []);
+  // the service worker of the installed app (shell and push): only where the browser allows one
+  useEffect(() => startWorker(), []);
   const connection = useStore((s) => s.connection);
   const loading = useStore((s) => s.info === null);
   const gone = useStore((s) => s.failedAttempts >= RECONNECT_SERVER_GONE_AFTER);

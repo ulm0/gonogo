@@ -45,6 +45,8 @@ const delay = Number(process.env.FAKE_ROOM_DELAY_MS ?? 0);
 setTimeout(() => server.listen(0, '127.0.0.1', () => {
   server.listen2 = true;
   socketServer.listen(sockPath, () => process.stdout.write(`gonogo ready: http://127.0.0.1:${server.address().port}/\n`));
+  // what a room says on its pipe when something waits for the Director (FAKE_ROOM_PUSH is a list of lines, written as they are)
+  for (const line of (process.env.FAKE_ROOM_PUSH ? JSON.parse(process.env.FAKE_ROOM_PUSH) : [])) process.stdout.write(line + '\n');
   // FAKE_ROOM_ASK=<line>: the room puts that line to its supervisor on stdout; what comes back on stdin is written to 'answer'
   if (process.env.FAKE_ROOM_ASK && (!process.env.FAKE_ROOM_ASK_ONLY || process.env.FAKE_ROOM_ASK_ONLY === process.env.GONOGO_ROOM)) {
     process.stdin.on('data', (d) => fs.appendFileSync(join(home, 'answer'), d));

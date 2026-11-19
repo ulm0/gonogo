@@ -52,6 +52,8 @@ import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createFeatureStore } from './features.js';
 import { toolsOff } from '../shared/features.js';
+import { pushEventOfHub, pushKindOf, pushLineOf } from './push.js';
+import type { PushEvent } from './push.js';
 import { createRelay } from './relay.js';
 import { createSchedules } from './schedules.js';
 import { createLiveries } from './livery.js';
@@ -78,6 +80,7 @@ import { cachedLatest, createRollout, installKind, installNote, isNewer, updateC
 import { createUpdater } from './updater.js';
 import { addRoom, loadRooms, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { authCommand } from './authcli.js';
+import { exposeCommand } from './exposecli.js';
 import { startSupervisor } from './supervisor.js';
 import type { Supervisor } from './supervisor.js';
 import { dockerUpdateStatus, followResult, readResult, settleResult, viewOfResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
@@ -107,6 +110,10 @@ export interface StartOptions {
   allowedHosts?: string[];
   /** Addresses of reverse proxies whose X-Forwarded-For is believed (the login's failure buckets use the client address). Default: the split of env GONOGO_TRUSTED_PROXY on ","; none. */
   trustedProxies?: string[];
+  /** Where the page is for people outside (docs/expose-spec.md): an https address for a public name. Default env GONOGO_PUBLIC_URL; none. */
+  publicUrl?: string;
+  /** The header that carries the client address from a trusted proxy: x-forwarded-for (default) or cf-connecting-ip. Default env GONOGO_CLIENT_IP_HEADER. */
+  clientIpHeader?: string;
   /** Default: dist/client when it has index.html, else null. */
   staticDir?: string | null;
   /** Default process.env; the base of the claude children's environment too. */
@@ -156,6 +163,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
        gonogo token rotate [--home <dir>]
        gonogo auth reset | status | key add|list|revoke | confirm [--home <dir>]
+       gonogo expose <tailscale|cloudflare|caddy|funnel|ngrok> --public-url https://<name> [--write]  |  gonogo expose check
 
 Run mission control for Claude Code agents from a browser tab: one front port, one process per room (room "main" is the home itself).
 
@@ -164,6 +172,7 @@ Commands:
   rooms                 add, list or remove rooms (the page's room list does the same); "gonogo rooms" alone is "gonogo", kept for one release
   token rotate          make a new Director token (the old one stops working; not once a login account exists)
   auth                  the login account: reset it, make API keys, confirm after a tamper alarm (gonogo auth --help)
+  expose                print (or write) the config that publishes gonogo through a tunnel or proxy, and check the public address (docs: Expose); it runs nothing
   reload                hand over to the installed gonogo without stopping the agents (needs --pty-host; not in Docker)
   update                print the command that updates gonogo the way it was installed (it never runs it)
 
@@ -174,7 +183,10 @@ Options:
   --pty-host            keep the agents in a separate process so that gonogo reload does not stop them (env GONOGO_PTY_HOST=1)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
   --trusted-proxy <ip>  believe X-Forwarded-For from this reverse proxy's address; repeatable (env GONOGO_TRUSTED_PROXY, comma list)
-  --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list)
+  --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list).
+                        "name:hooks" serves only the webhooks (/uplink, /dock) there: no page, no login
+  --public-url <url>    where the page is for people outside, https for a public name (env GONOGO_PUBLIC_URL)
+  --client-ip-header <h>  x-forwarded-for (default) or cf-connecting-ip: the header a trusted proxy puts the client address in (env GONOGO_CLIENT_IP_HEADER)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
   -v, --version         show the version
@@ -202,12 +214,14 @@ export type ParsedArgs =
   | { kind: 'room'; options: StartOptions }
   | { kind: 'token'; home?: string }
   | { kind: 'auth'; args: string[]; home?: string }
+  | { kind: 'expose'; args: string[]; home?: string }
   | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
   | { kind: 'selfupdate'; target: string; expect: string; home: string; image: string }
   | { kind: 'run'; options: StartOptions }
   | { kind: 'error'; message: string };
 
-const VALUE_FLAGS = ['--port', '--host', '--home', '--allow-host', '--trusted-proxy'];
+const VALUE_FLAGS = ['--port', '--host', '--home', '--allow-host', '--trusted-proxy', '--public-url', '--client-ip-header'];
+export const CLIENT_IP_HEADERS = ['x-forwarded-for', 'cf-connecting-ip'] as const;
 
 function parsePort(value: string, label: string): number {
   const port = /^\d{1,5}$/.test(value) ? Number(value) : -1;
@@ -225,7 +239,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     const room = parseArgs(argv.slice(1));
     return room.kind === 'run' ? { kind: 'room', options: { ...room.options, roomChild: true } } : room;
   }
-  if (argv[0] === 'auth') {
+  if (argv[0] === 'auth' || argv[0] === 'expose') {
     const args: string[] = [];
     let home: string | undefined;
     for (let i = 1; i < argv.length; i += 1) {
@@ -235,7 +249,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         i += 1;
       } else args.push(argv[i] as string);
     }
-    return { kind: 'auth', args, ...(home === undefined ? {} : { home }) };
+    return { kind: argv[0], args, ...(home === undefined ? {} : { home }) };
   }
   if (argv[0] === 'token') {
     if (argv[1] !== 'rotate') return { kind: 'error', message: 'token needs rotate' };
@@ -331,6 +345,14 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
           if (value === '') throw new Error('--home needs a directory');
           options.home = value;
           break;
+        case '--public-url':
+          if (value.trim() === '') throw new Error('--public-url needs an address');
+          options.publicUrl = value.trim();
+          break;
+        case '--client-ip-header':
+          if (!(CLIENT_IP_HEADERS as readonly string[]).includes(value.trim().toLowerCase())) throw new Error(`--client-ip-header is ${CLIENT_IP_HEADERS.join(' or ')}`);
+          options.clientIpHeader = value.trim().toLowerCase();
+          break;
         case '--trusted-proxy':
           if (value.trim() === '') throw new Error('--trusted-proxy needs an address');
           trustedProxies.push(value.trim());
@@ -364,6 +386,8 @@ interface Settings {
   redline: boolean;
   allowedHosts: string[];
   trustedProxies: string[];
+  publicUrl: string | null;
+  clientIpHeader: string;
   staticDir: string | null;
   env: Env;
   checkClaude: boolean;
@@ -428,6 +452,8 @@ export function resolveSettings(options: StartOptions, log: Logger = nullLogger)
         .split(',')
         .map((h) => h.trim())
         .filter((h) => h !== ''),
+    publicUrl: (options.publicUrl ?? env.GONOGO_PUBLIC_URL ?? '').trim() || null,
+    clientIpHeader: (options.clientIpHeader ?? env.GONOGO_CLIENT_IP_HEADER ?? '').trim().toLowerCase() || 'x-forwarded-for',
     staticDir: options.staticDir !== undefined ? options.staticDir : defaultStaticDir(),
     env,
     checkClaude: options.checkClaude ?? true,
@@ -655,6 +681,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('relay'),
     });
     await relay.load();
+    // push to the installed app (docs/features/mobile.md): the supervisor holds the key and the devices; this room only says, on its pipe, what waits for the Director
+    const push = { send: (ev: PushEvent | null): void => void (ev !== null && options.roomChild === true && options.exitWithStdin === true && process.stdout.write(pushLineOf(ev))) };
     const blackBox = createBlackBox({
       dir: home.dir,
       now: () => Date.now(),
@@ -670,6 +698,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const tell: DownlinkNotify = (kind, text, ref) => {
       downlink.post(kind, text);
       if (features.isOn('relay')) relay.event(kind, text);
+      const pushKind = pushKindOf(kind, text);
+      if (pushKind !== null) push.send({ kind: pushKind, text });
       if (ref !== undefined) phone?.approval(ref, text);
       if (kind === 'redline') audit('redline', tripText(text));
       else if (kind === 'tminus') audit('poll', pollText(text));
@@ -772,6 +802,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         web?.broadcast(event);
         downlink.observe(event);
         if (features.isOn('relay')) relay.observe(event);
+        push.send(pushEventOfHub(event));
       },
       notify: tell,
       log: log.child('hub'),
@@ -798,6 +829,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       startedAt,
       installed: installedProviders(env.PATH, agentCmd !== null),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ...(settings.publicUrl === null ? {} : { publicUrl: settings.publicUrl }),
     });
     const schedules = createSchedules({
       dir: home.dir,
@@ -1242,8 +1274,8 @@ async function runRoomsCommand(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, e
 }
 
 /** The arguments a room is started with beyond its own (the front port's flags that rooms inherit). */
-export function roomArgsOf(options: StartOptions): string[] {
-  return [...(options.ptyHost === true ? ['--pty-host'] : []), ...(options.updateCheck === false ? ['--no-update-check'] : []), ...(options.seed === true ? ['--seed-claude'] : [])];
+export function roomArgsOf(options: StartOptions, publicUrl: string | null = null): string[] {
+  return [...(publicUrl === null ? [] : ['--public-url', publicUrl]),...(options.ptyHost === true ? ['--pty-host'] : []), ...(options.updateCheck === false ? ['--no-update-check'] : []), ...(options.seed === true ? ['--seed-claude'] : [])];
 }
 
 /** `gonogo`: the supervisor. The front port, the room list and one `gonogo __room` process per room. */
@@ -1262,8 +1294,11 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
         port: settings.port,
         allowedHosts: settings.allowedHosts,
         trustedProxies: settings.trustedProxies,
+        ...(settings.publicUrl === null ? {} : { publicUrl: settings.publicUrl }),
+        clientIpHeader: settings.clientIpHeader,
+        inContainer: installInfo(env).docker,
         command: [process.execPath, process.argv[1] ?? 'gonogo'],
-        roomArgs: roomArgsOf(parsed.options),
+        roomArgs: roomArgsOf(parsed.options, settings.publicUrl),
         staticDir: settings.staticDir,
         env,
         log,
@@ -1428,6 +1463,11 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
       readLine: () => new Promise<string>((done) => { let text = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (c) => { text += String(c); if (text.includes('\n')) done(text.split('\n')[0] ?? ''); }); process.stdin.on('end', () => done(text.split('\n')[0] ?? '')); }),
     };
     exit(await authCommand(parsed.args, parsed.home === undefined ? homeOf(env) : resolve(parsed.home), io));
+    return;
+  }
+  if (parsed.kind === 'expose') {
+    // prints (and with --write, writes files); runs no tunnel and no installer
+    exit(await exposeCommand(parsed.args, parsed.home === undefined ? homeOf(env) : resolve(parsed.home), env, { out: (t) => void process.stdout.write(t), err: (t) => void process.stderr.write(t) }));
     return;
   }
   if (parsed.kind === 'token') {

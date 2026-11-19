@@ -14,6 +14,7 @@ import { FeaturesBlock } from './Features.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AccountBlock } from './AccountBlock.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
+import { PushBlock } from './PushBlock.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
 import { STATUS_TEXT } from './notify.js';
 import { TabNameBlock } from './TabName.js';
@@ -223,6 +224,7 @@ export function FlightRules(): ReactElement {
           THIS BROWSER
         </h2>
         <Notifications />
+        <PushBlock />
         <p className="hint">The Commissioning checklist shows on an empty room until you put it away. Only this browser remembers that.</p>
         <button type="button" className="btn" aria-disabled={current.size === 0 || undefined} onClick={() => current.size > 0 && setMarks(new Set())}>
           Show Commissioning again

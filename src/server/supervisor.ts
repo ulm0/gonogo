@@ -19,13 +19,19 @@ import type { Logger } from '../shared/protocol.js';
 import { keyMayDo, openAuth } from './auth.js';
 import type { AuthStore, HashCosts } from './auth.js';
 import { createAuthHttp } from './authhttp.js';
+import { createPasskeys } from './passkeys.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy } from './roomproxy.js';
 import { acquireSupervisorLock } from './home.js';
+import { createPush, PUSH_LINE, parsePushLine } from './push.js';
+import type { Push } from './push.js';
+import { isPushPath, pushApi } from './pushhttp.js';
 import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
+import { exposureProblem, parsePublicUrl } from './exposure.js';
+import { splitAllowed } from './hosts.js';
 import { hostName } from './web.js';
 
 const DIRECTOR_TOKEN_FILE = 'token';
@@ -73,7 +79,16 @@ export interface SupervisorOptions {
   host: string;
   /** 0 for any (tests). */
   port: number;
+  /** `--allow-host`: a name is a page host, `name:hooks` a host that serves only /uplink and /dock (docs/expose-spec.md). */
   allowedHosts: string[];
+  /** `--public-url`: where the page is for people outside (an https origin for a public name). */
+  publicUrl?: string;
+  /** The request header that carries the client address when the peer is a trusted proxy: `x-forwarded-for` (default) or `cf-connecting-ip`. */
+  clientIpHeader?: string;
+  /** Tests of the login pages boot on a public name with no account yet, which the start refuses by default (docs/expose-spec.md): they turn the refusal off. Never set outside a test. */
+  exposureCheck?: boolean;
+  /** Inside a container the wildcard bind is normal and says nothing about exposure. */
+  inContainer?: boolean;
   /** The command that starts a gonogo: [node, entry]. */
   command: string[];
   env: NodeJS.ProcessEnv;
@@ -81,6 +96,8 @@ export interface SupervisorOptions {
   roomArgs?: string[];
   /** The running version, shown in the corner of the list page. */
   version?: string;
+  /** What a push is sent with (tests give a stand-in for the browser vendors' push services). */
+  fetch?: typeof fetch;
   /** The built client (dist/client): its stylesheet dresses the list page, served from /assets/. Absent or without a build: plain styles. */
   staticDir?: string | null;
   /** Addresses of reverse proxies whose X-Forwarded-For is believed (`--trusted-proxy`); none by default. */
@@ -150,6 +167,11 @@ export function directorTokenOf(home: string, otherRooms: readonly string[] = []
 
 export async function startSupervisor(options: SupervisorOptions): Promise<Supervisor> {
   const log = options.log ?? nullLogger;
+  // the names and the public URL are read before anything is held
+  const split = splitAllowed(options.allowedHosts);
+  if (typeof split === 'string') throw new Error(split);
+  const publicUrl = options.publicUrl === undefined ? null : parsePublicUrl(options.publicUrl);
+  if (typeof publicUrl === 'string') throw new Error(publicUrl);
   // one supervisor per home; the lock is released by stop() (and by the process ending, for the stale-pid rule)
   const releaseLock = acquireSupervisorLock(options.home);
   let directorToken: string | null = null;
@@ -172,8 +194,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       rmSync(join(options.home, DIRECTOR_TOKEN_FILE), { force: true });
       rmSync(join(options.home, 'rooms-token'), { force: true });
     }
+    // docs/expose-spec.md: gonogo does not start on a name other machines use until the login (and its second factor) stands behind it
+    const problem = exposureProblem({ pages: [...split.pages], hooks: [...split.hooks], bindHost: options.host, inContainer: options.inContainer === true, publicUrl, account: auth.state(), mfa: auth.mfa().enabled });
+    if (problem !== null && options.exposureCheck !== false) {
+      auth.close();
+      throw new Error(problem);
+    }
     madeSetupToken = auth.ensureSetupToken();
   } catch (error) {
+    releaseLock();
+    throw error;
+  }
+  // push to the installed app (docs/features/mobile.md): one key and the devices of the login's sessions, in the supervisor's home
+  const push: Push = createPush({ dir: options.home, now: options.now ?? (() => Date.now()), fetch: options.fetch ?? ((url, init) => fetch(url, init)), log: log.child('push') });
+  try {
+    await push.load();
+    // a device whose session is not alive (it ended while this server was off, a reset, an entry planted in the file) is not kept
+    await push.prune((id) => auth.alive(id));
+  } catch (error) {
+    auth.close();
     releaseLock();
     throw error;
   }
@@ -215,8 +254,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   let stopping = false;
   const statusCache = new Map<string, { at: number; value: Counts }>();
 
-  const allowedNames = new Set<string>(options.allowedHosts.map((h) => hostName(h) ?? h.trim().toLowerCase()).filter((h) => h !== ''));
+  // page hosts serve everything the login lets in; hooks hosts only the webhooks (the proxy answers 404 to anything else there)
+  const allowedNames = new Set<string>(split.pages);
   if (!['0.0.0.0', '::', ''].includes(options.host)) allowedNames.add(hostName(options.host) ?? options.host.toLowerCase());
+  const hooksNames = split.hooks;
 
   /* ---------------------------------------------------------------- the children */
 
@@ -272,6 +313,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         // the one question a room may ask: no route, no port, only this pipe; any other line is just output
         if (line === 'gonogo-ask busy' && child.proc === proc) {
           void answerBusy(child, proc);
+          continue;
+        }
+        // what waits for the Director in this room, to be pushed to the phones (push.ts): checked and cut here, whatever the room sent
+        if (line.startsWith(PUSH_LINE) && child.proc === proc) {
+          const event = parsePushLine(line.slice(PUSH_LINE.length));
+          if (event !== null) push.notify({ id: child.entry.id, name: child.entry.name }, event);
           continue;
         }
         const ready = READY.exec(line);
@@ -447,22 +494,34 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     hostOk,
     stylesheet,
     local: localReqs,
+    passkeys: createPasskeys(auth, options.now),
     ...(options.trustedProxies === undefined ? {} : { trustedProxies: options.trustedProxies }),
+    ...(options.clientIpHeader === undefined ? {} : { clientIpHeader: options.clientIpHeader }),
+    exposure: { pages: [...split.pages], hooks: [...split.hooks], publicUrl: publicUrl === null ? null : publicUrl.origin },
     log: log.child('login'),
   });
 
   const proxy = createRoomProxy({
     auth: { ...authHttp, alive: (id) => auth.alive(id), touchSession: (id) => auth.touchSession(id) },
     allowedNames,
+    hooksHosts: hooksNames,
     rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, port: c.state === 'running' ? c.port : null, socket: socketOf(c) })),
   });
 
   closeDirectorSockets = () => proxy.closeSockets();
   // a session that ends (revoked, logged out, expired, password changed, reset, tamper) takes its sockets with it
-  auth.onEnded((ids) => proxy.closeSessions(ids));
+  auth.onEnded((ids) => {
+    proxy.closeSessions(ids);
+    // the phones of these sessions go with them (push.ts)
+    void push.dropSessions(ids);
+  });
   // a socket opened with the old browser token is bound to no session: it ends with the token, when the account is made
   auth.onAccountMade(() => proxy.closeSockets());
-  auth.onReminted((from, to) => proxy.rebind(from, to));
+  auth.onReminted((from, to) => {
+    proxy.rebind(from, to);
+    // a step-up gives the session a new id: its phones follow it, or a later revoke would never find them
+    void push.rebind(from, to);
+  });
 
   /** The write routes need the same Origin rule as a room's: a browser page of another address is refused, a client without one is not. */
   const originOk = (req: http.IncomingMessage): boolean => {
@@ -543,6 +602,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   }
 
   const onRequest = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+    // a hooks-only host (`--allow-host name:hooks`) has no login, no list and no page: the proxy serves its webhooks, everything else is 404
+    const asked = req.headers.host === undefined ? null : hostName(req.headers.host);
+    if (asked !== null && hooksNames.has(asked) && !allowedNames.has(asked)) {
+      if (!proxy.handle(req, res)) sendText(res, 404, 'not found');
+      return;
+    }
     // the login pages and /api/auth are the supervisor's own
     if (authHttp.handle(req, res)) return;
     if (proxy.handle(req, res)) return;
@@ -575,6 +640,15 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       } catch {
         sendText(res, 404, 'not found');
       }
+      return;
+    }
+    if (isPushPath(path)) {
+      const grant = authHttp.grant(req, 'api');
+      if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
+      if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
+      // a device is tied to a login session; a key, the old token and the local socket have none
+      void pushApi(push, req, res, path, grant.kind === 'session' ? (grant.sessionId ?? null) : null);
       return;
     }
     const rooms = /^\/api\/rooms(?:\/([^/]+))?$/.exec(path);
@@ -631,6 +705,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const poll = setInterval(() => {
     currentToken();
     reconcile();
+    // a session that ended unseen (a reset, the tamper alarm, an outside edit of the file) takes its phones with it within a beat
+    void push.prune((id) => auth.alive(id));
   }, POLL_MS);
   // `gonogo rooms add` looks for this file to tell whether anything will act on a change
   writeSupervisorFile(options.home, options.host, (server.address() as { port: number }).port);
@@ -677,6 +753,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       auth.close();
       proxy.close();
       await Promise.all([...children.values()].map((c) => halt(c)));
+      await push.close();
       releaseLock();
     },
   };
