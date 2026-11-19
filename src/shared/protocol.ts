@@ -352,8 +352,14 @@ export interface Payload {
   mcpServers?: Record<string, McpServer>;
   /** Absolute paths of skill folders (each holds a SKILL.md). Claude Code agents only. */
   skills?: string[];
-  /** Room defaults this agent switches off (docs/payload-spec.md): server names and skill folder names. Only the names of room items mean anything here. */
-  off?: { mcpServers?: string[]; skills?: string[] };
+}
+/**
+ * The room's Payload defaults an agent switches off (docs/payload-spec.md): server names and skill folder names. An agent-level field of its own, not part of
+ * `Payload`, so that an older gonogo reading agents.json (it ignores a field it does not know) still starts after a downgrade.
+ */
+export interface PayloadOff {
+  mcpServers?: string[];
+  skills?: string[];
 }
 /** One MCP server of the room's Payload defaults as the page may see it: never an argument, a value of env or headers, or a query. */
 export interface PayloadDefaultServer {
@@ -483,6 +489,8 @@ export interface AgentRecord {
   command?: string;
   /** Absent means none. Never an empty object. */
   payload?: Payload;
+  /** Room Payload defaults this agent switches off. Absent means none. */
+  payloadOff?: PayloadOff;
   /** Absent means the agent runs on the host. Claude Code agents only. */
   cleanRoom?: CleanRoom;
   /** Absent means the agent starts in `dir`. Never together with cleanRoom. */
@@ -589,6 +597,8 @@ export interface AgentView {
   command: string | null;
   /** The payload as stored (env and header values included), or null. */
   payload: Payload | null;
+  /** The room's Payload defaults this agent switches off, or null. */
+  payloadOff: PayloadOff | null;
   /** The Clean Room as stored, or null: the branch and the worktree path follow from the name (cleanRoomBranch, CLEAN_ROOM_DIR). */
   cleanRoom: CleanRoom | null;
   /** The worktree setting as stored, or null: the branch and the path follow from the name (worktreeBranch, worktreePath). */
@@ -1304,6 +1314,8 @@ export interface HireRequest {
   command?: string;
   /** MCP servers and skills. Bad value: 400, field 'payload', 'payload.mcpServers' or 'payload.skills'. */
   payload?: Payload;
+  /** Room Payload defaults to switch off for this agent (names only). Bad value: 400, field 'payloadOff'. */
+  payloadOff?: PayloadOff;
   /** Run the agent in a container on its own worktree. Refused (400, field 'cleanRoom') for another engine, a bad image, no Docker or a directory outside a git repository. */
   cleanRoom?: CleanRoom;
   /** Start the agent in its own git worktree. Refused (400, field 'worktree') with cleanRoom, or for a directory outside a git repository. */
@@ -1336,6 +1348,8 @@ export interface EditRequest {
   command?: string;
   /** Replaces the whole payload; null removes it. */
   payload?: Payload | null;
+  /** Replaces the room defaults this agent switches off; null brings them all back. */
+  payloadOff?: PayloadOff | null;
   /** Replaces the Clean Room setting; null turns it off. */
   cleanRoom?: CleanRoom | null;
   /** Replaces the worktree setting; null turns it off (the worktree and branch are kept). */

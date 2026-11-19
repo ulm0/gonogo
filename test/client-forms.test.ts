@@ -17,6 +17,7 @@ import {
   needsBypassConfirm,
   cleanRoomOf,
   payloadOf,
+  payloadOffOf,
   payloadRows,
   positionShort,
   positionTag,
@@ -602,10 +603,15 @@ describe('Payload fold: what a console starts with and where each item comes fro
     expect(rowsOf({ provider: 'codex' })).toEqual([]);
     expect(rowsOf({}, null)).toEqual([]);
   });
-  it('the payload carries off only for what the engine takes, in the order of the roster, and nothing else is added', () => {
-    expect(payloadOf({ ...EMPTY, offServers: ['web'], offSkills: ['review'] })).toEqual({ off: { mcpServers: ['web'], skills: ['review'] } });
-    expect(payloadOf({ ...EMPTY, provider: 'gemini', offServers: ['web'], offSkills: ['review'] })).toEqual({ off: { mcpServers: ['web'] } });
-    expect(payloadOf({ ...EMPTY, provider: 'codex', offServers: ['web'] })).toBeNull();
-    expect(payloadOf(EMPTY)).toBeNull();
+  it('the switches are their own field, never part of the payload, and only for what the engine takes', () => {
+    expect(payloadOf({ ...EMPTY, offServers: ['web'], offSkills: ['review'] })).toBeNull();
+    expect(payloadOffOf({ ...EMPTY, offServers: ['web'], offSkills: ['review'] })).toEqual({ mcpServers: ['web'], skills: ['review'] });
+    expect(payloadOffOf({ ...EMPTY, provider: 'gemini', offServers: ['web'], offSkills: ['review'] })).toEqual({ mcpServers: ['web'] });
+    expect(payloadOffOf({ ...EMPTY, provider: 'codex', offServers: ['web'] })).toBeNull();
+    expect(payloadOffOf(EMPTY)).toBeNull();
+    expect(hireRequest({ ...EMPTY, name: 'ana', role: 'r', offServers: ['web'] })).toMatchObject({ payloadOff: { mcpServers: ['web'] } });
+  });
+  it('a name switched off that the room no longer has is still listed, so it can be switched back', () => {
+    expect(rowsOf({ offServers: ['old'], offSkills: ['older'] })).toEqual(['room:server:files:on', 'room:server:web:on', 'room:skill:review:on', "room:server:old:off:switched off, but the room's defaults no longer have it", "room:skill:older:off:switched off, but the room's defaults no longer have it"]);
   });
 });

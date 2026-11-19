@@ -417,6 +417,10 @@ function parseHire(o: Record<string, unknown>): Parsed<HireRequest> {
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return fieldError('payload', 'an object');
     value.payload = payload;
   }
+  if (o.payloadOff !== undefined) {
+    if (typeof o.payloadOff !== 'object' || o.payloadOff === null || Array.isArray(o.payloadOff)) return fieldError('payloadOff', 'an object');
+    value.payloadOff = o.payloadOff;
+  }
   if (cleanRoom !== undefined) {
     if (typeof cleanRoom !== 'object' || cleanRoom === null || Array.isArray(cleanRoom)) return fieldError('cleanRoom', 'an object');
     value.cleanRoom = cleanRoom;
@@ -513,6 +517,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.payload !== undefined) {
     if (o.payload !== null && (typeof o.payload !== 'object' || Array.isArray(o.payload))) return fieldError('payload', 'an object or null');
     value.payload = o.payload;
+  }
+  if (o.payloadOff !== undefined) {
+    if (o.payloadOff !== null && (typeof o.payloadOff !== 'object' || Array.isArray(o.payloadOff))) return fieldError('payloadOff', 'an object or null');
+    value.payloadOff = o.payloadOff;
   }
   if (o.cleanRoom !== undefined) {
     if (o.cleanRoom !== null && (typeof o.cleanRoom !== 'object' || Array.isArray(o.cleanRoom))) return fieldError('cleanRoom', 'an object or null');

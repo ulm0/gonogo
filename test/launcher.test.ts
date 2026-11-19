@@ -1620,7 +1620,7 @@ describe('Payload: MCP servers and skills', () => {
     expect(Object.keys((await mcpOf()).mcpServers)).toEqual(['files', 'remote', 'gonogo']);
     expect(await readdir(join(home, 'agents', 'ana', 'payload-plugin', 'skills'))).toEqual(['review', 'triage']);
     const mine = { command: 'mine' };
-    await l.prepareStart(agent({ payload: { mcpServers: { files: mine }, off: { mcpServers: ['remote'], skills: ['triage'] } } }), START);
+    await l.prepareStart(agent({ payload: { mcpServers: { files: mine } }, payloadOff: { mcpServers: ['remote'], skills: ['triage'] } }), START);
     const config = (await mcpOf()).mcpServers;
     expect(Object.keys(config)).toEqual(['files', 'gonogo']);
     expect(config.files).toEqual(mine);

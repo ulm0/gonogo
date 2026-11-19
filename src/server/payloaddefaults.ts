@@ -71,8 +71,7 @@ export function createPayloadDefaults(options: { dir: string; log?: Logger }): P
       try {
         const saved: unknown = JSON.parse(await readFile(path, 'utf8'));
         const checked = typeof saved === 'object' && saved !== null && (saved as { version?: unknown }).version === 1 ? parsePayload((saved as { payload?: unknown }).payload) : null;
-        // `off` means nothing in the room's own set: a hand-edited file with it is refused whole
-        if (checked === null || !checked.ok || checked.payload?.off !== undefined) throw new Error(checked !== null && !checked.ok ? checked.error : 'not a version 1 payload defaults file');
+        if (checked === null || !checked.ok) throw new Error(checked !== null && !checked.ok ? checked.error : 'not a version 1 payload defaults file');
         payload = checked.payload;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;

@@ -2693,13 +2693,17 @@ describe('end to end with the stand-in agent', () => {
     // its own server of the same name wins, and another can be switched off by name
     await api(h, 'PUT', '/api/payload-defaults/servers/web', { type: 'http', url: 'https://x.test/mcp' });
     const own = { command: 'own-files' };
-    expect((await api<AgentView>(h, 'POST', '/api/agents', { name: 'ben', role: 'x', dir: h.work, mode: 'default', payload: { mcpServers: { files: own }, off: { mcpServers: ['web'] } } })).status).toBe(201);
+    expect((await api<AgentView>(h, 'POST', '/api/agents', { name: 'ben', role: 'x', dir: h.work, mode: 'default', payload: { mcpServers: { files: own } }, payloadOff: { mcpServers: ['web'] } })).status).toBe(201);
     await waitState(h, 'ben', 'idle');
     expect(mcp('ben').mcpServers.files).toEqual(own);
     expect(Object.keys(mcp('ben').mcpServers)).toEqual(['files', 'gonogo']);
-    expect(rosterEntry(h, 'ben')).toMatchObject({ payload: { off: { mcpServers: ['web'] } } });
+    expect(rosterEntry(h, 'ben')).toMatchObject({ payload: { mcpServers: { files: own } }, payloadOff: { mcpServers: ['web'] } });
+    // the switch is a field of the agent, not of its payload: an older gonogo ignores it and still starts
+    expect(JSON.parse(readFileSync(join(h.home, 'agents.json'), 'utf8')).agents.find((a: { name: string }) => a.name === 'ben')).toMatchObject({ payloadOff: { mcpServers: ['web'] } });
+    expect((await api<ApiError>(h, 'PATCH', '/api/agents/ben', { payloadOff: { mcpServers: ['A b'] } })).body).toMatchObject({ field: 'payloadOff' });
+    expect((await api<AgentView>(h, 'PATCH', '/api/agents/ben', { payloadOff: null })).body.payloadOff).toBeNull();
     // an engine that takes no payload refuses the switches too
-    expect((await api<ApiError>(h, 'POST', '/api/agents', { name: 'cy', role: 'x', dir: h.work, mode: 'default', provider: 'codex', payload: { off: { mcpServers: ['web'] } } })).status).toBe(400);
+    expect((await api<ApiError>(h, 'POST', '/api/agents', { name: 'cy', role: 'x', dir: h.work, mode: 'default', provider: 'codex', payloadOff: { mcpServers: ['web'] } })).status).toBe(400);
     expect((await api(h, 'DELETE', '/api/payload-defaults/servers/files')).body).toMatchObject({ mcpServers: [{ name: 'web' }] });
     expect((await api<ApiError>(h, 'DELETE', '/api/payload-defaults/servers/files')).status).toBe(404);
   }, 60_000);

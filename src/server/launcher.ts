@@ -577,7 +577,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
 
   /** What the agent starts with: the room's Payload defaults under its own payload. A Clean Room agent gets its own only: the room's servers (their env and headers hold keys) never reach a container the Director chose to keep keys out of. */
   const payloadOf = (agent: AgentRecord, provider: Provider): Payload | undefined =>
-    mergePayload(agent.cleanRoom === undefined ? options.payloadDefaults?.() : undefined, agent.payload, PROVIDER_INFO[provider].payload);
+    mergePayload(agent.cleanRoom === undefined ? options.payloadDefaults?.() : undefined, agent.payload, agent.payloadOff, PROVIDER_INFO[provider].payload);
 
   const prepareOther = async (agent: AgentRecord, provider: OtherProvider, base: string, hubUrl: string, memoryPath: string, token: string): Promise<PreparedStart> => {
     const ctx = {

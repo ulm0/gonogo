@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PAYLOAD_DEFAULTS_FILE } from '../src/server/constants.js';
 import { HubError } from '../src/server/hub.js';
-import { defaultsView, mergePayload, parsePayload } from '../src/server/payload.js';
+import { defaultsView, mergePayload, parsePayload, parsePayloadOff } from '../src/server/payload.js';
 import { createPayloadDefaults } from '../src/server/payloaddefaults.js';
 import { stepUpReason } from '../src/server/stepup.js';
 import type { Payload } from '../src/shared/protocol.js';
@@ -39,47 +39,51 @@ const refused = async (run: Promise<unknown>): Promise<HubError> => {
   throw new Error('expected a refusal');
 };
 
-describe('off: what an agent switches off of the room', () => {
-  it('is kept by the reader, deduplicated, after the servers and skills, and a payload may hold only it', () => {
-    const own = { off: { mcpServers: ['files', 'files'], skills: ['review'] }, mcpServers: { a: { command: 'x' } } };
-    expect(parsePayload(own)).toEqual({ ok: true, payload: { mcpServers: { a: { command: 'x' } }, off: { mcpServers: ['files'], skills: ['review'] } } });
-    expect(parsePayload({ off: { mcpServers: ['files'] } })).toEqual({ ok: true, payload: { off: { mcpServers: ['files'] } } });
-    expect(parsePayload({ off: {} })).toEqual({ ok: true, payload: undefined });
+describe('payloadOff: what an agent switches off of the room', () => {
+  it('is read on its own, deduplicated, and nothing is left when it is empty', () => {
+    expect(parsePayloadOff({ mcpServers: ['files', 'files'], skills: ['review'] })).toEqual({ ok: true, off: { mcpServers: ['files'], skills: ['review'] } });
+    expect(parsePayloadOff({ mcpServers: ['files'] })).toEqual({ ok: true, off: { mcpServers: ['files'] } });
+    for (const none of [undefined, null, {}, { mcpServers: [] }]) expect(parsePayloadOff(none)).toEqual({ ok: true, off: undefined });
   });
   it('takes names only', () => {
-    for (const off of [[], 'x', { servers: [] }, { mcpServers: 'a' }, { mcpServers: ['A b'] }, { mcpServers: [1] }, { skills: ['a/b'] }, { skills: [''] }]) expect(bad({ off }), JSON.stringify(off)).toMatch(/off/);
+    for (const off of [[], 'x', { servers: [] }, { mcpServers: 'a' }, { mcpServers: ['A b'] }, { mcpServers: [1] }, { skills: ['a/b'] }, { skills: [''] }]) {
+      const checked = parsePayloadOff(off);
+      expect(checked.ok, JSON.stringify(off)).toBe(false);
+    }
+  });
+  it('is not a field of the payload: an older gonogo would refuse the whole roster over it, so the payload takes only its own', () => {
+    expect(bad({ off: { mcpServers: ['files'] } })).toEqual('payload has no field "off"');
   });
 });
 
 describe('mergePayload: the agent wins', () => {
   it('adds the room to an agent with nothing', () => {
-    expect(mergePayload(room, undefined, 'all')).toEqual(room);
+    expect(mergePayload(room, undefined, undefined, 'all')).toEqual(room);
   });
   it('a server of the agent with the room name replaces the room one whole, no field is merged', () => {
-    const merged = mergePayload(room, { mcpServers: { files: { command: 'mine' } } }, 'all');
+    const merged = mergePayload(room, { mcpServers: { files: { command: 'mine' } } }, undefined, 'all');
     expect(merged?.mcpServers?.files).toEqual({ command: 'mine' });
     expect(merged?.mcpServers?.web).toEqual(room.mcpServers?.web);
   });
   it('off leaves a room item out, by server name and by skill folder name, and nothing else', () => {
-    const merged = mergePayload(room, { off: { mcpServers: ['web'], skills: ['review'] } }, 'all');
+    const merged = mergePayload(room, undefined, { mcpServers: ['web'], skills: ['review'] }, 'all');
     expect(Object.keys(merged?.mcpServers ?? {})).toEqual(['files']);
     expect(merged?.skills).toEqual(['/skills/triage']);
-    expect(merged).not.toHaveProperty('off');
   });
   it('an agent skill of the same folder name replaces the room one; another stays', () => {
-    expect(mergePayload(room, { skills: ['/mine/review'] }, 'all')?.skills).toEqual(['/skills/triage', '/mine/review']);
+    expect(mergePayload(room, { skills: ['/mine/review'] }, undefined, 'all')?.skills).toEqual(['/skills/triage', '/mine/review']);
   });
   it('off names an agent already has itself do not switch off the agent item', () => {
-    expect(mergePayload(room, { mcpServers: { files: { command: 'mine' } }, off: { mcpServers: ['files'] } }, 'all')?.mcpServers?.files).toEqual({ command: 'mine' });
+    expect(mergePayload(room, { mcpServers: { files: { command: 'mine' } } }, { mcpServers: ['files'] }, 'all')?.mcpServers?.files).toEqual({ command: 'mine' });
   });
   it('an engine with servers only gets no skills, and one with no payload gets nothing', () => {
-    expect(mergePayload(room, undefined, 'servers')?.skills).toBeUndefined();
-    expect(mergePayload(room, undefined, 'servers')?.mcpServers).toBeDefined();
-    expect(mergePayload(room, { mcpServers: { a: { command: 'x' } } }, null)).toBeUndefined();
+    expect(mergePayload(room, undefined, undefined, 'servers')?.skills).toBeUndefined();
+    expect(mergePayload(room, undefined, undefined, 'servers')?.mcpServers).toBeDefined();
+    expect(mergePayload(room, { mcpServers: { a: { command: 'x' } } }, undefined, null)).toBeUndefined();
   });
   it('nothing at all is no payload; no room is the agent alone', () => {
-    expect(mergePayload(undefined, undefined, 'all')).toBeUndefined();
-    expect(mergePayload(undefined, { mcpServers: { a: { command: 'x' } }, off: { skills: ['x'] } }, 'all')).toEqual({ mcpServers: { a: { command: 'x' } } });
+    expect(mergePayload(undefined, undefined, undefined, 'all')).toBeUndefined();
+    expect(mergePayload(undefined, { mcpServers: { a: { command: 'x' } } }, { skills: ['x'] }, 'all')).toEqual({ mcpServers: { a: { command: 'x' } } });
   });
 });
 
@@ -148,7 +152,7 @@ describe('the store', () => {
     expect(a.get()?.mcpServers).toBeUndefined();
   });
 
-  it('a file it cannot read, or one with off in it, is kept as .bad and the room has no defaults', async () => {
+  it('a file it cannot read, or one with a field the reader does not know (off), is kept as .bad and the room has no defaults', async () => {
     for (const text of ['not json', JSON.stringify({ version: 1, payload: { off: { skills: ['x'] } } }), JSON.stringify({ version: 2, payload: {} }), JSON.stringify({ version: 1, payload: { mcpServers: { gonogo: { command: 'x' } } } })]) {
       writeFileSync(join(dir, PAYLOAD_DEFAULTS_FILE), text);
       const a = createPayloadDefaults({ dir });
