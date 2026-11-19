@@ -123,6 +123,10 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   expect(topbar.display).toBe('flex');
   expect(topbar.height).toBeGreaterThan(40);
   expect(topbar.height).toBeLessThan(200);
+  // rules far down the sheets: a lost `}` nests every later rule under the broken one, and these lose their selectors
+  const lamp = await page.locator('.lamp').evaluate((el) => ({ display: getComputedStyle(el).display, size: getComputedStyle(el).fontSize }));
+  expect(lamp).toEqual({ display: 'flex', size: '10.5px' });
+  expect(await page.locator('.mark-name').evaluate((el) => getComputedStyle(el).height)).toBe('26px');
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => [...document.fonts].some((face) => face.family.includes('Geist') && face.status === 'loaded'))).toBe(true);
 
