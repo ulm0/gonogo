@@ -125,6 +125,8 @@ export interface StartOptions {
   fetch?: typeof fetch;
   /** Rollout, the daily check for a newer gonogo. Default false here, so that a test never reaches the registry: `main` turns it on unless GONOGO_UPDATE_CHECK=0 or --no-update-check. */
   updateCheck?: boolean;
+  /** Telegram inbound by long polling. Default false here, so that a test never reaches Telegram; `main` turns it on. */
+  telegramPoll?: boolean;
   /** Live reload (opt-in for one release): the ptys live in a separate `gonogo ptyhost` process, so `gonogo reload` leaves the agents running. Default env GONOGO_PTY_HOST is "1" or "true". */
   ptyHost?: boolean;
   /** [node, entry] that starts the pty host, default the entry this process was started with. A test hands in its own. */
@@ -944,7 +946,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('relief'),
     });
     // Telegram inbound by long polling (no public address): room main's process only, one loop per gonogo, off while a Telegram uplink exists
-    const telegramPoll = options.roomChild !== true || env.GONOGO_ROOM === 'main' ? createTelegramPoll({
+    const telegramPoll = options.telegramPoll === true && (options.roomChild !== true || env.GONOGO_ROOM === 'main') ? createTelegramPoll({
       dir: home.dir,
       target: () => relay.telegramTarget(),
       hasUplink: () => uplinks.secretOf('telegram') !== null,
@@ -1618,7 +1620,7 @@ export async function runRoom(options: StartOptions, env: Env): Promise<void> {
   const askBusy = options.roomChild === true && options.exitWithStdin === true ? () => pipeAnswers.ask() : undefined;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      running = await startGonogo({ ...options, ...(askBusy === undefined ? {} : { askBusy }), updateCheck: options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
+      running = await startGonogo({ ...options, ...(askBusy === undefined ? {} : { askBusy }), telegramPoll: true, updateCheck: options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
       break;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

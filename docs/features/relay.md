@@ -34,10 +34,13 @@ With a Telegram **target** saved (the bot token and the chat id) gonogo asks Tel
 
 - **On by itself** while the Telegram target is set and **no Telegram uplink exists** (an uplink gets its updates by webhook, and polling stays off). One loop per gonogo, in room `main`.
 - **The same path as a webhook:** only text from the target's chat reaches an agent (other chats are dropped), a reply to a message gonogo posted goes to the agent that wrote it, and a message that is not a reply goes to the boss with the subject "Telegram". At most 30 a minute, like an uplink.
-- **A webhook that is set on the bot** makes Telegram refuse `getUpdates` (409). The RELAY card then says "A webhook is set for this bot; inbound uses it", and gonogo looks again once a minute. It **never removes your webhook**: do that yourself (`deleteWebhook`) if you want polling instead.
+- **The first start reads nothing old.** Telegram keeps about a day of updates for a bot. With no saved offset (or another bot's token) gonogo asks only for the newest update, takes its id as the starting point and hands on **nothing** of what was already there: only what arrives afterwards reaches an agent.
+- **A webhook that is set on the bot** makes Telegram refuse `getUpdates` (409, "webhook is active"). The RELAY card then says "A webhook is set for this bot; inbound uses it", and gonogo looks again once a minute. It **never removes your webhook**: do that yourself (`deleteWebhook`) if you want polling instead. A 409 that says another `getUpdates` is running means **another program polls this bot** (a second gonogo, a reload that overlaps, a script): the card says so and gonogo backs off like for any error (1 s, doubling), not a minute.
 - **A restart does not replay:** the last update id is kept in `<home>/telegram-poll.json` (mode 0600, with the secret that signs the phone-approval buttons while there is no uplink). A crash between handing an update on and saving its id can repeat one update.
 - **Errors back off** (1 s, doubling, at most a minute; Telegram's own pause on 429; five minutes on a refused token) with no busy loop. A changed token ends the request in flight. The token is never in a log line, an error or the card.
-- The card reads this state when it is opened or changed; it is not pushed.
+- The card reads this state when it is opened or changed; it is not pushed. A target set a moment ago shows "starting" until the first look (within two seconds).
+- **Use a private chat with the bot.** In a group, any member can press the approval buttons (the chat is the filter, not the person).
+- **Buttons sent while polling stop working if you then make a Telegram uplink:** they were signed with the polling secret, the uplink's secret signs from then on, and an older button fails its check (send a new request). Polling then stops by itself.
 
 ## Replies
 

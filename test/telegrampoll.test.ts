@@ -91,6 +91,11 @@ function make(fetchFn: typeof fetch, over: Partial<Parameters<typeof createTeleg
 }
 
 describe('the loop', () => {
+  // these start with a known offset and bot, as after a first start; the first-start tests below do not
+  beforeEach(async () => {
+    await writeFile(join(dir, TELEGRAM_POLL_FILE), JSON.stringify({ version: 1, offset: 0, bot: '123456', secret: 'b'.repeat(64) }));
+  });
+
   it('asks for message and callback_query only, with a 50 s timeout and the offset after the last update', async () => {
     const t = stand([{ json: { ok: true, result: [{ update_id: 10, message: { text: 'a' } }, { update_id: 11, message: { text: 'b' } }] } }, { json: { ok: true, result: [{ update_id: 12, message: { text: 'c' } }] } }]);
     const { poll, delivered } = make(t.fetch);
@@ -122,14 +127,27 @@ describe('the loop', () => {
     expect(two.poll.secret()).toBe(one.poll.secret());
   });
 
-  it('a damaged file starts at the newest update and is made again', async () => {
+  it('a damaged file starts like a first start: the newest update is looked at and nothing is handed on', async () => {
     await writeFile(join(dir, TELEGRAM_POLL_FILE), '{ nope');
     const t = stand([]);
     const { poll } = make(t.fetch);
     await poll.load();
     poll.start();
     await until(() => t.calls.length === 1);
-    expect(t.calls[0]?.body.offset).toBe(0);
+    expect(t.calls[0]?.body).toMatchObject({ offset: -1, timeout: 0 });
+  });
+
+  it('a 409 "terminated by other getUpdates request" is another program polling this bot: said so, and backed off like an error, not a minute', async () => {
+    const other = { status: 409, json: { ok: false, error_code: 409, description: 'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running' } };
+    const t = stand([other, other, other]);
+    const { poll, waits } = make(t.fetch);
+    await poll.load();
+    poll.start();
+    await until(() => t.calls.length >= 4);
+    expect(poll.state().mode).toBe('error');
+    expect(poll.state().note).toMatch(/Another program polls this bot/);
+    expect(waits.slice(0, 3)).toEqual([1000, 2000, 4000]);
+    expect(waits).not.toContain(60_000);
   });
 
   it('a 409 means a webhook is set: it says so, never calls deleteWebhook, and looks again after a minute', async () => {
@@ -225,6 +243,67 @@ describe('the loop', () => {
     expect(poll.state().note).toMatch(/uplink.*webhook.*polling is off/);
     await new Promise((r) => setTimeout(r, 30));
     expect(t.calls.length).toBe(count);
+  });
+});
+
+describe('the first start (no replay of what Telegram still holds)', () => {
+  it('asks for the newest update only, hands nothing on, and goes on after it', async () => {
+    const old = [{ update_id: 88, message: { text: 'yesterday' } }, { update_id: 90, message: { text: 'an hour ago' } }];
+    const t = stand([{ json: { ok: true, result: old } }, { json: { ok: true, result: [{ update_id: 91, message: { text: 'now' } }] } }]);
+    const { poll, delivered } = make(t.fetch);
+    await poll.load();
+    poll.start();
+    await until(() => t.calls.length >= 3);
+    expect(t.calls[0]?.body).toMatchObject({ offset: -1, timeout: 0, allowed_updates: ['message', 'callback_query'] });
+    expect(t.calls[1]?.body).toMatchObject({ offset: 91, timeout: 50 });
+    expect(delivered.map((d) => d.update.update_id)).toEqual([91]);
+    expect(JSON.parse(await readFile(join(dir, TELEGRAM_POLL_FILE), 'utf8'))).toMatchObject({ offset: 92, bot: '123456' });
+  });
+
+  it('with nothing waiting it starts at 0, and a restart keeps what it saved (no second priming)', async () => {
+    const t = stand([{ json: { ok: true, result: [] } }]);
+    const one = make(t.fetch);
+    await one.poll.load();
+    one.poll.start();
+    await until(() => t.calls.length >= 2);
+    expect(t.calls[1]?.body.offset).toBe(0);
+    await one.poll.stop();
+    const again = stand([]);
+    const two = make(again.fetch);
+    await two.poll.load();
+    two.poll.start();
+    await until(() => again.calls.length === 1);
+    expect(again.calls[0]?.body).toMatchObject({ offset: 0, timeout: 50 });
+  });
+
+  it('another bot has other update ids: the offset of the first is dropped and the new one is primed; a rotated token of the same bot keeps its offset', async () => {
+    await writeFile(join(dir, TELEGRAM_POLL_FILE), JSON.stringify({ version: 1, offset: 5000, bot: '111111', secret: 'c'.repeat(64) }));
+    let token = TOKEN;
+    const t = stand([{ json: { ok: true, result: [{ update_id: 7, message: { text: 'old' } }] } }]);
+    const { poll, delivered } = make(t.fetch, { target: () => ({ token, to: CHAT }) });
+    await poll.load();
+    poll.start();
+    await until(() => t.calls.length >= 2);
+    expect(t.calls[0]?.body.offset).toBe(-1);
+    expect(t.calls[1]?.body.offset).toBe(8);
+    expect(delivered).toEqual([]);
+    token = '123456:ROTATED-token_abcdefghijklmnopqrstuvwxyz0123';
+    await until(() => t.calls.length >= 3);
+    expect(t.calls[2]?.body.offset).toBe(8);
+    expect(t.calls[2]?.url).toContain('ROTATED');
+  });
+
+  it('shows "starting" while a set target waits for the first look, and a changed target is seen within the check interval', async () => {
+    let target: { token: string; to: string } | null = null;
+    const t = stand([{ json: { ok: true, result: [] } }]);
+    const { poll } = make(t.fetch, { target: () => target });
+    await poll.load();
+    expect(poll.state().mode).toBe('off');
+    poll.start();
+    await new Promise((r) => setTimeout(r, 20));
+    target = { token: TOKEN, to: CHAT };
+    expect(poll.state().note).toMatch(/starting/);
+    await until(() => t.calls.length >= 1);
   });
 });
 
