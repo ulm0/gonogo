@@ -2,7 +2,9 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.5.5 (2026-11-19)
+
+The top bar shows the version, a ROOMS key and, in every room, the note when a newer gonogo is out; the compose file keeps the gh login and git config across a recreated container.
 
 - **Fix: `gh auth login` and git's global config were lost when the container was recreated.** The image keeps them in `/state/config`, an anonymous volume that a new container (`docker compose up` after a pull, a self-update) replaces with an empty one. `compose.yaml` now points `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL` into the data folder (`gonogo-data/config`; create it with the others). An existing compose file: add the two lines and the folder.
 
