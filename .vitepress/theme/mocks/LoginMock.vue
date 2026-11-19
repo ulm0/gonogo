@@ -4,17 +4,20 @@ import '../landing/landing.css';
 </script>
 
 <template>
-  <div class="module lp-visual lm" role="img" aria-label="The log in form with a name and a password and a LOG IN button, and the Flight Rules block LOGIN with the second factor on, one session from this machine marked this one, and one read key that expires in 90 days.">
+  <div class="module lp-visual lm" role="img" aria-label="The log in form with a name and a password, a LOG IN button and a LOG IN WITH A PASSKEY button, and the Flight Rules block LOGIN with a passkey and the second factor on, one session from this machine marked this one, and one read key that expires in 90 days.">
     <div class="lm-form">
       <span class="label">LOG IN</span>
       <span class="input lm-field">director</span>
       <span class="input lm-field">••••••••••••••</span>
       <span class="btn" data-kind="primary">LOG IN</span>
+      <span class="btn">LOG IN WITH A PASSKEY</span>
     </div>
     <div class="lm-rules">
       <span class="label">LOGIN</span>
       <span class="label">SECOND FACTOR (TOTP)</span>
       <span class="lm-line">On. 10 recovery codes left. <span class="btn" data-kind="danger">TURN OFF</span></span>
+      <span class="label">PASSKEYS</span>
+      <span class="lm-line">laptop · for gonogo.example.com · last used 2026-11-19 09:30 <span class="btn" data-kind="danger">REMOVE</span></span>
       <span class="label">SESSIONS</span>
       <span class="lm-line">127.0.0.1 · Firefox · last used 2026-11-19 09:41 · this one <span class="btn">REVOKE</span></span>
       <span class="label">API KEYS</span>

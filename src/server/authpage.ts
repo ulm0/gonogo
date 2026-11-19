@@ -19,10 +19,10 @@ const hash = (text: string): string => `'sha256-${createHash('sha256').update(te
 const esc = (text: string): string => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The same strict policy as the room pages (docs/login-spec.md, threat model 3): nothing but the page's own files, no script, no frame. */
-export const authPageHeaders = (): Record<string, string> => ({
+export const authPageHeaders = (script = false): Record<string, string> => ({
   'Content-Type': 'text/html; charset=utf-8',
   'Cache-Control': 'no-store',
-  'Content-Security-Policy': `default-src 'none'; style-src 'self' ${hash(STYLE)}; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+  'Content-Security-Policy': `default-src 'none'; ${script ? "script-src 'self'; connect-src 'self'; " : ''}style-src 'self' ${hash(STYLE)}; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
@@ -36,6 +36,8 @@ export interface AuthPageInput {
   /** What went wrong, in words the Director can act on; never the reason a login failed beyond "wrong name or password". */
   message?: string;
   user?: string;
+  /** Offer a passkey: the page loads /login/passkey.js (the one script it may load) and shows its button. */
+  passkey?: boolean;
   /** The single-use token of a login that waits for its second factor. */
   pending?: string;
   /** Whether the connection is plain http to a private name (the page says so: a LAN sniffer sees the password). */
@@ -85,6 +87,31 @@ export function authPage(input: AuthPageInput): string {
     `${head}<form class="module lg-form" method="post" action="/api/auth/login" autocomplete="on"><h2 class="label">LOG IN</h2>` +
     `<label><span class="label">NAME</span><input class="input" name="user" value="${esc(input.user ?? 'director')}" autocomplete="username" required maxlength="64"></label>` +
     `<label><span class="label">PASSWORD</span><input class="input" name="password" type="password" autocomplete="current-password" required maxlength="256" autofocus></label>` +
-    `${error}${plain}<button class="btn" data-kind="primary" type="submit">LOG IN</button></form>${tail}`
+    `${error}${plain}<button class="btn" data-kind="primary" type="submit">LOG IN</button>${input.passkey === true ? '<button class="btn" type="button" id="pk" hidden>LOG IN WITH A PASSKEY</button><p id="pkmsg" class="error lg-warn" role="alert" hidden></p>' : ''}</form>${input.passkey === true ? '<script src="/login/passkey.js" defer></script>' : ''}${tail}`
   );
 }
+
+/**
+ * The script of the login page: one button, no library. It asks for the options, has the authenticator sign them, and posts the answer; the server
+ * checks everything. base64url to bytes and back is all it does besides.
+ */
+export const PASSKEY_SCRIPT = `(function(){
+var b=document.getElementById('pk');
+if(!b||!window.PublicKeyCredential||!navigator.credentials)return;
+b.hidden=false;
+var m=document.getElementById('pkmsg');
+function say(t){m.textContent=t;m.hidden=false}
+function dec(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var r=atob(s),u=new Uint8Array(r.length);for(var i=0;i<r.length;i++)u[i]=r.charCodeAt(i);return u.buffer}
+function enc(a){var u=new Uint8Array(a),s='';for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'')}
+function post(p,x){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(x||{}),credentials:'same-origin'})}
+b.addEventListener('click',function(){
+m.hidden=true;b.disabled=true;
+post('/api/auth/passkey/options').then(function(r){if(!r.ok)throw new Error('No passkey is set up for this address.');return r.json()}).then(function(o){
+o.challenge=dec(o.challenge);(o.allowCredentials||[]).forEach(function(c){c.id=dec(c.id)});
+return navigator.credentials.get({publicKey:o})}).then(function(c){
+var r=c.response;
+return post('/api/auth/passkey/login',{id:c.id,rawId:enc(c.rawId),type:c.type,clientExtensionResults:c.getClientExtensionResults(),authenticatorAttachment:c.authenticatorAttachment||undefined,response:{clientDataJSON:enc(r.clientDataJSON),authenticatorData:enc(r.authenticatorData),signature:enc(r.signature),userHandle:r.userHandle?enc(r.userHandle):undefined}})}).then(function(r){
+if(r.ok){location.assign('/');return}
+say(r.status===423?'Remote logins are paused. Confirm on the machine gonogo runs on.':'That passkey was not accepted.');b.disabled=false}).catch(function(e){say(e&&e.name==='NotAllowedError'?'The passkey was not given.':(e&&e.message)||'The passkey did not work.');b.disabled=false})});
+})();
+`;
