@@ -36,6 +36,8 @@ export interface TuiOutput {
 export interface TuiOptions {
   url: string;
   token: string;
+  /** The supervisor's local socket, when the TUI runs on the machine gonogo runs on (no token then). */
+  socketPath?: string;
   stdin: TuiInput;
   stdout: TuiOutput;
   /** NO_COLOR and the like: only `NO_COLOR` is read. */
@@ -73,6 +75,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
   const client = (options.client ?? createTuiClient)({
     url: options.url,
     token: options.token,
+    ...(options.socketPath === undefined ? {} : { socketPath: options.socketPath }),
     onFrame: (frame: ServerFrame) => {
       if (frame.t === 'snapshot') {
         if (mode.kind === 'console' && frame.seq === client.seq) stdout.write(Buffer.concat([Buffer.from('\x1b[0m\x1b[2J\x1b[H'), osc.filter(Buffer.from(frame.data, 'utf8'))]));

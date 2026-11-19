@@ -13,12 +13,16 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { chmodSync } from 'node:fs';
 import type { Logger } from '../shared/protocol.js';
+import { keyMayDo, openAuth } from './auth.js';
+import type { AuthStore, HashCosts } from './auth.js';
+import { createAuthHttp } from './authhttp.js';
 import { nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
-import { bearerToken, sendApiError, sendJson, sendText } from './hooks.js';
+import { sendApiError, sendJson, sendText } from './hooks.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
-import { createRoomProxy, sameToken } from './roomproxy.js';
+import { createRoomProxy } from './roomproxy.js';
 import { acquireSupervisorLock } from './home.js';
 import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
@@ -26,7 +30,13 @@ import { hostName } from './web.js';
 
 const DIRECTOR_TOKEN_FILE = 'token';
 const RELOAD_EXIT = 75;
-const READY = /gonogo ready: http:\/\/[^\s/:]+:(\d{1,5})\/#token=([0-9a-f]{64})/;
+const READY = /gonogo ready: http:\/\/[^\s/:]+:(\d{1,5})\//;
+/** The socket the supervisor itself answers on, for the TUI, the CLI and scripts on this machine (docs/login-spec.md R2). */
+export const API_SOCKET = join('run', 'api.sock');
+/** The socket each room answers on (room main's home is the root home, so it cannot also be `api.sock`). */
+export const ROOM_SOCKET = join('run', 'room.sock');
+/** Alerts that wait for room main to be up (a start that finds the account reset, for one). */
+const ALERTS_KEPT = 20;
 const POLL_MS = 2000;
 const STATUS_TTL_MS = 3000;
 const START_BACKOFF_MS = [1000, 2000, 5000, 15_000, 30_000];
@@ -73,14 +83,27 @@ export interface SupervisorOptions {
   version?: string;
   /** The built client (dist/client): its stylesheet dresses the list page, served from /assets/. Absent or without a build: plain styles. */
   staticDir?: string | null;
+  /** Addresses of reverse proxies whose X-Forwarded-For is believed (`--trusted-proxy`); none by default. */
+  trustedProxies?: string[];
+  /** Tests: cheaper password hashing, no tamper timer. */
+  authCosts?: HashCosts;
+  tamperEveryMs?: number;
+  now?: () => number;
   log?: Logger;
 }
 
 export interface Supervisor {
   host: string;
   port: number;
-  directorToken: string;
+  /** The old browser token: only on an install that has never had an account; null once there is one (docs/login-spec.md R1). */
+  directorToken: string | null;
   url: string;
+  /** The account, sessions and keys. */
+  auth: AuthStore;
+  /** `<home>/run/api.sock`. */
+  socketPath: string;
+  /** The setup token made at this start (no account yet), to print once; null otherwise. */
+  setupToken: string | null;
   rooms(): RoomView[];
   /** Resolves once room main has been ready, or after `ms` (a main that does not start must not keep the front port from being announced). */
   whenReady(ms: number): Promise<void>;
@@ -94,7 +117,6 @@ interface Child {
   entry: RoomEntry;
   proc: ChildProcess | null;
   port: number | null;
-  token: string | null;
   state: RoomState;
   failures: number;
   startedAt: number;
@@ -130,9 +152,27 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const log = options.log ?? nullLogger;
   // one supervisor per home; the lock is released by stop() (and by the process ending, for the stale-pid rule)
   const releaseLock = acquireSupervisorLock(options.home);
-  let directorToken: string;
+  let directorToken: string | null = null;
+  const children = new Map<string, Child>();
+  const alertsWaiting: string[] = [];
+  /** Alerts go to room main (its Downlink and Relay) over the pipe the supervisor holds. */
+  const tell = (text: string): void => {
+    log.warn(`login: ${text}`);
+    const main = children.get(MAIN_ROOM);
+    if (main?.proc != null && main.state === 'running' && main.proc.stdin !== null && !main.proc.stdin.destroyed) main.proc.stdin.write(`gonogo-alert ${JSON.stringify(text)}\n`);
+    else if (alertsWaiting.length < ALERTS_KEPT) alertsWaiting.push(text);
+  };
+  let auth: AuthStore;
+  let madeSetupToken: string | null = null;
   try {
-    directorToken = directorTokenOf(options.home, loadRooms(options.home).filter((r) => r.id !== MAIN_ROOM).map((r) => r.id));
+    auth = openAuth({ home: options.home, alert: tell, log: log.child('auth'), ...(options.authCosts === undefined ? {} : { costs: options.authCosts }), ...(options.tamperEveryMs === undefined ? {} : { tamperEveryMs: options.tamperEveryMs }), ...(options.now === undefined ? {} : { now: options.now }) });
+    // once an account has existed no browser token comes back, and an old home's token file is gone (R1)
+    if (auth.tokenAllowed()) directorToken = directorTokenOf(options.home, loadRooms(options.home).filter((r) => r.id !== MAIN_ROOM).map((r) => r.id));
+    else {
+      rmSync(join(options.home, DIRECTOR_TOKEN_FILE), { force: true });
+      rmSync(join(options.home, 'rooms-token'), { force: true });
+    }
+    madeSetupToken = auth.ensureSetupToken();
   } catch (error) {
     releaseLock();
     throw error;
@@ -154,7 +194,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     }
   };
   tokenStamp = stampOf();
-  const currentToken = (): string => {
+  const currentToken = (): string | null => {
+    if (!auth.tokenAllowed()) return null;
     const now = stampOf();
     if (now !== tokenStamp) {
       tokenStamp = now;
@@ -171,7 +212,6 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     }
     return directorToken;
   };
-  const children = new Map<string, Child>();
   let stopping = false;
   const statusCache = new Map<string, { at: number; value: Counts }>();
 
@@ -179,6 +219,28 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   if (!['0.0.0.0', '::', ''].includes(options.host)) allowedNames.add(hostName(options.host) ?? options.host.toLowerCase());
 
   /* ---------------------------------------------------------------- the children */
+
+  const socketOf = (child: Child): string => join(roomHome(options.home, child.entry.id), ROOM_SOCKET);
+
+  /** GET a JSON answer from a room over its local socket (no token: the file permissions are the credential). */
+  const askRoom = (child: Child, path: string, timeoutMs: number): Promise<unknown> =>
+    new Promise((resolve, reject) => {
+      const req = http.request({ socketPath: socketOf(child), path, method: 'GET', headers: { host: `127.0.0.1:${child.port ?? 0}`, accept: 'application/json' }, timeout: timeoutMs }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          if (res.statusCode !== 200) return reject(new Error(`room answered ${String(res.statusCode)}`));
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error('not json'));
+          }
+        });
+      });
+      req.on('timeout', () => req.destroy(new Error('timeout')));
+      req.on('error', reject);
+      req.end();
+    });
 
   function launch(child: Child): void {
     if (stopping || reloading || !child.wanted) return;
@@ -197,7 +259,6 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     const args = [...head, '__room', '--home', home, '--port', '0', '--host', '127.0.0.1', '--exit-with-stdin', ...(child.entry.id === MAIN_ROOM ? [] : ['--no-update-check']), ...(options.roomArgs ?? [])];
     child.state = 'starting';
     child.port = null;
-    child.token = null;
     child.startedAt = Date.now();
     const proc = spawn(file as string, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
     child.proc = proc;
@@ -216,12 +277,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         const ready = READY.exec(line);
         if (ready !== null && child.proc === proc) {
           child.port = Number(ready[1]);
-          child.token = ready[2] ?? null;
           child.state = 'running';
           child.lastError = null;
           if (child.entry.id === MAIN_ROOM) {
             mainReadyOnce = true;
             markMainReady();
+            for (const text of alertsWaiting.splice(0)) proc.stdin?.write(`gonogo-alert ${JSON.stringify(text)}\n`);
           }
           log.info(`room ${child.entry.id} is up on 127.0.0.1:${child.port}`);
         } else if (line.trim() !== '') {
@@ -243,7 +304,6 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         if (child.proc !== proc) return done();
         child.proc = null;
         child.port = null;
-        child.token = null;
         if (stopping || !child.wanted) {
           child.state = 'stopped';
         } else if (reloading && code === RELOAD_EXIT) {
@@ -285,10 +345,9 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     let busy: string | null = null;
     let room: string | null = null;
     for (const other of children.values()) {
-      if (other === asker || other.port === null || other.token === null) continue;
+      if (other === asker || other.port === null) continue;
       try {
-        const res = await fetch(`http://127.0.0.1:${other.port}/api/state`, { headers: { authorization: `Bearer ${other.token}` }, signal: AbortSignal.timeout(2000) });
-        const body = (await res.json()) as { poll?: { status?: string } | null };
+        const body = (await askRoom(other, '/api/state', 2000)) as { poll?: { status?: string } | null };
         if (body.poll?.status === 'open') {
           busy = `a T-minus poll or Static fire is open in room "${other.entry.name}": wait for its answer, then update`;
           room = other.entry.id;
@@ -323,7 +382,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     for (const entry of listed) {
       const have = children.get(entry.id);
       if (have === undefined) {
-        const child: Child = { entry, proc: null, port: null, token: null, state: 'stopped', failures: 0, startedAt: 0, timer: null, wanted: entry.autostart, lastError: null, exited: null };
+        const child: Child = { entry, proc: null, port: null, state: 'stopped', failures: 0, startedAt: 0, timer: null, wanted: entry.autostart, lastError: null, exited: null };
         children.set(entry.id, child);
         if (entry.autostart) launch(child);
       } else {
@@ -343,12 +402,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   async function statusOf(child: Child): Promise<Counts> {
     const none: Counts = NO_COUNTS;
-    if (child.port === null || child.token === null) return none;
+    if (child.port === null) return none;
     const cached = statusCache.get(child.entry.id);
     if (cached !== undefined && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
     try {
-      const res = await fetch(`http://127.0.0.1:${child.port}/api/state`, { headers: { authorization: `Bearer ${child.token}` }, signal: AbortSignal.timeout(1500) });
-      const body = (await res.json()) as { agents?: Array<{ state?: string; stateSince?: number }>; activity?: Array<{ at?: number }>; tabName?: { name?: string | null; fallback?: string | null } };
+      const body = (await askRoom(child, '/api/state', 1500)) as { agents?: Array<{ state?: string; stateSince?: number }>; activity?: Array<{ at?: number }>; tabName?: { name?: string | null; fallback?: string | null } };
       const agents = Array.isArray(body.agents) ? body.agents : [];
       const times = [...agents.map((a) => a.stateSince), body.activity?.[0]?.at].filter((t): t is number => typeof t === 'number' && t > 0);
       const tab = body.tabName?.name ?? body.tabName?.fallback;
@@ -376,18 +434,34 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const assetsDir = options.staticDir === null || options.staticDir === undefined ? null : join(options.staticDir, 'assets');
   const TYPES: Record<string, string> = { css: 'text/css', woff: 'font/woff', woff2: 'font/woff2', svg: 'image/svg+xml' };
 
-  const proxy = createRoomProxy({
-    directorToken: currentToken,
-    allowedNames,
-    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, port: c.state === 'running' ? c.port : null, token: c.token })),
-  });
-
-  closeDirectorSockets = () => proxy.closeSockets();
-
   const hostOk = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
     return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || allowedNames.has(name));
   };
+
+  /** Requests that came in on the local socket. */
+  const localReqs = new WeakSet<http.IncomingMessage>();
+  const authHttp = createAuthHttp({
+    auth,
+    legacyToken: currentToken,
+    hostOk,
+    stylesheet,
+    local: localReqs,
+    ...(options.trustedProxies === undefined ? {} : { trustedProxies: options.trustedProxies }),
+    log: log.child('login'),
+  });
+
+  const proxy = createRoomProxy({
+    auth: { ...authHttp, alive: (id) => auth.alive(id), touchSession: (id) => auth.touchSession(id) },
+    allowedNames,
+    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, port: c.state === 'running' ? c.port : null, socket: socketOf(c) })),
+  });
+
+  closeDirectorSockets = () => proxy.closeSockets();
+  // a session that ends (revoked, logged out, expired, password changed, reset, tamper) takes its sockets with it
+  auth.onEnded((ids) => proxy.closeSessions(ids));
+  // a socket opened with the old browser token is bound to no session: it ends with the token, when the account is made
+  auth.onAccountMade(() => proxy.closeSockets());
 
   /** The write routes need the same Origin rule as a room's: a browser page of another address is refused, a client without one is not. */
   const originOk = (req: http.IncomingMessage): boolean => {
@@ -467,7 +541,9 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     }
   }
 
-  const server = http.createServer((req, res) => {
+  const onRequest = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+    // the login pages and /api/auth are the supervisor's own
+    if (authHttp.handle(req, res)) return;
     if (proxy.handle(req, res)) return;
     if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
     const path = (req.url ?? '').split('?')[0] ?? '';
@@ -502,14 +578,29 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     }
     const rooms = /^\/api\/rooms(?:\/([^/]+))?$/.exec(path);
     if (rooms !== null) {
-      if (!sameToken(bearerToken(req.headers.authorization), currentToken())) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
+      const grant = authHttp.grant(req, 'api');
+      if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
+      if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
       void roomsApi(req, res, rooms[1]);
       return;
     }
     sendText(res, 404, 'not found');
-  });
-  server.on('upgrade', (req, socket, head) => {
+  };
+  const onUpgrade = (req: http.IncomingMessage, socket: import('node:stream').Duplex, head: Buffer): void => {
     if (!proxy.upgrade(req, socket, head)) socket.destroy();
+  };
+  const server = http.createServer(onRequest);
+  server.on('upgrade', onUpgrade);
+  // the local door: the unix socket is this machine's own, and its file permissions are the credential (R2)
+  const socketPath = join(options.home, API_SOCKET);
+  const socketServer = http.createServer((req, res) => {
+    localReqs.add(req);
+    onRequest(req, res);
+  });
+  socketServer.on('upgrade', (req, socket, head) => {
+    localReqs.add(req);
+    onUpgrade(req, socket, head);
   });
 
   try {
@@ -518,10 +609,20 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       server.once('error', reject);
       server.listen(options.port, options.host, () => resolve());
     });
+    mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
+    chmodSync(dirname(socketPath), 0o700);
+    rmSync(socketPath, { force: true });
+    await new Promise<void>((resolve, reject) => {
+      socketServer.once('error', reject);
+      socketServer.listen({ path: socketPath }, () => resolve());
+    });
+    chmodSync(socketPath, 0o600);
   } catch (error) {
     // a start that fails leaves no lock and no child behind
     stopping = true;
     await Promise.all([...children.values()].map((c) => halt(c)));
+    auth.close();
+    proxy.close();
     releaseLock();
     throw error;
   }
@@ -543,7 +644,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     get directorToken() {
       return currentToken();
     },
-    url: `http://${shownHost}:${port}/#token=${directorToken}`,
+    auth,
+    socketPath,
+    setupToken: madeSetupToken,
+    url: `http://${shownHost}:${port}/${directorToken === null ? '' : `#token=${directorToken}`}`,
     rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.lastError, ...NO_COUNTS })),
     whenReady: (ms) => Promise.race([mainReady, new Promise<void>((resolve) => setTimeout(resolve, ms).unref())]),
     async reload() {
@@ -565,7 +669,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       clearInterval(poll);
       removeSupervisorFile(options.home);
       server.closeAllConnections?.();
+      socketServer.closeAllConnections?.();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => socketServer.close(() => resolve()));
+      rmSync(socketPath, { force: true });
+      auth.close();
+      proxy.close();
       await Promise.all([...children.values()].map((c) => halt(c)));
       releaseLock();
     },

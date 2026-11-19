@@ -3,7 +3,7 @@
  * the token file in gonogo's home (the same user can read it), or --token / GONOGO_BROWSER_TOKEN for a server somewhere else, and
  * --url for its address. The token is read and never printed. It needs a terminal: with none it says so and exits 2.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { BROWSER_TOKEN_FILE, DEFAULT_HOME_DIRNAME, DEFAULT_HOST, DEFAULT_PORT } from './constants.js';
@@ -93,6 +93,13 @@ export interface TuiIo {
   stderr: { write(text: string): unknown };
 }
 
+/** The supervisor's socket in gonogo's home, when it is there and is a socket (a stale file left by a crash fails at the first call and says so). */
+export function localSocketOf(home: string | undefined, env: Env, stat: (path: string) => { isSocket(): boolean } | null = (p) => { try { return statSync(p); } catch { return null; } }): string | null {
+  const dir = resolve(home ?? (env.GONOGO_HOME || join(homedir(), DEFAULT_HOME_DIRNAME)));
+  const path = join(dir, 'run', 'api.sock');
+  return stat(path)?.isSocket() === true ? path : null;
+}
+
 /** `gonogo tui`: answers the exit code. */
 export async function tuiMain(argv: readonly string[], env: Env, io: TuiIo = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }): Promise<number> {
   const args = parseTuiArgs(argv);
@@ -112,6 +119,15 @@ export async function tuiMain(argv: readonly string[], env: Env, io: TuiIo = { s
   if ('error' in url) {
     io.stderr.write(`gonogo tui: ${url.error}\n`);
     return 2;
+  }
+  // on the machine gonogo runs on, once an account exists, the local socket is the door: no token, no URL (docs/login-spec.md R2)
+  if (args.url === undefined && args.token === undefined && env.GONOGO_BROWSER_TOKEN === undefined) {
+    const socketPath = localSocketOf(args.home, env);
+    if (socketPath !== null) {
+      const { runTui } = await import('./tui-app.js');
+      const prefix = args.room === undefined || args.room === 'main' ? '' : `/r/${args.room}`;
+      return runTui({ url: `http://localhost${prefix}`, token: '', socketPath, stdin: io.stdin, stdout: io.stdout, env });
+    }
   }
   const token = resolveToken(args.token, args.home, env);
   if ('error' in token) {

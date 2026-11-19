@@ -72,24 +72,21 @@ need it.
 The list page has a **NEW ROOM** key (top bar) that opens a form with an id and, if you want one, a name; and, on every room but main, **RENAME** (the name becomes a field in the card; Enter saves, Escape cancels) and **REMOVE**. REMOVE
 asks first, in the card (focus lands on KEEP), and says that the room's folder stays: it only takes the room off the list and stops it (its agents stop gracefully, as in
 `gonogo rooms remove`). The same calls are on the supervisor's own port, for scripts: `GET /api/rooms`, `POST /api/rooms` `{ "id", "name"? }`,
-`PATCH /api/rooms/<id>` `{ "name" }` and `DELETE /api/rooms/<id>`, with the Director token as a Bearer header (a room's own token is 401), a JSON
+`PATCH /api/rooms/<id>` `{ "name" }` and `DELETE /api/rooms/<id>`, with a session (and this page's Origin), a `full` API key, the local socket, or on a fresh install the Director token, a JSON
 body of at most 4 KB, and an Origin that is this server's own when there is one. A bad id or name is 400, main is refused (400), a
 room that exists or too many rooms is 409, an unknown room is 404, and a damaged `rooms.json` is 409 and is left untouched. The file is
 written the way the command line writes it (0600, atomically), and the supervisor starts or stops the room at once.
 
 ## Tokens
 
-The browser holds **one** secret, the Director token: `<home>/token`, 0600, **the value your home already has**, so every old link, bookmark and script works (rotate it with `gonogo token rotate`: from 0.5.0 it opens **every** room, so the old one may be worth replacing; a running gonogo takes the new one at once). The proxy checks it and **swaps in
-the room's own browser token** on the way, in the `Authorization` header and in the WebSocket subprotocol. The Director token never
-reaches a room, a room's token never leaves the supervisor, and agent tokens never leave their room. A room's own browser token is `run/room-token` in its home, **new at every start** and never copied from `token`; a room never reads `token`.
-`gonogo tui` opens main with the Director token, and another room with `--room <id>` (`gonogo tui --home <room folder>` no longer works: that folder has no `token`).
+Who may reach the front port is decided by the [login](./login.md): a session cookie, an API key, or the local unix socket `<home>/run/api.sock`. On an install that has never had an account the old **Director token** (`<home>/token`, 0600, the value your home already has) still does it, and opens **every** room; the account's creation deletes it for good (`gonogo token rotate` is for that fresh install only). The proxy asks the login who the request is and reaches the room over **its own unix socket**, `<room home>/run/room.sock`: **a room has no TCP credential for its page** (no token, no `run/room-token`), so a connection aimed at a room's port gets nothing, and agent tokens never leave their room. The supervisor strips every `Set-Cookie` from a room's answer and puts its own CSP on a room's pages. `gonogo tui` opens main through the socket, and another room with `--room <id>`.
 
 What the proxy lets through under `/r/<id>/` and, for main, at the root (any path that is not reserved):
 
 | Path | Without the Director token | With it |
 |---|---|---|
 | the page and its assets (GET, HEAD) | passes, with no Authorization | passes |
-| `/api`, `/ws` | 401 | passes with the room's token |
+| `/api`, `/ws` | 401 | passes (the room sees no credential) |
 | `/uplink/`, `/dock/` (webhooks, other stations) | passes, no Authorization added; the room checks the signature | same |
 | `/hook/`, `/mcp` | 404 | 404: agents use the loopback port of their own room |
 | a path with `..`, an encoded slash or dot, a backslash or a NUL | 400 | 400 |

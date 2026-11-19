@@ -71,7 +71,9 @@ class Node {
 let doc: { activeElement: Node | null; title: string; documentElement: Node & { style: { setProperty(n: string, v: string): void; props: Record<string, string> } } };
 const make = (tag: string): Node => new Node(tag);
 
-function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?: string }): { byId: Record<string, Node>; saved: Record<string, string>; root: Node & { style: { props: Record<string, string> } } } {
+function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?: string; status?: number }): { byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
+  const replaced: string[] = [];
+  const sent: Array<Record<string, string>> = [];
   const html = roomsPage(null, '1.2.3');
   const scripts = [...html.matchAll(/<script>([^]*?)<\/script>/g)].map((m) => m[1] ?? '');
   const byId: Record<string, Node> = {};
@@ -86,10 +88,14 @@ function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?
   const context = {
     document: Object.assign(doc, { getElementById: (id: string) => byId[id] ?? null, createElement: make }),
     localStorage: { getItem: (k: string) => saved[k] ?? null, setItem: (k: string, v: string) => (saved[k] = v) },
-    location: { hash: options.hash ?? '', pathname: '/' },
+    location: { hash: options.hash ?? '', pathname: '/', replace: (to: string) => void replaced.push(to) },
     history: { replaceState() {} },
     URLSearchParams,
-    fetch: async () => ({ status: 200, ok: true, json: async () => ({ rooms: options.rooms }) }),
+    fetch: async (_url: string, init: { headers?: Record<string, string> } = {}) => {
+      sent.push(init.headers ?? {});
+      const status = options.status ?? 200;
+      return { status, ok: status < 300, json: async () => ({ rooms: options.rooms }) };
+    },
     setInterval: () => 0,
     JSON,
     Number,
@@ -102,7 +108,7 @@ function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?
   };
   vm.createContext(context);
   for (const script of scripts) vm.runInContext(script, context);
-  return { byId, saved, root };
+  return { byId, saved, replaced, sent, root };
 }
 
 const room = (patch: Record<string, unknown> = {}): Record<string, unknown> => ({ id: 'main', name: 'Main', state: 'running', agents: 15, running: 15, needsYou: 0, working: 0, lastActivity: null, tabName: null, note: null, ...patch });
@@ -162,13 +168,21 @@ describe('the rooms list page script', () => {
     expect(text(card())).not.toContain('nothing is deleted');
   });
 
-  it('without a token it says how to open the page; nothing else is drawn', async () => {
-    const { byId } = run({ rooms: [room()] });
+  it('without a token it asks anyway (the login cookie is the credential) and sends no Authorization', async () => {
+    const { byId, sent, replaced } = run({ rooms: [room()] });
     await settle();
-    expect(byId.gate?.hidden).toBe(false);
-    expect(text(byId.gate?.querySelector('h2') ?? undefined)).toMatch(/address gonogo printed/);
-    expect(byId.rooms?.children).toHaveLength(0);
-    expect(byId.new?.disabled).toBe(true);
+    expect(sent[0]).toEqual({});
+    expect(replaced).toEqual([]);
+    expect(byId.rooms?.children.length).toBeGreaterThan(0);
+  });
+
+  it('a 401, with or without a token, goes to the login page; nothing else is drawn', async () => {
+    for (const token of [undefined, 'a'.repeat(64)]) {
+      const { byId, replaced } = run({ rooms: [room()], status: 401, ...(token === undefined ? {} : { token }) });
+      await settle();
+      expect(replaced).toEqual(['/login']);
+      expect(byId.rooms?.children).toHaveLength(0);
+    }
   });
 
   const whole = (value: string | ((name: string) => string)): Record<string, string> => Object.fromEntries(LIVERY_NAMES.map((n) => [n, typeof value === 'string' ? value : value(n)]));

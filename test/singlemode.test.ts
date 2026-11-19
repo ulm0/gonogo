@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import http from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { createPipeAnswers, startGonogo } from '../src/server/cli.js';
@@ -13,6 +14,18 @@ import { addRoom, loadRooms, ROOMS_FILE, RoomsError, RESERVED_ROOT_NAMES } from 
 import { isSupervisorProcess, requestReload, rotateDirectorToken } from '../src/server/reload.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
+
+/** One request to a room on its own unix socket, which takes no token. */
+const viaSocket = (socketPath: string, path: string, method = 'GET', body?: string): Promise<{ status: number; text: string }> =>
+  new Promise((resolve, reject) => {
+    const req = http.request({ socketPath, path, method, headers: { host: '127.0.0.1', ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }) } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
 
 const FAKE = new URL('./fake-room.mjs', import.meta.url).pathname;
 const FAKE_CLAUDE = new URL('./fake-claude.mjs', import.meta.url).pathname;
@@ -65,9 +78,9 @@ describe('the Director token is <home>/token', () => {
     expect(statSync(join(home, 'token')).mode & 0o777).toBe(0o600);
     const dump = readFileSync(join(home, 'dump.json'), 'utf8');
     expect(dump).not.toContain(s.directorToken);
-    expect(readFileSync(join(home, 'run', 'room-token'), 'utf8').trim()).not.toBe(s.directorToken);
-    // the room's own token, as the supervisor learned it, is not the one that opens the front
-    expect((await get(s, '/api/rooms', readFileSync(join(home, 'run', 'room-token'), 'utf8').trim())).status).toBe(401);
+    // a room has no browser token at all (docs/login-spec.md R8): nothing of the kind is on disk, and its own socket is how the front reaches it
+    expect(existsSync(join(home, 'run', 'room-token'))).toBe(false);
+    expect((await get(s, '/api/rooms', 'e'.repeat(64))).status).toBe(401);
   });
 
   it('gonogo token rotate: a new token, 0600, the old one stops at once in a running supervisor, the new one opens it; nothing is printed that is a token', async () => {
@@ -220,21 +233,27 @@ describe('a real room (roomChild)', () => {
   const start = (over: Record<string, unknown> = {}) =>
     startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home }, roomChild: true, ...over });
 
-  it('has its own token in run/room-token, new at every start, and never reads or accepts <home>/token', async () => {
+  it('has no TCP credential for its page: it answers on run/room.sock only, and never reads or accepts <home>/token', async () => {
     const director = 'd4'.repeat(32);
     writeFileSync(join(home, 'token'), `${director}\n`, { mode: 0o600 });
     const first = await start();
-    const firstToken = first.browserToken;
-    expect(firstToken).not.toBe(director);
-    expect(readFileSync(join(home, 'run', 'room-token'), 'utf8').trim()).toBe(firstToken);
-    expect(statSync(join(home, 'run', 'room-token')).mode & 0o777).toBe(0o600);
+    expect(existsSync(join(home, 'run', 'room-token'))).toBe(false);
     expect(readFileSync(join(home, 'token'), 'utf8').trim()).toBe(director);
     const open = (token: string): Promise<number> => fetch(`http://127.0.0.1:${first.port}/api/state`, { headers: { authorization: `Bearer ${token}` } }).then((r) => r.status);
     expect(await open(director)).toBe(401);
-    expect(await open(firstToken)).toBe(200);
+    // not even the token the room made for itself in memory
+    expect(await open(first.browserToken)).toBe(401);
+    expect((await fetch(`http://127.0.0.1:${first.port}/api/state`)).status).toBe(401);
+    const socket = join(home, 'run', 'room.sock');
+    expect(statSync(socket).mode & 0o777).toBe(0o600);
+    expect(statSync(join(home, 'run')).mode & 0o777).toBe(0o700);
+    expect((await viaSocket(socket, '/api/state')).status).toBe(200);
     await first.stop();
+    // the socket goes with the room, and a stale file left by a crash is replaced at the next start
+    expect(existsSync(socket)).toBe(false);
+    writeFileSync(socket, '');
     const second = await start();
-    expect(second.browserToken).not.toBe(firstToken);
+    expect((await viaSocket(socket, '/api/state')).status).toBe(200);
     await second.stop();
   }, 60_000);
 
@@ -252,7 +271,6 @@ describe('a real room (roomChild)', () => {
     await again.stop();
     // a room that is not under the supervisor does not do any of this
     const plain = await start({ roomChild: false });
-    expect(existsSync(join(home, 'run', 'room-token'))).toBe(true); // left by the earlier starts
     expect(plain.browserToken).toBe(readFileSync(join(home, 'token'), 'utf8').trim());
     await plain.stop();
   }, 90_000);
@@ -277,7 +295,7 @@ describe('after review of #85', () => {
         ws.once('error', reject);
         ws.once('unexpected-response', (_req, res) => reject(new Error(`status ${res.statusCode}`)));
       });
-    const old = s.directorToken;
+    const old = s.directorToken as string;
     const socket = await connect(old);
     const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
     rotateDirectorToken(home);
@@ -385,9 +403,9 @@ describe('PR 2: the room side of the question, and Update from main only', () =>
 
   const start = (room: string, over: Record<string, unknown> = {}) =>
     startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: room, GONOGO_INSTALL: 'docker' }, ...over });
-  const rolloutOf = async (running: { port: number; browserToken: string }): Promise<{ install?: string; canUpdate?: boolean; installNote?: string }> => {
-    const res = await fetch(`http://127.0.0.1:${running.port}/api/state`, { headers: { authorization: `Bearer ${running.browserToken}` } });
-    return ((await res.json()) as { rollout: { install?: string; canUpdate?: boolean; installNote?: string } }).rollout;
+  const rolloutOf = async (_running: { port: number; browserToken: string }): Promise<{ install?: string; canUpdate?: boolean; installNote?: string }> => {
+    const res = await viaSocket(join(home, 'run', 'room.sock'), '/api/state');
+    return (JSON.parse(res.text) as { rollout: { install?: string; canUpdate?: boolean; installNote?: string } }).rollout;
   };
 
   it('a room other than main does not offer Update and points to main; main is as before', async () => {
@@ -426,7 +444,7 @@ describe('PR 2: after review', () => {
   it('a room other than main has no update route: 409, hook or not', async () => {
     const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: 'team', GONOGO_UPDATE_HOOK: 'http://hook.example/x' } });
     try {
-      const call = (path: string): Promise<Response> => fetch(`http://127.0.0.1:${running.port}${path}`, { method: 'POST', headers: { authorization: `Bearer ${running.browserToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ version: '9.9.9' }) });
+      const call = (path: string): Promise<{ status: number; text: string }> => viaSocket(join(home, 'run', 'room.sock'), path, 'POST', JSON.stringify({ version: '9.9.9' }));
       expect((await call('/api/update')).status).toBe(409);
       expect((await call('/api/update/undo')).status).toBe(409);
     } finally {

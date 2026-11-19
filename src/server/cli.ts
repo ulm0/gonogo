@@ -77,6 +77,7 @@ import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { createUpdater } from './updater.js';
 import { addRoom, loadRooms, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
+import { authCommand } from './authcli.js';
 import { startSupervisor } from './supervisor.js';
 import type { Supervisor } from './supervisor.js';
 import { dockerUpdateStatus, followResult, readResult, settleResult, viewOfResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
@@ -104,6 +105,8 @@ export interface StartOptions {
   maxWorking?: number;
   /** Default: the split of env GONOGO_ALLOWED_HOSTS on ",". */
   allowedHosts?: string[];
+  /** Addresses of reverse proxies whose X-Forwarded-For is believed (the login's failure buckets use the client address). Default: the split of env GONOGO_TRUSTED_PROXY on ","; none. */
+  trustedProxies?: string[];
   /** Default: dist/client when it has index.html, else null. */
   staticDir?: string | null;
   /** Default process.env; the base of the claude children's environment too. */
@@ -136,6 +139,8 @@ export interface Running {
   port: number;
   browserToken: string;
   home: string;
+  /** A login alert of the supervisor (docs/login-spec.md R4): the Director's inbox and Relay, as a `redline` event. */
+  alert(text: string): void;
   /** Idempotent graceful shutdown. */
   stop(): Promise<void>;
   /** Live reload: ends this server and leaves the agents running in the pty host (a hold stays saved). Only with ptyHost; else it stops. */
@@ -150,13 +155,15 @@ export const USAGE = `Usage: gonogo [options]
        gonogo reload
        gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
        gonogo token rotate [--home <dir>]
+       gonogo auth reset | status | key add|list|revoke | confirm [--home <dir>]
 
 Run mission control for Claude Code agents from a browser tab: one front port, one process per room (room "main" is the home itself).
 
 Commands:
   doctor                list the agent CLIs on the PATH with their versions, and the install command of each missing one
   rooms                 add, list or remove rooms (the page's room list does the same); "gonogo rooms" alone is "gonogo", kept for one release
-  token rotate          make a new Director token (the old one stops working)
+  token rotate          make a new Director token (the old one stops working; not once a login account exists)
+  auth                  the login account: reset it, make API keys, confirm after a tamper alarm (gonogo auth --help)
   reload                hand over to the installed gonogo without stopping the agents (needs --pty-host; not in Docker)
   update                print the command that updates gonogo the way it was installed (it never runs it)
 
@@ -166,6 +173,7 @@ Options:
   --home <dir>          state directory (default ~/${DEFAULT_HOME_DIRNAME}; env GONOGO_HOME)
   --pty-host            keep the agents in a separate process so that gonogo reload does not stop them (env GONOGO_PTY_HOST=1)
   --seed-claude         record Claude's folder trust and skip its startup dialogs (env GONOGO_SEED_CLAUDE=1)
+  --trusted-proxy <ip>  believe X-Forwarded-For from this reverse proxy's address; repeatable (env GONOGO_TRUSTED_PROXY, comma list)
   --allow-host <name>   accept this Host name too, for a reverse proxy; repeatable (env GONOGO_ALLOWED_HOSTS, comma list)
   --no-update-check     do not ask the npm registry once a day whether a newer gonogo exists (env GONOGO_UPDATE_CHECK=0)
   -h, --help            show this help
@@ -193,12 +201,13 @@ export type ParsedArgs =
   | { kind: 'ptyhost'; home: string }
   | { kind: 'room'; options: StartOptions }
   | { kind: 'token'; home?: string }
+  | { kind: 'auth'; args: string[]; home?: string }
   | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
   | { kind: 'selfupdate'; target: string; expect: string; home: string; image: string }
   | { kind: 'run'; options: StartOptions }
   | { kind: 'error'; message: string };
 
-const VALUE_FLAGS = ['--port', '--host', '--home', '--allow-host'];
+const VALUE_FLAGS = ['--port', '--host', '--home', '--allow-host', '--trusted-proxy'];
 
 function parsePort(value: string, label: string): number {
   const port = /^\d{1,5}$/.test(value) ? Number(value) : -1;
@@ -215,6 +224,18 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (argv[0] === '__room') {
     const room = parseArgs(argv.slice(1));
     return room.kind === 'run' ? { kind: 'room', options: { ...room.options, roomChild: true } } : room;
+  }
+  if (argv[0] === 'auth') {
+    const args: string[] = [];
+    let home: string | undefined;
+    for (let i = 1; i < argv.length; i += 1) {
+      if (argv[i] === '--home') {
+        home = argv[i + 1];
+        if (home === undefined || home === '') return { kind: 'error', message: '--home needs a directory' };
+        i += 1;
+      } else args.push(argv[i] as string);
+    }
+    return { kind: 'auth', args, ...(home === undefined ? {} : { home }) };
   }
   if (argv[0] === 'token') {
     if (argv[1] !== 'rotate') return { kind: 'error', message: 'token needs rotate' };
@@ -267,6 +288,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   }
   const options: StartOptions = {};
   const allowedHosts: string[] = [];
+  const trustedProxies: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     if (arg === '--seed-claude') {
@@ -309,6 +331,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
           if (value === '') throw new Error('--home needs a directory');
           options.home = value;
           break;
+        case '--trusted-proxy':
+          if (value.trim() === '') throw new Error('--trusted-proxy needs an address');
+          trustedProxies.push(value.trim());
+          break;
         default:
           if (value.trim() === '') throw new Error('--allow-host needs a host name');
           allowedHosts.push(value.trim());
@@ -319,6 +345,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   }
   // any --allow-host replaces the GONOGO_ALLOWED_HOSTS list, like every other flag replaces its variable
   if (allowedHosts.length > 0) options.allowedHosts = allowedHosts;
+  if (trustedProxies.length > 0) options.trustedProxies = trustedProxies;
   return { kind: 'run', options };
 }
 
@@ -336,6 +363,7 @@ interface Settings {
   /** Redline's automatic detectors; GONOGO_REDLINE=off turns them off. */
   redline: boolean;
   allowedHosts: string[];
+  trustedProxies: string[];
   staticDir: string | null;
   env: Env;
   checkClaude: boolean;
@@ -391,6 +419,12 @@ export function resolveSettings(options: StartOptions, log: Logger = nullLogger)
     allowedHosts:
       options.allowedHosts ??
       (env.GONOGO_ALLOWED_HOSTS ?? '')
+        .split(',')
+        .map((h) => h.trim())
+        .filter((h) => h !== ''),
+    trustedProxies:
+      options.trustedProxies ??
+      (env.GONOGO_TRUSTED_PROXY ?? '')
         .split(',')
         .map((h) => h.trim())
         .filter((h) => h !== ''),
@@ -960,6 +994,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       host,
       port: listenPort,
       browserToken: home.browserToken,
+      // a room of the supervisor has no TCP credential for its page: the supervisor reaches it by this socket (docs/login-spec.md R8)
+      ...(options.roomChild === true ? { localSocket: join(home.dir, 'run', 'room.sock') } : {}),
       allowedHosts,
       staticDir,
       // what the Director does through the browser is told to the Black Box by these copies
@@ -1132,11 +1168,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
 
     log.info(`listening on ${addr.host.includes(':') ? `[${addr.host}]` : addr.host}:${addr.port}, home ${home.dir}`);
     running = {
-      url: `http://${displayHost(host)}:${addr.port}/#token=${home.browserToken}`,
+      url: `http://${displayHost(host)}:${addr.port}/${options.roomChild === true ? '' : `#token=${home.browserToken}`}`,
       host: addr.host,
       port: addr.port,
       browserToken: home.browserToken,
       home: home.dir,
+      alert: (text) => tell('redline', text.slice(0, 300)),
       stop,
       release,
     };
@@ -1224,6 +1261,7 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
         host: settings.host,
         port: settings.port,
         allowedHosts: settings.allowedHosts,
+        trustedProxies: settings.trustedProxies,
         command: [process.execPath, process.argv[1] ?? 'gonogo'],
         roomArgs: roomArgsOf(parsed.options),
         staticDir: settings.staticDir,
@@ -1269,6 +1307,10 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
   // announced when main answers (or after 30 s): scripts that read this line and call /api at once must find the room there
   await running.whenReady(30_000);
   process.stdout.write(`gonogo ready: ${running.url}\n`);
+  if (running.setupToken !== null) {
+    // printed once, when it is made: single use, one hour, answered on this machine or the local network only (docs/login-spec.md R1, R3)
+    process.stdout.write(`gonogo setup: open ${running.url.split('#')[0]?.replace(/\/$/, '')}/setup and give this setup token (one use, one hour; it is also in ${join(settings.home, 'setup-token')}): ${running.setupToken}\n`);
+  }
   log.info(`docs: ${DOCS_URL}`);
 }
 
@@ -1379,6 +1421,15 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     }
     return;
   }
+  if (parsed.kind === 'auth') {
+    const io = {
+      out: (text: string) => void process.stdout.write(text),
+      err: (text: string) => void process.stderr.write(text),
+      readLine: () => new Promise<string>((done) => { let text = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (c) => { text += String(c); if (text.includes('\n')) done(text.split('\n')[0] ?? ''); }); process.stdin.on('end', () => done(text.split('\n')[0] ?? '')); }),
+    };
+    exit(await authCommand(parsed.args, parsed.home === undefined ? homeOf(env) : resolve(parsed.home), io));
+    return;
+  }
   if (parsed.kind === 'token') {
     try {
       process.stdout.write(`${rotateDirectorToken(parsed.home === undefined ? homeOf(env) : resolve(parsed.home))}\n`);
@@ -1446,7 +1497,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
  * `gonogo-ask busy` on stdout, the supervisor answers one line `gonogo-answer busy {"busy":<text|null>,"room":<id|null>}` on stdin. One answer per
  * question; a second question while one is out waits for it. No answer in 5 s is "busy", so an update never goes ahead on a guess.
  */
-export function createPipeAnswers(write: (line: string) => void, timeoutMs = 5000) {
+export function createPipeAnswers(write: (line: string) => void, timeoutMs = 5000, onAlert: (text: string) => void = () => undefined) {
   let waiting: Array<(answer: { busy: string | null; room: string | null }) => void> = [];
   let buffer = '';
   const none = { busy: 'the supervisor did not answer whether another room is busy: try again', room: null };
@@ -1457,6 +1508,16 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
       while ((at = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, at).trim();
         buffer = buffer.slice(at + 1);
+        const alert = /^gonogo-alert (".*")$/.exec(line);
+        if (alert !== null) {
+          try {
+            const text: unknown = JSON.parse(alert[1] as string);
+            if (typeof text === 'string') onAlert(text);
+          } catch {
+            // not a line of ours
+          }
+          continue;
+        }
         const match = /^gonogo-answer busy (\{.*\})$/.exec(line);
         // only a line of the shape of an answer takes the place of a question: other output of the supervisor is ignored
         if (match === null) continue;
@@ -1486,7 +1547,8 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
     },
   };
 }
-const pipeAnswers = createPipeAnswers((line) => process.stdout.write(line));
+let onSupervisorAlert: (text: string) => void = () => undefined;
+const pipeAnswers = createPipeAnswers((line) => process.stdout.write(line), 5000, (text) => onSupervisorAlert(text));
 
 /** One room: what `gonogo` was before it became the supervisor. `gonogo __room` runs it; the tests run it directly with fakes. */
 export async function runRoom(options: StartOptions, env: Env): Promise<void> {
@@ -1514,6 +1576,7 @@ export async function runRoom(options: StartOptions, env: Env): Promise<void> {
       return;
     }
   }
+  onSupervisorAlert = (text) => running.alert(text);
   installProcessHandlers(running, log, process.argv.slice(2), process.argv[1], options.roomChild === true);
   if (options.exitWithStdin === true) {
     // the supervisor holds the other end of this pipe: when it dies, for any reason, this ends and the room stops as for SIGTERM
