@@ -48,6 +48,12 @@ describe('redaction (what may stay in the log)', () => {
     ['password: hunter2hunter2', 'hunter2hunter2'],
     ['{"secret":"s3cr3t-value","ok":1}', 's3cr3t-value'],
     ['xoxb-1234567890-abcdefghijkl', 'xoxb-1234567890-abcdefghijkl'],
+    ['clone https://oauth2:glpat-abcdefghij0123456789@gitlab.example.com/x.git', 'oauth2:glpat-abcdefghij0123456789'],
+    ['git push https://ana:hunter2pass@git.example.com/repo', 'ana:hunter2pass'],
+    ['glpat-abcdefghij0123456789xyz', 'glpat-abcdefghij0123456789xyz'],
+    ['xapp-1-A0123456789-1234567890123-abcdef', 'xapp-1-A0123456789-1234567890123-abcdef'],
+    ['key sk_live_ABCDEFGH12345678 end', 'sk_live_ABCDEFGH12345678'],
+    ['key rk_live_ABCDEFGH12345678 end', 'rk_live_ABCDEFGH12345678'],
     ['ghp_abcdefghijklmnopqrstuvwxyz0123456789', 'ghp_abcdefghijklmnopqrstuvwxyz0123456789'],
     ['github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz', 'github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz'],
     ['sk-ant-api03-abcdefghijklmnopqrstuvwxyz', 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz'],
@@ -68,6 +74,12 @@ describe('redaction (what may stay in the log)', () => {
       expect(out, said).not.toContain(value);
       expect(out.startsWith('before ') && out.endsWith(' after'), said).toBe(true);
     }
+  });
+
+  it('a URL keeps its host and path and loses only the userinfo', () => {
+    expect(redactSecrets('https://oauth2:glpat-abcdefghij0123456789@gitlab.example.com/x.git')).toBe('https://[redacted]@gitlab.example.com/x.git');
+    expect(redactSecrets('see https://example.com/a?b=1 and ftp://host:21/f')).toBe('see https://example.com/a?b=1 and ftp://host:21/f');
+    expect(redactSecrets('ssh://git@host/repo')).toBe('ssh://git@host/repo');
   });
 
   it('leaves ordinary text alone: names, versions, short words, ids', () => {

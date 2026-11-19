@@ -32,7 +32,12 @@ export function redactSecrets(text: string): string {
   return text
     .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
     .replace(/\b(token|access_token|secret|client_secret|password|passwd|pwd|api[_-]?key|apikey|authorization|signature|sig|credential)(["']?\s*[=:]\s*["']?)[^\s"'&#,}]+/gi, '$1$2[redacted]')
+    // user:password@ in a URL (https://oauth2:glpat-...@gitlab.com): the userinfo goes, the host stays
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^@\s/]+@/gi, '$1[redacted]@')
     .replace(/\bxox[abprs]-[A-Za-z0-9-]{8,}/g, '[redacted]')
+    .replace(/\bxapp-[A-Za-z0-9-]{8,}/g, '[redacted]')
+    .replace(/\bglpat-[\w-]{20,}/g, '[redacted]')
+    .replace(/\b[sr]k_(?:live|test)_[A-Za-z0-9]{8,}/g, '[redacted]')
     .replace(/\bgh[pousr]_[A-Za-z0-9]{16,}|\bgithub_pat_[A-Za-z0-9_]{16,}/g, '[redacted]')
     .replace(/\bsk-[A-Za-z0-9_-]{16,}/g, '[redacted]')
     .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]')
