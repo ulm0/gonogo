@@ -102,6 +102,7 @@ tracked. Only what is still missing stays open here.
       per agent from text you write. Missing: a list of known servers and skills to pick from, defaults for new
       agents, and a skills tab apart from the hire form.
 
+- [ ] Telegram Mini App *(parked by the owner, 2026-11-19)*: a menu button of the Relay bot opens gonogo's page inside Telegram, signed in by the Mini App's `initData` (HMAC with the bot token) for the Director's Telegram user id only. Needs a public https address (`gonogo expose`), an RSO decision on whether `initData` counts as both factors (anyone with the bot token can sign it), a short lifetime and a Downlink note per sign-in. No separate app: the same page, with Telegram's theme.
 ## 7. Cost and safety
 
 - [ ] Cost and usage tracking with pricing.
