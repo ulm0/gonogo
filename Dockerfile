@@ -164,7 +164,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:7777/rooms/health').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
 
 # -s: tini acts as a subreaper, so reaping also works under Docker's own --init, where tini is not PID 1.
-# cp -rn: a home that is a new, empty folder has no .bashrc or .profile; the skeleton is copied in, never over a file that exists (and never an error: a read-only home is left alone).
-ENTRYPOINT ["tini", "-s", "--", "sh", "-c", "cp -rn /etc/skel/. \"$HOME\"/ 2>/dev/null; exec gonogo \"$@\"", "gonogo"]
+# packaging/docker/entrypoint.sh: fills a new, empty home from /etc/skel, carries over gh's login and git's config from a 0.5.x /state/config, warns when the home is not writable, then execs gonogo with the CMD.
+ENTRYPOINT ["tini", "-s", "--", "sh", "/opt/gonogo/packaging/docker/entrypoint.sh"]
 # Inside the container the server must listen on all interfaces; the home comes from GONOGO_HOME.
 CMD ["--host", "0.0.0.0", "--port", "7777"]
