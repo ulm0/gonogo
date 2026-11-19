@@ -10,7 +10,7 @@
  * whatever the agent is called, so a rename does not count its total again; each delta is credited to the agent the line names. The first line of
  * a session that arrives within ten minutes of the file being made is a `base`: it counts 0, because that session was already running when this
  * began and its total is not today's spend. A restart of gonogo cannot count anything twice. The last seconds before a session ends can be lost:
- * the figure is "at least". The file is pruned as it grows, and the number of sessions kept is capped.
+ * the figure is "at least". The file is pruned as it grows, and the number of sessions kept is capped (20,000 in all, 5,000 per agent; reaching either is logged once).
  */
 import { randomBytes } from 'node:crypto';
 import { appendFile, readFile, rename, writeFile } from 'node:fs/promises';
@@ -27,8 +27,8 @@ const BASE_MS = 10 * 60 * 1000;
 const AHEAD_MS = 60 * 1000;
 const BEHIND_MS = 6 * 3_600_000;
 /** Sessions kept in all and per agent; a new one beyond that is not recorded (an agent posting endless fresh ids cannot grow memory or disk). */
-export const MAX_SESSIONS = 2000;
-export const MAX_SESSIONS_PER_AGENT = 500;
+export const MAX_SESSIONS = 20_000;
+export const MAX_SESSIONS_PER_AGENT = 5000;
 /** The file and the memory are pruned every this many lines recorded. */
 const PRUNE_EVERY = 200;
 
@@ -77,6 +77,8 @@ export function createReported(options: { dir: string; now: () => number; log: L
   let createdAt: number | null = null;
   let headerWritten = false;
   let recorded = 0;
+  /** Each cap, told once in the log when it is reached (a busy room that hits one must not undercount in silence). */
+  const told = new Set<string>();
   let chain: Promise<unknown> = Promise.resolve();
 
   /** Lines older than the window are dropped, except the newest of each session before it (the baseline the next delta needs); a session whose newest line is older than the window goes whole. */
@@ -149,10 +151,16 @@ export function createReported(options: { dir: string; now: () => number; log: L
           return;
         }
       } else {
-        if (lastBy.size >= MAX_SESSIONS) return;
         let mine = 0;
         for (const v of lastBy.values()) if (v.agent === agent) mine += 1;
-        if (mine >= MAX_SESSIONS_PER_AGENT) return;
+        if (lastBy.size >= MAX_SESSIONS || mine >= MAX_SESSIONS_PER_AGENT) {
+          const which = lastBy.size >= MAX_SESSIONS ? 'all' : agent;
+          if (!told.has(which)) {
+            told.add(which);
+            log.warn(`reported cost: ${lastBy.size >= MAX_SESSIONS ? `${MAX_SESSIONS} sessions are kept in all` : `${MAX_SESSIONS_PER_AGENT} sessions are kept for ${agent}`}: new sessions are not recorded until old ones age out (31 days), so the reported figure undercounts`);
+          }
+          return;
+        }
       }
       const base = prev === undefined && createdAt !== null && at - createdAt < BASE_MS;
       const line: Line = { at, agent, session: r.session, total: r.total, ...(base ? { base: true as const } : {}) };

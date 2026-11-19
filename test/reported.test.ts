@@ -203,10 +203,17 @@ describe('a session that was already running (the upgrade day)', () => {
 });
 
 describe('growth', () => {
-  it('RSO: an agent posting endless fresh session ids is capped, and cannot crowd out another agent', async () => {
-    const r = await make();
+  it('RSO: an agent posting endless fresh session ids is capped, the log says so once, and it cannot crowd out another agent', async () => {
+    const warnings: string[] = [];
+    const loud = { ...quiet, warn: (...a: unknown[]) => void warnings.push(String(a[0])) } as unknown as Logger;
+    const r = createReported({ dir, now: () => clock, log: loud });
+    opened.push(r);
+    await oldFile();
+    await r.load();
     for (let i = 0; i < MAX_SESSIONS_PER_AGENT + 300; i += 1) r.record('noisy', { session: `s${i}`, total: 1 });
     expect(r.size()).toBe(MAX_SESSIONS_PER_AGENT);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/sessions are kept for noisy/);
     r.record('quiet', { session: 'mine', total: 2 });
     expect(r.size()).toBe(MAX_SESSIONS_PER_AGENT + 1);
     expect(r.window(NOW - DAY, dayOf).agents.quiet?.usd).toBe(2);
@@ -214,8 +221,14 @@ describe('growth', () => {
     r.record('noisy', { session: 's0', total: 3 });
     expect(r.window(NOW - DAY, dayOf).agents.noisy?.usd).toBe(MAX_SESSIONS_PER_AGENT + 2);
     // and the whole is capped too
-    for (let a = 0; a < 6; a += 1) for (let i = 0; i < MAX_SESSIONS_PER_AGENT; i += 1) r.record(`agent${a}`, { session: `a${a}-${i}`, total: 1 });
+    for (let a = 0; a < Math.ceil(MAX_SESSIONS / MAX_SESSIONS_PER_AGENT) + 1; a += 1) for (let i = 0; i < MAX_SESSIONS_PER_AGENT; i += 1) r.record(`agent${a}`, { session: `a${a}-${i}`, total: 1 });
     expect(r.size()).toBe(MAX_SESSIONS);
+    // the whole cap is told once too, and each telling is made once however many more are refused
+    expect(warnings).toHaveLength(2);
+    expect(warnings[1]).toMatch(/sessions are kept in all/);
+    r.record('another', { session: 'nope', total: 1 });
+    r.record('noisy', { session: 'nope2', total: 1 });
+    expect(warnings).toHaveLength(2);
     await r.close();
   });
 
