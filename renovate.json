@@ -34,6 +34,13 @@
       "allowedVersions": "<25"
     },
     {
+      "description": "The passkey library is part of the login: never merged on its own (a person reads the release notes), and not before it is two weeks old",
+      "matchPackageNames": ["@simplewebauthn/**"],
+      "automerge": false,
+      "minimumReleaseAge": "14 days",
+      "labels": ["login"]
+    },
+    {
       "groupName": "fonts",
       "matchPackageNames": ["@fontsource/**"]
     },

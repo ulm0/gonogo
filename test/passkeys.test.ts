@@ -115,11 +115,12 @@ describe('signing in with a passkey', () => {
     return keys.loginFinish(who({ address: over.address ?? '203.0.113.7' }), rp, key.get({ rpId: over.rpId ?? rp.rpId, origin: over.origin ?? rp.origin, challenge, ...(over.verified === undefined ? {} : { verified: over.verified }), ...(over.counter === undefined ? {} : { counter: over.counter }) }));
   }
 
-  it('no options without a passkey for this name; with one, the credential is allowed and the user must be verified', async () => {
+  it('no options without a passkey for this name; with one, no credential id is handed out (discoverable) and the user must be verified', async () => {
     expect(await keys.loginOptions(rp)).toBeNull();
     const { key } = await enrol();
-    const o = (await keys.loginOptions(rp)) as { allowCredentials: Array<{ id: string }>; userVerification: string; rpId: string };
-    expect(o.allowCredentials.map((c) => c.id)).toEqual([key.id]);
+    const o = (await keys.loginOptions(rp)) as { allowCredentials?: Array<{ id: string }>; userVerification: string; rpId: string };
+    expect(o.allowCredentials ?? []).toEqual([]);
+    expect(JSON.stringify(o)).not.toContain(key.id);
     expect(o.userVerification).toBe('required');
     expect(o.rpId).toBe('gonogo.example.com');
   });
@@ -162,6 +163,41 @@ describe('signing in with a passkey', () => {
     expect((await login(key, { counter: 3 })).ok).toBe(false);
     expect(alerts.filter((a) => /counter did not go up/.test(a))).toHaveLength(2);
     expect((await login(key, { counter: 6 })).ok).toBe(true);
+  });
+
+  it('N1: login challenges are not kept, so any number of anonymous requests cannot push the Director\'s out', async () => {
+    const { key } = await enrol();
+    const mine = options((await keys.loginOptions(rp)) as Record<string, unknown>).challenge;
+    for (let i = 0; i < 1500; i += 1) await keys.loginOptions(rp);
+    for (let i = 0; i < 300; i += 1) await keys.registerOptions(session, rp);
+    expect((await keys.loginFinish(who(), rp, key.get({ rpId: rp.rpId, origin: rp.origin, challenge: mine }))).ok).toBe(true);
+  });
+
+  it('a login challenge is spent only when an assertion with it verified, and not before: a failed try leaves it good', async () => {
+    const { key } = await enrol();
+    const challenge = options((await keys.loginOptions(rp)) as Record<string, unknown>).challenge;
+    // someone who saw the challenge and has another key, or a wrong origin: refused, the challenge stays
+    expect((await keys.loginFinish(who(), rp, softKey().get({ rpId: rp.rpId, origin: rp.origin, challenge }))).ok).toBe(false);
+    expect((await keys.loginFinish(who(), rp, key.get({ rpId: rp.rpId, origin: 'https://evil.example', challenge }))).ok).toBe(false);
+    const answer = key.get({ rpId: rp.rpId, origin: rp.origin, challenge });
+    expect((await keys.loginFinish(who(), rp, answer)).ok).toBe(true);
+    // now it is spent
+    expect((await keys.loginFinish(who(), rp, key.get({ rpId: rp.rpId, origin: rp.origin, challenge }))).ok).toBe(false);
+  });
+
+  it('a login challenge that was not made here, was changed, is for another name or is old is refused', async () => {
+    const { key } = await enrol();
+    const good = options((await keys.loginOptions(rp)) as Record<string, unknown>).challenge;
+    const text = Buffer.from(good, 'base64url').toString('utf8');
+    const forged = [Buffer.from('not a challenge at all').toString('base64url'), Buffer.from(text.replace(/.$/, text.endsWith('A') ? 'B' : 'A')).toString('base64url'), Buffer.from(`${text.split('.')[0]}.AAAAAAAAAAAAAAAAAAAAAA`).toString('base64url'), Buffer.from('').toString('base64url')];
+    for (const challenge of forged) expect((await keys.loginFinish(who(), rp, key.get({ rpId: rp.rpId, origin: rp.origin, challenge }))).ok, challenge).toBe(false);
+    clock += 5 * 60_000 + 1000;
+    expect((await keys.loginFinish(who(), rp, key.get({ rpId: rp.rpId, origin: rp.origin, challenge: good }))).ok).toBe(false);
+    // a challenge made for one name is not good for another (a second name with its own passkey)
+    const other = relyingParty('b.example.com', 'public') as RelyingParty;
+    const made = await keys.loginOptions(rp);
+    expect(options(made as Record<string, unknown>).challenge).not.toBe(good);
+    expect(await keys.loginOptions(other)).toBeNull();
   });
 
   it('a passkey of one name does not work at another: the rp id is fixed at registration', async () => {

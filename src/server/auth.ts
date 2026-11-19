@@ -480,6 +480,8 @@ export interface AuthStore {
   onAccountMade(listener: () => void): void;
   /** The cookie of a session or device is signed with this. */
   signDevice(id: string): string;
+  /** A keyed hash of a text (HMAC-SHA-256 with the server key, base64url): for tokens that need no memory. */
+  mac(text: string): string;
   setupTokenFile(): string;
   /** Makes the setup token when there is no account and none valid; returns it only when it was just made. */
   ensureSetupToken(): string | null;
@@ -830,6 +832,7 @@ export function openAuth(options: AuthOptions): AuthStore {
     tokenAllowed: () => state() === 'fresh',
     setupTokenFile: () => join(options.home, SETUP_TOKEN_FILE),
     signDevice: sign,
+    mac: (text) => createHmac('sha256', serverKey).update(text).digest('base64url'),
     deviceOf,
     touchSession(id) {
       const found = data.sessions.find((s) => s.id === id);
