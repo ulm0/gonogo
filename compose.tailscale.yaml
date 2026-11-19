@@ -1,0 +1,43 @@
+# gonogo through Tailscale Serve (your tailnet only) or Funnel (public). Used on top of compose.yaml (docs/expose/tailscale.md):
+#   docker compose -f compose.yaml -f compose.tailscale.yaml up -d
+# FIRST set the login up (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before.
+# .env (no secret is written in this file):
+#   TS_AUTHKEY=tskey-auth-...           an auth key from the Tailscale admin console (reusable off, ephemeral off)
+#   TAILSCALE_VERSION=v1.x.y            a tag of tailscale/tailscale: pick the current stable from https://hub.docker.com/r/tailscale/tailscale/tags
+#   GONOGO_PUBLIC_NAME=gonogo.<tailnet>.ts.net     the name Tailscale gives it (tailscale status, or the admin console)
+#   TAILSCALE_MODE=serve                serve (tailnet only, default) or funnel (the public internet)
+#   GONOGO_HOOKS_ONLY=1                 optional: that name serves only /uplink and /dock (name:hooks), no page
+#   GONOGO_EDGE_SUBNET / GONOGO_EDGE_PROXY_IP   optional: the private network between the sidecar and gonogo (default 172.29.80.0/24 and .2)
+# Tailscale does not decrypt the traffic (the TLS ends in the sidecar, inside your own host).
+services:
+  tailscale:
+    image: tailscale/tailscale:${TAILSCALE_VERSION:?set TAILSCALE_VERSION to a tag of tailscale/tailscale}
+    restart: always
+    hostname: ${TS_HOSTNAME:-gonogo}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      TS_HOSTNAME: ${TS_HOSTNAME:-gonogo}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_USERSPACE: "true"
+    volumes:
+      - ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/tailscale:/var/lib/tailscale
+      - ./packaging/overlays/tailscale-${TAILSCALE_MODE:-serve}.json:/config/serve.json:ro
+    networks:
+      edge:
+        ipv4_address: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
+  gonogo:
+    environment:
+      GONOGO_ALLOWED_HOSTS: ${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}${GONOGO_HOOKS_ONLY:+:hooks}
+      GONOGO_PUBLIC_URL: https://${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}
+      # the sidecar's address on the edge network, not 127.0.0.1: that is how gonogo knows whose forwarded address to believe
+      GONOGO_TRUSTED_PROXY: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
+      GONOGO_CLIENT_IP_HEADER: x-forwarded-for
+    networks:
+      - default
+      - edge
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${GONOGO_EDGE_SUBNET:-172.29.80.0/24}

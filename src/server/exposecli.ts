@@ -53,9 +53,12 @@ export interface ExposePlan {
 /** What every provider needs said about a gonogo in Docker: the tunnel's address as gonogo sees it is not 127.0.0.1 when the tunnel runs on the host. */
 const DOCKER_NOTE = 'In Docker with the tunnel or proxy on the HOST, gonogo sees it at the bridge gateway (for example 172.17.0.1: `docker network inspect bridge`), so give --trusted-proxy that address, not 127.0.0.1; with the tunnel in the same container or network namespace, 127.0.0.1 is right.';
 
+/** The compose overlay of each provider (Funnel is the Tailscale one with TAILSCALE_MODE=funnel). */
+const OVERLAY: Record<ExposeProvider, string> = { tailscale: 'compose.tailscale.yaml', funnel: 'compose.tailscale.yaml', cloudflare: 'compose.cloudflared.yaml', caddy: 'compose.caddy.yaml', ngrok: 'compose.ngrok.yaml' };
+
 export function exposePlan(provider: ExposeProvider, input: { publicUrl: string; host: string; port: number }): ExposePlan {
   const plan = planOf(provider, input);
-  return { ...plan, notes: [...plan.notes, DOCKER_NOTE] };
+  return { ...plan, notes: [...plan.notes, DOCKER_NOTE, `On a Docker Compose install ${OVERLAY[provider]} next to compose.yaml does all of this with a sidecar: docker compose -f compose.yaml -f ${OVERLAY[provider]} up -d (login and second factor first).`] };
 }
 
 function planOf(provider: ExposeProvider, input: { publicUrl: string; host: string; port: number }): ExposePlan {

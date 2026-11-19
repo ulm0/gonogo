@@ -44,4 +44,19 @@ gonogo expose check
 
 - **In Docker with the tunnel or proxy on the host,** gonogo sees it at the Docker bridge gateway (for example `172.17.0.1`: `docker network inspect bridge`), so give `--trusted-proxy` that address, not `127.0.0.1`. With the tunnel in the same container or network namespace, `127.0.0.1` is right.
 
+## With Docker Compose
+
+`compose.cloudflared.yaml` next to `compose.yaml` adds the sidecar, a private `edge` network between it and gonogo, and the gonogo settings `gonogo expose cloudflare` prints. It is used on top of the base file:
+
+```
+docker compose -f compose.yaml -f compose.cloudflared.yaml up -d
+```
+
+- **Set the login up first** (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before. So start with `docker compose up -d` alone, do that, then add the overlay.
+- **`.env`** (no secret is in the file; everything comes from here): `TUNNEL_TOKEN` (the token of a remotely managed tunnel), `GONOGO_PUBLIC_NAME`.
+- **Sets for gonogo:** `GONOGO_ALLOWED_HOSTS` (the name; with `GONOGO_HOOKS_ONLY=1` it becomes `name:hooks` and serves only the webhooks), `GONOGO_PUBLIC_URL` (`https://` and the name), `GONOGO_TRUSTED_PROXY` (the sidecar's address on the edge network, `172.29.80.2` unless you set `GONOGO_EDGE_PROXY_IP` and `GONOGO_EDGE_SUBNET`: **not 127.0.0.1**, which is the container itself) and `GONOGO_CLIENT_IP_HEADER`.
+- **In the Cloudflare dashboard** (the token mode keeps the ingress there): the tunnel's Public Hostname is your name, service `HTTP` `gonogo:7777`, and under Additional application settings, HTTP Settings, set the **HTTP Host Header** to the same name: gonogo checks the Host. `cloudflare/cloudflared` is pinned in the file.
+- `GONOGO_CLIENT_IP_HEADER` is `cf-connecting-ip` here, right only behind Cloudflare.
+- **Not tried:** no real tunnel, certificate or provider was run, and `docker compose config` was not run on these files (no Compose where they were written); the text is checked by tests against `gonogo expose`. Run `gonogo expose check` once it is up.
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

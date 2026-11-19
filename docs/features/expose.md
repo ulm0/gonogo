@@ -45,6 +45,10 @@ Run it on the machine after you did the provider's steps. It refuses while the l
 
 It exits 1 when a line fails. It cannot see an idle WebSocket close, a certificate that is about to expire or what the provider logs.
 
+## Docker Compose overlays
+
+On a Docker install each provider also has a file next to `compose.yaml`: `compose.tailscale.yaml` (Serve or Funnel), `compose.cloudflared.yaml`, `compose.ngrok.yaml` and `compose.caddy.yaml`, used as `docker compose -f compose.yaml -f compose.<provider>.yaml up -d`. They add the sidecar, a private edge network, and set `GONOGO_ALLOWED_HOSTS` (with `GONOGO_HOOKS_ONLY=1`: `name:hooks`), `GONOGO_PUBLIC_URL`, the trusted proxy (the sidecar's address on that network, not `127.0.0.1`) and the client address header, the way `gonogo expose` prints them; secrets and versions come from your `.env`. A test keeps the overlays and `gonogo expose` saying the same. Each provider page has a **With Docker Compose** section.
+
 ## When gonogo refuses to start
 
 One message that says what to do: start gonogo **without** the option it names (and with `--host 127.0.0.1`; **in Docker never `--host 127.0.0.1`**, it cuts off the published port while the healthcheck still says healthy: keep the image's `0.0.0.0` and drop `GONOGO_ALLOWED_HOSTS` once), open `http://127.0.0.1:<your port>/` (in Docker the published port, on the host), make the account, turn on the second factor (Flight Rules, LOGIN), then add the option back. The refusals: a bind other machines can reach, outside Docker, with no account; a public page name without an account, the second factor and an https `--public-url`; an `--allow-host` entry that is not a bare host name (`https://x` or `x/y`). Private names (`zimaos`, `nas.local`, `192.168.x.x`) in a container are never refused. A **Docker self-update from 0.4 with a public `GONOGO_ALLOWED_HOSTS` rolls back**: the new container refuses to start, so it never becomes healthy.

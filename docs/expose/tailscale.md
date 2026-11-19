@@ -29,4 +29,18 @@ gonogo expose check
 
 - **In Docker with the tunnel or proxy on the host,** gonogo sees it at the Docker bridge gateway (for example `172.17.0.1`: `docker network inspect bridge`), so give `--trusted-proxy` that address, not `127.0.0.1`. With the tunnel in the same container or network namespace, `127.0.0.1` is right.
 
+## With Docker Compose
+
+`compose.tailscale.yaml` next to `compose.yaml` adds the sidecar, a private `edge` network between it and gonogo, and the gonogo settings `gonogo expose tailscale` prints. It is used on top of the base file:
+
+```
+docker compose -f compose.yaml -f compose.tailscale.yaml up -d
+```
+
+- **Set the login up first** (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before. So start with `docker compose up -d` alone, do that, then add the overlay.
+- **`.env`** (no secret is in the file; everything comes from here): `TS_AUTHKEY` (an auth key from the Tailscale admin console), `TAILSCALE_VERSION` (a tag of `tailscale/tailscale`: pick the current stable on Docker Hub; there is no default on purpose), `GONOGO_PUBLIC_NAME` (`<machine>.<tailnet>.ts.net`), optional `TS_HOSTNAME` and `TAILSCALE_MODE=serve` (default) or `funnel`.
+- **Sets for gonogo:** `GONOGO_ALLOWED_HOSTS` (the name; with `GONOGO_HOOKS_ONLY=1` it becomes `name:hooks` and serves only the webhooks), `GONOGO_PUBLIC_URL` (`https://` and the name), `GONOGO_TRUSTED_PROXY` (the sidecar's address on the edge network, `172.29.80.2` unless you set `GONOGO_EDGE_PROXY_IP` and `GONOGO_EDGE_SUBNET`: **not 127.0.0.1**, which is the container itself) and `GONOGO_CLIENT_IP_HEADER`.
+- **Serve or Funnel:** `TAILSCALE_MODE` picks `packaging/overlays/tailscale-serve.json` or `tailscale-funnel.json` (the second adds `AllowFunnel`). The state is kept in `${GONOGO_DATA}/tailscale`. The sidecar runs in user-space networking: no `NET_ADMIN`, no `/dev/net/tun`.
+- **Not tried:** no real tunnel, certificate or provider was run, and `docker compose config` was not run on these files (no Compose where they were written); the text is checked by tests against `gonogo expose`. Run `gonogo expose check` once it is up.
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

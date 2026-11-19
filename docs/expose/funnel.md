@@ -27,4 +27,8 @@ gonogo expose check
 
 - **In Docker with the tunnel or proxy on the host,** gonogo sees it at the Docker bridge gateway (for example `172.17.0.1`: `docker network inspect bridge`), so give `--trusted-proxy` that address, not `127.0.0.1`. With the tunnel in the same container or network namespace, `127.0.0.1` is right.
 
+## With Docker Compose
+
+Funnel is the Tailscale overlay with `TAILSCALE_MODE=funnel`: `docker compose -f compose.yaml -f compose.tailscale.yaml up -d` (see `compose.tailscale.yaml` and [Tailscale Serve](./tailscale.md#with-docker-compose)). The login with its second factor must be set up first.
+
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

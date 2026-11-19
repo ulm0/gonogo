@@ -1,0 +1,36 @@
+# gonogo through ngrok (public, the last choice). On top of compose.yaml (docs/expose/ngrok.md):
+#   docker compose -f compose.yaml -f compose.ngrok.yaml up -d
+# FIRST set the login up (account and second factor): gonogo refuses to start on a public name before.
+# .env (no secret is written in this file):
+#   NGROK_AUTHTOKEN=...                 your ngrok authtoken
+#   NGROK_VERSION=3.x.y                 a tag of ngrok/ngrok: pick one from https://hub.docker.com/r/ngrok/ngrok/tags
+#   GONOGO_PUBLIC_NAME=gonogo.example.ngrok.app     your fixed ngrok domain (the free plan has one static domain)
+#   GONOGO_HOOKS_ONLY=1                 optional: that name serves only /uplink and /dock (name:hooks), no page
+#   GONOGO_EDGE_SUBNET / GONOGO_EDGE_PROXY_IP   optional: the private network between ngrok and gonogo (default 172.29.80.0/24 and .2)
+# ngrok ends the TLS: it can see every password, cookie, TOTP code and terminal byte. The flag for a fixed name is --url (ngrok 3.16 and later);
+# an older agent has --domain instead.
+services:
+  ngrok:
+    image: ngrok/ngrok:${NGROK_VERSION:?set NGROK_VERSION to a tag of ngrok/ngrok}
+    restart: always
+    command: http --url=${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME} gonogo:7777
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in .env}
+    networks:
+      edge:
+        ipv4_address: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
+  gonogo:
+    environment:
+      GONOGO_ALLOWED_HOSTS: ${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}${GONOGO_HOOKS_ONLY:+:hooks}
+      GONOGO_PUBLIC_URL: https://${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}
+      # ngrok's address on the edge network, not 127.0.0.1
+      GONOGO_TRUSTED_PROXY: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
+      GONOGO_CLIENT_IP_HEADER: x-forwarded-for
+    networks:
+      - default
+      - edge
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${GONOGO_EDGE_SUBNET:-172.29.80.0/24}
