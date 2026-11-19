@@ -2,7 +2,9 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.5.1 (2026-11-19)
+
+A fix for 0.5.0: in a real browser the setup and login forms answered "forbidden origin", so no account could be made. Upgrade from 0.5.0 before running setup.
 
 - **Fix: the login and setup forms answered "forbidden origin" in a browser.** The pages were sent with `Referrer-Policy: no-referrer`, under which a browser sends `Origin: null` on a same-origin POST, and the Origin check refused it; the same held for every change made with a session cookie. The policy is now `same-origin` (no referrer leaves the site).
 
