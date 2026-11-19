@@ -516,7 +516,7 @@ export async function pushTest(id: string): Promise<{ ok: boolean; note: string 
 /** The newer version main's check saw, from the supervisor (a room other than main runs no check of its own); null when none, or when it cannot be asked. */
 export async function roomsUpdate(): Promise<string | null> {
   try {
-    const response = await fetch('/api/rooms', { cache: 'no-store' });
+    const response = await fetch('/api/rooms', { headers: token === null ? {} : { Authorization: `Bearer ${token}` }, cache: 'no-store' });
     const latest = asRecord(asRecord(await response.json())?.update)?.latest;
     return response.ok && typeof latest === 'string' ? latest : null;
   } catch {
