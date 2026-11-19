@@ -1,8 +1,9 @@
 # gonogo in Docker, with Clean Room. Once, as root on the Docker host (the image runs as uid 1000):
 #   install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/config    # next to this file
-# Then, with CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported in your shell:
-#   export GONOGO_DATA=$PWD/gonogo-data                        # the ABSOLUTE path of that folder (or put GONOGO_DATA=... in an .env file next to this one)
-#   export DOCKER_GID=$(stat -L -c %g /var/run/docker.sock)    # every compose command reads it
+# Then make a file named .env next to this one (compose reads it for every command, from a shell or from a UI such as ZimaOS or Portainer):
+#   GONOGO_DATA=/absolute/path/to/gonogo-data                  # the folder above, by its ABSOLUTE path; every compose command stops without it
+#   DOCKER_GID=<the output of: stat -L -c %g /var/run/docker.sock>
+# (or export both in your shell, and then every compose command must see them). With CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported:
 #   docker compose up -d           # pulls the published image the first time
 #   docker compose logs gonogo     # the `gonogo ready:` line is the URL, token included
 # Update to the latest release: docker compose pull && docker compose up -d

@@ -113,7 +113,8 @@ describe('compose.yaml', () => {
     expect(live).not.toContain('PWD');
     expect(live).not.toMatch(/\$\{GONOGO_DATA(?!:\?)/);
     expect(live.match(/\$\{GONOGO_DATA:\?[^}]+\}/g)?.length).toBeGreaterThanOrEqual(6);
-    expect(read('docs', 'guide', 'docker.md')).toContain('export GONOGO_DATA=');
+    expect(read('docs', 'guide', 'docker.md')).toContain('GONOGO_DATA=%s');
+    expect(compose).toMatch(/make a file named \.env/);
   });
 });
 

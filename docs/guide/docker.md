@@ -64,14 +64,13 @@ its own agents within 12 seconds, in parallel, and the supervisor waits 17 befor
 
 ```
 sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/config   # next to compose.yaml
+printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env   # next to compose.yaml; compose reads it for every command
 export CLAUDE_CODE_OAUTH_TOKEN=...     # or ANTHROPIC_API_KEY, never both
-export GONOGO_DATA=$PWD/gonogo-data                        # the absolute path of that folder (required)
-export DOCKER_GID=$(stat -L -c %g /var/run/docker.sock)   # every compose command reads it
 docker compose up -d                                       # pulls ghcr.io/ulm0/gonogo:latest
 docker compose logs gonogo
 ```
 
-`GONOGO_DATA` has no default: compose stops with "set GONOGO_DATA to the absolute path of the data folder" when it is missing. Export it as above, or put `GONOGO_DATA=/absolute/path/gonogo-data` in a file named `.env` next to `compose.yaml`. When compose runs from a UI (ZimaOS, Portainer, Dockge) there is no shell and no `$PWD`: set it in the stack's environment or `.env`, with a path that exists on the host.
+`GONOGO_DATA` has no default: **every** compose command (`up`, `logs`, `ps`, `down`, and the `docker compose pull && docker compose up -d` of an update) stops with "set GONOGO_DATA to the absolute path of the data folder" when it is missing. The `.env` file above covers a shell and a UI alike (a stack in ZimaOS, Portainer or Dockge has no shell and no `$PWD`: put the same two lines in the stack's environment or `.env`, with a path that exists on the host). The alternative is `export GONOGO_DATA=...` and `export DOCKER_GID=...` in the shell that runs compose.
 
 It runs the published image (amd64, arm64) with `restart: always`. Update: `docker compose pull && docker compose up -d`. To use your own build, tag it first: `docker build -t ghcr.io/ulm0/gonogo:latest .`.
 
