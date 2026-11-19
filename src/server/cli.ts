@@ -46,6 +46,7 @@ import { runDir } from './ptyhost.js';
 import { TOKENS_FILE } from './ptyhostproto.js';
 import { createHoldStore, relaunch, requestReload, rotateDirectorToken, runPtyHost, spawnHostProcess } from './reload.js';
 import { createWebServer } from './web.js';
+import { createReported } from './reported.js';
 import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
 import { createTelegramPoll } from './telegrampoll.js';
@@ -640,7 +641,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('quota'),
     });
     await quota.load();
+    // what Claude Code itself says a session cost (its status line): kept beside the ledger, never mixed into it
+    const reported = createReported({ dir: home.dir, now: () => Date.now(), log: log.child('reported') });
+    await reported.load();
     const propellant = createPropellant({
+      reported,
       dir: home.dir,
       plan: () => quota.view(),
       attribute: workingOn,
@@ -1046,6 +1051,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     }
     const webServer = createWebServer({
       statusLine: (name, body) => {
+        reported.record(name, body);
         if (quota.report(name, body)) web?.broadcast({ t: 'propellant', propellant: propellant.view() });
       },
       host,
@@ -1196,6 +1202,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       });
       await step('downlink close', () => downlink.close());
       await step('propellant close', () => propellant.close());
+      await step('reported close', () => reported.close());
       closing = true;
       await step('quota close', () => quota.close());
       await step('prices close', () => prices.close());

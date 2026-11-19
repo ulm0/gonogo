@@ -74,17 +74,18 @@ export const HOOK_SHIM = [
 
 /**
  * Plan quota (docs/quota-spec.md): Claude Code runs this as the agent's status line with `node -e`. It reads the status-line JSON from
- * stdin, keeps ONLY `rate_limits` (nothing else of it leaves the process: no cwd, ids, cost or transcript path) and posts it to
+ * stdin, keeps ONLY `rate_limits`, the session id and the session's total cost (`cost.total_cost_usd`): nothing else of it leaves the process (no
+ * cwd, transcript path or name), and posts them to
  * argv[1] with the agent's token (GONOGO_TOKEN, which claude has in its environment). argv[2], when given, is the Director's own
  * status-line command: it gets the same JSON and its output is what is shown; else one short line. Any failure still prints a line.
  * No single quote inside: it is passed in single quotes.
  */
 export const STATUS_LINE_SHIM = [
   'let d="";process.stdin.on("data",c=>d+=c).on("end",async()=>{let o="";',
-  'try{const j=JSON.parse(d||"{}"),r=j.rate_limits;',
+  'try{const j=JSON.parse(d||"{}"),r=j.rate_limits,c=j.cost&&j.cost.total_cost_usd,s=j.session_id;',
   'const w=r&&(r.seven_day||r.five_hour);if(w&&typeof w.used_percentage==="number")o="plan "+Math.round(w.used_percentage)+"%"+(r.seven_day?" wk":" 5h");',
-  'if(r)await fetch(process.argv[1],{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GONOGO_TOKEN},',
-  'body:JSON.stringify({rate_limits:r}),signal:AbortSignal.timeout(3000)}).catch(()=>{})}catch{}',
+  'const g=typeof c==="number"&&typeof s==="string";if(r||g)await fetch(process.argv[1],{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GONOGO_TOKEN},',
+  'body:JSON.stringify(g?{rate_limits:r,session:s.slice(0,80),total:c}:{rate_limits:r}),signal:AbortSignal.timeout(3000)}).catch(()=>{})}catch{}',
   // detached: the whole process group is killed when the command exits or after 4 s, so a grandchild cannot hold the shim
   'if(process.argv[2])o=await new Promise(r=>{const c=require("child_process").spawn("sh",["-c",process.argv[2]],{detached:true,stdio:["pipe","pipe","ignore"]});let s="",n=0;',
   'const e=()=>{if(n++)return;clearTimeout(t);try{process.kill(-c.pid,"SIGKILL")}catch{}r(s.trim()||o)};const t=setTimeout(e,4000);',

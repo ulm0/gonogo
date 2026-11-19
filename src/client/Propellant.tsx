@@ -3,10 +3,10 @@
  * Director's limit (or budget) for that window. Over it, Redline stops the agents; at 80 % the light turns amber.
  * Dollars are an estimate at API list prices (docs/cost-spec.md).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactElement } from 'react';
 import { FUEL_WINDOWS } from '../shared/protocol.js';
-import type { Budget, CostGauge, CostView, DayCost, FuelGauge, FuelLimits, FuelWindow, PlanQuota } from '../shared/protocol.js';
+import type { Budget, CostGauge, CostReport, CostView, DayCost, FuelGauge, FuelLimits, FuelWindow, PlanQuota } from '../shared/protocol.js';
 import { ageText, NO_PLAN_TEXT, PLAN_LABEL, planRows } from './quota.js';
 import { moneyText } from '../shared/prices.js';
 import type { ModelPrice, PricesView } from '../shared/prices.js';
@@ -174,9 +174,76 @@ export function RoomFuel(): ReactElement {
       <details className="fuel-fold" id="fuel-days">
         <summary className="label">COST BY DAY</summary>
         <CostDays cost={cost} />
+        <CostByKind spent={cost.room.usd.day + cost.room.usd.month} />
       </details>
       <PricesFold since={cost.pricedSince} />
     </>
+  );
+}
+
+/** The last 14 days by agent, with input, output and cache apart, from GET /api/cost. Asks again when the spend moves. */
+export function CostByKind({ spent }: { spent: number }): ReactElement {
+  const [report, setReport] = useState<CostReport | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.getCost(14).then(
+      (found) => live && (setReport(found), setProblem(null)),
+      (e: unknown) => live && setProblem(e instanceof Error ? e.message : String(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [spent]);
+  if (problem !== null) return <p className="error" role="alert">{problem}</p>;
+  if (report === null) return <p className="hint">Reading the ledger.</p>;
+  return <CostKindsTable report={report} />;
+}
+
+/** The table itself: estimates by kind of token, and the reported figure beside them. */
+export function CostKindsTable({ report }: { report: CostReport }): ReactElement {
+  const rows = Object.entries(report.agents).filter(([, s]) => s.usd > 0 || s.unpriced > 0);
+  const cache = (s: { usdSplit: { cacheWrite: number; cacheRead: number } }): number => s.usdSplit.cacheWrite + s.usdSplit.cacheRead;
+  return (
+    <div className="fuel-kinds">
+      <table className="fuel-table">
+        <caption>{`Estimated dollars, ${report.from} to ${report.to}, by kind of token`}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Agent</th>
+            <th scope="col">Total</th>
+            <th scope="col">Input</th>
+            <th scope="col">Output</th>
+            <th scope="col">Cache</th>
+            <th scope="col">Reported</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([name, s]) => (
+            <tr key={name}>
+              <th scope="row">{name}</th>
+              <td>{moneyText(s.usd)}</td>
+              <td>{moneyText(s.usdSplit.input)}</td>
+              <td>{moneyText(s.usdSplit.output)}</td>
+              <td>{moneyText(cache(s))}</td>
+              <td data-basis={s.basis}>{s.reported === null ? '—' : `at least ${moneyText(s.reported)}`}</td>
+            </tr>
+          ))}
+          <tr>
+            <th scope="row">the room</th>
+            <td>{moneyText(report.room.usd)}</td>
+            <td>{moneyText(report.room.usdSplit.input)}</td>
+            <td>{moneyText(report.room.usdSplit.output)}</td>
+            <td>{moneyText(cache(report.room))}</td>
+            <td>{report.room.reported === null ? '—' : `at least ${moneyText(report.room.reported)} (${report.room.reportedAgents.have} of ${report.room.reportedAgents.of} agents)`}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="hint">
+        Total, Input, Output and Cache are <strong>estimates</strong> at list prices (tokens times price), not a bill, and are what the budgets use. Reported is what Claude Code says its sessions cost, shown beside them and never added to them: at least that much, and for a claude.ai subscription it is an equivalent, not a charge. Other engines have no reported figure. Prices as of {report.priceAsOf} unless you changed them.
+        {report.unpricedModels.length > 0 ? ` No price for: ${report.unpricedModels.join(', ')}.` : ''}
+      </p>
+    </div>
   );
 }
 
