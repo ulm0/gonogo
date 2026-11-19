@@ -2016,6 +2016,7 @@ describe('end to end with the stand-in agent', () => {
     expect((await api(h, 'PUT', '/api/relay/slack', { token: SLACK_TOKEN, to: 'C0123456789' })).status).toBe(200);
     const view = await api<{ slack: { to: string } | null; telegram: { to: string } | null; forward: string[] }>(h, 'PUT', '/api/relay/telegram', { token: TELEGRAM_TOKEN, to: '555' });
     expect(view.body).toEqual({ slack: { to: 'C0123456789', last: null }, telegram: { to: '555', last: null }, forward: ['message', 'redline', 'tminus', 'flight-plan'], phone: 'off' });
+    // (polling is off in a test server: telegramInbound is absent, so the view is exactly this)
     expect(statSync(join(h.home, 'relay.json')).mode & 0o777).toBe(0o600);
     expect(await api<ApiError>(h, 'PUT', '/api/relay/slack', { token: 'nope', to: 'C0123456789' })).toMatchObject({ status: 400, body: { field: 'token' } });
 

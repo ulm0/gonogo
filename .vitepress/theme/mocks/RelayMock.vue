@@ -21,6 +21,7 @@ const HEADERS: Record<string, string> = {
         <code>{{ HEADERS[s.kind] }}</code>
       </div>
       <span class="lcd mk-lcd">Uplink: &lt;name&gt;</span>
+      <span class="lcd mk-lcd">Telegram without an uplink: getUpdates, no public address</span>
     </div>
     <div class="module mk-side">
       <span class="label">Out · forwarded to the targets</span>

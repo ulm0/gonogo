@@ -230,6 +230,11 @@ function Card({ info, ...shared }: Shared & { info: ServiceInfo }): ReactElement
         {info.label}
       </h3>
       {info.target !== null && <Target {...shared} service={info.target} label={info.label} saved={shared.view?.[info.target] ?? null} />}
+      {info.target === 'telegram' && shared.view?.telegram != null && shared.view.telegramInbound !== undefined && (
+        <p className={shared.view.telegramInbound.mode === 'error' ? 'error' : 'hint'} data-inbound={shared.view.telegramInbound.mode}>
+          {shared.view.telegramInbound.note}
+        </p>
+      )}
       <details className="up-log rl-steps">
         <summary>Setup steps</summary>
         <ol>
