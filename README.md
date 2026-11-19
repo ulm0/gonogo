@@ -16,7 +16,7 @@ With pnpm, name the version of the latest [release](https://github.com/ulm0/gono
 npm i -g @ulm0/gonogo@latest && gonogo     # or once, with pnpm: pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@<version>
 brew install ulm0/tap/gonogo              # Homebrew (macOS, Linux)
 pnpm install && pnpm build && pnpm start   # from a clone
-docker build -t gonogo . && docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_TOKEN -v gonogo-state:/state -v gonogo-projects:/projects gonogo
+docker build -t gonogo . && docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_TOKEN -v gonogo-state:/state -v gonogo-home:/home/node -v gonogo-projects:/projects gonogo
 ```
 
 Open the printed `gonogo ready: http://127.0.0.1:7777/#token=...` (Docker: `docker logs gonogo`). The token after `#` is your password; the server runs shells as you. State lives in `~/.gonogo` (`/state/gonogo` in Docker). Keep the port on `127.0.0.1`; for other devices or webhooks read [`docs/https.md`](docs/https.md).

@@ -13,9 +13,9 @@
 #
 # Run. One credential only: CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY, never both.
 # `-e NAME` without a value forwards the variable from your shell, so the secret is not typed into the command line.
-# Two named volumes: a named volume copies the image's ownership (uid 1000) on first use.
+# Three named volumes (/home/node keeps gh's login, ~/.gitconfig and the other dotfiles): a named volume copies the image's ownership (uid 1000) on first use.
 #   docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_TOKEN \
-#     -v gonogo-state:/state -v gonogo-projects:/projects gonogo:<tag>
+#     -v gonogo-state:/state -v gonogo-home:/home/node -v gonogo-projects:/projects gonogo:<tag>
 #   docker logs gonogo     # the line `gonogo ready: http://127.0.0.1:7777/#token=...` is the URL to open
 # That line holds the browser token, so whoever can read the container log can open the UI. If the log is collected
 # anywhere, read the token from the volume instead: docker exec gonogo cat /state/gonogo/token
@@ -123,21 +123,20 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global
 
 COPY --from=build /app /opt/gonogo
 RUN ln -s /opt/gonogo/bin/gonogo.js /usr/local/bin/gonogo
+# The entrypoint script is not in the npm tarball (/app), so it comes from the build stage's source.
+COPY --from=build --chmod=0755 /src/packaging/docker/entrypoint.sh /usr/local/bin/gonogo-entrypoint
 
-RUN mkdir -p /state /state/config/git /projects \
+RUN mkdir -p /state /projects \
  && chown -R node:node /state /projects
 
-# XDG_CONFIG_HOME puts the config of gh ($XDG_CONFIG_HOME/gh, so `gh auth login` survives a restart) and git's global
-# config in the volume; HOME=/home/node is not on one. Git alone would still write `git config --global` to ~/.gitconfig, so
-# GIT_CONFIG_GLOBAL names the file.
+# HOME=/home/node holds only dotfiles (claude, gh and node are in /usr/local): mount a volume or a host folder there and gh's login
+# (~/.config/gh), ~/.gitconfig, ~/.aws and the rest survive a new container, with no XDG or GIT_CONFIG detour.
 # CLAUDE_CONFIG_DIR keeps Claude's .claude.json (onboarding, folder trust), settings and sessions in the volume.
 # IS_DEMO is not set here: the server gives it to each claude child in seed mode, and an image-wide value would
 # hide the account in every claude started in the container.
 ENV HOME=/home/node \
     GONOGO_INSTALL=docker \
     CLAUDE_CONFIG_DIR=/state/claude \
-    XDG_CONFIG_HOME=/state/config \
-    GIT_CONFIG_GLOBAL=/state/config/git/config \
     GONOGO_HOME=/state/gonogo \
     GONOGO_SEED_CLAUDE=1 \
     DISABLE_AUTOUPDATER=1 \
@@ -167,7 +166,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:7777/rooms/health').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
 
 # -s: tini acts as a subreaper, so reaping also works under Docker's own --init, where tini is not PID 1.
-# mkdir -p: a /state volume made by an older image has no /state/config/git yet, and a named volume is seeded only once.
-ENTRYPOINT ["tini", "-s", "--", "sh", "-c", "mkdir -p /state/config/git; exec gonogo \"$@\"", "gonogo"]
+# gonogo-entrypoint (packaging/docker/entrypoint.sh): fills a new, empty home from /etc/skel, carries over gh's login and git's config from a 0.5.x /state/config, warns when the home is not writable, then execs gonogo with the CMD.
+ENTRYPOINT ["tini", "-s", "--", "gonogo-entrypoint"]
 # Inside the container the server must listen on all interfaces; the home comes from GONOGO_HOME.
 CMD ["--host", "0.0.0.0", "--port", "7777"]

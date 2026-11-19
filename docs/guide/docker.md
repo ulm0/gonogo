@@ -9,7 +9,7 @@ Build from a clone (the `Dockerfile` is not in the npm package), then run:
 ```
 docker build -t gonogo:0.1.0 .
 docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_TOKEN \
-  -v gonogo-state:/state -v gonogo-projects:/projects gonogo:0.1.0
+  -v gonogo-state:/state -v gonogo-home:/home/node -v gonogo-projects:/projects gonogo:0.1.0
 docker logs gonogo
 ```
 
@@ -28,7 +28,7 @@ Set one credential, not both: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-toke
 - **Base image** `node:24-bookworm-slim` is a floating tag. Pin it with `--build-arg NODE_IMAGE=node:24-bookworm-slim@sha256:<digest>` (`docker pull node:24-bookworm-slim` prints the digest). gonogo's dependencies come from the repository's `pnpm-lock.yaml` (`--prod --frozen-lockfile`).
 - **Health check**: every 30 s it fetches `http://127.0.0.1:7777/` inside the container; `docker ps` shows `healthy` on a 200. The probe is fixed to port 7777: if you run with another `--port` or `GONOGO_PORT`, give the container a matching `--health-cmd` (compose: `healthcheck:`), or it is always `unhealthy` and **every Docker self-update rolls back** (the update waits for `healthy`).
 - **Port**: the server binds `0.0.0.0` inside the container but prints `127.0.0.1:7777`. With `-p 127.0.0.1:8080:7777`, open the printed URL with `8080`.
-- **Volumes**: `/state` holds gonogo's home and Claude Code's configuration and sessions. `/projects` is the boss's working directory and where your projects go. Named volumes take the image's ownership (uid 1000).
+- **Volumes**: `/state` holds gonogo's home and Claude Code's configuration and sessions. `/home/node` is the container's HOME (the image keeps only dotfiles there: claude, gh and node live in `/usr/local`); mount a volume or a folder on it and gh's login, `~/.gitconfig`, `~/.aws` and every other dotfile survive a new container. `/projects` is the boss's working directory and where your projects go. Named volumes take the image's ownership (uid 1000).
 - **Host folder for `/projects`**: it must belong to uid 1000, or agents cannot write there (you only see Claude errors in a terminal). On Linux Docker creates a missing folder as `root:root`, so:
 
   ```
@@ -41,9 +41,9 @@ Set one credential, not both: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-toke
   - records folder trust for every folder an agent is hired into, except `/`, your home directory and folders that hold either or the state ([Security](../reference/security.md)). **Add only repositories you trust.**
   - sets `IS_DEMO=1` for each `claude`, which hides your account name and organisation in Claude's header and `/status`;
   - moves `ANTHROPIC_API_KEY` out of the agent's environment into an `apiKeyHelper`.
-- **gh and git**: the image has the `gh` CLI (pinned, checked against the release checksum). `gh auth login` inside the container keeps its login in `/state/config/gh`, and `git config --global` writes `/state/config/git/config`, so both survive a restart or a new container on the same `/state`. The home folder `/home/node` is not on a volume. The container creates `/state/config/git` at start, so a `/state` volume made by an older image needs nothing.
+- **gh and git**: the image has the `gh` CLI (pinned, checked against the release checksum). `gh auth login` keeps its login in `~/.config/gh` and `git config --global` writes `~/.gitconfig`, as on any machine; with `/home/node` on a volume (compose does it: `gonogo-data/home`) both survive a restart or a new container, a self-update included (it keeps the bind). Without a volume on `/home/node` (a bare `docker run` that omits it) they are lost when the container is recreated. At start the container copies `/etc/skel` (`.bashrc`, `.profile`) into the home when it is a new, empty folder, never over a file that exists. **To keep what you already have**: copy it into `gonogo-data/home` before the first `docker compose up` (`~/.config/gh`, `~/.aws`, `~/.gitconfig`; on a compose install from 0.5.x the old `gonogo-data/config/gh` goes to `gonogo-data/home/.config/gh` and `gonogo-data/config/gitconfig` to `gonogo-data/home/.gitconfig`), owned by uid 1000.
 - **Update**: with the Docker socket mounted (the compose file does) and a moving tag, the Update button pulls the image and recreates the container itself, with a health check and a rollback, and UNDO puts the old image back. With a pinned tag or no socket the page shows `docker compose pull && docker compose up -d`, or calls `GONOGO_UPDATE_HOOK` ([Update from the page](../features/update.md#in-a-container-update-recreates-gonogo-itself)).
-- **Environment**: `GONOGO_INSTALL=docker`, `HOME=/home/node`, `CLAUDE_CONFIG_DIR=/state/claude`, `XDG_CONFIG_HOME=/state/config`, `GIT_CONFIG_GLOBAL=/state/config/git/config`, `GONOGO_HOME=/state/gonogo`, `GONOGO_SEED_CLAUDE=1`, `DISABLE_AUTOUPDATER=1`, `LANG=C.UTF-8`. Command: `gonogo --host 0.0.0.0 --port 7777`. Every [option](../reference/configuration.md#options) works, as `-e GONOGO_ALLOWED_HOSTS=gonogo.example.com` or as arguments after the image name (these replace the whole command, so repeat `--host 0.0.0.0 --port 7777`).
+- **Environment**: `GONOGO_INSTALL=docker`, `HOME=/home/node`, `CLAUDE_CONFIG_DIR=/state/claude`, `GONOGO_HOME=/state/gonogo`, `GONOGO_SEED_CLAUDE=1`, `DISABLE_AUTOUPDATER=1`, `LANG=C.UTF-8`. Command: `gonogo --host 0.0.0.0 --port 7777`. Every [option](../reference/configuration.md#options) works, as `-e GONOGO_ALLOWED_HOSTS=gonogo.example.com` or as arguments after the image name (these replace the whole command, so repeat `--host 0.0.0.0 --port 7777`).
 - **Stopping**: gonogo stops its agents within 8 s and gives up at 12, past Docker's default 10. Use `docker stop -t 15` or more.
 - **Docker CLI**: the client binary only (from `docker:<version>-cli`; `--build-arg DOCKER_CLI_IMAGE=...` changes it), for Clean Room. No daemon.
 
@@ -63,7 +63,7 @@ its own agents within 12 seconds, in parallel, and the supervisor waits 17 befor
 :::
 
 ```
-sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/config   # next to compose.yaml
+sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home   # next to compose.yaml
 printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env   # next to compose.yaml; compose reads it for every command
 export CLAUDE_CODE_OAUTH_TOKEN=...     # or ANTHROPIC_API_KEY, never both
 docker compose up -d                                       # pulls ghcr.io/ulm0/gonogo:latest

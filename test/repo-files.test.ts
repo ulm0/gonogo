@@ -118,6 +118,34 @@ describe('compose.yaml', () => {
   });
 });
 
+describe('the HOME of the container is persisted as a whole', () => {
+  it('compose binds <data>/home on /home/node, the image and the compose file point no XDG or git config elsewhere, and nothing reads /state/config', () => {
+    const compose = read('compose.yaml');
+    const live = compose.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+    expect(live).toMatch(/- \$\{GONOGO_DATA:\?[^}]+\}\/home:\/home\/node\n/);
+    const docker = read('Dockerfile');
+    const liveDocker = docker.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+    for (const text of [live, liveDocker]) {
+      expect(text).not.toContain('XDG_CONFIG_HOME');
+      expect(text).not.toContain('GIT_CONFIG_GLOBAL');
+      expect(text).not.toContain('/state/config');
+    }
+    // a new, empty home gets the skeleton, never over a file that exists
+    const entry = read('packaging', 'docker', 'entrypoint.sh');
+    expect(liveDocker).toContain('/src/packaging/docker/entrypoint.sh /usr/local/bin/gonogo-entrypoint');
+    expect(liveDocker).toContain('ENTRYPOINT ["tini", "-s", "--", "gonogo-entrypoint"]');
+    expect(entry).toContain('cp -rn /etc/skel/.');
+    expect(entry).toContain('[ ! -e "$HOME/.config/gh" ]');
+    expect(entry).toContain('cp -rn /state/config/gh');
+    expect(entry).toContain('[ ! -e "$HOME/.gitconfig" ]');
+    expect(entry).toMatch(/\[ -w "\$HOME" \] \|\| echo .*chown 1000:1000/);
+    expect(entry).toMatch(/exec gonogo "\$@"\n$/);
+    expect(statSync(join(root, 'packaging', 'docker', 'entrypoint.sh')).mode & 0o111).not.toBe(0);
+    expect(compose).toContain('gonogo-data/home');
+    expect(read('docs', 'guide', 'docker.md')).toContain('gonogo-data/home');
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [
