@@ -13,6 +13,8 @@
   },
   "include": [
     "test",
+    "browser",
+    "playwright.config.ts",
     "src/server",
     "src/shared"
   ]

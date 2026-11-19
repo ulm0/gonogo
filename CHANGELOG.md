@@ -4,6 +4,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **A real-browser smoke test in CI.** `browser/smoke.spec.ts` (Playwright, Chromium) runs the built server with the stand-in agent: setup, login with TOTP, console and CSP errors, styles, the room's link lamp and console, the service worker. It runs on pull requests that touch the page, auth or web code, by hand, and before every release publish. See CONTRIBUTING.md.
 - **Fix: `gonogo tui` answered "unknown option tui".** The command was dropped from the CLI by mistake in 0.3.0 (#52); the terminal client itself was there all along. It is back, with a test that `gonogo tui` reaches it.
 
 ## 0.5.5 (2026-11-19)

@@ -34,7 +34,14 @@ env:
   TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
+  # A real-browser pass of the tagged code first: a failure blocks the publish (the workflow checks out the tag too).
+  browser:
+    uses: ./.github/workflows/browser.yml
+    permissions:
+      contents: read
+
   publish:
+    needs: browser
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
