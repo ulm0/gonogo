@@ -9,7 +9,8 @@ import './landing.css';
 const ROOM = '/guide/the-room#positions-t-minus-max-q-and-custom-agents';
 
 // ---- install lines ----
-const INSTALL = ['pnpm dlx @ulm0/gonogo', 'docker pull ghcr.io/ulm0/gonogo'];
+declare const __GONOGO_VERSION__: string;
+const INSTALL = [`pnpm dlx @ulm0/gonogo@${__GONOGO_VERSION__}`, 'docker pull ghcr.io/ulm0/gonogo'];
 const copied = ref('');
 async function copy(line: string): Promise<void> {
   try {

@@ -39,9 +39,11 @@ note, and prints the exact command for the way gonogo was installed. Running tha
 |---|---|
 | a container (the image, `compose.yaml`) | `docker compose pull && docker compose up -d`, in the folder of the compose file |
 | a git checkout | `git pull && pnpm install && pnpm build` |
-| `pnpm dlx` | `pnpm dlx @ulm0/gonogo@latest` |
-| `npm install -g` (`lib/node_modules/@ulm0/gonogo`) | `npm install -g @ulm0/gonogo@latest` |
-| `pnpm add -g`, and anything not recognised | `pnpm add -g @ulm0/gonogo@latest` |
+| `pnpm dlx` | `pnpm dlx @ulm0/gonogo@<newest>` |
+| `npm install -g` (`lib/node_modules/@ulm0/gonogo`) | `npm install -g @ulm0/gonogo@<newest>` |
+| `pnpm add -g`, and anything not recognised | `pnpm add -g @ulm0/gonogo@<newest>` |
+
+`<newest>` is the last check's version, put in by `pinCommand` (the page and `gonogo update`); before a check has answered it stays `@latest`. pnpm's one-day `minimumReleaseAge` makes `@latest` resolve to an older version just after a release.
 
 ## Known limits
 

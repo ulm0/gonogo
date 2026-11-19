@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RolloutView } from '../src/shared/protocol.js';
 import { ROLLOUT_EVERY_MS, ROLLOUT_MAX_BYTES, ROLLOUT_URL } from '../src/server/constants.js';
-import { cachedLatest, createRollout, isNewer, updateCheckOff, updateCommand, updateText } from '../src/server/rollout.js';
+import { cachedLatest, createRollout, isNewer, pinCommand, updateCheckOff, updateCommand, updateText } from '../src/server/rollout.js';
 
 let dir: string;
 beforeEach(async () => {
@@ -85,7 +85,7 @@ describe('the answer', () => {
     const { rollout, emitted, now } = setup();
     expect(rollout.view()).toEqual({ enabled: true, current: '0.1.1', latest: null, checkedAt: null, newer: false, command: 'pnpm add -g @ulm0/gonogo@latest' });
     const view = await rollout.check();
-    expect(view).toEqual({ enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: now(), newer: true, command: 'pnpm add -g @ulm0/gonogo@latest' });
+    expect(view).toEqual({ enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: now(), newer: true, command: 'pnpm add -g @ulm0/gonogo@0.2.0' });
     expect(emitted).toEqual([view]);
     const file = join(dir, 'rollout.json');
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 1, checkedAt: now(), latest: '0.2.0' });
@@ -267,7 +267,7 @@ describe('updateText', () => {
   it('says what is out and prints the command; it says gonogo never updates itself', () => {
     const text = updateText('pnpm add -g @ulm0/gonogo@latest', false, { current: '0.1.1', latest: '0.2.0', newer: true });
     expect(text).toContain('gonogo 0.2.0 is out; this is 0.1.1.');
-    expect(text).toContain('\n  pnpm add -g @ulm0/gonogo@latest\n');
+    expect(text).toContain('\n  pnpm add -g @ulm0/gonogo@0.2.0\n'); // exact version: @latest would resolve to an old one under pnpm's release age
     expect(text).toContain('gonogo never updates itself without your click.');
   });
 
@@ -276,5 +276,13 @@ describe('updateText', () => {
     expect(up).toContain('This is gonogo 0.2.0; the newest the last check saw is 0.2.0.');
     expect(up).toContain('in the folder of your compose.yaml');
     expect(updateText('x', false, { current: '0.2.0', latest: null, newer: false })).toContain('This is gonogo 0.2.0.');
+  });
+});
+
+describe('pinCommand', () => {
+  it('puts the exact version where @latest was, for npm, pnpm and dlx, and leaves other commands alone', () => {
+    for (const c of ['pnpm dlx', 'pnpm add -g', 'npm install -g']) expect(pinCommand(`${c} @ulm0/gonogo@latest`, '0.4.1')).toBe(`${c} @ulm0/gonogo@0.4.1`);
+    expect(pinCommand('brew upgrade gonogo', '0.4.1')).toBe('brew upgrade gonogo');
+    expect(pinCommand('pnpm dlx @ulm0/gonogo@latest', null)).toBe('pnpm dlx @ulm0/gonogo@latest');
   });
 });

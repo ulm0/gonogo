@@ -10,8 +10,10 @@ Documentation: <https://gonogo.ulm0.com/>
 
 Needs Node 24+, macOS or Linux (glibc), and one agent CLI on your `PATH`, signed in (`claude` by default; Codex, Gemini CLI and others also work). The npm package is `@ulm0/gonogo` (the unscoped `gonogo` is another project).
 
+Name the version (see [Releases](https://github.com/ulm0/gonogo/releases)): pnpm only takes a release at least a day old, so a bare `pnpm dlx @ulm0/gonogo` runs an older gonogo for a day after each release.
+
 ```
-pnpm dlx @ulm0/gonogo                      # or: pnpm add -g @ulm0/gonogo && gonogo
+pnpm dlx @ulm0/gonogo@<version>            # the version of the latest release; or: pnpm add -g @ulm0/gonogo@<version> && gonogo
 brew install ulm0/tap/gonogo              # Homebrew (macOS, Linux)
 pnpm install && pnpm build && pnpm start   # from a clone
 docker build -t gonogo . && docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_TOKEN -v gonogo-state:/state -v gonogo-projects:/projects gonogo
