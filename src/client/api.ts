@@ -1292,7 +1292,8 @@ export async function authPasskeyAdd(name: string): Promise<void> {
   if (credential === null) throw failure('The passkey was not made.');
   await authCall('POST', '/passkeys/finish', { response: credentialJson(credential as PublicKeyCredential), name });
 }
-export const authPasskeyRemove = (id: string): Promise<unknown> => authCall('DELETE', `/passkeys/${encodeURIComponent(id)}`);
+/** Taking one away asks the password and a code, as turning the second factor off does. */
+export const authPasskeyRemove = (id: string, password: string, code: string): Promise<unknown> => authCall('DELETE', `/passkeys/${encodeURIComponent(id)}`, { password, code });
 
 /** For a step-up: the browser signs the server's challenge; the answer is what POST /api/auth/stepup takes. */
 export async function passkeyStepUpAnswer(): Promise<{ passkey: unknown }> {

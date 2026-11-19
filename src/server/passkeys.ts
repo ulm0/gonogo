@@ -27,7 +27,9 @@ export function relyingParty(host: string | undefined, cls: HostClass): RelyingP
   if (cls !== 'public' || host === undefined) return null;
   const name = hostName(host);
   if (name === null || !DOMAIN.test(name)) return null;
-  return { rpId: name, origin: `https://${host.trim().toLowerCase()}` };
+  // a browser writes the origin without the port https has by default
+  const port = /:(\d{1,5})$/.exec(host.trim())?.[1];
+  return { rpId: name, origin: `https://${name}${port === undefined || port === '443' ? '' : `:${port}`}` };
 }
 
 /** register and step belong to a signed-in session; a login challenge belongs to nobody yet and is not kept at all (see below). */
@@ -51,6 +53,8 @@ export interface Passkeys {
   /** Options to confirm a step-up with a passkey; null when there is none. */
   stepOptions(sessionId: string, rp: RelyingParty): Promise<Record<string, unknown> | null>;
   stepFinish(sessionId: string, rp: RelyingParty, response: unknown): Promise<{ ok: true; session: string } | { ok: false }>;
+  /** A passkey assertion that confirms an action without minting the session again (taking a passkey away); the answer is the credential and its counter. */
+  confirm(sessionId: string, rp: RelyingParty, response: unknown): Promise<{ id: string; counter: number } | null>;
   /** Whether this rp id has a passkey (for the login page's button). */
   has(rp: RelyingParty): boolean;
 }
@@ -186,6 +190,11 @@ export function createPasskeys(auth: AuthStore, now: () => number = Date.now): P
       const options = await generateAuthenticationOptions({ rpID: rp.rpId, userVerification: 'required', allowCredentials: mine.map((p) => ({ id: p.id, transports: p.transports })) });
       remember(options.challenge, { kind: 'step', rpId: rp.rpId, session: sessionId });
       return options as unknown as Record<string, unknown>;
+    },
+
+    async confirm(sessionId, rp, raw) {
+      const got = await assertion('step', sessionId, rp, raw);
+      return got === null ? null : { id: got.passkey.id, counter: got.counter };
     },
 
     async stepFinish(sessionId, rp, raw) {

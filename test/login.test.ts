@@ -703,10 +703,34 @@ describe('passkeys through the supervisor', () => {
 
   /** The account, a session from this machine, and one passkey registered at the public name. */
   let pclock = Date.now();
+  const unbase32 = (text: string): Buffer => {
+    let bits = 0;
+    let value = 0;
+    const out: number[] = [];
+    for (const ch of text) {
+      value = (value << 5) | 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(ch);
+      bits += 5;
+      if (bits >= 8) {
+        out.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    return Buffer.from(out);
+  };
+  let secret: Buffer = Buffer.alloc(0);
+  const codeOf = (plus = 0): string => totpCode(secret, Math.floor((pclock + plus) / 1000 / 30));
+  /** The way back first: a passkey asks for the second factor to be on. */
+  async function totpOn(cookies: Record<string, string>): Promise<void> {
+    const local = { ...cookieHeader(cookies), ...origin(), ...JSONH };
+    secret = unbase32((JSON.parse((await call('POST', '/api/auth/mfa/begin', local, '{}')).text) as { secret: string }).secret);
+    expect((await call('POST', '/api/auth/mfa/enable', local, JSON.stringify({ code: codeOf() }))).status).toBe(200);
+    pclock += 31_000;
+  }
   async function withPasskey(): Promise<{ cookies: Record<string, string>; key: ReturnType<typeof softKey> }> {
     pclock = Date.now();
     await boot({ now: () => pclock });
     const cookies = await setUp();
+    await totpOn(cookies);
     const key = softKey();
     const begun = JSON.parse((await post('/api/auth/passkeys/begin', at(cookies))).text) as { challenge: string };
     const done = await post('/api/auth/passkeys/finish', at(cookies), { name: 'laptop', response: key.create({ rpId: NAME, origin: ORIGIN, challenge: begun.challenge }) });
@@ -802,12 +826,52 @@ describe('passkeys through the supervisor', () => {
     expect((await post('/api/auth/stepup', at(next), { passkey: softKey().get({ rpId: NAME, origin: ORIGIN, challenge: again.challenge }) })).status).toBe(401);
   });
 
-  it('removing it is a change of the account: needs a session, the list shows it gone', async () => {
+  it('the first passkey needs the second factor on (the way back if the name changes), and the second factor stays while a passkey does', async () => {
+    pclock = Date.now();
+    await boot({ now: () => pclock });
+    const cookies = await setUp();
+    const refused = await post('/api/auth/passkeys/begin', at(cookies));
+    expect(refused.status).toBe(409);
+    expect(refused.text).toContain('second factor');
+    await totpOn(cookies);
+    expect((await post('/api/auth/passkeys/begin', at(cookies))).status).toBe(200);
+    const { cookies: _unused } = { cookies };
+    void _unused;
+  });
+
+  it('turning the second factor off is refused while a passkey exists', async () => {
     const { cookies } = await withPasskey();
+    const off = await post('/api/auth/mfa/disable', at(cookies), { password: PASSWORD, code: codeOf() });
+    expect(off.status).toBe(409);
+    expect(off.text).toContain('remove the passkeys first');
+  });
+
+  it('removing one needs the password and a code (or a passkey), not only a fresh session; then the login says none is set up', async () => {
+    const { cookies, key } = await withPasskey();
     const view = JSON.parse((await call('GET', '/api/auth/account', { ...cookieHeader(cookies), host: NAME })).text) as { passkeys: Array<{ id: string }> };
     const id = view.passkeys[0]?.id as string;
-    expect((await call('DELETE', `/api/auth/passkeys/${id}`, { host: NAME, origin: ORIGIN })).status).toBe(401);
-    expect((await call('DELETE', `/api/auth/passkeys/${id}`, at(cookies))).status).toBe(200);
+    const del = (headers: Record<string, string>, body: unknown = {}): Promise<Answer> => call('DELETE', `/api/auth/passkeys/${id}`, headers, JSON.stringify(body));
+    expect((await del({ host: NAME, origin: ORIGIN, ...JSONH })).status).toBe(401);
+    // a session that is fresh but gives nothing, or the wrong thing
+    expect((await del(at(cookies))).status).toBe(401);
+    pclock += 10_000;
+    expect((await del(at(cookies), { password: 'not the password', code: codeOf() })).status).toBe(401);
+    // the waits count on the clock of the supervisor; the session stays fresh (under five minutes)
+    pclock += 10_000;
+    expect((await del(at(cookies), { password: PASSWORD, code: '000000' })).status).toBe(401);
+    expect((await post('/api/auth/passkey/options', at())).status).toBe(200);
+    pclock += 20_000;
+    expect((await del(at(cookies), { password: PASSWORD, code: codeOf() })).status).toBe(200);
+    expect((await post('/api/auth/passkey/options', at())).status).toBe(404);
+    void key;
+  });
+
+  it('or with a passkey assertion for the same session', async () => {
+    const { cookies, key } = await withPasskey();
+    const view = JSON.parse((await call('GET', '/api/auth/account', { ...cookieHeader(cookies), host: NAME })).text) as { passkeys: Array<{ id: string }> };
+    const id = view.passkeys[0]?.id as string;
+    const { challenge } = JSON.parse((await post('/api/auth/stepup/options', at(cookies))).text) as { challenge: string };
+    expect((await call('DELETE', `/api/auth/passkeys/${id}`, at(cookies), JSON.stringify({ passkey: key.get({ rpId: NAME, origin: ORIGIN, challenge }) }))).status).toBe(200);
     expect((await post('/api/auth/passkey/options', at())).status).toBe(404);
   });
 });

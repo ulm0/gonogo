@@ -360,18 +360,36 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     if (path === '/api/auth/passkeys/begin' && method === 'POST') {
       const rp = rpOf(req, who);
       if (found.sessionId === undefined || rp === null || options.passkeys === undefined) return sendApiError(res, 409, 'a passkey can be added from a public name opened over https, signed in with a session', 'conflict');
+      // the way back: the name a passkey is made for can change, and then it is gone; a second factor and its recovery codes do not depend on the name
+      if (!auth.passkeysMayStart()) return sendApiError(res, 409, 'turn on the second factor (TOTP) first: it is the way back if the name of this page ever changes', 'conflict');
       return sendJson(res, 200, await options.passkeys.registerOptions(found.sessionId, rp), { 'Cache-Control': 'no-store' });
     }
     if (path === '/api/auth/passkeys/finish' && method === 'POST') {
       const rp = rpOf(req, who);
       const wide = await readForm(req, PASSKEY_BODY_MAX);
       if (found.sessionId === undefined || rp === null || options.passkeys === undefined || wide === null) return sendApiError(res, 409, 'a passkey can be added from a public name opened over https, signed in with a session', 'conflict');
+      if (!auth.passkeysMayStart()) return sendApiError(res, 409, 'turn on the second factor (TOTP) first', 'conflict');
       const answer = await options.passkeys.registerFinish(found.sessionId, who, rp, wide.form.response, text(wide.form, 'name'));
       if (answer === 'ok') return sendJson(res, 200, { ok: true });
       return sendApiError(res, answer === 'full' ? 409 : 400, answer === 'full' ? 'there are twenty passkeys already, or this one is one of them' : 'that passkey was not accepted: it must be made for this address, opened over https, with a screen lock or key', answer === 'full' ? 'conflict' : 'bad_request');
     }
     const passkey = /^\/api\/auth\/passkeys\/([A-Za-z0-9_-]{8,64})$/.exec(path);
-    if (passkey !== null && method === 'DELETE') return auth.passkeyRemove(passkey[1] as string) ? sendJson(res, 200, { ok: true }) : sendApiError(res, 404, 'no such passkey', 'not_found');
+    if (passkey !== null && method === 'DELETE') {
+      // as turning the second factor off: the password and a code, or a passkey; a fresh step-up alone is not enough
+      const wide = await readForm(req, PASSKEY_BODY_MAX);
+      const body = wide?.form ?? {};
+      const short = passkey[1] as string;
+      if (body.passkey !== undefined) {
+        const rp = rpOf(req, who);
+        const done = found.sessionId === undefined || rp === null || options.passkeys === undefined ? null : await options.passkeys.confirm(found.sessionId, rp, body.passkey);
+        if (done === null) return sendApiError(res, 401, 'that passkey was not accepted', 'unauthorized');
+        return auth.passkeyRemoveConfirmed(short, done.id, done.counter) ? sendJson(res, 200, { ok: true }) : sendApiError(res, 404, 'no such passkey', 'not_found');
+      }
+      const answer = await auth.passkeyRemove(found.sessionId ?? 'socket', who, short, { password: text(body, 'password'), code: text(body, 'code') });
+      if (answer === 'ok') return sendJson(res, 200, { ok: true });
+      if (answer === 'none') return sendApiError(res, 404, 'no such passkey', 'not_found');
+      return sendApiError(res, answer === 'wait' ? 429 : 401, answer === 'wait' ? 'too many tries: wait, then try again' : 'wrong password or code', answer === 'wait' ? 'rate_limited' : 'unauthorized');
+    }
     if (path === '/api/auth/mfa/begin' && method === 'POST') {
       if (auth.mfa().enabled) return sendApiError(res, 409, 'a second factor is already on: turn it off first', 'conflict');
       return sendJson(res, 200, auth.mfaBegin(), { 'Cache-Control': 'no-store' });
@@ -389,6 +407,8 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       if (body === null) return sendApiError(res, 400, 'send application/json', 'bad_request');
       const input = { password: text(body, 'password'), code: text(body, 'code') };
       if (path.endsWith('disable')) {
+        // with a passkey on the account, TOTP and its recovery codes are the way back when the name changes: they stay until the passkeys are gone
+        if (auth.passkeys().length > 0) return sendApiError(res, 409, 'remove the passkeys first: the second factor is the way back if the name of this page changes', 'conflict');
         const answer = await auth.mfaDisable(found.sessionId ?? 'socket', who, input);
         if (answer === 'ok') return sendJson(res, 200, { ok: true });
         return sendApiError(res, answer === 'wait' ? 429 : 401, answer === 'wait' ? 'too many tries: wait, then try again' : 'wrong password or code', answer === 'wait' ? 'rate_limited' : 'unauthorized');

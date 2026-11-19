@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openAuth } from '../src/server/auth.js';
+import { openAuth, totpCode } from '../src/server/auth.js';
 import type { AuthStore, Who } from '../src/server/auth.js';
 import { createPasskeys, relyingParty } from '../src/server/passkeys.js';
 import type { Passkeys, RelyingParty } from '../src/server/passkeys.js';
@@ -51,6 +51,8 @@ describe('where a passkey can be offered', () => {
   it('a public domain name, with its origin (the port stays in the origin, not in the rp id); nothing else', () => {
     expect(relyingParty('gonogo.example.com', 'public')).toEqual({ rpId: 'gonogo.example.com', origin: 'https://gonogo.example.com' });
     expect(relyingParty('Gonogo.Example.com:8443', 'public')).toEqual({ rpId: 'gonogo.example.com', origin: 'https://gonogo.example.com:8443' });
+    // a browser writes the origin without the port https has already
+    expect(relyingParty('gonogo.example.com:443', 'public')).toEqual({ rpId: 'gonogo.example.com', origin: 'https://gonogo.example.com' });
     for (const host of ['203.0.113.7', '203.0.113.7:7357', '[2001:db8::1]:7357', 'localhost', 'com', 'a_b.example.com', '-a.example.com', 'example.123', 'a..b.com', '', undefined]) expect(relyingParty(host, 'public'), String(host)).toBeNull();
     // the class says it too: a name that is not public is not offered one
     for (const cls of ['loopback', 'private'] as const) expect(relyingParty('gonogo.example.com', cls)).toBeNull();
@@ -96,12 +98,23 @@ describe('registering', () => {
     expect((await enrol(key)).answer).toBe('full');
   });
 
-  it('remove: a prefix names one, and an alert says so', async () => {
+  it('remove: needs the password and a code, a prefix names one, and an alert says so', async () => {
+    // the second factor first, as the route asks
+    auth.mfaBegin();
+    const secret = Buffer.from(JSON.parse(readFileSync(join(home, 'auth.json'), 'utf8')).totp.secret, 'base64url');
+    const code = (): string => totpCode(secret, Math.floor(clock / 1000 / 30));
+    expect(auth.passkeysMayStart()).toBe(false);
+    auth.mfaEnable(session, who(), code());
+    expect(auth.passkeysMayStart()).toBe(true);
+    clock += 31_000;
     await enrol(softKey(), 'a');
     await enrol(softKey(), 'b');
     const [first, second] = auth.passkeys();
-    expect(auth.passkeyRemove('short')).toBe(false);
-    expect(auth.passkeyRemove((first?.id as string).slice(0, 24))).toBe(true);
+    expect(await auth.passkeyRemove(session, who(), 'short', { password: PASSWORD, code: code() })).toBe('none');
+    expect(await auth.passkeyRemove(session, who(), (first?.id as string).slice(0, 24), { password: 'not the password', code: code() })).toBe('wrong');
+    expect(auth.passkeys()).toHaveLength(2);
+    clock += 3000;
+    expect(await auth.passkeyRemove(session, who(), (first?.id as string).slice(0, 24), { password: PASSWORD, code: code() })).toBe('ok');
     expect(auth.passkeys().map((p) => p.id)).toEqual([second?.id]);
     expect(alerts.at(-1)).toBe('a passkey was removed (a)');
   });

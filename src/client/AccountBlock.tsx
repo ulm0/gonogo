@@ -272,13 +272,19 @@ export function AccountBlock(): ReactElement {
                   {p.name} · for {p.rpId} · added {when(p.created).slice(0, 10)} · last used {when(p.last)}
                   {p.backedUp ? ' · synced' : ''}
                 </span>
-                <button type="button" className="btn" data-kind="danger" onClick={() => run(() => api.authPasskeyRemove(p.id))} aria-label={`Remove the passkey ${p.name}`}>
+                <button type="button" className="btn" data-kind="danger" onClick={() => run(() => api.authPasskeyRemove(p.id, offPassword, offCode), () => {
+                    setOffPassword('');
+                    setOffCode('');
+                  })} aria-label={`Remove the passkey ${p.name}`}>
                   REMOVE
                 </button>
               </li>
             ))}
           </ul>
-          {account.passkeyHere !== null && passkeysSupported() ? (
+          {account.passkeys.length > 0 && <p className="hint">To remove a passkey, give your password and a code in the fields of the second factor above, then REMOVE.</p>}
+          {account.passkeyHere !== null && passkeysSupported() && !account.mfa.enabled ? (
+            <p className="hint">Turn on the second factor (TOTP) first: it is the way back if the name of this page ever changes and the passkey stops working.</p>
+          ) : account.passkeyHere !== null && passkeysSupported() ? (
             <form
               className="rules-row"
               onSubmit={(event) => {

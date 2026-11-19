@@ -245,6 +245,8 @@ interface AuthFile {
   /** SHA-256 (hex) of the recovery codes not yet used. */
   recovery: string[];
   passkeys: Passkey[];
+  /** Top-level fields this version does not know (a newer gonogo wrote them): kept and written back, so a rollback and a return lose nothing. */
+  extra: Record<string, unknown>;
 }
 
 const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -318,10 +320,12 @@ function parseAuth(text: string): AuthFile | undefined {
       passkeys.push({ id: p.id, publicKey: p.publicKey, counter: p.counter, transports: p.transports.slice(0, 8), name: p.name, rpId: p.rpId, created: p.created, last: p.last as number | null, backedUp: p.backedUp });
     }
   }
-  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone, totp, recovery, passkeys };
+  const KNOWN = ['version', 'user', 'password', 'sessions', 'devices', 'keys', 'serverKey', 'tombstone', 'totp', 'recovery', 'passkeys', 'reset'];
+  const extra = Object.fromEntries(Object.entries(raw).filter(([key]) => !KNOWN.includes(key)));
+  return { version: 1, user: raw.user, password, sessions, devices, keys, serverKey: raw.serverKey, tombstone, totp, recovery, passkeys, extra };
 }
 
-const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone, totp: null, recovery: [], passkeys: [] });
+const empty = (tombstone: AuthFile['tombstone']): AuthFile => ({ version: 1, user: 'director', password: null, sessions: [], devices: [], keys: [], serverKey: rand(), tombstone, totp: null, recovery: [], passkeys: [], extra: {} });
 
 function writeAtomic(path: string, text: string): void {
   const temp = `${path}.${process.pid}.tmp`;
@@ -445,7 +449,12 @@ export interface AuthStore {
   /** The passkeys (credentials) of the account, newest last. */
   passkeys(): Passkey[];
   passkeyAdd(sessionId: string, who: Who, input: { id: string; publicKey: string; counter: number; transports: string[]; name: string; rpId: string; backedUp: boolean }): boolean;
-  passkeyRemove(short: string): boolean;
+  /** Takes a passkey off the list: asks the password and a code (or a recovery code), as turning TOTP off does. */
+  passkeyRemove(sessionId: string, who: Who, short: string, input: { password: string; code: string }): Promise<'ok' | 'wrong' | 'wait' | 'none'>;
+  /** The same, when a passkey assertion that verified stands for both (the caller checked it). */
+  passkeyRemoveConfirmed(short: string, credentialId: string, counter: number): boolean;
+  /** Whether a first passkey may be made: there has to be a second way in that does not depend on the name. */
+  passkeysMayStart(): boolean;
   /** A passkey assertion that was verified: the counter moves, and a session starts (a passkey is both factors; no waits, as a passkey cannot be guessed). */
   passkeyLogin(who: Who, credentialId: string, counter: number): LoginResult;
   /** The same for step-up: the session's id is minted again. */
@@ -528,7 +537,9 @@ export function openAuth(options: AuthOptions): AuthStore {
       const on = fileText();
       if (on === null || sha(on) !== written) checkTamper(true);
     }
-    const text = `${JSON.stringify(data)}\n`;
+    const { extra, ...known } = data;
+    // what this version does not know goes back as it was; what it does know wins
+    const text = `${JSON.stringify({ ...extra, ...known })}\n`;
     try {
       writeAtomic(path, text);
       written = sha(text);
@@ -1151,10 +1162,32 @@ export function openAuth(options: AuthOptions): AuthStore {
       options.alert(`a passkey was added (${data.passkeys.at(-1)?.name}, for ${input.rpId})`);
       return true;
     },
-    passkeyRemove(short) {
-      if (short.length < 8) return false;
+    passkeysMayStart: () => data.totp?.enabled === true,
+    async passkeyRemove(sessionId, who, short, input) {
+      if (short.length < 8) return 'none';
       const matches = data.passkeys.filter((p) => p.id.startsWith(short));
-      if (matches.length !== 1) return false;
+      if (matches.length !== 1) return 'none';
+      const keys = [`pk:${sessionId}`];
+      if (wait(keys) > 0) return 'wait';
+      // the password and the second factor, as turning TOTP off asks: a stolen session alone cannot take a passkey away
+      if (!(await checkPassword(input.password)) || !verifySecond(input.code)) {
+        fail(keys, who, null);
+        return 'wrong';
+      }
+      const found = matches[0] as Passkey;
+      data.passkeys = data.passkeys.filter((p) => p !== found);
+      save();
+      options.alert(`a passkey was removed (${found.name})`);
+      return 'ok';
+    },
+    passkeyRemoveConfirmed(short, credentialId, counter) {
+      const used = data.passkeys.find((p) => p.id === credentialId);
+      if (used !== undefined) {
+        used.counter = counter;
+        used.last = now();
+      }
+      const matches = data.passkeys.filter((p) => p.id.startsWith(short));
+      if (short.length < 8 || matches.length !== 1) return false;
       const found = matches[0] as Passkey;
       data.passkeys = data.passkeys.filter((p) => p !== found);
       save();
