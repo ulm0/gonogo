@@ -2,6 +2,10 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
+## Unreleased
+
+- **Fix: `gonogo tui` answered "unknown option tui".** The command was dropped from the CLI by mistake in 0.3.0 (#52); the terminal client itself was there all along. It is back, with a test that `gonogo tui` reaches it.
+
 ## 0.5.5 (2026-11-19)
 
 The top bar shows the version, a ROOMS key and, in every room, the note when a newer gonogo is out; the compose file keeps the gh login and git config across a recreated container.

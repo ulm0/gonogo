@@ -106,6 +106,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 import { USAGE, isTransientError, main, parseArgs, runRoom, resolveSettings, startGonogo } from '../src/server/cli.js';
+import { TUI_USAGE } from '../src/server/tui-cli.js';
 import type { Running } from '../src/server/cli.js';
 import { lockHooks, openHome } from '../src/server/home.js';
 import { createHookHandler } from '../src/server/hooks.js';
@@ -6924,6 +6925,17 @@ describe('cli: main', () => {
     await main(['-v'], baseEnv());
     expect(cap.out.join('')).toBe(`gonogo ${PACKAGE_VERSION}\ngonogo ${PACKAGE_VERSION}\n`);
     expect(cap.exits).toEqual([0, 0]);
+  });
+
+  // #52 dropped this dispatch by mistake and `gonogo tui` answered 'unknown option' until 0.5.5
+  it('runs the terminal client for tui, and starts nothing', async () => {
+    installFakes();
+    const cap = captureProcess();
+    await main(['tui', '--help'], baseEnv());
+    expect(cap.out.join('')).toBe(TUI_USAGE);
+    expect(cap.exits).toEqual([0]);
+    expect(factories.createHub).not.toHaveBeenCalled();
+    expect(USAGE).toContain('gonogo tui');
   });
 
   it('prints the usage to stderr and exits 2 for an unknown flag or a bad value', async () => {
