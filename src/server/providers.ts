@@ -85,7 +85,7 @@ export const STATUS_LINE_SHIM = [
   'try{const j=JSON.parse(d||"{}"),r=j.rate_limits,c=j.cost&&j.cost.total_cost_usd,s=j.session_id;',
   'const w=r&&(r.seven_day||r.five_hour);if(w&&typeof w.used_percentage==="number")o="plan "+Math.round(w.used_percentage)+"%"+(r.seven_day?" wk":" 5h");',
   'const g=typeof c==="number"&&typeof s==="string";if(r||g)await fetch(process.argv[1],{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GONOGO_TOKEN},',
-  'body:JSON.stringify(g?{rate_limits:r,session:s.slice(0,80),total:c}:{rate_limits:r}),signal:AbortSignal.timeout(3000)}).catch(()=>{})}catch{}',
+  'body:JSON.stringify(g?{rate_limits:r,session:s.slice(0,80),total:c,at:Date.now()}:{rate_limits:r}),signal:AbortSignal.timeout(3000)}).catch(()=>{})}catch{}',
   // detached: the whole process group is killed when the command exits or after 4 s, so a grandchild cannot hold the shim
   'if(process.argv[2])o=await new Promise(r=>{const c=require("child_process").spawn("sh",["-c",process.argv[2]],{detached:true,stdio:["pipe","pipe","ignore"]});let s="",n=0;',
   'const e=()=>{if(n++)return;clearTimeout(t);try{process.kill(-c.pid,"SIGKILL")}catch{}r(s.trim()||o)};const t=setTimeout(e,4000);',

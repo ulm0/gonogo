@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createPropellant } from '../src/server/propellant.js';
-import { createReported, parseReport, REPORTED_FILE } from '../src/server/reported.js';
+import { createReported, MAX_SESSIONS, MAX_SESSIONS_PER_AGENT, parseReport, REPORTED_FILE } from '../src/server/reported.js';
 import type { Reported } from '../src/server/reported.js';
 import { mergePrices } from '../src/shared/prices.js';
 import type { Logger } from '../src/shared/protocol.js';
@@ -20,13 +20,18 @@ const dayOf = (at: number): string => {
 let dir: string;
 let clock: number;
 const opened: Reported[] = [];
+/** A file that was made long ago, so that no session counts as "already running" (that rule has its own test). */
+const oldFile = async (): Promise<void> => {
+  await writeFile(join(dir, REPORTED_FILE), `${JSON.stringify({ created: NOW - 2 * DAY })}\n`);
+};
 const make = async (): Promise<Reported> => {
+  if (!(await readFile(join(dir, REPORTED_FILE)).then(() => true, () => false))) await oldFile();
   const r = createReported({ dir, now: () => clock, log: quiet });
   opened.push(r);
   await r.load();
   return r;
 };
-const file = async (): Promise<string[]> => (await readFile(join(dir, REPORTED_FILE), 'utf8').catch(() => '')).split('\n').filter(Boolean);
+const file = async (): Promise<string[]> => (await readFile(join(dir, REPORTED_FILE), 'utf8').catch(() => '')).split('\n').filter((l) => l.includes('"session"'));
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'gonogo-reported-'));
@@ -40,6 +45,8 @@ afterEach(async () => {
 describe('parseReport', () => {
   it('takes a session and a total, and nothing else of a status-line body', () => {
     expect(parseReport({ session: 'abc-1', total: 1.5, rate_limits: {}, cwd: '/x' })).toEqual({ session: 'abc-1', total: 1.5 });
+    expect(parseReport({ session: 'abc-1', total: 1.5, at: 1_700_000_000_000.4 })).toEqual({ session: 'abc-1', total: 1.5, at: 1_700_000_000_000 });
+    for (const at of ['x', -1, 0, Number.NaN]) expect(parseReport({ session: 'abc-1', total: 1, at }), String(at)).toEqual({ session: 'abc-1', total: 1 });
     for (const bad of [null, 'x', [], {}, { session: 'abc' }, { total: 1 }, { session: 'a b', total: 1 }, { session: '', total: 1 }, { session: 'abc', total: -1 }, { session: 'abc', total: Number.NaN }, { session: 'abc', total: '2' }, { session: 'abc', total: 2_000_000 }, { session: 'x'.repeat(81), total: 1 }, { session: '../x', total: 1 }]) expect(parseReport(bad), JSON.stringify(bad)).toBeNull();
   });
 });
@@ -57,14 +64,20 @@ describe('recording and reading', () => {
     expect(r.window(NOW - DAY, dayOf).agents.ana).toEqual({ usd: 1.75, sessions: 1 });
   });
 
-  it('keys by agent and session: two sessions, and two agents, add up apart', async () => {
+  it('keys by session: two sessions add up, an agent is credited what it posted, and a session that changes name does not count its total again', async () => {
     const r = await make();
     r.record('ana', { session: 's1', total: 2 });
     r.record('ana', { session: 's2', total: 3 });
-    r.record('ben', { session: 's1', total: 4 });
+    r.record('ben', { session: 's3', total: 4 });
+    // the same session under a new name (a rename): only what it spent since counts, credited to the new name
+    clock += 1000;
+    r.record('cy', { session: 's1', total: 2.5 });
     const w = r.window(NOW - DAY, dayOf).agents;
     expect(w.ana).toEqual({ usd: 5, sessions: 2 });
     expect(w.ben).toEqual({ usd: 4, sessions: 1 });
+    expect(w.cy?.usd).toBeCloseTo(0.5, 9);
+    const total = Object.values(w).reduce((s, x) => s + x.usd, 0);
+    expect(total).toBeCloseTo(9.5, 9);
   });
 
   it('a total below the last one is a reset: the new total is the delta, never negative', async () => {
@@ -75,6 +88,33 @@ describe('recording and reading', () => {
     clock += 1000;
     r.record('ana', { session: 's1', total: 3 });
     expect(r.window(NOW - DAY, dayOf).agents.ana?.usd).toBeCloseTo(5 + 1 + 2, 9);
+  });
+
+  it('two reports swapped on the way: the older one (by the shim\'s own time) is dropped, and its lower total is no reset; a lower total with a newer time is one', async () => {
+    const r = await make();
+    r.record('ana', { session: 's1', total: 5, at: NOW });
+    // the report of NOW - 2 s, with a lower total, arrives after: it was overtaken
+    clock += 500;
+    r.record('ana', { session: 's1', total: 4, at: NOW - 2000 });
+    clock += 500;
+    r.record('ana', { session: 's1', total: 5.5, at: NOW + 1000 });
+    expect(r.window(NOW - DAY, dayOf).agents.ana?.usd).toBeCloseTo(5.5, 9);
+    // a real reset: lower, and posted later
+    clock += 5000;
+    r.record('ana', { session: 's1', total: 1, at: NOW + 5000 });
+    expect(r.window(NOW - DAY, dayOf).agents.ana?.usd).toBeCloseTo(6.5, 9);
+    await r.close();
+    expect(await file()).toHaveLength(3);
+  });
+
+  it('a time that is missing, from the future or very old is taken as arriving now', async () => {
+    const r = await make();
+    r.record('ana', { session: 's1', total: 1, at: NOW + 3_600_000 });
+    clock += 1000;
+    // were the future time believed, this later report would look older than it and be dropped
+    r.record('ana', { session: 's1', total: 2, at: NOW + 1000 });
+    r.record('ana', { session: 's2', total: 1, at: 1 });
+    expect(r.window(NOW - DAY, dayOf).agents.ana).toEqual({ usd: 3, sessions: 2 });
   });
 
   it('a restart of gonogo counts nothing twice and takes up where the totals were', async () => {
@@ -117,7 +157,7 @@ describe('recording and reading', () => {
     const r = await make();
     // ana's day line is a delta of 1 over the old baseline of 8; ben's old line is the baseline, outside the window
     expect(r.window(NOW - 2 * DAY, dayOf).agents).toEqual({ ana: { usd: 1, sessions: 1 } });
-    // nothing was cut here (every old line is the baseline of its key), and the torn line is skipped on read, not repaired
+    // the torn line is skipped on read, not repaired
     const kept = (await file()).flatMap((l) => {
       try {
         return [JSON.parse(l) as { total: number }];
@@ -125,7 +165,75 @@ describe('recording and reading', () => {
         return [];
       }
     });
-    expect(kept.map((l) => l.total).sort((a, b) => a - b)).toEqual([1, 8, 9]);
+    // ben's only line is older than the window and its session has nothing since: it goes whole; ana's baseline stays
+    expect(kept.map((l) => l.total).sort((a, b) => a - b)).toEqual([8, 9]);
+  });
+});
+
+describe('a session that was already running (the upgrade day)', () => {
+  it('the first line of a session seen within ten minutes of the file being made counts 0; what it spends after counts; one seen later counts its own total', async () => {
+    const fresh = createReported({ dir, now: () => clock, log: quiet });
+    opened.push(fresh);
+    await fresh.load();
+    fresh.record('ana', { session: 'old', total: 40 });
+    clock += 60_000;
+    fresh.record('ana', { session: 'old', total: 41 });
+    clock += 8 * 60_000;
+    fresh.record('ana', { session: 'also-old', total: 7 });
+    // eleven minutes after the file was made: a session that really began since, with its first total
+    clock += 2 * 60_000;
+    fresh.record('ana', { session: 'new', total: 0.25 });
+    expect(fresh.window(NOW - DAY, dayOf).agents.ana).toEqual({ usd: 1.25, sessions: 3 });
+    await fresh.close();
+    const text = await readFile(join(dir, REPORTED_FILE), 'utf8');
+    expect(JSON.parse(text.split('\n')[0] ?? '{}')).toEqual({ created: NOW });
+    // after a restart the rule still holds, and a file with no first line (an older one) marks nothing
+    const again = createReported({ dir, now: () => clock, log: quiet });
+    opened.push(again);
+    await again.load();
+    expect(again.window(NOW - DAY, dayOf).agents.ana).toEqual({ usd: 1.25, sessions: 3 });
+    await rm(join(dir, REPORTED_FILE));
+    await writeFile(join(dir, REPORTED_FILE), JSON.stringify({ at: NOW, agent: 'ana', session: 'x', total: 3 }) + '\n');
+    const legacy = createReported({ dir, now: () => clock, log: quiet });
+    opened.push(legacy);
+    await legacy.load();
+    legacy.record('ana', { session: 'y', total: 2 });
+    expect(legacy.window(NOW - DAY, dayOf).agents.ana?.usd).toBe(5);
+  });
+});
+
+describe('growth', () => {
+  it('RSO: an agent posting endless fresh session ids is capped, and cannot crowd out another agent', async () => {
+    const r = await make();
+    for (let i = 0; i < MAX_SESSIONS_PER_AGENT + 300; i += 1) r.record('noisy', { session: `s${i}`, total: 1 });
+    expect(r.size()).toBe(MAX_SESSIONS_PER_AGENT);
+    r.record('quiet', { session: 'mine', total: 2 });
+    expect(r.size()).toBe(MAX_SESSIONS_PER_AGENT + 1);
+    expect(r.window(NOW - DAY, dayOf).agents.quiet?.usd).toBe(2);
+    // the sessions it had keep reporting
+    r.record('noisy', { session: 's0', total: 3 });
+    expect(r.window(NOW - DAY, dayOf).agents.noisy?.usd).toBe(MAX_SESSIONS_PER_AGENT + 2);
+    // and the whole is capped too
+    for (let a = 0; a < 6; a += 1) for (let i = 0; i < MAX_SESSIONS_PER_AGENT; i += 1) r.record(`agent${a}`, { session: `a${a}-${i}`, total: 1 });
+    expect(r.size()).toBe(MAX_SESSIONS);
+    await r.close();
+  });
+
+  it('RSO: the memory and the file are pruned while it runs, not only at load: an old session goes, an active one keeps its baseline', async () => {
+    const r = await make();
+    r.record('ana', { session: 'gone', total: 1 });
+    r.record('ana', { session: 'active', total: 10 });
+    clock += 40 * DAY;
+    r.record('ana', { session: 'active', total: 12 });
+    // enough lines to reach the pruning count
+    for (let i = 0; i < 205; i += 1) r.record('ben', { session: `b${i}`, total: 1 });
+    expect(r.size()).toBe(206);
+    await r.close();
+    const lines = await file();
+    expect(lines.some((l) => l.includes('"gone"'))).toBe(false);
+    expect(lines.filter((l) => l.includes('"active"'))).toHaveLength(2);
+    // what is in the window is what it was
+    expect(r.window(clock - 2 * DAY, dayOf).agents.ana?.usd).toBe(2);
   });
 });
 

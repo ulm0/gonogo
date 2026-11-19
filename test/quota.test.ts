@@ -196,7 +196,9 @@ describe('the status line shim', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]?.auth).toBe('Bearer tok');
     expect(seen[0]?.url).toBe('/hook/ana/StatusLine');
-    expect(JSON.parse(seen[0]?.body ?? '{}')).toEqual({ rate_limits: { seven_day: { used_percentage: 41.4, resets_at: 1795518000 } }, session: 's', total: 2 });
+    expect(JSON.parse(seen[0]?.body ?? '{}')).toEqual({ rate_limits: { seven_day: { used_percentage: 41.4, resets_at: 1795518000 } }, session: 's', total: 2, at: expect.any(Number) });
+    // the time the shim posts at is its own, close to ours
+    expect(Math.abs(Date.now() - (JSON.parse(seen[0]?.body ?? '{}') as { at: number }).at)).toBeLessThan(10_000);
     // nothing else of the status line leaves the process
     expect(seen[0]?.body).not.toMatch(/secret|transcript|cwd/);
   });
@@ -217,7 +219,7 @@ describe('the status line shim', () => {
     await run(url, JSON.stringify({ session_id: 'x'.repeat(200), cost: { total_cost_usd: 1 } }));
     await run(url, JSON.stringify({ session_id: 'abc', cost: { total_cost_usd: 'a lot' } }));
     server.close();
-    expect(bodies.map((b) => JSON.parse(b) as Record<string, unknown>)).toEqual([{ session: 'abc', total: 0.5 }, { session: 'x'.repeat(80), total: 1 }]);
+    expect(bodies.map((b) => JSON.parse(b) as Record<string, unknown>)).toEqual([{ session: 'abc', total: 0.5, at: expect.any(Number) }, { session: 'x'.repeat(80), total: 1, at: expect.any(Number) }]);
   });
 
   it('prints a line and exits 0 when the hub is down or the input is not JSON', async () => {
