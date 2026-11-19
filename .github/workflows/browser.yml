@@ -14,13 +14,24 @@ on:
       - 'src/server/supervisor*'
       - 'src/server/web*'
       - '**/*.css'
-      - 'public/sw.js'
+      - 'public/**'
+      - 'index.html'
+      - 'src/shared/**'
+      - 'src/server/cli.ts'
+      - 'src/server/home.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
       - 'vite.config.ts'
       - 'browser/**'
       - 'playwright.config.ts'
       - '.github/workflows/browser.yml'
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        description: The ref to test; the release passes its tag (a run by hand is dispatched from a branch)
+        type: string
+        required: false
 
 permissions: {}
 
@@ -37,6 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
       # No version: it installs the pnpm that package.json `packageManager` pins.
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1

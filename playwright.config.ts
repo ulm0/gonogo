@@ -4,7 +4,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: 'browser',
   timeout: 120_000,
-  retries: 0,
+  // one retry in CI: this gates a release, and a single Chromium start failure must not stop a publish
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [['list']],
   outputDir: 'browser-results',
