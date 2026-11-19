@@ -2,7 +2,9 @@
 
 All notable changes to gonogo. Versions follow [Semantic Versioning](https://semver.org/); before 1.0.0 a minor release may break things.
 
-## Unreleased
+## 0.5.3 (2026-11-19)
+
+The page lost its layout in 0.5.0 to 0.5.2 (a style sheet missing one brace); this puts it back, and the login page and the list of rooms get their fonts.
 
 - **Fix: the page lost its layout in 0.5.0 and 0.5.1.** A merge dropped the closing brace of one rule in `rules.css`, so the bundler nested every later rule of the page under `.stepup-row`; nothing failed and nothing warned. The brace is back, and a test checks every style sheet closes what it opens.
 - **Fix: the login page and the list of rooms showed system fonts.** Their CSP allowed fonts only from `'self'`, and the style sheet embeds them as `data:`; both now allow `data:` fonts, as the room pages did.
