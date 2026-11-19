@@ -1,7 +1,7 @@
 /**
  * The manifest of the installed app (docs/features/mobile.md): what a phone shows on the Home Screen and in the app switcher. There is
- * ONE app for a gonogo, whichever room's page it is installed from: its scope and start address are the root (room main at `/`, the
- * list of rooms at `/rooms`, every other room under `/r/<id>/`), so its one service worker covers them all and the phone holds one
+ * ONE app for a gonogo, whichever room's page it is installed from: its scope and start address are the root (the list of rooms at `/`, room main at `/r/main/`, every other
+ * room under `/r/<id>/`), so its one service worker covers them all and the phone holds one
  * icon. The colours are the livery's body, as the room that served the manifest has it.
  */
 import { DEFAULT_LIVERY, INSTRUMENT, toHex } from '../shared/livery.js';

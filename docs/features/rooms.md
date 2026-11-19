@@ -14,12 +14,14 @@ the other rooms. Design: [`docs/rooms-spec.md`](https://github.com/ulm0/gonogo/b
 home and a loopback port of its own (the hidden `gonogo __room`, not for you to start). With one room, you see the same address, the same token
 and the same page as before; there is just one more process in front.
 
-- **Main** is today's home: nothing moves. It answers at `/`, **and** at `/r/main/` (the same room). Your old webhook addresses
-  (`/uplink/<id>`), docking links and scripts that call `/api` keep working. Other rooms are at `/r/<id>/` and live in `<home>/rooms/<id>/`, starting from
+- **Main** is today's home and a room like any other: its page is at `/r/main/` (before, it was at `/`). What was handed out for main at the root **keeps
+  working there**: `/api/...` and `/ws`, `/uplink/<id>`, `/dock/...` (webhooks and other stations), and the installed app's own files (`/sw.js`, `/manifest.webmanifest`,
+  the icons). A GET or HEAD of any other old path of main (its page, `/assets/...`) answers **308 to `/r/main/...`** with the query kept (the `#fragment` never leaves the browser).
+  New addresses you copy (webhooks, docking) name `/r/main/`. The agents' own hooks use the room's loopback port and are not affected. Other rooms are at `/r/<id>/` and live in `<home>/rooms/<id>/`, starting from
   zero (roster, mail, Flight Plan, Plot Board, Mission Log, Black Box, missions and every setting are per room). Main's home is the root folder,
   which also holds `token`, `rooms.json` and `rooms/<id>/` for the others.
-- **The list of rooms** is at `/rooms` (and **Rooms** in the Patch Panel, Cmd+K). The names the front port keeps for itself, never a room's:
-  `/r/`, `/rooms` (the list, `/rooms/health`, `/rooms/assets/`), `/api/rooms` and `/internal/`. `rooms add` refuses the ids `r`, `ws`, `internal`,
+- **The list of rooms** is at `/` (and **Rooms** in the Patch Panel, Cmd+K); `/rooms` answers 308 to `/`. The names the front port keeps for itself, never a room's:
+  `/` itself, `/r/`, `/rooms` (`/rooms/health`, `/rooms/assets/`), `/api/rooms` and `/internal/`. `rooms add` refuses the ids `r`, `ws`, `internal`,
   `api`, `assets`, `rooms` and `main`.
 - **Shared by inheritance**: the binary and its update, and the environment of the supervisor (`CLAUDE_CONFIG_DIR`, the agent CLIs' logins, `gh`'s
   config, `GONOGO_*` flags). **Not shared**: the price table, Clearance keys, Max Q (each room counts its own working agents) and Propellant.
@@ -57,7 +59,7 @@ Update key or `docker compose pull && docker compose up -d`. Reload per room is 
 
 ## The list page
 
-Open the printed address and go to `/rooms`. The list page is dressed like the app: the top bar with the logo, the version corner in the bottom right and the livery you chose (it reads the one the room pages keep in this browser; a browser that never opened a room shows the default). It takes its styles from the built client, so without a build it falls back to plain ones. Each room is a card like a console tile of the Room view: a light (green running, amber blinking when something needs you, red when it crashed, dim when stopped), its name, a state word (the light is never the only sign), the agents running of all, how many need you and how many are working, the last activity, the tab name when one is set, and `r/<id>`. A crashed room shows its reason. OPEN goes to `/r/<id>/` (a key that cannot be pressed while the room is not running). The room's name is the one you gave it, else its id; main is called Main. With only main, the page offers a new room. In a room,
+Open the printed address (it is the list). The list page is dressed like the app: the top bar with the logo, the version corner in the bottom right and the livery you chose (it reads the one the room pages keep in this browser; a browser that never opened a room shows the default). It takes its styles from the built client, so without a build it falls back to plain ones. Each room is a card like a console tile of the Room view: a light (green running, amber blinking when something needs you, red when it crashed, dim when stopped), its name, a state word (the light is never the only sign), the agents running of all, how many need you and how many are working, the last activity, the tab name when one is set, and `r/<id>`. A crashed room shows its reason. OPEN goes to `/r/<id>/` (main too) (a key that cannot be pressed while the room is not running). The room's name is the one you gave it, else its id; main is called Main. With only main, the page offers a new room. In a room,
 **Rooms** in the Patch Panel (Cmd+K) goes back to the list.
 
 ### Clean Room
@@ -93,7 +95,7 @@ What the proxy lets through under `/r/<id>/` and, for main, at the root (any pat
 | a room that does not exist or has a bad id | 404 | 404 |
 | a room that is not running | 503 | 503 |
 
-The path is decoded once and the reserved-name check and the path check run on that same text, case exact (`/%72ooms`, `//internal/busy`, `/r%2Fmain/x` never reach main). Host and Origin are checked as a room checks them, then rewritten to the room's loopback address. Cookies and `X-Forwarded-*` headers are dropped from the request, and **`Set-Cookie` from every answer**: a room can never set a cookie on the address all the rooms share. A redirect of a room under `/r/<id>/` stays under that prefix; main at `/` gets none.
+The path is decoded once and the reserved-name check and the path check run on that same text, case exact (`/%72ooms`, `//internal/busy`, `/r%2Fmain/x` never reach main). Host and Origin are checked as a room checks them, then rewritten to the room's loopback address. Cookies and `X-Forwarded-*` headers are dropped from the request, and **`Set-Cookie` from every answer**: a room can never set a cookie on the address all the rooms share. A redirect of a room under `/r/<id>/` stays under that prefix, main's included. Only the address `/` itself is the list: a bookmark of `/` opens the list, not main.
 
 ## Webhooks, phone approvals, notifications
 

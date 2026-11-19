@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 type Handler = (event: Record<string, unknown>) => void;
 
-function worker(scope: string, windows: Array<{ url: string; focus(): unknown; postMessage(m: unknown): void }> = [], page = new Response('x')) {
+function worker(scope: string, windows: Array<{ url: string; focus(): unknown; postMessage(m: unknown): void }> = [], page: Response | null = new Response('x')) {
   const handlers: Record<string, Handler> = {};
   const shown: Array<[string, Record<string, unknown>]> = [];
   const opened: string[] = [];
@@ -14,6 +14,9 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
   const put: string[] = [];
   const keptAssets = new Set<string>();
   const deleted: string[] = [];
+  const fetched: string[] = [];
+  const matched: string[] = [];
+  const responses: Response[] = [];
   const self = {
     registration: { scope, showNotification: (title: string, options: Record<string, unknown>) => (shown.push([title, options]), Promise.resolve()) },
     addEventListener: (type: string, fn: Handler) => (handlers[type] = fn),
@@ -23,15 +26,15 @@ function worker(scope: string, windows: Array<{ url: string; focus(): unknown; p
   const caches = {
     open: () => Promise.resolve({ addAll: () => Promise.resolve(), put: (r: { url: string }) => (put.push(r.url), Promise.resolve()), keys: () => Promise.resolve([...keptAssets].map((url) => ({ url }))), delete: (r: { url: string }) => (deleted.push(r.url), keptAssets.delete(r.url), Promise.resolve(true)) }),
     keys: () => Promise.resolve([]),
-    match: (r: string | { url: string }) => Promise.resolve(kept.get(typeof r === 'string' ? r : r.url)),
+    match: (r: string | { url: string }) => (matched.push(typeof r === 'string' ? r : r.url), Promise.resolve(kept.get(typeof r === 'string' ? r : r.url))),
   };
-  vm.runInNewContext(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'), { self, caches, URL, Response, fetch: () => Promise.resolve(page) });
+  vm.runInNewContext(readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'), { self, caches, URL, Response, fetch: (r: { url: string }) => (fetched.push(r.url), page === null ? Promise.reject(new Error('offline')) : Promise.resolve(page)) });
   const waits: Array<Promise<unknown>> = [];
   const fire = (type: string, event: Record<string, unknown>): Promise<unknown> => {
-    handlers[type]?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => waits.push(Promise.resolve(p).then(() => 'responded')) });
+    handlers[type]?.({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => waits.push(Promise.resolve(p).then((answer) => (responses.push(answer as Response), 'responded'))) });
     return Promise.all(waits);
   };
-  return { fire, shown, opened, kept, put, waits, keptAssets, deleted };
+  return { fire, shown, opened, kept, put, waits, keptAssets, deleted, fetched, matched, responses };
 }
 
 const request = (url: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ request: { url, method: 'GET', mode: 'cors', headers: { has: () => false }, ...extra } });
@@ -51,41 +54,69 @@ describe('the service worker', () => {
       ['https://x.test/login', {}],
       ['https://x.test/setup', {}],
       ['https://x.test/internal/busy', {}],
+      ['https://x.test/assets/app.js', {}],
+      ['https://x.test/', {}],
       ['https://x.test/rooms', {}],
       ['https://x.test/rooms/assets/x.css', {}],
       ['https://x.test/r/team/', { mode: 'navigate' }],
       ['https://x.test/r/team/assets/app.js', {}],
-      ['https://x.test/assets/app.js', { method: 'POST' }],
-      ['https://x.test/assets/app.js', { headers: { has: (h: string) => h === 'authorization' } }],
-      ['https://other.test/assets/app.js', {}],
+      ['https://x.test/r/main/assets/app.js', { method: 'POST' }],
+      ['https://x.test/r/main/assets/app.js', { headers: { has: (h: string) => h === 'authorization' } }],
+      ['https://other.test/r/main/assets/app.js', {}],
+      ['https://x.test/r/main/api/state', {}],
+      ['https://x.test/r/main/ws', {}],
     ] as const) {
       const before = w.waits.length;
       await w.fire('fetch', request(url, extra));
       if (w.waits.length !== before) touched.push(url);
     }
     expect(touched).toEqual([]);
-    // a file of the built client is answered by the worker, and so is the page itself
-    await w.fire('fetch', request('https://x.test/assets/app-1a2b.js'));
+    // a file of the built client is answered by the worker, and so is the page of room main (the list at the root is not)
+    await w.fire('fetch', request('https://x.test/r/main/assets/app-1a2b.js'));
     expect(w.waits).toHaveLength(1);
-    await w.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    await w.fire('fetch', request('https://x.test/r/main/', { mode: 'navigate' }));
     expect(w.waits).toHaveLength(2);
+  });
+
+  it('the list of rooms at the root, where the installed app starts, is a navigation: network first, the kept page of main when offline, and it never prunes the kept build', async () => {
+    const html = (body: string): Response => Object.defineProperty(new Response(body, { headers: { 'content-type': 'text/html' } }), 'type', { value: 'basic' });
+    const online = worker('https://x.test/', [], html('<link rel="stylesheet" href="/rooms/assets/list.css">'));
+    online.keptAssets.add('https://x.test/r/main/assets/index-old.js');
+    await online.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(online.waits).toHaveLength(1);
+    expect(online.deleted).toEqual([]);
+    // no network: the answer is the kept page of main, not the browser's error page
+    const offline = worker('https://x.test/', [], null);
+    await offline.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    expect(offline.waits).toHaveLength(1);
+    expect(offline.fetched).toEqual(['https://x.test/']);
+    expect(offline.responses[0]).toMatchObject({ status: 302 });
+    expect(offline.responses[0]?.headers.get('location')).toBe('https://x.test/r/main/');
+    // and there the page and its relative files come from the kept shell
+    const main = worker('https://x.test/', [], null);
+    main.kept.set('https://x.test/r/main/', new Response('kept page'));
+    main.kept.set('https://x.test/r/main/assets/x.js', new Response('kept file'));
+    await main.fire('fetch', request('https://x.test/r/main/', { mode: 'navigate' }));
+    await main.fire('fetch', request('https://x.test/r/main/assets/x.js'));
+    expect(main.matched).toEqual(['https://x.test/r/main/', 'https://x.test/r/main/assets/x.js']);
   });
 
   it('forgets the kept assets that the page it just got does not name, and none when the page names none', async () => {
     // a same-origin answer from the network is of type basic
     const html = (body: string): Response => Object.defineProperty(new Response(body, { headers: { 'content-type': 'text/html' } }), 'type', { value: 'basic' });
-    const old = 'https://x.test/assets/index-old.js';
-    const fresh = 'https://x.test/assets/index-new.js';
+    const old = 'https://x.test/r/main/assets/index-old.js';
+    const fresh = 'https://x.test/r/main/assets/index-new.js';
     const w = worker('https://x.test/', [], html('<script src="./assets/index-new.js"></script><link href="./assets/index-new.css">'));
-    w.keptAssets.add(old).add(fresh).add('https://x.test/assets/index-new.css');
-    await w.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    w.keptAssets.add(old).add(fresh).add('https://x.test/r/main/assets/index-new.css');
+    await w.fire('fetch', request('https://x.test/r/main/', { mode: 'navigate' }));
     await new Promise((r) => setTimeout(r, 20));
     await Promise.all(w.waits);
     expect(w.deleted).toEqual([old]);
     // a login page or an error names no file of the build: nothing is forgotten
     const login = worker('https://x.test/', [], html('<form>login</form>'));
     login.keptAssets.add(old);
-    await login.fire('fetch', request('https://x.test/', { mode: 'navigate' }));
+    await login.fire('fetch', request('https://x.test/r/main/', { mode: 'navigate' }));
     await new Promise((r) => setTimeout(r, 20));
     expect(login.deleted).toEqual([]);
   });
@@ -111,19 +142,19 @@ describe('the service worker', () => {
     const told: unknown[] = [];
     let focused = 0;
     const window = (url: string) => ({ url, focus: () => void focused++, postMessage: (m: unknown) => void told.push(m) });
-    const mainWin = window('https://x.test/');
+    const mainWin = window('https://x.test/r/main/');
     const teamWin = window('https://x.test/r/team/');
-    const listWin = window('https://x.test/rooms');
+    const listWin = window('https://x.test/');
     const click = (open: string, room: string) => ({ notification: { close: () => undefined, data: { open, room } } });
     const w = worker('https://x.test/', [listWin, mainWin, teamWin]);
     await w.fire('notificationclick', click('downlink', 'team'));
     expect(told).toEqual([{ t: 'open', open: 'downlink', room: 'team' }]);
     expect(focused).toBe(1);
     expect(w.opened).toEqual([]);
-    // main's page is the root, not the list of rooms and not a room
+    // main's page is /r/main/, not the list of rooms at the root and not another room
     const main = worker('https://x.test/', [listWin, teamWin]);
     await main.fire('notificationclick', click('room', 'main'));
-    expect(main.opened).toEqual(['https://x.test/?open=room']);
+    expect(main.opened).toEqual(['https://x.test/r/main/?open=room']);
     // a room with no window open gets one, at its own address
     const none = worker('https://x.test/', [mainWin]);
     await none.fire('notificationclick', click('room', 'team'));
@@ -131,6 +162,6 @@ describe('the service worker', () => {
     // a room id that is not one is main
     const odd = worker('https://x.test/', []);
     await odd.fire('notificationclick', click('room', '../x'));
-    expect(odd.opened).toEqual(['https://x.test/?open=room']);
+    expect(odd.opened).toEqual(['https://x.test/r/main/?open=room']);
   });
 });

@@ -276,11 +276,11 @@ async function main() {
     console.log(`ok 3 pnpm add with no build script run, start: ${parsed.origin}`);
 
     // 4. what only a built run shows.
-    const index = await ask(port, '/');
-    if (index.status !== 200 || !/^text\/html/.test(index.headers['content-type'] ?? '')) fail('http', `GET / answered ${index.status} ${index.headers['content-type']}, expected 200 text/html`);
+    const index = await ask(port, '/r/main/');
+    if (index.status !== 200 || !/^text\/html/.test(index.headers['content-type'] ?? '')) fail('http', `GET /r/main/ answered ${index.status} ${index.headers['content-type']}, expected 200 text/html`);
     const wanted = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin', 'x-frame-options': 'DENY' };
     for (const [name, value] of Object.entries(wanted)) {
-      if (index.headers[name] !== value) fail('http', `GET / header ${name} is ${JSON.stringify(index.headers[name])}, expected ${value}`);
+      if (index.headers[name] !== value) fail('http', `GET /r/main/ header ${name} is ${JSON.stringify(index.headers[name])}, expected ${value}`);
     }
     const noToken = await ask(port, '/api/state');
     if (noToken.status !== 401) fail('http', `GET /api/state without a token answered ${noToken.status}, expected 401`);
@@ -302,7 +302,7 @@ async function main() {
     if (boss?.state !== 'idle') fail('boss', `the boss is ${boss?.state ?? `missing (GET /api/state answered ${status})`} after 30 s, expected idle`);
     const pids = await standInPids(logDir);
     if (!pids.length || !pids.every(alive)) fail('boss', `no live stand-in process in ${logDir} (${pids.length} start lines); the stand-in must log "start" with its pid (contract 9.9)`);
-    console.log(`ok 4 GET / is 200 text/html with the 3 headers, no token is 401, GET // is 404 and the server still answers, ${boss.name} is idle (stand-in pid ${pids.join(', ')})`);
+    console.log(`ok 4 GET /r/main/ is 200 text/html with the 3 headers, no token is 401, GET // is 404 and the server still answers, ${boss.name} is idle (stand-in pid ${pids.join(', ')})`);
 
     // 5. SIGTERM: exit 0 in 15 s, the port is free, no stand-in process is left.
     server.kill('SIGTERM');

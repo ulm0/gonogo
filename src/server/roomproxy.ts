@@ -1,7 +1,9 @@
 /**
  * The proxy of the rooms supervisor (docs/rooms-spec.md, docs/single-mode-spec.md): `/r/<id>/...` on the front port reaches the gonogo process
- * of that room, and any path that is not reserved reaches room `main`, so a user with one room keeps every address he had.
- * Reserved (the supervisor's own, never proxied): `/rooms` and under it, `/api/rooms` and `/api/auth` and under them, `/login`, `/setup`, `/internal` and under it, and `/r`.
+ * of that room; main is a room like any other, at `/r/main/`, and `/` is the list of rooms. What 0.4 and 0.5.0 gave out for main at the root keeps
+ * working as an alias to main: the API (`/api`, `/ws`), the webhooks and station calls (`/uplink/`, `/dock/`) and the installed app's own files (`/sw.js`, the
+ * manifest, the icons). A GET of any other path of the old main (its page, its assets) is a 308 to `/r/main/...`.
+ * Reserved (the supervisor's own, never proxied): `/` itself, `/rooms` and under it, `/api/rooms` and `/api/auth` and under them, `/login`, `/setup`, `/internal` and under it, and `/r`.
  *
  * It is on the security path, so it is small and says no by default:
  * - The browser is let in by the login (docs/login-spec.md): a session cookie, an API key, or, on a fresh install with no account, the old
@@ -75,6 +77,8 @@ export interface RoomProxy {
 }
 
 const PREFIX = /^\/r\/([^/?#]*)(\/[^?#]*)?(\?[^#]*)?$/;
+/** The old main's paths that stay at the root as an alias of `/r/main/`: what a script, a webhook, a peer station or the installed app was given. Every other GET of the root is moved. */
+const ROOT_ALIASES = /^\/(?:api|ws|uplink|dock|hook|mcp)(?:\/|$)|^\/(?:sw\.js|manifest\.webmanifest|apple-touch-icon\.png|favicon\.(?:ico|svg)|icon-[\w-]+\.png|lockup\.svg)$/;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const DROPPED = new Set(['authorization', 'cookie', 'host', 'origin', 'forwarded', 'x-real-ip']);
 const digest = (text: string): Buffer => createHash('sha256').update(text, 'utf8').digest();
@@ -113,6 +117,8 @@ function suspicious(rest: string): boolean {
 function reservedPath(rest: string): boolean {
   const segments = rest.split('/').map((segment) => decodeURIComponent(segment));
   const first = segments[1] ?? '';
+  // the list of rooms is "/" exactly ("//" and the like are no path of anything)
+  if (segments.length === 2 && first === '') return true;
   return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push'));
 }
 
@@ -259,6 +265,15 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         res.writeHead(308, { Location: `/r/${bare[1]}/${bare[2] ?? ''}`, 'Content-Length': 0 });
         res.end();
         return true;
+      }
+      // an old address of main's page or assets: moved to /r/main/ (the query stays, the #fragment stays in the browser)
+      if ((req.method === 'GET' || req.method === 'HEAD') && PREFIX.exec(req.url ?? '') === null) {
+        const old = split(req.url ?? '');
+        if (old !== null && old.path.length > 1 && !old.path.startsWith('//') && !old.path.startsWith('/r/') && old.path !== '/r' && !suspicious(old.path) && !ROOT_ALIASES.test(old.path) && hostAllowed(req.headers.host) && !hooksOnly(req.headers.host)) {
+          res.writeHead(308, { Location: `/r/main${old.path}${old.query}`, 'Content-Length': 0 });
+          res.end();
+          return true;
+        }
       }
       const target = resolve(req, (status, text) => sendText(res, status, text));
       if (target === null) return true;
