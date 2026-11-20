@@ -79,12 +79,14 @@ export function ghEnv(from: NodeJS.ProcessEnv, configDir?: string): Record<strin
 
 /** `digests` are the registry digests the pulled image carries for `repo` (RepoDigests). One that verifies is enough. */
 export async function verifyImage(repo: string, digests: readonly string[], options: { run?: Run; env?: NodeJS.ProcessEnv; configDir?: string; /** The version being installed (x.y.z): its release tag is demanded of the attestation, and from FIRST_ATTESTED on a missing attestation is a failure. */ version?: string } = {}): Promise<Attestation> {
+  // a version that is given and is not x.y.z is a failure, never a reason to check less (no tag to demand, nothing "owed")
+  if (options.version !== undefined && !/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(options.version)) return { kind: 'failed', why: 'the version to verify is not a release number' };
   if (repo !== OFFICIAL_IMAGE) return { kind: 'unattested', why: `only ${OFFICIAL_IMAGE} can be checked; this container runs ${repo}` };
   const valid = digests.filter((d) => DIGEST.test(d));
   if (valid.length === 0) return { kind: 'failed', why: 'the pulled image has no registry digest to check' };
   const run = options.run ?? defaultRun;
   const env = ghEnv(options.env ?? process.env, options.configDir);
-  const version = options.version !== undefined && /^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(options.version) ? options.version : null;
+  const version = options.version ?? null;
   const owed = version !== null && atLeast(version, FIRST_ATTESTED);
   // the build must come from the tag of THIS release: a run of the workflow from a branch (workflow_dispatch) makes no image that verifies
   const ref = version === null ? [] : ['--source-ref', `refs/tags/v${version}`];

@@ -80,9 +80,14 @@ describe('verifyImage', () => {
     await verifyImage(OFFICIAL_IMAGE, [D1], { run, version: '0.8.1' });
     expect(seen[0]?.slice(-2)).toEqual(['--source-ref', 'refs/tags/v0.8.1']);
     seen.length = 0;
-    // no version, or one that is not x.y.z, adds nothing (and nothing of it reaches a command line)
-    for (const version of [undefined, '0.8.1; rm -rf /', 'latest', '--repo']) await verifyImage(OFFICIAL_IMAGE, [D1], { run, ...(version === undefined ? {} : { version }) });
-    for (const args of seen) expect(args).not.toContain('--source-ref');
+    // no version asks for no tag; one that is given and is not x.y.z FAILS (it is not silently dropped), and none of it reaches a command line
+    await verifyImage(OFFICIAL_IMAGE, [D1], { run });
+    expect(seen[0]).not.toContain('--source-ref');
+    seen.length = 0;
+    for (const version of ['0.8.1; rm -rf /', 'latest', '--repo', '', '0.8', '0.8.1-rc.1']) expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run, version }), version).toMatchObject({ kind: 'failed', why: expect.stringMatching(/not a release number/) as string });
+    expect(seen).toEqual([]);
+    // and the order does not matter: not even for an image that is not the official one
+    expect((await verifyImage('localhost:5000/gonogo', [D1], { run, version: 'latest' })).kind).toBe('failed');
   });
 
   it('from the first attested release on, no attestation is a failure with no override; for an older one, or an image that is not the official one, it is only unattested', async () => {
