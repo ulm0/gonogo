@@ -580,13 +580,16 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const dirInfo = await stat(agent.dir).catch(() => null);
     if (!dirInfo?.isDirectory()) throw new Error(`working directory does not exist: ${agent.dir}`);
     const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
-    const env = await withCoauthor(agent, buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name), gh: await ensureGh() }), where, agentDir(name));
+    const env = await withCoauthor(agent, buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: keysOf(agent), gh: await ensureGh() }), where, agentDir(name));
     return { spec: { file, args, env, cwd: where }, flag: 'session-id', token: '' };
   };
 
   /** Engine Bay: another agent CLI, started by its program name with the files and flags of its adapter (providers.ts). */
   /** A plain worktree (not a Clean Room's): made or found, and the folder the agent starts in; null when the agent starts in its own folder. */
   const plainWorktree = async (agent: AgentRecord, from: Record<string, string | undefined>): Promise<WorktreePlace | null> => (agent.worktree === undefined || agent.cleanRoom !== undefined ? null : prepareWorktree(agent, homeDir, from));
+
+  /** The keys of an agent: the room's under its own (its own of the same name wins). A Clean Room agent gets only the room keys marked for it. */
+  const keysOf = (agent: AgentRecord): Record<string, string> => ({ ...options.roomKeys?.(agent.cleanRoom !== undefined), ...options.keys?.(agent.name) });
 
   /** What the agent starts with: the room's Payload defaults under its own payload. A Clean Room agent gets its own only: the room's servers (their env and headers hold keys) never reach a container the Director chose to keep keys out of. */
   const payloadOf = (agent: AgentRecord, provider: Provider): Payload | undefined =>
@@ -609,7 +612,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const start = buildProviderStart(provider, ctx);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
     const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
-    const env = await withCoauthor(agent, { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: options.keys?.(agent.name), gh: await ensureGh() }), ...start.env }, where, base);
+    const env = await withCoauthor(agent, { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: keysOf(agent), gh: await ensureGh() }), ...start.env }, where, base);
     log.debug(`prepared ${agent.name} to run ${provider}`);
     return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
   };
@@ -659,7 +662,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const agentUrl = clean === null ? hubUrl : containerUrl(hubUrl);
       const settingsPath = join(base, SETTINGS_FILE);
       const mcpPath = join(base, MCP_FILE);
-      const keys = options.keys?.(name) ?? {};
+      const keys = keysOf(agent);
       const moveApiKey = seed && hasText(keys.ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY);
       // Plan quota: the shim goes in always; the Director's own status line (user settings, read only) is chained, never replaced. Not in a container: his command is a host path.
       const ownConfig = hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : join(homedir(), '.claude');

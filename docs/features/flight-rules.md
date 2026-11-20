@@ -44,3 +44,5 @@ device that shows the checklist once more costs one press of PUT AWAY. A private
 visit; nothing else breaks.
 
 **PAYLOAD DEFAULTS** sets MCP servers and skill folders that every agent gets; an agent's own Payload wins and can switch one off ([Payload](payload.md)). No value is shown after it is saved.
+
+**ROOM KEYS** sets environment variables (a Bedrock login, say) that every agent of the room gets; an agent's own Clearance key wins, and a Clean Room agent gets only the keys switched on for it ([Room keys](room-keys.md)). No value is shown after it is saved.

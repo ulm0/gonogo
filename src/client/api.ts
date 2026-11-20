@@ -69,6 +69,7 @@ import type {
   Effort,
   ModelDefaults,
   PayloadDefaults,
+  RoomKeysView,
   PermissionDefaults,
   PermissionRules,
   StartupSettings,
@@ -433,6 +434,23 @@ export async function setModelDefault(provider: Provider, model: string | null):
 /** The room's default engine; null goes back to Claude Code. */
 export async function setDefaultEngine(engine: Provider | null): Promise<ModelDefaults> {
   return toModelDefaults(await call('PUT', '/models/engine', { engine }));
+}
+
+/** Room keys: environment variables every agent of the room gets. The answers hold names, never a value. */
+const toRoomKeys = (value: unknown): RoomKeysView => {
+  const record = asRecord(value);
+  if (record === null || !Array.isArray(record.keys)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as RoomKeysView;
+};
+export async function roomKeys(): Promise<RoomKeysView> {
+  return toRoomKeys(await call('GET', '/room-keys'));
+}
+/** A new key needs a value; with none, `cleanRoom` alone changes a saved one. */
+export async function setRoomKey(name: string, body: { value?: string; cleanRoom?: boolean }): Promise<RoomKeysView> {
+  return toRoomKeys(await call('PUT', `/room-keys/${encodeURIComponent(name)}`, body));
+}
+export async function removeRoomKey(name: string): Promise<RoomKeysView> {
+  return toRoomKeys(await call('DELETE', `/room-keys/${encodeURIComponent(name)}`));
 }
 
 /** Payload defaults: what the room gives every agent (docs/payload-spec.md). The answers say what each item is and never a value. */

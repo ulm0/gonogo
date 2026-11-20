@@ -2675,6 +2675,24 @@ describe('end to end with the stand-in agent', () => {
     expect(logOf<FakeEvent & { action: string }>(h, 'flight', 'dialog').map((event) => event.action)).toHaveLength(4);
   }, 90_000);
 
+  it("Room keys: set, listed by name only, in the environment of an agent at its next start, and an agent's own key wins", async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    expect((await api(h, 'GET', '/api/room-keys')).body).toEqual({ keys: [] });
+    expect(await api<ApiError>(h, 'PUT', '/api/room-keys/lower', { value: 'x' })).toMatchObject({ status: 400, body: { field: 'name' } });
+    expect(await api<ApiError>(h, 'PUT', '/api/room-keys/GONOGO_TOKEN', { value: 'x' })).toMatchObject({ status: 400, body: { field: 'name' } });
+    const SECRET = 'room-secret-value';
+    const set = await api<{ keys: Array<{ name: string; cleanRoom: boolean }> }>(h, 'PUT', '/api/room-keys/ROOM_KEY', { value: SECRET });
+    expect(set.body.keys).toMatchObject([{ name: 'ROOM_KEY', cleanRoom: false }]);
+    expect(JSON.stringify((await api(h, 'GET', '/api/room-keys')).body)).not.toContain(SECRET);
+    expect(JSON.parse(readFileSync(join(h.home, 'room-keys.json'), 'utf8')).keys.ROOM_KEY.value).toBe(SECRET);
+    // no value ever comes back in the roster either
+    await hire(h, 'ana');
+    expect(JSON.stringify((await getState(h)).agents)).not.toContain(SECRET);
+    expect((await api(h, 'DELETE', '/api/room-keys/ROOM_KEY')).body).toEqual({ keys: [] });
+    expect((await api<ApiError>(h, 'DELETE', '/api/room-keys/ROOM_KEY')).status).toBe(404);
+  }, 60_000);
+
   it("Payload defaults: the room's servers reach every agent's mcp.json, the agent wins and can switch one off, and no value is ever sent to the page", async () => {
     const h = await startServer();
     await waitState(h, 'flight', 'idle');

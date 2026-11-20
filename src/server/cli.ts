@@ -27,7 +27,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -73,6 +73,7 @@ import { createTriggers } from './triggers.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
+import { createRoomKeys } from './roomkeys.js';
 import { createModelDefaults } from './models.js';
 import { createPayloadDefaults } from './payloaddefaults.js';
 import { createPermissionDefaults } from './permissions.js';
@@ -597,6 +598,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       }
     }
 
+    const roomKeys = createRoomKeys({ dir: home.dir, log: log.child('room-keys') });
+    await roomKeys.load();
     const clearance = createClearance({ dir: home.dir, log: log.child('clearance') });
     await clearance.load();
     const modelDefaults = createModelDefaults({ dir: home.dir, log: log.child('models') });
@@ -621,6 +624,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       env,
       agentCmd,
       keys: (name) => clearance.values(name),
+      roomKeys: (cleanRoom) => roomKeys.values(cleanRoom),
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
       defaultEffort: () => modelDefaults.effort(),
@@ -1144,6 +1148,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       relay: audited(relay, audit, RELAY_AUDIT),
       models: modelDefaults,
       features: audited(features, audit, FEATURES_AUDIT),
+      roomKeys: audited(roomKeys, blackBox.record, ROOM_KEYS_AUDIT),
       payloadDefaults: audited(payloadDefaults, blackBox.record, PAYLOAD_DEFAULTS_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
@@ -1269,6 +1274,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('rollout close', () => rollout.close());
       autoUpdater.close();
       await step('autoupdate close', () => autoStore.close());
+      await step('room keys close', () => roomKeys.close());
       await step('clearance close', () => clearance.close());
       await step('home close', () => home.close());
     };

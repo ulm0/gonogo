@@ -93,6 +93,7 @@ import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { ModelDefaultsStore } from './models.js';
 import type { PayloadDefaultsStore } from './payloaddefaults.js';
+import type { RoomKeys } from './roomkeys.js';
 import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
 import type { StartupStore } from './startup.js';
@@ -182,6 +183,8 @@ export interface WebOptions {
   /** Test clock of the status-line rate limit. */
   statusLineNow?: () => number;
   /** Payload defaults (docs/payload-spec.md): absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame, and no value is ever sent. */
+  /** Room keys (docs/features/room-keys.md): absent in tests that do not need it (the routes answer 404). Names only ever leave the server. */
+  roomKeys?: Pick<RoomKeys, 'view' | 'set' | 'remove'>;
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
@@ -1371,6 +1374,21 @@ export function createWebServer(options: WebOptions): WebServer {
       }
       if (s[2] === 'skills' && s.length === 4) return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await defaults.removeSkill(s[3] ?? '')) };
       return null;
+    }
+    // GET /api/room-keys; PUT /api/room-keys/<NAME> ({ value?, cleanRoom? }); DELETE /api/room-keys/<NAME>
+    if (s[1] === 'room-keys' && s.length <= 3) {
+      const roomKeys = options.roomKeys;
+      if (!roomKeys) return null;
+      if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, roomKeys.view()) };
+      const name = s[2] ?? '';
+      return {
+        allow: ['PUT', 'DELETE'],
+        run: async (req, res) => {
+          if (req.method === 'DELETE') return sendJson(res, 200, await roomKeys.remove(name));
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await roomKeys.set(name, body));
+        },
+      };
     }
     if (s[1] === 'permissions' && s.length === 2) {
       const rules = options.permissions;

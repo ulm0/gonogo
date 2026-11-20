@@ -47,6 +47,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (/^\/api\/agents\/[^/]+\/git\/commit$/.test(path)) return 'making a commit';
   // the permissions editor, Features, Uplink, Relay, Docking and Clearance (the keys of an engine)
   if (/^\/api\/permissions(\/|$)/.test(path)) return 'the permissions of the room';
+  // a key every agent of the room gets (a cloud login, say)
+  if (/^\/api\/room-keys(\/|$)/.test(path)) return 'the keys of the room';
   // a default server is a program every agent of the room starts, with the keys in its env
   if (/^\/api\/payload-defaults(\/|$)/.test(path)) return 'the Payload defaults of the room';
   if (/^\/api\/features(\/|$)/.test(path)) return 'the feature switches';

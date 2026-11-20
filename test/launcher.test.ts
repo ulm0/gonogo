@@ -1561,6 +1561,18 @@ describe('renameAgentFiles and memoryPath', () => {
   });
 });
 
+describe('Room keys under the keys of an agent', () => {
+  it("every agent gets the room's keys, its own key of the same name wins, and an engine other than Claude Code gets them too", async () => {
+    const l = launcher({ roomKeys: () => ({ AWS_REGION: 'room-region', ROOM_ONLY: 'r' }), keys: () => ({ AWS_REGION: 'agent-region' }) });
+    const claude = await l.prepareStart(agent(), START);
+    expect(claude.spec.env).toMatchObject({ AWS_REGION: 'agent-region', ROOM_ONLY: 'r' });
+    const other = await l.prepareStart(agent({ provider: 'codex' }), START);
+    expect(other.spec.env).toMatchObject({ AWS_REGION: 'agent-region', ROOM_ONLY: 'r' });
+    const plain = await launcher({ roomKeys: () => ({ ROOM_ONLY: 'r' }) }).prepareStart(agent(), START);
+    expect(plain.spec.env.ROOM_ONLY).toBe('r');
+  });
+});
+
 describe('Payload: MCP servers and skills', () => {
   const files = { command: 'npx', args: ['-y', 'server-files'], env: { ROOT: '/work' } };
   const remote = { type: 'http' as const, url: 'https://example.test/mcp', headers: { Authorization: 'Bearer abc' } };

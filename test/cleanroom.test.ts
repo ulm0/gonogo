@@ -432,6 +432,25 @@ describe('the launcher starts a Clean Room agent through docker', () => {
   });
 });
 
+describe("the room's keys and a Clean Room", () => {
+  it('a Clean Room agent gets only the room keys marked for it, by name, never the value on the command line; its own key still wins', async () => {
+    const asked: boolean[] = [];
+    const roomKeys = (cleanRoom: boolean): Record<string, string> => {
+      asked.push(cleanRoom);
+      return cleanRoom ? { MARKED_KEY: 'marked-secret' } : { MARKED_KEY: 'marked-secret', OTHER_KEY: 'other-secret' };
+    };
+    const launcher = createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env, roomKeys, keys: () => ({ MARKED_KEY: 'own-secret' }) });
+    const { spec } = await launcher.prepareStart(record(), { generation: 1, flag: null });
+    expect(asked).toEqual([true]);
+    const named = spec.args.flatMap((arg, i) => (spec.args[i - 1] === '-e' && !arg.includes('=') ? [arg] : []));
+    expect(named).toContain('MARKED_KEY');
+    expect(named).not.toContain('OTHER_KEY');
+    expect(spec.env.MARKED_KEY).toBe('own-secret');
+    expect(spec.env.OTHER_KEY).toBeUndefined();
+    for (const secret of ['marked-secret', 'other-secret', 'own-secret']) expect(spec.args.join('\n')).not.toContain(secret);
+  });
+});
+
 describe("the room's Payload defaults and a Clean Room", () => {
   it('a Clean Room agent gets its own servers and none of the room\'s (their env and headers hold keys); a plain agent gets both', async () => {
     const roomServer = { command: 'room-server', env: { TOKEN: 'room-secret' } };
