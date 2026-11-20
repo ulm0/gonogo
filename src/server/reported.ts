@@ -74,6 +74,14 @@ export function createReported(options: { dir: string; now: () => number; log: L
   let lines: Line[] = [];
   /** The newest report kept for each session. */
   const lastBy = new Map<string, { at: number; total: number; agent: string }>();
+  /** Sessions kept per agent, so that a new session costs one lookup, not a pass over every kept session. */
+  const perAgent = new Map<string, number>();
+  const keep = (session: string, v: { at: number; total: number; agent: string }): void => {
+    const old = lastBy.get(session);
+    if (old !== undefined) perAgent.set(old.agent, (perAgent.get(old.agent) ?? 1) - 1);
+    perAgent.set(v.agent, (perAgent.get(v.agent) ?? 0) + 1);
+    lastBy.set(session, v);
+  };
   let createdAt: number | null = null;
   let headerWritten = false;
   let recorded = 0;
@@ -93,7 +101,8 @@ export function createReported(options: { dir: string; now: () => number; log: L
     lines = kept;
     if (changed) {
       lastBy.clear();
-      for (const l of [...lines].sort((a, b) => a.at - b.at)) lastBy.set(l.session, { at: l.at, total: l.total, agent: l.agent });
+      perAgent.clear();
+      for (const l of [...lines].sort((a, b) => a.at - b.at)) keep(l.session, { at: l.at, total: l.total, agent: l.agent });
     }
     return changed;
   };
@@ -130,7 +139,7 @@ export function createReported(options: { dir: string; now: () => number; log: L
         }
       }
       lines.sort((a, b) => a.at - b.at);
-      for (const l of lines) lastBy.set(l.session, { at: l.at, total: l.total, agent: l.agent });
+      for (const l of lines) keep(l.session, { at: l.at, total: l.total, agent: l.agent });
       // a file with no first line is older than this feature of the file: no session of it is "already running"; a new file is made now
       if (text === '' && createdAt === null) createdAt = now();
       if (prune()) await rewrite();
@@ -151,8 +160,7 @@ export function createReported(options: { dir: string; now: () => number; log: L
           return;
         }
       } else {
-        let mine = 0;
-        for (const v of lastBy.values()) if (v.agent === agent) mine += 1;
+        const mine = perAgent.get(agent) ?? 0;
         if (lastBy.size >= MAX_SESSIONS || mine >= MAX_SESSIONS_PER_AGENT) {
           const which = lastBy.size >= MAX_SESSIONS ? 'all' : agent;
           if (!told.has(which)) {
@@ -165,7 +173,7 @@ export function createReported(options: { dir: string; now: () => number; log: L
       const base = prev === undefined && createdAt !== null && at - createdAt < BASE_MS;
       const line: Line = { at, agent, session: r.session, total: r.total, ...(base ? { base: true as const } : {}) };
       lines.push(line);
-      lastBy.set(r.session, { at, total: r.total, agent });
+      keep(r.session, { at, total: r.total, agent });
       recorded += 1;
       if (recorded % PRUNE_EVERY === 0 && prune()) {
         chain = chain.then(rewrite);
