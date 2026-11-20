@@ -26,7 +26,7 @@ Quick Tunnels (`trycloudflare.com`) are for testing only: the name changes every
 | `--trusted-proxy 127.0.0.1` | the proxy whose forwarded address is believed. A tunnel makes every client look like 127.0.0.1; without it one shared bucket does the work |
 | `--client-ip-header x-forwarded-for\|cf-connecting-ip` | header read **only from a trusted proxy** |
 
-- **Host matching:** lower case, no port, no brackets, one trailing dot dropped, **exact** match. An unknown Host gets `403 forbidden host` everywhere. Hooks hosts check the parsed path: `/uplink/../api`, `//api`, `%2e%2e`, `/UPLINK` do not pass.
+- **Host matching:** lower case, no port, no brackets, one trailing dot dropped, **exact** match. An unknown Host gets `403 forbidden host` everywhere (default deny). Hooks hosts check the parsed path: `/uplink/../api`, `//api`, `%2e%2e`, `/UPLINK` do not pass.
 - **A public page host needs the login with its second factor, and an https public URL**; gonogo refuses to start otherwise, with one message saying what to do. Public or private comes from the flags and the shape of the name (RFC 1918, tailnet 100.64/10, `.local`, `.lan`, a name with no dot are private), never from where it resolves. A private name may stay plain http with the login (the page says it is not encrypted). A bind other machines can reach (outside a container) also needs the login.
 - **`/hook` and `/mcp` are 404** on every Host the front port serves (agents use their room's loopback port). The Docker socket and `GONOGO_UPDATE_HOOK` are never reachable from the internet.
 - Flight Rules -> LOGIN shows which names gonogo answers on and whether the login stands behind them.

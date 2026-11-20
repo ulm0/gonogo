@@ -9,7 +9,7 @@ Sign in with a **name and a password** instead of a pasted token. One account. D
 ## First start
 
 - With no account, the printed `#token=...` address still opens the page. gonogo also prints a **setup token** once and writes it to `<home>/setup-token` (0600): one use, one hour.
-- Open `/setup`; give that token (or the old browser token), a name and a password of 12+ characters.
+- Open `/setup`; give that token (or the old browser token), a name and a password of 12 characters or more.
 - **Setup is answered on this machine and your local network only.** A public name gets "login is not set up: open gonogo from this machine or your local network".
 - **The old browser token dies when the account is made** (file deleted; `gonogo token rotate` refuses; `gonogo auth reset` does not bring it back).
 - Passwords: argon2id (scrypt on Node older than 24.7), OWASP minimum cost, rehashed at login if the cost rises.

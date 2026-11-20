@@ -27,7 +27,7 @@ Not recorded: messages, terminal input, tool calls, an agent that exits by itsel
 - Lines are written at once. Commits are batched: 30 seconds after a batch's first event, and at shutdown; message `audit: N events`; author and committer `gonogo <gonogo@localhost>`.
 - At most 600 events a minute; the rest are dropped and counted.
 - Read it: `git -C '<folder>' log -p` (the page has the line, with COPY).
-- git runs without a shell, 10 second limit, identity on the command line (your git config is not read or changed), hooks, signing and fsmonitor off. The Docker image has git.
+- git runs without a shell, 10 second limit (a git killed for it leaves no `index.lock` behind), identity on the command line (your git config is not read or changed), hooks, signing and fsmonitor off. The Docker image has git.
 - **git missing:** the page says `git was not found on the PATH`; events still go to the files, and the first batch after you install git and restart commits them. **git failing:** the page shows git's first error line; the next batch retries.
 
 ## The page and API

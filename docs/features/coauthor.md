@@ -15,11 +15,11 @@ Agent commits end with `Co-Authored-By: flight (gonogo) <flight@gonogo.invalid>`
 
 Every pull request a Claude Code agent writes ends with **Generated with [gonogo](https://gonogo.ulm0.com/)** (a robot emoji in front), instead of Claude Code's own line. On by default; second switch of the same Flight Rules block (CO-AUTHOR LINE AND PR FOOTER); applies at each console's next restart.
 
-- gonogo writes `attribution: { "pr": "<the line>" }` into the agent's settings file (the one with its hooks; never `~/.claude` or the repository's `.claude`). Name read in Claude Code 2.1.325's settings schema (`attribution: { commit?, pr?, sessionUrl? }`; empty string hides it). Only `pr` is set.
+- gonogo writes `attribution: { "pr": "<the line>" }` into the agent's settings file (`includeCoAuthoredBy` is Claude Code's deprecated older way; the one with its hooks; never `~/.claude` or the repository's `.claude`). Name read in Claude Code 2.1.325's settings schema (`attribution: { commit?, pr?, sessionUrl? }`; empty string hides it). Only `pr` is set.
 - Your own settings are kept: Claude Code merges layers key by key. In one short run (2.1.325, haiku) a project's `attribution.commit` and gonogo's `attribution.pr` were **both** in force.
 - Clean Room agents get it too.
 - Other engines get none (no known setting); a custom command writes what it writes.
-- Rolling back to a build without this switch and forward again turns a footer you had switched off back on.
+- Rolling back to a build without this switch and forward again turns a footer you had switched off back on (the old build saves `coauthor.json` without the field).
 - **Not tried on a real pull request**: written and read back in tests, name from the schema.
 
 ## Limits

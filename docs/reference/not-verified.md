@@ -70,6 +70,16 @@ Used by nobody in this room, so still **not run**: Hold on a console and ALL STO
 - **Reported cost:** one short real run (Claude Code 2.1.325, haiku, a claude.ai subscription) showed `session_id` and `cost.total_cost_usd` in the status line and a new id and a total of 0 after `/clear`. Not run: whether a subagent's spend is inside the total, `--resume`, an API-key account, and the page showing the figures in a real browser. Also not run: `--resume` (whether the id and the total carry over) and an API-key account.
 - **PR footer:** the name and shape of `attribution.pr` were read in Claude Code 2.1.325's own settings schema, and the setting is written and read back in tests; no agent opened a real pull request with it here, so what Claude Code puts in the description is not seen.
 
+### Live reload: what was seen (the stand-in agent, a real host process, 2026-11-18)
+
+- `gonogo --pty-host`, one agent mid-turn (`@fake sleep 90000`) and the boss on hold. `gonogo reload`: the new server was
+  listening 0.4 s after the signal, the host and the agent processes kept their pids, and the log said `took over 2 running
+  agents`. The boss stayed `needs_you` (redline), mail to it stayed `held`, and the agent's turn ended under the new server
+  (its Stop hook was accepted with the saved token), so it went idle.
+- `kill -9` of the host: the agents showed `stopped` after about 3 s; a restart of one started a new host (the stale socket
+  file was removed) and the agent ran again.
+- SIGTERM of gonogo: agents stopped, host exited, socket removed; the files in `run/` were `0600`.
+
 ## Known limits
 
 - Launch Window: a fire time a DST change skips does not fire that day (in America/Santiago `0 0 * * *` misses the September change). A scheduled message to FLIGHT replaces the wall's MISSION.

@@ -39,7 +39,7 @@ A reply is counted to the **mission and task the agent works on**: its Flight Pl
 - An unpriced model adds to unpriced tokens, not dollars, so it does not move a budget. Old ledger lines have no model: tokens only, shown unpriced ("priced since" date). Not rewritten.
 - Cache writes use the 5-minute price. The 1-hour price, batch discounts, long-context surcharges and per-call fees are not modelled.
 - The ledger and budgets are keyed by agent name: a rename starts from zero.
-- **Reported figures** come from Claude Code's status line while an agent runs. Seen in one short run only (Claude Code 2.1.325, haiku, claude.ai subscription). **Not seen:** whether a subagent's spend is in the total, what `--resume` does to the id and total, a run with an API key.
+- **Reported figures** come from Claude Code's status line only, while an agent runs: a figure is "at least" what was spent. **Seen in one short run** (Claude Code 2.1.325, haiku, claude.ai subscription): the JSON has `session_id` and `cost.total_cost_usd` from its first refresh; `/clear` made a new session id with a total back at 0. **Not seen:** whether a subagent's spend is in the total, what `--resume` does to the id and total, a run with an API key.
 
 ## Files and API
 

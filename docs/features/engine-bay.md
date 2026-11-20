@@ -29,7 +29,7 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 
 Each console shows chips for **engine**, **model it starts with** and **effort**: console head (under the name on a phone), the CONSOLES list of Flight Rules, and the terminal client's room list. The model chip says where it comes from when it is not the console's own (`sonnet · room default`, `opus · position default`, `effort high · room default`). With no model set there is no chip (gonogo never guesses the CLI's default). A `/model` typed in a console is not shown or kept.
 
-**Effort** is Claude Code's `--effort` (`low`, `medium`, `high`, `xhigh`, `max`). Set the EFFORT field of the hire or edit form; empty uses the room's default effort, then the CLI's own. Applies at next start (`dirty` until then). A request with another level, or for an engine without effort, gets 400 with the field. Antigravity lists `--effort` but its levels were not read, so it is not offered. `CLAUDE_EFFORT` is still scrubbed from agents.
+**Effort** is Claude Code's `--effort` (`low`, `medium`, `high`, `xhigh`, `max`, as `claude --help` lists them). Set the EFFORT field of the hire or edit form; empty uses the room's default effort, then the CLI's own. Applies at next start (`dirty` until then). A request with another level, or for an engine without effort, gets 400 with the field. Antigravity lists `--effort` but its levels were not read, so it is not offered. `CLAUDE_EFFORT` is still scrubbed from agents.
 
 **Room defaults** (Flight Rules, DEFAULTS), kept in `<home>/models.json`:
 

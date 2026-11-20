@@ -16,7 +16,7 @@ LAUNCH WINDOW (top bar, or LAUNCH in the phone bar) lists schedules: messages go
 
 At most 50 schedules. Max Q, Redline and held mail apply.
 
-**Rule:** five cron fields `minute hour day-of-month month day-of-week`, in the server's time zone (`TZ`). Fields take `*`, numbers, ranges (`9-17`), lists (`mon,wed`), steps (`*/15`, `10-50/10`); months `jan` to `dec`; days `sun` to `sat` or 0 to 7 (both Sunday). If both day fields are limited, either fires (`0 0 13 * fri` = every 13th and every Friday). Examples: `0 9 * * mon-fri`, `30 8 1 * *`, `*/20 * * * *`. No `@daily`, no seconds. The form previews the next three fires (in the browser's zone) or the error.
+**Rule:** five cron fields `minute hour day-of-month month day-of-week`, in the server's time zone (`TZ`). Fields take `*`, numbers, ranges (`9-17`), lists (`mon,wed`), steps (`*/15`, `10-50/10`); months `jan` to `dec`; days `sun` to `sat` or 0 to 7 (both Sunday). If both day fields are limited, either fires (`0 0 13 * fri` = every 13th and every Friday). Examples: `0 9 * * mon-fri` (weekdays 09:00), `30 8 1 * *` (the 1st at 08:30), `*/20 * * * *` (every 20 minutes). No `@daily`, no seconds. The form previews the next three fires (in the browser's zone) or the error.
 
 **Rows** show the next fire (`in 3 h, 09:00 Mon`, or `off`), the last run and the hub's answer (`sent m12: queued`, `sent m13: held (...)`, `undelivered m14: ...`, `not sent: unknown recipient "ana"...`), an Enabled switch, **RUN NOW** (sends at once, even when off), **EDIT**, **DELETE**, and a History link.
 
