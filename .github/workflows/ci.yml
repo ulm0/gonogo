@@ -35,3 +35,27 @@ jobs:
       - run: pnpm check:pack
       # The site is published on a release, so a broken page is caught here, on the pull request.
       - run: pnpm docs:build
+
+  # CHANGELOG.md is changed only by the release pull request (it also changes the version); everyone else adds changes/<branch>.md.
+  changelog:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$BASE...HEAD" | grep -qx CHANGELOG.md; then
+            before=$(git show "origin/$BASE:package.json" | node -p 'JSON.parse(require("fs").readFileSync(0)).version')
+            after=$(node -p 'require("./package.json").version')
+            if [ "$before" = "$after" ]; then
+              echo "::error file=CHANGELOG.md::Do not edit CHANGELOG.md in a pull request (it conflicts with every other one). Add changes/<branch>.md instead; see changes/README.md."
+              exit 1
+            fi
+          fi
