@@ -12,3 +12,4 @@ test/fixtures/tmp
 .vitepress/dist
 gonogo-data*/
 browser-results
+screens
