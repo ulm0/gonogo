@@ -1568,6 +1568,9 @@ describe('Room keys under the keys of an agent', () => {
     expect(claude.spec.env).toMatchObject({ AWS_REGION: 'agent-region', ROOM_ONLY: 'r' });
     const other = await l.prepareStart(agent({ provider: 'codex' }), START);
     expect(other.spec.env).toMatchObject({ AWS_REGION: 'agent-region', ROOM_ONLY: 'r' });
+    // the room's gh login folder (#133) is a default: a room key named GH_CONFIG_DIR replaces it, and the agent's own key replaces that
+    expect((await launcher({ roomKeys: () => ({ GH_CONFIG_DIR: '/room/gh' }) }).prepareStart(agent(), START)).spec.env.GH_CONFIG_DIR).toBe('/room/gh');
+    expect((await launcher({ roomKeys: () => ({ GH_CONFIG_DIR: '/room/gh' }), keys: () => ({ GH_CONFIG_DIR: '/mine/gh' }) }).prepareStart(agent(), START)).spec.env.GH_CONFIG_DIR).toBe('/mine/gh');
     const plain = await launcher({ roomKeys: () => ({ ROOM_ONLY: 'r' }) }).prepareStart(agent(), START);
     expect(plain.spec.env.ROOM_ONLY).toBe('r');
   });
