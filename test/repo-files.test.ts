@@ -146,6 +146,26 @@ describe('the HOME of the container is persisted as a whole', () => {
   });
 });
 
+describe('the image is attested, and the self-update verifies it', () => {
+  const workflow = read('.github', 'workflows', 'image.yml');
+  it('image.yml attests the digest of the manifest list the tags point at, with an action pinned by commit, and only the merge job gets the token for it', () => {
+    expect(workflow).toMatch(/uses: actions\/attest-build-provenance@[0-9a-f]{40} # v\d/);
+    expect(workflow).toContain('subject-digest: ${{ steps.index.outputs.digest }}');
+    expect(workflow).toContain('push-to-registry: true');
+    const merge = workflow.slice(workflow.indexOf('\n  merge:'));
+    expect(merge).toMatch(/id-token: write/);
+    expect(merge).toMatch(/attestations: write/);
+    const before = workflow.slice(0, workflow.indexOf('\n  merge:'));
+    expect(before).not.toMatch(/id-token|attestations/);
+    expect(workflow).toMatch(/^permissions: \{\}/m);
+  });
+  it('the signer the self-update demands is that workflow of this repository', () => {
+    const attest = read('src', 'server', 'attest.ts');
+    expect(attest).toContain("SIGNER_WORKFLOW = 'ulm0/gonogo/.github/workflows/image.yml'");
+    expect(attest).toContain("OFFICIAL_IMAGE = 'ghcr.io/ulm0/gonogo'");
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [

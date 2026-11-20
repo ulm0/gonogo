@@ -174,6 +174,7 @@ export function createCoauthorStore(options: { dir: string; log?: Logger }): Coa
   const log = options.log ?? nullLogger;
   const path = join(options.dir, COAUTHOR_FILE);
   let enabled = true;
+  let prFooter = true;
   let chain: Promise<unknown> = Promise.resolve();
   return {
     async load() {
@@ -181,6 +182,8 @@ export function createCoauthorStore(options: { dir: string; log?: Logger }): Coa
         const saved: unknown = JSON.parse(await readFile(path, 'utf8'));
         if (!isRecord(saved) || saved.version !== 1 || typeof saved.enabled !== 'boolean') throw new Error('not a version 1 coauthor file');
         enabled = saved.enabled;
+        // a file of before the PR footer has no such field: it is on
+        prFooter = typeof saved.prFooter === 'boolean' ? saved.prFooter : true;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === 'ENOENT') return;
@@ -192,28 +195,33 @@ export function createCoauthorStore(options: { dir: string; log?: Logger }): Coa
         await rename(path, `${path}.bad`).catch(() => undefined);
       }
     },
-    view: () => ({ enabled }),
+    view: () => ({ enabled, prFooter }),
     async set(input) {
       if (!isRecord(input)) throw new HubError('bad_request', 'request body must be a JSON object');
-      for (const key of Object.keys(input)) if (key !== 'enabled') throw new HubError('bad_request', `unknown field "${key}"`, key);
-      if (typeof input.enabled !== 'boolean') throw new HubError('bad_request', 'enabled must be true or false', 'enabled');
-      const next = input.enabled;
+      for (const key of Object.keys(input)) if (key !== 'enabled' && key !== 'prFooter') throw new HubError('bad_request', `unknown field "${key}"`, key);
+      if (input.enabled === undefined && input.prFooter === undefined) throw new HubError('bad_request', 'enabled or prFooter is required', 'enabled');
+      if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new HubError('bad_request', 'enabled must be true or false', 'enabled');
+      if (input.prFooter !== undefined && typeof input.prFooter !== 'boolean') throw new HubError('bad_request', 'prFooter must be true or false', 'prFooter');
+      const next = input.enabled ?? enabled;
+      const nextFooter = input.prFooter ?? prFooter;
       const run = chain.then(async () => {
-        if (next === enabled) return;
-        const before = enabled;
+        if (next === enabled && nextFooter === prFooter) return;
+        const before = { enabled, prFooter };
         enabled = next;
+        prFooter = nextFooter;
         const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
         try {
-          await writeFile(temp, JSON.stringify({ version: 1, enabled }, null, 2), { flag: 'wx', mode: FILE_MODE });
+          await writeFile(temp, JSON.stringify({ version: 1, enabled, prFooter }, null, 2), { flag: 'wx', mode: FILE_MODE });
           await rename(temp, path);
         } catch (error) {
-          enabled = before;
+          enabled = before.enabled;
+          prFooter = before.prFooter;
           await rm(temp, { force: true }).catch(() => undefined);
           throw new Error(`could not save the co-author setting: ${error instanceof Error ? error.message : String(error)}`);
         }
       });
       chain = run.catch(() => undefined);
-      return run.then(() => ({ enabled }));
+      return run.then(() => ({ enabled, prFooter }));
     },
     close: () => chain.then(() => undefined),
   };

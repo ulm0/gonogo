@@ -247,7 +247,7 @@ export const AUDIT_TEXT_MAX_CHARS = 200;
 /** How a part of the server tells the Black Box of an event: names, ids and words of the server, never a text somebody wrote. */
 export type AuditRecord = (kind: AuditKind, text: string) => void;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
-export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission', 'review', 'startup'] as const;
+export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission', 'review', 'startup', 'update'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
 /** How a part of the server tells the inbox of something the Director should see (`Downlink.post`). */
 /** What a `permission` or `relief` event is about, for the buttons of a phone (docs/phone-approvals-spec.md): the dialog of an agent, or a hire request. */
@@ -440,7 +440,11 @@ export interface SubagentSettings {
 /** Co-author (docs/coauthor-spec.md): the room's switch for the `Co-Authored-By: <agent> (gonogo)` line an agent's commits carry. On by default. */
 export interface CoauthorSettings {
   enabled: boolean;
+  /** The footer of the pull requests an agent writes: Claude Code's `attribution.pr` is set to PR_FOOTER (src/server/launcher.ts). On by default. */
+  prFooter: boolean;
 }
+/** The line every pull request an agent writes ends with, in place of Claude Code's own. */
+export const PR_FOOTER = `🤖 Generated with [gonogo](${DOCS_URL})`;
 export const STARTUP_POLICIES = ['boss', 'running', 'off'] as const;
 export type StartupPolicy = (typeof STARTUP_POLICIES)[number];
 export interface StartupSettings {
@@ -1300,9 +1304,38 @@ export interface UpdateView {
   rollback: string | null;
   /** Docker self-update: the last update went well and the old image is still there, so UNDO can put it back. */
   undo?: boolean;
+  /** Docker self-update: the pulled image has no attestation (an older image, or not the official one): the Director may update anyway, by hand. */
+  verify?: 'unattested';
 }
 
 /** Rollout (docs/rollout-spec.md): the newest @ulm0/gonogo the daily check saw. */
+/** One time window of the day, local time, 24 hours ("02:00" to "05:00"); an end before the start runs over midnight. */
+export interface AutoUpdateWindow {
+  from: string;
+  to: string;
+}
+
+/** Auto-update (docs/features/update.md): the switch, the windows, what it will not take, and what it waits for. */
+export interface AutoUpdateView {
+  enabled: boolean;
+  /** `env`: GONOGO_AUTO_UPDATE sets the switch and the page cannot change it. */
+  source: 'file' | 'env';
+  /** This install can update itself by Docker (the socket, a moving tag, room main). */
+  available: boolean;
+  unavailable: string | null;
+  windows: AutoUpdateWindow[];
+  /** Versions the Director chose to skip, and versions already tried once (never again). */
+  skipped: string[];
+  tried: string[];
+  /** Why it turned itself off, when it did. */
+  note: string | null;
+  latest: string | null;
+  /** The reason it is not updating right now, or null. */
+  waiting: string | null;
+  /** The update it will start (when nothing changes): the version and the time. */
+  plan: { version: string; startsAt: number } | null;
+}
+
 export interface RolloutView {
   /** The check is on (GONOGO_UPDATE_CHECK, --no-update-check). When off, `latest` stays what was saved before, or null. */
   enabled: boolean;

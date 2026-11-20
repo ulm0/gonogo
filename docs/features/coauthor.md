@@ -28,6 +28,17 @@ temporary repositories ([What was not verified](../reference/not-verified.md)).
   outside). **The commits you make through Recorder get none.**
 - **Doctor.** `gonogo doctor` prints the git version and says when it is older than 2.31 (then there is no line, and no harm).
 
+## The footer of the pull requests
+
+Every pull request a Claude Code agent writes ends with the line **Generated with [gonogo](https://gonogo.ulm0.com/)** (a robot emoji in front of it, as Claude Code's own line has) instead of Claude Code's own line. It is on by default, and it is the second switch of the same Flight Rules block (CO-AUTHOR LINE AND PR FOOTER); it applies at each console's next restart.
+
+- **How.** gonogo writes `attribution: { "pr": "<the line>" }` into the settings file of the agent (the same file as its hooks; never `~/.claude`, never the repository's `.claude`). The name and shape were read in the settings schema of Claude Code 2.1.325, which has `attribution: { commit?, pr?, sessionUrl? }` (text for commits and for pull request descriptions; an empty string hides it; `includeCoAuthoredBy` is the deprecated older way). Only `pr` is set: the commit attribution is Claude Code's own plus gonogo's co-author line above, as before.
+- **Your own settings.** Claude Code merges the settings of its layers key by key, `attribution` included: seen in one short run (Claude Code 2.1.325, haiku), an `attribution.commit` in a project's `.claude/settings.json` and an `attribution.pr` in the file gonogo passes with `--settings` were **both** in force. So a commit text you set yourself is not lost, and gonogo copies nothing of it.
+- **Rolling back** to a build without this switch and forward again turns a footer you had switched off back on (the old build saves `coauthor.json` without the field).
+- **Clean Room** agents get it too (their settings file is the same one).
+- **Other engines.** None. gonogo does not know of a setting that the other engines (Gemini CLI, Antigravity, and the others of Engine Bay) have for the text of a pull request, so they write their own, and a custom command writes what it writes.
+- **Not tried on a real pull request**: the setting is written and read back in tests, and the name is the one in the schema, but no agent opened a pull request with it here.
+
 ## What it does not do
 
 - It marks commits made through git's hooks. It is **not a proof of authorship**: an agent can unset the environment, run

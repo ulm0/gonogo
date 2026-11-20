@@ -27,7 +27,7 @@ import {
   nullLogger,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -81,6 +81,9 @@ import { createStartupStore } from './startup.js';
 import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
+import { verifyImage } from './attest.js';
+import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
+import type { AutoUpdater } from './autoupdate.js';
 import { createUpdater } from './updater.js';
 import { addRoom, loadRooms, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { authCommand } from './authcli.js';
@@ -141,7 +144,7 @@ export interface StartOptions {
   /** This process is a room of the supervisor (`gonogo __room`): its browser token is `run/room-token`, new at each start, and it asks for the port it had. */
   roomChild?: boolean;
   /** A room of the supervisor: asks it over the pipe it holds whether another room is busy (a poll or Static fire open), for the Docker update. */
-  askBusy?: () => Promise<{ busy: string | null; room: string | null }>;
+  askBusy?: (idle?: boolean) => Promise<{ busy: string | null; room: string | null }>;
 }
 
 export interface Running {
@@ -1049,11 +1052,48 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       reload: triggerReload,
       keepsAgents: remote !== null,
-      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
+      notify: (text) => tell('update', text),
+      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, verify: (prepared) => verifyImage(prepared.repo, prepared.repoDigests, existsSync(join(home.dir, 'gh')) ? { configDir: join(home.dir, 'gh') } : {}), busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
       hook: /^https?:\/\//.test(hookUrl) ? { url: hookUrl, token: (env.GONOGO_UPDATE_HOOK_TOKEN ?? '').trim() || null } : null,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       log: log.child('update'),
     });
+    // auto-update (docs/features/update.md): room main under a Docker install with the socket; nothing here updates by itself unless the Director turned it on
+    const autoStore = createAutoUpdateStore({ dir: home.dir, env, log: log.child('autoupdate') });
+    await autoStore.load();
+    const hubBusy = (): string | null => {
+      if (hubInstance.poll()?.status === 'open') return 'a T-minus poll or Static fire is open';
+      const active = hubInstance.views().find((v) => v.state === 'working' || v.state === 'needs_you' || v.state === 'starting' || v.transition !== null || v.queued > 0);
+      return active === undefined ? null : `${active.name} is ${active.state === 'needs_you' ? 'waiting for you' : active.state === 'working' ? 'working' : 'starting or has mail queued'}`;
+    };
+    const autoUpdater: AutoUpdater = createAutoUpdater({
+      store: autoStore,
+      rollout,
+      current: version,
+      unavailable: () => (!isMain ? 'only room main updates' : installed.kind !== 'docker' ? 'auto-update is for the Docker install' : dockerStatus?.ready === true ? null : (dockerStatus?.text ?? 'needs the Docker socket')),
+      busy: async () => hubBusy() ?? (supervised && options.askBusy !== undefined ? (await options.askBusy(true)).busy : null),
+      start: (target) => updater.start(target, { auto: true }),
+      updating: () => ['running', 'handed-off', 'reloading'].includes(rollout.view().update?.state ?? ''),
+      readResult: () => readResult(home.dir),
+      notify: (text) => tell('update', text),
+      now: () => io.now(),
+      log: log.child('autoupdate'),
+    });
+    const autoApi = isMain
+      ? {
+          view: () => autoUpdater.view(),
+          set: async (input: unknown) => {
+            await autoStore.set(input);
+            void autoUpdater.tick();
+            return autoUpdater.view();
+          },
+          skip: async (target: string) => {
+            await autoStore.skip(target);
+            void autoUpdater.tick();
+            return autoUpdater.view();
+          },
+        }
+      : undefined;
     // a room under the supervisor asks for the port it had: agents that survive a reload keep the hook and MCP address they were started with
     // (the pty host keeps them running), and a new port would leave them talking to nothing. When it is taken a free port is used, and the agents must be restarted.
     let listenPort = port;
@@ -1107,6 +1147,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       payloadDefaults: audited(payloadDefaults, blackBox.record, PAYLOAD_DEFAULTS_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
+      ...(autoApi === undefined ? {} : { autoUpdate: audited(autoApi, blackBox.record, AUTOUPDATE_AUDIT) }),
       subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),
       coauthor: audited(coauthorStore, blackBox.record, COAUTHOR_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
@@ -1114,7 +1155,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       // only a gonogo started from the command line has the signal handler that does the hand-over; a test or an embedder has not
       // only room main updates (and so only main can reach an update hook or the Docker socket through the page); the others answer 409
-      ...(isMain ? { update: (version: unknown) => updater.start(version), undoUpdate: () => updater.undo() } : {}),
+      ...(isMain ? { update: (version: unknown, how?: { unverified?: boolean }) => updater.start(version, how), undoUpdate: () => updater.undo() } : {}),
       reload: () => {
         if (!triggerReload()) return { ok: false, reason: 'reload is only available in a gonogo started from the command line' };
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
@@ -1168,6 +1209,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     ready = true;
     docking.start();
     rollout.start();
+    if (isMain) await autoUpdater.start();
     telegramPoll?.start();
 
     let stopping: Promise<void> | undefined;
@@ -1225,6 +1267,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('prices close', () => prices.close());
       await step('telemetry close', () => telemetry.close());
       await step('rollout close', () => rollout.close());
+      autoUpdater.close();
+      await step('autoupdate close', () => autoStore.close());
       await step('clearance close', () => clearance.close());
       await step('home close', () => home.close());
     };
@@ -1641,7 +1685,8 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
         }
       }
     },
-    ask(): Promise<{ busy: string | null; room: string | null }> {
+    /** `idle`: the stricter question of auto-update (any agent working, starting or waiting for the Director in another room), where `busy` only asks for an open poll. */
+    ask(idle = false): Promise<{ busy: string | null; room: string | null }> {
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
           waiting = waiting.filter((w) => w !== done);
@@ -1652,7 +1697,7 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
           resolve(answer);
         };
         waiting.push(done);
-        write('gonogo-ask busy\n');
+        write(idle ? 'gonogo-ask idle\n' : 'gonogo-ask busy\n');
       });
     },
   };
@@ -1670,7 +1715,7 @@ export async function runRoom(options: StartOptions, env: Env): Promise<void> {
   // started by a reload: the old gonogo may still hold the home and the port for a moment
   const reloaded = env.GONOGO_RELOADED === '1';
   delete process.env.GONOGO_RELOADED;
-  const askBusy = options.roomChild === true && options.exitWithStdin === true ? () => pipeAnswers.ask() : undefined;
+  const askBusy = options.roomChild === true && options.exitWithStdin === true ? (idle?: boolean) => pipeAnswers.ask(idle === true) : undefined;
   for (let attempt = 0; ; attempt += 1) {
     try {
       running = await startGonogo({ ...options, ...(askBusy === undefined ? {} : { askBusy }), telegramPoll: true, updateCheck: options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });

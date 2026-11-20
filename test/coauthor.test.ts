@@ -323,8 +323,8 @@ describe('the room setting', () => {
   it('is on at first, is saved in a private file, and refuses what is not a boolean', async () => {
     const store = createCoauthorStore({ dir: root });
     await store.load();
-    expect(store.view()).toEqual({ enabled: true });
-    expect(await store.set({ enabled: false })).toEqual({ enabled: false });
+    expect(store.view()).toEqual({ enabled: true, prFooter: true });
+    expect(await store.set({ enabled: false })).toEqual({ enabled: false, prFooter: true });
     expect((await stat(join(root, 'coauthor.json'))).mode & 0o777).toBe(0o600);
     const again = createCoauthorStore({ dir: root });
     await again.load();
@@ -332,6 +332,24 @@ describe('the room setting', () => {
     await expect(store.set({ enabled: 'no' })).rejects.toMatchObject({ field: 'enabled' });
     await expect(store.set({ enabled: true, x: 1 })).rejects.toMatchObject({ field: 'x' });
     await store.close();
+  });
+
+  it('the PR footer is its own switch: on at first, saved with the other, a file of before it has it on, and a body with nothing in it is refused', async () => {
+    const store = createCoauthorStore({ dir: root });
+    await store.load();
+    expect(await store.set({ prFooter: false })).toEqual({ enabled: true, prFooter: false });
+    expect(JSON.parse(await readFile(join(root, 'coauthor.json'), 'utf8'))).toEqual({ version: 1, enabled: true, prFooter: false });
+    expect(await store.set({ enabled: false })).toEqual({ enabled: false, prFooter: false });
+    const again = createCoauthorStore({ dir: root });
+    await again.load();
+    expect(again.view()).toEqual({ enabled: false, prFooter: false });
+    await expect(store.set({})).rejects.toMatchObject({ field: 'enabled' });
+    await expect(store.set({ prFooter: 'yes' })).rejects.toMatchObject({ field: 'prFooter' });
+    await store.close();
+    await writeFile(join(root, 'coauthor.json'), JSON.stringify({ version: 1, enabled: false }));
+    const old = createCoauthorStore({ dir: root });
+    await old.load();
+    expect(old.view()).toEqual({ enabled: false, prFooter: true });
   });
 
   it('is on when the file is damaged, which is kept aside, and left alone when it cannot be read', async () => {
@@ -355,7 +373,7 @@ describe('the launcher', () => {
   const start = async (patch: Partial<AgentRecord>, enabled = true, provider?: 'gemini' | 'custom') => {
     const home = await mkdtemp(join(tmpdir(), 'gonogo-co-home-'));
     try {
-      const launcher = createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env: { PATH: process.env.PATH ?? '', GIT_CONFIG_GLOBAL: '/dev/null' }, coauthor: () => ({ enabled }) });
+      const launcher = createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env: { PATH: process.env.PATH ?? '', GIT_CONFIG_GLOBAL: '/dev/null' }, coauthor: () => ({ enabled, prFooter: false }) });
       const { spec } = await launcher.prepareStart(agent({ ...(provider === undefined ? {} : { provider }), ...(provider === 'custom' ? { command: 'sh' } : {}), ...patch }), { generation: 1, flag: null });
       return { env: spec.env, home, dir: join(home, 'agents', 'ana', 'githooks') };
     } finally {

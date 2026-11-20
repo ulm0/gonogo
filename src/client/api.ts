@@ -72,6 +72,8 @@ import type {
   PermissionDefaults,
   PermissionRules,
   StartupSettings,
+  AutoUpdateView,
+  AutoUpdateWindow,
   SubagentSettings,
   CoauthorSettings,
   HoldAllResult,
@@ -553,13 +555,13 @@ export async function roomsUpdate(): Promise<string | null> {
 /** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */
 export async function coauthorSettings(): Promise<CoauthorSettings> {
   const record = asRecord(await call('GET', '/coauthor'));
-  if (record === null || typeof record.enabled !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  if (record === null || typeof record.enabled !== 'boolean' || typeof record.prFooter !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
   return record as unknown as CoauthorSettings;
 }
 
-export async function setCoauthorSettings(enabled: boolean): Promise<CoauthorSettings> {
-  const record = asRecord(await call('PUT', '/coauthor', { enabled }));
-  if (record === null || typeof record.enabled !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+export async function setCoauthorSettings(patch: Partial<CoauthorSettings>): Promise<CoauthorSettings> {
+  const record = asRecord(await call('PUT', '/coauthor', patch));
+  if (record === null || typeof record.enabled !== 'boolean' || typeof record.prFooter !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
   return record as unknown as CoauthorSettings;
 }
 
@@ -1016,8 +1018,8 @@ export async function undoUpdate(): Promise<void> {
   await call('POST', '/update/undo');
 }
 
-export async function startUpdate(version: string): Promise<void> {
-  await call('POST', '/update', { version });
+export async function startUpdate(version: string, unverified = false): Promise<void> {
+  await call('POST', '/update', unverified ? { version, unverified: true } : { version });
 }
 
 /** Live reload: the server hands over to the installed gonogo (Flight Rules). Resolves with the note the server gives. */
@@ -1407,4 +1409,23 @@ export async function passkeyStepUpAnswer(): Promise<{ passkey: unknown }> {
   }
   if (credential === null) throw failure('The passkey was not given.');
   return { passkey: credentialJson(credential as PublicKeyCredential) };
+}
+
+/** Auto-update (docs/features/update.md): the switch, the windows, SKIP THIS VERSION. The route is room main's and a Docker install's: another room answers 404. */
+export async function autoUpdate(): Promise<AutoUpdateView> {
+  return toAutoUpdate(await call('GET', '/autoupdate'));
+}
+
+export async function setAutoUpdate(patch: { enabled?: boolean; windows?: AutoUpdateWindow[] }): Promise<AutoUpdateView> {
+  return toAutoUpdate(await call('PUT', '/autoupdate', patch));
+}
+
+export async function skipAutoUpdate(version: string): Promise<AutoUpdateView> {
+  return toAutoUpdate(await call('POST', '/autoupdate/skip', { version }));
+}
+
+function toAutoUpdate(value: unknown): AutoUpdateView {
+  const record = asRecord(value);
+  if (record === null || typeof record.enabled !== 'boolean' || !Array.isArray(record.windows) || !Array.isArray(record.skipped)) throw failure('The server sent an answer gonogo does not understand.');
+  return value as AutoUpdateView;
 }

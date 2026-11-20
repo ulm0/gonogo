@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 const launcher = (seed = false): Launcher =>
-  createLauncher({ homeDir: home, hubUrl: () => HUB, seed, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') }, coauthor: () => ({ enabled: false }) });
+  createLauncher({ homeDir: home, hubUrl: () => HUB, seed, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') }, coauthor: () => ({ enabled: false, prFooter: false }) });
 const agent = (provider: Provider, over: Partial<AgentRecord> = {}): AgentRecord => ({
   name: 'ana',
   role: 'Reviews pull requests.',
@@ -49,6 +49,16 @@ const agentDir = (): string => join(home, 'agents', 'ana');
 const roleText = (): string => buildRoleText('ana', 'Reviews pull requests.', join(agentDir(), 'memory.md'));
 
 describe('prepareStart for another agent CLI', () => {
+  it('the PR footer is Claude Code\'s setting: with it on in the room, another engine\'s files carry no attribution', async () => {
+    const on = createLauncher({ homeDir: home, hubUrl: () => HUB, seed: false, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') }, coauthor: () => ({ enabled: false, prFooter: true }) });
+    await on.prepareStart(agent('gemini'), START);
+    for (const file of await readdir(agentDir())) {
+      const text = await readFile(join(agentDir(), file), 'utf8').catch(() => '');
+      expect(text, file).not.toContain('attribution');
+      expect(text, file).not.toContain('gonogo.ulm0.com');
+    }
+  });
+
   it('gemini: its own settings file through GEMINI_CLI_SYSTEM_SETTINGS_PATH, hooks to the hub, the role as the first prompt', async () => {
     const l = launcher();
     const prepared = await l.prepareStart(agent('gemini'), START);

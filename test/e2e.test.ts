@@ -2735,6 +2735,23 @@ describe('end to end with the stand-in agent', () => {
     expect((await api<ApiError>(h, 'PATCH', '/api/agents/ben', { permissions: 'Bash' })).status).toBe(400);
   }, 60_000);
 
+  it('Auto-update: the routes answer on room main, say this install cannot update itself, keep what the Director sets, and refuse a bad body', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    const first = await api<Record<string, unknown>>(h, 'GET', '/api/autoupdate');
+    expect(first.status).toBe(200);
+    // not a Docker install with the socket (a bare host says so; inside a container the socket decides): either way it says why
+    expect(first.body.available === true || typeof first.body.unavailable === 'string').toBe(true);
+    expect(first.body).toMatchObject({ enabled: false, source: 'file', available: expect.any(Boolean), windows: [{ from: '02:00', to: '05:00' }], skipped: [], tried: [], plan: null });
+    expect((await api(h, 'PUT', '/api/autoupdate', { enabled: 'yes' })).status).toBe(400);
+    expect((await api(h, 'PUT', '/api/autoupdate', { windows: [{ from: '25:00', to: '01:00' }] })).status).toBe(400);
+    expect((await api(h, 'PUT', '/api/autoupdate', { enabled: true, windows: [{ from: '23:00', to: '01:00' }] })).body).toMatchObject({ enabled: true, windows: [{ from: '23:00', to: '01:00' }] });
+    expect((await api(h, 'POST', '/api/autoupdate/skip', { version: 'next' })).status).toBe(400);
+    expect((await api(h, 'POST', '/api/autoupdate/skip', { version: '0.9.9' })).body).toMatchObject({ skipped: ['0.9.9'] });
+    expect((await api(h, 'GET', '/api/autoupdate')).body).toMatchObject({ enabled: true, skipped: ['0.9.9'] });
+    expect((await api(h, 'DELETE', '/api/autoupdate')).status).toBe(405);
+  }, 60_000);
+
   it('Autostart: a cold restart starts the agents that were running, not one that was stopped, held or opted out, and start_agent starts a stopped one', async () => {
     const first = await startServer();
     await waitState(first, 'flight', 'idle');

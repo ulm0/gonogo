@@ -163,6 +163,8 @@ export interface RolloutOptions {
 export interface Rollout {
   load(): Promise<void>;
   view(): RolloutView;
+  /** When this `latest` was first seen by a check (ms epoch), or null when unknown: auto-update takes a version only after a day of it. */
+  seenAt(): number | null;
   /** The update the Director started: shown with the view and sent to every page. */
   setUpdate(update: UpdateView): void;
   /** Asks now when a day has passed since the last try, then looks again every hour. A no-op while off. */
@@ -177,6 +179,7 @@ export function createRollout(options: RolloutOptions): Rollout {
   const path = join(options.dir, ROLLOUT_FILE);
   let latest: string | null = null;
   let checkedAt: number | null = null;
+  let seen: number | null = null;
   let timer: NodeJS.Timeout | undefined;
   let closed = false;
   let running: Promise<RolloutView> | null = null;
@@ -196,7 +199,7 @@ export function createRollout(options: RolloutOptions): Rollout {
   async function save(): Promise<void> {
     const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
     try {
-      await writeFile(temp, JSON.stringify({ version: 1, checkedAt, latest }, null, 2), { flag: 'wx', mode: FILE_MODE });
+      await writeFile(temp, JSON.stringify({ version: 1, checkedAt, latest, latestSeenAt: seen }, null, 2), { flag: 'wx', mode: FILE_MODE });
       await rename(temp, path);
     } catch (error) {
       await rm(temp, { force: true }).catch(() => undefined);
@@ -212,7 +215,12 @@ export function createRollout(options: RolloutOptions): Rollout {
       if (!res.ok) await res.body?.cancel().catch(() => undefined);
       const text = res.ok ? await readCapped(res, ROLLOUT_MAX_BYTES) : null;
       const doc: unknown = text === null ? null : JSON.parse(text);
-      if (isRecord(doc) && typeof doc.version === 'string' && STABLE.test(doc.version)) latest = doc.version;
+      if (isRecord(doc) && typeof doc.version === 'string' && STABLE.test(doc.version)) {
+        // a new `latest` starts its day of cooling; one read from an older file (no time kept) starts it now
+        if (doc.version !== latest) seen = options.now();
+        else seen ??= options.now();
+        latest = doc.version;
+      }
     } catch (error) {
       log.debug(`the update check did not get an answer: ${error instanceof Error ? error.name : 'error'}`);
     }
@@ -232,6 +240,7 @@ export function createRollout(options: RolloutOptions): Rollout {
         const saved: unknown = JSON.parse(await readFile(path, 'utf8'));
         if (isRecord(saved) && saved.version === 1) {
           if (typeof saved.latest === 'string' && STABLE.test(saved.latest)) latest = saved.latest;
+          if (typeof saved.latestSeenAt === 'number' && Number.isFinite(saved.latestSeenAt)) seen = saved.latestSeenAt;
           if (typeof saved.checkedAt === 'number' && Number.isFinite(saved.checkedAt)) checkedAt = saved.checkedAt;
         }
       } catch {
@@ -239,6 +248,7 @@ export function createRollout(options: RolloutOptions): Rollout {
       }
     },
     view,
+    seenAt: () => seen,
     check,
     setUpdate(next) {
       update = next;

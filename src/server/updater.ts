@@ -10,7 +10,9 @@
 import { execFile } from 'node:child_process';
 import type { InstallKind, Logger, UpdateView } from '../shared/protocol.js';
 import { nullLogger } from './constants.js';
+import type { Attestation } from './attest.js';
 import { checkPrevious, DockerUpdateError, pullAndCheck, readResult, startHelper, STABLE_VERSION } from './dockerupdate.js';
+import type { Prepared } from './dockerupdate.js';
 import type { DockerCall } from './dockerupdate.js';
 import { installCommand } from './rollout.js';
 import type { Rollout } from './rollout.js';
@@ -54,15 +56,23 @@ export interface UpdaterOptions {
   /** How long a handed-off update may wait for the helper before the page says it did not answer. Default 5 minutes. */
   handoffMs?: number;
   /** Docker self-update (docs/self-update-spec.md): the socket, the container's own hostname (its id) and gonogo's home; absent without the socket. */
-  docker?: { call: DockerCall; hostname: string; home: string; ready: boolean; busy(): string | null | Promise<string | null> };
+  docker?: { call: DockerCall; hostname: string; home: string; ready: boolean; busy(): string | null | Promise<string | null>; verify?(prepared: Pick<Prepared, 'repo' | 'repoDigests'>): Promise<Attestation> };
+  /** A line for the Downlink (a refused image); absent in tests. */
+  notify?(text: string): void;
   fetch: typeof fetch;
   log?: Logger;
+}
+
+/** `unverified`: the Director confirmed an image that has no attestation (never set by auto-update). `auto`: auto-update started it (it tells the Downlink itself). */
+export interface StartHow {
+  unverified?: boolean;
+  auto?: boolean;
 }
 
 export interface Updater {
   /** Starts the update to `version` and returns at once with the state; the page follows through the rollout frames. */
   /** Starts the update; with Docker it first asks whether another room is busy, so the answer may take a moment. */
-  start(version: unknown): UpdateView | Promise<UpdateView>;
+  start(version: unknown, how?: StartHow): UpdateView | Promise<UpdateView>;
   /** An update hook is set (a container). */
   hasHook(): boolean;
   /** Docker self-update: puts the previous image back, through the same helper. */
@@ -106,7 +116,9 @@ export function createUpdater(options: UpdaterOptions): Updater {
   let state: UpdateView = { state: 'idle', version: null, note: '', tail: [], rollback: null };
 
   const set = (next: Partial<UpdateView>): UpdateView => {
-    state = { ...state, ...next };
+    // `verify` belongs to one refusal: it does not carry over into the next state
+    state = { ...state, verify: undefined, ...next };
+    if (state.verify === undefined) delete state.verify;
     options.rollout.setUpdate(state);
     return state;
   };
@@ -138,7 +150,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
   }
 
   /** Pull, check the version label, start the helper; the helper then replaces this container, so what follows is the next process's. */
-  async function dockerUpdate(version: string, image: 'pull' | { previous: string }): Promise<void> {
+  async function dockerUpdate(version: string, image: 'pull' | { previous: string }, how: StartHow = {}): Promise<void> {
     const docker = options.docker;
     if (docker === undefined) return;
     try {
@@ -146,6 +158,20 @@ export function createUpdater(options: UpdaterOptions): Updater {
       let inspect;
       if (image === 'pull') {
         const prepared = await pullAndCheck(docker.call, docker.hostname, version);
+        // the image is run only when GitHub's attestation says this repository's workflow built it (attest.ts); the copy is made from the id of THIS pulled image
+        // no verifier wired is a refusal, never a pass
+        const verdict: Attestation = docker.verify === undefined ? { kind: 'failed', why: 'no verifier is configured' } : await docker.verify(prepared);
+        if (verdict.kind === 'failed' || (verdict.kind === 'unattested' && how.unverified !== true)) {
+          const note = `${version} was not run: ${verdict.kind === 'failed' ? `its image could not be verified (${verdict.why})` : `its image has no attestation (${verdict.why})`}. Nothing was changed.${verdict.kind === 'unattested' ? ' Update anyway only if you built or trust this image.' : ''}`;
+          log.warn(`the Docker update to ${version} was refused: ${note}`);
+          if (how.auto !== true) options.notify?.(`Update to ${version} refused: ${note}`);
+          set({ state: 'failed', version, note, tail: [], rollback: null, ...(verdict.kind === 'unattested' ? { verify: 'unattested' as const } : {}) });
+          return;
+        }
+        if (verdict.kind === 'unattested') {
+          log.warn(`updating to ${version} with an image that has no attestation, as the Director confirmed`);
+          options.notify?.(`Updating to ${version} with an image that has no attestation (${verdict.why}), as you confirmed.`);
+        }
         target = prepared.image;
         inspect = prepared.inspect;
       } else {
@@ -207,7 +233,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
       void dockerUpdate(last.from, { previous: last.previousImage });
       return started;
     },
-    start(version) {
+    start(version, how) {
       const seen = options.rollout.view();
       if (!seen.enabled) throw new UpdateError('conflict', 'the update check is off (GONOGO_UPDATE_CHECK): gonogo does not update itself');
       if (typeof version !== 'string' || !STABLE.test(version)) throw new UpdateError('bad_request', 'version must be a release number like 1.2.3');
@@ -223,7 +249,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
             const busy = await docker.busy();
             if (busy !== null) throw new UpdateError('conflict', busy);
             const started = set({ state: 'running', version, note: `Pulling ${version}…`, tail: [], rollback: null });
-            void dockerUpdate(version, 'pull');
+            void dockerUpdate(version, 'pull', how ?? {});
             return started;
           } finally {
             asking = false;

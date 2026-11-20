@@ -43,6 +43,7 @@ export const EVENT_CHIPS: Readonly<Record<DownlinkEventKind, { text: string; ton
   'flight-plan': { text: 'FLIGHT PLAN', tone: 'quiet' },
   livery: { text: 'LIVERY', tone: 'quiet' },
   startup: { text: 'STARTUP', tone: 'quiet' },
+  update: { text: 'UPDATE', tone: 'quiet' },
   relief: { text: 'RELIEF', tone: 'amber' },
   permission: { text: 'PERMISSION', tone: 'amber' },
   mission: { text: 'MISSION', tone: 'quiet' },

@@ -88,7 +88,7 @@ describe('the answer', () => {
     expect(view).toEqual({ enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: now(), newer: true, command: 'pnpm add -g @ulm0/gonogo@0.2.0' });
     expect(emitted).toEqual([view]);
     const file = join(dir, 'rollout.json');
-    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 1, checkedAt: now(), latest: '0.2.0' });
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 1, checkedAt: now(), latest: '0.2.0', latestSeenAt: now() });
     expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 
@@ -295,5 +295,38 @@ describe('the three pnpm commands exempt gonogo from minimumReleaseAge and carry
     expect(view('/h/.cache/pnpm/dlx/a/node_modules/@ulm0/gonogo/dist/server/cli.js')).toBe('pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@0.4.1');
     expect(view('/h/.local/share/pnpm/global/5/node_modules/@ulm0/gonogo/dist/server/cli.js')).toBe('pnpm --config.minimum-release-age-exclude=@ulm0/gonogo add -g @ulm0/gonogo@0.4.1');
     expect(installCommand('pnpm', '0.4.1')).toEqual({ file: 'pnpm', args: ['--config.minimum-release-age-exclude=@ulm0/gonogo', 'add', '-g', '@ulm0/gonogo@0.4.1'] });
+  });
+});
+
+describe('when a version was first seen (auto-update takes one only after a day)', () => {
+  it('stamps a new latest, keeps the stamp while it is the same, starts again for another, and keeps it across a restart', async () => {
+    const s = setup();
+    expect(s.rollout.seenAt()).toBeNull();
+    await s.rollout.check();
+    const first = s.now();
+    expect(s.rollout.seenAt()).toBe(first);
+    s.advance(ROLLOUT_EVERY_MS);
+    await s.rollout.check();
+    expect(s.rollout.seenAt()).toBe(first);
+    s.next.push(() => answer('0.2.1'));
+    s.advance(ROLLOUT_EVERY_MS);
+    await s.rollout.check();
+    expect(s.rollout.seenAt()).toBe(s.now());
+    const again = createRollout({ dir, now: s.now, fetch: ((): Promise<Response> => Promise.reject(new Error('offline'))) as typeof fetch, enabled: true, current: '0.1.1', command: 'x', emit: () => undefined });
+    await again.load();
+    expect(again.seenAt()).toBe(s.now());
+  });
+
+  it('a file of an older gonogo (no time kept) starts the day at the next check, and a failed check changes nothing', async () => {
+    await writeFile(join(dir, 'rollout.json'), JSON.stringify({ version: 1, checkedAt: 5, latest: '0.2.0' }));
+    const s = setup({ fetch: (() => Promise.reject(new Error('offline'))) as typeof fetch });
+    await s.rollout.load();
+    expect(s.rollout.seenAt()).toBeNull();
+    await s.rollout.check();
+    expect(s.rollout.seenAt()).toBeNull();
+    const ok = setup();
+    await ok.rollout.load();
+    await ok.rollout.check();
+    expect(ok.rollout.seenAt()).toBe(ok.now());
   });
 });
