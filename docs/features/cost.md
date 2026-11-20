@@ -2,44 +2,61 @@
 
 <CostMock class="doc-mock" />
 
-gonogo prices the tokens that [Propellant](propellant.md) counts. The dollars are an **API-equivalent estimate at list prices**: on a Pro or Max subscription nothing is billed per token, and the page says so.
+Prices the tokens that [Propellant](propellant.md) counts, with budgets. Dollars are an **API-equivalent estimate at list prices**: on a Pro or Max subscription nothing is billed per token.
 
-- **Switch.** The meter of Propellant (the wall module, Flight Rules, and each console's PROPELLANT fold) has a TOKENS | DOLLARS switch. In DOLLARS the same windows (5 h, day, week, month) show spend against a **budget**, typed as `10`, `$12.40` or `1.5k`.
-- **Budget.** At 80 % the meter turns saffron and the Downlink gets one `redline` event ("ana is at 80 % of its day budget") until the window drops below 80 % again. At 100 % Redline stops the agent (agent budget) or every Claude agent (room budget), exactly as for a token limit: `out of propellant: ana spent $12.40 of $10.00 in 24 h`. Resume while still over allows one more turn.
-- **Cost by day.** A chart of the last 14 local calendar days, one colour per agent, with a table of the same numbers.
-- **Prices.** The PRICES fold lists dollars per million tokens for each model prefix (input, output, cache write, cache read). The built-in rows are Anthropic's list prices, each stamped with the day they were copied, and **go stale**: check the vendor's page. Your own rows win; RESET drops one. A built-in row matches only its own model id, with a date (`claude-sonnet-5-5-20260101`), `-latest` or `[1m]` after it, so a newer model that merely starts the same (`claude-sonnet-5-6`) is not guessed. **Your own rows are prefixes**: the longest one that starts the model id wins. A model with no row is **unpriced**: its tokens are shown apart, never costed at zero. Nothing is fetched from the web. Editing a price prices the whole history again.
-- **Patch Panel.** "Propellant: prices" and "Propellant: budget" open Flight Rules at the fold or the budget field.
+- **Switch.** The Propellant meter (wall module, Flight Rules, each console's PROPELLANT fold) has TOKENS | DOLLARS. DOLLARS shows the windows (5 h, day, week, month) against a **budget** typed as `10`, `$12.40` or `1.5k`.
+- **Budget.** At 80 % the meter turns saffron and the Downlink gets one `redline` event ("ana is at 80 % of its day budget") until the window drops below 80 %. At 100 % Redline stops the agent (agent budget) or every Claude agent (room budget), as for a token limit: `out of propellant: ana spent $12.40 of $10.00 in 24 h`. Resume while still over allows one more turn.
+- **Cost by day.** Chart of the last 14 local calendar days, one colour per agent, plus a table by agent and kind of token (Total, Input, Output, Cache write and read), from `GET /api/cost`. All are estimates: counted tokens times list price. This is the one basis of the meter, budgets and Redline.
+- **Room list.** Each room's card shows "about $x today (estimate)" when above zero.
+- **Patch Panel.** "Propellant: prices" and "Propellant: budget" open Flight Rules at the fold or field.
 
-## By kind of token, and what Claude Code reports
+## Prices
 
-- **COST BY DAY** also has a table of the last 14 days **by agent and by kind of token**: Total, Input, Output and Cache (write and read) in dollars, from `GET /api/cost`. Every one of these is an **estimate**: the tokens gonogo counted times the list price. It is the one basis of the headline meter, the budgets and Redline.
-- **Reported.** Claude Code's status line carries the dollars the session has cost so far. gonogo keeps that figure **beside** the estimate, per agent and for the room, and **never adds it to the estimate or lets it move a budget**: a room total that mixed the two would change whenever an agent began to report. The room's figure is the sum of the agents that have one, with how many that is ("1 of 2 agents"); each figure says "at least", because the last seconds of a session can be lost. Other engines have no reported figure: they show the estimate only. For a claude.ai subscription, Claude Code's figure is what the same use would cost at API prices, an equivalent and not a charge.
-- **In a room list.** Each room's card shows "about $x today (estimate)" when it is above zero, taken from the state the list already reads.
+The PRICES fold lists dollars per million tokens per model prefix (input, output, cache write, cache read).
+
+- Built-in rows are Anthropic's list prices, stamped with the day copied; they **go stale**, so check the vendor's page. Nothing is fetched from the web.
+- A built-in row matches only its own model id, with a date (`claude-sonnet-5-5-20260101`), `-latest` or `[1m]` after it; `claude-sonnet-5-6` is not guessed.
+- **Your own rows are prefixes**: the longest match wins and beats built-ins. RESET drops one. Editing a price prices the whole history again.
+- A model with no row is **unpriced**: its tokens show apart, never costed at zero.
+
+## Reported cost (Claude Code)
+
+Claude Code's status line carries the session's dollars so far. gonogo keeps that **beside** the estimate, per agent and for the room, and **never adds it to the estimate or lets it move a budget**. The room figure sums the agents that have one ("1 of 2 agents") and says "at least" (the last seconds of a session can be lost). Other engines show the estimate only. On a claude.ai subscription it is what the use would cost at API prices, not a charge.
 
 ## Cost per mission and task, and a budget per mission
 
-A reply is counted to the **mission and task the agent is working on**: the agent's own Flight Plan task with status `doing` and the mission that task serves. The ledger line keeps both ids (`mission`, `task`), so the Missions view shows what each mission and each of its tasks has cost (`$1.20 of $10.00`, and the tokens that have no price). An agent with no task on `doing` costs the room, not a mission, and an agent with several is counted to the first. Work is counted when its reply is read, so a task set to `doing` a minute late is only counted from then; nothing is attributed back.
+A reply is counted to the **mission and task the agent works on**: its Flight Plan task with status `doing` and that task's mission. The Missions view shows each mission's and task's cost (`$1.20 of $10.00`, plus unpriced tokens).
 
-A **mission budget** is dollars in all (not per window), set in the COST block of the mission's page (`25`, `$12.50`; CLEAR removes it). At 80 % the Downlink gets one `redline` event (`mission ms3 is at 80 % of its budget`); at 100 % Redline stops **every Claude agent that has a task of that mission on `doing`**, with `out of propellant: mission ms3 spent $10.00 of $10.00`. An agent on another mission or on none keeps going. To go on, raise the budget (it is checked at once), clear it, or move the task to another mission. The order of the checks is the agent's tokens, the agent's budget, the mission's budget, then the room's. The spend of a mission is the sum of its ledger lines of the last 31 days: older ones are pruned like all ledger lines.
+- An agent with no `doing` task costs the room, not a mission; with several, the first counts. Counted when the reply is read: nothing is attributed back.
+- **Mission budget:** dollars in all (not per window). Set in the COST block of the mission page (`25`, `$12.50`; CLEAR removes it). At 80 % one `redline` event (`mission ms3 is at 80 % of its budget`). At 100 % Redline stops **every Claude agent with a `doing` task of that mission**: `out of propellant: mission ms3 spent $10.00 of $10.00`. Others keep going.
+- To go on: raise the budget (checked at once), clear it, or move the task to another mission.
+- Check order: agent tokens, agent budget, mission budget, room.
+- Mission spend is its ledger lines of the last 31 days; a longer mission loses its oldest spend against its "in all" budget.
 
 ## Limits
 
-- A mission's spend is what the ledger still holds (31 days): a longer mission quietly loses its oldest spend against its "in all" budget.
-- Spend of an agent with no `doing` task is counted to no mission. A model with no price adds to the mission's unpriced tokens, not its dollars, so it does not move the budget.
-- A reply is attributed by the agent's `doing` task when the transcript is read, so a reply finished just after a switch of task goes to the new task.
-- **Reported figures** come from Claude Code's status line only, and only while an agent runs: a figure is "at least" what was spent. **Seen in one short run** (Claude Code 2.1.325, haiku, a claude.ai subscription): the JSON has `session_id` and `cost.total_cost_usd` from its first refresh; `/clear` made a new session id with a total back at 0. **Not seen:** whether the spend of a subagent (Task tool) is inside the total, what `--resume` does to the id and the total, and a run with an API key.
 - Counted like tokens: Claude Code agents only, not Clean Room agents, not subagent (Task tool) transcripts.
-- Cache writes use the 5-minute price; the 1-hour price, batch discounts, long-context surcharges and per-call fees are not modelled.
-- Ledger lines written before this feature have no model: they count for tokens and show as unpriced (the fold says "priced since" and a date). They are not rewritten.
-- The ledger and the budgets are keyed by agent name, so a rename starts from zero.
+- An unpriced model adds to unpriced tokens, not dollars, so it does not move a budget. Old ledger lines have no model: tokens only, shown unpriced ("priced since" date). Not rewritten.
+- Cache writes use the 5-minute price. The 1-hour price, batch discounts, long-context surcharges and per-call fees are not modelled.
+- The ledger and budgets are keyed by agent name: a rename starts from zero.
+- **Reported figures** come from Claude Code's status line only, while an agent runs: a figure is "at least" what was spent. **Seen in one short run** (Claude Code 2.1.325, haiku, claude.ai subscription): the JSON has `session_id` and `cost.total_cost_usd` from its first refresh; `/clear` made a new session id with a total back at 0. **Not seen:** whether a subagent's spend is in the total, what `--resume` does to the id and total, a run with an API key.
 
 ## Files and API
 
-- `~/.gonogo/fuel.jsonl`: lines `{at, agent, model, i, cw, o, cr, tokens}` (input, cache write, output, cache read; `tokens` = i + cw + o, as before).
-- `~/.gonogo/propellant.json`: gains `budget: { room, agents }`, dollars in whole cents from 0.01 to 1,000,000.
-- `~/.gonogo/prices.json` (mode 0600): `{ "version": 1, "currency": "USD", "models": { "<prefix>": { input, output, cacheWrite, cacheRead } } }`, 0 to 10,000 dollars per million. `currency` is a label only.
-- `PUT /api/propellant` takes `{"budget": {"room": {"day": 10}, "agents": {"ana": {"5h": 2.5}}, "missions": {"ms3": 25, "ms4": null}}}` next to the limits; `{}` for a scope clears it, `null` clears a mission's. The view has `cost.missions` and `cost.tasks`: `{ usd, unpriced, budget? }` by id.
-- `fuel.jsonl` lines may also carry `mission` and `task` (ids); `propellant.json` `budget.missions` holds the mission budgets.
-- `GET /api/cost?days=N` (1 to 31, default 14; another value is a 400): `{ currency, estimate: true, dayBoundary: "local", from, to, room, agents, days, unpricedModels, partial, sessions, pricedSince, priceAsOf }`. **A day is the server's local calendar day, midnight to midnight.** `room` and each of `agents` have `usd`, `usdSplit` `{input, output, cacheWrite, cacheRead}`, `tokens` (the same kinds) and `unpriced` (tokens of an old line or of a model with no price; `unpricedModels` names those models). `room.reported` and `reportedAgents` `{have, of}`, and per agent `reported`, `basis` (`reported`, `estimated` or `none`) and `sessions`, are the engine's own figure. `days` has the same numbers per day with `byAgent` and `reported`. `partial` is true when the ledger (31 days) was cut inside the window. `priceAsOf` is the day the default prices were copied. It is a room's own API: a room under `/r/<id>/` has its own `/api/cost`.
-- `~/.gonogo/reported.jsonl`: a first line `{created}`, then lines `{at, agent, session, total, base?}`, appended only when a **session's** total changed. Dollars are worked out on read, **per session** (so a rename does not count a session's total again; each increase is credited to the agent the line names): a total below the one before, **posted later**, is a reset (the new total is the delta, never negative). `at` is the time the status-line script posted it: a report older than the last kept for its session is dropped, so two posts that arrive swapped are not read as a reset (a missing time, or one far from now, is taken as arriving now). **The first line of a session that arrives within ten minutes of the file being made counts 0** (`base`): that session was already running when this began, and its total is not that day's spend; this applies once, on the day of the upgrade. **Limits of that rule:** a session that was idle when the file was made and spends later still counts its whole total on the day of its first line (gonogo cannot tell it from a new one), and an agent launched before the upgrade keeps the old status-line script, which posts no time, until it restarts: its reports are ordered by arrival until then. A restart of gonogo counts nothing twice. Lines older than 31 days go, and a session with nothing in the last 31 days goes whole (one that comes back after that counts its total again). The file and the memory are pruned every 200 lines while it runs, and at most 5,000 sessions per agent and 20,000 in all are kept (a busy room can reach that in months): a new session beyond that is not recorded and the log says so once, and the reported figure then undercounts until old sessions age out, so an agent posting endless fresh ids cannot grow memory or disk or crowd out another agent.
-- `GET /api/prices`, `PUT /api/prices` (`{"models": {...}}`, replaces your rows; an unknown field is a 400), `DELETE /api/prices/<prefix>`.
+| Item | Shape |
+|---|---|
+| `~/.gonogo/fuel.jsonl` | `{at, agent, model, i, cw, o, cr, tokens}` (input, cache write, output, cache read; `tokens` = i + cw + o); may carry `mission`, `task` ids |
+| `~/.gonogo/propellant.json` | `budget: { room, agents, missions }`, dollars in whole cents, 0.01 to 1,000,000 |
+| `~/.gonogo/prices.json` (0600) | `{ "version": 1, "currency": "USD", "models": { "<prefix>": { input, output, cacheWrite, cacheRead } } }`, 0 to 10,000 per million; `currency` is a label |
+| `~/.gonogo/reported.jsonl` | reported session totals; format in [`docs/cost-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/cost-spec.md); kept 31 days, 5,000 sessions per agent, 20,000 in all |
+| `PUT /api/propellant` | `{"budget": {"room": {"day": 10}, "agents": {"ana": {"5h": 2.5}}, "missions": {"ms3": 25, "ms4": null}}}`; `{}` clears a scope, `null` a mission's. View has `cost.missions`, `cost.tasks`: `{ usd, unpriced, budget? }` by id |
+| `GET /api/prices`, `PUT /api/prices`, `DELETE /api/prices/<prefix>` | PUT `{"models": {...}}` replaces your rows; unknown field is 400 |
+| `GET /api/cost?days=N` | N 1 to 31, default 14, else 400 |
+
+`GET /api/cost` returns `{ currency, estimate: true, dayBoundary: "local", from, to, room, agents, days, unpricedModels, partial, sessions, pricedSince, priceAsOf }`.
+
+- **A day is the server's local calendar day.**
+- `room` and each agent: `usd`, `usdSplit` `{input, output, cacheWrite, cacheRead}`, `tokens` (same kinds), `unpriced` (tokens of an old line or unpriced model; `unpricedModels` names them).
+- Reported: `room.reported`, `reportedAgents` `{have, of}`, per agent `reported`, `basis` (`reported`, `estimated`, `none`), `sessions`. `days` repeats the numbers per day with `byAgent` and `reported`.
+- `partial` is true when the 31-day ledger was cut inside the window. `priceAsOf` is the day default prices were copied.
+- A room under `/r/<id>/` has its own `/api/cost`.

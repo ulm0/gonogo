@@ -85,3 +85,9 @@ Max Q off: no mail held for load; Black Box off: no commit; Launch Window off: n
 - **Black Box is core** (RETRO's review): an off switch dropped the audit, including the record of its own toggle. Its row has a lock.
 - **Room editor hookup** (rules of PR #48): `CATALOGUE[id].feature`, `displayBlocks` (display only), `mergeEdit` (an off block keeps its entry; one an edit now lies on is saved `hidden` with its rectangle, so the server still accepts the file). The tray greys an off block; a hidden block whose feature comes back is in the tray. The re-added operations block is clamped to `GRID_ROWS_MAX`.
 - **Plan context:** an open T-minus poll or Static fire blocks turning them off; turning a feature on lists the running agents to restart for its tools; `load()` closes the off list over `requires` and drops core and not-switchable ids; apply takes `expect` (the previewed `off`) and answers 409 on a mismatch; Max Q off calls `Hub.refreshLimits()` so held mail is released at once.
+
+## Moved from the user page
+
+- Black Box is core because an audit trail that can be switched off is not one: it records the switches themselves.
+- Hold is core so that ALL STOP and ALL RESUME (Hold of every console) stay.
+- Propellant and Cost are not switchable yet: the spend brake would have to be reworked so that "off" is not a way to lose the limit. Party Line is a view of the messages with no server side.
