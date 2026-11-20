@@ -1036,6 +1036,12 @@ export async function undoUpdate(): Promise<void> {
   await call('POST', '/update/undo');
 }
 
+/** CHECK NOW: the version check now (the rollout frame follows). `waitS` is there when it was asked a moment ago and the cache was answered. */
+export async function checkUpdateNow(): Promise<{ waitS?: number }> {
+  const answer = asRecord(await call('POST', '/rollout/check'));
+  return typeof answer?.waitS === 'number' ? { waitS: answer.waitS } : {};
+}
+
 export async function startUpdate(version: string, unverified = false): Promise<void> {
   await call('POST', '/update', unverified ? { version, unverified: true } : { version });
 }

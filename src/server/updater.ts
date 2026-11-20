@@ -19,6 +19,7 @@ import { installCommand, isNewer } from './rollout.js';
 /** The first release that knows room main may live in rooms/main (a new home's layout, #154). */
 const LAYOUT_VERSION = '0.8.2';
 import type { Rollout } from './rollout.js';
+import type { RolloutView } from '../shared/protocol.js';
 
 const STABLE = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -48,7 +49,7 @@ export interface UpdaterOptions {
   cwd: string;
   /** The version that runs now: the rollback goes back to it. */
   current: string;
-  rollout: Pick<Rollout, 'view' | 'setUpdate'>;
+  rollout: Pick<Rollout, 'view' | 'setUpdate'> & Partial<Pick<Rollout, 'checkNow'>>;
   /** Runs one command without a shell; resolves with the exit code and the output, never rejects. */
   run?(file: string, args: string[]): Promise<RunResult>;
   /** Hands over to the installed gonogo; false when this process cannot (a test, an embedder). */
@@ -243,10 +244,21 @@ export function createUpdater(options: UpdaterOptions): Updater {
       return started;
     },
     start(version, how) {
-      const seen = options.rollout.view();
-      if (!seen.enabled) throw new UpdateError('conflict', 'the update check is off (GONOGO_UPDATE_CHECK): gonogo does not update itself');
+      const first = options.rollout.view();
+      if (!first.enabled) throw new UpdateError('conflict', 'the update check is off (GONOGO_UPDATE_CHECK): gonogo does not update itself');
       if (typeof version !== 'string' || !STABLE.test(version)) throw new UpdateError('bad_request', 'version must be a release number like 1.2.3');
-      if (!seen.newer || seen.latest !== version) throw new UpdateError('conflict', `${version} is not the newer version the check found${seen.latest === null ? '' : ` (${seen.latest})`}`);
+      // a version newer than what the cache knows (the check runs once a day): ask once now, rate limited, and then decide on what it found
+      if (options.rollout.checkNow !== undefined && isNewer(version, first.latest ?? first.current) && !(first.newer && first.latest === version)) {
+        const ask = options.rollout.checkNow();
+        return ask.then(({ view, waitS }) => begin(version, how, view, waitS));
+      }
+      return begin(version, how, first, null);
+    },
+  };
+
+  function begin(version: string, how: StartHow | undefined, seen: RolloutView, waitS: number | null): UpdateView | Promise<UpdateView> {
+    {
+      if (!seen.newer || seen.latest !== version) throw new UpdateError('conflict', `${version} is not the newer version the check found${seen.latest === null ? '' : ` (${seen.latest})`}${waitS === null ? '' : `; it was asked a moment ago, try again in ${waitS} s`}`);
       if (state.state === 'running' || state.state === 'reloading' || state.state === 'handed-off') throw new UpdateError('conflict', 'an update is already in progress');
       if (options.kind === 'docker' && options.docker?.ready === true) {
         const docker = options.docker;
@@ -278,6 +290,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
         set({ state: 'failed', note: 'The update failed unexpectedly; the running version is unchanged.', tail: [], rollback: null });
       });
       return started;
-    },
-  };
+    }
+  }
 }

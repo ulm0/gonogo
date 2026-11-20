@@ -6,7 +6,7 @@ gonogo tells you when a newer `@ulm0/gonogo` exists and the command to update yo
 
 ## The check
 
-- At most once a day, one GET of the `latest` version document of `@ulm0/gonogo` on `registry.npmjs.org` with an `Accept` header only: no version, id, cookie or machine data (the registry sees your address).
+- At most once a day (or once a minute when the Director presses CHECK NOW, or asks for a version the cache does not know), one GET of the `latest` version document of `@ulm0/gonogo` on `registry.npmjs.org` with an `Accept` header only: no version, id, cookie or machine data (the registry sees your address).
 - 5 s at most, 256 KiB at most; the answer must hold a stable `x.y.z`, else ignored. Failure is silent.
 - Asks at start, checks hourly, asks again after a day since the last try (a failed try counts). State in `rollout.json` in the home, so a restart does not re-ask within the day.
 - **Off**: `GONOGO_UPDATE_CHECK=0` (or `off`, `false`, `no`) or `--no-update-check` (wins). Then nothing is asked or shown, not even a version the file holds.

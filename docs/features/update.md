@@ -10,7 +10,7 @@ Update gonogo from the page: the top bar shows the running version (links to the
 
 ## The notice, by install type
 
-Rollout checks once a day (off with `GONOGO_UPDATE_CHECK=0` or `--no-update-check`). The strip adapts to how gonogo was installed, told from where its file is:
+Rollout checks once a day (off with `GONOGO_UPDATE_CHECK=0` or `--no-update-check`). **CHECK NOW** (in the strip, and in FLIGHT RULES, VERSION CHECK) asks the registry right away, for a release that came out since: at most **once a minute** (inside it the answer is the cache and the seconds to wait), room main only (`POST /api/rollout/check`, a full key or a session; other rooms answer 409). Asking the page to update to a version **newer than the cache knows** (`POST /api/update {"version":"0.9.2"}` while the cache says 0.9.0) makes the same one ask first and then decides on what it found, instead of refusing at once; a version that is still not the newest one is the same 409 as before, and says so. The strip adapts to how gonogo was installed, told from where its file is:
 
 | Install | How it is told | What the strip offers |
 |---|---|---|
