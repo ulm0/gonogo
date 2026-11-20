@@ -31,17 +31,19 @@ gonogo expose check
 
 ## With Docker Compose
 
-`compose.tailscale.yaml` next to `compose.yaml` adds the sidecar, a private `edge` network between it and gonogo, and the gonogo settings `gonogo expose tailscale` prints. It is used on top of the base file:
+`compose.tailscale.yaml` next to `compose.yaml` adds the sidecar, a private `edge` network between it and gonogo, and the gonogo settings `gonogo expose tailscale` prints. It is used on top of the base file (it needs **Docker Compose v2.23 or later**: the proxy's config is inline in the file, so only `compose.yaml` and this file are needed):
 
 ```
 docker compose -f compose.yaml -f compose.tailscale.yaml up -d
 ```
 
 - **Set the login up first** (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before. So start with `docker compose up -d` alone, do that, then add the overlay.
-- **`.env`** (no secret is in the file; everything comes from here): `TS_AUTHKEY` (an auth key from the Tailscale admin console), optional `TAILSCALE_VERSION` (another tag of `tailscale/tailscale`; the file pins `v1.104.4`), `GONOGO_PUBLIC_NAME` (`<machine>.<tailnet>.ts.net`), optional `TS_HOSTNAME` and `TAILSCALE_MODE=serve` (default) or `funnel`.
+- **`.env`** (no secret is in the file; everything comes from here): `TS_AUTHKEY` (an auth key from the Tailscale admin console), optional `TAILSCALE_VERSION` (another tag of `tailscale/tailscale`; the file pins `v1.104.4`), `GONOGO_PUBLIC_NAME` (`<machine>.<tailnet>.ts.net`), optional `TS_HOSTNAME` and `TAILSCALE_FUNNEL=true` (Funnel, the public internet; the default is Serve).
+- **Your own LAN names:** `GONOGO_LAN_HOSTS=zimaos,192.168.1.5` (comma separated) is added to `GONOGO_ALLOWED_HOSTS`, so the names you open gonogo by on your own network keep working.
+- **Docker says "Pool overlaps with other one on this address space":** another network already uses `172.29.80.0/24`; set `GONOGO_EDGE_SUBNET` (for example `172.29.81.0/24`) and `GONOGO_EDGE_PROXY_IP` (an address in it) in `.env`.
 - **Sets for gonogo:** `GONOGO_ALLOWED_HOSTS` (the name; with `GONOGO_HOOKS_ONLY=1` it becomes `name:hooks` and serves only the webhooks), `GONOGO_PUBLIC_URL` (`https://` and the name), `GONOGO_TRUSTED_PROXY` (the sidecar's address on the edge network, `172.29.80.2` unless you set `GONOGO_EDGE_PROXY_IP` and `GONOGO_EDGE_SUBNET`: **not 127.0.0.1**, which is the container itself) and `GONOGO_CLIENT_IP_HEADER`.
 - **The client address (not verified):** if Serve or Funnel do not set `X-Forwarded-For`, every client reaches gonogo as the sidecar, `172.29.80.2`: one shared rate-limit bucket and no "different network" warning at login. Check the client address LOGIN shows on a real run.
-- **Serve or Funnel:** `TAILSCALE_MODE` picks `packaging/overlays/tailscale-serve.json` or `tailscale-funnel.json` (the second adds `AllowFunnel`). The state (the node key) is kept in the named volume `tailscale_state`, **not** in the data folder: agents of gonogo can read that folder, and the node key lets whoever holds it act as that machine on your tailnet. The sidecar runs in user-space networking: no `NET_ADMIN`, no `/dev/net/tun`.
+- **Serve or Funnel:** `TAILSCALE_FUNNEL=true` adds `AllowFunnel` to the serve config, which is inline in the file (`configs` with `content`). The sidecar runs in user-space networking: no `NET_ADMIN`, no `/dev/net/tun`.
 - **Not tried:** no real tunnel, certificate or provider was run, and `docker compose config` was not run on these files (no Compose where they were written); the text is checked by tests against `gonogo expose`. Run `gonogo expose check` once it is up.
 
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

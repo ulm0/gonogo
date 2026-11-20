@@ -28,7 +28,8 @@ describe('the overlays', () => {
         const header = /--client-ip-header (\S+)/.exec(plan.gonogo.join(' '))?.[1];
         expect(envOf(text, 'GONOGO_CLIENT_IP_HEADER')).toBe(header);
         expect(plan.gonogo.join(' ')).toContain('--trusted-proxy');
-        expect(envOf(text, 'GONOGO_ALLOWED_HOSTS')).toMatch(/^\$\{GONOGO_PUBLIC_NAME:\?[^}]+\}\$\{GONOGO_HOOKS_ONLY:\+:hooks\}$/);
+        // the public name (name:hooks with GONOGO_HOOKS_ONLY), then the LAN names the Director also uses, so the zimaos / 192.168.x.x setup keeps working
+        expect(envOf(text, 'GONOGO_ALLOWED_HOSTS')).toMatch(/^\$\{GONOGO_PUBLIC_NAME:\?[^}]+\}\$\{GONOGO_HOOKS_ONLY:\+:hooks\},\$\{GONOGO_LAN_HOSTS:-\}$/);
         expect(envOf(text, 'GONOGO_PUBLIC_URL')).toMatch(/^https:\/\/\$\{GONOGO_PUBLIC_NAME:\?[^}]+\}$/);
       });
 
@@ -63,6 +64,13 @@ describe('the overlays', () => {
         expect(code).not.toMatch(/tskey-[A-Za-z0-9]|eyJ[A-Za-z0-9_-]{10,}|[0-9a-f]{32,}/);
       });
 
+      it('needs Compose 2.23 and says so, inlines its config (no file to bind) and says how to change a clashing subnet', () => {
+        expect(text).toMatch(/Docker Compose v2\.23/);
+        expect(text).not.toMatch(/\.\/packaging|\.\/[A-Za-z]+:\//);
+        expect(text).toContain('Pool overlaps');
+        expect(text).toContain('GONOGO_LAN_HOSTS');
+      });
+
       it('says to set the login up first, and names the docs page', () => {
         expect(text).toMatch(/FIRST set the login up/);
         expect(text).toContain(`docs/expose/${provider}.md`);
@@ -71,16 +79,14 @@ describe('the overlays', () => {
     });
   }
 
-  it('Tailscale serves a tailnet name to gonogo:7777, and Funnel is the same plus AllowFunnel', () => {
-    const serve = JSON.parse(read('packaging/overlays/tailscale-serve.json')) as Record<string, unknown>;
-    const funnel = JSON.parse(read('packaging/overlays/tailscale-funnel.json')) as Record<string, unknown>;
-    const web = (c: Record<string, unknown>): string => JSON.stringify(c.Web);
-    expect(web(serve)).toContain('http://gonogo:7777');
-    expect(web(serve)).toContain('${TS_CERT_DOMAIN}:443');
-    expect(serve).not.toHaveProperty('AllowFunnel');
-    expect(funnel.AllowFunnel).toEqual({ '${TS_CERT_DOMAIN}:443': true });
-    expect(web(funnel)).toBe(web(serve));
-    expect(read('compose.tailscale.yaml')).toContain('tailscale-${TAILSCALE_MODE:-serve}.json');
+  it('Tailscale serves its tailnet name to gonogo:7777 from an inline config, and Funnel is one variable', () => {
+    const text = read('compose.tailscale.yaml');
+    expect(text).toMatch(/^configs:\n  tailscale_serve:\n(?: {4}.*\n)*? {4}content: \|/m);
+    expect(text).toContain('"Proxy": "http://gonogo:7777"');
+    // Tailscale fills TS_CERT_DOMAIN in, so Compose must not: $$
+    expect(text).toContain('"Web": { "$${TS_CERT_DOMAIN}:443"');
+    expect(text).toContain('"AllowFunnel": { "$${TS_CERT_DOMAIN}:443": ${TAILSCALE_FUNNEL:-false} }');
+    expect(text).toContain('TS_SERVE_CONFIG: /config/serve.json');
   });
 
   it('the Tailscale node key is in a named volume, not in the data folder the agents can read', () => {
@@ -90,12 +96,15 @@ describe('the overlays', () => {
     expect(text).not.toMatch(/GONOGO_DATA[^\n]*:\/var\/lib\/tailscale/);
   });
 
-  it('Caddy keeps the public Host and sets the client address; the Caddyfile is the one the page shows', () => {
-    const caddyfile = read('packaging/overlays/Caddyfile');
-    expect(caddyfile).toContain('{$GONOGO_PUBLIC_NAME} {');
-    expect(caddyfile).toContain('reverse_proxy gonogo:7777');
-    expect(caddyfile).toContain('header_up X-Forwarded-For {remote_host}');
-    expect(caddyfile).not.toMatch(/header_up Host/);
+  it('Caddy keeps the public Host and sets the client address, in a Caddyfile that is inline and names the domain by Compose, not by a Caddy variable', () => {
+    const text = read('compose.caddy.yaml');
+    expect(text).toMatch(/^configs:\n  caddyfile:\n(?: {4}.*\n)*? {4}content: \|/m);
+    expect(text).toContain('${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME} {');
+    expect(text).toContain('reverse_proxy gonogo:7777 {');
+    expect(text).toContain('header_up X-Forwarded-For {remote_host}');
+    expect(text).not.toMatch(/header_up Host/);
+    expect(text).toContain('target: /etc/caddy/Caddyfile');
+    expect(text).not.toMatch(/\t/);
     expect(exposePlan('caddy', { publicUrl: 'https://g.example.com', host: 'g.example.com', port: 7777 }).files.Caddyfile).toContain('header_up X-Forwarded-For {remote_host}');
   });
 

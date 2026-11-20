@@ -46,7 +46,7 @@ gonogo expose check
 
 ## With Docker Compose
 
-`compose.cloudflared.yaml` next to `compose.yaml` adds the sidecar, a private `edge` network between it and gonogo, and the gonogo settings `gonogo expose cloudflare` prints. It is used on top of the base file:
+`compose.cloudflared.yaml` next to `compose.yaml` adds the sidecar, a private `edge` network between it and gonogo, and the gonogo settings `gonogo expose cloudflare` prints. It is used on top of the base file (it needs **Docker Compose v2.23 or later**: the proxy's config is inline in the file, so only `compose.yaml` and this file are needed):
 
 ```
 docker compose -f compose.yaml -f compose.cloudflared.yaml up -d
@@ -54,6 +54,8 @@ docker compose -f compose.yaml -f compose.cloudflared.yaml up -d
 
 - **Set the login up first** (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before. So start with `docker compose up -d` alone, do that, then add the overlay.
 - **`.env`** (no secret is in the file; everything comes from here): `TUNNEL_TOKEN` (the token of a remotely managed tunnel), `GONOGO_PUBLIC_NAME`.
+- **Your own LAN names:** `GONOGO_LAN_HOSTS=zimaos,192.168.1.5` (comma separated) is added to `GONOGO_ALLOWED_HOSTS`, so the names you open gonogo by on your own network keep working.
+- **Docker says "Pool overlaps with other one on this address space":** another network already uses `172.29.80.0/24`; set `GONOGO_EDGE_SUBNET` (for example `172.29.81.0/24`) and `GONOGO_EDGE_PROXY_IP` (an address in it) in `.env`.
 - **Sets for gonogo:** `GONOGO_ALLOWED_HOSTS` (the name; with `GONOGO_HOOKS_ONLY=1` it becomes `name:hooks` and serves only the webhooks), `GONOGO_PUBLIC_URL` (`https://` and the name), `GONOGO_TRUSTED_PROXY` (the sidecar's address on the edge network, `172.29.80.2` unless you set `GONOGO_EDGE_PROXY_IP` and `GONOGO_EDGE_SUBNET`: **not 127.0.0.1**, which is the container itself) and `GONOGO_CLIENT_IP_HEADER`.
 - **In the Cloudflare dashboard** (the token mode keeps the ingress there): the tunnel's Public Hostname is your name, service `HTTP` `gonogo:7777`, and under Additional application settings, HTTP Settings, set the **HTTP Host Header** to the same name: gonogo checks the Host. `cloudflare/cloudflared` is pinned in the file.
 - `GONOGO_CLIENT_IP_HEADER` is `cf-connecting-ip` here, right only behind Cloudflare.

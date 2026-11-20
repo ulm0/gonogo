@@ -1,11 +1,15 @@
-# gonogo behind Caddy with automatic https on your own domain. On top of compose.yaml (docs/expose/caddy.md):
+# gonogo behind Caddy with automatic https on your own domain. Needs Docker Compose v2.23 or later (it uses `configs` with inline `content`, so only this file and compose.yaml are needed).
+# On top of compose.yaml (docs/expose/caddy.md):
 #   docker compose -f compose.yaml -f compose.caddy.yaml up -d
-# FIRST set the login up (account and second factor): gonogo refuses to start on a public name before.
-# The name must point at this machine in DNS, and ports 80 and 443 must be open to the internet (Caddy gets its certificate on them).
+# FIRST set the login up, with compose.yaml alone (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a
+# public name before it, and with restart: always it would loop. Then add this file.
 # .env (no secret is written in this file):
-#   GONOGO_PUBLIC_NAME=gonogo.example.com
-#   GONOGO_HOOKS_ONLY=1                 optional: that name serves only /uplink and /dock (name:hooks), no page
-#   GONOGO_EDGE_SUBNET / GONOGO_EDGE_PROXY_IP   optional: the private network between Caddy and gonogo (default 172.29.80.0/24 and .2)
+#   GONOGO_PUBLIC_NAME=...             the public name (this is also what gonogo accepts as its Host)
+#   GONOGO_LAN_HOSTS=zimaos,192.168.1.5   optional: the names you also open gonogo by on your own network, comma separated (kept in GONOGO_ALLOWED_HOSTS)
+#   GONOGO_HOOKS_ONLY=1                optional: the public name serves only /uplink and /dock (name:hooks), no page
+#   GONOGO_EDGE_SUBNET / GONOGO_EDGE_PROXY_IP   optional: the private network between the sidecar and gonogo (default 172.29.80.0/24 and .2);
+#                                      change both if Docker says "Pool overlaps with other one on this address space"
+# The name must point at this machine in DNS, and ports 80 and 443 must be open to the internet (Caddy gets its certificate on them).
 # Caddy ends the TLS on your own machine: nobody else sees the traffic.
 services:
   caddy:
@@ -14,17 +18,17 @@ services:
     ports:
       - 80:80
       - 443:443
-    environment:
-      GONOGO_PUBLIC_NAME: ${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}
     volumes:
-      - ./packaging/overlays/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     networks:
       edge:
         ipv4_address: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
   gonogo:
     environment:
-      GONOGO_ALLOWED_HOSTS: ${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}${GONOGO_HOOKS_ONLY:+:hooks}
+      GONOGO_ALLOWED_HOSTS: ${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}${GONOGO_HOOKS_ONLY:+:hooks},${GONOGO_LAN_HOSTS:-}
       GONOGO_PUBLIC_URL: https://${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}
       # Caddy's address on the edge network, not 127.0.0.1; it sets X-Forwarded-For itself (the Caddyfile says header_up X-Forwarded-For {remote_host})
       GONOGO_TRUSTED_PROXY: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
@@ -32,6 +36,15 @@ services:
     networks:
       - default
       - edge
+configs:
+  caddyfile:
+    content: |
+      # gonogo behind Caddy: automatic https for GONOGO_PUBLIC_NAME. Caddy keeps the public Host and SETS the client address.
+      ${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME} {
+          reverse_proxy gonogo:7777 {
+              header_up X-Forwarded-For {remote_host}
+          }
+      }
 volumes:
   caddy_data:
 networks:

@@ -47,7 +47,7 @@ It exits 1 when a line fails. It cannot see an idle WebSocket close, a certifica
 
 ## Docker Compose overlays
 
-On a Docker install each provider also has a file next to `compose.yaml`: `compose.tailscale.yaml` (Serve or Funnel), `compose.cloudflared.yaml`, `compose.ngrok.yaml` and `compose.caddy.yaml`, used as `docker compose -f compose.yaml -f compose.<provider>.yaml up -d`. They add the sidecar, a private edge network, and set `GONOGO_ALLOWED_HOSTS` (with `GONOGO_HOOKS_ONLY=1`: `name:hooks`), `GONOGO_PUBLIC_URL`, the trusted proxy (the sidecar's address on that network, not `127.0.0.1`) and the client address header, the way `gonogo expose` prints them; secrets and versions come from your `.env`. A test keeps the overlays and `gonogo expose` saying the same. Each provider page has a **With Docker Compose** section.
+On a Docker install each provider also has a file next to `compose.yaml`: `compose.tailscale.yaml` (Serve or Funnel), `compose.cloudflared.yaml`, `compose.ngrok.yaml` and `compose.caddy.yaml`, used as `docker compose -f compose.yaml -f compose.<provider>.yaml up -d` (Docker Compose v2.23 or later: the config of the proxy is inline, so only those two files are needed). They add the sidecar, a private edge network, and set `GONOGO_ALLOWED_HOSTS` (with `GONOGO_HOOKS_ONLY=1`: `name:hooks`), `GONOGO_PUBLIC_URL`, the trusted proxy (the sidecar's address on that network, not `127.0.0.1`) and the client address header, the way `gonogo expose` prints them; secrets and versions come from your `.env`. A test keeps the overlays and `gonogo expose` saying the same. Each provider page has a **With Docker Compose** section.
 
 ## When gonogo refuses to start
 

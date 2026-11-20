@@ -1,6 +1,0 @@
-# gonogo behind Caddy (compose.caddy.yaml): automatic https for GONOGO_PUBLIC_NAME. Caddy keeps the public Host and SETS the client address.
-{$GONOGO_PUBLIC_NAME} {
-	reverse_proxy gonogo:7777 {
-		header_up X-Forwarded-For {remote_host}
-	}
-}

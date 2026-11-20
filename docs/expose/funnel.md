@@ -29,6 +29,6 @@ gonogo expose check
 
 ## With Docker Compose
 
-Funnel is the Tailscale overlay with `TAILSCALE_MODE=funnel`: `docker compose -f compose.yaml -f compose.tailscale.yaml up -d` (see `compose.tailscale.yaml` and [Tailscale Serve](./tailscale.md#with-docker-compose)). The login with its second factor must be set up first.
+Funnel is the Tailscale overlay with `TAILSCALE_FUNNEL=true`: `docker compose -f compose.yaml -f compose.tailscale.yaml up -d` (see `compose.tailscale.yaml` and [Tailscale Serve](./tailscale.md#with-docker-compose)). The login with its second factor must be set up first.
 
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.
