@@ -2,24 +2,22 @@
 
 <NotificationsMock class="doc-mock" />
 
-You miss a message for you when the gonogo tab is in the background. Notifications tell you. They are **off by default and a setting of this browser**: turn them on in [Flight Rules](./flight-rules.md), under THIS BROWSER. The browser asks for permission when you press that key, never when the page loads.
+Get a browser notification when something needs you and the gonogo tab is in the background. **Off by default, per browser**: turn on in [Flight Rules](./flight-rules.md), THIS BROWSER. The browser asks permission on that key press, never on load. The setting is `gonogo.notify` in this browser's `localStorage`; nothing is sent to a server.
 
 ## What is shown
 
-A notification appears only while the tab is hidden or not focused, for:
+Only while the tab is hidden or unfocused:
 
-- **A message to you** ([Downlink](./downlink.md)): the title is the sender and the subject (`ana: Done`), the body is the first 80 characters of the text. A notification can show on a lock screen, so only a snippet leaves the page. One agent gives one notification: a burst from the same sender replaces the one before it.
-- **A T-minus poll** that holds on a no-go or comes out go, and a [Static fire](./static-fire.md) the same way.
-- **A [Relief](./relief.md) request** waiting for your GO or NO-GO.
+- **A message to you** ([Downlink](./downlink.md)): title is sender and subject (`ana: Done`), body the first 80 characters. A burst from one agent replaces the earlier notification.
+- **A T-minus poll** that holds on a no-go or comes out go; a [Static fire](./static-fire.md) the same way.
+- **A [Relief](./relief.md) request** awaiting GO or NO-GO.
 
-Clicking a notification focuses the tab and opens the INBOX tab of Comms (a message) or the room (a poll or a Relief request). What was in the inbox when the page connected is history and is not announced; messages that arrive while you are looking at the tab are not announced either.
+Clicking focuses the tab and opens the Comms INBOX (a message) or the room (poll, Relief). Inbox content at connect, and messages arriving while you watch the tab, are not announced.
 
 ## The tab title
 
-While the tab is away, its title counts what waits for you: `(3) gonogo` (unread items of the Downlink plus Relief requests). It goes back when you return. This needs no permission, so it also works when notifications are off, blocked or not available.
+While the tab is away its title counts what waits: `(3) gonogo` (unread Downlink items plus Relief requests). No permission needed; works with notifications off or blocked.
 
 ## Where it works
 
-Browsers allow notifications only on a **secure context**: `https://` or `localhost`. Over plain `http://` on another address, for example gonogo behind a reverse proxy without TLS, the browser offers no notifications: Flight Rules says so and the key is disabled, and the tab title counter is what you get. Put TLS in front ([HTTPS](../https.md)) to use them. If you blocked notifications for the address in the browser, the page says so; allow them in the browser's site settings. The page's own notifications use no service worker, so a phone browser that wants one shows only the tab title; for a push that arrives with the app closed, install gonogo as an app: see [The phone app](./mobile.md).
-
-Nothing is sent to a server: the page raises the notification itself from what it already shows. The setting is the `gonogo.notify` key of this browser's `localStorage`.
+Only on a secure context: `https://` or `localhost`. Over plain `http://` the key is disabled (Flight Rules says so) and only the tab title counter works; put TLS in front ([HTTPS](../https.md)). If you blocked the address, allow it in the browser's site settings. These notifications use no service worker, so a phone browser that needs one shows only the tab title; for push with the app closed see [The phone app](./mobile.md).
