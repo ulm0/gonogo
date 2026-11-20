@@ -212,6 +212,16 @@ describe('moving room main into rooms/main', () => {
       expect(existsSync(join(root, 'agents.json'))).toBe(true);
     });
 
+    it('a half-done journal refuses BEFORE anything is removed', async () => {
+      oldHome();
+      const rso = leftover('cleanroom', 'rso');
+      writeMigration(root, { state: 'moving', at: 1, entries: ['keys.json'] });
+      const plan = await planMigration(root, 'forward', { running: false, clean: true });
+      expect(plan.problems.join('\n')).toContain('an earlier move of room main is not finished');
+      expect(existsSync(rso)).toBe(true);
+      expect(git(repo, 'worktree', 'list')).toContain('cleanroom/rso');
+    });
+
     it('a worktree that an agent of the roster has is not a leftover: the agent is the reason, and it is never removed', async () => {
       oldHome([{ name: 'rso', dir: '/p', cleanRoom: {}, role: 'r', mode: 'default', sessionId: '1', desk: 0, boss: true, createdAt: 1 }]);
       const rso = leftover('cleanroom', 'rso');

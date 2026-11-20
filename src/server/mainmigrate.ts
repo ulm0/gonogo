@@ -267,6 +267,9 @@ export async function planMigration(root: string, direction: Direction, options:
   }
 
   // an agent whose working folder would move, or an earlier half move
+  // before anything is removed: a half-done journal refuses the whole thing
+  const note = readMigration(root);
+  if (note !== null && (note.state === 'moving' || note.state === 'undoing')) problem('an earlier move of room main is not finished');
   const agents = agentsInside(from);
   for (const reason of agents.problems) problem(reason);
   const leftovers = await leftoverFolders(from, agents.names);
@@ -288,8 +291,6 @@ export async function planMigration(root: string, direction: Direction, options:
       }
     }
   }
-  const note = readMigration(root);
-  if (note !== null && (note.state === 'moving' || note.state === 'undoing')) problem('an earlier move of room main is not finished');
   return plan;
 }
 
