@@ -159,7 +159,7 @@ export function directorTokenOf(home: string, otherRooms: readonly string[] = []
   rmSync(join(home, 'rooms-token'), { force: true });
   // a room's own token of 0.4 must not open anything now (it was never the Director's)
   for (const id of otherRooms) rmSync(join(roomHome(home, id), 'token'), { force: true });
-  // room main in its own folder (a home made by 0.9 or later) has no use for a token file either: the one at the root is the Director's
+  // room main in its own folder (a home made by 0.8.2 or later) has no use for a token file either: the one at the root is the Director's
   try {
     const main = roomHome(home, MAIN_ROOM);
     if (main !== home) rmSync(join(main, 'token'), { force: true });

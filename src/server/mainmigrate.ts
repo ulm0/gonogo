@@ -1,5 +1,5 @@
 /**
- * Moving room main of an old home into `rooms/main/` (and back). A home made before 0.9 keeps main's files at the root, next to the
+ * Moving room main of an old home into `rooms/main/` (and back). A home made before 0.8.2 keeps main's files at the root, next to the
  * supervisor's own; this makes it look like a new one. It runs at the supervisor's start, before any room, with the supervisor lock held.
  *
  * Only main's files move (the lists in rooms.ts, built from the code's own file names), by `rename` inside one filesystem: nothing is copied,

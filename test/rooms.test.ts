@@ -199,6 +199,17 @@ describe('the layout of room main', () => {
     }
   });
 
+  it('with no record, a finished move (the note says done) keeps main in rooms/main even when the older build that dropped the record made files at the root and rooms/main holds little', () => {
+    mkdirSync(join(fresh, 'rooms', 'main'), { recursive: true });
+    writeFileSync(join(fresh, 'main-migration.json'), JSON.stringify({ version: 1, state: 'done', at: 1, moved: 3 }));
+    writeFileSync(join(fresh, 'agents.json'), '{}'); // the older build's empty main
+    writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [] }));
+    expect(mainLayout(fresh)).toBe('rooms/main');
+    // no note and nothing in rooms/main: the root's files are main's
+    rmSync(join(fresh, 'main-migration.json'));
+    expect(mainLayout(fresh)).toBe('.');
+  });
+
   it('every file a room can hold alone makes a home old (keys.json, room-keys.json, payload-defaults.json, autoupdate.json, triggers.jsonl ...)', () => {
     for (const name of ['keys.json', 'room-keys.json', 'payload-defaults.json', 'autoupdate.json', 'triggers.jsonl', ...ROOM_STATE_FILES]) {
       const old = mkdtempSync(join(tmpdir(), 'gng-old-'));

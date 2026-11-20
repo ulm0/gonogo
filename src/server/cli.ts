@@ -3,7 +3,7 @@ import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSy
 import net from 'node:net';
 import { stat } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
 import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
@@ -87,7 +87,7 @@ import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
 import type { AutoUpdater } from './autoupdate.js';
 import { createUpdater } from './updater.js';
 import { migrate, planMigration } from './mainmigrate.js';
-import { addRoom, loadRooms, mainLayout, MAIN_ROOM, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
+import { addRoom, loadRooms, mainLayout, MAIN_ROOM, recordedMainHome, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { authCommand } from './authcli.js';
 import { exposeCommand } from './exposecli.js';
 import { startSupervisor } from './supervisor.js';
@@ -514,6 +514,17 @@ function installInfo(env: Env = process.env): { command: string; docker: boolean
 
 /** The home as `gonogo --version` and `gonogo update` find it: GONOGO_HOME or the default, with no flag read (they read the cache only). */
 const homeOf = (env: Env): string => resolve(env.GONOGO_HOME || join(homedir(), DEFAULT_HOME_DIRNAME));
+
+/** Whether this room is main in a home that keeps it in `rooms/main` (the folder says so, and so does the root's rooms.json). */
+function mainLivesInRooms(dir: string): boolean {
+  const root = dirname(dirname(dir));
+  if (basename(dir) !== 'main' || basename(dirname(dir)) !== 'rooms') return false;
+  try {
+    return recordedMainHome(root) === 'rooms/main';
+  } catch {
+    return false;
+  }
+}
 
 /** Room main's folder, where the update check keeps its cache: the root or `rooms/main`. A damaged rooms.json must not break `--version`: the root then. */
 function mainHomeOf(env: Env): string {
@@ -1094,7 +1105,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       reload: triggerReload,
       keepsAgents: remote !== null,
       notify: (text) => tell('update', text),
-      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, verify: (prepared, target) => verifyImage(prepared.repo, prepared.repoDigests, { version: target, ...(existsSync(join(home.dir, 'gh')) ? { configDir: join(home.dir, 'gh') } : {}) }), busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
+      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, mainInRooms: mainLivesInRooms(home.dir), ready: true, verify: (prepared, target) => verifyImage(prepared.repo, prepared.repoDigests, { version: target, ...(existsSync(join(home.dir, 'gh')) ? { configDir: join(home.dir, 'gh') } : {}) }), busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
       hook: /^https?:\/\//.test(hookUrl) ? { url: hookUrl, token: (env.GONOGO_UPDATE_HOOK_TOKEN ?? '').trim() || null } : null,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       log: log.child('update'),

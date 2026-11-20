@@ -39,7 +39,7 @@ export class RoomsError extends Error {
 /** The id of a room as a path segment: lower case, starts with a letter, no dots and no slashes. */
 export const validRoomId = (id: unknown): id is string => typeof id === 'string' && ID_RE.test(id);
 
-/** Where room `main` keeps its files: the root itself (a home made before 0.9) or `rooms/main` (a new one). */
+/** Where room `main` keeps its files: the root itself (a home made before 0.8.2) or `rooms/main` (a new one). */
 export type MainHome = '.' | 'rooms/main';
 const MAIN_HOMES: readonly unknown[] = ['.', 'rooms/main'];
 /**
@@ -98,6 +98,12 @@ export function mainLayout(root: string): MainHome {
   // no record: rooms/main first. An older build that edited rooms.json after a rollback dropped the record and started an empty main at the root, but the real one is still in rooms/main
   const holds = (dir: string): boolean => ROOM_STATE_AT_ROOT.some((name) => existsSync(join(dir, name)));
   if (holds(join(root, ROOMS_DIR, MAIN_ROOM))) return 'rooms/main';
+  // a move that finished (main-migration.json says done) and a rooms.json an older build saved without the record: main is where the move put it, even when its files are few
+  try {
+    if ((JSON.parse(readFileSync(join(root, 'main-migration.json'), 'utf8')) as { state?: unknown }).state === 'done' && existsSync(join(root, ROOMS_DIR, MAIN_ROOM))) return 'rooms/main';
+  } catch {
+    // no note, or one that is not read here (the migration reads it strictly)
+  }
   return holds(root) ? '.' : 'rooms/main';
 }
 
@@ -106,7 +112,7 @@ export const roomHome = (root: string, id: string): string => (id !== MAIN_ROOM 
 
 /**
  * Writes the layout into `rooms.json` of a fresh home (nothing is on record and the root holds no room's files), so it stays whatever appears later.
- * A home made before 0.9 is NOT written to: its files at the root already say where main is, and nothing of an old home is touched.
+ * A home made before 0.8.2 is NOT written to: its files at the root already say where main is, and nothing of an old home is touched.
  */
 export function recordMainHome(root: string): void {
   if (recordedMain(readRoomsFile(root)) !== null || mainLayout(root) === '.') return;
