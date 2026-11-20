@@ -123,16 +123,19 @@ async function api(context: BrowserContext, method: 'POST' | 'PUT', path: string
 test.beforeAll(async () => {
   await mkdir(OUT, { recursive: true });
   home = await mkdtemp(join(tmpdir(), 'gn-scr-'));
+  // the stand-in logs to a folder and reads a Claude config folder: without them it exits and every agent shows as stopped
+  await mkdir(join(home, 'fake-log'));
+  await mkdir(join(home, 'fake-claude'));
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   const server = spawn(process.execPath, ['bin/gonogo.js', '--port', String(port), '--no-update-check'], {
-    env: { ...process.env, GONOGO_HOME: home, GONOGO_AGENT_CMD: `${process.execPath} test/fake-claude.mjs` },
+    env: { ...process.env, GONOGO_HOME: join(home, 'gonogo'), CLAUDE_CONFIG_DIR: join(home, 'fake-claude'), FAKE_CLAUDE_LOG_DIR: join(home, 'fake-log'), GONOGO_AGENT_CMD: `${process.execPath} test/fake-claude.mjs` },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(server);
   server.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   server.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  await waitFor('the server and its setup token', () => existsSync(join(home, 'setup-token')) && output.includes(String(port)));
+  await waitFor('the server and its setup token', () => existsSync(join(home, 'gonogo', 'setup-token')) && output.includes(String(port)));
   if (process.env.SCREENS_DOCS === '1') {
     const docsPort = await freePort();
     docsBase = `http://127.0.0.1:${docsPort}`;
@@ -227,7 +230,7 @@ test('screens of the app and the docs', async ({ browser }) => {
   const setupPage = await setupContext.newPage();
   await setupPage.goto(`${base}/setup`);
   await shoot(setupPage, 'before-account', 'setup page');
-  await setupPage.locator('input[name=token]').fill(readFileSync(join(home, 'setup-token'), 'utf8').trim());
+  await setupPage.locator('input[name=token]').fill(readFileSync(join(home, 'gonogo', 'setup-token'), 'utf8').trim());
   await setupPage.locator('input[name=password]').fill(PASSWORD);
   await setupPage.locator('form button[type=submit], form input[type=submit]').first().click();
   await setupPage.waitForURL((url) => !url.pathname.startsWith('/setup'));
@@ -262,7 +265,7 @@ test('screens of the app and the docs', async ({ browser }) => {
     await api(setupContext, 'POST', '/api/messages', { to: 'ana', body: '@fake say Notes are drafted.' });
   });
   await seed('schedule', () => api(setupContext, 'POST', '/api/schedules', { name: 'Daily check', to: 'ana', subject: 'status', body: 'Where are you?', rule: '0 9 * * *' }));
-  await seed('mission', () => api(setupContext, 'POST', '/api/missions', { name: 'Ship the release', createdBy: 'user' }));
+  await seed('mission', () => api(setupContext, 'POST', '/api/missions', { name: 'Ship the release' }));
   await seed('tasks', async () => {
     await api(setupContext, 'POST', '/api/tasks', { title: 'Write the release notes', detail: 'One page.', assignee: 'ana' });
     await api(setupContext, 'POST', '/api/tasks', { title: 'Review the notes', assignee: 'ben' });
@@ -272,6 +275,10 @@ test('screens of the app and the docs', async ({ browser }) => {
     await api(setupContext, 'POST', '/api/log', { title: 'Cache key', body: 'The key has the node version.', tags: ['build', 'cache'] });
   });
   await new Promise((r) => setTimeout(r, 3000));
+  // what state the agents are in, and the tail of the server's output when one is stopped: it explains a screen of undelivered mail
+  const roster = await (await setupContext.request.get(`${base}/api/state`)).json().catch(() => ({ agents: [] }));
+  const states = ((roster as { agents?: Array<{ name: string; state: string }> }).agents ?? []).map((agent) => `${agent.name}=${agent.state}`);
+  missed.push(`info: agents after the seed: ${states.join(', ')}${states.some((x) => x.endsWith('=stopped')) ? '; server output: ' + output.slice(-600).replace(/\s+/g, ' ') : ''}`);
   await setupContext.close();
 
   // every view, light then dark (the livery is the server's, so it is chosen once per scheme), desktop and phone
