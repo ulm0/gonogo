@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 /*
- * The link-preview card of the docs site: docs/brand/og.png, 1200x630, the logo and the tagline on the Instrument livery.
+ * The link-preview card of the docs site, docs/brand/og.png (1200x630), and the social preview of the GitHub repository, docs/brand/social-preview.png
+ * (1280x640, GitHub's size; the Director uploads it by hand in the repository's Settings): the logo and the tagline on the Instrument livery, the same design
+ * in both, with the content well inside the edges, which GitHub and the chat apps crop.
  * Written pixel by pixel with node alone (no browser, no font, no dependency), so it is the same bytes on every machine:
  * test/og.test.ts runs it again and compares with the committed file. The logo is read from docs/brand/lockup.svg (its circles and rounded
  * rectangles); the tagline is drawn in the same dot matrix as the logo's word, on a 5x7 grid of the a slightly larger pitch and dot.
  *
- * node scripts/og-image.mjs [--out <file>]
+ * node scripts/og-image.mjs [--out <file>]   --out writes only the docs card (the test compares it with the committed one)
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-const W = 1200;
-const H = 630;
+const CARDS = [
+  ['og.png', 1200, 630],
+  ['social-preview.png', 1280, 640],
+];
 const BODY = [0xe4, 0xe2, 0xdc]; // --body of the Instrument livery
 const INK = [0x26, 0x27, 0x2b]; // --text
 const SAMPLES = 4; // 4 x 4 samples per pixel
@@ -75,6 +79,8 @@ function shapesOf(svg) {
   return shapes;
 }
 
+/** One card of w x h pixels as PNG bytes. */
+function render(W, H) {
 const pixels = new Uint8Array(W * H * 3);
 for (let i = 0; i < W * H; i += 1) pixels.set(BODY, i * 3);
 
@@ -122,6 +128,7 @@ function draw(shape, dx, dy, scale) {
   );
 }
 
+// the logo and the tagline are 1085 px wide on either card: 57 px from the edge of the narrower one, and the content is centred
 const lockup = readFileSync(new URL('../docs/brand/lockup.svg', import.meta.url), 'utf8');
 const box = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(lockup);
 const lockupW = Number(box[1]);
@@ -186,5 +193,8 @@ function png() {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
-const out = process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1] : new URL('../docs/brand/og.png', import.meta.url).pathname;
-writeFileSync(out, png());
+return png();
+}
+
+if (process.argv.includes('--out')) writeFileSync(process.argv[process.argv.indexOf('--out') + 1], render(CARDS[0][1], CARDS[0][2]));
+else for (const [file, w, h] of CARDS) writeFileSync(new URL(`../docs/brand/${file}`, import.meta.url).pathname, render(w, h));

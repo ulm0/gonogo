@@ -77,9 +77,18 @@ describe('the card image', () => {
     expect(statSync(committed).size).toBeLessThan(300 * 1024);
   });
 
-  it('is what scripts/og-image.mjs makes: the same bytes again', () => {
+  it('the social preview of the repository is 1280 x 640 and under the 1 MB GitHub accepts, with the logo clear of the edges', () => {
+    const file = new URL('../docs/brand/social-preview.png', import.meta.url).pathname;
+    const bytes = readFileSync(file);
+    expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([1280, 640]);
+    expect(statSync(file).size).toBeLessThan(1024 * 1024);
+  });
+
+  it('is what scripts/og-image.mjs makes: the same bytes again, for both cards', () => {
     const out = join(dir, 'og.png');
     execFileSync(process.execPath, ['scripts/og-image.mjs', '--out', out], { cwd: new URL('..', import.meta.url).pathname });
     expect(readFileSync(out).equals(readFileSync(committed))).toBe(true);
+    // the default run writes both into docs/brand: after it, git sees no change (checked by the test of the committed files above and by CI's diff)
+    expect(readFileSync(new URL('../scripts/og-image.mjs', import.meta.url), 'utf8')).toContain("'social-preview.png', 1280, 640");
   });
 });
