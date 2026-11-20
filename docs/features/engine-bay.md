@@ -67,7 +67,7 @@ opencode, Copilot CLI, Qwen Code, Grok CLI, Crush and the custom command have no
 
 <BedrockMock class="doc-mock" />
 
-gonogo has no Bedrock switch: an engine uses Bedrock when its own settings say so, and gonogo passes the environment on. Set the variables as Clearance keys for one agent (the form suggests the names) or in the shell that starts gonogo. Nothing was run against a real AWS account; see `docs/facts/bedrock.md` for sources and for what a real check needs.
+gonogo has no Bedrock switch: an engine uses Bedrock when its own settings say so, and gonogo passes the environment on. Set the variables as [room keys](room-keys.md) for every agent, or as Clearance keys for one agent (the form suggests the names) or in the shell that starts gonogo. Nothing was run against a real AWS account; see `docs/facts/bedrock.md` for sources and for what a real check needs.
 
 | Engine | Bedrock | What to set |
 |---|---|---|

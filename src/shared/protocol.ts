@@ -336,6 +336,11 @@ export const STATE_LABELS: Record<AgentState, string> = {
  * Part 2. Wire types (browser <-> server) and persisted shapes
  * ---------------------------------------------------------------------------------------------------------- */
 
+/** The room's keys as the page may see them: names, never a value (docs/features/room-keys.md). */
+export interface RoomKeysView {
+  keys: Array<{ name: string; /** ms epoch the value was set */ at: number; /** A Clean Room agent gets this key too. */ cleanRoom: boolean }>;
+}
+
 /** One MCP server of a Payload, in the shape of Claude Code's mcp.json: stdio has command, args and env; http and sse have url and headers. */
 export interface McpServer {
   /** Absent means 'stdio'. */
@@ -2037,6 +2042,8 @@ export interface LauncherOptions {
   tokensFile?: string | null;
   /** Clearance: the values of an agent's keys, put in that agent's environment only. Default none. */
   keys?: (name: string) => Record<string, string>;
+  /** Room keys: the values every agent of the room gets, under the agent's own keys; for a Clean Room agent (`true`) only the ones marked for it. Default none. */
+  roomKeys?: (cleanRoom: boolean) => Record<string, string>;
   /** Default models: the model of a provider that the room sets, used when an agent has no `model` of its own. Default none. */
   defaultModel?: (provider: Provider, position?: string) => string | undefined;
   /** Feature toggles: the MCP tools of features that are off; they are left out of `--allowedTools`. Default none. */

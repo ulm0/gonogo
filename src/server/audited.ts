@@ -187,6 +187,11 @@ export const PAYLOAD_DEFAULTS_AUDIT: Table = {
   addSkill: ['config', 'Director added a default skill folder'],
   removeSkill: ['config', (args) => `Director removed the default skill ${plain(args[0]) ?? '(unnamed)'}`],
 };
+/** Room keys: which key changed, by its name (a name is plain capitals) and never a value. */
+export const ROOM_KEYS_AUDIT: Table = {
+  set: ['config', (args) => `Director set the room key ${plain(args[0]) ?? '(unnamed)'}`],
+  remove: ['config', (args) => `Director removed the room key ${plain(args[0]) ?? '(unnamed)'}`],
+};
 export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const AUTOUPDATE_AUDIT: Table = { set: ['config', 'Director changed auto-update'], skip: ['config', 'Director skipped a version for auto-update'] };

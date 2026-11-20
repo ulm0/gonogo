@@ -12,6 +12,7 @@ import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { FeaturesBlock } from './Features.js';
 import { PayloadDefaultsBlock } from './PayloadDefaults.js';
+import { RoomKeysBlock } from './RoomKeys.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AccountBlock } from './AccountBlock.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
@@ -198,6 +199,7 @@ export function FlightRules(): ReactElement {
       <ModelDefaultsBlock />
       <PermissionDefaultsBlock />
       <PayloadDefaultsBlock />
+      <RoomKeysBlock />
       <StartupBlock />
       <AutoUpdateBlock />
       <SubagentsBlock />
