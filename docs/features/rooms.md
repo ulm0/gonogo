@@ -12,7 +12,7 @@ Run several separate gonogos (own agents, mail, settings) behind one port.
 
 - **Main** is a room at `/r/main/`. Kept working at the root: `/api/...`, `/ws`, `/uplink/<id>`, `/dock/...`, `/sw.js`, `/manifest.webmanifest`, icons. A GET or HEAD of any other old main path answers **308 to `/r/main/...`** (query kept). Agent hooks use the room's loopback port.
 - Other rooms: `/r/<id>/`, home `<home>/rooms/<id>/`, starting from zero (roster, mail, Flight Plan, Plot Board, Mission Log, Black Box, missions, every setting are per room).
-- Main's home: `<home>/rooms/main/` on a new install (root holds `auth.json`, `token`, `rooms.json`, `push.json`, `run/api.sock`). A home from before 0.9 keeps main's files at the root; nothing is moved; `gonogo rooms list` prints where each lives. `rooms.json` says `"main": { "home": "rooms/main" }` (new homes); no key means old home. Any other value is a damaged file.
+- Main's home: `<home>/rooms/main/` on a new install (root holds `auth.json`, `token`, `rooms.json`, `push.json`, `run/api.sock`). A home made before 0.8.2 keeps main's files at the root: gonogo moves it at the next start unless a check says no (see "Moving main of an older install" below); `gonogo rooms list` prints where each lives. `rooms.json` says `"main": { "home": "rooms/main" }` (new homes); no key means old home. Any other value is a damaged file.
 - Rolling back to an older build on a new home starts a new empty main at the root and leaves `rooms/main/` intact (nothing lost). Stop it, go forward, delete the root's room files to get the old main back.
 - Room list: `/` (and **Rooms** in the Patch Panel, Cmd+K); `/rooms` is 308 to `/`. Reserved front-port names: `/`, `/r/`, `/rooms` (`/rooms/health`, `/rooms/assets/`), `/api/rooms`, `/internal/`. `rooms add` refuses ids `r`, `ws`, `internal`, `api`, `assets`, `rooms`, `main`.
 - Inherited, not per room: the binary and its update, the supervisor's environment (`CLAUDE_CONFIG_DIR`, agent CLI logins, `gh` config, `GONOGO_*`). Not shared: price table, Clearance keys, Max Q (each room counts its own working agents), Propellant.
@@ -25,6 +25,7 @@ gonogo                                    # the supervisor: the front port and e
 gonogo rooms add team --name "Team B"     # id: a-z, 0-9, dashes, at most 24 characters
 gonogo rooms list
 gonogo rooms remove team                  # off the list; its folder stays
+gonogo rooms migrate-main --dry-run       # an older install: what would move into rooms/main (--undo moves it back; stop gonogo first)
 gonogo token rotate                       # new Director token; the old one stops working
 ```
 
@@ -58,6 +59,20 @@ Needs a session (with this page's Origin), a `full` API key, the local socket, o
 ### Clean Room
 
 A room listens on loopback only. A Clean Room container reaches it through gonogo's own network when gonogo runs in Docker, and via `host.docker.internal` on Docker Desktop (macOS, Windows: **not tried**). **On Linux with gonogo outside a container, a Clean Room start is refused** with a message (it needed `--host 0.0.0.0`, no longer the room's address).
+
+## Moving main of an older install
+
+An install made before 0.8.2 keeps room main's files at the root of the home, mixed with the supervisor's. At the **start** of a release after 0.8.2, before any room starts, gonogo moves them into `rooms/main/`, once, so the home looks like a new one. It is a `rename` inside one filesystem (nothing is copied, nothing is deleted), and it **only moves main's files**: `agents.json`, `agents/`, `messages.jsonl`, `mission-log/`, `black-box/`, `gh/`, `keys.json`, the settings of the room and the rest of the list in `src/server/rooms.ts` (`ROOM_STATE_FILES`), and `run/port`, `run/update.json` and the pty host's key and log. The supervisor's own files (`auth.json`, `token`, `push.json`, `rooms.json`, `run/api.sock`...) stay, and so does anything gonogo does not know (a folder you made in the home: the dry run lists it). Sockets are made again at the next start. The generated files of an agent (settings, MCP config, hooks) are written again at every start, so nothing rewrites paths inside them.
+
+**Checks first.** The move is refused, and the home stays as it is, when: a room of main is running (a live `server.lock`, or `run/room.sock` or the pty host's socket answers, which also means agents are alive under a pty host); `rooms/main/` exists and is not empty; any file of main is on another filesystem (a mount); the home is not writable; `agents.json` cannot be read; an earlier move is not finished; or **an agent works in a folder inside the home**: an agent with a worktree or a Clean Room (its folder is `worktrees/<name>` or `cleanroom/<name>`, and Claude's session history is keyed by that folder), or a leftover `worktrees/` or `cleanroom/` folder (git knows it by its path). The reasons are short sentences with the agent's name. A refusal is **not tried again by itself**: the layout is written as the root (`main.home` is `"."`), a note is shown on main's card on the rooms page and in Downlink, and the next start leaves it alone.
+
+**The journal.** `main-migration.json` is written before the first move and names what moves. A crash (power, kill) leaves it: the next start **finishes** the move before anything else, name by name, and refuses (with the reason) if a name is in both places, rather than overwrite one. `main.home` in `rooms.json` is written **last**; it says the move is complete. A damaged journal stops the start with a message: look at `rooms/main/` and the root, then fix or delete it.
+
+**On the rooms page**, main's card shows where its files are, and: after a refusal, the reasons with **MIGRATE NOW** (done at the next start, with the same checks; asks for your password if the last check is old, like other changes of what the room may do), **DRY RUN** (what would move and what would stop it) and **DISMISS**; after a move, a note with **UNDO** (also at the next start) and **DISMISS**; while a request waits, **CANCEL**. `GET /api/rooms` carries `layout`: `{ main: "." | "rooms/main", path, migration: null | { state, at, reasons?, moved? } }`; `GET /api/rooms/main/migrate` is the dry run and `POST` takes `{ "action": "request" | "undo" | "cancel" | "dismiss" }`.
+
+**Command line.** With gonogo stopped: `gonogo rooms migrate-main --dry-run` (what would move; exit 1 if something stops it), `gonogo rooms migrate-main` (moves now) and `gonogo rooms migrate-main --undo` (back to the root: the files are put back, the empty `rooms/main/` goes, and the root is written as the layout so the next start does not move them again). While gonogo runs they refuse and say to use the page.
+
+**Before going back to a build older than 0.8.2, run `gonogo rooms migrate-main --undo`** (or UNDO on the page and restart once): an older build knows only the root, and on a moved home it would start an empty main there. Nothing is lost if you forget (main is still in `rooms/main/`), and going forward again finds it, even when an older build saved `rooms.json` without the record. In Docker, the update strip's own **UNDO refuses** for such a build until main is back at the root: "UNDO on the rooms page first, then UNDO the update".
 
 ## Tokens
 

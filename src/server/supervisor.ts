@@ -27,6 +27,8 @@ import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
 import { clientStylesheet, ROOMS_PATH, roomsPage, roomsPageHeaders } from './roomspage.js';
 import { createRoomProxy } from './roomproxy.js';
 import { acquireSupervisorLock } from './home.js';
+import { clearMigration, planMigration, readMigration, startupMigration, writeMigration } from './mainmigrate.js';
+import type { MigrationNote, StartupOutcome } from './mainmigrate.js';
 import { createPush, PUSH_LINE, parsePushLine } from './push.js';
 import type { Push } from './push.js';
 import { isPushPath, pushApi } from './pushhttp.js';
@@ -157,7 +159,7 @@ export function directorTokenOf(home: string, otherRooms: readonly string[] = []
   rmSync(join(home, 'rooms-token'), { force: true });
   // a room's own token of 0.4 must not open anything now (it was never the Director's)
   for (const id of otherRooms) rmSync(join(roomHome(home, id), 'token'), { force: true });
-  // room main in its own folder (a home made by 0.9 or later) has no use for a token file either: the one at the root is the Director's
+  // room main in its own folder (a home made by 0.8.2 or later) has no use for a token file either: the one at the root is the Director's
   try {
     const main = roomHome(home, MAIN_ROOM);
     if (main !== home) rmSync(join(main, 'token'), { force: true });
@@ -201,6 +203,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     const main = children.get(MAIN_ROOM);
     if (main?.proc != null && main.state === 'running' && main.proc.stdin !== null && !main.proc.stdin.destroyed) main.proc.stdin.write(`gonogo-notice ${JSON.stringify(text)}\n`);
   };
+  // an old home's room main is moved into rooms/main before anything reads where it lives (docs/features/rooms.md); a refusal leaves the home as it is
+  let startupMove: StartupOutcome;
+  try {
+    startupMove = await startupMigration(options.home);
+  } catch (error) {
+    releaseLock();
+    throw error;
+  }
+  const noticesWaiting: string[] = [];
+  const moveNotice = ((): string | null => {
+    const o = startupMove;
+    if (o.did === 'migrated' || o.did === 'resumed') return o.direction === 'forward' ? `Room main now lives in rooms/main/ (${o.moved} files moved). UNDO is on the rooms page.` : 'Room main is back at the root of the home.';
+    if (o.did === 'skipped') return o.direction === 'forward' ? `Room main stays at the root of the home, not moved: ${o.problems[0] ?? 'a check failed'}. The rooms page has the reasons and MIGRATE NOW.` : `Room main stays in rooms/main/, not moved back: ${o.problems[0] ?? 'a check failed'}.`;
+    return null;
+  })();
+  if (moveNotice !== null) {
+    log.warn(moveNotice);
+    noticesWaiting.push(moveNotice);
+  }
   let auth: AuthStore;
   let madeSetupToken: string | null = null;
   try {
@@ -350,6 +371,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
             mainReadyOnce = true;
             markMainReady();
             for (const text of alertsWaiting.splice(0)) proc.stdin?.write(`gonogo-alert ${JSON.stringify(text)}\n`);
+            for (const text of noticesWaiting.splice(0)) proc.stdin?.write(`gonogo-notice ${JSON.stringify(text)}\n`);
           }
           log.info(`room ${child.entry.id} is up on 127.0.0.1:${child.port}`);
         } else if (line.trim() !== '') {
@@ -604,13 +626,77 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     return latest !== null && options.version !== undefined && isNewer(latest, options.version) ? { latest } : null;
   };
 
+  /** Where room main lives, and what the last move said (never the list of files: reasons are short text). */
+  const layoutView = (): { main: '.' | 'rooms/main'; path: string; migration: { state: string; at: number; reasons?: string[]; moved?: number } | null } => {
+    let note: MigrationNote | null = null;
+    let damaged = false;
+    try {
+      note = readMigration(options.home);
+    } catch {
+      damaged = true;
+    }
+    const path = homeOfRoom(MAIN_ROOM);
+    const migration = damaged
+      ? { state: 'damaged', at: 0, reasons: ['main-migration.json cannot be read: fix or delete it'] }
+      : note === null
+        ? null
+        : note.state === 'skipped'
+          ? { state: note.state, at: note.at, reasons: note.reasons }
+          : note.state === 'done'
+            ? { state: note.state, at: note.at, moved: note.moved, ...(note.undoReasons === undefined ? {} : { reasons: note.undoReasons }) }
+            : { state: note.state, at: note.at };
+    return { main: path === options.home ? '.' : 'rooms/main', path, migration };
+  };
+
+  /** GET: what a move would do now (nothing is written). POST {action}: request | undo | cancel | dismiss, each acted on at the next start. The Director's grant was checked. */
+  async function migrateApi(req: http.IncomingMessage, res: http.ServerResponse, grant: NonNullable<ReturnType<typeof authHttp.grant>>): Promise<void> {
+    try {
+      const method = req.method ?? '';
+      const layout = layoutView();
+      if (method === 'GET') {
+        const plan = await planMigration(options.home, layout.main === '.' ? 'forward' : 'undo', { running: false });
+        return sendJson(res, 200, { ...plan, layout }, { 'Cache-Control': 'no-store' });
+      }
+      if (method !== 'POST') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET, POST' });
+      if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      const body = await readBody(req);
+      // a session whose last password check is old is asked again (the supervisor's own routes are not behind the room proxy, which asks for the rooms' routes)
+      const reason = authHttp.stepUpNeeded(grant, 'POST', '/api/rooms/main/migrate', body);
+      if (reason !== null) return authHttp.stepUpDenied(req, res, reason, grant.kind === 'tui');
+      const action = body.action;
+      const note = readMigration(options.home);
+      const pending = note?.state === 'requested' || note?.state === 'undo-requested';
+      if (action === 'request') {
+        if (layout.main !== '.') throw new RoomsError('room main already lives in rooms/main', 'conflict');
+        writeMigration(options.home, { state: 'requested', at: Date.now() });
+      } else if (action === 'undo') {
+        if (layout.main !== 'rooms/main') throw new RoomsError('room main is at the root: there is nothing to undo', 'conflict');
+        writeMigration(options.home, { state: 'undo-requested', at: Date.now() });
+      } else if (action === 'cancel') {
+        if (!pending) throw new RoomsError('no move is waiting for the next start', 'conflict');
+        clearMigration(options.home);
+      } else if (action === 'dismiss') {
+        // only what the page shows as a note: never the journal of a move (moving, undoing) or a request that waits
+        if (note === null || (note.state !== 'skipped' && note.state !== 'done')) throw new RoomsError('there is no note to dismiss', 'conflict');
+        clearMigration(options.home);
+      } else {
+        throw new RoomsError('action must be request, undo, cancel or dismiss');
+      }
+      return sendJson(res, 200, { ok: true, layout: layoutView() });
+    } catch (error) {
+      if (error instanceof RoomsError) return sendApiError(res, error.kind === 'conflict' ? 409 : error.kind === 'not_found' ? 404 : 400, error.message, error.kind);
+      log.error('migrate api failed', error);
+      return sendApiError(res, 500, 'internal error', 'internal');
+    }
+  }
+
   const roomView = async (id: string): Promise<RoomView | undefined> => (await viewsNow()).find((r) => r.id === id);
 
   /** GET lists; POST adds; PATCH renames; DELETE takes a room off the list (its folder stays). The Director token was checked. */
   async function roomsApi(req: http.IncomingMessage, res: http.ServerResponse, rawId: string | undefined): Promise<void> {
     try {
       const method = req.method ?? '';
-      if (method === 'GET' && rawId === undefined) return sendJson(res, 200, { rooms: await viewsNow(), update: newerNow() }, { 'Cache-Control': 'no-store' });
+      if (method === 'GET' && rawId === undefined) return sendJson(res, 200, { rooms: await viewsNow(), update: newerNow(), layout: layoutView() }, { 'Cache-Control': 'no-store' });
       const allow = rawId === undefined ? 'GET, POST' : 'PATCH, DELETE';
       if (!(rawId === undefined ? method === 'POST' : method === 'PATCH' || method === 'DELETE')) return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: allow });
       if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
@@ -703,13 +789,14 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       void pushApi(push, req, res, path, grant.kind === 'session' ? (grant.sessionId ?? null) : null);
       return;
     }
-    const rooms = /^\/api\/rooms(?:\/([^/]+))?$/.exec(path);
+    const rooms = /^\/api\/rooms(?:\/([^/]+)(?:\/(migrate))?)?$/.exec(path);
     if (rooms !== null) {
       const grant = authHttp.grant(req, 'api');
       if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
       if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
       if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
-      void roomsApi(req, res, rooms[1]);
+      if (rooms[2] === 'migrate') void (rooms[1] === 'main' ? migrateApi(req, res, grant) : sendApiError(res, 404, 'not found', 'not_found'));
+      else void roomsApi(req, res, rooms[1]);
       return;
     }
     sendText(res, 404, 'not found');

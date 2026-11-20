@@ -1,5 +1,6 @@
 // The login through the whole supervisor (docs/login-spec.md): real HTTP and WebSocket on a real front port, stand-in rooms (test/fake-room.mjs)
 // behind it on their unix sockets, and the local socket for the TUI and the CLI.
+import { setMainHome } from '../src/server/rooms.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
@@ -50,6 +51,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-login-'));
   // a home made before 0.9: room main's files are at the root (a room's mission-log folder says so); a fresh home puts main in rooms/main (test/rooms.test.ts)
   mkdirSync(join(home, 'mission-log'));
+  setMainHome(home, '.'); // and it has been asked: it stays (a home that was never asked is moved at the start, see test/mainmigrate.test.ts)
   stopped = false;
 });
 afterEach(async () => {
@@ -693,6 +695,22 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(closed).toBe(false);
     ws.close();
+  });
+
+  it('step-up: moving where room main keeps its files (MIGRATE NOW, UNDO) is refused with stepUp:true when the check is old; cancelling it, dismissing the note and the dry run are not', async () => {
+    const { cookies } = await withTotp();
+    const [h] = json(cookieHeader(cookies), {});
+    const post = (action: string): Promise<Answer> => call('POST', '/api/rooms/main/migrate', h, JSON.stringify({ action }));
+    expect((await post('request')).status).toBe(200); // fresh
+    clock += 6 * 60_000;
+    for (const action of ['request', 'undo']) {
+      const refused = await post(action);
+      expect(refused.status, action).toBe(403);
+      expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true });
+    }
+    expect((await post('cancel')).status).toBe(200);
+    expect((await post('dismiss')).status).toBe(409); // not behind step-up; there is just no note
+    expect((await call('GET', '/api/rooms/main/migrate', cookieHeader(cookies))).status).toBe(200);
   });
 
   describe('push devices (docs/features/mobile.md)', () => {

@@ -14,7 +14,10 @@ import type { Attestation } from './attest.js';
 import { checkPrevious, DockerUpdateError, pullAndCheck, readResult, startHelper, STABLE_VERSION } from './dockerupdate.js';
 import type { Prepared } from './dockerupdate.js';
 import type { DockerCall } from './dockerupdate.js';
-import { installCommand } from './rollout.js';
+import { installCommand, isNewer } from './rollout.js';
+
+/** The first release that knows room main may live in rooms/main (a new home's layout, #154). */
+const LAYOUT_VERSION = '0.8.2';
 import type { Rollout } from './rollout.js';
 
 const STABLE = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
@@ -56,7 +59,7 @@ export interface UpdaterOptions {
   /** How long a handed-off update may wait for the helper before the page says it did not answer. Default 5 minutes. */
   handoffMs?: number;
   /** Docker self-update (docs/self-update-spec.md): the socket, the container's own hostname (its id) and gonogo's home; absent without the socket. */
-  docker?: { call: DockerCall; hostname: string; home: string; ready: boolean; busy(): string | null | Promise<string | null>; verify?(prepared: Pick<Prepared, 'repo' | 'repoDigests'>, version: string): Promise<Attestation> };
+  docker?: { call: DockerCall; hostname: string; home: string; /** Room main keeps its files in rooms/main (a build before 0.8.2 knows only the root). */ mainInRooms?: boolean; ready: boolean; busy(): string | null | Promise<string | null>; verify?(prepared: Pick<Prepared, 'repo' | 'repoDigests'>, version: string): Promise<Attestation> };
   /** A line for the Downlink (a refused image); absent in tests. */
   notify?(text: string): void;
   fetch: typeof fetch;
@@ -228,6 +231,8 @@ export function createUpdater(options: UpdaterOptions): Updater {
       if (busy !== null) throw new UpdateError('conflict', busy);
       const last = await readResult(docker.home);
       if (last === null || last.state !== 'ok' || last.previousImage === '' || !STABLE_VERSION.test(last.from)) throw new UpdateError('conflict', 'there is no update to undo');
+      // an image older than 0.8.2 looks for main at the root of the home, and would show an empty one: put the files back first
+      if (docker.mainInRooms === true && isNewer(LAYOUT_VERSION, last.from)) throw new UpdateError('conflict', `UNDO on the rooms page first (it moves main back to the root at the next start), then UNDO the update: ${last.from} looks for room main at the root of the home and would show an empty one`);
       try {
         await checkPrevious(docker.call, docker.hostname, last);
       } catch (error) {
