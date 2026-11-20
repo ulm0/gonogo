@@ -1422,6 +1422,7 @@ async function runMigrateMainCommand(parsed: Extract<ParsedArgs, { kind: 'migrat
     const plan = await planMigration(root, direction, { running: false });
     process.stdout.write(`${direction === 'forward' ? 'would move' : 'would move back'} ${plan.entries.length} of room main's files from ${plan.from} to ${plan.to}\n`);
     for (const name of plan.entries) process.stdout.write(`  ${name}\n`);
+    if (plan.removes.length > 0) process.stdout.write(`first it removes these leftover worktrees (clean, branch merged; git worktree remove, the branches are kept):\n${plan.removes.map((p) => `  ${p}`).join('\n')}\n`);
     if (plan.stays.length > 0) process.stdout.write(`stay where they are (not main's, or not known): ${plan.stays.join(', ')}\n`);
     if (plan.problems.length > 0) process.stdout.write(`it would NOT be done now:\n${plan.problems.map((p) => `  - ${p}`).join('\n')}\n`);
     else process.stdout.write('nothing stops it. Stop gonogo, then run it without --dry-run (or press MIGRATE NOW on the rooms page).\n');

@@ -1,9 +1,9 @@
 // Moving room main of an old home into rooms/main (src/server/mainmigrate.ts): the plan, the pre-checks, the move with its journal, a crash in the middle, undo.
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { lockHooks } from '../src/server/home.js';
 import { MIGRATION_FILE, migrate, planMigration, readMigration, resumeMigration, startupMigration, writeMigration } from '../src/server/mainmigrate.js';
@@ -125,7 +125,7 @@ describe('moving room main into rooms/main', () => {
     rmSync(main('stray'));
     mkdirSync(join(root, 'worktrees', 'old'), { recursive: true });
     plan = await planMigration(root, 'forward', { running: false });
-    expect(plan.problems.join('\n')).toMatch(/worktrees still holds old/);
+    expect(plan.problems.join('\n')).toMatch(/worktrees\/old is not a git worktree/);
     rmSync(join(root, 'worktrees'), { recursive: true });
     writeFileSync(join(root, 'agents.json'), '{nope');
     plan = await planMigration(root, 'forward', { running: false });
@@ -154,6 +154,168 @@ describe('moving room main into rooms/main', () => {
     rmSync(join(root, 'run', 'room.sock'), { force: true });
     await listening(join(root, 'run', 'ptyhost.sock'));
     expect((await planMigration(root, 'forward', { running: true })).problems.join('\n')).toContain('pty host');
+  });
+
+  describe('leftover worktrees of Clean Rooms and plain worktrees (as on a real install: rso and simsup)', () => {
+    let repo: string;
+    const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8' });
+    beforeEach(() => {
+      repo = mkdtempSync(join(tmpdir(), 'gng-repo-'));
+      git(repo, 'init', '-q', '-b', 'main');
+      writeFileSync(join(repo, 'a.txt'), 'a');
+      git(repo, 'add', '.');
+      git(repo, 'commit', '-q', '-m', 'one');
+    });
+    afterEach(() => rmSync(repo, { recursive: true, force: true }));
+    const leftover = (dir: string, name: string): string => {
+      const path = join(root, dir, name);
+      mkdirSync(join(root, dir), { recursive: true });
+      git(repo, 'worktree', 'add', '-q', '-b', `gonogo/${name}`, path);
+      return path;
+    };
+
+    it('removes a clean one whose branch is merged (git worktree remove, the branch kept), journals it, and moves', async () => {
+      oldHome();
+      const rso = leftover('cleanroom', 'rso');
+      const sim = leftover('cleanroom', 'simsup');
+      const plan = await planMigration(root, 'forward', { running: false });
+      expect(plan.problems).toEqual([]);
+      expect(plan.removes.sort()).toEqual([rso, sim].sort());
+      expect(existsSync(rso)).toBe(true); // a dry run removes nothing
+      const out = await startupMigration(root);
+      expect(out).toMatchObject({ did: 'migrated', removed: expect.arrayContaining([rso, sim]) });
+      expect(existsSync(rso) || existsSync(sim) || existsSync(join(root, 'cleanroom'))).toBe(false);
+      expect(git(repo, 'branch', '--list', 'gonogo/rso')).toContain('gonogo/rso');
+      expect(git(repo, 'worktree', 'list')).not.toContain('cleanroom');
+      expect(readMigration(root)).toMatchObject({ state: 'done', removedWorktrees: expect.arrayContaining([rso, sim]) });
+      expect(existsSync(main('agents.json'))).toBe(true);
+    });
+
+    it('a dirty one, one with a commit that is not merged, or a plain folder still refuses, with the exact command; and nothing is removed', async () => {
+      oldHome();
+      const clean = leftover('cleanroom', 'rso');
+      const dirty = leftover('worktrees', 'dirty');
+      writeFileSync(join(dirty, 'new.txt'), 'x');
+      const ahead = leftover('worktrees', 'ahead');
+      writeFileSync(join(ahead, 'b.txt'), 'b');
+      git(ahead, 'add', '.');
+      git(ahead, 'commit', '-q', '-m', 'two');
+      mkdirSync(join(root, 'worktrees', 'plain'));
+      const out = await startupMigration(root);
+      expect(out.did).toBe('skipped');
+      const reasons = out.did === 'skipped' ? out.problems.join('\n') : '';
+      expect(reasons).toContain(`has changes that are not committed: look at them, then run: git -C ${realpathSync(repo)} worktree remove ${dirty}`);
+      expect(reasons).toMatch(/worktrees\/ahead is on gonogo\/ahead, which has commits that are not in the repository's checked-out branch[^\n]*run: git -C [^\n]* worktree remove [^\n]*worktrees\/ahead/);
+      expect(reasons).toContain('worktrees/plain is not a git worktree');
+      expect(reasons).not.toContain(clean); // the clean one is no reason
+      expect(existsSync(clean)).toBe(true); // a refused move changes nothing
+      expect(existsSync(join(root, 'agents.json'))).toBe(true);
+    });
+
+    it('judges what the worktree has CHECKED OUT, not the branch named after it: a detached commit or another branch is refused (the work would be lost)', async () => {
+      oldHome();
+      const detached = leftover('cleanroom', 'det');
+      writeFileSync(join(detached, 'd.txt'), 'd');
+      git(detached, 'add', '.');
+      git(detached, 'checkout', '-q', '--detach');
+      git(detached, 'commit', '-q', '-m', 'only here');
+      const other = leftover('cleanroom', 'oth');
+      git(other, 'checkout', '-q', '-b', 'feature');
+      writeFileSync(join(other, 'o.txt'), 'o');
+      git(other, 'add', '.');
+      git(other, 'commit', '-q', '-m', 'on feature');
+      const out = await startupMigration(root);
+      expect(out.did).toBe('skipped');
+      const reasons = out.did === 'skipped' ? out.problems.join('\n') : '';
+      expect(reasons).toMatch(/cleanroom\/det has a detached HEAD, not gonogo\/det: look at what it holds, then run: git -C [^\n]* worktree remove [^\n]*cleanroom\/det/);
+      expect(reasons).toMatch(/cleanroom\/oth has feature checked out, not gonogo\/oth/);
+      expect(existsSync(detached)).toBe(true);
+      expect(existsSync(other)).toBe(true);
+      expect(git(detached, 'log', '--oneline', '-1')).toContain('only here');
+    });
+
+    it('a detached HEAD is refused even when its commit is already in the checked-out branch: the rule is the branch the worktree is on', async () => {
+      oldHome();
+      const det = leftover('cleanroom', 'same');
+      git(det, 'checkout', '-q', '--detach');
+      expect((await planMigration(root, 'forward', { running: false })).problems.join('\n')).toContain('has a detached HEAD');
+    });
+
+    it('refuses a link, and a folder whose real path is outside the home: nothing is followed or removed', async () => {
+      oldHome();
+      const real = leftover('cleanroom', 'real');
+      const outside = mkdtempSync(join(tmpdir(), 'gng-outside-'));
+      try {
+        symlinkSync(real, join(root, 'cleanroom', 'link')); // a link to a clean merged worktree
+        symlinkSync(outside, join(root, 'cleanroom', 'out')); // a link to a folder anywhere
+        const plan = await planMigration(root, 'forward', { running: false });
+        const reasons = plan.problems.join('\n');
+        expect(reasons).toContain(`${join(root, 'cleanroom', 'link')} is a link`);
+        expect(reasons).toContain(`${join(root, 'cleanroom', 'out')} is a link`);
+        expect(plan.removes).toEqual([real]); // the real one is fine, the links are not
+        expect((await migrate(root, 'forward')).ok).toBe(false);
+        expect(existsSync(real)).toBe(true);
+        expect(existsSync(outside)).toBe(true);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+      // the folder cleanroom/ itself a link
+      rmSync(join(root, 'cleanroom'), { recursive: true, force: true });
+      git(repo, 'worktree', 'prune');
+      const elsewhere = mkdtempSync(join(tmpdir(), 'gng-elsewhere-'));
+      try {
+        symlinkSync(elsewhere, join(root, 'cleanroom'));
+        const plan = await planMigration(root, 'forward', { running: false });
+        expect(plan.problems.join('\n')).toContain(`${join(root, 'cleanroom')} is a link`);
+        expect(plan.removes).toEqual([]);
+      } finally {
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    it('ignored files that are not build output refuse (.env, local config); node_modules, dist and .vite may go', async () => {
+      oldHome();
+      writeFileSync(join(repo, '.gitignore'), 'node_modules/\ndist/\n.vite/\n.env\nlocal.json\n');
+      git(repo, 'add', '.');
+      git(repo, 'commit', '-q', '-m', 'ignore');
+      const build = leftover('cleanroom', 'build');
+      for (const d of ['node_modules', 'dist', '.vite']) mkdirSync(join(build, d));
+      writeFileSync(join(build, 'node_modules', 'x'), 'x');
+      const secret = leftover('cleanroom', 'secret');
+      writeFileSync(join(secret, '.env'), 'TOKEN=1');
+      const plan = await planMigration(root, 'forward', { running: false });
+      expect(plan.removes).toEqual([build]);
+      const reasons = plan.problems.join('\n');
+      expect(reasons).toMatch(/cleanroom\/secret holds ignored files that removing would delete \(\.env\)[^\n]*run: git -C [^\n]* worktree remove [^\n]*cleanroom\/secret/);
+      expect(reasons).not.toContain('cleanroom/build');
+    });
+
+    it('a half-done journal refuses BEFORE anything is removed', async () => {
+      oldHome();
+      const rso = leftover('cleanroom', 'rso');
+      writeMigration(root, { state: 'moving', at: 1, entries: ['keys.json'] });
+      const plan = await planMigration(root, 'forward', { running: false, clean: true });
+      expect(plan.problems.join('\n')).toContain('an earlier move of room main is not finished');
+      expect(existsSync(rso)).toBe(true);
+      expect(git(repo, 'worktree', 'list')).toContain('cleanroom/rso');
+    });
+
+    it('a worktree that an agent of the roster has is not a leftover: the agent is the reason, and it is never removed', async () => {
+      oldHome([{ name: 'rso', dir: '/p', cleanRoom: {}, role: 'r', mode: 'default', sessionId: '1', desk: 0, boss: true, createdAt: 1 }]);
+      const rso = leftover('cleanroom', 'rso');
+      const plan = await planMigration(root, 'forward', { running: false });
+      expect(plan.removes).toEqual([]);
+      expect(plan.problems.join('\n')).toContain('agent rso has a Clean Room');
+      expect((await migrate(root, 'forward')).ok).toBe(false);
+      expect(existsSync(rso)).toBe(true);
+    });
+
+    it('--dry-run on the command line says which ones it would remove', async () => {
+      oldHome();
+      const rso = leftover('cleanroom', 'rso');
+      const plan = await planMigration(root, 'forward', { running: false });
+      expect(plan.removes).toEqual([rso]);
+    });
   });
 
   it('refuses while the lock of a room is held (its holder touches it every beat), and not for a lock nobody holds', async () => {
