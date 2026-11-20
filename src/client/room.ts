@@ -17,7 +17,7 @@ export type Cell =
   | { type: 'spare'; n: number };
 
 /**
- * The fixed matrix. Cells 1 to 15 are the positions in their order; an agent with a position sits there, the oldest desk
+ * The fixed matrix. Cells 1 to 16 are the positions in their order; an agent with a position sits there, the oldest desk
  * when several share one. Everyone else (no position, a duplicate, a custom command) follows in desk order, then one SPARE
  * open cell while the room has room.
  */
