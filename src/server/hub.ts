@@ -114,6 +114,7 @@ import {
   NEEDS_YOU_CLEAR_MS,
   PASTE_END,
   PERMISSION_SUMMARY_CHARS,
+  DIRECTOR_REPLY_TAIL,
   DIRECTOR_TURN_CHARS,
   LEGACY_POINTER_MAX_CHARS,
   DIRECTOR_TURNS_TOTAL_CHARS,
@@ -2814,7 +2815,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       parts.push(part);
       total += part.length + 1;
     }
-    return parts.length === 0 ? pointer : `${pointer} ${parts.join(' ')}`;
+    return parts.length === 0 ? pointer : `${pointer} ${parts.join(' ')} ${DIRECTOR_REPLY_TAIL}`;
   }
 
   function sendFromStation(station: string, request: StationMessage): SendResult {

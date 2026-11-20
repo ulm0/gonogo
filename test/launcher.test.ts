@@ -292,6 +292,12 @@ describe('buildRoleText', () => {
     expect(out).not.toMatch(/\{(name|memory|role)\}/);
   });
 
+  it('tells the agent to answer the Director\'s typed words with send_message to user, never only in the console', () => {
+    const out = buildRoleText('ana', 'r', memory);
+    expect(out).toContain('The line may go on with "[Director via web]" or "[Director via Telegram]"');
+    expect(out).toMatch(/Answer his words with send_message to "user" \(in_reply_to the message id from read_messages\), never only in your console/);
+  });
+
   it('keeps $&, $$, $\' and $` of the role as they are', () => {
     const role = 'Budget is $$5 and cost $& more; $\' then $` then $1 and $<x>.';
     const out = buildRoleText('ana', role, memory);

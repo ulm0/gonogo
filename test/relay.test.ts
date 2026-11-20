@@ -213,6 +213,21 @@ describe('relay: forwarding', () => {
     return relay;
   }
 
+  it('an agent\'s answer to a message the Director wrote from Telegram (send_message to user, in_reply_to its id) is sent to the Telegram chat like any message to him; with the message kind off it stays in the inbox', async () => {
+    const relay = await both();
+    relay.observe(message({ id: 'm40', body: 'merged, 3 files', subject: 'Re: merge it', inReplyTo: 'm39' }));
+    await sent(2);
+    const telegram = calls.find((c) => c.url.includes('api.telegram.org'));
+    expect(telegram?.json).toEqual({ chat_id: CHAT, text: 'Message from ana: Re: merge it\n\nmerged, 3 files' });
+    await quietly(relay);
+    // what the Director chose: no messages forwarded, nothing goes out
+    await relay.forward({ kinds: ['redline'] });
+    const before = calls.length;
+    relay.observe(message({ id: 'm41', inReplyTo: 'm39' }));
+    await quietly(relay);
+    expect(calls.length).toBe(before);
+  });
+
   it('sends a message to the Director to every target, with the right call for each service', async () => {
     const relay = await both();
     relay.observe(message({ body: 'Tests <pass> & more' }));
