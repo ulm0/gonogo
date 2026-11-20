@@ -12,6 +12,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { UplinkKind } from '../shared/protocol.js';
 import { SLACK_SIGNATURE_MAX_AGE_MS } from './constants.js';
 import { isRecord } from './hooks.js';
+import { attachmentOf, FILE_ACCEPTED_TEXT } from './telegramfiles.js';
 import { cutText, HubError } from './hub.js';
 import type { Inbound, KindDef, Made } from './uplinks.js';
 
@@ -207,19 +208,25 @@ function telegramRead(raw: Buffer, _headers: IncomingHttpHeaders, inbound: Inbou
     return { callback: { queryId, data: query.data, chat, messageId: str(get(query, 'message.message_id')) } };
   }
   const message = update.message;
-  const said = str(get(message, 'text')).trim();
+  // a photo or a document has its words in `caption`; the file is fetched by uplinks.ts (it is a download) and its path is added to the message
+  const attached = attachmentOf(message);
+  const file = attached !== null && 'fileId' in attached ? attached : undefined;
+  const typed = (str(get(message, 'text')) || str(get(message, 'caption'))).trim();
+  const said = typed !== '' || attached === null ? typed : '(no caption)';
   const chat = str(get(message, 'chat.id'));
   // a bot can be found and written to by anybody on Telegram: only the chat of the target is the Director
   if (said === '' || chat === '' || chat !== inbound.telegramChat()) return null;
+  const note = attached !== null && 'refused' in attached ? `\n\n(The file was not taken: it is ${attached.refused}, and only ${FILE_ACCEPTED_TEXT} are.)` : '';
+  const more = file === undefined ? {} : { file };
   // his own words as a user turn only from a PRIVATE chat with him: in a group anybody who is in it is in the chat of the target
   // and only what he wrote: a forwarded message, an automatic forward from a channel and a message made by an inline bot are somebody else's words in his chat
   const forwarded = [...FORWARD_FIELDS, 'via_bot'].some((field) => isRecord(message) && message[field] !== undefined && message[field] !== null && message[field] !== false);
-  const own = !forwarded && str(get(message, 'chat.type')) === 'private' && str(get(message, 'from.id')) === chat ? { director: { channel: 'telegram' as const, said } } : {};
+  const own = !forwarded && str(get(message, 'chat.type')) === 'private' && str(get(message, 'from.id')) === chat ? { director: { channel: 'telegram' as const, said: said + note } } : {};
   const parent = inbound.find(`telegram:${chat}:${str(get(message, 'reply_to_message.message_id'))}`);
-  if (parent !== undefined) return text(excerpt(said, 4000), { to: parent.agent, inReplyTo: parent.id, subject: `Re: ${parent.subject}`.slice(0, 200), ...own });
+  if (parent !== undefined) return text(excerpt(said, 4000) + note, { to: parent.agent, inReplyTo: parent.id, subject: `Re: ${parent.subject}`.slice(0, 200), ...own, ...more });
   const name = line(get(message, 'from.first_name'), 60);
   const handle = line(get(message, 'from.username'), 60);
-  return text(`Telegram message from ${[name, handle && `@${handle}`].filter(Boolean).join(' ') || 'the Director'} in chat ${chat}:\n\n${excerpt(said, 4000)}`, own);
+  return text(`Telegram message from ${[name, handle && `@${handle}`].filter(Boolean).join(' ') || 'the Director'} in chat ${chat}:\n\n${excerpt(said, 4000)}${note}`, { ...own, ...more });
 }
 
 /** The kinds that Relay adds to the generic one (uplinks.ts `KINDS`). */

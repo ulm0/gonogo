@@ -214,13 +214,15 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   const noticesWaiting: string[] = [];
   const moveNotice = ((): string | null => {
     const o = startupMove;
-    if (o.did === 'migrated' || o.did === 'resumed') return o.direction === 'forward' ? `Room main now lives in rooms/main/ (${o.moved} files moved). UNDO is on the rooms page.` : 'Room main is back at the root of the home.';
+    if (o.did === 'migrated' || o.did === 'resumed') return o.direction === 'forward' ? `Room main now lives in rooms/main/ (${o.moved} files moved${o.did === 'migrated' && o.removed.length > 0 ? `; leftover worktrees removed first: ${o.removed.join(', ')}; their branches are kept` : ''}). UNDO is on the rooms page.` : 'Room main is back at the root of the home.';
     if (o.did === 'skipped') return o.direction === 'forward' ? `Room main stays at the root of the home, not moved: ${o.problems[0] ?? 'a check failed'}. The rooms page has the reasons and MIGRATE NOW.` : `Room main stays in rooms/main/, not moved back: ${o.problems[0] ?? 'a check failed'}.`;
     return null;
   })();
   if (moveNotice !== null) {
     log.warn(moveNotice);
-    noticesWaiting.push(moveNotice);
+    // a move the Director asked for (MIGRATE NOW, UNDO) that was refused is an alert: his inbox AND his phone, not a line he may miss while a page reloads
+    if (startupMove.did === 'skipped' && startupMove.asked) alertsWaiting.push(moveNotice);
+    else noticesWaiting.push(moveNotice);
   }
   let auth: AuthStore;
   let madeSetupToken: string | null = null;
@@ -627,7 +629,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   };
 
   /** Where room main lives, and what the last move said (never the list of files: reasons are short text). */
-  const layoutView = (): { main: '.' | 'rooms/main'; path: string; migration: { state: string; at: number; reasons?: string[]; moved?: number } | null } => {
+  const layoutView = (): { main: '.' | 'rooms/main'; path: string; migration: { state: string; at: number; reasons?: string[]; moved?: number; removed?: string[] } | null } => {
     let note: MigrationNote | null = null;
     let damaged = false;
     try {
@@ -643,7 +645,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         : note.state === 'skipped'
           ? { state: note.state, at: note.at, reasons: note.reasons }
           : note.state === 'done'
-            ? { state: note.state, at: note.at, moved: note.moved, ...(note.undoReasons === undefined ? {} : { reasons: note.undoReasons }) }
+            ? { state: note.state, at: note.at, moved: note.moved, ...(note.undoReasons === undefined ? {} : { reasons: note.undoReasons }), ...(note.removedWorktrees === undefined ? {} : { removed: note.removedWorktrees }) }
             : { state: note.state, at: note.at };
     return { main: path === options.home ? '.' : 'rooms/main', path, migration };
   };

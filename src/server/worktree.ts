@@ -107,7 +107,7 @@ export async function prepareWorktree(agent: Pick<AgentRecord, 'name' | 'dir'>, 
 }
 
 /** The folder of the repository that a worktree belongs to (the one that holds its `.git`), or null when there is none. */
-async function mainRepoOf(path: string, env: Env): Promise<string | null> {
+export async function mainRepoOf(path: string, env: Env): Promise<string | null> {
   try {
     const common = (await run(GIT_BIN, ['-C', path, 'rev-parse', '--path-format=absolute', '--git-common-dir'], env)).trim();
     return dirname(common);
@@ -127,6 +127,16 @@ export async function worktreeStatus(path: string, branch: string, env: Env): Pr
   const ahead = Number((await git('rev-list', '--count', `HEAD..${branch}`).catch(() => '0')).trim()) || 0;
   const merged = (await git('branch', '--merged', 'HEAD', '--list', branch).catch(() => '')).trim() !== '';
   return { path, branch, exists: true, dirty, ahead, merged };
+}
+
+/** `git worktree remove <path>` and nothing more: no --force (git refuses a dirty folder), and the branch is kept. */
+export async function removeWorktreeFolder(repo: string, path: string, env: Env): Promise<string | null> {
+  try {
+    await run(GIT_BIN, ['-C', repo, 'worktree', 'remove', path], env);
+    return null;
+  } catch (error) {
+    return messageOf(error);
+  }
 }
 
 export interface WorktreeRemoval {

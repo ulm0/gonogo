@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitepress';
 import { BUILTIN_LIVERIES, schemeOf } from '../src/shared/livery.ts';
+import { ogHead } from './og.ts';
 
 // The livery of the site, before the first paint: the one chosen here before (theme/LiverySwitch.vue keeps it), else the one
 // that matches the system's light or dark. `dark` is the class VitePress reads (logo, code), set for a livery with a dark body.
@@ -18,9 +19,11 @@ const liveryScript = `(() => {
 // The site is built from docs/ in place; the design notes there (specs, contract, backlog, facts) stay out of it.
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 
+const SITE_DESCRIPTION = 'Self-hosted mission control for AI coding agents, in a browser tab.';
+
 export default defineConfig({
   title: 'gonogo',
-  description: 'Self-hosted mission control for AI coding agents, in a browser tab.',
+  description: SITE_DESCRIPTION,
   base: '/',
   srcDir: 'docs',
   srcExclude: [
@@ -40,6 +43,8 @@ export default defineConfig({
     ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
     ['script', {}, liveryScript],
   ],
+  // Link previews (WhatsApp, LinkedIn, Slack): Open Graph and Twitter tags with absolute addresses, on every page (og.ts).
+  transformHead: ({ pageData }) => ogHead(pageData, SITE_DESCRIPTION),
   // The livery key (theme/LiverySwitch.vue) replaces the light/dark switch.
   appearance: false,
   // One dark theme: every code block is an LCD, a dark screen in every livery. Its high-contrast colours stay above 6:1 on all four.

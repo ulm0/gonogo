@@ -25,6 +25,7 @@ import {
   TRANSIENT_ERROR_PREFIXES,
   createLogger,
   nullLogger,
+  AGENTS_DIR,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
 import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
@@ -70,6 +71,7 @@ import { createRoomLayout } from './roomlayout.js';
 import { createTabName } from './tabname.js';
 import { createTasks } from './tasks.js';
 import { createTriggers } from './triggers.js';
+import { createTelegramFiles } from './telegramfiles.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
@@ -918,6 +920,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('launch window'),
     });
+    const telegramFiles = createTelegramFiles({ fetch: options.fetch ?? ((url, init) => fetch(url, init)), token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), agentsRoot: join(home.dir, AGENTS_DIR), now: io.now, log: log.child('telegram files') });
+    void telegramFiles.prune();
     const uplinks = createUplinks({
       dir: home.dir,
       trigger: (entry) => triggers.record(entry),
@@ -926,6 +930,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (list) => web?.broadcast({ t: 'uplinks', uplinks: list }),
       notify: tell,
       inbound: relay,
+      fetchFile: (file, agent) => telegramFiles.fetchFile(file, agent),
       press: (secret, pressed) => void phone?.press(secret, pressed).catch((error: unknown) => log.warn('phone approvals: a button failed', error instanceof Error ? error.message : String(error))),
       log: log.child('uplink'),
     });
@@ -1417,6 +1422,7 @@ async function runMigrateMainCommand(parsed: Extract<ParsedArgs, { kind: 'migrat
     const plan = await planMigration(root, direction, { running: false });
     process.stdout.write(`${direction === 'forward' ? 'would move' : 'would move back'} ${plan.entries.length} of room main's files from ${plan.from} to ${plan.to}\n`);
     for (const name of plan.entries) process.stdout.write(`  ${name}\n`);
+    if (plan.removes.length > 0) process.stdout.write(`first it removes these leftover worktrees (clean, branch merged; git worktree remove, the branches are kept):\n${plan.removes.map((p) => `  ${p}`).join('\n')}\n`);
     if (plan.stays.length > 0) process.stdout.write(`stay where they are (not main's, or not known): ${plan.stays.join(', ')}\n`);
     if (plan.problems.length > 0) process.stdout.write(`it would NOT be done now:\n${plan.problems.map((p) => `  - ${p}`).join('\n')}\n`);
     else process.stdout.write('nothing stops it. Stop gonogo, then run it without --dry-run (or press MIGRATE NOW on the rooms page).\n');

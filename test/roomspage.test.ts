@@ -21,6 +21,9 @@ class Node {
   maxLength = 0;
   elements: Record<string, Node> = {};
   constructor(readonly tag: string) {}
+  get childNodes(): Node[] {
+    return this.children;
+  }
   get textContent(): string {
     return this.own + this.children.map((c) => c.textContent).join('');
   }
@@ -71,13 +74,13 @@ class Node {
 let doc: { activeElement: Node | null; title: string; documentElement: Node & { style: { setProperty(n: string, v: string): void; props: Record<string, string> } } };
 const make = (tag: string): Node => new Node(tag);
 
-function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?: string; status?: number }): { byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
+function run(options: { token?: string; rooms: unknown[]; layout?: unknown; livery?: string; hash?: string; status?: number }): { byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
   const replaced: string[] = [];
   const sent: Array<Record<string, string>> = [];
   const html = roomsPage(null, '1.2.3');
   const scripts = [...html.matchAll(/<script>([^]*?)<\/script>/g)].map((m) => m[1] ?? '');
   const byId: Record<string, Node> = {};
-  for (const id of ['rooms', 'note', 'add', 'gate', 'sum', 'live', 'title', 'loading', 'new', 'cancel']) byId[id] = make(id === 'add' ? 'form' : 'div');
+  for (const id of ['rooms', 'move', 'note', 'add', 'gate', 'sum', 'live', 'title', 'loading', 'new', 'cancel']) byId[id] = make(id === 'add' ? 'form' : 'div');
   byId.gate?.append(make('h2'), make('p'));
   byId.add?.elements && Object.assign(byId.add.elements, { id: make('input'), name: make('input') });
   const root = Object.assign(make('html'), { style: { props: {} as Record<string, string>, setProperty(n: string, v: string) { this.props[n] = v; } } });
@@ -94,7 +97,7 @@ function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?
     fetch: async (_url: string, init: { headers?: Record<string, string> } = {}) => {
       sent.push(init.headers ?? {});
       const status = options.status ?? 200;
-      return { status, ok: status < 300, json: async () => ({ rooms: options.rooms }) };
+      return { status, ok: status < 300, json: async () => ({ rooms: options.rooms, ...(options.layout === undefined ? {} : { layout: options.layout }) }) };
     },
     setInterval: () => 0,
     JSON,
@@ -292,5 +295,30 @@ describe('the version on the rooms page', () => {
     expect(bar).toContain('>9.9.9</a>');
     expect(page).not.toContain('version-corner');
     expect(roomsPage(null, null)).not.toContain('topbar-version');
+  });
+});
+
+describe('where room main keeps its files', () => {
+  const text = (n: { all(): Array<{ textContent: string }> } & { textContent: string }): string => n.textContent;
+  it('a move that was refused shows its reasons and the keys ABOVE the cards, in a box of its own, not inside main\'s card', async () => {
+    const page = run({ rooms: [room()], layout: { main: '.', path: '/h', migration: { state: 'skipped', at: Date.now(), reasons: ['/h/cleanroom still holds rso: run git -C /r worktree remove /h/cleanroom/rso'] } } });
+    await settle();
+    const box = page.byId.move as Node;
+    expect(text(box)).toContain('was not moved into rooms/main');
+    expect(text(box)).toContain('git -C /r worktree remove /h/cleanroom/rso');
+    for (const key of ['migrate:now', 'migrate:dry', 'migrate:dismiss']) expect(box.querySelector(`[data-f="${key}"]`), key).not.toBeNull();
+    // not in the room's own card
+    expect(text(page.byId.rooms as Node)).not.toContain('was not moved');
+  });
+
+  it('shows nothing for a home that keeps main in rooms/main with no note, and the removed worktrees after a move', async () => {
+    const quiet = run({ rooms: [room()], layout: { main: 'rooms/main', path: '/h/rooms/main', migration: null } });
+    await settle();
+    expect(text(quiet.byId.move as Node)).toBe('');
+    const done = run({ rooms: [room()], layout: { main: 'rooms/main', path: '/h/rooms/main', migration: { state: 'done', at: Date.now(), moved: 9, removed: ['/h/cleanroom/rso'] } } });
+    await settle();
+    expect(text(done.byId.move as Node)).toContain('Leftover worktrees removed first');
+    expect(text(done.byId.move as Node)).toContain('/h/cleanroom/rso');
+    expect((done.byId.move as Node).querySelector('[data-f="migrate:undo"]')).not.toBeNull();
   });
 });

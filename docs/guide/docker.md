@@ -1,3 +1,7 @@
+---
+description: "Run gonogo from the official Docker image: compose file, the data folder, running as user node, and how an update replaces the container."
+---
+
 # Running in Docker
 
 The image runs gonogo as user `node` (uid 1000, so `bypassPermissions` works: it refuses root) on Debian bookworm, with git, tini, `gh`, the Docker CLI client, Claude Code 2.1.325 and gonogo.
