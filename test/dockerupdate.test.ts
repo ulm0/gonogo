@@ -549,6 +549,8 @@ describe('the image is verified before it runs (attest.ts)', () => {
     await updater.start('0.4.0', { unverified: true });
     await until(seen, 'handed-off');
     expect(notes[0]).toMatch(/Updating to 0\.4\.0 with an image that has no attestation \(old image\), as you confirmed/);
+    // the offer of the refusal before it does not stay on the states that follow
+    expect(seen.every((u) => u.state === 'failed' || u.verify === undefined)).toBe(true);
     const failed = fake();
     const again = build(failed, async () => ({ kind: 'failed', why: 'no network' }), []);
     await again.updater.start('0.4.0', { unverified: true });
@@ -564,6 +566,19 @@ describe('the image is verified before it runs (attest.ts)', () => {
     expect(autoRun.seen.at(-1)?.note).toMatch(/has no attestation/);
     expect(autoNotes).toEqual([]);
     expect(auto.log.some((l) => l.includes('containers/create'))).toBe(false);
+  });
+
+  it('the offer to update anyway belongs to the refusal: the same updater, asked again with the confirm, carries it no further', async () => {
+    const f = fake();
+    const { updater, seen } = build(f, async () => ({ kind: 'unattested', why: 'old image' }), []);
+    await updater.start('0.4.0');
+    await until(seen, 'failed');
+    expect(seen.at(-1)?.verify).toBe('unattested');
+    const mark = seen.length;
+    await updater.start('0.4.0', { unverified: true });
+    await until(seen, 'handed-off');
+    expect(seen.slice(mark).every((u) => u.verify === undefined)).toBe(true);
+    expect(seen.at(-1)?.state).toBe('handed-off');
   });
 
   it('UNDO does not verify: the image was run before', async () => {

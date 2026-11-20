@@ -116,7 +116,9 @@ export function createUpdater(options: UpdaterOptions): Updater {
   let state: UpdateView = { state: 'idle', version: null, note: '', tail: [], rollback: null };
 
   const set = (next: Partial<UpdateView>): UpdateView => {
-    state = { ...state, ...next };
+    // `verify` belongs to one refusal: it does not carry over into the next state
+    state = { ...state, verify: undefined, ...next };
+    if (state.verify === undefined) delete state.verify;
     options.rollout.setUpdate(state);
     return state;
   };
