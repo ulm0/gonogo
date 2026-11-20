@@ -1,3 +1,7 @@
+---
+description: "Update gonogo from the page: how it knows a newer version is out, what an npm, pnpm or Docker install does, and how to undo an update."
+---
+
 # Update from the page, and the version in the top bar
 
 <SelfUpdateMock class="doc-mock" />
