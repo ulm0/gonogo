@@ -12,8 +12,8 @@ Rollout checks once a day (off with `GONOGO_UPDATE_CHECK=0` or `--no-update-chec
 |---|---|---|
 | Container image | `GONOGO_INSTALL=docker` (the image sets it), `/.dockerenv` or `/run/.containerenv` | **Update** recreates this container (socket mounted and moving tag, below); else `docker compose pull && docker compose up -d` in the `compose.yaml` folder, or **Update** through an update hook |
 | Homebrew | file under `Cellar/gonogo/` | command only: `brew upgrade gonogo` (the button never runs brew) |
-| npm global | file under `lib/node_modules/@ulm0/gonogo/` | **Update**: `npm install -g @ulm0/gonogo@<version>` |
-| pnpm global | file under a `pnpm` folder, or unknown place | **Update**: `pnpm add -g @ulm0/gonogo@<version>` |
+| npm global | file under `lib/node_modules/@ulm0/gonogo/` | **Update**: `npm install -g @ulm0/gonogo@x.y.z` |
+| pnpm global | file under a `pnpm` folder, or unknown place | **Update**: `pnpm add -g @ulm0/gonogo@x.y.z` |
 | `pnpm dlx` | file under `pnpm/dlx/` | command only |
 | Git checkout | a `.git` next to the package | command only: `git pull && pnpm install && pnpm build` |
 
@@ -73,7 +73,7 @@ One POST, no redirect followed, 15 s. The URL comes from the server environment,
 
 ### Verifying the image (Docker)
 
-The version label can be written by anyone who can push the tag, so it proves nothing. From 0.8.0 each image has a **build provenance attestation**. Before it creates anything, the update (the click's and auto-update's) runs `gh attestation verify oci://ghcr.io/ulm0/gonogo@sha256:... --repo ulm0/gonogo --signer-workflow ulm0/gonogo/.github/workflows/image.yml` on the pulled digest, then builds the copy from that image's **id**.
+The version label can be written by anyone who can push the tag, so it proves nothing. From 0.8.0 each image has a **build provenance attestation** (GitHub's `actions/attest-build-provenance`, on the digest of the manifest list the tags point at). Before it creates anything, the update (the click's and auto-update's) runs `gh attestation verify oci://ghcr.io/ulm0/gonogo@sha256:... --repo ulm0/gonogo --signer-workflow ulm0/gonogo/.github/workflows/image.yml` on the pulled digest, then builds the copy from that image's **id**.
 
 | Result | Meaning | What happens |
 |---|---|---|

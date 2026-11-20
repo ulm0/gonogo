@@ -61,7 +61,7 @@ A room listens on loopback only. A Clean Room container reaches it through gonog
 
 ## Tokens
 
-Access to the front port is decided by [login](./login.md): session cookie, API key, or the unix socket `<home>/run/api.sock`. On an install that never had an account, the **Director token** (`<home>/token`, 0600) still works and opens **every** room; creating an account deletes it (`gonogo token rotate` is for that fresh install only). The proxy reaches a room over its own unix socket `<room home>/run/room.sock`: a room has no TCP credential for its page, and agent tokens never leave their room. The supervisor strips every `Set-Cookie` from a room's answer and sets its own CSP. `gonogo tui` opens main through the socket, another room with `--room <id>`.
+Access to the front port is decided by [login](./login.md): session cookie, API key, or the unix socket `<home>/run/api.sock`. On an install that never had an account, the **Director token** (`<home>/token`, 0600) still works and opens **every** room; creating an account deletes it (`gonogo token rotate` is for that fresh install only). The proxy reaches a room over its own unix socket `<room home>/run/room.sock`: a room has no TCP credential for its page (no token, no `run/room-token`), so a connection aimed at a room's port gets nothing, and agent tokens never leave their room. The supervisor strips every `Set-Cookie` from a room's answer and sets its own CSP. `gonogo tui` opens main through the socket, another room with `--room <id>`.
 
 Under `/r/<id>/` and, for main, at the root (non-reserved paths):
 
