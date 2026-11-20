@@ -1,1 +1,1 @@
-- **Shorter feature pages (M-Z).** Cut the M-Z feature pages by about 24% (22,300 to 17,000 words), same commands, flags, limits and warnings.
+- **Shorter feature pages (M-Z).** Cut the M-Z feature pages by about 26% (22,300 to 16,500 words), same commands, flags, limits and warnings.
