@@ -84,10 +84,19 @@ describe('verifyImage', () => {
     await verifyImage(OFFICIAL_IMAGE, [D1], { run });
     expect(seen[0]).not.toContain('--source-ref');
     seen.length = 0;
-    for (const version of ['0.8.1; rm -rf /', 'latest', '--repo', '', '0.8', '0.8.1-rc.1']) expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run, version }), version).toMatchObject({ kind: 'failed', why: expect.stringMatching(/not a release number/) as string });
+    for (const version of ['0.8.1; rm -rf /', 'latest', '--repo', '', '0.8', '0.8.1-', 'v0.8.1', '0.8.1 -rc', '0.8.1-rc 1', '0.8.1-rc/1', '0.8.1+build']) expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run, version }), version).toMatchObject({ kind: 'failed', why: expect.stringMatching(/not a release number/) as string });
     expect(seen).toEqual([]);
     // and the order does not matter: not even for an image that is not the official one
     expect((await verifyImage('localhost:5000/gonogo', [D1], { run, version: 'latest' })).kind).toBe('failed');
+  });
+
+  it('a release candidate is checked like its base version: its own tag, and owed from 0.8.0 on', async () => {
+    const seen: string[][] = [];
+    const run: Run = async (_f, args) => (seen.push(args), { code: 1, out: 'HTTP 404' });
+    expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run, version: '0.8.1-rc.1' })).kind).toBe('failed');
+    expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run, version: '0.8.0-rc.2' })).kind).toBe('failed');
+    expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run, version: '0.7.9-rc.1' })).kind).toBe('unattested');
+    expect(seen.map((a) => a.slice(-1)[0])).toEqual(['refs/tags/v0.8.1-rc.1', 'refs/tags/v0.8.0-rc.2', 'refs/tags/v0.7.9-rc.1']);
   });
 
   it('from the first attested release on, no attestation is a failure with no override; for an older one, or an image that is not the official one, it is only unattested', async () => {
