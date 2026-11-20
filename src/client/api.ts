@@ -1018,8 +1018,8 @@ export async function undoUpdate(): Promise<void> {
   await call('POST', '/update/undo');
 }
 
-export async function startUpdate(version: string): Promise<void> {
-  await call('POST', '/update', { version });
+export async function startUpdate(version: string, unverified = false): Promise<void> {
+  await call('POST', '/update', unverified ? { version, unverified: true } : { version });
 }
 
 /** Live reload: the server hands over to the installed gonogo (Flight Rules). Resolves with the note the server gives. */

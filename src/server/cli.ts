@@ -81,6 +81,7 @@ import { createStartupStore } from './startup.js';
 import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
+import { verifyImage } from './attest.js';
 import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
 import type { AutoUpdater } from './autoupdate.js';
 import { createUpdater } from './updater.js';
@@ -1051,7 +1052,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       reload: triggerReload,
       keepsAgents: remote !== null,
-      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
+      notify: (text) => tell('update', text),
+      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, verify: (prepared) => verifyImage(prepared.repo, prepared.repoDigests, { configDir: join(runDir(home.dir), 'gh-verify') }), busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
       hook: /^https?:\/\//.test(hookUrl) ? { url: hookUrl, token: (env.GONOGO_UPDATE_HOOK_TOKEN ?? '').trim() || null } : null,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       log: log.child('update'),
@@ -1070,7 +1072,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       current: version,
       unavailable: () => (!isMain ? 'only room main updates' : installed.kind !== 'docker' ? 'auto-update is for the Docker install' : dockerStatus?.ready === true ? null : (dockerStatus?.text ?? 'needs the Docker socket')),
       busy: async () => hubBusy() ?? (supervised && options.askBusy !== undefined ? (await options.askBusy(true)).busy : null),
-      start: (target) => updater.start(target),
+      start: (target) => updater.start(target, { auto: true }),
       updating: () => ['running', 'handed-off', 'reloading'].includes(rollout.view().update?.state ?? ''),
       readResult: () => readResult(home.dir),
       notify: (text) => tell('update', text),
@@ -1153,7 +1155,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rollout,
       // only a gonogo started from the command line has the signal handler that does the hand-over; a test or an embedder has not
       // only room main updates (and so only main can reach an update hook or the Docker socket through the page); the others answer 409
-      ...(isMain ? { update: (version: unknown) => updater.start(version), undoUpdate: () => updater.undo() } : {}),
+      ...(isMain ? { update: (version: unknown, how?: { unverified?: boolean }) => updater.start(version, how), undoUpdate: () => updater.undo() } : {}),
       reload: () => {
         if (!triggerReload()) return { ok: false, reason: 'reload is only available in a gonogo started from the command line' };
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };

@@ -41,7 +41,8 @@ server.on('upgrade', (req, socket, head) => {
 });
 socketServer.on('upgrade', (...a) => server.listeners('upgrade')[0](...a));
 // FAKE_ROOM_DELAY_MS: a room that takes its time to be ready (main only when FAKE_ROOM_DELAY_ONLY=main is the id of the home's folder name)
-const delay = Number(process.env.FAKE_ROOM_DELAY_MS ?? 0);
+const delayOnly = process.env.FAKE_ROOM_DELAY_ONLY;
+const delay = delayOnly === undefined || (delayOnly === 'main' ? !home.includes('/rooms/') : home.endsWith(`/rooms/${delayOnly}`)) ? Number(process.env.FAKE_ROOM_DELAY_MS ?? 0) : 0;
 setTimeout(() => server.listen(0, '127.0.0.1', () => {
   server.listen2 = true;
   socketServer.listen(sockPath, () => process.stdout.write(`gonogo ready: http://127.0.0.1:${server.address().port}/\n`));

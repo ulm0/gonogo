@@ -493,6 +493,13 @@ describe('rooms proxy: the login', () => {
     // the body that went through reached the room whole
     expect(main.seen.filter((x) => x.method === 'PATCH').at(-1)?.body).toBe('{"model":"x"}');
     for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/payload-defaults/servers/x'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);
+    // auto-update: turning it on or moving its window asks (the body decides); turning it off and skipping a version do not
+    expect((await send(stale, 'PUT', '/api/autoupdate', { enabled: true })).status).toBe(403);
+    expect((await send(stale, 'PUT', '/api/autoupdate', { windows: [{ from: '01:00', to: '02:00' }] })).status).toBe(403);
+    expect((await send(stale, 'PUT', '/api/autoupdate', { enabled: false })).status).toBe(200);
+    expect((await send(stale, 'POST', '/api/autoupdate/skip', { version: '0.6.3' })).status).toBe(200);
+    expect((await send(fresh, 'PUT', '/api/autoupdate', { enabled: true })).status).toBe(200);
+    for (const path of ['/api/%61utoupdate', '/%61pi/autoupdate', '/r/a/api/autoupdat%65']) expect((await send(stale, 'PUT', path, { enabled: true })).status, path).toBe(403);
     // an encoded spelling of a listed route is the same route
     for (const path of ['/api/%70ermissions', '/%61pi/permissions', '/r/a/api/%66eatures/relay']) expect((await send(stale, 'PUT', path, {})).status, path).toBe(403);
     // shell-equivalent already, and not behind it: a message, an answer, hold, resume, restart, a fresh session for all of it

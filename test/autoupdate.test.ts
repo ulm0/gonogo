@@ -135,6 +135,8 @@ describe('the controller', () => {
     if (over.enable !== false && over.env?.GONOGO_AUTO_UPDATE === undefined) await store.set({ enabled: true });
     const started: string[] = [];
     const notes: string[] = [];
+    // the real manual update shows as running from the moment it is started
+    let live = false;
     const view = { enabled: true, current: over.current ?? '0.6.1', latest: over.latest === undefined ? '0.6.2' : over.latest, checkedAt: 1, newer: (over.latest === undefined ? '0.6.2' : over.latest) !== null, command: '' };
     const auto = createAutoUpdater({
       store,
@@ -144,9 +146,11 @@ describe('the controller', () => {
       busy: async () => over.busy?.() ?? null,
       start: (v) => {
         started.push(v);
-        return over.start?.(v);
+        const answer = over.start?.(v);
+        live = true;
+        return answer;
       },
-      updating: over.updating ?? (() => false),
+      updating: over.updating ?? (() => live),
       readResult: async () => over.result ?? null,
       notify: (text) => notes.push(text),
       now: () => clock,
@@ -308,12 +312,30 @@ describe('the controller', () => {
       expect(back.store.state()).toMatchObject({ enabled: false, pending: null, tried: ['0.6.2'] });
     });
 
-    it('with no record of the update at all there is nothing to learn, and the pending note is dropped', async () => {
+    it('a restart between the note of the attempt and the helper (no record of it): the attempt is taken back and the Director is told, not skipped silently', async () => {
       const r = await rig({ current: '0.6.1', result: null });
       await r.store.attempt('0.6.2', '0.6.1', START);
       expect(await r.auto.settle()).toBe(true);
-      expect(r.store.state().pending).toBeNull();
+      expect(r.store.state()).toMatchObject({ pending: null, tried: [], enabled: true });
+      expect(r.notes[0]).toMatch(/was interrupted before it started.*try again at the next quiet moment/);
+      // a record of another update (result.to is not this version) is no record of this one
+      const other = await rig({ current: '0.6.1', result: { version: 1, at: 1, state: 'ok', from: '0.6.0', to: '0.6.1', previousImage: '', note: '', tail: [] } });
+      await other.store.attempt('0.6.2', '0.6.1', START);
+      expect(await other.auto.settle()).toBe(true);
+      expect(other.store.state().tried).toEqual([]);
+    });
+
+    it('and the check goes on every minute while an attempt is on record with nothing running for it, but never while an update is running', async () => {
+      let running = true;
+      const r = await rig({ current: '0.6.1', result: null, latest: null, updating: () => running });
+      await r.store.attempt('0.6.2', '0.6.1', START);
+      await r.auto.tick();
+      expect(r.store.state().pending).not.toBeNull();
       expect(r.notes).toEqual([]);
+      running = false;
+      await r.auto.tick();
+      expect(r.store.state()).toMatchObject({ pending: null, tried: [] });
+      expect(r.notes[0]).toMatch(/interrupted before it started/);
     });
 
     it('a helper that is still working leaves the record for the next start, and one that was killed is a failure', async () => {

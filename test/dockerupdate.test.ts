@@ -11,6 +11,7 @@ import { agentCounts, updateDialogText } from '../src/client/selfupdate.js';
 import { parseArgs } from '../src/server/cli.js';
 import { followResult, settleResult, viewOfResult, checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
 import type { DockerCall } from '../src/server/dockerupdate.js';
+import type { Attestation } from '../src/server/attest.js';
 import { createUpdater, UpdateError } from '../src/server/updater.js';
 import type { UpdateView } from '../src/shared/protocol.js';
 
@@ -75,7 +76,7 @@ function fake(): Fake {
     if (img !== null) {
       const ref = decodeURIComponent(img[1] ?? '');
       if (ref === OLD_IMG) return { status: 200, text: JSON.stringify({ Id: OLD_IMG, Config: OLD_IMAGE_CONFIG, RepoTags: [], RepoDigests: ['ghcr.io/ulm0/gonogo@sha256:' + '3'.repeat(64)] }) };
-      if (ref === f.script.imageRef || ref === NEW_IMG) return { status: 200, text: JSON.stringify({ Id: NEW_IMG, Config: { Labels: { [VERSION_LABEL]: f.script.pullLabel }, Cmd: ['serve'] } }) };
+      if (ref === f.script.imageRef || ref === NEW_IMG) return { status: 200, text: JSON.stringify({ Id: NEW_IMG, Config: { Labels: { [VERSION_LABEL]: f.script.pullLabel }, Cmd: ['serve'] }, RepoDigests: ['ghcr.io/ulm0/gonogo@sha256:' + '4'.repeat(64), 'other.example/gonogo@sha256:' + '5'.repeat(64)] }) };
       return { status: 404, text: '{"message":"no such image"}' };
     }
     if (m === null) return { status: 404, text: '{"message":"unknown route"}' };
@@ -195,7 +196,7 @@ describe('the pull and the checks', () => {
   it('pulls the container\'s own tag and returns the new image id with both versions', async () => {
     const f = fake();
     const got = await pullAndCheck(f.call, ME.slice(0, 12), '0.4.0');
-    expect(got).toMatchObject({ image: NEW_IMG, previousImage: OLD_IMG, from: '0.3.0' });
+    expect(got).toMatchObject({ image: NEW_IMG, previousImage: OLD_IMG, from: '0.3.0', repo: 'ghcr.io/ulm0/gonogo', repoDigests: ['sha256:' + '4'.repeat(64)] });
     expect(f.log).toContain('POST /images/create');
     expect(f.log.filter((l) => /stop|create$|rename/.test(l)).filter((l) => l !== 'POST /images/create')).toEqual([]);
   });
@@ -490,6 +491,89 @@ describe('a helper that is killed half way', () => {
     const f = fake();
     const ok = { ...started, state: 'ok' as const };
     expect(await settleResult(f.call, dir, ok, ME)).toBe(ok);
+  });
+});
+
+describe('the image is verified before it runs (attest.ts)', () => {
+  const DIGEST = 'sha256:' + '4'.repeat(64);
+  const build = (f: Fake, verify: ((p: { repo: string; repoDigests: string[] }) => Promise<Attestation>) | undefined, notes: string[]) => {
+    const seen: UpdateView[] = [];
+    const updater = createUpdater({
+      kind: 'docker',
+      cwd: dir,
+      current: '0.3.0',
+      rollout: { view: () => ({ enabled: true, current: '0.3.0', latest: '0.4.0', checkedAt: 1, newer: true, command: 'x' }), setUpdate: (u) => void seen.push(u) },
+      reload: () => false,
+      keepsAgents: false,
+      hook: null,
+      notify: (text) => void notes.push(text),
+      docker: { call: f.call, hostname: ME.slice(0, 12), home: dir, ready: true, busy: () => null, ...(verify === undefined ? {} : { verify }) },
+      fetch: (() => Promise.reject(new Error('no network'))) as typeof fetch,
+    });
+    return { updater, seen };
+  };
+  const until = async (seen: UpdateView[], state: UpdateView['state']): Promise<void> => {
+    for (let i = 0; i < 100 && seen.at(-1)?.state !== state; i += 1) await new Promise((r) => setTimeout(r, 5));
+  };
+
+  it('verifies the digests the pull gave, then starts the helper from the id of that very image', async () => {
+    const f = fake();
+    const asked: Array<{ repo: string; repoDigests: string[] }> = [];
+    const { updater, seen } = build(f, async (p) => (asked.push(p), { kind: 'verified', digest: DIGEST }), []);
+    await updater.start('0.4.0');
+    await until(seen, 'handed-off');
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ repo: 'ghcr.io/ulm0/gonogo', repoDigests: [DIGEST] });
+    expect(f.bodies.find((b) => b.route === '/containers/create')).toMatchObject({ Image: NEW_IMG });
+  });
+
+  it('a failed verification refuses with nothing created, tells the Downlink, and offers no confirm; an image with no attestation offers one', async () => {
+    for (const [verdict, offers] of [[{ kind: 'failed', why: 'verification failed: signer mismatch' }, false], [{ kind: 'unattested', why: 'sha256:44444444444 has no attestation' }, true]] as const) {
+      const f = fake();
+      const notes: string[] = [];
+      const { updater, seen } = build(f, async () => verdict, notes);
+      await updater.start('0.4.0');
+      await until(seen, 'failed');
+      expect(seen.at(-1)?.note).toMatch(/was not run:.*Nothing was changed/);
+      expect(seen.at(-1)?.verify).toBe(offers ? 'unattested' : undefined);
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toMatch(/^Update to 0\.4\.0 refused:/);
+      expect(f.log.some((l) => l.includes('containers/create'))).toBe(false);
+    }
+  });
+
+  it('the Director may confirm an unattested image, once, by hand; a failed one never; auto-update never confirms and tells the Downlink itself', async () => {
+    const f = fake();
+    const notes: string[] = [];
+    const { updater, seen } = build(f, async () => ({ kind: 'unattested', why: 'old image' }), notes);
+    await updater.start('0.4.0', { unverified: true });
+    await until(seen, 'handed-off');
+    expect(notes[0]).toMatch(/Updating to 0\.4\.0 with an image that has no attestation \(old image\), as you confirmed/);
+    const failed = fake();
+    const again = build(failed, async () => ({ kind: 'failed', why: 'no network' }), []);
+    await again.updater.start('0.4.0', { unverified: true });
+    await until(again.seen, 'failed');
+    expect(again.seen.at(-1)?.verify).toBeUndefined();
+    expect(failed.log.some((l) => l.includes('containers/create'))).toBe(false);
+    // auto: the same refusal, no confirm even if one is passed along, and no note of the updater's own
+    const auto = fake();
+    const autoNotes: string[] = [];
+    const autoRun = build(auto, async () => ({ kind: 'unattested', why: 'old image' }), autoNotes);
+    await autoRun.updater.start('0.4.0', { auto: true });
+    await until(autoRun.seen, 'failed');
+    expect(autoRun.seen.at(-1)?.note).toMatch(/has no attestation/);
+    expect(autoNotes).toEqual([]);
+    expect(auto.log.some((l) => l.includes('containers/create'))).toBe(false);
+  });
+
+  it('UNDO does not verify: the image was run before', async () => {
+    const f = fake();
+    let asked = 0;
+    const { updater, seen } = build(f, async () => (asked++, { kind: 'failed', why: 'x' }), []);
+    await writeResult(dir, { version: 1, at: 1, state: 'ok', from: '0.3.0', to: '0.4.0', previousImage: OLD_IMG, note: 'ok', tail: [] });
+    await updater.undo();
+    await until(seen, 'handed-off');
+    expect(asked).toBe(0);
   });
 });
 

@@ -257,6 +257,8 @@ export function createAutoUpdater(options: AutoUpdaterOptions): AutoUpdater {
       // the update it started failed before the helper took over (the pull was refused, the version label was wrong): this process is still the old one
       const pending = options.store.state().pending;
       const update = options.rollout.view().update;
+      // an attempt still on record with nothing running for it: how did it end? (a restart between the note and the helper leaves one)
+      if (pending !== null && update?.state !== 'failed' && !options.updating() && options.current !== pending.version && (await settleOnce())) return;
       if (pending !== null && update?.state === 'failed' && update.version === pending.version) {
         const reason = update.note.slice(0, 200);
         await options.store.trip(pending.version, reason);
@@ -327,12 +329,13 @@ export function createAutoUpdater(options: AutoUpdaterOptions): AutoUpdater {
       options.notify(`Auto-update to ${pending.version} ${mine.state === 'rolled-back' ? 'was rolled back' : 'failed'}: ${reason}. gonogo is running ${options.current} as before. ${pending.version} is not tried again and auto-update is off until you turn it on.`);
       return true;
     }
-    // no record of this update, or a helper still at work: this process is the old one waiting for it; with no record at all there is nothing to learn
-    if (mine === null) {
-      await options.store.settle();
-      return true;
-    }
-    return false;
+    // a helper still at work: this process is the old one waiting for it
+    if (mine !== null) return false;
+    // no record of this update at all: gonogo restarted between the note of the attempt and the helper (or the pull failed and was lost): the attempt
+    // never happened, so the version is open again, and the Director is told (no silent skip)
+    await options.store.undo(pending.version);
+    options.notify(`Auto-update to ${pending.version} was interrupted before it started (gonogo restarted, or nothing came of it). Nothing was changed; it will try again at the next quiet moment in a window.`);
+    return true;
   }
 
   /** Follows the record every few seconds for a quarter of an hour (the helper's health wait is minutes), then lets it be. */

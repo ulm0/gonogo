@@ -2,6 +2,21 @@
 import { describe, expect, it } from 'vitest';
 import { bodyMatters, stepUpReason } from '../src/server/stepup.js';
 
+describe('auto-update (it runs code of the publisher unattended)', () => {
+  const put = (body: Record<string, unknown> | null) => stepUpReason('PUT', '/api/autoupdate', body);
+  it('asks to turn it on or to move its windows, and when the body cannot be read; never to turn it off or to skip a version', () => {
+    expect(bodyMatters('PUT', '/api/autoupdate')).toBe(true);
+    expect(put({ enabled: true })).not.toBeNull();
+    expect(put({ windows: [{ from: '02:00', to: '05:00' }] })).not.toBeNull();
+    expect(put({ enabled: true, windows: [] })).not.toBeNull();
+    expect(put(null)).not.toBeNull();
+    expect(put({ enabled: false })).toBeNull();
+    expect(put({})).toBeNull();
+    expect(stepUpReason('POST', '/api/autoupdate/skip', { version: '0.6.3' })).toBeNull();
+    expect(stepUpReason('GET', '/api/autoupdate', null)).toBeNull();
+  });
+});
+
 describe('an edit of an agent', () => {
   const edit = (body: Record<string, unknown> | null) => stepUpReason('PATCH', '/api/agents/ana', body);
 

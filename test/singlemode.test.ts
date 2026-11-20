@@ -345,6 +345,14 @@ describe('PR 2: update under the supervisor', () => {
     expect(body.busy).toMatch(/room "Team B" is not idle \(an agent is working\)/);
   }, 40_000);
 
+  it('the idle question: a room that is still starting is busy; the plain busy question does not count it', async () => {
+    addRoom(home, 'team', 'Team B');
+    await supervise({ FAKE_ROOM_ASK: 'gonogo-ask idle', FAKE_ROOM_ASK_ONLY: 'main', FAKE_ROOM_DELAY_MS: '6000', FAKE_ROOM_DELAY_ONLY: 'team' });
+    await until(() => answerOf(home).includes('\n'), 15_000, 'the answer');
+    const body = JSON.parse(/\{.*\}/.exec(answerOf(home))?.[0] ?? '{}') as Record<string, unknown>;
+    expect(body).toEqual({ busy: 'room "Team B" is still starting', room: 'team' });
+  }, 40_000);
+
   it('no other question exists: another line gets no answer, and /internal/busy is a 404 for any Host', async () => {
     addRoom(home, 'team');
     const s = await supervise({ FAKE_ROOM_ASK: 'gonogo-ask room-token', FAKE_ROOM_ASK_ONLY: 'main' });

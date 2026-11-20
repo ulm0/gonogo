@@ -405,7 +405,14 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     let busy: string | null = null;
     let room: string | null = null;
     for (const other of children.values()) {
-      if (other === asker || other.port === null) continue;
+      if (other === asker) continue;
+      // a room that is still starting may be about to have agents working (auto-update asks; the click's plain question does not)
+      if (strict && other.state === 'starting') {
+        busy = `room "${other.entry.name}" is still starting`;
+        room = other.entry.id;
+        break;
+      }
+      if (other.port === null) continue;
       try {
         const body = (await askRoom(other, '/api/state', 2000)) as { poll?: { status?: string } | null; agents?: Array<{ name?: string; state?: string; queued?: number }> };
         if (body.poll?.status === 'open') {

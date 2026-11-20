@@ -171,7 +171,7 @@ export interface WebOptions {
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   /** Live reload (Flight Rules): asks this server to hand over to a new one. Returns what the page shows, or a reason it cannot. Absent: the route says so. */
   /** Update from the page (Flight Rules): installs the named newer version, then reloads. Throws UpdateError with a reason the page shows. */
-  update?: (version: unknown) => UpdateView | Promise<UpdateView>;
+  update?: (version: unknown, how?: { unverified?: boolean }) => UpdateView | Promise<UpdateView>;
   /** Docker self-update: put the previous image back. */
   undoUpdate?: () => Promise<UpdateView>;
   reload?: () => { ok: true; note: string } | { ok: false; reason: string };
@@ -896,7 +896,7 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!body) return;
           if (!options.update) return sendApiError(res, 409, 'update from the page is not available here', 'conflict');
           try {
-            sendJson(res, 202, await options.update(body.version));
+            sendJson(res, 202, await options.update(body.version, body.unverified === true ? { unverified: true } : {}));
           } catch (error) {
             if (error instanceof UpdateError) sendApiError(res, error.code === 'bad_request' ? 400 : 409, error.message, error.code, error.code === 'bad_request' ? 'version' : undefined);
             else throw error;
