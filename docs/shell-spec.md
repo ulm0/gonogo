@@ -51,3 +51,7 @@ feature.
 
 - No new settings, no per-user settings, no shortcut editor, no recent or pinned lines in the panel.
 - Not verified: Firefox and Safari (`<dialog>` focus return differs), a real screen reader, a phone's software keyboard over the panel.
+
+## Moved from the user page
+
+- Commissioning marks (put away, note read, livery opened) live in one `localStorage` key, `gonogo.commissioning`: a convenience like the selected console, with no server state and no migration. A private window or blocked site data shows the checklist on every visit; nothing else breaks.

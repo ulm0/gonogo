@@ -96,3 +96,12 @@ Tests: test/mission-cost.test.ts.
 - The estimate ignores batch discounts, long-context surcharges, and web-search or other per-call fees.
 - Prices go stale: each default row shows its `asOf`, and the panel says "prices as of" with the oldest one.
 - A name-keyed ledger (existing shortcut).
+
+## Moved from the user page
+
+- `~/.gonogo/reported.jsonl`: a first line `{created}`, then `{at, agent, session, total, base?}`, appended only when a session's total changed. Dollars are worked out on read, per session (a rename does not count a total again; each increase is credited to the agent the line names). A total below the one before, posted later, is a reset (the new total is the delta, never negative). `at` is the post time of the status-line script: a report older than the last kept for its session is dropped, so swapped posts are not read as a reset (a missing or far-off time counts as arriving now).
+- The first line of a session arriving within ten minutes of the file being made counts 0 (`base`): that session was already running, once, on the upgrade day. A session idle at that time that spends later counts its whole total on its first line day; an agent launched before the upgrade keeps the old status-line script (no time posted) until restart, so its reports are ordered by arrival. A gonogo restart counts nothing twice.
+- Pruning: lines older than 31 days go; a session with nothing in 31 days goes whole (one that returns counts its total again). Pruned every 200 lines while running. At most 5,000 sessions per agent and 20,000 in all; a new session beyond that is not recorded, the log says so once, and the reported figure undercounts until old sessions age out.
+- Reported figure seen in one short run (Claude Code 2.1.325, haiku, claude.ai subscription): JSON has `session_id` and `cost.total_cost_usd` from its first refresh; `/clear` made a new session id with total back at 0.
+- Ledger lines written before the cost feature have no model: they count as tokens and show unpriced.
+- Why reported is kept apart: a room total mixing the two would change whenever an agent began to report.

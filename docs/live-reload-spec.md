@@ -102,3 +102,11 @@ The whole `terminal.test.ts` suite against `RemoteTerminalHost` through a socket
 counting its output); a revoked token stays revoked after reload; a held agent stays held; an agent missing from the roster is stopped; a
 protocol-version mismatch falls back to B with a clear message; the socket refuses a wrong key; the old hub exits only after `ready`; host
 exits with no hub and no agent. Not tested: a real `claude` through a reload (state it in the page).
+
+## Moved from the user page
+
+- Updating gonogo used to end the process and every agent's terminal with it (Claude agents came back with `--resume`). The pty host exists so a reload does not touch them. It is opt-in for one release because it moves every agent's terminal through a socket.
+- How the new server reads each adopted agent: a saved hold or trip stays `needs_you`; a dialog on screen reads `needs_you`; otherwise the window title says idle or working (the input box is drawn during a turn too, so it says nothing).
+- Seen with the stand-in agent and a real host process (2026-11-18): `gonogo --pty-host`, one agent mid-turn (`@fake sleep 90000`), boss on hold. After `gonogo reload` the new server listened 0.4 s after the signal, host and agent pids were kept, log said `took over 2 running agents`, boss stayed `needs_you`, its mail stayed `held`, and the agent's Stop hook was accepted with the saved token. `kill -9` of the host: agents showed `stopped` after about 3 s; a restart of one started a new host (stale socket removed). SIGTERM of gonogo: agents stopped, host exited, socket removed, `run/` files `0600`.
+- Tests: `test/ptyhost.test.ts`, `test/hub.test.ts`, `test/launcher.test.ts`, e2e 38. The whole `terminal.test.ts` suite was not run against the remote host (`spawn` there is asynchronous, `spawnAsync`).
+- Not tried: reload inside Docker, Windows, reloading the host's own code.
