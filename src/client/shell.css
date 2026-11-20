@@ -1323,6 +1323,17 @@
 
 /* ---- phone: under 700 px ---- */
 
+/* the Rooms key on a phone: four squares, drawn in the colour of the text */
+.rooms-mark {
+  width: 16px;
+  height: 16px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 0 / 7px 7px no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 0 / 7px 7px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 100% / 7px 7px no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 100% / 7px 7px no-repeat;
+}
+
 .topbar-plus {
   flex: none; /* two of them in the bar: they must not shrink under the 44 px of a touch target */
   width: 44px;
@@ -1633,15 +1644,27 @@
     --bottom-bar: 68px;
   }
 
+  /* Wrap, never overflow: in a row that cannot fit (the link lamp spelling CONNECTING beside the logo, the version and three keys) a key goes to a second line instead of over its neighbour. */
   .topbar {
-    flex-wrap: nowrap;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 4px 6px;
     min-height: 52px;
-    padding: 4px 8px 4px 14px;
+    padding: 4px 8px 4px 10px;
   }
 
+  /* the logo at 18 px high is 105 px wide: logo, version, lamp and three 44 px keys are 340 px, which fits a 360 px phone on one line */
   .mark-name {
-    height: 22px;
+    height: 18px;
+  }
+
+  /* the lamp is its light when the link is up; its word shows when it is not (the light alone would be colour alone for those two states) */
+  .lamp[data-link='up'] .lamp-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* the bar must stay on one line: the version and the Rooms key take the room of the unit's name; a newer version replaces the running one */

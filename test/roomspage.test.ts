@@ -88,7 +88,7 @@ function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?
   const context = {
     document: Object.assign(doc, { getElementById: (id: string) => byId[id] ?? null, createElement: make }),
     localStorage: { getItem: (k: string) => saved[k] ?? null, setItem: (k: string, v: string) => (saved[k] = v) },
-    location: { hash: options.hash ?? '', pathname: '/', replace: (to: string) => void replaced.push(to) },
+    location: { hash: options.hash ?? '', pathname: '/', replace: (to: string) => void replaced.push(to), assign: (to: string) => void replaced.push(`assign:${to}`) },
     history: { replaceState() {} },
     URLSearchParams,
     fetch: async (_url: string, init: { headers?: Record<string, string> } = {}) => {
@@ -155,6 +155,20 @@ describe('the rooms list page script', () => {
     expect(text(byId.sum)).toContain('3 rooms');
     expect(text(byId.sum)).toContain('1 need you');
     expect(doc.title).toBe('(1) rooms · gonogo');
+  });
+
+  it('a tap anywhere on a running room\'s card opens it, a tap on one of its own keys does not, and a stopped room\'s card does nothing', async () => {
+    const { byId, replaced } = run({ token: 'a'.repeat(64), rooms: [room(), room({ id: 'ninah', name: 'ninah', state: 'running', agents: 2, running: 2 }), room({ id: 'old', name: 'Old', state: 'crashed', agents: null })] });
+    await settle();
+    const [main, ninah, old] = (byId.rooms?.children ?? []) as [Node, Node, Node];
+    expect(ninah.className).toContain('rl-open');
+    expect(old.className).not.toContain('rl-open');
+    ninah.fire('click', { target: { closest: () => null } });
+    expect(replaced).toEqual(['assign:/r/ninah/']);
+    // the target is inside a key, a link or a field (RENAME, OPEN itself, the name box): the key does its own work
+    main.fire('click', { target: { closest: () => ({}) } });
+    old.fire('click', { target: { closest: () => null } });
+    expect(replaced).toEqual(['assign:/r/ninah/']);
   });
 
   it('with only main, the empty state offers a new room', async () => {

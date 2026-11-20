@@ -25,6 +25,7 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .rl-head h2{margin:0 8px 0 0}
 .rl-cards{list-style:none;margin:0;padding:0;display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))}
 .rl-card{gap:10px;padding:12px;cursor:default}
+.rl-card.rl-open{cursor:pointer}
 .rl-card .tile-head{min-height:28px}
 .rl-name{flex:1 1 auto;min-width:0;margin:0;overflow-wrap:anywhere}
 .rl-card .tile-state{margin-left:auto;white-space:nowrap}
@@ -150,7 +151,9 @@ function card(r){
   const foot=el('div','tile-foot');foot.append(el('span','','r/'+r.id));if(r.tabName)foot.append(el('span','','tab: '+r.tabName));
   li.append(foot);
   const keys=el('div','rl-keys');
-  if(up){const a=el('a','btn','OPEN');a.dataset.kind='primary';a.dataset.f='open:'+r.id;a.href='/r/'+encodeURIComponent(r.id)+'/';a.setAttribute('aria-label','Open '+name);keys.append(a)}
+  if(up){const a=el('a','btn','OPEN');a.dataset.kind='primary';a.dataset.f='open:'+r.id;a.href='/r/'+encodeURIComponent(r.id)+'/';a.setAttribute('aria-label','Open '+name);keys.append(a);
+    // a tap anywhere on a running room's card opens it (the OPEN key stays the one for a keyboard and a screen reader)
+    li.className+=' rl-open';li.addEventListener('click',e=>{if(!e.target.closest('a,button,input'))location.assign(a.href)})}
   else{const b=key('OPEN','primary',()=>{},'open:'+r.id,'Open '+name);b.disabled=true;keys.append(b)}
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);
