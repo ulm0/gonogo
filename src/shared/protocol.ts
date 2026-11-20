@@ -1319,8 +1319,8 @@ export interface UpdateView {
   rollback: string | null;
   /** Docker self-update: the last update went well and the old image is still there, so UNDO can put it back. */
   undo?: boolean;
-  /** Docker self-update: the pulled image has no attestation (an older image, or not the official one): the Director may update anyway, by hand. */
-  verify?: 'unattested';
+  /** Docker self-update: the pulled image has no attestation (an older image, or not the official one: `unattested`) or gonogo could not check it (no GitHub login: `unchecked`): the Director may update anyway, by hand, knowing which. */
+  verify?: 'unattested' | 'unchecked';
 }
 
 /** Rollout (docs/rollout-spec.md): the newest @ulm0/gonogo the daily check saw. */

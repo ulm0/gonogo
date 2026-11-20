@@ -509,7 +509,7 @@ describe('a helper that is killed half way', () => {
 
 describe('the image is verified before it runs (attest.ts)', () => {
   const DIGEST = 'sha256:' + '4'.repeat(64);
-  const build = (f: Fake, verify: ((p: { repo: string; repoDigests: string[] }) => Promise<Attestation>) | undefined, notes: string[]) => {
+  const build = (f: Fake, verify: ((p: { repo: string; repoDigests: string[] }, version: string) => Promise<Attestation>) | undefined, notes: string[]) => {
     const seen: UpdateView[] = [];
     const updater = createUpdater({
       kind: 'docker',
@@ -553,6 +553,35 @@ describe('the image is verified before it runs (attest.ts)', () => {
       expect(notes[0]).toMatch(/^Update to 0\.4\.0 refused:/);
       expect(f.log.some((l) => l.includes('containers/create'))).toBe(false);
     }
+  });
+
+  it('"could not check" (no login) is kept apart from "no attestation": its own words, its own offer, confirmable by hand, never by auto', async () => {
+    const f = fake();
+    const notes: string[] = [];
+    const { updater, seen } = build(f, async () => ({ kind: 'unchecked', why: 'gh has no GitHub login in this container' }), notes);
+    await updater.start('0.4.0');
+    await until(seen, 'failed');
+    expect(seen.at(-1)?.verify).toBe('unchecked');
+    expect(seen.at(-1)?.note).toMatch(/gonogo could not check its image \(gh has no GitHub login in this container\)\. Nothing was changed\. Log in as said/);
+    expect(seen.at(-1)?.note).not.toMatch(/no attestation/);
+    expect(notes[0]).toMatch(/refused: .*could not check/);
+    await updater.start('0.4.0', { unverified: true });
+    await until(seen, 'handed-off');
+    expect(notes.at(-1)).toMatch(/with an image gonogo could not check \(gh has no GitHub login in this container\), as you confirmed/);
+    const auto = fake();
+    const run = build(auto, async () => ({ kind: 'unchecked', why: 'no login' }), []);
+    await run.updater.start('0.4.0', { auto: true });
+    await until(run.seen, 'failed');
+    expect(auto.log.some((l) => l.includes('containers/create'))).toBe(false);
+  });
+
+  it('the version being installed is handed to the verifier', async () => {
+    const f = fake();
+    const versions: string[] = [];
+    const { updater, seen } = build(f, async (_p, version) => (versions.push(version), { kind: 'verified', digest: '' }), []);
+    await updater.start('0.4.0');
+    await until(seen, 'handed-off');
+    expect(versions).toEqual(['0.4.0']);
   });
 
   it('the Director may confirm an unattested image, once, by hand; a failed one never; auto-update never confirms and tells the Downlink itself', async () => {
@@ -599,7 +628,7 @@ describe('the image is verified before it runs (attest.ts)', () => {
     const { updater, seen } = build(f, undefined, []);
     await updater.start('0.4.0');
     await until(seen, 'failed');
-    expect(seen.at(-1)?.note).toMatch(/could not be verified \(no verifier is configured\)/);
+    expect(seen.at(-1)?.note).toMatch(/failed verification \(no verifier is configured\)/);
     expect(f.log.some((l) => l.includes('containers/create'))).toBe(false);
   });
 

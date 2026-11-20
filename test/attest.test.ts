@@ -1,6 +1,6 @@
 // Image provenance (attest.ts): what is asked of gh, what is answered for each of its outcomes, and what gh is never given. gh is a stand-in.
 import { describe, expect, it } from 'vitest';
-import { ghEnv, OFFICIAL_IMAGE, SIGNER_WORKFLOW, SOURCE_REPO, verifyImage } from '../src/server/attest.js';
+import { FIRST_ATTESTED, ghEnv, OFFICIAL_IMAGE, SIGNER_WORKFLOW, SOURCE_REPO, verifyImage } from '../src/server/attest.js';
 import type { Run } from '../src/server/attest.js';
 
 const D1 = 'sha256:' + '1'.repeat(64);
@@ -74,6 +74,28 @@ describe('verifyImage', () => {
     expect(why).not.toMatch(/[\u0000-\u001f]/);
   });
 
+  it('the tag of the release is demanded of the attestation (--source-ref), so a run of the workflow from a branch makes no image that verifies', async () => {
+    const seen: string[][] = [];
+    const run: Run = async (_f, args) => (seen.push(args), { code: 0, out: '' });
+    await verifyImage(OFFICIAL_IMAGE, [D1], { run, version: '0.8.1' });
+    expect(seen[0]?.slice(-2)).toEqual(['--source-ref', 'refs/tags/v0.8.1']);
+    seen.length = 0;
+    // no version, or one that is not x.y.z, adds nothing (and nothing of it reaches a command line)
+    for (const version of [undefined, '0.8.1; rm -rf /', 'latest', '--repo']) await verifyImage(OFFICIAL_IMAGE, [D1], { run, ...(version === undefined ? {} : { version }) });
+    for (const args of seen) expect(args).not.toContain('--source-ref');
+  });
+
+  it('from the first attested release on, no attestation is a failure with no override; for an older one, or an image that is not the official one, it is only unattested', async () => {
+    const notFound: Run = async () => ({ code: 1, out: 'Error: HTTP 404: Not Found' });
+    for (const version of [FIRST_ATTESTED, '0.8.1', '0.9.0', '1.0.0', '10.0.0']) expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run: notFound, version })).kind, version).toBe('failed');
+    for (const version of ['0.7.9', '0.7.0', '0.1.0']) expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run: notFound, version })).kind, version).toBe('unattested');
+    // a mirror or your own build: nothing was owed
+    expect((await verifyImage('localhost:5000/gonogo', [D1], { run: notFound, version: '0.9.0' })).kind).toBe('unattested');
+    // and a verified one is verified whatever its version
+    expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run: async () => ({ code: 0, out: '' }), version: '0.9.0' })).kind).toBe('verified');
+    expect(FIRST_ATTESTED).toBe('0.8.0');
+  });
+
   it('ghEnv passes only what gh needs', () => {
     expect(ghEnv({ PATH: 'p', LANG: 'C', GH_TOKEN: 't', HOME: '/h', SSL_CERT_FILE: '/c', CLAUDE_CODE_OAUTH_TOKEN: 'o', GONOGO_TOKEN: 'g' })).toEqual({ GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1', PATH: 'p', LANG: 'C', GH_TOKEN: 't', HOME: '/h', SSL_CERT_FILE: '/c' });
   });
@@ -85,9 +107,9 @@ describe('verifyImage', () => {
     expect(ghEnv({ PATH: 'p', GH_CONFIG_DIR: '/shared/gh' }, '/state/gh').GH_CONFIG_DIR).toBe('/shared/gh');
   });
 
-  it('gh with no login (it refuses before it asks GitHub) is not a bad image: unattested, with what to do; a rejected token is a failure', async () => {
+  it('gh with no login (it refuses before it asks GitHub) is not a bad image: unchecked (apart from "no attestation"), with what to do; a rejected token is a failure', async () => {
     const none: Run = async () => ({ code: 4, out: 'To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.' });
-    expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: none })).toMatchObject({ kind: 'unattested', why: expect.stringMatching(/gh auth login.*GH_TOKEN/) as string });
+    expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: none })).toMatchObject({ kind: 'unchecked', why: expect.stringMatching(/gh auth login.*GH_TOKEN/) as string });
     const rejected: Run = async () => ({ code: 1, out: 'Error: HTTP 401: Bad credentials' });
     expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run: rejected })).kind).toBe('failed');
   });

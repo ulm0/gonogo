@@ -21,7 +21,23 @@ export const SIGNER_WORKFLOW = 'ulm0/gonogo/.github/workflows/image.yml';
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const VERIFY_MS = 120_000;
 
-export type Attestation = { kind: 'verified'; digest: string } | { kind: 'unattested'; why: string } | { kind: 'failed'; why: string };
+/** The release from which every image of ghcr.io/ulm0/gonogo is attested: for it and later ones "no attestation" is a failure, never a thing to confirm. */
+export const FIRST_ATTESTED = '0.8.0';
+
+export type Attestation =
+  | { kind: 'verified'; digest: string }
+  /** No attestation to find, and none was owed: an image of before FIRST_ATTESTED, or one that is not ghcr.io/ulm0/gonogo (your own build, a mirror). */
+  | { kind: 'unattested'; why: string }
+  /** Gonogo cannot check (no GitHub login for gh): nothing is known about the image either way. */
+  | { kind: 'unchecked'; why: string }
+  | { kind: 'failed'; why: string };
+
+/** a >= b for two x.y.z strings. */
+const atLeast = (a: string, b: string): boolean => {
+  const [x, y] = [a, b].map((v) => v.split('.').map(Number));
+  for (let i = 0; i < 3; i += 1) if ((x?.[i] ?? 0) !== (y?.[i] ?? 0)) return (x?.[i] ?? 0) > (y?.[i] ?? 0);
+  return true;
+};
 
 export interface RunResult {
   code: number | null;
@@ -62,22 +78,29 @@ export function ghEnv(from: NodeJS.ProcessEnv, configDir?: string): Record<strin
 }
 
 /** `digests` are the registry digests the pulled image carries for `repo` (RepoDigests). One that verifies is enough. */
-export async function verifyImage(repo: string, digests: readonly string[], options: { run?: Run; env?: NodeJS.ProcessEnv; configDir?: string } = {}): Promise<Attestation> {
+export async function verifyImage(repo: string, digests: readonly string[], options: { run?: Run; env?: NodeJS.ProcessEnv; configDir?: string; /** The version being installed (x.y.z): its release tag is demanded of the attestation, and from FIRST_ATTESTED on a missing attestation is a failure. */ version?: string } = {}): Promise<Attestation> {
   if (repo !== OFFICIAL_IMAGE) return { kind: 'unattested', why: `only ${OFFICIAL_IMAGE} can be checked; this container runs ${repo}` };
   const valid = digests.filter((d) => DIGEST.test(d));
   if (valid.length === 0) return { kind: 'failed', why: 'the pulled image has no registry digest to check' };
   const run = options.run ?? defaultRun;
   const env = ghEnv(options.env ?? process.env, options.configDir);
+  const version = options.version !== undefined && /^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(options.version) ? options.version : null;
+  const owed = version !== null && atLeast(version, FIRST_ATTESTED);
+  // the build must come from the tag of THIS release: a run of the workflow from a branch (workflow_dispatch) makes no image that verifies
+  const ref = version === null ? [] : ['--source-ref', `refs/tags/v${version}`];
   let unattested: string | null = null;
   let failed: string | null = null;
   for (const digest of valid) {
-    const result = await run('gh', ['attestation', 'verify', `oci://${OFFICIAL_IMAGE}@${digest}`, '--repo', SOURCE_REPO, '--signer-workflow', SIGNER_WORKFLOW], env);
+    const result = await run('gh', ['attestation', 'verify', `oci://${OFFICIAL_IMAGE}@${digest}`, '--repo', SOURCE_REPO, '--signer-workflow', SIGNER_WORKFLOW, ...ref], env);
     if (result.code === 0) return { kind: 'verified', digest };
     if (result.missing === true) return { kind: 'failed', why: 'gh is not installed in this image, so the image cannot be checked' };
     // no login at all: not a bad image, a gonogo that cannot check (gh itself says so before it asks GitHub anything)
-    if (/gh auth login|GH_TOKEN environment variable/i.test(result.out)) return { kind: 'unattested', why: 'gh has no GitHub login in this container, so attestations cannot be fetched: log in from a console of room main (`gh auth login`; the login stays in that room folder) or set GH_TOKEN in the container (a token with no permissions is enough)' };
+    if (/gh auth login|GH_TOKEN environment variable/i.test(result.out)) return { kind: 'unchecked', why: 'gh has no GitHub login in this container, so attestations cannot be fetched: log in from a console of room main (`gh auth login`; the login stays in that room folder) or set GH_TOKEN in the container (a token with no permissions is enough)' };
     // gh answers HTTP 404 for a digest that has no attestation at all (an image from before they were made): the one case a Director may confirm
-    if (/HTTP 404|no attestations? found/i.test(result.out) && !/verification failed/i.test(result.out)) unattested = `${digest.slice(0, 19)} has no attestation: it was published before they were made`;
+    if (/HTTP 404|no attestations? found/i.test(result.out) && !/verification failed/i.test(result.out)) {
+      if (owed) failed = `${digest.slice(0, 19)} has no attestation, and every image since ${FIRST_ATTESTED} has one`;
+      else unattested = `${digest.slice(0, 19)} has no attestation: it was published before they were made`;
+    }
     else failed = oneLine(result.out) === '' ? `gh attestation verify exited ${result.code ?? 'with no code'}` : oneLine(result.out);
   }
   if (failed !== null) return { kind: 'failed', why: failed };

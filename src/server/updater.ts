@@ -56,7 +56,7 @@ export interface UpdaterOptions {
   /** How long a handed-off update may wait for the helper before the page says it did not answer. Default 5 minutes. */
   handoffMs?: number;
   /** Docker self-update (docs/self-update-spec.md): the socket, the container's own hostname (its id) and gonogo's home; absent without the socket. */
-  docker?: { call: DockerCall; hostname: string; home: string; ready: boolean; busy(): string | null | Promise<string | null>; verify?(prepared: Pick<Prepared, 'repo' | 'repoDigests'>): Promise<Attestation> };
+  docker?: { call: DockerCall; hostname: string; home: string; ready: boolean; busy(): string | null | Promise<string | null>; verify?(prepared: Pick<Prepared, 'repo' | 'repoDigests'>, version: string): Promise<Attestation> };
   /** A line for the Downlink (a refused image); absent in tests. */
   notify?(text: string): void;
   fetch: typeof fetch;
@@ -160,17 +160,21 @@ export function createUpdater(options: UpdaterOptions): Updater {
         const prepared = await pullAndCheck(docker.call, docker.hostname, version);
         // the image is run only when GitHub's attestation says this repository's workflow built it (attest.ts); the copy is made from the id of THIS pulled image
         // no verifier wired is a refusal, never a pass
-        const verdict: Attestation = docker.verify === undefined ? { kind: 'failed', why: 'no verifier is configured' } : await docker.verify(prepared);
-        if (verdict.kind === 'failed' || (verdict.kind === 'unattested' && how.unverified !== true)) {
-          const note = `${version} was not run: ${verdict.kind === 'failed' ? `its image could not be verified (${verdict.why})` : `its image has no attestation (${verdict.why})`}. Nothing was changed.${verdict.kind === 'unattested' ? ' Update anyway only if you built or trust this image.' : ''}`;
+        const verdict: Attestation = docker.verify === undefined ? { kind: 'failed', why: 'no verifier is configured' } : await docker.verify(prepared, version);
+        const confirmable = verdict.kind === 'unattested' || verdict.kind === 'unchecked';
+        if (verdict.kind === 'failed' || (confirmable && how.unverified !== true)) {
+          // three different things, and the words keep them apart: it failed; it has no attestation; gonogo could not look
+          const what = verdict.kind === 'failed' ? `its image failed verification (${verdict.why})` : verdict.kind === 'unchecked' ? `gonogo could not check its image (${verdict.why})` : `its image has no attestation (${verdict.why})`;
+          const note = `${version} was not run: ${what}. Nothing was changed.${verdict.kind === 'unattested' ? ' Update anyway only if you built or trust this image.' : verdict.kind === 'unchecked' ? ' Log in as said, or update anyway if you trust this image.' : ''}`;
           log.warn(`the Docker update to ${version} was refused: ${note}`);
           if (how.auto !== true) options.notify?.(`Update to ${version} refused: ${note}`);
-          set({ state: 'failed', version, note, tail: [], rollback: null, ...(verdict.kind === 'unattested' ? { verify: 'unattested' as const } : {}) });
+          set({ state: 'failed', version, note, tail: [], rollback: null, ...(confirmable ? { verify: verdict.kind } : {}) });
           return;
         }
-        if (verdict.kind === 'unattested') {
-          log.warn(`updating to ${version} with an image that has no attestation, as the Director confirmed`);
-          options.notify?.(`Updating to ${version} with an image that has no attestation (${verdict.why}), as you confirmed.`);
+        if (confirmable) {
+          const what = verdict.kind === 'unchecked' ? 'an image gonogo could not check' : 'an image that has no attestation';
+          log.warn(`updating to ${version} with ${what}, as the Director confirmed`);
+          options.notify?.(`Updating to ${version} with ${what} (${verdict.why}), as you confirmed.`);
         }
         target = prepared.image;
         inspect = prepared.inspect;
