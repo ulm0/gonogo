@@ -25,6 +25,7 @@ import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
+import { CheckNow } from './CheckNow.js';
 import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
 import { agentCounts, updateDialogText } from './selfupdate.js';
 import { BASE, MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
@@ -496,6 +497,7 @@ function RolloutStrip(): ReactElement | null {
       >
         Dismiss
       </button>
+      <CheckNow />
       {rollout.installNote !== undefined && rollout.installNote !== '' && <span className="hint rollout-note">{rollout.installNote}</span>}
       {error !== null && (
         <span className="error" role="alert">

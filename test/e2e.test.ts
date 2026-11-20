@@ -2476,8 +2476,15 @@ describe('end to end with the stand-in agent', () => {
     expect((await getState(on)).rollout).toMatchObject({ install: expect.stringMatching(/^(docker|clone)$/), canUpdate: false });
     expect(await api(on, 'POST', '/api/update', { version: '99.1.0' })).toMatchObject({ status: 409, body: { code: 'conflict', error: expect.stringMatching(/cannot (be updated from the page|replace its own image)/) } });
     expect(await api(on, 'POST', '/api/update', { version: 'latest' })).toMatchObject({ status: 400, body: { code: 'bad_request', field: 'version' } });
-    expect(await api(on, 'POST', '/api/update', { version: '99.1.1' })).toMatchObject({ status: 409 });
+    // a version the cache does not know asks the registry once (CHECK NOW's rate limit), finds 99.1.0 again, and is the 409 it was
+    expect(await api(on, 'POST', '/api/update', { version: '99.1.1' })).toMatchObject({ status: 409, body: { error: expect.stringMatching(/99\.1\.1 is not the newer version the check found \(99\.1\.0\)/) } });
+    expect(calls).toHaveLength(2);
     expect(await api(on, 'GET', '/api/update')).toMatchObject({ status: 405 });
+    // CHECK NOW: POST only; inside the minute it answers the cache with the seconds to wait and asks nothing
+    expect(await api(on, 'GET', '/api/rollout/check')).toMatchObject({ status: 405 });
+    const now = await api<{ rollout: { latest: string }; waitS?: number }>(on, 'POST', '/api/rollout/check');
+    expect(now).toMatchObject({ status: 200, body: { rollout: { latest: '99.1.0' }, waitS: expect.any(Number) } });
+    expect(calls).toHaveLength(2);
     // the page is told when a client is connected while the check ends: the frame carries the view
     const c = await Client.open(on);
     const state = c.frames.find((f) => f.t === 'state');
@@ -2486,7 +2493,8 @@ describe('end to end with the stand-in agent', () => {
     const off = await startServer({ relayFetch: fake, updateCheck: false });
     await waitState(off, 'flight', 'idle');
     await sleep(300);
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+    expect(await api(off, 'POST', '/api/rollout/check')).toMatchObject({ status: 409, body: { code: 'conflict' } });
     expect((await getState(off)).rollout).toMatchObject({ enabled: false, latest: null, newer: false });
     expect(existsSync(join(off.home, 'rollout.json'))).toBe(false);
   }, 60_000);

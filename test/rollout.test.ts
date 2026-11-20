@@ -330,3 +330,32 @@ describe('when a version was first seen (auto-update takes one only after a day)
     expect(ok.rollout.seenAt()).toBe(ok.now());
   });
 });
+
+describe('CHECK NOW', () => {
+  it('asks the registry now, at most once in a minute: inside that minute it answers the cache with the seconds to wait, after it asks again', async () => {
+    const { rollout, calls, next, advance } = setup();
+    next.push(() => answer('0.1.2'), () => answer('0.2.0'));
+    const first = await rollout.checkNow();
+    expect(first).toMatchObject({ waitS: null, view: { latest: '0.1.2', newer: true } });
+    advance(20_000);
+    const second = await rollout.checkNow();
+    expect(second.waitS).toBe(40);
+    expect(second.view.latest).toBe('0.1.2'); // the cache, not a second ask
+    expect(calls).toHaveLength(1);
+    advance(40_000);
+    expect(await rollout.checkNow()).toMatchObject({ waitS: null, view: { latest: '0.2.0' } });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('is not locked by a clock that went back, and asks nothing while the check is off', async () => {
+    const { rollout, calls, next, advance } = setup();
+    next.push(() => answer('0.1.2'), () => answer('0.2.0'));
+    await rollout.checkNow();
+    advance(-3_600_000);
+    expect((await rollout.checkNow()).waitS).toBeNull();
+    expect(calls).toHaveLength(2);
+    const off = setup({ enabled: false });
+    expect(await off.rollout.checkNow()).toMatchObject({ waitS: null, view: { enabled: false } });
+    expect(off.calls).toHaveLength(0);
+  });
+});

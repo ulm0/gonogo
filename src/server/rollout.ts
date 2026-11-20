@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { InstallKind, Logger, RolloutView, UpdateView } from '../shared/protocol.js';
-import { FILE_MODE, nullLogger, ROLLOUT_EVERY_MS, ROLLOUT_FILE, ROLLOUT_MAX_BYTES, ROLLOUT_OFF_WORDS, ROLLOUT_TIMEOUT_MS, ROLLOUT_URL } from './constants.js';
+import { FILE_MODE, nullLogger, ROLLOUT_EVERY_MS, ROLLOUT_FILE, ROLLOUT_MAX_BYTES, ROLLOUT_NOW_EVERY_MS, ROLLOUT_OFF_WORDS, ROLLOUT_TIMEOUT_MS, ROLLOUT_URL } from './constants.js';
 
 const STABLE = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
 const CHECK_TICK_MS = 60 * 60 * 1000;
@@ -171,6 +171,8 @@ export interface Rollout {
   start(): void;
   /** Asks now, whatever the cache says (one ask at a time); resolves with the view. While off it asks nothing. */
   check(): Promise<RolloutView>;
+  /** CHECK NOW: asks now, but at most once in ROLLOUT_NOW_EVERY_MS; inside that time it answers the cache with `waitS`, the seconds until it may ask again. While off it asks nothing. */
+  checkNow(): Promise<{ view: RolloutView; waitS: number | null }>;
   close(): Promise<void>;
 }
 
@@ -183,6 +185,7 @@ export function createRollout(options: RolloutOptions): Rollout {
   let timer: NodeJS.Timeout | undefined;
   let closed = false;
   let running: Promise<RolloutView> | null = null;
+  let askedNowAt: number | null = null;
   let update: UpdateView | undefined = options.update;
 
   const view = (): RolloutView => ({
@@ -232,6 +235,14 @@ export function createRollout(options: RolloutOptions): Rollout {
   }
 
   const check = (): Promise<RolloutView> => (options.enabled ? (running ??= ask().finally(() => (running = null))) : Promise.resolve(view()));
+  async function checkNow(): Promise<{ view: RolloutView; waitS: number | null }> {
+    if (!options.enabled) return { view: view(), waitS: null };
+    const t = options.now();
+    // a clock that went back counts as long ago: the limit must never lock the key for good
+    if (askedNowAt !== null && t >= askedNowAt && t - askedNowAt < ROLLOUT_NOW_EVERY_MS) return { view: view(), waitS: Math.ceil((ROLLOUT_NOW_EVERY_MS - (t - askedNowAt)) / 1000) };
+    askedNowAt = t;
+    return { view: await check(), waitS: null };
+  }
   const due = (): boolean => checkedAt === null || options.now() - checkedAt >= ROLLOUT_EVERY_MS || checkedAt > options.now();
 
   return {
@@ -250,6 +261,7 @@ export function createRollout(options: RolloutOptions): Rollout {
     view,
     seenAt: () => seen,
     check,
+    checkNow,
     setUpdate(next) {
       update = next;
       if (!closed) options.emit(view());

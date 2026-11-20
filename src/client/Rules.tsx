@@ -17,6 +17,7 @@ import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AccountBlock } from './AccountBlock.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
 import { AutoUpdateBlock } from './AutoUpdateRules.js';
+import { VersionCheckBlock } from './CheckNow.js';
 import { PushBlock } from './PushBlock.js';
 import { disableNotifications, enableNotifications, useNotifyStatus } from './notify-browser.js';
 import { STATUS_TEXT } from './notify.js';
@@ -201,6 +202,7 @@ export function FlightRules(): ReactElement {
       <PayloadDefaultsBlock />
       <RoomKeysBlock />
       <StartupBlock />
+      <VersionCheckBlock />
       <AutoUpdateBlock />
       <SubagentsBlock />
       <CoauthorBlock />

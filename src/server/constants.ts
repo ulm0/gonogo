@@ -477,6 +477,8 @@ export const ENGINE_VERSION_CHARS = 80;
 export const ROLLOUT_FILE = 'rollout.json';
 export const ROLLOUT_URL = 'https://registry.npmjs.org/@ulm0%2Fgonogo/latest';
 export const ROLLOUT_EVERY_MS = 24 * 60 * 60 * 1000;
+/** CHECK NOW (and the check an update makes when it is asked for a version the cache does not know): at most one ask of the registry in this time. */
+export const ROLLOUT_NOW_EVERY_MS = 60_000;
 export const ROLLOUT_TIMEOUT_MS = 5_000;
 export const ROLLOUT_MAX_BYTES = 256 * 1024;
 /** Rollout is off for a value in this list (GONOGO_UPDATE_CHECK). */

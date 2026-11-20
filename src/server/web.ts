@@ -211,7 +211,7 @@ export interface WebOptions {
   /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
   coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
-  rollout?: Pick<Rollout, 'view'>;
+  rollout?: Pick<Rollout, 'view'> & Partial<Pick<Rollout, 'checkNow'>>;
   /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
   engines?: () => Promise<EngineCheck[]>;
   log: Logger;
@@ -876,6 +876,18 @@ export function createWebServer(options: WebOptions): WebServer {
           // the proxy says (and only over the local socket, which only the supervisor reaches) that a signed-in browser made this request
           else if (viaSocket.has(req) && req.headers['x-gonogo-director'] === 'web') sendJson(res, 201, hub.sendFromDirector(parsed.value, 'web'));
           else sendJson(res, 201, hub.sendFromUser(parsed.value));
+        },
+      };
+    }
+    // CHECK NOW: the version check, now instead of in a day (room main: the other rooms run no check and answer that it is off)
+    if (s.length === 3 && s[1] === 'rollout' && s[2] === 'check') {
+      return {
+        allow: ['POST'],
+        run: async (_req, res) => {
+          const rollout = options.rollout;
+          if (rollout?.checkNow === undefined || !rollout.view().enabled) return sendApiError(res, 409, 'the update check is off here (GONOGO_UPDATE_CHECK, or this is not room main)', 'conflict');
+          const { view, waitS } = await rollout.checkNow();
+          sendJson(res, 200, waitS === null ? { rollout: view } : { rollout: view, waitS });
         },
       };
     }

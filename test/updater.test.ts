@@ -44,7 +44,7 @@ describe('which install is this', () => {
   });
 });
 
-function setup(over: { kind?: Parameters<typeof createUpdater>[0]['kind']; view?: Partial<RolloutView>; run?: (file: string, args: string[]) => Promise<RunResult>; reload?: () => boolean; keepsAgents?: boolean; hook?: { url: string; token: string | null } | null; fetch?: typeof fetch } = {}) {
+function setup(over: { checkNow?: (view: RolloutView) => { view: RolloutView; waitS: number | null }; kind?: Parameters<typeof createUpdater>[0]['kind']; view?: Partial<RolloutView>; run?: (file: string, args: string[]) => Promise<RunResult>; reload?: () => boolean; keepsAgents?: boolean; hook?: { url: string; token: string | null } | null; fetch?: typeof fetch } = {}) {
   const view: RolloutView = { enabled: true, current: '0.2.0', latest: '0.3.0', checkedAt: 1, newer: true, command: 'npm install -g @ulm0/gonogo@latest', ...over.view };
   const seen: UpdateView[] = [];
   const calls: Array<{ file: string; args: string[] }> = [];
@@ -52,7 +52,7 @@ function setup(over: { kind?: Parameters<typeof createUpdater>[0]['kind']; view?
     kind: over.kind ?? 'npm',
     cwd: '/tmp',
     current: '0.2.0',
-    rollout: { view: () => view, setUpdate: (u) => void seen.push(u) },
+    rollout: { view: () => view, setUpdate: (u) => void seen.push(u), ...(over.checkNow === undefined ? {} : { checkNow: async () => over.checkNow?.(view) as { view: RolloutView; waitS: number | null } }) },
     run:
       over.run ??
       (async (file, args) => {
@@ -80,6 +80,38 @@ describe('update from the page', () => {
     expect(t.calls).toEqual([{ file: 'npm', args: ['install', '-g', '@ulm0/gonogo@0.3.0'] }]);
     expect(done).toMatchObject({ state: 'reloading', rollback: 'npm install -g @ulm0/gonogo@0.2.0' });
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('a version newer than the cache knows asks the registry once, then decides on what it found (not a flat 409)', async () => {
+    const asked: string[] = [];
+    // the cache says 0.3.0; 0.3.2 is out
+    const t = setup({
+      checkNow: (view) => {
+        asked.push('check');
+        Object.assign(view, { latest: '0.3.2', newer: true });
+        return { view: { ...view }, waitS: null };
+      },
+    });
+    const started = await t.updater.start('0.3.2');
+    expect(asked).toEqual(['check']);
+    expect(started).toMatchObject({ state: 'running', version: '0.3.2' });
+    expect((await t.settled()).state).not.toBe('failed');
+    expect(t.calls[0]?.args).toContain('@ulm0/gonogo@0.3.2');
+  });
+
+  it('after the ask a version that is still not the newer one is the 409 it was; inside the minute it says when to try again; the ask is not made for a version that is not newer than what runs, nor for the one the cache has', async () => {
+    let waitS: number | null = null;
+    const asked: number[] = [];
+    const t = setup({ checkNow: (view) => (asked.push(1), { view: { ...view }, waitS }) });
+    await expect(Promise.resolve().then(() => t.updater.start('0.3.9'))).rejects.toThrow(/0\.3\.9 is not the newer version the check found \(0\.3\.0\)$/);
+    waitS = 42;
+    await expect(Promise.resolve().then(() => t.updater.start('0.3.9'))).rejects.toThrow(/asked a moment ago, try again in 42 s/);
+    expect(asked).toHaveLength(2);
+    // not newer than the running 0.2.0: no ask, the plain refusal
+    expect(() => t.updater.start('0.1.0')).toThrow(/not the newer version/);
+    // the one the cache has: no ask
+    expect(t.updater.start('0.3.0')).toMatchObject({ state: 'running' });
+    expect(asked).toHaveLength(2);
   });
 
   it('does not reload without a pty host: it stops after the install and says what a reload would do', async () => {
