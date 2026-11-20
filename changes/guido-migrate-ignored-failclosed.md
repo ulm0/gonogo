@@ -1,1 +1,0 @@
-- **Moving main: a worktree whose ignored files cannot be listed is refused**, not removed (fail closed, like the check for uncommitted changes).
