@@ -44,6 +44,7 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .rl-fields{display:flex;flex-wrap:wrap;gap:10px}
 .rl-fields label{display:grid;gap:4px;flex:1 1 12em;min-width:0}
 .rl-confirm{display:grid;gap:8px;padding:10px 12px}
+.rl-move{margin:0 0 12px}.rl-move:empty{display:none}
 .rl-confirm p{margin:0}
 .rl-error{padding:10px 12px;margin:0}
 @media (max-width:699px){.rl-main{padding:10px 12px 40px}.rl-keys .btn[data-kind=primary]{flex-basis:100%}}
@@ -159,7 +160,6 @@ function card(r){
   else{const b=key('OPEN','primary',()=>{},'open:'+r.id,'Open '+name);b.disabled=true;keys.append(b)}
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);
-  if(r.id==='main'){const mb=moveBox();if(mb)li.append(mb)}
   if(removing===r.id){
     const box=el('div','flood rl-confirm');box.dataset.tone='nogo';box.setAttribute('role','group');box.setAttribute('aria-label','Remove '+name);
     box.append(el('p','','Remove '+name+'? gonogo stops the room and its agents. Its folder stays on disk (rooms/'+r.id+'); nothing is deleted.'));
@@ -177,7 +177,7 @@ async function act(action){
   }
 }
 async function confirmStep(){
-  const box=list.querySelector('.rl-step'),pw=box.querySelector('[name=password]').value,code=box.querySelector('[name=code]');
+  const box=$('move').querySelector('.rl-step'),pw=box.querySelector('[name=password]').value,code=box.querySelector('[name=code]');
   try{await call('POST','/api/auth/stepup',Object.assign({password:pw},code&&code.value?{code:code.value}:{}));const a=ask.action;ask=null;await act(a)}
   catch(e){note.textContent=e.message;note.hidden=false}
 }
@@ -201,6 +201,7 @@ function moveBox(){
     row.append(key('CANCEL','',()=>act('cancel'),'migrate:cancel'));
   }else if(m&&m.state==='done'){
     box.append(el('p','','Room main now lives in rooms/main ('+m.moved+' files moved, '+ago(m.at)+'). The supervisor\u2019s own files stayed at the root. UNDO moves them back at the next start.'));
+    if(m.removed&&m.removed.length){box.append(el('p','','Leftover worktrees removed first (their branches are kept):'));lines(box,m.removed)}
     if(m.reasons&&m.reasons.length){box.append(el('p','','The last UNDO was not possible:'));lines(box,m.reasons)}
     row.append(key('UNDO','',()=>act('undo'),'migrate:undo'),key('DISMISS','',()=>act('dismiss'),'migrate:dismiss'));
   }else if(m&&m.state==='damaged'){
@@ -212,6 +213,7 @@ function moveBox(){
   if(dry){
     const p=dry;box.append(el('p','',(p.direction==='forward'?'Would move ':'Would move back ')+p.entries.length+' of main\u2019s files from '+p.from+' to '+p.to+(p.stays&&p.stays.length?'. Stay where they are: '+p.stays.join(', '):'')+'.'));
     box.append(el('p','',p.entries.join(', ')||'(nothing)'));
+    if(p.removes&&p.removes.length){box.append(el('p','','It would first remove these leftover worktrees (clean, merged; the branches are kept):'));lines(box,p.removes)}
     if(p.problems.length){box.append(el('p','','It would not be done now:'));lines(box,p.problems)}else box.append(el('p','','Nothing stops it.'));
     row.append(key('CLOSE','',()=>{dry=null;seen='';draw();focus('migrate:dry')},'dry:close'));
   }
@@ -227,9 +229,11 @@ function moveBox(){
   if(row.childNodes.length)box.append(row);
   return box;
 }
-function focus(f){const t=list.querySelector('[data-f="'+f+'"]');if(t){t.focus();if(t.select)t.select()}return !!t}
+function focus(f){const t=list.querySelector('[data-f="'+f+'"]')||$('move').querySelector('[data-f="'+f+'"]');if(t){t.focus();if(t.select)t.select()}return !!t}
 function draw(){
-  const had=document.activeElement&&list.contains(document.activeElement)?document.activeElement.dataset.f:null;
+  const had=document.activeElement&&(list.contains(document.activeElement)||$('move').contains(document.activeElement))?document.activeElement.dataset.f:null;
+  // where main keeps its files comes first and is amber when something needs doing: a refused move must not hide in a card
+  const mb=moveBox();$('move').replaceChildren(...(mb?[mb]:[]));
   const cards=rooms.map(card);
   if(rooms.length===1){
     const open=el('li','tile rl-card rl-new');open.dataset.kind='open';
@@ -302,5 +306,6 @@ export const roomsPage = (stylesheet: string | null, version: string | null = nu
   `<p id="loading" class="hint">Asking the rooms…</p>` +
   `<form id="add" class="module rl-form" hidden><span class="label">NEW ROOM</span><div class="rl-fields"><label><span class="label">ID</span><input class="input" name="id" required maxlength="24" pattern="[a-z][a-z0-9-]{0,23}" aria-describedby="idhint" autocomplete="off" spellcheck="false"><span id="idhint" class="hint">Lowercase letters, digits and dashes, like team-a. It is the folder and the address.</span></label><label><span class="label">NAME (OPTIONAL)</span><input class="input" name="name" maxlength="40" autocomplete="off"></label></div><div class="rl-keys"><button class="btn" data-kind="primary" type="submit">ADD ROOM</button><button id="cancel" class="btn" type="button">CANCEL</button></div></form>` +
   `<p id="note" class="error rl-error" role="alert" hidden></p>` +
+  `<div id="move" class="rl-move"></div>` +
   `<ul id="rooms" class="rl-cards" aria-labelledby="title"></ul>` +
   `</main><script>${SCRIPT}</script></body></html>`;

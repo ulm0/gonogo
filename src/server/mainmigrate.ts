@@ -17,6 +17,8 @@ import { accessSync, constants, lstatSync, mkdirSync, readdirSync, readFileSync,
 import net from 'node:net';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { roomLockAlive } from './home.js';
+import { mainRepoOf, removeWorktreeFolder, worktreeStatus } from './worktree.js';
+import { cleanRoomBranch } from '../shared/protocol.js';
 import { MAIN_ROOM, NESTED_FILES, ROOM_STATE_FILES, ROOMS_DIR, RoomsError, SUPERVISOR_FILES, mainLayout, recordedMainHome, setMainHome } from './rooms.js';
 import type { MainHome } from './rooms.js';
 
@@ -34,7 +36,7 @@ export type MigrationNote =
   | { state: 'undo-requested'; at: number }
   | { state: 'moving' | 'undoing'; at: number; entries: string[] }
   | { state: 'skipped'; at: number; reasons: string[] }
-  | { state: 'done'; at: number; moved: number; undoReasons?: string[] };
+  | { state: 'done'; at: number; moved: number; undoReasons?: string[]; removedWorktrees?: string[] };
 
 const STATES = ['requested', 'undo-requested', 'moving', 'undoing', 'skipped', 'done'];
 const text = (value: unknown, max: number): string => (typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, max) : '');
@@ -61,7 +63,7 @@ export function readMigration(root: string): MigrationNote | null {
       return { state, at, entries };
     }
     if (state === 'skipped') return { state, at, reasons: names(saved.reasons).slice(0, REASON_MAX) };
-    if (state === 'done') return { state, at, moved: typeof saved.moved === 'number' ? saved.moved : 0, ...(Array.isArray(saved.undoReasons) ? { undoReasons: names(saved.undoReasons).slice(0, REASON_MAX) } : {}) };
+    if (state === 'done') return { state, at, moved: typeof saved.moved === 'number' ? saved.moved : 0, ...(Array.isArray(saved.undoReasons) ? { undoReasons: names(saved.undoReasons).slice(0, REASON_MAX) } : {}), ...(Array.isArray(saved.removedWorktrees) ? { removedWorktrees: names(saved.removedWorktrees).slice(0, REASON_MAX) } : {}) };
     return { state: state as 'requested' | 'undo-requested', at };
   } catch (error) {
     throw new RoomsError(`${MIGRATION_FILE} is damaged (${(error as Error).message}): a move of room main may be half done. Fix or delete it only after looking at ${ROOMS_DIR}/${MAIN_ROOM}/ and the root. Nothing was started.`, 'conflict');
@@ -118,11 +120,15 @@ export interface MigrationPlan {
   stays: string[];
   /** Why it cannot be done now. Empty: it can. */
   problems: string[];
+  /** Leftover worktrees of Clean Rooms or plain worktrees (clean, branch merged) that the move removes first with `git worktree remove` (the branch is kept). */
+  removes: string[];
 }
 
 export interface PlanOptions {
   /** Look for a room that is running (a live `server.lock`, a pty host that answers). False for a dry run: what runs now stops before the move. */
   running: boolean;
+  /** Remove the leftover worktrees that are safe to remove (a real move). False: only say which. */
+  clean?: boolean;
 }
 
 /** Whether something answers on a unix socket (a room or a pty host that is alive). Never throws. */
@@ -141,37 +147,69 @@ function answers(path: string): Promise<boolean> {
 }
 
 /** The agents of a roster whose working folder is inside `home`, or that have a worktree or Clean Room (their folder is). Read the file as it is: no parse of what an agent may do. */
-function agentsInside(from: string): { problems: string[] } {
+function agentsInside(from: string): { problems: string[]; names: { worktree: Set<string>; cleanRoom: Set<string> } } {
   const problems: string[] = [];
+  const names = { worktree: new Set<string>(), cleanRoom: new Set<string>() };
   let roster: unknown;
   try {
     roster = JSON.parse(readFileSync(join(from, 'agents.json'), 'utf8'));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { problems };
-    return { problems: [`agents.json cannot be read (${(error as Error).message.slice(0, 80)}): the agents' folders are not known`] };
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { problems, names };
+    return { problems: [`agents.json cannot be read (${(error as Error).message.slice(0, 80)}): the agents' folders are not known`], names };
   }
   const list = typeof roster === 'object' && roster !== null && Array.isArray((roster as { agents?: unknown }).agents) ? ((roster as { agents: unknown[] }).agents) : null;
-  if (list === null) return { problems: ['agents.json has no list of agents: the agents\' folders are not known'] };
+  if (list === null) return { problems: ['agents.json has no list of agents: the agents\' folders are not known'], names };
   for (const item of list) {
     if (typeof item !== 'object' || item === null) continue;
     const agent = item as { name?: unknown; dir?: unknown; worktree?: unknown; cleanRoom?: unknown };
     const name = text(agent.name, 40);
+    if (agent.worktree !== undefined && agent.worktree !== null && agent.worktree !== false) names.worktree.add(name);
+    if (agent.cleanRoom !== undefined && agent.cleanRoom !== null && agent.cleanRoom !== false) names.cleanRoom.add(name);
     if (typeof agent.dir === 'string' && inside(from, agent.dir)) problems.push(`agent ${name} works in ${text(agent.dir, 200)}, inside the folder that would move (its Claude session history is keyed by that folder)`);
     else if (agent.worktree !== undefined && agent.worktree !== null && agent.worktree !== false) problems.push(`agent ${name} has a worktree in ${join(from, 'worktrees', name)}: its working folder would move and its Claude session history is keyed by it`);
     else if (agent.cleanRoom !== undefined && agent.cleanRoom !== null && agent.cleanRoom !== false) problems.push(`agent ${name} has a Clean Room in ${join(from, 'cleanroom', name)}: its working folder would move and its Claude session history is keyed by it`);
   }
-  return { problems };
+  return { problems, names };
 }
 
-/** Folders of worktrees or Clean Rooms that are still there (an agent that was removed or changed): git knows them by their path. */
-function leftoverFolders(from: string): string[] {
-  const out: string[] = [];
-  for (const dir of ['worktrees', 'cleanroom']) {
+/** A worktree or Clean Room folder that is still in the home but that no agent of the roster has any more. */
+export interface Leftover {
+  path: string;
+  /** `git worktree remove` would do it: git knows it, it is clean, and its branch is in the repository's checked-out branch. */
+  removable: boolean;
+  /** The repository it belongs to, when git knows it. */
+  repo: string | null;
+  /** Why it is not removable, with the command to run by hand. */
+  reason: string;
+}
+
+/**
+ * Folders of worktrees or Clean Rooms that are still there and that no agent uses (an agent that was removed or changed): git knows them by their path.
+ * One that is clean and whose branch is merged can be removed by the move itself; anything else is a reason, with the exact command.
+ */
+async function leftoverFolders(from: string, used: { worktree: Set<string>; cleanRoom: Set<string> }): Promise<Leftover[]> {
+  const out: Leftover[] = [];
+  const env = process.env;
+  for (const [dir, owners] of [['worktrees', used.worktree], ['cleanroom', used.cleanRoom]] as const) {
+    let names: string[];
     try {
-      const names = readdirSync(join(from, dir));
-      if (names.length > 0) out.push(`${join(from, dir)} still holds ${names.slice(0, 3).join(', ')}${names.length > 3 ? ' ...' : ''}: git knows those folders by their path; remove them (git worktree remove) or keep the old layout`);
+      names = readdirSync(join(from, dir)).sort();
     } catch {
-      // not there
+      continue; // not there
+    }
+    for (const name of names) {
+      if (owners.has(name)) continue; // an agent has it: agentsInside says so
+      const path = join(from, dir, name);
+      const repo = await mainRepoOf(path, env);
+      if (repo === null) {
+        out.push({ path, removable: false, repo: null, reason: `${path} is not a git worktree: move it away or delete it, or keep the old layout` });
+        continue;
+      }
+      const state = await worktreeStatus(path, cleanRoomBranch(name), env);
+      const command = `git -C ${repo} worktree remove ${path}`;
+      if (state.dirty) out.push({ path, removable: false, repo, reason: `${path} has changes that are not committed: look at them, then run: ${command} (add --force to drop them)` });
+      else if (state.ahead > 0 || !state.merged) out.push({ path, removable: false, repo, reason: `${path} is on a branch (${state.branch}) that is not merged in the repository's checked-out branch (${state.ahead} commit${state.ahead === 1 ? '' : 's'} ahead): merge or push it, then run: ${command}` });
+      else out.push({ path, removable: true, repo, reason: '' });
     }
   }
   return out;
@@ -182,7 +220,7 @@ export async function planMigration(root: string, direction: Direction, options:
   const mainDir = join(root, ROOMS_DIR, MAIN_ROOM);
   const from = direction === 'forward' ? root : mainDir;
   const to = direction === 'forward' ? mainDir : root;
-  const plan: MigrationPlan = { direction, from, to, entries: [], stays: [], problems: [] };
+  const plan: MigrationPlan = { direction, from, to, entries: [], stays: [], problems: [], removes: [] };
   const problem = (reason: string): void => void plan.problems.push(reason);
 
   // what moves: the names of main's files that are there
@@ -229,8 +267,27 @@ export async function planMigration(root: string, direction: Direction, options:
   }
 
   // an agent whose working folder would move, or an earlier half move
-  for (const reason of agentsInside(from).problems) problem(reason);
-  for (const reason of leftoverFolders(from)) problem(reason);
+  const agents = agentsInside(from);
+  for (const reason of agents.problems) problem(reason);
+  const leftovers = await leftoverFolders(from, agents.names);
+  for (const left of leftovers) {
+    if (!left.removable) problem(left.reason);
+    else plan.removes.push(left.path);
+  }
+  // a real move takes the safe ones away first, when nothing else stops it (a refused move changes nothing)
+  if (options.clean === true && plan.problems.length === 0) {
+    for (const left of leftovers) {
+      const failed = left.repo === null ? 'not a worktree' : await removeWorktreeFolder(left.repo, left.path, process.env);
+      if (failed !== null) problem(`${left.path} could not be removed (${failed.slice(0, 120)}): run: git -C ${left.repo ?? '<repository>'} worktree remove ${left.path}`);
+    }
+    for (const dir of ['worktrees', 'cleanroom']) {
+      try {
+        rmdirSync(join(from, dir)); // empty now, or not there
+      } catch {
+        // something is left in it
+      }
+    }
+  }
   const note = readMigration(root);
   if (note !== null && (note.state === 'moving' || note.state === 'undoing')) problem('an earlier move of room main is not finished');
   return plan;
@@ -255,7 +312,7 @@ function moveEntry(from: string, to: string, name: string): boolean {
 }
 
 /** Runs the moves of a journal, then writes where main is, then leaves the note. Safe to call again after a crash. */
-function perform(root: string, direction: Direction, entries: string[], hooks: MoveHooks, at: number): number {
+function perform(root: string, direction: Direction, entries: string[], hooks: MoveHooks, at: number, removed: string[] = []): number {
   const mainDir = join(root, ROOMS_DIR, MAIN_ROOM);
   const from = direction === 'forward' ? root : mainDir;
   const to = direction === 'forward' ? mainDir : root;
@@ -278,20 +335,20 @@ function perform(root: string, direction: Direction, entries: string[], hooks: M
     }
   }
   setMainHome(root, direction === 'forward' ? 'rooms/main' : '.'); // the marker, last
-  if (direction === 'forward') writeMigration(root, { state: 'done', at, moved: entries.length });
+  if (direction === 'forward') writeMigration(root, { state: 'done', at, moved: entries.length, ...(removed.length === 0 ? {} : { removedWorktrees: removed }) });
   else clearMigration(root);
   return moved;
 }
 
-export type MigrationResult = { ok: true; moved: number; direction: Direction } | { ok: false; direction: Direction; problems: string[] };
+export type MigrationResult = { ok: true; moved: number; direction: Direction; removed?: string[] } | { ok: false; direction: Direction; problems: string[] };
 
 /** Plans and, when nothing stops it, moves. The caller holds the supervisor lock. */
 export async function migrate(root: string, direction: Direction, hooks: MoveHooks = {}, now: () => number = Date.now): Promise<MigrationResult> {
-  const plan = await planMigration(root, direction, { running: true });
+  const plan = await planMigration(root, direction, { running: true, clean: direction === 'forward' });
   if (plan.problems.length > 0) return { ok: false, direction, problems: plan.problems.slice(0, REASON_MAX) };
   writeMigration(root, { state: direction === 'forward' ? 'moving' : 'undoing', at: now(), entries: plan.entries });
-  const moved = perform(root, direction, plan.entries, hooks, now());
-  return { ok: true, moved, direction };
+  const moved = perform(root, direction, plan.entries, hooks, now(), plan.removes);
+  return { ok: true, moved, direction, removed: plan.removes };
 }
 
 /** Finishes a move that a crash left half done (the journal is there). Returns null when there is none. */
@@ -307,8 +364,8 @@ export function resumeMigration(root: string, hooks: MoveHooks = {}, now: () => 
 export type StartupOutcome =
   | { did: 'nothing' }
   | { did: 'resumed'; direction: Direction; moved: number }
-  | { did: 'migrated'; direction: Direction; moved: number }
-  | { did: 'skipped'; direction: Direction; problems: string[] };
+  | { did: 'migrated'; direction: Direction; moved: number; removed: string[] }
+  | { did: 'skipped'; direction: Direction; problems: string[]; asked: boolean };
 
 /**
  * At the start, before any room: finish a half move; do what the page asked (MIGRATE NOW, UNDO); and move an old home that has never been asked
@@ -326,14 +383,14 @@ export async function startupMigration(root: string, hooks: MoveHooks = {}, now:
   else if (recorded === null && mainLayout(root) === '.' && note === null) direction = 'forward';
   if (direction === null) return { did: 'nothing' };
   const result = await migrate(root, direction, hooks, now);
-  if (result.ok) return { did: 'migrated', direction, moved: result.moved };
+  if (result.ok) return { did: 'migrated', direction, moved: result.moved, removed: result.removed ?? [] };
   if (direction === 'forward') {
     writeMigration(root, { state: 'skipped', at: now(), reasons: result.problems });
     setMainHome(root, '.');
   } else {
     writeMigration(root, { state: 'done', at: now(), moved: 0, undoReasons: result.problems });
   }
-  return { did: 'skipped', direction, problems: result.problems };
+  return { did: 'skipped', direction, problems: result.problems, asked: note?.state === 'requested' || note?.state === 'undo-requested' };
 }
 
 export type { MainHome };

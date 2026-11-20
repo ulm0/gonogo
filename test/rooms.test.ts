@@ -393,6 +393,25 @@ describe('the layout of room main', () => {
     expect((await post('dismiss')).status).toBe(409); // no note
   });
 
+  it('a move that was refused tells main: a notice when nobody asked, an ALERT (inbox and phone) when the Director pressed MIGRATE NOW', async () => {
+    const roster = JSON.stringify({ version: 1, agents: [{ name: 'wt', dir: '/p', worktree: {} }] });
+    writeFileSync(join(fresh, 'agents.json'), roster);
+    let s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    await until(() => existsSync(join(fresh, 'notices')));
+    expect(readFileSync(join(fresh, 'notices'), 'utf8')).toContain('stays at the root');
+    expect(existsSync(join(fresh, 'alerts'))).toBe(false);
+    await s.stop();
+    sup = null;
+    rmSync(join(fresh, 'notices'));
+    writeFileSync(join(fresh, 'main-migration.json'), JSON.stringify({ version: 1, state: 'requested', at: 1 }));
+    s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    await until(() => existsSync(join(fresh, 'alerts')));
+    expect(readFileSync(join(fresh, 'alerts'), 'utf8')).toContain('stays at the root');
+    expect(existsSync(join(fresh, 'notices'))).toBe(false);
+  });
+
   it('a start after a crash in the middle of a move finishes it before any room starts', async () => {
     writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
     writeFileSync(join(fresh, 'messages.jsonl'), '{}\n');
