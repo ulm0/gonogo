@@ -82,17 +82,17 @@ function wear(slug: string): void {
 
 const ENGINES = [
   { name: 'Claude Code', bin: 'claude', checked: 'real runs' },
-  { name: 'Gemini CLI', bin: 'gemini', checked: 'help and source' },
-  { name: 'Antigravity CLI', bin: 'agy', checked: 'its help' },
-  { name: 'Codex', bin: 'codex', checked: 'docs only' },
-  { name: 'opencode', bin: 'opencode', checked: 'docs only' },
-  { name: 'Kimi CLI', bin: 'kimi', checked: 'docs only' },
-  { name: 'Copilot CLI', bin: 'copilot', checked: 'docs only' },
-  { name: 'pi', bin: 'pi', checked: 'its help' },
-  { name: 'Qwen Code', bin: 'qwen', checked: 'docs only' },
-  { name: 'Grok CLI', bin: 'grok', checked: 'docs only' },
-  { name: 'Crush', bin: 'crush', checked: 'docs only' },
-  { name: 'Cursor Agent', bin: 'cursor-agent', checked: 'docs only' },
+  { name: 'Gemini CLI', bin: 'gemini', checked: 'gemini --help and source' },
+  { name: 'Antigravity CLI', bin: 'agy', checked: 'agy --help' },
+  { name: 'Codex', bin: 'codex', checked: 'vendor docs only' },
+  { name: 'opencode', bin: 'opencode', checked: 'vendor docs only' },
+  { name: 'Kimi CLI', bin: 'kimi', checked: 'vendor docs only' },
+  { name: 'Copilot CLI', bin: 'copilot', checked: 'vendor docs only' },
+  { name: 'pi', bin: 'pi', checked: 'pi --help' },
+  { name: 'Qwen Code', bin: 'qwen', checked: 'vendor docs only' },
+  { name: 'Grok CLI', bin: 'grok', checked: 'vendor docs only' },
+  { name: 'Crush', bin: 'crush', checked: 'vendor docs only' },
+  { name: 'Cursor Agent', bin: 'cursor-agent', checked: 'vendor docs only' },
 ];
 
 const PLAN = [

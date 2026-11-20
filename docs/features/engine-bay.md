@@ -4,17 +4,17 @@
 
 The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PATH` come first; the rest say `not installed`. Sign in to each CLI yourself. The engine cannot change after the hire. Design and limits: [`docs/engine-bay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/engine-bay-spec.md).
 
-| Engine | Program | State from | Mail and votes | Role | Permission modes | Checked |
+| Engine | Program | State from | Mail and votes | Role | Permission modes | How it was checked |
 |---|---|---|---|---|---|---|
 | Claude Code | `claude` | hooks, title, screen | yes | system prompt | yes | real runs |
-| Gemini CLI (legacy) | `gemini` | hooks | yes | first prompt | `default`, `auto_edit`, `yolo` | its help and source (0.59.0), not run with a model |
-| Antigravity CLI | `agy` | output | no | first prompt | `accept-edits`, `auto`, `--dangerously-skip-permissions` | its help (1.5.11), not run against a signed-in agy |
-| Codex | `codex` | output | yes | first prompt | default, `--full-auto`, `--dangerously-bypass-approvals-and-sandbox` | docs only |
-| opencode | `opencode` | output | yes | first prompt | no | docs only |
-| Kimi CLI | `kimi` | output | yes | no | no | docs only |
-| Copilot CLI | `copilot` | output | yes | no | no | docs only |
-| pi | `pi` | output | no | `--append-system-prompt` (role alone) | no | its help (1.5.2), not run with a model |
-| Qwen Code, Grok CLI, Crush, Cursor Agent | `qwen`, `grok`, `crush`, `cursor-agent` | output | no | no | no | docs only |
+| Gemini CLI (legacy) | `gemini` | hooks | yes | first prompt | `default`, `auto_edit`, `yolo` | `gemini --help` and source (0.59.0); not run with a model |
+| Antigravity CLI | `agy` | output | no | first prompt | `accept-edits`, `auto`, `--dangerously-skip-permissions` | `agy --help` (1.5.11); not run signed in |
+| Codex | `codex` | output | yes | first prompt | default, `--full-auto`, `--dangerously-bypass-approvals-and-sandbox` | vendor docs only |
+| opencode | `opencode` | output | yes | first prompt | no | vendor docs only |
+| Kimi CLI | `kimi` | output | yes | no | no | vendor docs only |
+| Copilot CLI | `copilot` | output | yes | no | no | vendor docs only |
+| pi | `pi` | output | no | `--append-system-prompt` (role alone) | no | `pi --help` (1.5.2); not run with a model |
+| Qwen Code, Grok CLI, Crush, Cursor Agent | `qwen`, `grok`, `crush`, `cursor-agent` | output | no | no | no | vendor docs only |
 
 <AgyMock class="doc-mock" />
 
