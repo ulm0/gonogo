@@ -68,6 +68,34 @@ Limits, stated plainly: a compose file edited since the container was created is
 
 One POST, no redirect followed, 15 s. The URL comes from the environment of the server, never from a request. The Dockerfile sets `GONOGO_INSTALL=docker`.
 
+### Verifying the image (Docker)
+
+The version label of an image is a line anyone who can push the tag can write, so it proves nothing about who built it. Since 0.7.0 the release workflow signs a **build provenance attestation** for each image (GitHub's `actions/attest-build-provenance`, on the digest of the manifest list the tags point at), and the update, **the click's and auto-update's alike**, runs `gh attestation verify oci://ghcr.io/ulm0/gonogo@sha256:… --repo ulm0/gonogo --signer-workflow ulm0/gonogo/.github/workflows/image.yml` on the digest it pulled before it creates anything. It then makes the copy from the **id of that very image** (the tag may move again; the id cannot). Three answers:
+
+- **Verified**: the update goes on.
+- **No attestation, or no way to check** (an image published before 0.7.0; one that is not `ghcr.io/ulm0/gonogo`, such as your own build or a mirror; or `gh` has no GitHub login in the container, see below): the click is refused with the reason and a key **Update anyway (not verified)** that you press by hand; the Downlink says it was run unverified. **Auto-update never takes such an image.**
+- **Failed** (an attestation that does not verify or has another signer, GitHub not reachable, `gh` missing): refused, with no key to override it, and the Downlink says why. Nothing was changed.
+
+**`gh attestation verify` refuses to run without a GitHub login**, even for a public repository (found by running it in a container: "To get started with GitHub CLI, please run: gh auth login"). So the container needs one: `gh auth login` once from a console of room main (gonogo looks for the login in the room's own folder, `<home>/gh`, and else in `~/.config/gh`), or `GH_TOKEN` in the container's environment; a token with **no permissions** is enough, since the repository is public. **A `GH_TOKEN` or `GITHUB_TOKEN` set in the container's environment also reaches every agent that does not run in a Clean Room** (they inherit the environment): prefer the login from a console of room main, or a fine-grained token with no permissions at all, never one with repository access. `gh attestation verify --bundle-from-oci` does not avoid the login (tried: it stops with the same message); only a bundle file given with `--bundle` does, and gonogo would have to fetch and parse that itself. Without a login every update is "no way to check": the click offers **Update anyway**, and **auto-update never runs** (it says why in Flight Rules). `gh` runs with a small environment (its login, `PATH`, a proxy; no other secret of gonogo's), no shell and a time limit, and needs to reach `api.github.com` and the sigstore trust root. **UNDO is not verified**: the previous image already ran here. What this does not do: it proves the image came out of that workflow of that repository, not that its code is good, and it cannot protect a repository whose workflow or account is itself compromised.
+
+## Auto-update (Docker, off unless you turn it on)
+
+<AutoUpdateMock class="doc-mock" />
+
+**AUTO-UPDATE** in Flight Rules (room main, a Docker install with the socket and a moving tag; nowhere else) lets gonogo run the Update above **by itself, unattended**. It is **off** until you turn it on in Flight Rules or set `GONOGO_AUTO_UPDATE=1` in the container's environment (the variable wins and the page then shows the switch as set by it; `0` forces it off). It applies the same pull, helper, health check, rollback and UNDO as the click, and only when all of this holds:
+
+- **The next patch only.** The version must have the same major and minor as the one that runs and a higher patch (0.6.1 takes 0.6.2). **A new minor (0.7.0) never installs by itself while gonogo is 0.x**, since a 0.x minor may break; a major or a pre-release never does either. Those wait for your click.
+- **A day old.** Rollout must have seen that version for at least 24 hours (`latestSeenAt` beside `latest` in `rollout.json`); a version it has just learned of starts its day then.
+- **Inside a window.** By default 02:00 to 05:00 in the container's time zone (set `TZ`); one to four windows, `HH:MM-HH:MM`, an end before the start runs over midnight. `GONOGO_AUTO_UPDATE_WINDOW=01:00-02:00,13:00-14:00` sets them from the environment.
+- **Nothing in the way, for 10 minutes running, in every room:** no agent working, starting, waiting for you or with mail queued, and no T-minus poll or Static fire open. Any change starts the 10 minutes again. The Downlink gets an **UPDATE** note when the 10 minutes begin ("Auto-update to 0.6.2 starts at about 03:10 …"), once per version, and Flight Rules shows **SKIP THIS VERSION** while it waits; skipping, or turning the switch off, stops it.
+- **Verified.** The image must verify as above; an unattested one is refused (no confirm exists for auto-update).
+- **Turning it on asks for your password again** when you sign in with an account (step-up): turning it on or changing its window is the one change here that lets code run unattended; turning it off and SKIP THIS VERSION never ask.
+- **Once per version.** The attempt is recorded before it starts. A version that was rolled back, failed or was interrupted is **never tried again**, and the switch turns itself **off** with the reason (turn it on again after you have read it); a newer patch is then taken as usual. (If the update refused to start at all, because a poll opened in the last second, nothing was touched: it is not an attempt and it tries again at the next quiet moment.)
+
+After the restart the new gonogo says in the Downlink what happened: *updated 0.6.1 to 0.6.2* (the agents start again by themselves per the startup setting; UNDO stays on the strip for a day), or *rolled back: the reason* with the version marked bad. The record is `<home>/autoupdate.json` (a damaged file means off).
+
+Trust, in one sentence, which the page repeats: **turning it on lets the publisher's next patch run on this machine, with the Docker socket, without you reading it**; the day of cooling and the patch-only rule are the only checks. The npm and pnpm installs have no auto-update.
+
 ## Not tried
 
 The install of a real package from the registry (the tests use a fake installer), **the Docker path against a real daemon, a real pull and a real healthy new image (the tests use a fake Engine API; try it by hand in a throwaway compose project before you rely on it)**, a Watchtower, Windows, and the strip in a browser

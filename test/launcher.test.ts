@@ -580,6 +580,8 @@ describe('prepareStart', () => {
       GONOGO_TOKEN: prepared.token,
       NO_PROXY: '127.0.0.1,localhost',
       no_proxy: '127.0.0.1,localhost',
+      // this room's own GitHub login (docs/features/github-login.md)
+      GH_CONFIG_DIR: join(home, 'gh'),
     });
 
     const settingsText = await text(join(base, 'settings.json'));
@@ -942,13 +944,16 @@ describe('prepareStart for a custom agent', () => {
       COLORTERM: 'truecolor',
       NO_PROXY: '127.0.0.1,localhost',
       no_proxy: '127.0.0.1,localhost',
+      GH_CONFIG_DIR: join(home, 'gh'),
     });
-    expect(await readdir(home)).toStrictEqual([]);
+    // no file of its own: only the room's (empty) gh folder
+    expect(await readdir(home)).toStrictEqual(['gh']);
+    expect(await readdir(join(home, 'gh'))).toStrictEqual([]);
     expect(l.resolveToken(words.token)).toBeNull();
 
     const array = await l.prepareStart(custom('["node","/x/my server.js","--flag"]', { name: 'ben' }), START);
     expect([array.spec.file, ...array.spec.args]).toStrictEqual(['node', '/x/my server.js', '--flag']);
-    expect(await readdir(home)).toStrictEqual([]);
+    expect(await readdir(home)).toStrictEqual(['gh']);
   });
 
   it('does not seed trust or move the API key even in seed mode', async () => {
@@ -1665,3 +1670,47 @@ describe('Payload: MCP servers and skills', () => {
 function reEscape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+describe('a GitHub login per room (docs/features/github-login.md)', () => {
+  const base = { PATH: '/usr/bin:/bin' };
+
+  it('buildChildEnv gives GH_CONFIG_DIR the room\'s folder, unless the room\'s own environment or the agent\'s key names it', () => {
+    expect(buildChildEnv({ base, token: null, seed: false, gh: '/rooms/a/gh' }).GH_CONFIG_DIR).toBe('/rooms/a/gh');
+    expect(buildChildEnv({ base: { ...base, GH_CONFIG_DIR: '/ops/gh' }, token: null, seed: false, gh: '/rooms/a/gh' }).GH_CONFIG_DIR).toBe('/ops/gh');
+    expect(buildChildEnv({ base: { ...base, GH_CONFIG_DIR: '/ops/gh' }, token: null, seed: false, keys: { GH_CONFIG_DIR: '/mine/gh' }, gh: '/rooms/a/gh' }).GH_CONFIG_DIR).toBe('/mine/gh');
+    expect(buildChildEnv({ base, token: null, seed: false, keys: { GH_CONFIG_DIR: '/mine/gh' }, gh: '/rooms/a/gh' }).GH_CONFIG_DIR).toBe('/mine/gh');
+    // nothing given: nothing set (a caller that does not know a room)
+    expect(buildChildEnv({ base, token: null, seed: false })).not.toHaveProperty('GH_CONFIG_DIR');
+  });
+
+  it('is not a reserved key name: the Director can set it for one agent', async () => {
+    const { keyNameProblem } = await import('../src/server/clearance.js');
+    expect(keyNameProblem('GH_CONFIG_DIR')).toBeNull();
+    expect(keyNameProblem('GH_TOKEN')).toBeNull();
+  });
+
+  it('every agent of a room starts with that room\'s folder, made 0700, and another room has another one; an agent key wins; the Director\'s own environment is not touched', async () => {
+    const roomA = join(tmp, 'rooms', 'a');
+    const roomB = join(tmp, 'rooms', 'b');
+    await mkdir(work, { recursive: true });
+    const env = { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') };
+    const make = (homeDir: string, keys?: (name: string) => Record<string, string>) => createLauncher({ homeDir, hubUrl: () => HUB, seed: false, env, ...(keys === undefined ? {} : { keys }) });
+    const a = await make(roomA).prepareStart(agent(), START);
+    const b = await make(roomB).prepareStart(agent(), START);
+    expect(a.spec.env.GH_CONFIG_DIR).toBe(join(roomA, 'gh'));
+    expect(b.spec.env.GH_CONFIG_DIR).toBe(join(roomB, 'gh'));
+    expect((await stat(join(roomA, 'gh'))).mode & 0o777).toBe(0o700);
+    const own = await make(roomA, () => ({ GH_CONFIG_DIR: '/mine/gh' })).prepareStart(agent({ name: 'ben' }), START);
+    expect(own.spec.env.GH_CONFIG_DIR).toBe('/mine/gh');
+    // gonogo's own environment is left alone: the Director's shell and anything outside the agents see no change
+    expect(env).toEqual({ PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') });
+    expect(process.env.GH_CONFIG_DIR).toBeUndefined();
+  });
+});
+
+describe('a Clean Room has no GitHub login of the room', () => {
+  it('GH_CONFIG_DIR is not among the variables a container is given by name', async () => {
+    const { CLEAN_ROOM_CREDENTIALS, CLEAN_ROOM_ENV } = await import('../src/server/constants.js');
+    for (const name of [...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS]) expect(name).not.toMatch(/^GH_|^GITHUB_/);
+  });
+});

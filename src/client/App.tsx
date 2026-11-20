@@ -449,6 +449,14 @@ function RolloutStrip(): ReactElement | null {
           </button>
         </div>
       )}
+      {update?.state === 'failed' && update.verify === 'unattested' && rollout.newer && !busy && (
+        <span className="rollout-confirm" role="alert">
+          {update.note}{' '}
+          <button type="button" className="btn" onClick={() => api.startUpdate(latest, true).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}>
+            Update anyway (not verified)
+          </button>
+        </span>
+      )}
       {update?.undo === true && (
         <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => api.undoUpdate().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}>
           UNDO

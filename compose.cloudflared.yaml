@@ -1,0 +1,39 @@
+# gonogo through a Cloudflare named tunnel (public, outbound-only, no open port). Needs Docker Compose v2.23 or later (it uses `configs` with inline `content`, so only this file and compose.yaml are needed).
+# On top of compose.yaml (docs/expose/cloudflare.md):
+#   docker compose -f compose.yaml -f compose.cloudflared.yaml up -d
+# FIRST set the login up, with compose.yaml alone (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a
+# public name before it, and with restart: always it would loop. Then add this file.
+# .env (no secret is written in this file):
+#   TUNNEL_TOKEN=...                   the token of the tunnel (Cloudflare Zero Trust, Networks, Tunnels, your tunnel, Docker)
+#   GONOGO_PUBLIC_NAME=...             the public name (this is also what gonogo accepts as its Host)
+#   GONOGO_LAN_HOSTS=zimaos,192.168.1.5   optional: the names you also open gonogo by on your own network, comma separated (kept in GONOGO_ALLOWED_HOSTS)
+#   GONOGO_HOOKS_ONLY=1                optional: the public name serves only /uplink and /dock (name:hooks), no page
+#   GONOGO_EDGE_SUBNET / GONOGO_EDGE_PROXY_IP   optional: the private network between the sidecar and gonogo (default 172.29.80.0/24 and .2);
+#                                      change both if Docker says "Pool overlaps with other one on this address space"
+# In the tunnel's Public Hostname: GONOGO_PUBLIC_NAME -> HTTP, gonogo:7777, and under Additional application settings, HTTP Settings, set the
+# HTTP Host Header to the same name (gonogo checks the Host). Cloudflare ends the TLS: it can see every password, cookie, TOTP code and terminal byte.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.8.1
+    restart: always
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    networks:
+      edge:
+        ipv4_address: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
+  gonogo:
+    environment:
+      GONOGO_ALLOWED_HOSTS: ${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}${GONOGO_HOOKS_ONLY:+:hooks},${GONOGO_LAN_HOSTS:-}
+      GONOGO_PUBLIC_URL: https://${GONOGO_PUBLIC_NAME:?set GONOGO_PUBLIC_NAME}
+      # cloudflared's address on the edge network, not 127.0.0.1; cf-connecting-ip is right ONLY behind Cloudflare, which sets it
+      GONOGO_TRUSTED_PROXY: ${GONOGO_EDGE_PROXY_IP:-172.29.80.2}
+      GONOGO_CLIENT_IP_HEADER: cf-connecting-ip
+    networks:
+      - default
+      - edge
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${GONOGO_EDGE_SUBNET:-172.29.80.0/24}
