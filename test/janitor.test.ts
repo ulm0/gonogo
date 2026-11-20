@@ -33,6 +33,17 @@ describe('the JANITOR position', () => {
     expect(role.length).toBeLessThanOrEqual(ROLE_MAX_CHARS);
   });
 
+  it('removes without asking only what is regenerable and unused, and never a worktree gonogo made for an agent or one in use', () => {
+    const role = janitor?.role ?? '';
+    const safe = /Local, safe without asking([^]*?)\n/.exec(role)?.[1] ?? '';
+    for (const word of ['regenerable output', 'dist', 'coverage', 'test temp dirs', 'git branch -d, never -D', 'nothing is using']) expect(safe, word).toContain(word);
+    // scratch files are not in the safe list: they are ask-first
+    expect(safe).not.toMatch(/scratch/);
+    expect(/Ask the boss first([^]*?)\n/.exec(role)?.[1] ?? '').toContain('scratch files');
+    expect(role).toMatch(/Never remove a worktree gonogo made for an agent/);
+    expect(role).toMatch(/any agent's console or any process is in[^]*?\/proc\/\*\/cwd/);
+  });
+
   it('has the never-list: main, tags, releases, open PRs, credentials, containers, a forced delete', () => {
     const role = janitor?.role ?? '';
     const never = /Never touch:([^]*?)\n/.exec(role)?.[1] ?? '';
