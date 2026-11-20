@@ -10,6 +10,8 @@ name: Release
 # job's `id-token: write` is the whole credential: no token lives in the repository. pnpm hands the tarball to the npm
 # CLI of Node 24, which must be 11.5.1 or newer for OIDC (checked below).
 #
+# One tarball: `pnpm pack` makes it once, `pnpm publish <tarball>` publishes that file to npm (with provenance), the same file is attached to the
+# GitHub Release, and the Homebrew formula installs from it.
 # Homebrew: the tarball that `pnpm pack` makes is attached to the GitHub Release, and the job `homebrew` opens a pull request on the
 # tap ulm0/homebrew-tap with the url of THAT asset and its sha256, computed here from the very file that was uploaded. Nothing waits for
 # npm's CDN to serve the version it just accepted (it took longer than ten minutes for 0.7.0 and 0.8.1). It is off until the repository
@@ -95,7 +97,7 @@ jobs:
             echo "::error::npm $v is older than 11.5.1, which trusted publishing (OIDC) needs"
             exit 1
           fi
-      # The tarball for Homebrew (and for anyone who wants the release's own file): made here, from the checked tag, and carried to the release by artifact.
+      # The tarball: made here, from the checked tag, published to npm below and carried to the GitHub Release (and Homebrew) by artifact.
       - name: Pack the tarball
         run: |
           mkdir "$RUNNER_TEMP/asset"
@@ -117,7 +119,10 @@ jobs:
           fi
           dist_tag=latest
           if [[ "$TAG" == *-* ]]; then dist_tag=next; fi
-          pnpm publish --access public --provenance --no-git-checks --tag "$dist_tag"
+          # the file packed above, not a pack of its own: npm, the release asset and Homebrew carry ONE tarball (same bytes, same sha256)
+          set -- "$RUNNER_TEMP"/asset/*.tgz
+          [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one packed tarball"; exit 1; }
+          pnpm publish "$1" --access public --provenance --no-git-checks --tag "$dist_tag"
 
   github-release:
     needs: publish

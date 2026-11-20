@@ -243,6 +243,10 @@ describe('Homebrew installs from the release asset, not from npm\'s CDN', () => 
   };
   it('the tarball is packed in the publish job, passed by artifact, attached to the release with --clobber, and the homebrew job waits for the release, not for npm', () => {
     expect(job('publish')).toContain('pnpm pack --pack-destination');
+    // npm gets the very file that is attached to the release and installed by Homebrew
+    expect(job('publish')).toContain('pnpm publish "$1" --access public --provenance --no-git-checks --tag "$dist_tag"');
+    expect(job('publish').indexOf('pnpm pack --pack-destination')).toBeLessThan(job('publish').indexOf('pnpm publish "$1"'));
+    expect(job('publish')).not.toMatch(/pnpm publish --/);
     expect(job('publish')).toMatch(/actions\/upload-artifact@[0-9a-f]{40} # v\d/);
     expect(job('github-release')).toMatch(/actions\/download-artifact@[0-9a-f]{40} # v\d/);
     expect(job('github-release')).toContain('gh release upload "$TAG" "$1" --repo "$GITHUB_REPOSITORY" --clobber');

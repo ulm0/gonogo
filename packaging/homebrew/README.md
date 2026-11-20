@@ -12,8 +12,8 @@
 - **Updates.** The `homebrew` job of `.github/workflows/release.yml` opens a pull request on the tap after each stable release, once the
   tarball is attached to the GitHub Release. It does not wait for npm: the sha256 is computed from the file the workflow uploaded, and the
   job only checks that the release serves that same file. (It used to read the npm registry's copy and failed on 0.7.0 and 0.8.1, when npm
-  still answered 404 after ten minutes.) The tarball is made by `pnpm pack` from the checked tag; npm gets its own pack from `pnpm publish`,
-  so the two files can differ in bytes but not in content. Off until the variable `HOMEBREW_TAP` is `true`.
+  still answered 404 after ten minutes.) The tarball is made once by `pnpm pack` from the checked tag, and `pnpm publish <tarball>` publishes that same file to npm: npm, the
+  release asset and the formula carry one file (one sha256). Off until the variable `HOMEBREW_TAP` is `true`.
 
 ## The Director creates
 
