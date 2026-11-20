@@ -1,3 +1,7 @@
+---
+description: "Sign in to gonogo with a password, a second factor and passkeys: the first-run setup, sessions, API keys for scripts, and what is allowed from the internet."
+---
+
 # Login: an account instead of the token
 
 <LoginMock class="doc-mock" />

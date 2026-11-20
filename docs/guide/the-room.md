@@ -1,3 +1,7 @@
+---
+description: "The room screen: the wall, the agents, the Director's console, FLIGHT the boss, positions, and how messages and approvals travel."
+---
+
 # The room
 
 The screen, the agents and how their messages travel.

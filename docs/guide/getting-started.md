@@ -1,4 +1,5 @@
 ---
+description: "Install gonogo with npm, Homebrew or Docker, make the account on the first run, and staff your first coding agent in a few minutes."
 pageClass: countdown
 ---
 

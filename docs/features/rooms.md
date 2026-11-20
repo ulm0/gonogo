@@ -1,3 +1,7 @@
+---
+description: "Run several separate rooms, each with its own agents, mail and settings, behind one address: the list of rooms, adding and removing them."
+---
+
 # Rooms: gonogo is a supervisor and one process per room
 
 <RoomsMock class="doc-mock" />
