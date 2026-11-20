@@ -6908,6 +6908,7 @@ describe('the co-author opt-out of an agent', () => {
 
 describe("the Director's words as a user turn (docs/features/relay.md)", () => {
   const POINTER = 'gonogo: 1 new message from user. Call read_messages.';
+  const TAIL = '(reply with send_message to user)';
 
   describe('the sanitizer', () => {
     it('keeps ordinary text, emoji and non-latin letters, and trims', () => {
@@ -6968,7 +6969,7 @@ describe("the Director's words as a user turn (docs/features/relay.md)", () => {
       await h.advance(DELIVERY_COALESCE_MS);
       expect(h.typed).toHaveLength(1);
       const text = h.typed[0]?.text ?? '';
-      expect(text).toBe(`${POINTER} [Director via web] go ahead, merge it`);
+      expect(text).toBe(`${POINTER} [Director via web] go ahead, merge it ${TAIL}`);
       expect(text.startsWith('gonogo: ')).toBe(true);
       // the user turn that shows up confirms it, as for any pointer
       h.prompt('ana', text);
@@ -6981,7 +6982,15 @@ describe("the Director's words as a user turn (docs/features/relay.md)", () => {
       const h = await withAna();
       h.hub.sendFromDirector({ to: 'ana', subject: 'Uplink: tg', body: 'Telegram message from Pierre in chat 1:\n\nyes, merge' }, 'telegram', 'yes, merge');
       await h.advance(DELIVERY_COALESCE_MS);
-      expect(h.typed[0]?.text).toBe(`${POINTER} [Director via Telegram] yes, merge`);
+      expect(h.typed[0]?.text).toBe(`${POINTER} [Director via Telegram] yes, merge ${TAIL}`);
+    });
+
+    it('the tail is gonogo\'s own words after his, only when his words are typed; the pointer alone has none; the role says to answer by send_message', async () => {
+      const h = await withAna();
+      h.hub.sendFromUser({ to: 'ana', subject: '', body: 'plain' });
+      await h.advance(DELIVERY_COALESCE_MS);
+      expect(h.typed.at(-1)?.text).toBe(POINTER);
+      expect(h.typed.at(-1)?.text).not.toContain(TAIL);
     });
 
     it('nothing else is typed as his: a plain message from the user (a schedule, an uplink, a trigger), an agent, a docked station', async () => {
@@ -7029,12 +7038,13 @@ describe("the Director's words as a user turn (docs/features/relay.md)", () => {
       h.hub.sendFromUser({ to: 'ana', subject: '', body: 'three (not his)' });
       await h.advance(DELIVERY_COALESCE_MS);
       expect(h.typed).toHaveLength(1);
-      expect(h.typed[0]?.text).toBe('gonogo: 3 new messages from user. Call read_messages. [Director via web] one [Director via Telegram] two');
+      expect(h.typed[0]?.text).toBe('gonogo: 3 new messages from user. Call read_messages. [Director via web] one [Director via Telegram] two ' + TAIL);
       const g = await withAna();
       for (let i = 0; i < 4; i += 1) g.hub.sendFromDirector({ to: 'ana', subject: '', body: `${i}${'x'.repeat(2000)}` }, 'web');
       await g.advance(DELIVERY_COALESCE_MS);
       const typed = g.typed[0]?.text ?? '';
       expect(typed.length).toBeLessThanOrEqual(1800);
+      expect(typed.endsWith(TAIL)).toBe(true);
       expect(typed).toContain('…');
       expect(typed.match(/\[Director via web\]/g)).toHaveLength(1);
     });
@@ -7052,7 +7062,7 @@ describe("the Director's words as a user turn (docs/features/relay.md)", () => {
       h.setTitle('ana', 'idle');
       expect(h.hook('ana', 'Stop')).toStrictEqual({});
       await h.advance(DELIVERY_SETTLE_MS + DELIVERY_COALESCE_MS);
-      expect(h.typed.at(-1)?.text).toBe(`${POINTER} [Director via web] now merge`);
+      expect(h.typed.at(-1)?.text).toBe(`${POINTER} [Director via web] now merge ${TAIL}`);
     });
 
     it('a Stop without a Director message still hands over the pointer in the block, as before; a second Stop of a deferred one does too', async () => {
