@@ -1,1 +1,0 @@
-- **Shorter feature pages (A-L).** Cut by about 26%, same commands, flags, limits and warnings.
