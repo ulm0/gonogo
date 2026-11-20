@@ -113,6 +113,8 @@ async function patch(page: Page, query: string): Promise<void> {
   await field.waitFor({ timeout: 3000 });
   await field.fill(query);
   await page.keyboard.press('Enter');
+  // the panel closes when it runs a line; one that stays open (no match) is closed, so it is not in the next shot
+  await field.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => page.keyboard.press('Escape'));
 }
 
 async function api(context: BrowserContext, method: 'POST' | 'PUT', path: string, data: unknown): Promise<void> {
