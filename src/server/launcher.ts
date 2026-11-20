@@ -261,6 +261,8 @@ export function buildChildEnv(input: {
   seed: boolean;
   /** Clearance: this agent's own keys. They win over the same name in `base` and are not scrubbed: the Director set them for this agent. */
   keys?: Record<string, string>;
+  /** A GitHub login per room: the folder `gh` keeps its login in for this room. It is only a default: a variable of the room's own environment or an agent's key named GH_CONFIG_DIR wins. */
+  gh?: string;
 }): Record<string, string> {
   const env: Record<string, string> = {};
   const extra = operatorScrub(input.base[SCRUB_EXTRA_VAR]);
@@ -270,6 +272,7 @@ export function buildChildEnv(input: {
     env[key] = value;
   }
   Object.assign(env, input.keys);
+  if (input.gh !== undefined && !hasText(env.GH_CONFIG_DIR)) env.GH_CONFIG_DIR = input.gh;
   if (input.seed) {
     env.IS_DEMO = '1';
     // A plain ANTHROPIC_API_KEY triggers a dialog whose default is "No" (or "Not logged in" under IS_DEMO)
@@ -446,6 +449,13 @@ async function transcriptExists(projectsRoot: string, dirs: readonly string[], s
 export function createLauncher(options: LauncherOptions): Launcher {
   const log = options.log ?? nullLogger;
   const homeDir = resolve(options.homeDir);
+  /** This room's own `gh` login (docs/features/github-login.md): made when an agent starts, private to the user. */
+  const ghDir = join(homeDir, 'gh');
+  const ensureGh = async (): Promise<string> => {
+    await mkdir(ghDir, { recursive: true, mode: DIR_MODE });
+    await chmod(ghDir, DIR_MODE).catch(() => undefined);
+    return ghDir;
+  };
   /** Keyed by the SHA-256 of the token: the token itself is never kept here, so the table can be saved for a live reload. */
   const byToken = new Map<string, AgentIdentity>();
   const hashOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
@@ -567,7 +577,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const dirInfo = await stat(agent.dir).catch(() => null);
     if (!dirInfo?.isDirectory()) throw new Error(`working directory does not exist: ${agent.dir}`);
     const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
-    const env = await withCoauthor(agent, buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name) }), where, agentDir(name));
+    const env = await withCoauthor(agent, buildChildEnv({ base: options.env ?? process.env, token: null, seed: false, keys: options.keys?.(name), gh: await ensureGh() }), where, agentDir(name));
     return { spec: { file, args, env, cwd: where }, flag: 'session-id', token: '' };
   };
 
@@ -596,7 +606,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const start = buildProviderStart(provider, ctx);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
     const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
-    const env = await withCoauthor(agent, { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: options.keys?.(agent.name) }), ...start.env }, where, base);
+    const env = await withCoauthor(agent, { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: options.keys?.(agent.name), gh: await ensureGh() }), ...start.env }, where, base);
     log.debug(`prepared ${agent.name} to run ${provider}`);
     return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
   };
@@ -695,7 +705,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
         effort = undefined;
       }
       const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
-      const childEnv = buildChildEnv({ base: env, token, seed, keys });
+      const childEnv = buildChildEnv({ base: env, token, seed, keys, gh: await ensureGh() });
       // a Clean Room has no git of the Director's inside: nothing to mark there
       if (clean === null) Object.assign(childEnv, await withCoauthor(agent, childEnv, startDir, base, true));
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
