@@ -46,6 +46,21 @@ With a Telegram **target** saved (the bot token and the chat id) gonogo asks Tel
 
 A Slack thread reply or Telegram reply to one of the last 500 posted messages (forgotten on restart) reaches the agent that wrote it, as a reply from you. If that agent was removed or renamed, the uplink's recipient gets it.
 
+## Your words as a user turn
+
+An agent reads mail with `read_messages`, and Claude Code's auto mode (its classifier) treats a tool result as **data, not as your words**: a "go" you wrote in the browser or on your phone did not authorize `gh pr merge --admin`, and the same words typed in the console did. So when gonogo has **checked that a message is yours**, it types your words into the agent's console as a user turn, after the pointer it already types, on one line:
+
+```
+gonogo: 1 new message from user. Call read_messages. [Director via Telegram] yes, merge it
+```
+
+- **Whose words.** Two places, and nothing else: the **BRIEF box and the message form of the page** when the request comes from a **signed-in browser session** (or the browser token of an install with no account yet), and a **Telegram message from your own private chat with the bot** (the chat of the Telegram target of Relay, with you as the sender; a group, a supergroup and a channel never count, and neither does a message that is forwarded, forwarded automatically from a channel or made by an inline bot: somebody else wrote it, and it arrives as a normal message). It is the supervisor, not the request, that says so: it adds the mark itself, drops any `x-gonogo-` header a sender wrote, and the room accepts it only on its local socket. **Never** typed as yours: a message from an agent or a docked station, an Uplink or a webhook of any kind (GitHub, Linear, Slack, a generic one), a schedule, a trigger, a task or a Relief message, an API key (it is a script, and a key can be made for a service), the local socket, the terminal client, Docking.
+- **One clean line.** Escape sequences are removed whole (colours, titles, the end of a bracketed paste), control, invisible and direction characters (zero-width, the Arabic letter mark, the Mongolian vowel separator, interlinear annotation marks, bidi controls, tag characters) are removed, line breaks and tabs become a space, and what is left is cut at 1,000 characters (1,400 in all in one pointer; the full text is always in `read_messages`). Nothing in it can end the paste or press a key. The line must still begin with `gonogo: ` or the terminal refuses it.
+- **Queued like the pointer.** A working agent is not typed into. When its turn ends it is **not** handed the pointer in the Stop block (that is hook output, not your turn): it goes idle and the console types the line then. If it cannot be typed, the next Stop hands over the pointer as before, so the message is never stuck. Your words are typed **once**: a pointer that has to be typed again is only the pointer. The message is marked read when the agent reads it, as ever.
+- **Every engine** that gets the pointer gets the line (they all take it as typed input); only Claude Code has a classifier that cares. The role text tells the agent that the line is yours.
+- **The switch**: FLIGHT RULES, FEATURES, *Director messages as user turns*, on by default, per room. Changing it asks for the password again when the last check is old, like every feature.
+- **The risk, said plainly.** Whoever holds your **signed-in browser session** or your **Telegram chat** speaks with your authority to the agents, and an agent in auto mode will act on it. Protect both as you protect the account: a second factor, a short session on a shared computer, a private Telegram chat that nobody else can write in. A non-Clean-Room console runs as the same user as gonogo and can reach the room's local socket itself: the mark protects against the network and against other senders, not against a process on the machine that already has your files.
+
 ## Whatever is said, the agent reads
 
 Anyone who can message or mention the bot reaches the agent, and issue titles, pull request bodies and comments arrive as messages from you. Use a private workspace or channel; choose the recipient and its permission mode accordingly.

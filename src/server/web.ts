@@ -873,6 +873,8 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!body) return;
           const parsed = parseUserMessage(body);
           if (!parsed.ok) sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
+          // the proxy says (and only over the local socket, which only the supervisor reaches) that a signed-in browser made this request
+          else if (viaSocket.has(req) && req.headers['x-gonogo-director'] === 'web') sendJson(res, 201, hub.sendFromDirector(parsed.value, 'web'));
           else sendJson(res, 201, hub.sendFromUser(parsed.value));
         },
       };

@@ -81,6 +81,8 @@ const PREFIX = /^\/r\/([^/?#]*)(\/[^?#]*)?(\?[^#]*)?$/;
 const ROOT_ALIASES = /^\/(?:api|ws|uplink|dock|hook|mcp)(?:\/|$)|^\/(?:sw\.js|manifest\.webmanifest|apple-touch-icon\.png|favicon\.(?:ico|svg)|icon-[\w-]+\.png|lockup\.svg)$/;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const DROPPED = new Set(['authorization', 'cookie', 'host', 'origin', 'forwarded', 'x-real-ip']);
+/** The one header the proxy adds for a room (docs/features/relay.md): "this POST /api/messages was made by a browser session that is signed in". Whatever a sender puts under any `x-gonogo-` name is dropped first, so only this code can say it. */
+export const DIRECTOR_HEADER = 'x-gonogo-director';
 const digest = (text: string): Buffer => createHash('sha256').update(text, 'utf8').digest();
 export const sameToken = (candidate: string | null, expected: string): boolean => candidate !== null && timingSafeEqual(digest(candidate), digest(expected));
 
@@ -217,15 +219,16 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   }
 
   /** The headers for the room: no secret of the browser; the socket is the credential. */
-  function forwardHeaders(req: IncomingMessage, target: Target, upgrade: boolean): http.OutgoingHttpHeaders {
+  function forwardHeaders(req: IncomingMessage, target: Target, upgrade: boolean, director = false): http.OutgoingHttpHeaders {
     const out: http.OutgoingHttpHeaders = {};
     for (const [name, value] of Object.entries(req.headers)) {
       const lower = name.toLowerCase();
-      if (DROPPED.has(lower) || lower.startsWith('x-forwarded-') || (!upgrade && HOP.has(lower))) continue;
+      if (DROPPED.has(lower) || lower.startsWith('x-forwarded-') || lower.startsWith('x-gonogo-') || (!upgrade && HOP.has(lower))) continue;
       if (upgrade && lower === 'sec-websocket-protocol') continue;
       out[lower] = value;
     }
     out.host = `127.0.0.1:${target.room.port}`;
+    if (director) out[DIRECTOR_HEADER] = 'web';
     // a browser's Origin was checked above and now names the room; another sender's is kept, so the room refuses it as it would
     if (req.headers.origin !== undefined) out.origin = target.kind === 'browser' ? `http://127.0.0.1:${target.room.port}` : req.headers.origin;
     if (upgrade) {
@@ -287,6 +290,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       const first = target.first.toLowerCase();
       /** What the step-up asks about this change, when a session makes it: after the body is read when the body decides. */
       let stepUp: { grant: Grant; method: string; path: string } | null = null;
+      // a message of the Director: the browser route of messages, with a login session (or the browser token of an install with no account yet). Not a key, not the local socket, not a terminal.
+      let director = false;
       if (target.kind === 'browser' && !((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
         const grant = options.auth.grant(req, 'api');
         if (grant === null) {
@@ -303,10 +308,11 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           return true;
         }
         if (grant.kind === 'session' || grant.kind === 'tui') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
+        director = (grant.kind === 'session' || grant.kind === 'token') && req.method === 'POST' && target.decoded === '/api/messages';
       }
       const forward = (buffered: Buffer | null): void => {
         const upstream = http.request(
-        { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false) },
+        { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false, director) },
         (answer) => {
           const headers: http.OutgoingHttpHeaders = {};
           // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2); no Service-Worker-Allowed: a room's script cannot widen its scope
