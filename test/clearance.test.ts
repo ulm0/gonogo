@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../src/shared/protocol.js';
 import { checkKeys, createClearance, keyNameProblem, keyNameReserved } from '../src/server/clearance.js';
 import { keyWarning } from '../src/shared/protocol.js';
+import { createRoomKeys } from '../src/server/roomkeys.js';
+import { KEYS_REFUSED_FILE, ROOM_KEYS_REFUSED_FILE } from '../src/server/constants.js';
 
 const SECRET = 'sk-test-0123456789abcdef';
 let dir: string;
@@ -215,6 +217,22 @@ describe('the key store', () => {
     expect(await readFile(join(dir, 'keys.json'), 'utf8')).toBe(main);
     expect(await readFile(join(dir, 'keys.refused.json'), 'utf8')).toBe('not json');
     expect(lines.join('\n')).not.toContain(SECRET);
+  });
+
+  it('the files kept aside are write-only for gonogo: no store reads them back, so what is in them is never given to an agent or sent to a page', async () => {
+    await writeFile(join(dir, KEYS_REFUSED_FILE), JSON.stringify({ version: 1, agents: { ana: { EDITOR: SECRET, OK_KEY: SECRET } } }));
+    await writeFile(join(dir, ROOM_KEYS_REFUSED_FILE), JSON.stringify({ version: 1, keys: { EDITOR: { value: SECRET }, OK_KEY: { value: SECRET } } }));
+    const clearance = createClearance({ dir, log });
+    const room = createRoomKeys({ dir, log });
+    await clearance.load();
+    await room.load();
+    expect(clearance.values('ana')).toEqual({});
+    expect(room.values(false)).toEqual({});
+    expect(JSON.stringify(room.view())).not.toContain(SECRET);
+    expect(clearance.refused()).toEqual([]);
+    expect(room.refused()).toEqual([]);
+    // and nothing in the server's source reads them but the one writer (keepAside)
+    for (const file of ['clearance.ts', 'roomkeys.ts']) expect(await readFile(new URL(`../src/server/${file}`, import.meta.url), 'utf8')).not.toMatch(/readFile\([^)]*REFUSED/);
   });
 
   it('warns, and does not refuse, on a CA override or ENV', () => {
