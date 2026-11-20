@@ -4,6 +4,16 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.9.1 (2026-11-20)
+
+Telegram photos and documents reach the agent; room main's move clears leftover worktrees and shows why when it can't; link previews for the docs site; passkeys library 14.1.0.
+
+- **Link previews for the docs site.** Pasting a docs address in WhatsApp, LinkedIn or Slack now shows a card: the logo and the tagline, with the page's own title and description (Open Graph and Twitter tags and a canonical address on every page). The card is `docs/brand/og.png`, made by `node scripts/og-image.mjs` with node alone, so it is the same file on every machine. The top pages have a description of their own. Not checked in WhatsApp or LinkedIn yet (they read the tags only after the site is deployed).
+- **Passkeys library 14.1.0, and a faster session count.** `@simplewebauthn/server` goes from 14.0.3 to 14.1.0: it refuses an invalid relying party id or origin at verification time, which gonogo never passes (passkeys already need a public name), so logins are unchanged. Reported cost counted an agent's sessions by scanning every kept session for each new one; it now keeps a count per agent, so a busy room no longer slows down as `reported.jsonl` grows.
+- **Moving main: a worktree whose ignored files cannot be listed is refused**, not removed (fail closed, like the check for uncommitted changes).
+- **Moving main takes away leftover worktrees that are safe to remove.** A `worktrees/` or `cleanroom/` folder left in the home by an agent that no longer exists no longer stops the move of room main into `rooms/main/` when its worktree is clean and its branch is merged: the move runs `git worktree remove` on it first (the branch is kept) and lists it. A dirty or unmerged one, or a folder git does not know, still refuses, and the reason is the exact command to run. A refusal now shows in a box above the room cards, and as an alert (inbox and phone) when you had pressed MIGRATE NOW.
+- **Photos and documents from Telegram reach the agent.** A photo or a PNG, JPG, WebP, GIF or PDF sent in the Telegram chat is downloaded into the agent's `inbox-files` folder (checked by its first bytes, 20 MB at most, 10 a minute) and the message says where it is, so you can send screenshots.
+
 ## 0.9.0 (2026-11-20)
 
 Room main moves into rooms/main on its own at start (with checks, a journal and undo); the Director's messages from the web or Telegram reach agents as their own turn; the phone layout works again; the edit form names the model and effort that apply; the docs are about half as long.
