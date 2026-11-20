@@ -25,12 +25,12 @@ if [ "$(id -u)" = 0 ]; then
   }
   fix "$HOME"
   # `docker exec -it gonogo gh auth login` runs as root and leaves root-owned files inside the home, which uid 1000 could not read: give the ENTRIES of the home
-  # that are root's to uid 1000. Only regular files and directories (a symlink an agent planted is no `-type f` or `-type d`, and is never followed), never across a mount
+  # that are root's to uid 1000. Only regular files with ONE link and directories (a symlink an agent planted is no `-type f` or `-type d` and is never followed; a hardlink planted to a root file has a second link and is never chowned, whatever fs.protected_hardlinks says), never across a mount
   # (-xdev for another device, and every mount point is pruned: a bind of the same filesystem has the same device, so -xdev alone does not see it), and `-execdir` so chown runs inside each directory on `./name` and `-h` leaves a symlink alone: nothing outside the home can be reached.
   # At this point nothing else of this container runs, so nobody can swap a path under it.
   case "$HOME" in
     '' | / | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /media | /mnt | /opt | /proc | /root | /run | /sbin | /srv | /sys | /tmp | /usr | /var) ;;
-    /*) if [ "$(realpath -e "$HOME" 2>/dev/null)" = "$HOME" ] && [ -d "$HOME" ] && [ ! -L "$HOME" ]; then find "$HOME" -xdev -mindepth 1 \( -type d -exec mountpoint -q {} \; -prune \) -o -user 0 \( -type f -o -type d \) -execdir chown -h 1000:1000 {} + 2>/dev/null; fi ;;
+    /*) if [ "$(realpath -e "$HOME" 2>/dev/null)" = "$HOME" ] && [ -d "$HOME" ] && [ ! -L "$HOME" ]; then find "$HOME" -xdev -mindepth 1 \( -type d -exec mountpoint -q {} \; -prune \) -o -user 0 \( -type f -links 1 -o -type d \) -execdir chown -h 1000:1000 {} + 2>/dev/null; fi ;;
   esac
   [ -n "${GONOGO_HOME:-}" ] && fix "$(dirname "$GONOGO_HOME")"
   fix "${CLAUDE_CONFIG_DIR:-}"

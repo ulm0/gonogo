@@ -222,7 +222,7 @@ describe('the container starts as root only to fix a bind folder, and drops to u
     const find = /find "\$HOME" (.*) -execdir chown -h 1000:1000 \{\} \+/.exec(rootPart);
     expect(find?.[1]).toBeDefined();
     expect(rootPart).toMatch(/realpath -e "\$HOME"[^\n]*= "\$HOME" \]/);
-    for (const part of ['-xdev', '-mindepth 1', '-user 0', '\\( -type f -o -type d \\)', '\\( -type d -exec mountpoint -q {} \\; -prune \\)']) expect(find?.[1], part).toContain(part);
+    for (const part of ['-xdev', '-mindepth 1', '-user 0', '\\( -type f -links 1 -o -type d \\)', '\\( -type d -exec mountpoint -q {} \\; -prune \\)']) expect(find?.[1], part).toContain(part);
     expect(rootPart).not.toMatch(/find [^\n]*(-L\b|-follow|-H\b)/);
     expect(rootPart).not.toContain('-exec chown');
     expect(rootPart).not.toMatch(/chown\s+-[a-zA-Z]*R/);
