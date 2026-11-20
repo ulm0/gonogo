@@ -31,13 +31,16 @@ const quiet = (sink: string[]): Logger => {
   return log;
 };
 
+const directors: unknown[] = [];
+
 function make(inbound?: Inbound): Uplinks {
   const u = createUplinks({
     dir,
     inbound,
     now: () => now,
-    send: (request) => {
+    send: (request, director) => {
       sent.push(request);
+      directors.push(director);
       return answer(request);
     },
     emit: (list) => void emitted.push(list),
@@ -666,6 +669,22 @@ describe('uplink: the kinds of Relay', () => {
     expect(sent).toEqual([]);
     expect(u.deliver('u1', text(555), { 'x-telegram-bot-api-secret-token': secret })).toMatchObject({ ok: true, id: 'm1' });
     expect(sent[0]?.body).toBe('Telegram message from Ulm in chat 555:\n\nhi');
+  });
+
+  it("hands the hub the Director's own words only for a private Telegram chat of the target; a generic uplink, a group chat and a test never do", async () => {
+    const u = make(inbound);
+    await u.load();
+    const tg = (await made(u, { kind: 'telegram', name: 'Bot' })).secret;
+    const update = (over: Record<string, unknown>): Buffer => Buffer.from(JSON.stringify({ update_id: 1, message: { message_id: 4, from: { id: 555, first_name: 'Ulm' }, chat: { id: 555, type: 'private' }, text: 'yes, merge', ...over } }));
+    expect(u.deliver('u1', update({}), { 'x-telegram-bot-api-secret-token': tg })).toMatchObject({ ok: true });
+    expect(directors.at(-1)).toEqual({ channel: 'telegram', said: 'yes, merge' });
+    expect(u.deliver('u1', update({ chat: { id: 555, type: 'supergroup' }, message_id: 5 }), { 'x-telegram-bot-api-secret-token': tg })).toMatchObject({ ok: true });
+    expect(directors.at(-1)).toBeUndefined();
+    const generic = await made(u, { name: 'Hook' });
+    expect(u.deliver('u2', Buffer.from(JSON.stringify({ text: 'yes, merge' })), { authorization: `Bearer ${generic.secret}` })).toMatchObject({ ok: true });
+    expect(directors.at(-1)).toBeUndefined();
+    await u.test('u1');
+    expect(directors.at(-1)).toBeUndefined();
   });
 
   it('tests a service uplink with the same sample as any other', async () => {

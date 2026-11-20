@@ -52,7 +52,7 @@ export interface UplinksOptions {
   dir: string;
   now(): number;
   /** Hub.sendFromUser: a message from the Director. May throw a HubError. */
-  send(request: UserMessageRequest): SendResult;
+  send(request: UserMessageRequest, director?: Director): SendResult;
   /** The whole list changed (an uplink made, edited, removed or delivered to). */
   emit(uplinks: UplinkView[]): void;
   /** Downlink: requests that did not prove themselves, more than UPLINK_BAD_MAX in UPLINK_BAD_WINDOW_MS. */
@@ -105,7 +105,12 @@ export interface Inbound {
   telegramChat(): string | null;
 }
 /** What a kind makes of a body: a message, an answer for the sender (a ping, a challenge), or null for an event that is not for the agents. */
-export type Made = { text: string; cut: boolean; to?: string; subject?: string; inReplyTo?: string; once?: string } | { answer: unknown; note: string } | { callback: ButtonPress } | null;
+/** Set by a kind that checked the sender is the Director himself (Telegram: the private chat of the target): his own words, to be typed as a user turn. */
+export interface Director {
+  channel: 'telegram';
+  said: string;
+}
+export type Made = { text: string; cut: boolean; to?: string; subject?: string; inReplyTo?: string; once?: string; director?: Director } | { answer: unknown; note: string } | { callback: ButtonPress } | null;
 
 /** A press of a button of a phone (Telegram `callback_query`) from the Director's own chat: what phone.ts checks and acts on. */
 export interface ButtonPress {
@@ -288,12 +293,12 @@ export function createUplinks(options: UplinksOptions): Uplinks {
       const request = { to: message.to ?? u.to, subject: message.subject ?? uplinkSubject(u.name), body: message.text, inReplyTo: message.inReplyTo };
       let sent: SendResult;
       try {
-        sent = options.send(request);
+        sent = options.send(request, message.director);
       } catch (error) {
         // that agent was removed or renamed since: the uplink's own recipient gets the reply, so that the service is not
         // answered 409 and does not send the same update again and again (Telegram does)
         if (message.to === undefined || !(error instanceof HubError && error.code === 'not_found')) throw error;
-        sent = options.send({ ...request, to: u.to });
+        sent = options.send({ ...request, to: u.to }, message.director);
       }
       record(u, sent.status, `${label}${sent.id}${sent.note ? `: ${sent.note}` : ''}${message.cut ? ' (cut)' : ''}`, { what: `${label}${message.text}`, message: sent.id, agent: sent.to });
       return sent;

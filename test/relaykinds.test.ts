@@ -264,6 +264,30 @@ describe('relay kinds: Telegram', () => {
     expect(read('telegram', { update_id: 3, channel_post: { text: 'x', chat: { id: 555 } } })).toBeNull();
   });
 
+  describe("the Director's words as a user turn", () => {
+    const from = (id: number, type: string, over: Record<string, unknown> = {}): unknown => ({ update_id: 1, message: { message_id: 40, from: { id, first_name: 'Ulm' }, chat: { id: 555, type }, text: 'yes, merge it', ...over } });
+    const directorOf = (made: unknown): unknown => (made as { director?: unknown } | null)?.director;
+
+    it('marks the words of his own private chat: the chat of the target, with him as the sender', () => {
+      expect(directorOf(read('telegram', from(555, 'private')))).toEqual({ channel: 'telegram', said: 'yes, merge it' });
+      // a reply to something gonogo forwarded is his too
+      threads.set('telegram:555:77', { id: 'm5', agent: 'bo', subject: 'Need a decision' });
+      expect(directorOf(read('telegram', from(555, 'private', { reply_to_message: { message_id: 77 } })))).toEqual({ channel: 'telegram', said: 'yes, merge it' });
+      threads.clear();
+    });
+
+    it('does not mark a group, a supergroup, a channel, or somebody else in the chat of the target', () => {
+      for (const type of ['group', 'supergroup', 'channel', 'weird']) expect(directorOf(read('telegram', from(555, type))), type).toBeUndefined();
+      expect(directorOf(read('telegram', from(9, 'private')))).toBeUndefined();
+      expect(textOf(read('telegram', from(9, 'private')))).toMatch(/^Telegram message from/);
+    });
+
+    it('never marks a message of another chat (those are not messages at all), a button, or another kind of uplink', () => {
+      expect(read('telegram', { update_id: 1, message: { from: { id: 777 }, chat: { id: 777, type: 'private' }, text: 'let me in' } })).toBeNull();
+      for (const kind of ['github', 'slack', 'linear'] as const) expect(directorOf(read(kind, { any: 'thing', channel: 555, text: 'x', chat: { id: 555, type: 'private' } })), kind).toBeUndefined();
+    });
+  });
+
   it('makes a reply of a Telegram reply to a message that gonogo forwarded', () => {
     threads.set('telegram:555:77', { id: 'm5', agent: 'bo', subject: 'Need a decision' });
     expect(read('telegram', message({ reply_to_message: { message_id: 77 }, text: 'go' }))).toEqual({ text: 'go', cut: false, to: 'bo', inReplyTo: 'm5', subject: 'Re: Need a decision' });

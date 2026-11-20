@@ -208,11 +208,13 @@ function telegramRead(raw: Buffer, _headers: IncomingHttpHeaders, inbound: Inbou
   const chat = str(get(message, 'chat.id'));
   // a bot can be found and written to by anybody on Telegram: only the chat of the target is the Director
   if (said === '' || chat === '' || chat !== inbound.telegramChat()) return null;
+  // his own words as a user turn only from a PRIVATE chat with him: in a group anybody who is in it is in the chat of the target
+  const own = str(get(message, 'chat.type')) === 'private' && str(get(message, 'from.id')) === chat ? { director: { channel: 'telegram' as const, said } } : {};
   const parent = inbound.find(`telegram:${chat}:${str(get(message, 'reply_to_message.message_id'))}`);
-  if (parent !== undefined) return text(excerpt(said, 4000), { to: parent.agent, inReplyTo: parent.id, subject: `Re: ${parent.subject}`.slice(0, 200) });
+  if (parent !== undefined) return text(excerpt(said, 4000), { to: parent.agent, inReplyTo: parent.id, subject: `Re: ${parent.subject}`.slice(0, 200), ...own });
   const name = line(get(message, 'from.first_name'), 60);
   const handle = line(get(message, 'from.username'), 60);
-  return text(`Telegram message from ${[name, handle && `@${handle}`].filter(Boolean).join(' ') || 'the Director'} in chat ${chat}:\n\n${excerpt(said, 4000)}`);
+  return text(`Telegram message from ${[name, handle && `@${handle}`].filter(Boolean).join(' ') || 'the Director'} in chat ${chat}:\n\n${excerpt(said, 4000)}`, own);
 }
 
 /** The kinds that Relay adds to the generic one (uplinks.ts `KINDS`). */

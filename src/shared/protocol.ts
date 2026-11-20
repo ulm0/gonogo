@@ -1586,6 +1586,9 @@ export interface VoteResult {
   ok: boolean;
   note: string;
 }
+/** Where a message of the Director came from, when gonogo checked it: a browser session that is signed in (or the browser token of an install with no account yet), or his own private Telegram chat. Never from a request body. */
+export type DirectorChannel = 'web' | 'telegram';
+
 export interface UserMessageRequest {
   /** Agent name or "boss". Never "user". */
   to: string;
@@ -2337,6 +2340,11 @@ export interface Hub {
   remove(name: string): Promise<void>;
   /** from = "user", hops 0. Throws HubError on invalid input: bad_request for a user recipient, an empty or too long body or subject; not_found (field `to`) for an unknown recipient. */
   sendFromUser(req: UserMessageRequest): SendResult;
+  /**
+   * sendFromUser for a message that gonogo itself checked came from the Director (the route of the browser, or the Telegram kind of Uplink): when the
+   * pointer for it is typed, his words go after it as a user turn (docs/features/relay.md). `said` is what to type when the body is not his text alone.
+   */
+  sendFromDirector(req: UserMessageRequest, channel: DirectorChannel, said?: string): SendResult;
   /**
    * Docking: a message that came from `station`. The record says it is from "<from>@<station>" and keeps the hops it came with.
    * Throws HubError: bad_request for a `to` that is "user" or has an @ (a station never writes to the Director or on to a third

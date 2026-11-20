@@ -314,6 +314,10 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       if (req.to === 'nobody') throw new FakeHubError('not_found', 'unknown recipient "nobody"', 'to');
       return { ok: true, id: 'm1', to: req.to === 'boss' ? 'flight' : req.to, status: 'queued', note: 'waiting: about to type the pointer' };
     },
+    sendFromDirector: (req, channel, said) => {
+      rec('sendFromDirector', req, channel, said);
+      return { ok: true, id: 'm1', to: req.to === 'boss' ? 'flight' : req.to, status: 'queued', note: 'waiting: about to type the pointer' };
+    },
     sendFromStation: (station, req) => {
       rec('sendFromStation', station, req);
       return { ok: true, id: 'm13', to: req.to, status: 'queued', note: 'waiting: ben is working' };
@@ -4226,6 +4230,39 @@ describe('web: REST', () => {
       expect(res.status).toBe(201);
       expect(res.json()).toEqual({ ok: true, id: 'm1', to: 'flight', status: 'queued', note: 'waiting: about to type the pointer' });
       expect(hubCalls.filter((c) => c.fn === 'sendFromUser').map((c) => c.args[0])).toStrictEqual([{ to: 'boss', body: 'do it', subject: 'Brief', inReplyTo: 'm2' }]);
+    });
+
+    describe("the Director's words (docs/features/relay.md)", () => {
+      /** A request on the local socket, the way the supervisor's proxy makes one. */
+      const overSocket = (socketPath: string, headers: Record<string, string>): Promise<number> =>
+        new Promise((resolve, reject) => {
+          const req = httpRequest({ socketPath, method: 'POST', path: '/api/messages', headers: { 'Content-Type': 'application/json', ...headers } }, (res) => {
+            res.resume();
+            res.on('end', () => resolve(res.statusCode ?? 0));
+          });
+          req.on('error', reject);
+          req.end(JSON.stringify({ to: 'boss', body: 'go' }));
+        });
+      const sockets = (): string => join(mkdtempSync(join(tmpdir(), 'gng-dt-')), 's');
+
+      it('a request over the local socket with the proxy\'s mark goes to the hub as the Director\'s, with the place web; without it, or with another mark, it is a plain message', async () => {
+        const path = sockets();
+        const { hubCalls } = await startWeb({ localSocket: path });
+        expect(await overSocket(path, { 'x-gonogo-director': 'web' })).toBe(201);
+        expect(await overSocket(path, {})).toBe(201);
+        expect(await overSocket(path, { 'x-gonogo-director': 'telegram' })).toBe(201);
+        expect(await overSocket(path, { 'x-gonogo-director': 'WEB' })).toBe(201);
+        expect(hubCalls.filter((c) => c.fn === 'sendFromDirector').map((c) => c.args.slice(0, 2))).toStrictEqual([[{ to: 'boss', body: 'go' }, 'web']]);
+        expect(hubCalls.filter((c) => c.fn === 'sendFromUser')).toHaveLength(3);
+      });
+
+      it('the mark means nothing on the TCP port (the browser token, an agent\'s token): the message is a plain one', async () => {
+        const { port, hubCalls } = await startWeb();
+        const res = await send(port, { method: 'POST', path: '/api/messages', headers: { ...bearer(TOKEN), ...JSON_HEADERS, 'x-gonogo-director': 'web' }, body: JSON.stringify({ to: 'boss', body: 'go' }) });
+        expect(res.status).toBe(201);
+        expect(hubCalls.filter((c) => c.fn === 'sendFromDirector')).toHaveLength(0);
+        expect(hubCalls.filter((c) => c.fn === 'sendFromUser')).toHaveLength(1);
+      });
     });
 
     it('relays the hub refusals: a message to the user is 400 and an unknown recipient is 404, both with field to', async () => {

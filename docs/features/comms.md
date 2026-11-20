@@ -11,6 +11,7 @@ COMMS (top bar, or COMMS on a phone) is the one place for what is said in the ro
 | **THREADS** | The same messages grouped as conversations, with a reply box. [Details](./party-line.md). | Party Line |
 
 - **The count** on COMMS (and on the INBOX tab) is the Downlink's unread count. A notification opens the INBOX tab.
+- **Your own words reach the agent as your turn.** A message from the BRIEF box (or the page's message form) while you are signed in, and a message from your private Telegram chat, are also typed into the agent's console as `[Director via web]` or `[Director via Telegram]` and your words, so a "go" counts as yours in auto mode. [Details and the risk](./relay.md#your-words-as-a-user-turn).
 - **The tab is remembered** in this browser. COMMS opens the one you used last; the Patch Panel lines `Comms: inbox`, `Comms: traffic` and `Comms: threads` open a given one. The old words (loop, downlink, party line) still find them.
 - **A console's "Comm loop" link** opens TRAFFIC filtered to that agent. Pick `everyone` in the AGENT picker to see the whole room again.
 - **On a phone** the tabs are three large keys; COMMS replaces the LOOP and DOWN keys of the bottom bar, which leaves one key free.
