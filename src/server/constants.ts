@@ -84,6 +84,8 @@ export const DIRECTOR_TURN_CHARS = 1000;
 export const DIRECTOR_TURNS_TOTAL_CHARS = 1400;
 /** What may reach a pointer's line at all: the pointer, its Director parts and some room for the names. */
 export const POINTER_LINE_MAX_CHARS = 1800;
+/** What a pty host started before the Director's words existed accepts as a pointer: after a `gonogo reload` it can still be the one that types. */
+export const LEGACY_POINTER_MAX_CHARS = 500;
 
 /* ---- state reconciliation (hooks lie by omission: Esc, denied dialogs and ! commands fire no hook) ---- */
 /** Design: title shows the idle glyph while the state is working for more than 2 s (counted from the later of the glyph change and the last state change) => idle. */

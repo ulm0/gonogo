@@ -7067,6 +7067,31 @@ describe("the Director's words as a user turn (docs/features/relay.md)", () => {
       expect(g.hook('ana', 'Stop')).toMatchObject({ decision: 'block', reason: POINTER });
     });
 
+    it('a pty host from before a reload still takes 500 characters: a pointer with his words over that is refused once, then the plain pointer is typed and delivered', async () => {
+      const h = await withAna();
+      h.io.typePointer = (name, generation, text) => {
+        h.typed.push({ name, generation, text });
+        return text.length <= 500;
+      };
+      const sent = h.hub.sendFromDirector({ to: 'ana', subject: '', body: 'y'.repeat(900) }, 'web');
+      await h.advance(DELIVERY_SETTLE_MS + RECONCILE_TICK_MS * 3);
+      expect(h.typed[0]?.text.length).toBeGreaterThan(500);
+      expect(h.typed.at(-1)?.text).toBe(POINTER);
+      h.prompt('ana', h.typed.at(-1)?.text ?? '');
+      expect(h.msg(sent.id).status).toBe('delivered');
+      expect(h.warnings.join('\n')).toContain('typing the pointer alone');
+      // a short message the old host takes is typed with the words, as ever
+      const g = await withAna();
+      g.io.typePointer = (name, generation, text) => {
+        g.typed.push({ name, generation, text });
+        return text.length <= 500;
+      };
+      g.hub.sendFromDirector({ to: 'ana', subject: '', body: 'short' }, 'web');
+      await g.advance(DELIVERY_COALESCE_MS);
+      expect(g.typed).toHaveLength(1);
+      expect(g.typed[0]?.text).toContain('[Director via web] short');
+    });
+
     it('his words are typed once: a pointer that has to be typed again is only the pointer', async () => {
       const h = await withAna();
       h.hub.sendFromDirector({ to: 'ana', subject: '', body: 'go' }, 'web');

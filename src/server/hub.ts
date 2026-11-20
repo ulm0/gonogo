@@ -115,6 +115,7 @@ import {
   PASTE_END,
   PERMISSION_SUMMARY_CHARS,
   DIRECTOR_TURN_CHARS,
+  LEGACY_POINTER_MAX_CHARS,
   DIRECTOR_TURNS_TOTAL_CHARS,
   POINTER_MAX_ATTEMPTS,
   POINTER_MAX_SENDERS,
@@ -1367,6 +1368,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       log.warn(`could not type the pointer into ${name}`, error);
     }
     if (!typed) {
+      // A pty host that outlived a reload may still cap a pointer at the old 500 characters: a line with the Director's words over that is refused for ever. Those words are dropped, so the next sweep types the plain pointer.
+      if (text.length > LEGACY_POINTER_MAX_CHARS && text !== pointerText(records)) {
+        for (const record of records) directorTurns.delete(record.id);
+        log.warn(`the pointer with the Director's words for ${name} was refused (${text.length} characters; a pty host from before may take only ${LEGACY_POINTER_MAX_CHARS}): typing the pointer alone`);
+      }
       log.debug(`the pointer for ${name} was not written; the next sweep tries again`);
       return;
     }
