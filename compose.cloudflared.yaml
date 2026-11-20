@@ -14,7 +14,7 @@
 # HTTP Host Header to the same name (gonogo checks the Host). Cloudflare ends the TLS: it can see every password, cookie, TOTP code and terminal byte.
 services:
   cloudflared:
-    image: cloudflare/cloudflared:2026.8.1
+    image: cloudflare/cloudflared:2026.11.1
     restart: always
     command: tunnel --no-autoupdate run
     environment:
