@@ -100,3 +100,9 @@ location / {
 - The long timeout is for agent stops (up to 8 seconds) and terminal sockets (open for hours).
 - To take Uplink webhooks from the internet without exposing the page, use a separate name that forwards `/uplink/` only ([Uplink](../features/uplink.md)).
 - Do not log the `Sec-WebSocket-Protocol` header: it carries the browser token.
+
+## The Docker image
+
+- **Who runs as whom.** The container starts as root; the server and agents run as uid 1000 (`node`; `bypassPermissions` refuses root). At start the entrypoint gives uid 1000 the top (never recursively, never through a symlink) of `$HOME`, the folder above `$GONOGO_HOME`, `$CLAUDE_CONFIG_DIR` and the working directory, but only those that are root-owned mount points (a folder Docker created as `root:root`), and logs it. Root-owned regular files and folders in `/home/node` go to uid 1000 too. PID 1 (`tini`) stays root. `--user 1000:1000` (or compose `user:`) skips all of it: nothing is chowned, and an unwritable home gets a warning with the `chown` to run. A self-update from an older image makes the copy start as root too; its helper runs as uid 1000.
+- **`docker exec` starts as root.** `gonogo` drops to uid 1000 itself; for `gh auth login` or anything writing in the home use `docker exec -u node ...`, or the files are root's.
+- **Seed mode** (on) answers Claude Code's five first-run dialogs (theme, login method, folder trust, bypass warning, API key) so a fresh container does not stop. It records folder trust for every folder an agent is hired into, except `/`, your home and folders holding either or the state: **add only repositories you trust**. It sets `IS_DEMO=1` for each `claude` (hides account name and organisation) and moves `ANTHROPIC_API_KEY` out of the agent's environment into an `apiKeyHelper`.

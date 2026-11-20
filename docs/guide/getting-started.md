@@ -12,8 +12,8 @@ Run coding agents (Claude Code, Codex, Gemini CLI and more) as real CLIs in term
 
 ## Requirements
 
-- Node 24+; macOS or Linux with glibc 2.28+ (not Alpine, not Windows). No `--no-optional` install: the terminal binary is an optional package.
-- One agent CLI on the `PATH`, signed in: `claude` (written against 2.1.325) or another ([Engine Bay](../features/engine-bay.md)). Telemetry and Max Q need hooks (Claude Code, Gemini CLI).
+- Node 24+; macOS or Linux with glibc 2.28+ (not Alpine, not Windows). Do not install with `--no-optional`: the terminal library's binary is an optional package, and without it `gonogo` prints the library's message and exits with code 1.
+- One agent CLI on the `PATH`, signed in: `claude` (written against 2.1.325) or another ([Engine Bay](../features/engine-bay.md)). Telemetry and Max Q need hooks (Claude Code, Gemini CLI); other engines show state from their output. How far each was checked: [What was not verified](../reference/not-verified.md).
 
 </div>
 
@@ -28,9 +28,22 @@ brew install ulm0/tap/gonogo               # or Homebrew; update: brew upgrade g
 pnpm install && pnpm build && pnpm start   # or from a clone (`corepack enable pnpm`)
 ```
 
-Scoped name only: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. With pnpm, name the version and exempt gonogo: where `minimumReleaseAge` is set, a young release is refused and `@latest` picks an older one (dependencies keep the check). [Options](../reference/configuration.md#options) follow the command (`--port 7780`).
+Scoped name only: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. With pnpm, name the version and exempt gonogo: where `minimumReleaseAge` is set, a young release is refused and `@latest` picks an older one (dependencies keep the check). [Options](../reference/configuration.md#options) follow the command: `gonogo --port 7780`, `pnpm start --port 7780`.
 
-It prints one line on stdout (the rest is stderr): `gonogo ready: http://127.0.0.1:7777/#token=<64 hex characters>`. Open it; the page keeps the token and clears the address bar. A copy is in `~/.gonogo/token` (0600): `echo "http://127.0.0.1:7777/#token=$(cat ~/.gonogo/token)"`. **The URL is a password: the server runs shells.**
+</div>
+
+<div class="t-step">
+
+## First run
+
+It prints, on stdout (the rest is stderr):
+
+```
+gonogo ready: http://127.0.0.1:7777/#token=<64 hex characters>
+gonogo setup: open http://127.0.0.1:7777/setup and give this setup token (one use, one hour; it is also in ~/.gonogo/setup-token): <token>
+```
+
+Open `/setup`, give the setup token, a name and a password of 12+ characters: you are signed in ([Login](../features/login.md)). Setup is answered on this machine and your local network only. Once the account exists the `#token=` address stops working (the file is deleted for good); scripts and `gonogo tui` use the local socket, or a key (`gonogo auth key add <name> --remote`). The token after `#` is never sent to a server: the page keeps it and clears the address bar. **The URL and the setup token are passwords: the server runs shells.**
 
 </div>
 
@@ -38,16 +51,6 @@ It prints one line on stdout (the rest is stderr): `gonogo ready: http://127.0.0
 
 ## Staff your first console
 
-`+ STAFF A CONSOLE` (or an open cell):
-
-| Field | Value |
-|---|---|
-| Engine | Claude Code by default |
-| Name | lowercase letters, digits, hyphens; at most 32 |
-| Role | free text; at most 4000 characters |
-| Working directory | an existing absolute path on the gonogo machine (`~` is not expanded) |
-| Permission mode | `default` asks before a tool runs; `acceptEdits` edits without asking; `auto` asks only about calls judged unsafe (depends on account and model); `bypassPermissions` runs everything (tick the box) |
-
-At most 24 agents. Edits apply at the next restart. Folds: [Payload](../features/payload.md), [Clean Room](../features/clean-room.md), MODEL and CLEARANCE ([Engine Bay](../features/engine-bay.md#model)). `gonogo doctor` lists the agent CLIs found; [Rollout](../features/rollout.md) tells you about a newer gonogo. Docs: <https://gonogo.ulm0.com/>.
+`+ STAFF A CONSOLE` (or an open cell): pick an engine (Claude Code by default), a name (lowercase letters, digits, hyphens, at most 32), a role, an absolute working directory that exists on the gonogo machine (`~` is not expanded) and a permission mode ([Permissions](../features/permissions.md); `bypassPermissions` needs a ticked box). At most 24 agents; edits apply at the next restart. Folds: [Payload](../features/payload.md), [Clean Room](../features/clean-room.md), MODEL and CLEARANCE ([Engine Bay](../features/engine-bay.md#model)). `gonogo doctor` lists the agent CLIs found; [Rollout](../features/rollout.md) tells you about a newer gonogo. Docs: <https://gonogo.ulm0.com/>.
 
 </div>

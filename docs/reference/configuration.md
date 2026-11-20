@@ -76,3 +76,7 @@ Every JSON file above with a format, and each Mission Log entry's front matter a
 - **Mission Log entries** are not upgraded; a newer one is skipped with a warning and kept.
 - **`board.md`** is not upgraded; a newer one stops the start with the message above.
 - **Not versioned**: `messages.jsonl`, `fuel.jsonl`, `telemetry.jsonl` and the day files of `black-box/` (an unreadable line is skipped), `mission-log/.seq`, `token`, `server.lock`, and files under `agents/<name>/` rewritten every start.
+
+## In the Docker image
+
+Environment: `GONOGO_INSTALL=docker`, `HOME=/home/node`, `CLAUDE_CONFIG_DIR=/state/claude`, `GONOGO_HOME=/state/gonogo`, `GONOGO_SEED_CLAUDE=1`, `DISABLE_AUTOUPDATER=1`, `LANG=C.UTF-8`. Command: `gonogo --host 0.0.0.0 --port 7777`. Every option above works as an `-e` variable (`-e GONOGO_ALLOWED_HOSTS=...`) or as arguments after the image name, which replace the whole command: repeat `--host 0.0.0.0 --port 7777`. Health check: every 30 s `GET /rooms/health` on port 7777 (503 until room main was ready once, then 200): with another port give a matching `--health-cmd` or the container is `unhealthy` and every self-update rolls back. Stop with `docker stop -t 15` or more (agents stop within 8 s, gonogo gives up at 12). Base image `node:24-bookworm-slim` floats: pin with `--build-arg NODE_IMAGE=...@sha256:<digest>`; `--build-arg CLAUDE_CODE_VERSION=<x.y.z>` and `DOCKER_CLI_IMAGE=...` change the other pieces.
