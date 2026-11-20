@@ -171,6 +171,7 @@ describe('position tiles', () => {
       'Tests and debugging',
       'Adversarial tester',
       'Code reviewer',
+      'Keeps the repository and the workspace clean',
       'Security reviewer',
       'Docs',
       'Reporter',
