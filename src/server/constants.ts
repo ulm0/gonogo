@@ -453,6 +453,9 @@ export const MODELS_FILE = 'models.json';
 export const PAYLOAD_DEFAULTS_FILE = 'payload-defaults.json';
 /** Room keys (docs/features/room-keys.md): environment variables every agent of the room gets, `{ version: 1, keys: { NAME: { value, at, cleanRoom? } } }`, mode 0600. */
 export const ROOM_KEYS_FILE = 'room-keys.json';
+/** Keys that load refused because their name is reserved now (kept aside, never deleted: a downgrade or a rename can bring them back), mode 0600, merged when it exists. */
+export const KEYS_REFUSED_FILE = 'keys.refused.json';
+export const ROOM_KEYS_REFUSED_FILE = 'room-keys.refused.json';
 export const QUOTA_FILE = 'quota.json';
 /** Feature toggles (docs/features-spec.md): `{ version: 1, off: ['static-fire'] }`, only the off ids. */
 export const FEATURES_FILE = 'features.json';

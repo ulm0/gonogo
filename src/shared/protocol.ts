@@ -111,9 +111,11 @@ export const KEYS_MAX = 16;
  * token included). The key forms warn on them and do not refuse them (a company proxy needs exactly this). Text for the form, or null.
  */
 export const keyWarning = (name: string): string | null =>
-  name === 'NODE_EXTRA_CA_CERTS' || name === 'SSL_CERT_FILE' || name === 'SSL_CERT_DIR'
-    ? `${name} adds a certificate authority that this agent's programs will trust. With a proxy in the way, whoever holds that authority can read the agent's TLS traffic, Anthropic tokens included. Set it only for a CA you control.`
-    : null;
+  name === 'ENV'
+    ? 'ENV names a file that an interactive sh runs when it starts. It is a common application setting (ENV=production), so it is allowed; set it to a path only for a file you control.'
+    : name === 'NODE_EXTRA_CA_CERTS' || name === 'SSL_CERT_FILE' || name === 'SSL_CERT_DIR'
+      ? `${name} adds a certificate authority that this agent's programs will trust. With a proxy in the way, whoever holds that authority can read the agent's TLS traffic, Anthropic tokens included. Set it only for a CA you control.`
+      : null;
 /** Names the form suggests for a key: the variables `pi --help` (1.5.2) lists, then the Amazon Bedrock ones (docs/facts/bedrock.md). Hints, not a list. */
 export const KEY_SUGGESTIONS = [
   'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY',

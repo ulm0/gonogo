@@ -11,8 +11,8 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX } from '../shared/protocol.js';
 import type { Logger, RoomKeysView } from '../shared/protocol.js';
-import { keyNameProblem, keyNameReserved } from './clearance.js';
-import { FILE_MODE, nullLogger, ROOM_KEYS_FILE } from './constants.js';
+import { keepAside, keyNameProblem, keyNameReserved } from './clearance.js';
+import { FILE_MODE, nullLogger, ROOM_KEYS_FILE, ROOM_KEYS_REFUSED_FILE } from './constants.js';
 import { HubError } from './hub.js';
 
 const VALUE_RE = new RegExp(KEY_VALUE_PATTERN);
@@ -45,6 +45,7 @@ export function createRoomKeys(options: { dir: string; now?: () => number; log?:
   const path = join(options.dir, ROOM_KEYS_FILE);
   let keys = new Map<string, Entry>();
   let refused: string[] = [];
+  const aside: Array<[name: string, entry: unknown]> = [];
   let chain: Promise<unknown> = Promise.resolve();
 
   const view = (): RoomKeysView => ({ keys: [...keys].map(([name, e]) => ({ name, at: e.at, cleanRoom: e.cleanRoom })) });
@@ -80,14 +81,26 @@ export function createRoomKeys(options: { dir: string; now?: () => number; log?:
           if (keyNameProblem(name) !== null || !isRecord(entry) || typeof entry.value !== 'string' || !VALUE_RE.test(entry.value)) {
             // the name only, and only when it has the shape of one: a value pasted in the name field must not reach the log
             skipped.push(NAME_RE.test(name) ? name : '(an entry whose name is not usable)');
-            if (keyNameReserved(name)) refused.push(name);
+            if (keyNameReserved(name)) {
+              refused.push(name);
+              aside.push([name, entry]);
+            }
             continue;
           }
           keys.set(name, { value: entry.value, at: typeof entry.at === 'number' ? entry.at : 0, cleanRoom: entry.cleanRoom === true });
         }
         if (skipped.length > 0) log.warn(`${ROOM_KEYS_FILE}: skipped ${skipped.length} entr${skipped.length === 1 ? 'y' : 'ies'} that cannot be a room key (a reserved or unusable name, or a value that is not printable text without a space): ${skipped.join(', ')}. The next change to the keys writes the file without them.`);
-        // written at once when a reserved name was refused, so the value leaves the disk and the Downlink note is made once
-        if (refused.length > 0) await write(() => new Map(keys)).catch((error: unknown) => log.error(`${ROOM_KEYS_FILE}: could not rewrite the file without the refused keys`, error));
+        // a refused key is kept aside in room-keys.refused.json (0600, merged), then the file is written without it: nothing is deleted, and the Downlink note is made once
+        if (refused.length > 0) {
+          try {
+            await keepAside(join(options.dir, ROOM_KEYS_REFUSED_FILE), (saved) => {
+              saved.keys = { ...(isRecord(saved.keys) ? saved.keys : {}), ...Object.fromEntries(aside) };
+            });
+            await write(() => new Map(keys));
+          } catch (error) {
+            log.error(`${ROOM_KEYS_FILE}: could not keep the refused keys aside in ${ROOM_KEYS_REFUSED_FILE} and rewrite the file; it is left as it was`, error instanceof Error ? error.message : 'error');
+          }
+        }
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
         // kept aside, so that the next save cannot overwrite the keys; a SyntaxError quotes the text around the fault, which can be a key

@@ -113,8 +113,10 @@ describe('the store', () => {
     await a.load();
     expect(a.refused()).toEqual(['EDITOR']);
     expect(a.values(false)).toEqual({ OK_KEY: 'v' });
-    // rewritten at once: the value is off the disk and the next start refuses nothing
+    // moved, not deleted: the value is in room-keys.refused.json (0600), the main file is rewritten without it, and the next start refuses nothing
     expect(readFileSync(join(dir, ROOM_KEYS_FILE), 'utf8')).not.toContain(SECRET);
+    expect(JSON.parse(readFileSync(join(dir, 'room-keys.refused.json'), 'utf8'))).toEqual({ version: 1, keys: { EDITOR: { value: SECRET } } });
+    expect(statSync(join(dir, 'room-keys.refused.json')).mode & 0o777).toBe(0o600);
     expect(statSync(join(dir, ROOM_KEYS_FILE)).mode & 0o777).toBe(0o600);
     const b = createRoomKeys({ dir });
     await b.load();

@@ -169,11 +169,12 @@ describe('the key store', () => {
   });
 
   it('reserves the variables that make a program run (a shell start-up file, git ssh, proxy, editor and pager), and nothing else new', () => {
-    for (const name of ['ENV', 'ZDOTDIR', 'GIT_SSH', 'GIT_PROXY_COMMAND', 'GIT_EDITOR', 'GIT_PAGER', 'EDITOR', 'VISUAL', 'PAGER']) {
+    for (const name of ['ZDOTDIR', 'GIT_SSH', 'GIT_PROXY_COMMAND', 'GIT_EDITOR', 'GIT_PAGER', 'EDITOR', 'VISUAL', 'PAGER']) {
       expect(keyNameProblem(name), name).toMatch(/cannot be a key/);
       expect(keyNameReserved(name), name).toBe(true);
     }
-    for (const name of ['ENVIRONMENT', 'MY_EDITOR', 'AWS_REGION', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE']) expect(keyNameProblem(name), name).toBeNull();
+    // ENV is allowed and warns: only an interactive sh reads it, and ENV=production is a common application setting
+    for (const name of ['ENV', 'ENVIRONMENT', 'MY_EDITOR', 'AWS_REGION', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE']) expect(keyNameProblem(name), name).toBeNull();
     // a badly spelled name is not "reserved": it is refused for its shape
     expect(keyNameReserved('path')).toBe(false);
   });
@@ -188,8 +189,10 @@ describe('the key store', () => {
     expect(store.refused()).toEqual(['ana: EDITOR', 'ben: ZDOTDIR']);
     expect(lines.join('\n')).toContain('ana: EDITOR, ben: ZDOTDIR');
     expect(lines.join('\n')).not.toContain(SECRET);
-    // the file is rewritten at once: the dead value is off the disk, and the next start refuses nothing, so the note is made once
+    // moved, not deleted: the value is in keys.refused.json (0600), the main file is rewritten without it, and the next start refuses nothing, so the note is made once
     expect(await readFile(join(dir, 'keys.json'), 'utf8')).not.toContain(SECRET);
+    expect(JSON.parse(await readFile(join(dir, 'keys.refused.json'), 'utf8'))).toEqual({ version: 1, agents: { ana: { EDITOR: SECRET }, ben: { ZDOTDIR: SECRET } } });
+    expect((await stat(join(dir, 'keys.refused.json'))).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(join(dir, 'keys.json'), 'utf8')).agents).toEqual({ ana: { OK_KEY: 'v' } });
     expect((await stat(join(dir, 'keys.json'))).mode & 0o777).toBe(0o600);
     const again = createClearance({ dir, log });
@@ -198,7 +201,24 @@ describe('the key store', () => {
     expect(again.values('ana')).toEqual({ OK_KEY: 'v' });
   });
 
-  it('warns, and does not refuse, on a CA override', () => {
+  it('a second refusal is merged into the file kept aside, and one that cannot be read leaves the main file alone', async () => {
+    await writeFile(join(dir, 'keys.refused.json'), JSON.stringify({ version: 1, agents: { ana: { PAGER: 'older' }, cy: { VISUAL: 'x' } } }));
+    await writeFile(join(dir, 'keys.json'), JSON.stringify({ version: 1, agents: { ana: { EDITOR: SECRET, OK_KEY: 'v' } } }));
+    await createClearance({ dir, log }).load();
+    expect(JSON.parse(await readFile(join(dir, 'keys.refused.json'), 'utf8')).agents).toEqual({ ana: { PAGER: 'older', EDITOR: SECRET }, cy: { VISUAL: 'x' } });
+    // not JSON: nothing is overwritten, the main file stays as it was and the error is logged without a value
+    await writeFile(join(dir, 'keys.refused.json'), 'not json');
+    const main = JSON.stringify({ version: 1, agents: { ana: { EDITOR: SECRET, OK_KEY: 'v' } } });
+    await writeFile(join(dir, 'keys.json'), main);
+    lines.length = 0;
+    await createClearance({ dir, log }).load();
+    expect(await readFile(join(dir, 'keys.json'), 'utf8')).toBe(main);
+    expect(await readFile(join(dir, 'keys.refused.json'), 'utf8')).toBe('not json');
+    expect(lines.join('\n')).not.toContain(SECRET);
+  });
+
+  it('warns, and does not refuse, on a CA override or ENV', () => {
+    expect(keyWarning('ENV')).toContain('interactive sh');
     for (const name of ['NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) {
       expect(keyWarning(name)).toContain('certificate authority');
       expect(keyNameProblem(name)).toBeNull();

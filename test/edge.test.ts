@@ -987,7 +987,7 @@ describe('home', () => {
     const home = openTestHome(dir);
     writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [agentRecord('ana', { keys: { EDITOR: 5, PATH: 6, OK_KEY: 7 } })] }));
     expect(home.loadRoster().agents[0]?.keys).toEqual({ OK_KEY: 7 });
-    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [agentRecord('ana', { keys: { ENV: 5 } })] }));
+    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [agentRecord('ana', { keys: { ZDOTDIR: 5 } })] }));
     expect(home.loadRoster().agents[0]).not.toHaveProperty('keys');
   });
 

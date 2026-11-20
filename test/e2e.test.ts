@@ -2687,7 +2687,28 @@ describe('end to end with the stand-in agent', () => {
     const note = inbox.items.find((item) => item.type === 'event' && item.kind === 'startup' && /reserved now/.test(item.text));
     expect(note).toMatchObject({ text: expect.stringContaining('flight: ZDOTDIR, room: EDITOR') });
     expect(JSON.stringify(inbox)).not.toMatch(/secret/);
+    expect(note?.type === 'event' ? note.text : '').toContain('kept aside');
     expect((await api(h, 'GET', '/api/room-keys')).body).toMatchObject({ keys: [{ name: 'FINE_KEY' }] });
+    // moved aside, not deleted
+    expect(readFileSync(join(home, 'keys.refused.json'), 'utf8')).toContain('agent-secret-2');
+    expect(readFileSync(join(home, 'room-keys.refused.json'), 'utf8')).toContain('room-secret-1');
+    expect(readFileSync(join(home, 'keys.json'), 'utf8')).not.toContain('agent-secret-2');
+  }, 60_000);
+
+  it('Keys: a long list of refused names fits the note in 300 characters and says how many more', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'gonogo-keys-'));
+    const home = join(tmp, 'home');
+    await mkdir(home, { recursive: true });
+    const names = ['ZDOTDIR', 'GIT_SSH', 'GIT_PROXY_COMMAND', 'GIT_EDITOR', 'GIT_PAGER', 'EDITOR', 'VISUAL', 'PAGER'];
+    writeFileSync(join(home, 'room-keys.json'), JSON.stringify({ version: 1, keys: Object.fromEntries(names.map((n) => [n, { value: 'v' }])) }));
+    writeFileSync(join(home, 'keys.json'), JSON.stringify({ version: 1, agents: { flight: Object.fromEntries(names.map((n) => [n, 'v'])) } }));
+    const h = await startServer({ home });
+    await waitState(h, 'flight', 'idle');
+    const inbox = (await api<DownlinkView>(h, 'GET', '/api/downlink')).body;
+    const note = inbox.items.find((item) => item.type === 'event' && item.kind === 'startup' && /reserved now/.test(item.text));
+    const text = note?.type === 'event' ? note.text : '';
+    expect(text.length).toBeLessThanOrEqual(300);
+    expect(text).toMatch(/ and \d+ more\. They are kept aside/);
   }, 60_000);
 
   it("Room keys: set, listed by name only, in the environment of an agent at its next start, and an agent's own key wins", async () => {
