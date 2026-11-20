@@ -98,7 +98,8 @@ async function view(page: Page, group: string, title: string, get: () => Promise
 
 /** A named key of the bar if it is there (a desktop), else the Patch Panel with a query (a phone, or a key that is not in the bar). */
 async function open(page: Page, key: string, query = key): Promise<void> {
-  const button = page.getByRole('button', { name: key, exact: true });
+  // a prefix: the Comms key says how many are unread, the Flight Plan key how many are active
+  const button = page.getByRole('button', { name: new RegExp('^' + key) });
   if (await button.first().isVisible().catch(() => false)) {
     await button.first().click({ timeout: 3000 });
     return;
@@ -108,7 +109,7 @@ async function open(page: Page, key: string, query = key): Promise<void> {
 
 async function patch(page: Page, query: string): Promise<void> {
   await page.keyboard.press('Control+k');
-  const field = page.getByRole('combobox').first();
+  const field = page.locator('.patch-input');
   await field.waitFor({ timeout: 3000 });
   await field.fill(query);
   await page.keyboard.press('Enter');
@@ -196,7 +197,7 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await view(page, group, 'patch panel', async () => {
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+k');
-    await page.getByRole('combobox').first().waitFor({ timeout: 3000 });
+    await page.locator('.patch-input').waitFor({ timeout: 3000 });
   });
   await page.keyboard.press('Escape');
   await view(page, group, 'hire form', async () => {
@@ -253,7 +254,6 @@ test('screens of the app and the docs', async ({ browser }) => {
   const seed = async (label: string, run: () => Promise<void>): Promise<void> => run().catch((error: Error) => void missed.push(`seed ${label}: ${error.message.split('\n')[0]}`));
   await seed('agents', async () => {
     for (const name of ['ana', 'ben']) await api(setupContext, 'POST', '/api/agents', { name, role: `${name} does what it is told`, dir: work, mode: 'default' });
-    await waitFor('the agents to be up', async () => (await (await setupContext.request.get(`${base}/api/agents`)).text()).includes('"ben"'), 30_000);
     await new Promise((r) => setTimeout(r, 4000));
   });
   await seed('messages', async () => {
@@ -261,6 +261,8 @@ test('screens of the app and the docs', async ({ browser }) => {
     await api(setupContext, 'POST', '/api/messages', { to: 'ben', subject: 'Review', body: 'Review the notes when ana is done.' });
     await api(setupContext, 'POST', '/api/messages', { to: 'ana', body: '@fake say Notes are drafted.' });
   });
+  await seed('schedule', () => api(setupContext, 'POST', '/api/schedules', { name: 'Daily check', to: 'ana', subject: 'status', body: 'Where are you?', rule: '0 9 * * *' }));
+  await seed('mission', () => api(setupContext, 'POST', '/api/missions', { name: 'Ship the release', createdBy: 'user' }));
   await seed('tasks', async () => {
     await api(setupContext, 'POST', '/api/tasks', { title: 'Write the release notes', detail: 'One page.', assignee: 'ana' });
     await api(setupContext, 'POST', '/api/tasks', { title: 'Review the notes', assignee: 'ben' });
