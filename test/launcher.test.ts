@@ -1719,7 +1719,22 @@ describe('a GitHub login per room (docs/features/github-login.md)', () => {
     expect(own.spec.env.GH_CONFIG_DIR).toBe('/mine/gh');
     // gonogo's own environment is left alone: the Director's shell and anything outside the agents see no change
     expect(env).toEqual({ PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') });
-    expect(process.env.GH_CONFIG_DIR).toBeUndefined();
+  });
+
+  it('does not write the process environment of gonogo itself, whatever it holds (hosts that set GH_CONFIG_DIR, and ones that do not)', async () => {
+    for (const outside of [undefined, '/outside/gh']) {
+      vi.stubEnv('GH_CONFIG_DIR', outside);
+      try {
+        const roomA = join(tmp, 'rooms', 'a');
+        await mkdir(work, { recursive: true });
+        const made = await createLauncher({ homeDir: roomA, hubUrl: () => HUB, seed: false, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user') } }).prepareStart(agent(), START);
+        // the agent gets the room's folder from the environment it was GIVEN, never from the one of this process
+        expect(made.spec.env.GH_CONFIG_DIR).toBe(join(roomA, 'gh'));
+        expect(process.env.GH_CONFIG_DIR).toBe(outside);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
   });
 });
 

@@ -1,0 +1,1 @@
+- **Test: the launcher test no longer depends on GH_CONFIG_DIR of the host.** The test that gonogo does not write its own process environment asserted that `GH_CONFIG_DIR` is unset, which failed on every host that sets it (hosts running gonogo in a room do). It now stubs the variable (set and unset) and restores it. No change for users.
