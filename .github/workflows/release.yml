@@ -10,9 +10,11 @@ name: Release
 # job's `id-token: write` is the whole credential: no token lives in the repository. pnpm hands the tarball to the npm
 # CLI of Node 24, which must be 11.5.1 or newer for OIDC (checked below).
 #
-# Homebrew: the job `homebrew` opens a pull request on the tap ulm0/homebrew-tap with the new url and sha256 of the npm
-# tarball. It is off until the repository variable HOMEBREW_TAP is `true` and the secret HOMEBREW_TAP_TOKEN exists (a
-# fine-grained token with Contents and Pull requests write on the tap repository only). A pre-release is skipped.
+# Homebrew: the tarball that `pnpm pack` makes is attached to the GitHub Release, and the job `homebrew` opens a pull request on the
+# tap ulm0/homebrew-tap with the url of THAT asset and its sha256, computed here from the very file that was uploaded. Nothing waits for
+# npm's CDN to serve the version it just accepted (it took longer than ten minutes for 0.7.0 and 0.8.1). It is off until the repository
+# variable HOMEBREW_TAP is `true` and the secret HOMEBREW_TAP_TOKEN exists (a fine-grained token with Contents and Pull requests write
+# on the tap repository only). A pre-release is skipped.
 on:
   push:
     tags: ['v*']
@@ -93,6 +95,18 @@ jobs:
             echo "::error::npm $v is older than 11.5.1, which trusted publishing (OIDC) needs"
             exit 1
           fi
+      # The tarball for Homebrew (and for anyone who wants the release's own file): made here, from the checked tag, and carried to the release by artifact.
+      - name: Pack the tarball
+        run: |
+          mkdir "$RUNNER_TEMP/asset"
+          pnpm pack --pack-destination "$RUNNER_TEMP/asset"
+          ls -l "$RUNNER_TEMP/asset"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/asset/*.tgz
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish to npm
         run: |
           name=$(node -p 'require("./package.json").name')
@@ -116,6 +130,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/asset
       # The notes are the tag's own section of CHANGELOG.md ("## <version> ..." up to the next "## "); without one,
       # GitHub's generated notes. A release that exists already is updated, so a re-run (or a fixed changelog on a
       # re-pushed tag) refreshes it.
@@ -139,9 +157,17 @@ jobs:
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes --prerelease="$prerelease"
           fi
+      # The npm tarball as the release's own asset: the Homebrew formula installs from it. --clobber: a re-run replaces it.
+      - name: Attach the tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -- "$RUNNER_TEMP"/asset/*.tgz
+          [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one tarball in the artifact"; exit 1; }
+          gh release upload "$TAG" "$1" --repo "$GITHUB_REPOSITORY" --clobber
 
   homebrew:
-    needs: publish
+    needs: github-release
     if: ${{ vars.HOMEBREW_TAP == 'true' && !contains(inputs.tag || github.ref_name, '-') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -152,6 +178,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/asset
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/homebrew-tap
@@ -162,14 +192,19 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           version=${TAG#v}
-          url="https://registry.npmjs.org/@${GITHUB_REPOSITORY_OWNER}/gonogo/-/gonogo-$version.tgz"
-          # npm can take minutes to serve a version it just accepted (0.5.5 took over 100 s): up to 10 minutes
-          for i in $(seq 1 20); do
-            curl -fsSL "$url" -o gonogo.tgz && break
-            [ "$i" = 20 ] && { echo "::error::$url is not served"; exit 1; }
-            sleep 30
+          set -- "$RUNNER_TEMP"/asset/*.tgz
+          [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one tarball in the artifact"; exit 1; }
+          file=$1
+          # the url of the release asset the previous job attached, and the sha256 of the very file that was uploaded: nothing here waits for npm
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/$(basename "$file")"
+          sha=$(sha256sum "$file" | cut -d' ' -f1)
+          # the asset is served from GitHub's own storage, within seconds of its upload: a minute is plenty, and a mismatch is an error
+          for i in $(seq 1 6); do
+            curl -fsSL "$url" -o served.tgz && break
+            [ "$i" = 6 ] && { echo "::error::$url is not served"; exit 1; }
+            sleep 10
           done
-          sha=$(sha256sum gonogo.tgz | cut -d' ' -f1)
+          [ "$(sha256sum served.tgz | cut -d' ' -f1)" = "$sha" ] || { echo "::error::$url serves another file than the one uploaded"; exit 1; }
           mkdir -p tap/Formula
           sed -e "s|^  url .*|  url \"$url\"|" -e "s|^  sha256 .*|  sha256 \"$sha\"|" packaging/homebrew/gonogo.rb > tap/Formula/gonogo.rb
           cd tap
