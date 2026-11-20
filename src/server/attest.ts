@@ -7,11 +7,13 @@
  * before the attestations, or one that is not `ghcr.io/ulm0/gonogo` at all, such as your own build): the Director may confirm it by hand; auto-update never does.
  * `failed`: an attestation that does not verify, or `gh` could not run or reach GitHub: refused, and no confirm helps.
  *
- * gh gets a small environment and no token (the repository is public; a token of yours would only widen what a bad `gh` could read), a private config folder,
- * no shell and a time limit. The digest is checked to be sha256:<64 hex> before it is put on a command line.
+ * `gh attestation verify` REFUSES to run without a GitHub login (found in a dind run: "To get started with GitHub CLI, please run: gh auth login"), even for a
+ * public repository. So it runs with the login the container has: `GH_TOKEN` or `GITHUB_TOKEN` of the environment (any token; it needs no scope for a
+ * public repository), or the `gh auth login` kept in the home (docs/guide/docker.md). Without either the answer is `unattested` with that reason: a Director may
+ * confirm by hand, auto-update never. gh gets a small environment, no shell and a time limit. The digest is checked to be sha256:<64 hex> before it is put on
+ * a command line.
  */
 import { execFile } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
 
 export const OFFICIAL_IMAGE = 'ghcr.io/ulm0/gonogo';
 export const SOURCE_REPO = 'ulm0/gonogo';
@@ -46,10 +48,10 @@ const oneLine = (out: string): string =>
     .trim()
     .slice(0, 200);
 
-/** The environment gh gets: where to find itself and a proxy, never a token. */
-export function ghEnv(from: NodeJS.ProcessEnv, configDir: string): Record<string, string> {
-  const out: Record<string, string> = { GH_CONFIG_DIR: configDir, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1', HOME: configDir };
-  for (const key of ['PATH', 'LANG', 'TMPDIR', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) {
+/** The environment gh gets: where to find itself, its login (the token variables and the config it keeps in the home) and a proxy; nothing else of gonogo's. */
+export function ghEnv(from: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = { GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1' };
+  for (const key of ['PATH', 'HOME', 'LANG', 'TMPDIR', 'GH_TOKEN', 'GITHUB_TOKEN', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) {
     const value = from[key];
     if (value !== undefined) out[key] = value;
   }
@@ -57,19 +59,20 @@ export function ghEnv(from: NodeJS.ProcessEnv, configDir: string): Record<string
 }
 
 /** `digests` are the registry digests the pulled image carries for `repo` (RepoDigests). One that verifies is enough. */
-export async function verifyImage(repo: string, digests: readonly string[], options: { configDir: string; run?: Run; env?: NodeJS.ProcessEnv }): Promise<Attestation> {
+export async function verifyImage(repo: string, digests: readonly string[], options: { run?: Run; env?: NodeJS.ProcessEnv } = {}): Promise<Attestation> {
   if (repo !== OFFICIAL_IMAGE) return { kind: 'unattested', why: `only ${OFFICIAL_IMAGE} can be checked; this container runs ${repo}` };
   const valid = digests.filter((d) => DIGEST.test(d));
   if (valid.length === 0) return { kind: 'failed', why: 'the pulled image has no registry digest to check' };
   const run = options.run ?? defaultRun;
-  await mkdir(options.configDir, { recursive: true, mode: 0o700 }).catch(() => undefined);
-  const env = ghEnv(options.env ?? process.env, options.configDir);
+  const env = ghEnv(options.env ?? process.env);
   let unattested: string | null = null;
   let failed: string | null = null;
   for (const digest of valid) {
     const result = await run('gh', ['attestation', 'verify', `oci://${OFFICIAL_IMAGE}@${digest}`, '--repo', SOURCE_REPO, '--signer-workflow', SIGNER_WORKFLOW], env);
     if (result.code === 0) return { kind: 'verified', digest };
     if (result.missing === true) return { kind: 'failed', why: 'gh is not installed in this image, so the image cannot be checked' };
+    // no login at all: not a bad image, a gonogo that cannot check (gh itself says so before it asks GitHub anything)
+    if (/gh auth login|GH_TOKEN environment variable/i.test(result.out)) return { kind: 'unattested', why: 'gh has no GitHub login in this container, so attestations cannot be fetched: run `gh auth login` in it (the login stays in the home folder) or set GH_TOKEN (a token with no permissions is enough)' };
     // gh answers HTTP 404 for a digest that has no attestation at all (an image from before they were made): the one case a Director may confirm
     if (/HTTP 404|no attestations? found/i.test(result.out) && !/verification failed/i.test(result.out)) unattested = `${digest.slice(0, 19)} has no attestation: it was published before they were made`;
     else failed = oneLine(result.out) === '' ? `gh attestation verify exited ${result.code ?? 'with no code'}` : oneLine(result.out);
