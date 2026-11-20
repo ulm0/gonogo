@@ -2,29 +2,27 @@
 
 <RecorderMock class="doc-mock" />
 
-OPEN GIT (next to OPEN FILES), or the GIT tab of [Hangar](./hangar.md), opens RECORDER: what changed in the folder of that agent (or its [Clean Room](./clean-room.md) worktree), the diff, the last 50 commits, and a commit with your message. Design and limits: [`docs/recorder-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/recorder-spec.md). Git does not run inside a Clean Room container, so this is how you commit its branch without a terminal.
+OPEN GIT (next to OPEN FILES) or the GIT tab of [Hangar](./hangar.md) opens RECORDER: changes, diff, the last 50 commits and a commit with your message, for that agent's folder or [Clean Room](./clean-room.md) worktree. Git does not run inside a Clean Room container, so this commits its branch without a terminal. Under the diff: [Post-Flight Review](./review.md). Design and limits: [`docs/recorder-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/recorder-spec.md).
 
-Under the diff is [Post-Flight Review](./review.md): notes on the lines of the diff, from you and from agents.
+- **Changes**: branch and one row per file in words (`staged: modified`, `not staged: deleted`, `staged: renamed from a.txt`, `untracked`, `conflict`). At most 1000 files; an untracked folder is one row. A row shows that file's diff.
+- **Diff**: read-only. NOT STAGED (tree vs index), STAGED (index vs last commit), ALL CHANGES or one file. At most 256 KiB, then marked cut. A new file has no diff until staged.
+- **Log**: last 50 commits (short hash, subject, author, time).
+- **Commit**: message (1 to 10000 characters), then ALL CHANGES (`git add -A`, commit) or ONLY WHAT IS STAGED (stage with git yourself).
+- **Author**: from your git config (`user.name`, `user.email`). With none the commit is refused; gonogo never invents one.
+- **No hooks run**, for any call (the agent can write them): your `pre-commit` does not run here.
+- **Not here**: push, pull, checkout, reset, amend, branches, signing options.
 
-## What it does
-
-- **Changes.** The branch and one row per file, in words: `staged: modified`, `not staged: deleted`, `staged: renamed from a.txt`, `untracked`, `conflict`. At most 1000 files; untracked folders are one row. A row shows that file's diff.
-- **Diff.** Read-only, on an LCD. NOT STAGED is the working tree against the index, STAGED the index against the last commit; ALL CHANGES or one file. At most 256 KiB, then it says it is cut. A new file has no diff until it is staged.
-- **Log.** The last 50 commits: short hash, subject, author, time.
-- **Commit.** Message (1 to 10000 characters), then ALL CHANGES (`git add -A`, then commit) or ONLY WHAT IS STAGED (the index as it is; stage with git yourself).
-- **Author.** The one in your git config (`user.name`, `user.email`). With none, the page says so and the commit is refused; gonogo never makes one up.
-- **No hooks.** No git hook runs, for any call: a hook is a program inside the repository, and the agent can write it. Your `pre-commit` hook does not run on a commit made here.
-- **Not here.** Push, pull, checkout, reset, amend, branches, signing options. The server runs no other git command.
-
-Works on the **top** of a repository only: an agent in a subfolder of one, or in none, sees why instead of the tab's content. So does a repository that holds gonogo's own folder.
+Works on the **top** of a repository only: an agent in a subfolder, in none, or in a repository holding gonogo's own folder sees why instead.
 
 ## API
 
-All need the browser token. `<name>` is an agent.
+Browser token; `<name>` is an agent.
 
-- `GET /api/agents/<name>/git` answers `{ "repo": true, "branch", "files": [{ "path", "index", "tree", "from"? }], "more", "author": { "name", "email" } | null }`, or `{ "repo": false, "reason" }`. `index` and `tree` are the two letters of `git status --porcelain`.
-- `GET /api/agents/<name>/git/diff?path=&staged=1` answers `{ "diff", "truncated" }`.
-- `GET /api/agents/<name>/git/log` answers up to 50 `{ "hash", "author", "at", "subject" }`.
-- `POST /api/agents/<name>/git/commit` with `{ "message", "scope": "all" | "staged" }` answers `{ "commit": { "hash", "author", "at", "subject" } }`; 409 for no author, nothing to commit, nothing staged, or a refusal by git (its first line).
+| Route | Answer |
+|---|---|
+| `GET /api/agents/<name>/git` | `{ "repo": true, "branch", "files": [{ "path", "index", "tree", "from"? }], "more", "author": { "name", "email" } \| null }` or `{ "repo": false, "reason" }`; `index`, `tree` are the two letters of `git status --porcelain` |
+| `GET .../git/diff?path=&staged=1` | `{ "diff", "truncated" }` |
+| `GET .../git/log` | up to 50 `{ "hash", "author", "at", "subject" }` |
+| `POST .../git/commit` | `{ "message", "scope": "all" \| "staged" }` -> `{ "commit": { "hash", "author", "at", "subject" } }`; 409 for no author, nothing to commit, nothing staged, or a git refusal (its first line) |
 
-git runs with an argument list and no shell, no prompt, hooks off, 15 s for a read and 30 s for a write, and the environment limited to `PATH`, `HOME`, `USER`, `LOGNAME`, `XDG_CONFIG_HOME` and `TMPDIR`. No option, no file of its own, no frame.
+git runs with an argument list, no shell, no prompt, hooks off, 15 s read and 30 s write, environment limited to `PATH`, `HOME`, `USER`, `LOGNAME`, `XDG_CONFIG_HOME`, `TMPDIR`.

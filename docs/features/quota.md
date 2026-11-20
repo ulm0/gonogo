@@ -2,18 +2,18 @@
 
 <PlanQuotaMock class="doc-mock" />
 
-Propellant counts what gonogo's agents spend. For a **claude.ai subscription** Claude Code also knows how much of the plan's **5-hour** and **weekly** windows is used, and gonogo shows that number as the PLAN block of the Propellant module, labelled "from Claude Code: your plan's own number".
+For a **claude.ai subscription**, shows how much of the plan's **5-hour** and **weekly** windows is used, as the PLAN block of the Propellant module ("from Claude Code: your plan's own number").
 
-- **Where it comes from.** Each Claude Code agent runs a small status-line script that sends gonogo only the `rate_limits` part of Claude Code's status-line JSON, **plus the session id and the session's total cost** (`cost.total_cost_usd`), which [Cost](cost.md) shows as "reported" (the percentages and reset times), **plus the session id and the session's total cost** that [Cost](cost.md) shows as "reported"; no folder, name or transcript path leaves it. The newest report wins, because the plan is one pool for every agent. Claude Code reports it only after the first reply of a session and only for Pro, Max and Ultra logins; a window may be missing.
-- **What shows.** A bar per open window with the percent and "resets in 2 h 10 min". A report older than 15 minutes is dimmed and says "last seen N min ago": with no agent running, nothing refreshes it (a running agent refreshes it every 5 minutes and on each reply). The last value is kept in `quota.json` and shown as stale after a restart.
-- **Alerts.** One Downlink item (`redline`) when a window reaches 80 % and one at 95 % ("Plan week is at 82 %, resets in 28 h 0 min"), again only for a new window (once the old reset has passed and a later one reaches it): a percentage that dips and rises inside one window is one alert. Nothing is stopped: at 100 % Claude Code itself says the limit is hit. The thresholds are fixed.
-- **Your own status line.** gonogo's status line is the agent's only one, so it **chains yours**: your `statusLine.command` from your user settings (read only, never written) gets the same JSON and its output is what the agent shows. A status line in a project's settings is not chained. Without one the agent shows `plan 41% wk`.
-- **No source.** An API-key or Bedrock room, a Clean Room or seed-mode agent (not verified), or a subscriber before the first reply: the block says "No plan quota reported". The token and dollar meters below it are gonogo's own ledger: an **estimate, not your plan's number**. They count only what gonogo's agents did, leave out cache reads, and Anthropic publishes the allowance in no token figure. Set a token limit that matches what you think your plan allows, and watch DOLLARS in [Cost](./cost.md) for a pay-per-token room.
-- **Limits.** A reset time further off than the window is long (5 h, 7 d, plus 5 min) is refused. The script posts at most one report per agent every 10 s (faster ones are dropped), and a chained command of yours is cut after 4 s with everything it started.
-- **Not read:** the spend limit of a gateway room, per-model windows, any history.
+- **Source.** Each Claude Code agent's status-line script sends gonogo only the `rate_limits` part of the status-line JSON, plus the session id and the session's total cost (`cost.total_cost_usd`, shown by [Cost](cost.md) as "reported"). No folder, name or transcript path leaves it. The newest report wins (one plan pool). Claude Code reports only after a session's first reply and only for Pro, Max and Ultra logins; a window may be missing.
+- **Display.** A bar per open window with percent and "resets in 2 h 10 min". A report older than 15 minutes is dimmed ("last seen N min ago"); a running agent refreshes every 5 minutes and on each reply. The last value is in `quota.json`, stale after a restart.
+- **Alerts.** One Downlink item (`redline`) at 80 % and one at 95 % of a window ("Plan week is at 82 %, resets in 28 h 0 min"), again only for a new window. Nothing is stopped (at 100 % Claude Code says so). Thresholds are fixed.
+- **Your status line.** gonogo's is the agent's only one, so it **chains yours**: `statusLine.command` from your user settings (read only) gets the same JSON and its output is shown. A project's status line is not chained. Without one the agent shows `plan 41% wk`.
+- **No source.** API-key or Bedrock rooms, Clean Room or seed-mode agents (not verified), or a subscriber before the first reply: "No plan quota reported". The token and dollar meters below are gonogo's own ledger: an **estimate, not your plan's number** (only gonogo's agents, no cache reads; Anthropic publishes no token allowance). Set a token limit by your own guess; watch DOLLARS in [Cost](./cost.md) for a pay-per-token room.
+- **Limits.** A reset time further off than the window (5 h, 7 d, plus 5 min) is refused. At most one report per agent per 10 s; a chained command is cut after 4 s with everything it started.
+- **Not read**: a gateway room's spend limit, per-model windows, history.
 
 ## Files and API
 
-- `~/.gonogo/quota.json` (mode 0600): `{ version: 1, windows: { fiveHour?, sevenDay? }, at, source }`.
-- `POST /hook/<agent>/StatusLine` with the agent's token (the route of the hooks); the Propellant view and frames carry `plan`.
-- Spec and what was seen in a real run: `docs/quota-spec.md`.
+- `~/.gonogo/quota.json` (0600): `{ version: 1, windows: { fiveHour?, sevenDay? }, at, source }`.
+- `POST /hook/<agent>/StatusLine` with the agent's token; the Propellant view and frames carry `plan`.
+- Spec and real-run observations: `docs/quota-spec.md`.
