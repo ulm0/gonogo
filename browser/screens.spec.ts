@@ -1,0 +1,309 @@
+/*
+ * Screenshots of every view, for the UI/UX audit (workflow screens.yml, by hand; not part of the smoke gate and not run by
+ * `pnpm exec playwright test` unless SCREENS=1). It starts the built server with the stand-in agent, takes the empty states, seeds a few
+ * agents, messages, tasks and log entries, then takes each view at 1280x800 and 390x844 in a light and a dark livery, and the docs site.
+ * Best effort on purpose: one view that cannot be reached is written down in the index and the rest go on.
+ * Out: screens/<scheme>-<size>/NN-name.png, screens/docs-<scheme>-<size>/..., screens/index.html.
+ */
+import { type ChildProcess, spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { type BrowserContext, type Page, test } from '@playwright/test';
+
+test.skip(process.env.SCREENS !== '1', 'screenshots are taken by the screens workflow (SCREENS=1)');
+
+const OUT = 'screens';
+const PASSWORD = 'screens-password-1';
+const SIZES = [
+  { name: 'desktop', width: 1280, height: 800 },
+  { name: 'phone', width: 390, height: 844 },
+] as const;
+const SCHEMES = [
+  { name: 'light', slug: 'instrument' },
+  { name: 'dark', slug: 'night-shift' },
+] as const;
+const DOCS_PAGES = [
+  ['home', '/'],
+  ['getting-started', '/guide/getting-started'],
+  ['feature-comms', '/features/comms'],
+  ['feature-black-box', '/features/black-box'],
+  ['feature-clean-room', '/features/clean-room'],
+  ['reference-configuration', '/reference/configuration'],
+] as const;
+
+interface Shot {
+  group: string;
+  file: string;
+  title: string;
+}
+const shots: Shot[] = [];
+const missed: string[] = [];
+let n = 0;
+
+const children: ChildProcess[] = [];
+let home = '';
+let base = '';
+let docsBase = '';
+let output = '';
+
+const freePort = (): Promise<number> =>
+  new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as { port: number };
+      probe.close(() => resolve(port));
+    });
+  });
+
+async function waitFor<T>(what: string, read: () => Promise<T | undefined | false> | T | undefined | false, ms = 60_000): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const got = await read();
+    if (got) return got;
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}\n${output.slice(-1500)}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+const slug = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/** One shot of the page as it is; a failure is written down, never thrown. */
+async function shoot(page: Page, group: string, title: string, fullPage = false): Promise<void> {
+  n += 1;
+  const file = `${group}/${String(n).padStart(3, '0')}-${slug(title)}.png`;
+  try {
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: join(OUT, file), fullPage });
+    shots.push({ group, file, title });
+  } catch (error) {
+    missed.push(`${group}: ${title}: ${(error as Error).message.split('\n')[0]}`);
+  }
+}
+
+/** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
+async function view(page: Page, group: string, title: string, get: () => Promise<void>, fullPage = false): Promise<void> {
+  try {
+    await get();
+  } catch (error) {
+    missed.push(`${group}: ${title}: could not get there: ${(error as Error).message.split('\n')[0]}`);
+    await page.keyboard.press('Escape').catch(() => undefined);
+    return;
+  }
+  await shoot(page, group, title, fullPage);
+}
+
+/** A named key of the bar if it is there (a desktop), else the Patch Panel with a query (a phone, or a key that is not in the bar). */
+async function open(page: Page, key: string, query = key): Promise<void> {
+  const button = page.getByRole('button', { name: key, exact: true });
+  if (await button.first().isVisible().catch(() => false)) {
+    await button.first().click({ timeout: 3000 });
+    return;
+  }
+  await patch(page, query);
+}
+
+async function patch(page: Page, query: string): Promise<void> {
+  await page.keyboard.press('Control+k');
+  const field = page.getByRole('combobox').first();
+  await field.waitFor({ timeout: 3000 });
+  await field.fill(query);
+  await page.keyboard.press('Enter');
+}
+
+async function api(context: BrowserContext, method: 'POST' | 'PUT', path: string, data: unknown): Promise<void> {
+  const response = await context.request.fetch(`${base}${path}`, { method, headers: { Origin: base, 'content-type': 'application/json' }, data: JSON.stringify(data) });
+  if (!response.ok()) throw new Error(`${method} ${path}: ${response.status()} ${(await response.text()).slice(0, 200)}`);
+}
+
+test.beforeAll(async () => {
+  await mkdir(OUT, { recursive: true });
+  home = await mkdtemp(join(tmpdir(), 'gn-scr-'));
+  const port = await freePort();
+  base = `http://127.0.0.1:${port}`;
+  const server = spawn(process.execPath, ['bin/gonogo.js', '--port', String(port), '--no-update-check'], {
+    env: { ...process.env, GONOGO_HOME: home, GONOGO_AGENT_CMD: `${process.execPath} test/fake-claude.mjs` },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  children.push(server);
+  server.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  server.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  await waitFor('the server and its setup token', () => existsSync(join(home, 'setup-token')) && output.includes(String(port)));
+  if (process.env.SCREENS_DOCS === '1') {
+    const docsPort = await freePort();
+    docsBase = `http://127.0.0.1:${docsPort}`;
+    children.push(spawn('pnpm', ['exec', 'vitepress', 'preview', '--port', String(docsPort), '--host', '127.0.0.1'], { stdio: 'ignore' }));
+    await waitFor('the docs preview', async () => (await fetch(docsBase).catch(() => null))?.ok === true);
+  }
+});
+
+test.afterAll(async () => {
+  for (const child of children) child.kill('SIGTERM');
+  await new Promise((r) => setTimeout(r, 500));
+  for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
+  await rm(home, { recursive: true, force: true });
+  const groups = [...new Set(shots.map((s) => s.group))];
+  const html =
+    `<!doctype html><meta charset="utf-8"><title>gonogo screens</title><style>body{font:14px system-ui;margin:16px;background:#eee}h2{margin:24px 0 8px}` +
+    `.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}figure{margin:0;background:#fff;padding:6px;border:1px solid #ccc}` +
+    `img{width:100%;display:block}figcaption{padding:4px 0 0;font-size:12px}</style><h1>gonogo screens</h1>` +
+    `<p>${shots.length} shots, ${missed.length} missed.</p>` +
+    (missed.length ? `<h2>Missed</h2><ul>${missed.map((m) => `<li>${m.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '') +
+    groups.map((g) => `<h2>${g}</h2><div class="g">${shots.filter((s) => s.group === g).map((s) => `<figure><a href="${s.file}"><img loading="lazy" src="${s.file}" alt=""></a><figcaption>${s.title}</figcaption></figure>`).join('')}</div>`).join('');
+  await writeFile(join(OUT, 'index.html'), html);
+});
+
+/** Every view of the app, in the order a person meets them. `full` is the pass after the seed. */
+async function app(page: Page, group: string, full: boolean): Promise<void> {
+  const t = (title: string): string => (full ? title : `${title} (empty)`);
+  await page.goto(`${base}/r/main/`);
+  await page.locator('.topbar').waitFor({ timeout: 30_000 });
+  await page.locator('.lamp[data-link="up"]').waitFor({ timeout: 30_000 }).catch(() => undefined);
+  await shoot(page, group, t('room main'), true);
+  await view(page, group, t('comms inbox'), async () => {
+    await open(page, 'Comms');
+    await page.getByRole('tab', { name: /inbox/i }).click({ timeout: 3000 });
+  });
+  await view(page, group, t('comms traffic'), () => page.getByRole('tab', { name: /traffic/i }).click({ timeout: 3000 }));
+  await view(page, group, t('comms threads'), () => page.getByRole('tab', { name: /threads/i }).click({ timeout: 3000 }));
+  await view(page, group, t('missions'), () => open(page, 'Missions'), true);
+  await view(page, group, t('launch window'), () => open(page, 'Launch Window'), true);
+  if (full) await view(page, group, 'launch window history', () => page.getByRole('button', { name: /^History of/ }).first().click({ timeout: 3000 }), true);
+  await view(page, group, t('flight plan'), () => open(page, 'Flight Plan'), true);
+  await view(page, group, t('mission log'), () => open(page, 'Mission Log'), true);
+  await view(page, group, t('hangar'), () => patch(page, 'hangar'), true);
+  await view(page, group, t('recorder'), () => patch(page, 'recorder'), true);
+  if (!full) return;
+  await view(page, group, 'flight rules', () => open(page, 'Flight Rules', 'rules'), true);
+  // each block of Flight Rules, one by one: the view scrolls inside itself, so a full-page shot would miss the lower ones
+  const blocks = page.locator('.rules-block');
+  const count = await blocks.count().catch(() => 0);
+  for (let i = 0; i < count; i += 1) {
+    const heading = ((await blocks.nth(i).locator('h2').first().textContent().catch(() => '')) ?? '').trim() || `block ${i + 1}`;
+    n += 1;
+    const file = `${group}/${String(n).padStart(3, '0')}-rules-${slug(heading)}.png`;
+    try {
+      await blocks.nth(i).screenshot({ path: join(OUT, file) });
+      shots.push({ group, file, title: `flight rules: ${heading}` });
+    } catch (error) {
+      missed.push(`${group}: flight rules ${heading}: ${(error as Error).message.split('\n')[0]}`);
+    }
+  }
+  await view(page, group, 'livery', () => open(page, 'Livery'), true);
+  await view(page, group, 'patch panel', async () => {
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+k');
+    await page.getByRole('combobox').first().waitFor({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await view(page, group, 'hire form', async () => {
+    await page.getByRole('button', { name: /staff a console/i }).first().click({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await view(page, group, 'agent console', async () => {
+    await patch(page, 'ana');
+    await page.locator('.xterm-rows').first().waitFor({ timeout: 10_000 });
+  });
+  await view(page, group, 'agent detail folds opened', async () => {
+    const summaries = page.locator('summary');
+    const total = await summaries.count();
+    for (let i = 0; i < total; i += 1) await summaries.nth(i).click({ timeout: 1000 }).catch(() => undefined);
+  }, true);
+  await view(page, group, 'telemetry', () => patch(page, 'telemetry'), true);
+  await view(page, group, 'plot board', () => patch(page, 'board'), true);
+  await view(page, group, 'black box', () => patch(page, 'black box'), true);
+  // the update strip needs a newer version from the registry, which the stand-in setup cannot give: see the index
+  missed.push(`${group}: update strip: not taken (it needs a newer gonogo from the npm registry; add a registry stand-in)`);
+}
+
+test('screens of the app and the docs', async ({ browser }) => {
+  test.setTimeout(280_000);
+  // 1. before an account: the setup page; 2. the account; 3. the login page
+  const setupContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const setupPage = await setupContext.newPage();
+  await setupPage.goto(`${base}/setup`);
+  await shoot(setupPage, 'before-account', 'setup page');
+  await setupPage.locator('input[name=token]').fill(readFileSync(join(home, 'setup-token'), 'utf8').trim());
+  await setupPage.locator('input[name=password]').fill(PASSWORD);
+  await setupPage.locator('form button[type=submit], form input[type=submit]').first().click();
+  await setupPage.waitForURL((url) => !url.pathname.startsWith('/setup'));
+  const state = await setupContext.storageState();
+
+  const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const loginPage = await fresh.newPage();
+  await loginPage.goto(`${base}/login`);
+  await shoot(loginPage, 'before-account', 'login page');
+  await fresh.close();
+
+  // the empty states first (no agents but the boss, no messages, tasks or log), at the first livery, desktop and phone
+  for (const size of SIZES) {
+    const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+    const page = await context.newPage();
+    await page.goto(`${base}/`);
+    await shoot(page, `empty-${size.name}`, 'rooms list', true);
+    await app(page, `empty-${size.name}`, false);
+    await context.close();
+  }
+
+  // the seed: agents, a conversation, a plan, a log, a mission
+  const work = await mkdtemp(join(tmpdir(), 'gn-scr-work-'));
+  const seed = async (label: string, run: () => Promise<void>): Promise<void> => run().catch((error: Error) => void missed.push(`seed ${label}: ${error.message.split('\n')[0]}`));
+  await seed('agents', async () => {
+    for (const name of ['ana', 'ben']) await api(setupContext, 'POST', '/api/agents', { name, role: `${name} does what it is told`, dir: work, mode: 'default' });
+    await waitFor('the agents to be up', async () => (await (await setupContext.request.get(`${base}/api/agents`)).text()).includes('"ben"'), 30_000);
+    await new Promise((r) => setTimeout(r, 4000));
+  });
+  await seed('messages', async () => {
+    await api(setupContext, 'POST', '/api/messages', { to: 'ana', subject: 'Plan the release', body: 'Write the release notes, then tell ben.' });
+    await api(setupContext, 'POST', '/api/messages', { to: 'ben', subject: 'Review', body: 'Review the notes when ana is done.' });
+    await api(setupContext, 'POST', '/api/messages', { to: 'ana', body: '@fake say Notes are drafted.' });
+  });
+  await seed('tasks', async () => {
+    await api(setupContext, 'POST', '/api/tasks', { title: 'Write the release notes', detail: 'One page.', assignee: 'ana' });
+    await api(setupContext, 'POST', '/api/tasks', { title: 'Review the notes', assignee: 'ben' });
+  });
+  await seed('log', async () => {
+    await api(setupContext, 'POST', '/api/log', { title: 'Release steps', body: 'Tag the release. See l1.', tags: ['release'] });
+    await api(setupContext, 'POST', '/api/log', { title: 'Cache key', body: 'The key has the node version.', tags: ['build', 'cache'] });
+  });
+  await new Promise((r) => setTimeout(r, 3000));
+  await setupContext.close();
+
+  // every view, light then dark (the livery is the server's, so it is chosen once per scheme), desktop and phone
+  for (const scheme of SCHEMES) {
+    const chooser = await browser.newContext({ storageState: state });
+    await api(chooser, 'PUT', '/api/livery', { slug: scheme.slug }).catch((error: Error) => void missed.push(`livery ${scheme.slug}: ${error.message.split('\n')[0]}`));
+    await chooser.close();
+    for (const size of SIZES) {
+      const group = `${scheme.name}-${size.name}`;
+      const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+      const page = await context.newPage();
+      await page.goto(`${base}/`);
+      await shoot(page, group, 'rooms list', true);
+      await app(page, group, true);
+      await context.close();
+    }
+  }
+
+  // the docs site, same four looks (it follows the browser's colour scheme)
+  if (docsBase !== '') {
+    for (const scheme of SCHEMES) {
+      for (const size of SIZES) {
+        const group = `docs-${scheme.name}-${size.name}`;
+        const context = await browser.newContext({ viewport: { width: size.width, height: size.height }, colorScheme: scheme.name });
+        const page = await context.newPage();
+        for (const [title, path] of DOCS_PAGES) {
+          await view(page, group, title, async () => void (await page.goto(`${docsBase}${path}`)), true);
+        }
+        await context.close();
+      }
+    }
+  } else {
+    missed.push('docs: not taken (SCREENS_DOCS=1 and a built docs site are needed)');
+  }
+  await rm(work, { recursive: true, force: true });
+});
+
