@@ -39,7 +39,7 @@ export class RoomsError extends Error {
 /** The id of a room as a path segment: lower case, starts with a letter, no dots and no slashes. */
 export const validRoomId = (id: unknown): id is string => typeof id === 'string' && ID_RE.test(id);
 
-/** Where room `main` keeps its files: the root itself (a home made before 0.9) or `rooms/main` (a new one). */
+/** Where room `main` keeps its files: the root itself (a home made before 0.8.2) or `rooms/main` (a new one). */
 export type MainHome = '.' | 'rooms/main';
 const MAIN_HOMES: readonly unknown[] = ['.', 'rooms/main'];
 /**
@@ -55,7 +55,7 @@ export const ROOM_STATE_FILES: readonly string[] = [
   'tasks.json', 'telegram-poll.json', 'telemetry.jsonl', 'triggers.1.jsonl', 'triggers.jsonl', 'uplinks.json', 'worktrees',
 ];
 /** The supervisor's own files and folders: they stay at the root whatever the layout, and never say where main is. */
-export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run'];
+export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run', 'main-migration.json'];
 /** Names that only exist inside another folder (an agent's, or `run/`): never at a home's root, so they say nothing about the layout. */
 export const NESTED_FILES: readonly string[] = ['.seq', 'agy-hooks.json', 'gemini-settings.json', 'mcp.json', 'memory.md', 'ptyhost.key', 'ptyhost.log', 'ptyhost.sock', 'settings.json', 'tokens.json', 'update.json'];
 /** Where a room that is running has put something besides those: its socket and token. */
@@ -98,6 +98,12 @@ export function mainLayout(root: string): MainHome {
   // no record: rooms/main first. An older build that edited rooms.json after a rollback dropped the record and started an empty main at the root, but the real one is still in rooms/main
   const holds = (dir: string): boolean => ROOM_STATE_AT_ROOT.some((name) => existsSync(join(dir, name)));
   if (holds(join(root, ROOMS_DIR, MAIN_ROOM))) return 'rooms/main';
+  // a move that finished (main-migration.json says done) and a rooms.json an older build saved without the record: main is where the move put it, even when its files are few
+  try {
+    if ((JSON.parse(readFileSync(join(root, 'main-migration.json'), 'utf8')) as { state?: unknown }).state === 'done' && existsSync(join(root, ROOMS_DIR, MAIN_ROOM))) return 'rooms/main';
+  } catch {
+    // no note, or one that is not read here (the migration reads it strictly)
+  }
   return holds(root) ? '.' : 'rooms/main';
 }
 
@@ -106,7 +112,7 @@ export const roomHome = (root: string, id: string): string => (id !== MAIN_ROOM 
 
 /**
  * Writes the layout into `rooms.json` of a fresh home (nothing is on record and the root holds no room's files), so it stays whatever appears later.
- * A home made before 0.9 is NOT written to: its files at the root already say where main is, and nothing of an old home is touched.
+ * A home made before 0.8.2 is NOT written to: its files at the root already say where main is, and nothing of an old home is touched.
  */
 export function recordMainHome(root: string): void {
   if (recordedMain(readRoomsFile(root)) !== null || mainLayout(root) === '.') return;
@@ -148,11 +154,26 @@ export function loadRooms(root: string): RoomEntry[] {
   return list;
 }
 
-function saveRooms(root: string, rooms: RoomEntry[]): void {
+/** What `rooms.json` says about main, or null when it says nothing (no file, or no `main` key). Throws RoomsError for a damaged file. */
+export function recordedMainHome(root: string): MainHome | null {
+  try {
+    return recordedMain(readRoomsFile(root));
+  } catch (error) {
+    if (error instanceof RoomsError) throw error;
+    throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`, 'conflict');
+  }
+}
+
+/** Writes where main lives into `rooms.json` (the migration's last step, and its undo's): the list of rooms is kept as it is. */
+export function setMainHome(root: string, home: MainHome): void {
+  saveRooms(root, loadRooms(root).filter((r) => r.id !== MAIN_ROOM), home);
+}
+
+function saveRooms(root: string, rooms: RoomEntry[], layout?: MainHome): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = join(root, ROOMS_FILE);
   const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, JSON.stringify({ version: 1, main: { home: mainLayout(root) }, rooms }, null, 2), { mode: 0o600 });
+  writeFileSync(temp, JSON.stringify({ version: 1, main: { home: layout ?? mainLayout(root) }, rooms }, null, 2), { mode: 0o600 });
   renameSync(temp, path);
 }
 

@@ -292,6 +292,18 @@ function acquireLock(dir: string, key: string, file: string = LOCK_FILE, what = 
   throw lockError(dir, lastPid, file, what);
 }
 
+/** Whether a gonogo room holds this home now: its `server.lock` names a live process (the same rule as the lock itself, so a recycled pid in a new container is not one). */
+export function roomLockAlive(dir: string): boolean {
+  const path = join(resolve(dir), LOCK_FILE);
+  let lock: LockContent | null;
+  try {
+    lock = readLock(path);
+  } catch {
+    return false;
+  }
+  return lock !== null && (lock.pid !== process.pid || lock.stamp !== null) && lockOwnerAlive(lock, path);
+}
+
 /** The lock of the rooms supervisor of a home: `<home>/run/supervisor.lock`, the same rule as `server.lock` (a stale pid is taken over). Returns the release. */
 export function acquireSupervisorLock(dir: string): () => void {
   const root = resolve(dir);

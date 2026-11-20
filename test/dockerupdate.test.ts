@@ -632,6 +632,31 @@ describe('the image is verified before it runs (attest.ts)', () => {
     expect(f.log.some((l) => l.includes('containers/create'))).toBe(false);
   });
 
+  it('UNDO to a build older than 0.8.2 is refused while room main lives in rooms/main: put main back first', async () => {
+    const f = fake();
+    const seen: UpdateView[] = [];
+    const make = (mainInRooms: boolean) =>
+      createUpdater({
+        kind: 'docker',
+        cwd: dir,
+        current: '0.8.3',
+        rollout: { view: () => ({ enabled: true, current: '0.8.3', latest: null, checkedAt: 1, newer: false, command: 'x' }), setUpdate: (u) => void seen.push(u) },
+        reload: () => false,
+        keepsAgents: false,
+        hook: null,
+        docker: { call: f.call, hostname: ME.slice(0, 12), home: dir, mainInRooms, ready: true, verify: async () => ({ kind: 'verified', digest: '' }), busy: () => null },
+        fetch: (() => Promise.reject(new Error('no'))) as typeof fetch,
+      });
+    await writeResult(dir, { version: 1, at: 1, state: 'ok', from: '0.8.1', to: '0.8.3', previousImage: OLD_IMG, note: 'ok', tail: [] });
+    await expect(make(true).undo()).rejects.toThrow(/UNDO on the rooms page first/);
+    expect(f.log.some((l) => l.includes('containers/create'))).toBe(false);
+    // main at the root: the older image finds it; and an image that knows rooms/main (0.8.2) is fine either way
+    const said = async (u: ReturnType<typeof make>): Promise<string> => u.undo().then(() => 'started', (e: Error) => e.message);
+    expect(await said(make(false))).not.toMatch(/rooms page first/); // (the stand-in image has another version: the check after it says so)
+    await writeResult(dir, { version: 1, at: 2, state: 'ok', from: '0.8.2', to: '0.8.3', previousImage: OLD_IMG, note: 'ok', tail: [] });
+    expect(await said(make(true))).not.toMatch(/rooms page first/);
+  });
+
   it('UNDO does not verify: the image was run before', async () => {
     const f = fake();
     let asked = 0;

@@ -1,13 +1,13 @@
 // Rooms (docs/rooms-spec.md): the list of rooms, the commands, and the supervisor with stand-in rooms (test/fake-room.mjs).
 // The real thing (built gonogo as the rooms) was tried by hand: docs/features/rooms.md, "What was seen".
-import { existsSync, lstatSync, mkdirSync, readdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { NESTED_FILES, ROOM_STATE_FILES, SUPERVISOR_FILES, addRoom, loadRooms, mainLayout, MAIN_ROOM, recordMainHome, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
+import { recordedMainHome, NESTED_FILES, ROOM_STATE_FILES, SUPERVISOR_FILES, setMainHome, addRoom, loadRooms, mainLayout, MAIN_ROOM, recordMainHome, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
 import { startGonogo } from '../src/server/cli.js';
 import { PUSH_FILE } from '../src/server/push.js';
 import { startSupervisor } from '../src/server/supervisor.js';
@@ -22,6 +22,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-rooms-'));
   // the tests below are of a home made before 0.9: room main's files are at the root (a room's own mission-log folder says so). A fresh home is in "the layout of room main".
   mkdirSync(join(home, 'mission-log'));
+  setMainHome(home, '.'); // and it has been asked: it stays (a home that was never asked is moved at the start, see test/mainmigrate.test.ts)
 });
 afterEach(async () => {
   await sup?.stop();
@@ -99,6 +100,10 @@ describe('gonogo rooms (the command line)', () => {
     expect(parseArgs(['rooms', 'add'])).toMatchObject({ kind: 'error', message: 'rooms add needs a room id' });
     expect(parseArgs(['rooms', 'list', 'x'])).toMatchObject({ kind: 'error' });
     expect(parseArgs(['rooms', '--nope'])).toMatchObject({ kind: 'error' });
+    expect(parseArgs(['rooms', 'migrate-main'])).toEqual({ kind: 'migrate-main', mode: 'move' });
+    expect(parseArgs(['rooms', 'migrate-main', '--dry-run', '--home', '/h'])).toEqual({ kind: 'migrate-main', mode: 'dry-run', home: '/h' });
+    expect(parseArgs(['rooms', 'migrate-main', '--undo'])).toEqual({ kind: 'migrate-main', mode: 'undo' });
+    for (const bad of [['--undo', '--dry-run'], ['--dry-run', '--undo'], ['--nope'], ['x'], ['--home']]) expect(parseArgs(['rooms', 'migrate-main', ...bad]), bad.join(' ')).toMatchObject({ kind: 'error' });
     // plain gonogo stays one room
     expect(parseArgs([])).toEqual({ kind: 'run', options: {} });
     // the flag a room is started with
@@ -194,6 +199,17 @@ describe('the layout of room main', () => {
     }
   });
 
+  it('with no record, a finished move (the note says done) keeps main in rooms/main even when the older build that dropped the record made files at the root and rooms/main holds little', () => {
+    mkdirSync(join(fresh, 'rooms', 'main'), { recursive: true });
+    writeFileSync(join(fresh, 'main-migration.json'), JSON.stringify({ version: 1, state: 'done', at: 1, moved: 3 }));
+    writeFileSync(join(fresh, 'agents.json'), '{}'); // the older build's empty main
+    writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [] }));
+    expect(mainLayout(fresh)).toBe('rooms/main');
+    // no note and nothing in rooms/main: the root's files are main's
+    rmSync(join(fresh, 'main-migration.json'));
+    expect(mainLayout(fresh)).toBe('.');
+  });
+
   it('every file a room can hold alone makes a home old (keys.json, room-keys.json, payload-defaults.json, autoupdate.json, triggers.jsonl ...)', () => {
     for (const name of ['keys.json', 'room-keys.json', 'payload-defaults.json', 'autoupdate.json', 'triggers.jsonl', ...ROOM_STATE_FILES]) {
       const old = mkdtempSync(join(tmpdir(), 'gng-old-'));
@@ -273,15 +289,196 @@ describe('the layout of room main', () => {
     expect((await api(s, '/r/main/api/state')).status).toBe(200);
   });
 
-  it('an old home starts and serves main at the root, as before, and its rooms.json is not written', async () => {
-    writeFileSync(join(fresh, 'agents.json'), '{}');
+  it('an old home that was never asked is moved into rooms/main at the start, before any room: the room starts there, /r/main/ answers, the layout is on the list', async () => {
+    writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+    writeFileSync(join(fresh, 'messages.jsonl'), '{}\n');
     const s = await startFresh(fresh);
     await until(async () => (await listed(s)).every((r) => r.state === 'running'));
-    expect(lstatSync(join(fresh, 'run', 'room.sock')).isSocket()).toBe(true);
-    expect(existsSync(join(fresh, 'rooms', 'main'))).toBe(false);
-    expect(existsSync(join(fresh, ROOMS_FILE))).toBe(false);
-    expect(await (await api(s, '/r/main/', null)).text()).toContain(roomHome(fresh, MAIN_ROOM));
+    const mainDir = join(fresh, 'rooms', 'main');
+    expect(existsSync(join(fresh, 'agents.json'))).toBe(false);
+    expect(existsSync(join(mainDir, 'agents.json'))).toBe(true);
+    expect(JSON.parse(readFileSync(join(mainDir, 'started-with'), 'utf8'))).toMatchObject({ home: mainDir });
+    expect(existsSync(join(fresh, 'started-with'))).toBe(false);
     expect((await api(s, '/r/main/api/state')).status).toBe(200);
+    expect(await (await api(s, '/r/main/', null)).text()).toContain(mainDir);
+    const body = (await (await api(s, '/api/rooms')).json()) as { layout: { main: string; path: string; migration: { state: string; moved: number } | null } };
+    expect(body.layout).toMatchObject({ main: 'rooms/main', path: mainDir, migration: { state: 'done', moved: 2 } });
+    expect(JSON.parse(readFileSync(join(fresh, ROOMS_FILE), 'utf8'))).toMatchObject({ main: { home: 'rooms/main' } });
+  });
+
+  it('a move that is refused leaves the home as it is, starts main at the root, and the list says why; the next start leaves it alone', async () => {
+    writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [{ name: 'wt', dir: '/p', worktree: {} }] }));
+    let s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    expect(existsSync(join(fresh, 'agents.json'))).toBe(true);
+    expect(existsSync(join(fresh, 'rooms', 'main'))).toBe(false);
+    expect(existsSync(join(fresh, 'started-with'))).toBe(true);
+    const view = async (): Promise<{ layout: { main: string; migration: { state: string; reasons: string[] } | null } }> => (await (await api(s, '/api/rooms')).json()) as never;
+    let got = await view();
+    expect(got.layout).toMatchObject({ main: '.', migration: { state: 'skipped' } });
+    expect(got.layout.migration?.reasons.join('\n')).toContain('agent wt ');
+    await s.stop();
+    sup = null;
+    writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+    s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    expect(existsSync(join(fresh, 'agents.json'))).toBe(true);
+    got = await view();
+    expect(got.layout.main).toBe('.');
+  });
+
+  it('MIGRATE NOW and UNDO from the list are acted on at the next start, with the same checks; CANCEL and DISMISS only do less', async () => {
+    writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [{ name: 'wt', dir: '/p', worktree: {} }] }));
+    let s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    const post = (action: unknown): Promise<Response> => api(s, '/api/rooms/main/migrate', s.directorToken, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
+    const layout = async (): Promise<{ main: string; migration: { state: string } | null }> => ((await (await api(s, '/api/rooms')).json()) as { layout: never }).layout;
+    // the dry run: what would move now, written nowhere
+    const dry = (await (await api(s, '/api/rooms/main/migrate')).json()) as { direction: string; entries: string[]; problems: string[] };
+    expect(dry).toMatchObject({ direction: 'forward', entries: expect.arrayContaining(['agents.json']) });
+    expect(dry.problems.join()).toContain('agent wt ');
+    expect((await post('nope')).status).toBe(400);
+    expect((await post('undo')).status).toBe(409); // main is at the root: nothing to undo
+    expect((await post('cancel')).status).toBe(409);
+    expect((await post('request')).status).toBe(200);
+    expect(await layout()).toMatchObject({ main: '.', migration: { state: 'requested' } });
+    expect((await post('cancel')).status).toBe(200);
+    expect((await layout()).migration).toBeNull();
+    // asked, with the reason gone: done at the next start
+    writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+    expect((await post('request')).status).toBe(200);
+    await s.stop();
+    sup = null;
+    s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    expect(await layout()).toMatchObject({ main: 'rooms/main', migration: { state: 'done' } });
+    expect(existsSync(join(fresh, 'rooms', 'main', 'agents.json'))).toBe(true);
+    expect((await post('request')).status).toBe(409); // already there
+    expect((await post('dismiss')).status).toBe(200);
+    expect((await layout()).migration).toBeNull();
+    // and back
+    expect((await post('undo')).status).toBe(200);
+    await s.stop();
+    sup = null;
+    s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    expect((await layout()).main).toBe('.');
+    expect(existsSync(join(fresh, 'agents.json'))).toBe(true);
+    expect(existsSync(join(fresh, 'rooms', 'main', 'agents.json'))).toBe(false); // (the stand-in room's own scratch files may stay in rooms/main: they are nobody's)
+    // the route is the Director's: no token, no answer
+    expect((await api(s, '/api/rooms/main/migrate', null)).status).toBe(401);
+    expect((await api(s, '/api/rooms/team/migrate')).status).toBe(404);
+  });
+
+  it('DISMISS only clears a skipped or done note: never a journal, nor a request that waits', async () => {
+    const s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    const post = (action: string): Promise<Response> => api(s, '/api/rooms/main/migrate', s.directorToken, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
+    const file = join(fresh, 'main-migration.json');
+    for (const note of [
+      { state: 'moving', at: 1, entries: ['agents.json'] },
+      { state: 'undoing', at: 1, entries: ['agents.json'] },
+      { state: 'requested', at: 1 },
+      { state: 'undo-requested', at: 1 },
+    ]) {
+      writeFileSync(file, JSON.stringify({ version: 1, ...note }));
+      expect((await post('dismiss')).status, note.state).toBe(409);
+      expect(JSON.parse(readFileSync(file, 'utf8')), note.state).toMatchObject({ state: note.state });
+    }
+    for (const note of [{ state: 'skipped', at: 1, reasons: ['x'] }, { state: 'done', at: 1, moved: 1 }]) {
+      writeFileSync(file, JSON.stringify({ version: 1, ...note }));
+      expect((await post('dismiss')).status, note.state).toBe(200);
+      expect(existsSync(file), note.state).toBe(false);
+    }
+    expect((await post('dismiss')).status).toBe(409); // no note
+  });
+
+  it('a start after a crash in the middle of a move finishes it before any room starts', async () => {
+    writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+    writeFileSync(join(fresh, 'messages.jsonl'), '{}\n');
+    mkdirSync(join(fresh, 'rooms', 'main'), { recursive: true });
+    renameSync(join(fresh, 'messages.jsonl'), join(fresh, 'rooms', 'main', 'messages.jsonl')); // the first file had moved
+    writeFileSync(join(fresh, 'main-migration.json'), JSON.stringify({ version: 1, state: 'moving', at: 1, entries: ['agents.json', 'messages.jsonl'] }));
+    const s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    expect(existsSync(join(fresh, 'agents.json'))).toBe(false);
+    expect(existsSync(join(fresh, 'rooms', 'main', 'agents.json'))).toBe(true);
+    expect(JSON.parse(readFileSync(join(fresh, ROOMS_FILE), 'utf8'))).toMatchObject({ main: { home: 'rooms/main' } });
+  });
+
+  describe('gonogo rooms migrate-main', () => {
+    const cli = async (...args: string[]): Promise<{ out: string; err: string; code: number | undefined }> => {
+      const { main } = await import('../src/server/cli.js');
+      let out = '';
+      let err = '';
+      let code: number | undefined;
+      const w = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => ((out += String(chunk)), true));
+      const e = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => ((err += String(chunk)), true));
+      const x = vi.spyOn(process, 'exit').mockImplementation(((c?: number) => void (code ??= c)) as never);
+      try {
+        await main(['rooms', 'migrate-main', ...args, '--home', fresh], { PATH: process.env.PATH });
+      } finally {
+        w.mockRestore();
+        e.mockRestore();
+        x.mockRestore();
+      }
+      return { out, err, code };
+    };
+
+    it('--dry-run says what would move and what stays, and writes nothing; it says what stops it', async () => {
+      writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+      mkdirSync(join(fresh, 'img'));
+      const before = readdirSync(fresh).sort();
+      const ok = await cli('--dry-run');
+      expect(ok.code).toBe(0);
+      expect(ok.out).toContain('would move 1 of room main');
+      expect(ok.out).toContain('  agents.json');
+      expect(ok.out).toContain('stay where they are');
+      expect(ok.out).toContain('img');
+      expect(ok.out).toContain('nothing stops it');
+      expect(readdirSync(fresh).sort()).toEqual(before);
+      writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [{ name: 'wt', dir: '/p', worktree: {} }] }));
+      const refused = await cli('--dry-run');
+      expect(refused.code).toBe(1);
+      expect(refused.out).toContain('would NOT be done now');
+      expect(refused.out).toContain('agent wt ');
+    });
+
+    it('moves, and --undo moves back; each says what it did, and the wrong one says there is nothing to do', async () => {
+      writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+      expect((await cli('--undo')).err).toContain('nothing to undo');
+      const moved = await cli();
+      expect(moved.code).toBe(0);
+      expect(moved.out).toContain('moved 1 of room main');
+      expect(existsSync(join(fresh, 'rooms', 'main', 'agents.json'))).toBe(true);
+      const again = await cli();
+      expect(again.code).toBe(1);
+      expect(again.err).toContain('already lives in rooms/main');
+      const back = await cli('--undo');
+      expect(back.code).toBe(0);
+      expect(existsSync(join(fresh, 'agents.json'))).toBe(true);
+      expect(existsSync(join(fresh, 'rooms', 'main'))).toBe(false);
+      expect(recordedMainHome(fresh)).toBe('.');
+    });
+
+    it('refuses while gonogo runs for the home (the supervisor lock), and names the page\'s keys', async () => {
+      writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+      const s = await startFresh(fresh); // an old home: the start moved it; ask for the move back while it runs
+      await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+      const busy = await cli('--undo');
+      expect(busy.code).toBe(1);
+      expect(busy.err).toContain('gonogo is running for this home');
+      expect(busy.err).toContain('UNDO');
+      expect(existsSync(join(fresh, 'rooms', 'main', 'agents.json'))).toBe(true);
+    });
+  });
+
+  it('a damaged journal stops the start with the reason, and nothing is moved', async () => {
+    writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
+    writeFileSync(join(fresh, 'main-migration.json'), '{nope');
+    await expect(startFresh(fresh)).rejects.toThrow(/main-migration.json is damaged/);
+    expect(existsSync(join(fresh, 'agents.json'))).toBe(true);
+    sup = null;
   });
 
   it('a damaged rooms.json later does not move main under a running supervisor', async () => {
@@ -464,7 +661,7 @@ describe('the supervisor', () => {
           expect((await send(s, method, path, body, token)).status, `${method} ${path} ${String(token).slice(0, 4)}`).toBe(401);
         }
       }
-      expect(existsSync(join(home, ROOMS_FILE))).toBe(false);
+      expect(loadRooms(home).map((r) => r.id)).toEqual(['main']); // no room was added
     });
 
     it('adds a room: it starts, shows in the list, and rooms.json is 0600; the same id again is 409', async () => {
@@ -494,7 +691,7 @@ describe('the supervisor', () => {
       expect((await api(s, '/api/rooms', s.directorToken, { method: 'POST', headers: json, body: JSON.stringify({ id: 'ok', name: 'x'.repeat(6000) }) })).status).toBe(400);
       expect((await send(s, 'PUT', '/api/rooms', { id: 'ok' })).status).toBe(405);
       expect((await send(s, 'POST', '/api/rooms/ok', { id: 'ok' })).status).toBe(405);
-      expect(existsSync(join(home, ROOMS_FILE))).toBe(false);
+      expect(loadRooms(home).map((r) => r.id)).toEqual(['main']); // no room was added
     });
 
     it('refuses a browser page of another address (Origin), and a path id that is not an id', async () => {
@@ -502,7 +699,7 @@ describe('the supervisor', () => {
       await until(() => running(s, 'main'));
       expect((await send(s, 'POST', '/api/rooms', { id: 'evil' }, s.directorToken, { ...json, origin: 'http://evil.example' })).status).toBe(403);
       for (const id of ['A', 'a%2fb']) expect([400, 404], id).toContain((await send(s, 'DELETE', `/api/rooms/${id}`)).status);
-      expect(existsSync(join(home, ROOMS_FILE))).toBe(false);
+      expect(loadRooms(home).map((r) => r.id)).toEqual(['main']); // no room was added
     });
 
     it('renames a room (its id and folder stay) and refuses main, an empty name and an unknown room', async () => {

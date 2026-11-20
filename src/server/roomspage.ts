@@ -94,7 +94,7 @@ const SCRIPT = `
 const KEY=${JSON.stringify(TOKEN_STORAGE_KEY)},FRAG=${JSON.stringify(TOKEN_FRAGMENT_KEY)};
 const $=id=>document.getElementById(id);
 const list=$('rooms'),note=$('note'),form=$('add'),gate=$('gate'),sum=$('sum'),title=$('title');
-let token=null,rooms=null,renaming=null,removing=null,seen='',said=-1;
+let token=null,rooms=null,layout=null,renaming=null,removing=null,seen='',said=-1,dry=null,ask=null;
 try{
   const h=new URLSearchParams(location.hash.slice(1));
   if(/^[0-9a-f]{64}$/i.test(h.get(FRAG)||'')){token=h.get(FRAG);try{localStorage.setItem(KEY,token)}catch{}history.replaceState(null,'',location.pathname)}
@@ -109,7 +109,7 @@ function ago(at){
 async function call(method,path,body){
   const res=await fetch(path,{method,headers:Object.assign(token?{Authorization:'Bearer '+token}:{},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,cache:'no-store'});
   const data=await res.json().catch(()=>({}));
-  if(!res.ok)throw new Error(data.error||('error '+res.status));
+  if(!res.ok)throw Object.assign(new Error(data.error||('error '+res.status)),{stepUp:data.stepUp===true,second:data.second===true});
   return data;
 }
 function fail(e){note.textContent=e instanceof Error?e.message:String(e);note.hidden=false}
@@ -147,13 +147,14 @@ function card(r){
   }else if(up)lcd.append(el('span','tile-sub','running'));
   else{lcd.append(el('span','tile-sub',r.state==='crashed'?'crashed, starting again':r.state==='starting'?'starting':'stopped'));if(r.note)lcd.append(el('span','tile-sub',r.note))}
   li.append(lcd);
-  const foot=el('div','tile-foot');foot.append(el('span','','r/'+r.id));if(r.tabName)foot.append(el('span','','tab: '+r.tabName));
+  const foot=el('div','tile-foot');foot.append(el('span','','r/'+r.id));if(r.tabName)foot.append(el('span','','tab: '+r.tabName));if(r.id==='main'&&layout)foot.append(el('span','','files: '+layout.path));
   li.append(foot);
   const keys=el('div','rl-keys');
   if(up){const a=el('a','btn','OPEN');a.dataset.kind='primary';a.dataset.f='open:'+r.id;a.href='/r/'+encodeURIComponent(r.id)+'/';a.setAttribute('aria-label','Open '+name);keys.append(a)}
   else{const b=key('OPEN','primary',()=>{},'open:'+r.id,'Open '+name);b.disabled=true;keys.append(b)}
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);
+  if(r.id==='main'){const mb=moveBox();if(mb)li.append(mb)}
   if(removing===r.id){
     const box=el('div','flood rl-confirm');box.dataset.tone='nogo';box.setAttribute('role','group');box.setAttribute('aria-label','Remove '+name);
     box.append(el('p','','Remove '+name+'? gonogo stops the room and its agents. Its folder stays on disk (rooms/'+r.id+'); nothing is deleted.'));
@@ -162,6 +163,64 @@ function card(r){
     box.append(row);li.append(box);
   }
   return li;
+}
+function lines(box,items){for(const t of items)box.append(el('p','',t))}
+async function act(action){
+  try{await call('POST','/api/rooms/main/migrate',{action});ask=null;dry=null;clear();seen='';await load()}
+  catch(e){
+    if(e.stepUp){ask={action,second:e.second,msg:e.message};seen='';draw();focus('step:password')}else fail(e)
+  }
+}
+async function confirmStep(){
+  const box=list.querySelector('.rl-step'),pw=box.querySelector('[name=password]').value,code=box.querySelector('[name=code]');
+  try{await call('POST','/api/auth/stepup',Object.assign({password:pw},code&&code.value?{code:code.value}:{}));const a=ask.action;ask=null;await act(a)}
+  catch(e){note.textContent=e.message;note.hidden=false}
+}
+async function showDry(){
+  try{dry=await call('GET','/api/rooms/main/migrate');clear();seen='';draw();focus('dry:close')}catch(e){fail(e)}
+}
+function moveBox(){
+  if(!layout)return null;
+  const m=layout.migration,old=layout.main==='.';
+  if(!m&&!old&&!dry&&!ask)return null;
+  const box=el('div','flood rl-confirm');box.dataset.tone='amber';box.setAttribute('role','group');box.setAttribute('aria-label','Where room main keeps its files');
+  const row=el('div','rl-keys');
+  if(m&&m.state==='skipped'){
+    box.append(el('p','','Room main was not moved into rooms/main, so its files stay at the root of the home. Nothing was changed.'));lines(box,m.reasons||[]);
+    row.append(key('MIGRATE NOW','primary',()=>act('request'),'migrate:now'),key('DRY RUN','',showDry,'migrate:dry'),key('DISMISS','',()=>act('dismiss'),'migrate:dismiss'));
+  }else if(m&&m.state==='requested'){
+    box.append(el('p','','Room main will be moved into rooms/main at the next start of gonogo, after the same checks. Restart gonogo to do it now.'));
+    row.append(key('CANCEL','',()=>act('cancel'),'migrate:cancel'),key('DRY RUN','',showDry,'migrate:dry'));
+  }else if(m&&m.state==='undo-requested'){
+    box.append(el('p','','Room main will be moved back to the root of the home at the next start of gonogo.'));
+    row.append(key('CANCEL','',()=>act('cancel'),'migrate:cancel'));
+  }else if(m&&m.state==='done'){
+    box.append(el('p','','Room main now lives in rooms/main ('+m.moved+' files moved, '+ago(m.at)+'). The supervisor\u2019s own files stayed at the root. UNDO moves them back at the next start.'));
+    if(m.reasons&&m.reasons.length){box.append(el('p','','The last UNDO was not possible:'));lines(box,m.reasons)}
+    row.append(key('UNDO','',()=>act('undo'),'migrate:undo'),key('DISMISS','',()=>act('dismiss'),'migrate:dismiss'));
+  }else if(m&&m.state==='damaged'){
+    box.append(el('p','',(m.reasons||['main-migration.json cannot be read'])[0]));
+  }else if(old&&!m){
+    box.append(el('p','','Room main keeps its files at the root of the home, next to gonogo\u2019s own. A new install keeps them in rooms/main.'));
+    row.append(key('MIGRATE NOW','primary',()=>act('request'),'migrate:now'),key('DRY RUN','',showDry,'migrate:dry'));
+  }
+  if(dry){
+    const p=dry;box.append(el('p','',(p.direction==='forward'?'Would move ':'Would move back ')+p.entries.length+' of main\u2019s files from '+p.from+' to '+p.to+(p.stays&&p.stays.length?'. Stay where they are: '+p.stays.join(', '):'')+'.'));
+    box.append(el('p','',p.entries.join(', ')||'(nothing)'));
+    if(p.problems.length){box.append(el('p','','It would not be done now:'));lines(box,p.problems)}else box.append(el('p','','Nothing stops it.'));
+    row.append(key('CLOSE','',()=>{dry=null;seen='';draw();focus('migrate:dry')},'dry:close'));
+  }
+  if(ask){
+    const st=el('div','rl-step');
+    const pw=el('input','input');pw.type='password';pw.name='password';pw.autocomplete='current-password';pw.dataset.f='step:password';pw.setAttribute('aria-label','Password');
+    st.append(el('p','',ask.msg),pw);
+    if(ask.second){const c=el('input','input');c.name='code';c.inputMode='numeric';c.autocomplete='one-time-code';c.setAttribute('aria-label','Code');st.append(c)}
+    pw.addEventListener('keydown',e=>{if(e.key==='Enter')confirmStep()});
+    st.append(key('CONFIRM','primary',confirmStep,'step:go'),key('CANCEL','',()=>{ask=null;seen='';draw()},'step:cancel'));
+    box.append(st);
+  }
+  if(row.childNodes.length)box.append(row);
+  return box;
 }
 function focus(f){const t=list.querySelector('[data-f="'+f+'"]');if(t){t.focus();if(t.select)t.select()}return !!t}
 function draw(){
@@ -190,10 +249,10 @@ async function load(){
     const res=await fetch('/api/rooms',{headers:token?{Authorization:'Bearer '+token}:{},cache:'no-store'});
     // no token, or one that no longer opens anything: the login (which says "set up" on an install with no account yet)
     if(res.status===401){location.replace('/login');return}
-    const next=(await res.json()).rooms||[],text=JSON.stringify(next);
-    rooms=next;
+    const body=await res.json(),next=body.rooms||[],text=JSON.stringify([next,body.layout||null]);
+    rooms=next;layout=body.layout||null;
     // while a name is being typed the cards stay as they are; the next poll draws what changed
-    if(text!==seen&&renaming===null){seen=text;draw()}
+    if(text!==seen&&renaming===null&&ask===null){seen=text;draw()}
   }catch{if(rooms===null)shut('Could not reach the server','Is gonogo still running? This page asks again in a few seconds.');else fail('Could not reach the server.')}
 }
 $('new').addEventListener('click',()=>form.hidden?showForm():hideForm());
