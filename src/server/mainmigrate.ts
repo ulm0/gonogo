@@ -17,7 +17,8 @@ import { accessSync, constants, lstatSync, mkdirSync, readdirSync, readFileSync,
 import net from 'node:net';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { roomLockAlive } from './home.js';
-import { mainRepoOf, removeWorktreeFolder, worktreeStatus } from './worktree.js';
+import { GIT_BIN } from './constants.js';
+import { mainRepoOf, removeWorktreeFolder, run } from './worktree.js';
 import { cleanRoomBranch } from '../shared/protocol.js';
 import { MAIN_ROOM, NESTED_FILES, ROOM_STATE_FILES, ROOMS_DIR, RoomsError, SUPERVISOR_FILES, mainLayout, recordedMainHome, setMainHome } from './rooms.js';
 import type { MainHome } from './rooms.js';
@@ -187,9 +188,13 @@ export interface Leftover {
  * Folders of worktrees or Clean Rooms that are still there and that no agent uses (an agent that was removed or changed): git knows them by their path.
  * One that is clean and whose branch is merged can be removed by the move itself; anything else is a reason, with the exact command.
  */
+/** Ignored files that are build output: they are regenerated and may go with the worktree. Anything else ignored (.env, local config) may not. */
+const BUILD_DIRS = new Set(['node_modules', 'dist', '.vite', 'build', 'coverage']);
+
 async function leftoverFolders(from: string, used: { worktree: Set<string>; cleanRoom: Set<string> }): Promise<Leftover[]> {
   const out: Leftover[] = [];
   const env = process.env;
+  const git = (cwd: string, ...args: string[]): Promise<string> => run(GIT_BIN, ['-C', cwd, ...args], env);
   for (const [dir, owners] of [['worktrees', used.worktree], ['cleanroom', used.cleanRoom]] as const) {
     let names: string[];
     try {
@@ -197,19 +202,52 @@ async function leftoverFolders(from: string, used: { worktree: Set<string>; clea
     } catch {
       continue; // not there
     }
+    const base = real(join(from, dir));
+    // the folder itself must be a real folder of this home too
+    const top = lstatOrNull(join(from, dir));
+    if (top === null || top.isSymbolicLink() || !real(join(from, dir)).startsWith(`${real(from)}${sep}`)) {
+      out.push({ path: join(from, dir), removable: false, repo: null, reason: `${join(from, dir)} is a link, or not really inside the home: look at it by hand, or keep the old layout` });
+      continue;
+    }
     for (const name of names) {
       if (owners.has(name)) continue; // an agent has it: agentsInside says so
       const path = join(from, dir, name);
-      const repo = await mainRepoOf(path, env);
-      if (repo === null) {
-        out.push({ path, removable: false, repo: null, reason: `${path} is not a git worktree: move it away or delete it, or keep the old layout` });
+      const refuse = (reason: string, repo: string | null = null): void => void out.push({ path, removable: false, repo, reason });
+      // a real folder of this home: a link (to a folder anywhere) is never followed or removed
+      const info = lstatOrNull(path);
+      if (info === null || info.isSymbolicLink() || !info.isDirectory() || !real(path).startsWith(`${base}${sep}`)) {
+        refuse(`${path} is a link, or a folder that is not really inside ${join(from, dir)}: look at it, then move it away or delete it by hand, or keep the old layout`);
         continue;
       }
-      const state = await worktreeStatus(path, cleanRoomBranch(name), env);
+      const repo = await mainRepoOf(path, env);
+      if (repo === null) {
+        refuse(`${path} is not a git worktree: move it away or delete it, or keep the old layout`);
+        continue;
+      }
       const command = `git -C ${repo} worktree remove ${path}`;
-      if (state.dirty) out.push({ path, removable: false, repo, reason: `${path} has changes that are not committed: look at them, then run: ${command} (add --force to drop them)` });
-      else if (state.ahead > 0 || !state.merged) out.push({ path, removable: false, repo, reason: `${path} is on a branch (${state.branch}) that is not merged in the repository's checked-out branch (${state.ahead} commit${state.ahead === 1 ? '' : 's'} ahead): merge or push it, then run: ${command}` });
-      else out.push({ path, removable: true, repo, reason: '' });
+      const branch = cleanRoomBranch(name);
+      // what the WORKTREE has checked out decides, not the branch it is named after: a detached commit or another branch there is work that removing would lose
+      const head = (await git(path, 'symbolic-ref', '-q', 'HEAD').catch(() => '')).trim();
+      if (head !== `refs/heads/${branch}`) {
+        refuse(`${path} has ${head === '' ? 'a detached HEAD' : `${head.replace('refs/heads/', '')} checked out`}, not ${branch}: look at what it holds, then run: ${command} (add --force to drop it)`, repo);
+        continue;
+      }
+      if ((await git(path, 'status', '--porcelain').catch(() => 'x')).trim() !== '') {
+        refuse(`${path} has changes that are not committed: look at them, then run: ${command} (add --force to drop them)`, repo);
+        continue;
+      }
+      const ignored = (await git(path, 'status', '--porcelain', '--ignored').catch(() => '')).split('\n').filter((line) => line.startsWith('!! ') && !BUILD_DIRS.has(line.slice(3).split('/')[0] ?? ''));
+      if (ignored.length > 0) {
+        refuse(`${path} holds ignored files that removing would delete (${ignored.slice(0, 3).map((l) => l.slice(3)).join(', ')}${ignored.length > 3 ? ', ...' : ''}): keep what you need, then run: ${command} (add --force to drop them)`, repo);
+        continue;
+      }
+      const tip = (await git(path, 'rev-parse', 'HEAD').catch(() => '')).trim();
+      const merged = tip !== '' && (await git(repo, 'merge-base', '--is-ancestor', tip, 'HEAD').then(() => true, () => false));
+      if (!merged) {
+        refuse(`${path} is on ${branch}, which has commits that are not in the repository's checked-out branch: merge or push it, then run: ${command}`, repo);
+        continue;
+      }
+      out.push({ path, removable: true, repo, reason: '' });
     }
   }
   return out;

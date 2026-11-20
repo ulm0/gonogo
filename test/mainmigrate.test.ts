@@ -1,5 +1,5 @@
 // Moving room main of an old home into rooms/main (src/server/mainmigrate.ts): the plan, the pre-checks, the move with its journal, a crash in the middle, undo.
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -205,11 +205,89 @@ describe('moving room main into rooms/main', () => {
       expect(out.did).toBe('skipped');
       const reasons = out.did === 'skipped' ? out.problems.join('\n') : '';
       expect(reasons).toContain(`has changes that are not committed: look at them, then run: git -C ${realpathSync(repo)} worktree remove ${dirty}`);
-      expect(reasons).toMatch(/gonogo\/ahead\) that is not merged[^\n]*1 commit ahead[^\n]*run: git -C [^\n]* worktree remove [^\n]*worktrees\/ahead/);
+      expect(reasons).toMatch(/worktrees\/ahead is on gonogo\/ahead, which has commits that are not in the repository's checked-out branch[^\n]*run: git -C [^\n]* worktree remove [^\n]*worktrees\/ahead/);
       expect(reasons).toContain('worktrees/plain is not a git worktree');
       expect(reasons).not.toContain(clean); // the clean one is no reason
       expect(existsSync(clean)).toBe(true); // a refused move changes nothing
       expect(existsSync(join(root, 'agents.json'))).toBe(true);
+    });
+
+    it('judges what the worktree has CHECKED OUT, not the branch named after it: a detached commit or another branch is refused (the work would be lost)', async () => {
+      oldHome();
+      const detached = leftover('cleanroom', 'det');
+      writeFileSync(join(detached, 'd.txt'), 'd');
+      git(detached, 'add', '.');
+      git(detached, 'checkout', '-q', '--detach');
+      git(detached, 'commit', '-q', '-m', 'only here');
+      const other = leftover('cleanroom', 'oth');
+      git(other, 'checkout', '-q', '-b', 'feature');
+      writeFileSync(join(other, 'o.txt'), 'o');
+      git(other, 'add', '.');
+      git(other, 'commit', '-q', '-m', 'on feature');
+      const out = await startupMigration(root);
+      expect(out.did).toBe('skipped');
+      const reasons = out.did === 'skipped' ? out.problems.join('\n') : '';
+      expect(reasons).toMatch(/cleanroom\/det has a detached HEAD, not gonogo\/det: look at what it holds, then run: git -C [^\n]* worktree remove [^\n]*cleanroom\/det/);
+      expect(reasons).toMatch(/cleanroom\/oth has feature checked out, not gonogo\/oth/);
+      expect(existsSync(detached)).toBe(true);
+      expect(existsSync(other)).toBe(true);
+      expect(git(detached, 'log', '--oneline', '-1')).toContain('only here');
+    });
+
+    it('a detached HEAD is refused even when its commit is already in the checked-out branch: the rule is the branch the worktree is on', async () => {
+      oldHome();
+      const det = leftover('cleanroom', 'same');
+      git(det, 'checkout', '-q', '--detach');
+      expect((await planMigration(root, 'forward', { running: false })).problems.join('\n')).toContain('has a detached HEAD');
+    });
+
+    it('refuses a link, and a folder whose real path is outside the home: nothing is followed or removed', async () => {
+      oldHome();
+      const real = leftover('cleanroom', 'real');
+      const outside = mkdtempSync(join(tmpdir(), 'gng-outside-'));
+      try {
+        symlinkSync(real, join(root, 'cleanroom', 'link')); // a link to a clean merged worktree
+        symlinkSync(outside, join(root, 'cleanroom', 'out')); // a link to a folder anywhere
+        const plan = await planMigration(root, 'forward', { running: false });
+        const reasons = plan.problems.join('\n');
+        expect(reasons).toContain(`${join(root, 'cleanroom', 'link')} is a link`);
+        expect(reasons).toContain(`${join(root, 'cleanroom', 'out')} is a link`);
+        expect(plan.removes).toEqual([real]); // the real one is fine, the links are not
+        expect((await migrate(root, 'forward')).ok).toBe(false);
+        expect(existsSync(real)).toBe(true);
+        expect(existsSync(outside)).toBe(true);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+      // the folder cleanroom/ itself a link
+      rmSync(join(root, 'cleanroom'), { recursive: true, force: true });
+      git(repo, 'worktree', 'prune');
+      const elsewhere = mkdtempSync(join(tmpdir(), 'gng-elsewhere-'));
+      try {
+        symlinkSync(elsewhere, join(root, 'cleanroom'));
+        const plan = await planMigration(root, 'forward', { running: false });
+        expect(plan.problems.join('\n')).toContain(`${join(root, 'cleanroom')} is a link`);
+        expect(plan.removes).toEqual([]);
+      } finally {
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    it('ignored files that are not build output refuse (.env, local config); node_modules, dist and .vite may go', async () => {
+      oldHome();
+      writeFileSync(join(repo, '.gitignore'), 'node_modules/\ndist/\n.vite/\n.env\nlocal.json\n');
+      git(repo, 'add', '.');
+      git(repo, 'commit', '-q', '-m', 'ignore');
+      const build = leftover('cleanroom', 'build');
+      for (const d of ['node_modules', 'dist', '.vite']) mkdirSync(join(build, d));
+      writeFileSync(join(build, 'node_modules', 'x'), 'x');
+      const secret = leftover('cleanroom', 'secret');
+      writeFileSync(join(secret, '.env'), 'TOKEN=1');
+      const plan = await planMigration(root, 'forward', { running: false });
+      expect(plan.removes).toEqual([build]);
+      const reasons = plan.problems.join('\n');
+      expect(reasons).toMatch(/cleanroom\/secret holds ignored files that removing would delete \(\.env\)[^\n]*run: git -C [^\n]* worktree remove [^\n]*cleanroom\/secret/);
+      expect(reasons).not.toContain('cleanroom/build');
     });
 
     it('a half-done journal refuses BEFORE anything is removed', async () => {
