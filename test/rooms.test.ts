@@ -1,13 +1,13 @@
 // Rooms (docs/rooms-spec.md): the list of rooms, the commands, and the supervisor with stand-in rooms (test/fake-room.mjs).
 // The real thing (built gonogo as the rooms) was tried by hand: docs/features/rooms.md, "What was seen".
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { addRoom, loadRooms, mainLayout, MAIN_ROOM, recordMainHome, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
+import { NESTED_FILES, ROOM_STATE_FILES, SUPERVISOR_FILES, addRoom, loadRooms, mainLayout, MAIN_ROOM, recordMainHome, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
 import { startGonogo } from '../src/server/cli.js';
 import { PUSH_FILE } from '../src/server/push.js';
 import { startSupervisor } from '../src/server/supervisor.js';
@@ -171,6 +171,30 @@ describe('the layout of room main', () => {
     writeFileSync(join(fresh, 'run', 'api.sock'), '');
     writeFileSync(join(fresh, 'run', 'supervisor.lock'), '');
     expect(mainLayout(fresh)).toBe('rooms/main');
+  });
+
+  it('every file a room can hold alone makes a home old (keys.json, room-keys.json, payload-defaults.json, autoupdate.json, triggers.jsonl ...)', () => {
+    for (const name of ['keys.json', 'room-keys.json', 'payload-defaults.json', 'autoupdate.json', 'triggers.jsonl', ...ROOM_STATE_FILES]) {
+      const old = mkdtempSync(join(tmpdir(), 'gng-old-'));
+      try {
+        writeFileSync(join(old, name), '');
+        expect(mainLayout(old), name).toBe('.');
+      } finally {
+        rmSync(old, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('cannot drift: every *_FILE and *_DIR name in src/ is a room\'s, the supervisor\'s, or lives in a folder', () => {
+    const known = new Set([...ROOM_STATE_FILES, ...SUPERVISOR_FILES, ...NESTED_FILES]);
+    const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith('.ts') ? [join(dir, e.name)] : []));
+    const seen = new Set<string>();
+    for (const file of [...walk(new URL('../src/server', import.meta.url).pathname), ...walk(new URL('../src/shared', import.meta.url).pathname)]) {
+      for (const m of readFileSync(file, 'utf8').matchAll(/\bconst [A-Z][A-Z0-9_]*_(?:FILE|DIR)(?::\s*string)? = '([^']+)'/g)) seen.add(m[1] as string);
+    }
+    expect(seen.size).toBeGreaterThan(40);
+    expect([...seen].filter((name) => !known.has(name))).toEqual([]);
+    expect([...ROOM_STATE_FILES].filter((n) => SUPERVISOR_FILES.includes(n) || NESTED_FILES.includes(n))).toEqual([]);
   });
 
   it('an old home with rooms.json and no layout on record stays at the root, and saving the list records it', () => {

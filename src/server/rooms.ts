@@ -42,12 +42,24 @@ export const validRoomId = (id: unknown): id is string => typeof id === 'string'
 /** Where room `main` keeps its files: the root itself (a home made before 0.9) or `rooms/main` (a new one). */
 export type MainHome = '.' | 'rooms/main';
 const MAIN_HOMES: readonly unknown[] = ['.', 'rooms/main'];
-/** Files a room (not the supervisor) leaves in its home: any of them at the root means room main lives there. Wider is safer: a miss would hide an old home's agents. */
-const ROOM_STATE_AT_ROOT = [
-  'agents.json', 'agents', 'messages.jsonl', 'server.lock', 'run-state.json', 'tasks.json', 'startup.json', 'mission-log', 'black-box', 'board.json', 'downlink.json',
-  'fuel.jsonl', 'propellant.json', 'quota.json', 'relay.json', 'rollout.json', 'room.json', 'station.json', 'uplinks.json', 'telemetry.jsonl', 'cleanroom', 'gh', 'liveries',
-  join('run', 'room.sock'), join('run', 'room-token'),
+/**
+ * What a room (not the supervisor) keeps in its home: any of them at the root means room main lives there. Wider is safer, since a miss would hide an
+ * old home's agents. test/rooms.test.ts reads every `*_FILE` and `*_DIR` name in src/ and fails for one that is in none of these three lists, so a
+ * new file of a room cannot be forgotten here.
+ */
+export const ROOM_STATE_FILES: readonly string[] = [
+  'agents.json', 'agents', 'autoupdate.json', 'black-box', 'board.md', 'cleanroom', 'cleanroom-home', 'coauthor.json', 'docking.json', 'downlink.json', 'features.json', 'fuel.jsonl',
+  'gh', 'hub-state.json', 'keys.json', 'keys.refused.json', 'liveries', 'livery.json', 'messages.jsonl', 'messages.jsonl.1', 'mission-log', 'missions.json', 'models.json',
+  'payload-defaults.json', 'payload-plugin', 'permissions.json', 'prices.json', 'propellant.json', 'quota.json', 'relay.json', 'reported.jsonl', 'reviews.json', 'rollout.json',
+  'room-keys.json', 'room-keys.refused.json', 'room.json', 'run-state.json', 'schedules.json', 'server.lock', 'startup.json', 'station.json', 'subagents.json', 'tabname.json',
+  'tasks.json', 'telegram-poll.json', 'telemetry.jsonl', 'triggers.1.jsonl', 'triggers.jsonl', 'uplinks.json', 'worktrees',
 ];
+/** The supervisor's own files and folders: they stay at the root whatever the layout, and never say where main is. */
+export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run'];
+/** Names that only exist inside another folder (an agent's, or `run/`): never at a home's root, so they say nothing about the layout. */
+export const NESTED_FILES: readonly string[] = ['.seq', 'agy-hooks.json', 'gemini-settings.json', 'mcp.json', 'memory.md', 'ptyhost.key', 'ptyhost.log', 'ptyhost.sock', 'settings.json', 'tokens.json', 'update.json'];
+/** Where a room that is running has put something besides those: its socket and token. */
+const ROOM_STATE_AT_ROOT: readonly string[] = [...ROOM_STATE_FILES, join('run', 'room.sock'), join('run', 'room-token')];
 
 /** What `rooms.json` says about main: null when it says nothing (no file, or a file of an older version). Throws a plain Error for a value it does not know. */
 function recordedMain(saved: unknown): MainHome | null {
