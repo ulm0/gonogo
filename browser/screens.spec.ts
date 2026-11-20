@@ -129,7 +129,7 @@ test.beforeAll(async () => {
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   const server = spawn(process.execPath, ['bin/gonogo.js', '--port', String(port), '--no-update-check'], {
-    env: { ...process.env, GONOGO_HOME: join(home, 'gonogo'), CLAUDE_CONFIG_DIR: join(home, 'fake-claude'), FAKE_CLAUDE_LOG_DIR: join(home, 'fake-log'), GONOGO_AGENT_CMD: `${process.execPath} test/fake-claude.mjs` },
+    env: { ...process.env, GONOGO_HOME: join(home, 'gonogo'), CLAUDE_CONFIG_DIR: join(home, 'fake-claude'), FAKE_CLAUDE_LOG_DIR: join(home, 'fake-log'), GONOGO_AGENT_CMD: `${process.execPath} ${join(process.cwd(), "test", "fake-claude.mjs")}` },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(server);
