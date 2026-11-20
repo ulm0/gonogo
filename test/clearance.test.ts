@@ -7,7 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../src/shared/protocol.js';
-import { checkKeys, createClearance, keyNameProblem } from '../src/server/clearance.js';
+import { checkKeys, createClearance, keyNameProblem, keyNameReserved } from '../src/server/clearance.js';
+import { keyWarning } from '../src/shared/protocol.js';
+import { createRoomKeys } from '../src/server/roomkeys.js';
+import { KEYS_REFUSED_FILE, ROOM_KEYS_REFUSED_FILE } from '../src/server/constants.js';
 
 const SECRET = 'sk-test-0123456789abcdef';
 let dir: string;
@@ -165,6 +168,80 @@ describe('the key store', () => {
     const store = createClearance({ dir, log });
     await store.load();
     expect(store.values('ana')).toEqual({ GOOD_KEY: 'v' });
+  });
+
+  it('reserves the variables that make a program run (a shell start-up file, git ssh, proxy, editor and pager), and nothing else new', () => {
+    for (const name of ['ZDOTDIR', 'GIT_SSH', 'GIT_PROXY_COMMAND', 'GIT_EDITOR', 'GIT_PAGER', 'EDITOR', 'VISUAL', 'PAGER']) {
+      expect(keyNameProblem(name), name).toMatch(/cannot be a key/);
+      expect(keyNameReserved(name), name).toBe(true);
+    }
+    // ENV is allowed and warns: only an interactive sh reads it, and ENV=production is a common application setting
+    for (const name of ['ENV', 'ENVIRONMENT', 'MY_EDITOR', 'AWS_REGION', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE']) expect(keyNameProblem(name), name).toBeNull();
+    // a badly spelled name is not "reserved": it is refused for its shape
+    expect(keyNameReserved('path')).toBe(false);
+  });
+
+  it('refuses at load a stored key whose name is reserved now: not given to the agent, its name logged and listed, never its value', async () => {
+    await writeFile(join(dir, 'keys.json'), JSON.stringify({ version: 1, agents: { ana: { EDITOR: SECRET, OK_KEY: 'v' }, ben: { ZDOTDIR: SECRET } } }));
+    lines.length = 0;
+    const store = createClearance({ dir, log });
+    await store.load();
+    expect(store.values('ana')).toEqual({ OK_KEY: 'v' });
+    expect(store.values('ben')).toEqual({});
+    expect(store.refused()).toEqual(['ana: EDITOR', 'ben: ZDOTDIR']);
+    expect(lines.join('\n')).toContain('ana: EDITOR, ben: ZDOTDIR');
+    expect(lines.join('\n')).not.toContain(SECRET);
+    // moved, not deleted: the value is in keys.refused.json (0600), the main file is rewritten without it, and the next start refuses nothing, so the note is made once
+    expect(await readFile(join(dir, 'keys.json'), 'utf8')).not.toContain(SECRET);
+    expect(JSON.parse(await readFile(join(dir, 'keys.refused.json'), 'utf8'))).toEqual({ version: 1, agents: { ana: { EDITOR: SECRET }, ben: { ZDOTDIR: SECRET } } });
+    expect((await stat(join(dir, 'keys.refused.json'))).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(join(dir, 'keys.json'), 'utf8')).agents).toEqual({ ana: { OK_KEY: 'v' } });
+    expect((await stat(join(dir, 'keys.json'))).mode & 0o777).toBe(0o600);
+    const again = createClearance({ dir, log });
+    await again.load();
+    expect(again.refused()).toEqual([]);
+    expect(again.values('ana')).toEqual({ OK_KEY: 'v' });
+  });
+
+  it('a second refusal is merged into the file kept aside, and one that cannot be read leaves the main file alone', async () => {
+    await writeFile(join(dir, 'keys.refused.json'), JSON.stringify({ version: 1, agents: { ana: { PAGER: 'older' }, cy: { VISUAL: 'x' } } }));
+    await writeFile(join(dir, 'keys.json'), JSON.stringify({ version: 1, agents: { ana: { EDITOR: SECRET, OK_KEY: 'v' } } }));
+    await createClearance({ dir, log }).load();
+    expect(JSON.parse(await readFile(join(dir, 'keys.refused.json'), 'utf8')).agents).toEqual({ ana: { PAGER: 'older', EDITOR: SECRET }, cy: { VISUAL: 'x' } });
+    // not JSON: nothing is overwritten, the main file stays as it was and the error is logged without a value
+    await writeFile(join(dir, 'keys.refused.json'), 'not json');
+    const main = JSON.stringify({ version: 1, agents: { ana: { EDITOR: SECRET, OK_KEY: 'v' } } });
+    await writeFile(join(dir, 'keys.json'), main);
+    lines.length = 0;
+    await createClearance({ dir, log }).load();
+    expect(await readFile(join(dir, 'keys.json'), 'utf8')).toBe(main);
+    expect(await readFile(join(dir, 'keys.refused.json'), 'utf8')).toBe('not json');
+    expect(lines.join('\n')).not.toContain(SECRET);
+  });
+
+  it('the files kept aside are write-only for gonogo: no store reads them back, so what is in them is never given to an agent or sent to a page', async () => {
+    await writeFile(join(dir, KEYS_REFUSED_FILE), JSON.stringify({ version: 1, agents: { ana: { EDITOR: SECRET, OK_KEY: SECRET } } }));
+    await writeFile(join(dir, ROOM_KEYS_REFUSED_FILE), JSON.stringify({ version: 1, keys: { EDITOR: { value: SECRET }, OK_KEY: { value: SECRET } } }));
+    const clearance = createClearance({ dir, log });
+    const room = createRoomKeys({ dir, log });
+    await clearance.load();
+    await room.load();
+    expect(clearance.values('ana')).toEqual({});
+    expect(room.values(false)).toEqual({});
+    expect(JSON.stringify(room.view())).not.toContain(SECRET);
+    expect(clearance.refused()).toEqual([]);
+    expect(room.refused()).toEqual([]);
+    // and nothing in the server's source reads them but the one writer (keepAside)
+    for (const file of ['clearance.ts', 'roomkeys.ts']) expect(await readFile(new URL(`../src/server/${file}`, import.meta.url), 'utf8')).not.toMatch(/readFile\([^)]*REFUSED/);
+  });
+
+  it('warns, and does not refuse, on a CA override or ENV', () => {
+    expect(keyWarning('ENV')).toContain('interactive sh');
+    for (const name of ['NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) {
+      expect(keyWarning(name)).toContain('certificate authority');
+      expect(keyNameProblem(name)).toBeNull();
+    }
+    expect(keyWarning('AWS_REGION')).toBeNull();
   });
 
   it('a write that fails leaves the old values, rejects, and does not repeat the value', async () => {

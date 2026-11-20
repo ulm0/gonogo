@@ -107,6 +107,23 @@ describe('the store', () => {
     expect(warned[0]).not.toMatch(/secret|AKIA|spaces/);
   });
 
+  it('a stored key whose name is reserved now is refused at load and listed by name', async () => {
+    writeFileSync(join(dir, ROOM_KEYS_FILE), JSON.stringify({ version: 1, keys: { EDITOR: { value: SECRET }, OK_KEY: { value: 'v' } } }));
+    const a = createRoomKeys({ dir });
+    await a.load();
+    expect(a.refused()).toEqual(['EDITOR']);
+    expect(a.values(false)).toEqual({ OK_KEY: 'v' });
+    // moved, not deleted: the value is in room-keys.refused.json (0600), the main file is rewritten without it, and the next start refuses nothing
+    expect(readFileSync(join(dir, ROOM_KEYS_FILE), 'utf8')).not.toContain(SECRET);
+    expect(JSON.parse(readFileSync(join(dir, 'room-keys.refused.json'), 'utf8'))).toEqual({ version: 1, keys: { EDITOR: { value: SECRET } } });
+    expect(statSync(join(dir, 'room-keys.refused.json')).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, ROOM_KEYS_FILE)).mode & 0o777).toBe(0o600);
+    const b = createRoomKeys({ dir });
+    await b.load();
+    expect(b.refused()).toEqual([]);
+    expect(b.values(false)).toEqual({ OK_KEY: 'v' });
+  });
+
   it('a change asks for the password again; a read does not', () => {
     for (const method of ['PUT', 'DELETE']) expect(stepUpReason(method, '/api/room-keys/AWS_REGION', {}), method).toBe('the keys of the room');
     expect(stepUpReason('GET', '/api/room-keys', null)).toBeNull();

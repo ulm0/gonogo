@@ -5,7 +5,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
-import { KEY_NAME_PATTERN } from '../shared/protocol.js';
+import { KEY_NAME_PATTERN, keyWarning } from '../shared/protocol.js';
 import type { RoomKeysView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { useRun } from './WallView.js';
@@ -111,6 +111,11 @@ export function RoomKeysBlock(): ReactElement {
             >
               Set key
             </button>
+            {keyWarning(name) !== null && (
+              <p className="hint" role="status">
+                {keyWarning(name)}
+              </p>
+            )}
             {bad && <p className="error">Use capital letters, digits and _, starting with a letter.</p>}
             {add.error !== null && (
               <p className="error" role="alert">

@@ -106,6 +106,16 @@ export const MODEL_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$';
 export const KEY_NAME_PATTERN = '^[A-Z][A-Z0-9_]{0,63}$';
 export const KEY_VALUE_PATTERN = '^[\\x21-\\x7e]{1,4096}$';
 export const KEYS_MAX = 16;
+/**
+ * Names that are allowed but change who a program trusts: a CA file or bundle another one reads, with a proxy in the way, can read the agent's TLS (an Anthropic
+ * token included). The key forms warn on them and do not refuse them (a company proxy needs exactly this). Text for the form, or null.
+ */
+export const keyWarning = (name: string): string | null =>
+  name === 'ENV'
+    ? 'ENV names a file that an interactive sh runs when it starts. It is a common application setting (ENV=production), so it is allowed; set it to a path only for a file you control.'
+    : name === 'NODE_EXTRA_CA_CERTS' || name === 'SSL_CERT_FILE' || name === 'SSL_CERT_DIR'
+      ? `${name} adds a certificate authority that this agent's programs will trust. With a proxy in the way, whoever holds that authority can read the agent's TLS traffic, Anthropic tokens included. Set it only for a CA you control.`
+      : null;
 /** Names the form suggests for a key: the variables `pi --help` (1.5.2) lists, then the Amazon Bedrock ones (docs/facts/bedrock.md). Hints, not a list. */
 export const KEY_SUGGESTIONS = [
   'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY',

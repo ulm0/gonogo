@@ -684,6 +684,17 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('downlink'),
     });
     await downlink.load();
+    // stored keys whose name a later version reserves: not given to the agent, and the Director is told which (names only)
+    const refusedKeys = [...clearance.refused().map((k) => `${k}`), ...roomKeys.refused().map((k) => `room: ${k}`)];
+    if (refusedKeys.length > 0) {
+      const head = 'gonogo no longer gives these keys to an agent, because their names are reserved now: ';
+      const tail = '. They are kept aside in keys.refused.json and room-keys.refused.json (0600); set them under another name to use them again.';
+      // up to 300 characters in all: the names that fit, then "and N more"
+      let shown = refusedKeys.length;
+      const text = (n: number): string => `${head}${refusedKeys.slice(0, n).join(', ')}${n < refusedKeys.length ? ` and ${refusedKeys.length - n} more` : ''}${tail}`;
+      while (shown > 0 && text(shown).length > 300) shown -= 1;
+      downlink.post('startup', text(shown));
+    }
     // Feature toggles: every gate below asks this store, so a switch is the same for the page, the routes, the tools and the background work
     const features = createFeatureStore({ dir: home.dir, emit: (view) => web?.broadcast({ t: 'features', features: view }), context: () => ({ pollOpen: hubInstance.poll()?.status === 'open', running: hubInstance.views().filter((v) => v.state !== 'stopped').map((v) => v.name) }), changed: () => {
         hubInstance.refreshLimits();

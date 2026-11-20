@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, ReactNode } from 'react';
-import { EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
+import { EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, keyWarning, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
 import type { AgentView, EngineCheck, PermissionMode, PhoneMode, Provider } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -900,6 +900,14 @@ function Staff({ form }: { form: Target }): ReactElement {
             </button>
           </div>
         ))}
+        {values.keys.map((row, i) => {
+          const warning = keyWarning(row.name.trim());
+          return warning === null ? null : (
+            <p className="hint" role="status" key={`warn-${i}`}>
+              {warning}
+            </p>
+          );
+        })}
         <datalist id={`${id}-key-names`}>
           {KEY_SUGGESTIONS.map((name) => (
             <option key={name} value={name} />
