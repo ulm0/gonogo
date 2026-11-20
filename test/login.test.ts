@@ -1,6 +1,6 @@
 // The login through the whole supervisor (docs/login-spec.md): real HTTP and WebSocket on a real front port, stand-in rooms (test/fake-room.mjs)
 // behind it on their unix sockets, and the local socket for the TUI and the CLI.
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -48,6 +48,8 @@ async function boot(over: Partial<Parameters<typeof startSupervisor>[0]> = {}): 
 }
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-login-'));
+  // a home made before 0.9: room main's files are at the root (a room's mission-log folder says so); a fresh home puts main in rooms/main (test/rooms.test.ts)
+  mkdirSync(join(home, 'mission-log'));
   stopped = false;
 });
 afterEach(async () => {

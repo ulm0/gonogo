@@ -34,6 +34,8 @@ let sup: Supervisor | null = null;
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-single-'));
+  // a home made before 0.9: room main's files are at the root (a room's mission-log folder says so); a fresh home puts main in rooms/main (test/rooms.test.ts)
+  mkdirSync(join(home, 'mission-log'));
 });
 afterEach(async () => {
   await sup?.stop();

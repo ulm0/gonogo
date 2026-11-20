@@ -86,7 +86,7 @@ import { verifyImage } from './attest.js';
 import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
 import type { AutoUpdater } from './autoupdate.js';
 import { createUpdater } from './updater.js';
-import { addRoom, loadRooms, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
+import { addRoom, loadRooms, MAIN_ROOM, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { authCommand } from './authcli.js';
 import { exposeCommand } from './exposecli.js';
 import { startSupervisor } from './supervisor.js';
@@ -497,6 +497,15 @@ function installInfo(env: Env = process.env): { command: string; docker: boolean
 
 /** The home as `gonogo --version` and `gonogo update` find it: GONOGO_HOME or the default, with no flag read (they read the cache only). */
 const homeOf = (env: Env): string => resolve(env.GONOGO_HOME || join(homedir(), DEFAULT_HOME_DIRNAME));
+
+/** Room main's folder, where the update check keeps its cache: the root or `rooms/main`. A damaged rooms.json must not break `--version`: the root then. */
+function mainHomeOf(env: Env): string {
+  try {
+    return roomHome(homeOf(env), MAIN_ROOM);
+  } catch {
+    return homeOf(env);
+  }
+}
 
 /** The host of the printed URL: a wildcard bind is reached on loopback, an IPv6 address needs brackets (contract 0.5 item 14). */
 function displayHost(host: string): string {
@@ -1541,7 +1550,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   if (parsed.kind === 'version') {
     process.stdout.write(`gonogo ${packageVersion()}\n`);
     // From the file the last check left, never from the network; nothing when the check is off.
-    const latest = updateCheckOff(env.GONOGO_UPDATE_CHECK) || argv.includes('--no-update-check') ? null : cachedLatest(homeOf(env));
+    const latest = updateCheckOff(env.GONOGO_UPDATE_CHECK) || argv.includes('--no-update-check') ? null : cachedLatest(mainHomeOf(env));
     if (latest !== null && isNewer(latest, packageVersion())) process.stdout.write(`${latest} is out. To update, run: gonogo update\n`);
     exit(0);
     return;
@@ -1562,7 +1571,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   }
   if (parsed.kind === 'update') {
     const current = packageVersion();
-    const latest = cachedLatest(homeOf(env));
+    const latest = cachedLatest(mainHomeOf(env));
     const { command, docker } = installInfo();
     process.stdout.write(updateText(command, docker, { current, latest, newer: latest !== null && isNewer(latest, current) }));
     exit(0);

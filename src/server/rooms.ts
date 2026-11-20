@@ -1,10 +1,12 @@
 /**
  * Rooms (docs/rooms-spec.md): the list of rooms of one gonogo home, `<home>/rooms.json`.
  *
- * The root home is room `main` (nothing moves); every other room lives in `<home>/rooms/<id>/` and starts from zero. The file is
- * 0600, written atomically. `remove` only takes a room off the list: it never deletes a folder.
+ * Every room lives in `<home>/rooms/<id>/` and starts from zero, `main` too on a home made by this version. A home made before it
+ * keeps room `main` AT the root (its files next to the supervisor's own): `main.home` of this file says which, so the layout never changes
+ * by accident (no file or no `main` key: the root when the root holds a room's files, else `rooms/main`). The file is 0600, written
+ * atomically. `remove` only takes a room off the list: it never deletes a folder.
  */
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { join } from 'node:path';
 
@@ -37,8 +39,64 @@ export class RoomsError extends Error {
 /** The id of a room as a path segment: lower case, starts with a letter, no dots and no slashes. */
 export const validRoomId = (id: unknown): id is string => typeof id === 'string' && ID_RE.test(id);
 
-/** Where a room keeps its files: the root for `main`, a folder under it for the others. */
-export const roomHome = (root: string, id: string): string => (id === MAIN_ROOM ? root : join(root, ROOMS_DIR, id));
+/** Where room `main` keeps its files: the root itself (a home made before 0.9) or `rooms/main` (a new one). */
+export type MainHome = '.' | 'rooms/main';
+const MAIN_HOMES: readonly unknown[] = ['.', 'rooms/main'];
+/** Files a room (not the supervisor) leaves in its home: any of them at the root means room main lives there. Wider is safer: a miss would hide an old home's agents. */
+const ROOM_STATE_AT_ROOT = [
+  'agents.json', 'agents', 'messages.jsonl', 'server.lock', 'run-state.json', 'tasks.json', 'startup.json', 'mission-log', 'black-box', 'board.json', 'downlink.json',
+  'fuel.jsonl', 'propellant.json', 'quota.json', 'relay.json', 'rollout.json', 'room.json', 'station.json', 'uplinks.json', 'telemetry.jsonl', 'cleanroom', 'gh', 'liveries',
+  join('run', 'room.sock'), join('run', 'room-token'),
+];
+
+/** What `rooms.json` says about main: null when it says nothing (no file, or a file of an older version). Throws a plain Error for a value it does not know. */
+function recordedMain(saved: unknown): MainHome | null {
+  const main = typeof saved === 'object' && saved !== null ? (saved as { main?: unknown }).main : undefined;
+  if (main === undefined) return null;
+  const home = typeof main === 'object' && main !== null ? (main as { home?: unknown }).home : undefined;
+  if (!MAIN_HOMES.includes(home)) throw new Error(`main.home must be one of ${MAIN_HOMES.map((h) => JSON.stringify(h)).join(', ')}`);
+  return home as MainHome;
+}
+
+function readRoomsFile(root: string): unknown {
+  let text: string;
+  try {
+    text = readFileSync(join(root, ROOMS_FILE), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new RoomsError(`cannot read ${ROOMS_FILE}: ${(error as Error).message}`, 'conflict');
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`, 'conflict');
+  }
+}
+
+/** The layout of this home: the recorded one, else decided by what is there. Never writes (see recordMainHome). */
+export function mainLayout(root: string): MainHome {
+  let recorded: MainHome | null;
+  try {
+    recorded = recordedMain(readRoomsFile(root));
+  } catch (error) {
+    if (error instanceof RoomsError) throw error;
+    throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`, 'conflict');
+  }
+  if (recorded !== null) return recorded;
+  return ROOM_STATE_AT_ROOT.some((name) => existsSync(join(root, name))) ? '.' : 'rooms/main';
+}
+
+/** Where a room keeps its files: `main` where the home's layout says, a folder under `rooms/` for the others. */
+export const roomHome = (root: string, id: string): string => (id !== MAIN_ROOM ? join(root, ROOMS_DIR, id) : mainLayout(root) === '.' ? root : join(root, ROOMS_DIR, MAIN_ROOM));
+
+/**
+ * Writes the layout into `rooms.json` of a fresh home (nothing is on record and the root holds no room's files), so it stays whatever appears later.
+ * A home made before 0.9 is NOT written to: its files at the root already say where main is, and nothing of an old home is touched.
+ */
+export function recordMainHome(root: string): void {
+  if (recordedMain(readRoomsFile(root)) !== null || mainLayout(root) === '.') return;
+  saveRooms(root, loadRooms(root).filter((r) => r.id !== MAIN_ROOM));
+}
 
 // eslint-disable-next-line no-control-regex
 /** A name that came from a room's own state (its tab name): cleaned and cut like a room's name, so a room cannot show the Director bidi or control characters. */
@@ -62,6 +120,7 @@ export function loadRooms(root: string): RoomEntry[] {
     const saved: unknown = JSON.parse(text);
     const rooms = typeof saved === 'object' && saved !== null && Array.isArray((saved as { rooms?: unknown }).rooms) ? (saved as { rooms: unknown[] }).rooms : null;
     if (rooms === null) throw new Error('no list of rooms');
+    recordedMain(saved);
     for (const item of rooms) {
       if (typeof item !== 'object' || item === null) continue;
       const { id, name, autostart } = item as Record<string, unknown>;
@@ -78,7 +137,7 @@ function saveRooms(root: string, rooms: RoomEntry[]): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = join(root, ROOMS_FILE);
   const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, JSON.stringify({ version: 1, rooms }, null, 2), { mode: 0o600 });
+  writeFileSync(temp, JSON.stringify({ version: 1, main: { home: mainLayout(root) }, rooms }, null, 2), { mode: 0o600 });
   renameSync(temp, path);
 }
 
