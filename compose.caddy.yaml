@@ -13,7 +13,7 @@
 # Caddy ends the TLS on your own machine: nobody else sees the traffic.
 services:
   caddy:
-    image: caddy:2.11.7
+    image: caddy:2.11.9
     restart: always
     ports:
       - 80:80
