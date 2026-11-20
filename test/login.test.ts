@@ -1028,7 +1028,8 @@ describe('the device login of a terminal through the supervisor', () => {
     expect((JSON.parse(lan.text) as { verification_uri: string }).verification_uri).toBe(`http://127.0.0.1:${sup.port}/login/device`);
     const local = { ...cookieHeader(cookies), ...origin(), ...JSONH };
     secret = unbase32((JSON.parse((await call('POST', '/api/auth/mfa/begin', local, '{}')).text) as { secret: string }).secret);
-    await call('POST', '/api/auth/mfa/enable', local, JSON.stringify({ code: totpCode(secret, Math.floor(Date.now() / 30000)) }));
+    // the server's clock is dclock, which is not the real time once another test moved it (or this file ran for a while): a code of the real step is refused
+    expect((await call('POST', '/api/auth/mfa/enable', local, JSON.stringify({ code: totpCode(secret, Math.floor(dclock / 30000)) }))).status).toBe(200);
     const flow = await startFlow({ host: NAME });
     expect(flow.verification_uri).toBe(`https://${NAME}/login/device`);
     expect(flow.verification_uri).not.toContain(flow.user_code);
