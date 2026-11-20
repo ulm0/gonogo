@@ -155,7 +155,7 @@ function card(r){
   const keys=el('div','rl-keys');
   if(up){const a=el('a','btn','OPEN');a.dataset.kind='primary';a.dataset.f='open:'+r.id;a.href='/r/'+encodeURIComponent(r.id)+'/';a.setAttribute('aria-label','Open '+name);keys.append(a);
     // a tap anywhere on a running room's card opens it (the OPEN key stays the one for a keyboard and a screen reader)
-    li.className+=' rl-open';li.addEventListener('click',e=>{if(!e.target.closest('a,button,input'))location.assign(a.href)})}
+    li.className+=' rl-open';li.addEventListener('click',e=>{if(renaming!==r.id&&removing!==r.id&&!e.target.closest('a,button,input'))location.assign(a.href)})}
   else{const b=key('OPEN','primary',()=>{},'open:'+r.id,'Open '+name);b.disabled=true;keys.append(b)}
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);

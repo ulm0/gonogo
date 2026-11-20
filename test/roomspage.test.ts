@@ -193,6 +193,27 @@ describe('the rooms list page script', () => {
     expect(text(card())).not.toContain('nothing is deleted');
   });
 
+  it('a tap on the card does not open the room in the middle of a remove or a rename: the half-done action is kept', async () => {
+    const { byId, replaced } = run({ token: 'a'.repeat(64), rooms: [room(), room({ id: 'team', name: 'Team B', state: 'running', agents: 1, running: 1 })] });
+    await settle();
+    const card = (): Node => (byId.rooms?.children ?? [])[1] as Node;
+    const tapCard = (): void => card().fire('click', { target: { closest: () => null } });
+    // removing: a tap on the question (not on one of its keys) leaves it open
+    card().querySelector('[data-f="remove:team"]')?.fire('click');
+    tapCard();
+    expect(replaced).toEqual([]);
+    expect(text(card())).toContain('nothing is deleted');
+    card().querySelector('[data-f="keep:team"]')?.fire('click');
+    // renaming: the card is the form, and a tap on its label does not leave the page
+    card().querySelector('[data-f="rename:team"]')?.fire('click');
+    tapCard();
+    expect(replaced).toEqual([]);
+    // when nothing is half done a tap on the card opens the room
+    card().querySelector('[data-f="cancel:team"]')?.fire('click');
+    tapCard();
+    expect(replaced).toEqual(['assign:/r/team/']);
+  });
+
   it('without a token it asks anyway (the login cookie is the credential) and sends no Authorization', async () => {
     const { byId, sent, replaced } = run({ rooms: [room()] });
     await settle();
