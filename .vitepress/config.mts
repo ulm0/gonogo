@@ -109,6 +109,7 @@ export default defineConfig({
           { text: 'Live reload', link: '/features/live-reload' },
           { text: 'Update from the page', link: '/features/update' },
           { text: 'Rooms', link: '/features/rooms' },
+          { text: 'A GitHub login per room', link: '/features/github-login' },
           { text: 'Flight Plan', link: '/features/flight-plan' },
           { text: 'Missions', link: '/features/missions' },
           { text: 'Room editor', link: '/features/room-editor' },
