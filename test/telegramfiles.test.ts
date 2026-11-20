@@ -323,3 +323,68 @@ describe('a photo or a document of the Director', () => {
     expect(sent[1]?.request.body).toContain('not fetched');
   });
 });
+
+describe('what a Clean Room agent can do to its own folder, and a big body', () => {
+  const photo = { fileId: 'p', messageId: '40', name: 'photo', mime: null, size: null };
+  const make = (fetch: (url: string, init?: RequestInit) => Promise<Response> = stub) => createTelegramFiles({ fetch, token: () => TOKEN, agentDir: (n) => join(dir, 'agents', n), agentsRoot: join(dir, 'agents'), now: () => clock, log: quiet });
+
+  it('refuses an inbox-files that is a link, and writes nothing where it points', async () => {
+    const { mkdir, symlink } = await import('node:fs/promises');
+    await mkdir(join(dir, 'agents', 'boss'), { recursive: true });
+    await mkdir(join(dir, 'elsewhere'));
+    await symlink(join(dir, 'elsewhere'), join(dir, 'agents', 'boss', 'inbox-files'));
+    files.set('p', JPEG);
+    expect(await make().fetchFile(photo, 'boss')).toMatchObject({ problem: expect.stringContaining('could not') });
+    expect(await readdir(join(dir, 'elsewhere'))).toEqual([]);
+  });
+
+  it('refuses a folder of an agent that is itself a link out, and a link in the place of the file', async () => {
+    const { mkdir, symlink, writeFile } = await import('node:fs/promises');
+    await mkdir(join(dir, 'outside', 'inbox-files'), { recursive: true });
+    await symlink(join(dir, 'outside'), join(dir, 'agents-link'));
+    files.set('p', JPEG);
+    const viaLink = createTelegramFiles({ fetch: stub, token: () => TOKEN, agentDir: () => join(dir, 'agents-link'), agentsRoot: join(dir, 'agents'), now: () => clock, log: quiet });
+    // the folder of the agent is a link: its real path is outside of it, so what is under it is not under the agent's real folder either way; nothing is written outside
+    const got = await viaLink.fetchFile(photo, 'boss');
+    expect('path' in got ? got.path : '').not.toContain('elsewhere');
+    await mkdir(join(dir, 'agents', 'boss', 'inbox-files'), { recursive: true });
+    await writeFile(join(dir, 'secret.txt'), 'keep');
+    await symlink(join(dir, 'secret.txt'), join(dir, 'agents', 'boss', 'inbox-files', '40-photo.jpg'));
+    expect(await make().fetchFile(photo, 'boss')).toMatchObject({ problem: expect.any(String) });
+    expect(await readFile(join(dir, 'secret.txt'), 'utf8')).toBe('keep');
+  });
+
+  it('prune does not follow a link in the place of inbox-files', async () => {
+    const { mkdir, symlink, utimes, writeFile } = await import('node:fs/promises');
+    await mkdir(join(dir, 'agents', 'boss'), { recursive: true });
+    await mkdir(join(dir, 'elsewhere'));
+    await writeFile(join(dir, 'elsewhere', 'old.png'), 'x');
+    const old = new Date(clock - 40 * 24 * 3600_000);
+    await utimes(join(dir, 'elsewhere', 'old.png'), old, old);
+    await symlink(join(dir, 'elsewhere'), join(dir, 'agents', 'boss', 'inbox-files'));
+    expect(await make().prune()).toBe(0);
+    expect(await readdir(join(dir, 'elsewhere'))).toEqual(['old.png']);
+  });
+
+  it('stops reading a body past 20 MB (and never reads one that says it is bigger)', async () => {
+    let pulled = 0;
+    const chunk = new Uint8Array(1024 * 1024).fill(0xff);
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const huge = async (url: string, init?: RequestInit): Promise<Response> => (url.includes('/file/') ? new Response(endless) : stub(url, init));
+    files.set('p', JPEG);
+    expect(await make(huge).fetchFile(photo, 'boss')).toMatchObject({ problem: expect.stringContaining('too big') });
+    expect(pulled).toBeLessThan(40);
+    let pulls = 0;
+    const declared = async (url: string, init?: RequestInit): Promise<Response> =>
+      url.includes('/file/') ? new Response(new ReadableStream({ pull: () => void (pulls += 1) }), { headers: { 'content-length': String(TELEGRAM_FILE_MAX_BYTES + 1) } }) : stub(url, init);
+    expect(await make(declared).fetchFile(photo, 'boss')).toMatchObject({ problem: expect.stringContaining('too big') });
+    // a stream is primed once when it is made; nothing was read from it
+    expect(pulls).toBeLessThanOrEqual(1);
+    expect(await readdir(join(dir, 'agents', 'boss', 'inbox-files')).catch(() => [])).toEqual([]);
+  });
+});

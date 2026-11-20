@@ -9,8 +9,8 @@
  * shortcut: a file that is the right type by its magic bytes is not scanned for anything else (a PDF with a script, an image with a payload
  * after its end); the agent opens it with its file reader, not a program. Add a scan if a real run needs one.
  */
-import { lstat, mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat, mkdir, readdir, realpath, unlink, writeFile } from 'node:fs/promises';
+import { join, sep } from 'node:path';
 import { isRecord } from './hooks.js';
 import { TELEGRAM_FILE_MAX_BYTES, TELEGRAM_FILES_DIR, TELEGRAM_FILES_KEEP_MS, TELEGRAM_FILES_MAX, TELEGRAM_FILE_TIMEOUT_MS, UPLINK_RATE_WINDOW_MS } from './constants.js';
 import type { Logger } from '../shared/protocol.js';
@@ -117,6 +117,27 @@ export interface TelegramFiles {
 const TOO_BIG = `(The file was too big for the Telegram Bot API, which gives a bot files of up to ${TELEGRAM_FILE_MAX_BYTES / 1024 / 1024} MB: it was not downloaded.)`;
 const FAILED = '(The file could not be downloaded from Telegram.)';
 
+/** The body of a response, read chunk by chunk: past the cap the read stops (and a Content-Length past it is not read at all). null when it is too big. */
+async function readCapped(res: Response): Promise<Uint8Array | null> {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > TELEGRAM_FILE_MAX_BYTES) return null;
+  if (res.body === null) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > TELEGRAM_FILE_MAX_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
 export function createTelegramFiles(options: TelegramFilesOptions): TelegramFiles {
   const { fetch, log } = options;
   let taken: number[] = [];
@@ -150,17 +171,24 @@ export function createTelegramFiles(options: TelegramFilesOptions): TelegramFile
     if (isRecord(result) && typeof result.file_size === 'number' && result.file_size > TELEGRAM_FILE_MAX_BYTES) return { problem: TOO_BIG };
     const res = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`, init({}));
     if (!res.ok) return { problem: FAILED };
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (bytes.length > TELEGRAM_FILE_MAX_BYTES) return { problem: TOO_BIG };
+    const bytes = await readCapped(res);
+    if (bytes === null) return { problem: TOO_BIG };
     const type = sniff(bytes);
     // the type that the bytes show must be an accepted one and the one the sender said (a photo is whatever Telegram made of it)
     if (type === null || (file.mime !== null && file.mime !== type.mime)) return { problem: `(The file was refused: its content is not ${file.mime === null ? 'an image' : `a ${file.mime}`}; only ${FILE_ACCEPTED_TEXT} are taken.)` };
-    const dir = join(options.agentDir(agent), TELEGRAM_FILES_DIR);
+    const home = options.agentDir(agent);
+    const dir = join(home, TELEGRAM_FILES_DIR);
+    // a Clean Room agent writes in its own folder: it can make `inbox-files` a link to somewhere else, so only a real folder (or none, made here) is used
+    const there = await lstat(dir).catch(() => null);
+    if (there !== null && !there.isDirectory()) return { problem: FAILED };
     await mkdir(dir, { recursive: true, mode: 0o700 });
+    const real = await realpath(dir);
+    if (!real.startsWith(`${await realpath(home)}${sep}`)) return { problem: FAILED };
     const path = join(dir, `${file.messageId}-${safeStem(file.name)}.${type.ext}`);
-    // wx: a file that is there (the same message again) is not overwritten
-    await writeFile(path, bytes, { mode: 0o600, flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
+    // wx: a file that is there (the same message again) is not overwritten, and a link that is there is not followed
+    await writeFile(path, bytes, { mode: 0o600, flag: 'wx' }).catch(async (error: NodeJS.ErrnoException) => {
       if (error.code !== 'EEXIST') throw error;
+      if (!(await lstat(path)).isFile()) throw error;
     });
     return { path };
   }
@@ -170,6 +198,8 @@ export function createTelegramFiles(options: TelegramFilesOptions): TelegramFile
       let removed = 0;
       for (const agent of await readdir(options.agentsRoot).catch(() => [])) {
         const folder = join(options.agentsRoot, agent, TELEGRAM_FILES_DIR);
+        // a link in its place (an agent can make one) is not followed
+        if (!(await lstat(folder).catch(() => null))?.isDirectory()) continue;
         for (const name of await readdir(folder).catch(() => [])) {
           try {
             // lstat: a link is not followed, and only a plain file is removed
