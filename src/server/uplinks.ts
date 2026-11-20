@@ -34,6 +34,7 @@ import { FILE_MODE, UPLINK_BAD_MAX, UPLINK_BAD_WINDOW_MS, UPLINK_NOTE_MAX_CHARS,
 import { HubError } from './hub.js';
 import { bearerToken, isRecord } from './hooks.js';
 import { RELAY_KINDS } from './relaykinds.js';
+import type { FileResult, TelegramFile } from './telegramfiles.js';
 import type { TriggerInput } from './triggers.js';
 import { UNSAFE_IN_NAME } from './schedules.js';
 
@@ -63,6 +64,8 @@ export interface UplinksOptions {
   press?(secret: string, press: ButtonPress): void;
   /** The history of triggers (docs/features/triggers.md): every delivery that proved itself, a polled Telegram update included. */
   trigger?(entry: TriggerInput): void;
+  /** Telegram files: downloads the photo or document of a message into the folder of the agent (telegramfiles.ts). Never throws. Without it the agent is told the file was not fetched. */
+  fetchFile?(file: TelegramFile, agent: string): Promise<FileResult>;
   log: Logger;
 }
 
@@ -110,7 +113,7 @@ export interface Director {
   channel: 'telegram';
   said: string;
 }
-export type Made = { text: string; cut: boolean; to?: string; subject?: string; inReplyTo?: string; once?: string; director?: Director } | { answer: unknown; note: string } | { callback: ButtonPress } | null;
+export type Made = { text: string; cut: boolean; to?: string; subject?: string; inReplyTo?: string; once?: string; director?: Director; file?: TelegramFile } | { answer: unknown; note: string } | { callback: ButtonPress } | null;
 
 /** A press of a button of a phone (Telegram `callback_query`) from the Director's own chat: what phone.ts checks and acts on. */
 export interface ButtonPress {
@@ -286,6 +289,21 @@ export function createUplinks(options: UplinksOptions): Uplinks {
     return true;
   };
 
+  /** The messages whose file is on its way: the endpoint has answered already (a download can take longer than Telegram waits), and `close` waits for them. */
+  const pending = new Set<Promise<void>>();
+  /** A message with a file: the file is fetched, then the message goes out with its path (or why there is none) after the words. */
+  const withFile = (u: Uplink, made: Extract<Made, { text: string }>, file: TelegramFile): void => {
+    const run = (async () => {
+      // shortcut: a reply to an agent that was removed meanwhile falls back to the uplink's own agent (receive), and the file stays in the folder of the first
+      const result = options.fetchFile === undefined ? { problem: '(The file was not fetched: this gonogo has no download set up.)' } : await options.fetchFile(file, made.to ?? u.to).catch(() => ({ problem: '(The file could not be downloaded from Telegram.)' }));
+      const more = 'path' in result ? `Attached: ${result.path}` : result.problem;
+      const { file: _done, ...rest } = made;
+      receive(u, { ...rest, text: `${made.text}\n\n${more}`, ...(made.director === undefined ? {} : { director: { ...made.director, said: `${made.director.said}\n\n${more}` } }) }, '');
+    })().catch((error: unknown) => log.warn(`telegram: a message with a file was not delivered: ${messageOf(error)}`));
+    pending.add(run);
+    void run.finally(() => pending.delete(run));
+  };
+
   /** Sends a message that a kind made and records what became of it. `label` starts the note ("test: "). Throws what `deliver` documents. */
   const receive = (u: Uplink, message: Extract<Made, { text: string }>, label: string): SendResult => {
     try {
@@ -450,6 +468,10 @@ export function createUplinks(options: UplinksOptions): Uplinks {
       limited.delete(u.id);
       // after the limit: an event that was refused for it is not marked handled, so Slack's retry can still get through
       if (made.once !== undefined && inbound.seen(made.once)) return IGNORED;
+      if (made.file !== undefined) {
+        withFile(u, made, made.file);
+        return { ok: true, answer: { ok: true } };
+      }
       const sent = receive(u, made, '');
       return { ok: sent.ok, id: sent.id, status: sent.status };
     },
@@ -462,14 +484,16 @@ export function createUplinks(options: UplinksOptions): Uplinks {
         if ('answer' in made) return;
         if (!takeSlot(POLLED)) return log.warn(`telegram polling: more than ${UPLINK_RATE_MAX} messages in a minute: the rest are dropped`);
         if (made.once !== undefined && inbound.seen(made.once)) return;
-        receive(POLLED, { ...made, subject: made.subject ?? 'Telegram' }, '');
+        const own = { ...made, subject: made.subject ?? 'Telegram' };
+        if (own.file !== undefined) return withFile(POLLED, own, own.file);
+        receive(POLLED, own, '');
       } catch (error) {
         log.warn(`telegram polling: an update was not delivered: ${messageOf(error)}`);
       }
     },
 
     close() {
-      return chain.then(() => undefined);
+      return Promise.all([...pending]).then(() => chain).then(() => undefined);
     },
   };
 }

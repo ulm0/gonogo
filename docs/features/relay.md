@@ -14,7 +14,7 @@ Each service card has setup steps, its uplinks (address, last delivery) and MAKE
 | GitHub | `X-Hub-Signature-256` | shown once; paste into the webhook; content type `application/json` | push, pull request, issue, issue comment, completed workflow run (summarised). `ping` is listed `answered`. Every action of a chosen event is a message: pick events in GitHub |
 | Linear | `Linear-Signature` | Linear's signing secret, pasted into the form | issue and comment events |
 | Slack | `X-Slack-Signature`, timestamp at most 5 minutes old | your app's Signing Secret, pasted into the form | bot mentions and DMs (with user and channel id); other talk, bot messages, edits ignored; request URL check answered |
-| Telegram | `X-Telegram-Bot-Api-Secret-Token` | shown once; pass to `setWebhook` as `secret_token` | text from the target's chat only; save the target first |
+| Telegram | `X-Telegram-Bot-Api-Secret-Token` | shown once; pass to `setWebhook` as `secret_token` | text, photos and documents from the target's chat only; save the target first |
 
 ## Out
 
@@ -26,12 +26,16 @@ One target each for Slack and Telegram: bot token plus Slack channel id or Teleg
 - 10 s timeout; up to 3 tries (after 1 s and 2 s, or `Retry-After`, at most 10 s) on network error, timeout, `5xx`, `429`. Refusals (wrong token, bot not in channel) are not retried; the answer shows under the target.
 - The token is never logged or returned to the page.
 
+## Photos and documents from Telegram
+
+A photo (its largest size) or a document that is a PNG, JPG, WebP, GIF or PDF, sent in the chat of the target, is downloaded into `agents/<name>/inbox-files/<message id>-<name>` (0600) in gonogo's home; the message to the agent is the caption (or "(no caption)") and `Attached: <absolute path>`. The type is checked by the mime type and by the first bytes of the file, the name is rebuilt from letters and digits, and at most 10 files are downloaded in a minute. Past the Bot API's 20 MB the agent is told the file was too big. Webhook and polling alike; the same gates as a text (a forwarded photo arrives without the Director's mark). A Clean Room agent sees it too (its own `agents/<name>/` is mounted at the same path).
+
 ## Telegram needs no public address
 
 With a Telegram **target** saved, gonogo polls Telegram itself (`getUpdates` long polling), so a gonogo nothing can reach from outside still hears you and your button presses ([Phone approvals](./phone-approvals.md)). No uplink, webhook or public URL.
 
 - On while the target is set and **no Telegram uplink exists** (an uplink uses webhook updates). One loop per gonogo, in room `main`.
-- Same path as a webhook: only text from the target's chat reaches an agent. A reply to a message gonogo posted goes to the agent that wrote it; other messages go to the boss, subject "Telegram". At most 30 a minute.
+- Same path as a webhook: only text, photos and documents from the target's chat reach an agent. A reply to a message gonogo posted goes to the agent that wrote it; other messages go to the boss, subject "Telegram". At most 30 a minute.
 - First start reads nothing old: with no saved offset (or another bot's token) it takes the newest update id as start and hands on nothing earlier.
 - **A webhook set on the bot** makes Telegram refuse `getUpdates` (409, "webhook is active"). The card says "A webhook is set for this bot; inbound uses it" and retries each minute. gonogo **never removes your webhook**: call `deleteWebhook` yourself to poll. A 409 about another `getUpdates` means **another program polls this bot** (second gonogo, overlapping reload, script): the card says so; back-off as below.
 - The last update id is kept in `<home>/telegram-poll.json` (0600, with the secret signing approval buttons while there is no uplink), so a restart does not replay. A crash between hand-on and save can repeat one update.

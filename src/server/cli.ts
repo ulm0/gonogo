@@ -70,6 +70,7 @@ import { createRoomLayout } from './roomlayout.js';
 import { createTabName } from './tabname.js';
 import { createTasks } from './tasks.js';
 import { createTriggers } from './triggers.js';
+import { createTelegramFiles } from './telegramfiles.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
 import { createClearance } from './clearance.js';
@@ -918,6 +919,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('launch window'),
     });
+    const telegramFiles = createTelegramFiles({ fetch: options.fetch ?? ((url, init) => fetch(url, init)), token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), now: io.now, log: log.child('telegram files') });
     const uplinks = createUplinks({
       dir: home.dir,
       trigger: (entry) => triggers.record(entry),
@@ -926,6 +928,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (list) => web?.broadcast({ t: 'uplinks', uplinks: list }),
       notify: tell,
       inbound: relay,
+      fetchFile: (file, agent) => telegramFiles.fetchFile(file, agent),
       press: (secret, pressed) => void phone?.press(secret, pressed).catch((error: unknown) => log.warn('phone approvals: a button failed', error instanceof Error ? error.message : String(error))),
       log: log.child('uplink'),
     });

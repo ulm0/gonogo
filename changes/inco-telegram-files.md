@@ -1,0 +1,1 @@
+- **Photos and documents from Telegram reach the agent.** A photo or a PNG, JPG, WebP, GIF or PDF sent in the Telegram chat is downloaded into the agent's `inbox-files` folder (checked by its first bytes, 20 MB at most, 10 a minute) and the message says where it is, so you can send screenshots.
