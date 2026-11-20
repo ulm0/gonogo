@@ -27,6 +27,7 @@ import {
 } from '../src/server/launcher.js';
 import { readCustomCommand } from '../src/server/command.js';
 import { shellQuote, STATUS_LINE_SHIM } from '../src/server/providers.js';
+import { PR_FOOTER } from '../src/shared/protocol.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -103,7 +104,7 @@ const baseEnv = (extra: Record<string, string | undefined> = {}): Record<string,
 });
 
 function launcher(over: Partial<LauncherOptions> = {}): Launcher {
-  return createLauncher({ homeDir: home, hubUrl: () => HUB, seed: false, env: baseEnv(), log: logs.log, coauthor: () => ({ enabled: false }), ...over });
+  return createLauncher({ homeDir: home, hubUrl: () => HUB, seed: false, env: baseEnv(), log: logs.log, coauthor: () => ({ enabled: false, prFooter: false }), ...over });
 }
 
 function seedLauncher(over: Partial<LauncherOptions> = {}): Launcher {
@@ -705,6 +706,24 @@ describe('prepareStart', () => {
       const extra = mode === 'bypassPermissions' ? { skipDangerousModePermissionPrompt: true } : {};
       expect(await json(agentFile(name, 'settings.json'))).toStrictEqual(startSettings(HUB, name, memory, extra));
     }
+  });
+
+  it('the PR footer: Claude Code\'s attribution.pr is the gonogo line, on by default; commit attribution is left alone; the room can turn it off', async () => {
+    const on = launcher({ coauthor: () => ({ enabled: false, prFooter: true }) });
+    await on.prepareStart(agent({ name: 'footer' }), START);
+    const settings = (await json(agentFile('footer', 'settings.json'))) as Record<string, unknown>;
+    expect(settings.attribution).toStrictEqual({ pr: '🤖 Generated with [gonogo](https://gonogo.ulm0.com/)' });
+    expect(PR_FOOTER).toBe('🤖 Generated with [gonogo](https://gonogo.ulm0.com/)');
+    // nothing else of the settings moved, and no commit attribution is written (Claude Code's own and gonogo's co-author line stay)
+    const { attribution: _footer, ...rest } = settings;
+    void _footer;
+    expect(rest).toStrictEqual(startSettings(HUB, 'footer', join(home, 'agents', 'footer', 'memory.md'), {}));
+    expect(JSON.stringify(settings)).not.toMatch(/"commit"|includeCoAuthoredBy/);
+    // without a setting at all (a test, an older caller) it is on too; off in the room, it is gone
+    await createLauncher({ homeDir: home, hubUrl: () => HUB, seed: false, env: baseEnv(), log: logs.log }).prepareStart(agent({ name: 'plain' }), START);
+    expect(((await json(agentFile('plain', 'settings.json'))) as Record<string, unknown>).attribution).toStrictEqual({ pr: PR_FOOTER });
+    await launcher({ coauthor: () => ({ enabled: true, prFooter: false }) }).prepareStart(agent({ name: 'quiet' }), START);
+    expect(await json(agentFile('quiet', 'settings.json'))).not.toHaveProperty('attribution');
   });
 
   it('keeps $&, $$, $\' and a literal {memory} of the role verbatim in the argv element', async () => {

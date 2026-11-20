@@ -63,6 +63,7 @@ Used by nobody in this room, so still **not run**: Hold on a console and ALL STO
 - **TUI device login:** run with the whole supervisor, real HTTP and WebSockets and a fake clock, and with the terminal's code against a fake server; not run in a real terminal over a real tunnel, nor with the approval pages in a real browser. A passkey cannot confirm on the approval page (it has no script).
 
 - **Reported cost:** one short real run (Claude Code 2.1.325, haiku, a claude.ai subscription) showed `session_id` and `cost.total_cost_usd` in the status line and a new id and a total of 0 after `/clear`. Not run: whether a subagent's spend is inside the total, `--resume`, an API-key account, and the page showing the figures in a real browser.
+- **PR footer:** the name and shape of `attribution.pr` were read in Claude Code 2.1.325's own settings schema, and the setting is written and read back in tests; no agent opened a real pull request with it here, so what Claude Code puts in the description is not seen.
 
 ## Known limits
 
