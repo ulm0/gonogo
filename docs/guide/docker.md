@@ -62,7 +62,7 @@ What that means for you:
 
 - `docker run --user 1000:1000` (or compose `user:`) skips all of it: nothing is chowned and an unwritable home gets the old warning, with the `chown` to run on the host.
 - **`docker exec` starts as root now.** The `gonogo` command drops to uid 1000 by itself (so `docker exec gonogo gonogo rooms add team` writes `rooms.json` as `node`, as before), but other programs do not: use `docker exec -u node ...` for `gh auth login` or anything that writes in the home, or the files it writes are root's.
-- A file that `docker exec` (as root) wrote in `/home/node` is root's, and the server could not read it: the next start gives the entries of the home that are root's (regular files and folders only, never across a mount, never a symlink or what one points to) to uid 1000.
+- A file that `docker exec` (as root) wrote in `/home/node` is root's, and the server could not read it: the next start gives the entries of the home that are root's (regular files with one link and folders only, never across a mount, never a symlink or what one points to, never a hardlink) to uid 1000.
 - PID 1 (`tini`) stays root; gonogo, its rooms and the agents are uid 1000 (`docker top`).
 - A self-update from an older image makes the copy start as root too (the new image's own setting; the old `USER node` is not carried over), and its helper runs as uid 1000.
 
