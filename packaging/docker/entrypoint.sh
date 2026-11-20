@@ -22,6 +22,14 @@ if [ "$(id -u)" = 0 ]; then
     chown -h 1000:1000 "$p" && echo "gonogo: $p was owned by root (Docker made it): now owned by uid 1000" >&2
   }
   fix "$HOME"
+  # `docker exec -it gonogo gh auth login` runs as root and leaves root-owned files inside the home, which uid 1000 could not read: give the ENTRIES of the home
+  # that are root's to uid 1000. Only regular files and directories (a symlink an agent planted is no `-type f` or `-type d`, and is never followed), never across a mount
+  # (-xdev), and `-execdir` so chown runs inside each directory on `./name` and `-h` leaves a symlink alone: nothing outside the home can be reached.
+  # At this point nothing else of this container runs, so nobody can swap a path under it.
+  case "$HOME" in
+    '' | / | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /media | /mnt | /opt | /proc | /root | /run | /sbin | /srv | /sys | /tmp | /usr | /var) ;;
+    /*) if [ -d "$HOME" ] && [ ! -L "$HOME" ]; then find "$HOME" -xdev -mindepth 1 -user 0 \( -type f -o -type d \) -execdir chown -h 1000:1000 {} + 2>/dev/null; fi ;;
+  esac
   [ -n "${GONOGO_HOME:-}" ] && fix "$(dirname "$GONOGO_HOME")"
   fix "${CLAUDE_CONFIG_DIR:-}"
   fix "$PWD"

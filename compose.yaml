@@ -1,5 +1,6 @@
-# gonogo in Docker, with Clean Room. Once, as root on the Docker host (the image runs as uid 1000):
+# gonogo in Docker, with Clean Room. The server runs as uid 1000. You may make the folders yourself, once, as root on the Docker host:
 #   install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home    # next to this file
+# or leave them out: a folder Docker makes root's (compose from ZimaOS or Portainer) is given to uid 1000 by the entrypoint, which starts as root for that one job.
 # Then make a file named .env next to this one (compose reads it for every command, from a shell or from a UI such as ZimaOS or Portainer):
 #   GONOGO_DATA=/absolute/path/to/gonogo-data                  # the folder above, by its ABSOLUTE path; every compose command stops without it
 #   DOCKER_GID=<the output of: stat -L -c %g /var/run/docker.sock>

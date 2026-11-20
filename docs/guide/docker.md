@@ -54,6 +54,18 @@ The image runs `gonogo`, which is the supervisor: one front port (7777) and one 
 for as long as gonogo runs, so a restart loop of one room does not flap the container. Give the service `stop_grace_period: 60s` (compose.yaml has it): every room stops
 its own agents within 12 seconds, in parallel, and the supervisor waits 17 before it kills one. The Clean Room, Update and healthcheck work on the container; `gonogo reload` is refused in Docker.
 
+## Who runs as whom
+
+The container **starts as root**, for one job, and the server **runs as uid 1000** (`node`). A folder that did not exist on the host when the container started (compose from ZimaOS or Portainer, where nobody ran `install -d`) is created by Docker as `root:root`, and uid 1000 could not write in it: the entrypoint (`gonogo-entrypoint`) looks at exactly four paths, `$HOME` (`/home/node`), the folder above `$GONOGO_HOME` (your data folder), `$CLAUDE_CONFIG_DIR` and the working directory, and gives uid 1000 the **top** of each that is a real directory, owned by root, and a mount point (or directly inside one). It says so in the container log. **Never** recursively (a root-owned folder with files of someone else keeps every one of them as it was), never through a symlink, never `/` or a system folder, never a folder that is not root's. Then it drops to uid 1000 with the groups the container was given (the Docker socket's `group_add`, not root's group) and runs everything else, `gonogo` and the agents, as that user.
+
+What that means for you:
+
+- `docker run --user 1000:1000` (or compose `user:`) skips all of it: nothing is chowned and an unwritable home gets the old warning, with the `chown` to run on the host.
+- **`docker exec` starts as root now.** The `gonogo` command drops to uid 1000 by itself (so `docker exec gonogo gonogo rooms add team` writes `rooms.json` as `node`, as before), but other programs do not: use `docker exec -u node ...` for `gh auth login` or anything that writes in the home, or the files it writes are root's.
+- A file that `docker exec` (as root) wrote in `/home/node` is root's, and the server could not read it: the next start gives the entries of the home that are root's (regular files and folders only, never across a mount, never a symlink or what one points to) to uid 1000.
+- PID 1 (`tini`) stays root; gonogo, its rooms and the agents are uid 1000 (`docker top`).
+- A self-update from an older image makes the copy start as root too (the new image's own setting; the old `USER node` is not carried over), and its helper runs as uid 1000.
+
 ## Clean Room in the container
 
 `compose.yaml` at the repository root runs gonogo with the host's Docker socket mounted, so a Clean Room console starts its container on the host's Docker, next to gonogo's (not Docker in Docker).
@@ -63,7 +75,7 @@ its own agents within 12 seconds, in parallel, and the supervisor waits 17 befor
 :::
 
 ```
-sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home   # next to compose.yaml
+sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home   # next to compose.yaml (optional: see "Who runs as whom")
 printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env   # next to compose.yaml; compose reads it for every command
 export CLAUDE_CODE_OAUTH_TOKEN=...     # or ANTHROPIC_API_KEY, never both
 docker compose up -d                                       # pulls ghcr.io/ulm0/gonogo:latest

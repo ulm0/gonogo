@@ -163,6 +163,8 @@ describe('the image is attested, and the self-update verifies it', () => {
     const attest = read('src', 'server', 'attest.ts');
     expect(attest).toContain("SIGNER_WORKFLOW = 'ulm0/gonogo/.github/workflows/image.yml'");
     expect(attest).toContain("OFFICIAL_IMAGE = 'ghcr.io/ulm0/gonogo'");
+  });
+});
 
 describe('the container starts as root only to fix a bind folder, and drops to uid 1000 before anything of gonogo runs', () => {
   const entry = read('packaging', 'docker', 'entrypoint.sh');
@@ -208,6 +210,16 @@ describe('the container starts as root only to fix a bind folder, and drops to u
     expect(drop).not.toContain('--init-groups');
     expect(wrapper).toContain('[ "$(id -u)" = 0 ]');
     expect(wrapper).toContain('exec /usr/local/bin/gonogo-drop /opt/gonogo/bin/gonogo.js "$@"');
+  });
+
+  it('repairs the files `docker exec` as root left in HOME: regular files and folders only, no symlink followed, no mount crossed, chown run in the directory', () => {
+    const rootPart = entry.slice(entry.indexOf('if [ "$(id -u)" = 0 ]; then'), entry.indexOf('# Past here'));
+    const find = /find "\$HOME" ([^;]*) -execdir chown -h 1000:1000 \{\} \+/.exec(rootPart);
+    expect(find?.[1]).toBeDefined();
+    for (const part of ['-xdev', '-mindepth 1', '-user 0', '\\( -type f -o -type d \\)']) expect(find?.[1], part).toContain(part);
+    expect(rootPart).not.toMatch(/find [^\n]*(-L\b|-follow|-H\b)/);
+    expect(rootPart).not.toContain('-exec chown');
+    expect(rootPart).not.toMatch(/chown\s+-[a-zA-Z]*R/);
   });
 
   it('a container started with --user (not root) skips the fix and keeps the warning', () => {
