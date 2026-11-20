@@ -234,6 +234,42 @@ describe('the container starts as root only to fix a bind folder, and drops to u
   });
 });
 
+describe('Homebrew installs from the release asset, not from npm\'s CDN', () => {
+  const release = read('.github', 'workflows', 'release.yml');
+  const job = (name: string): string => {
+    const start = release.indexOf(`\n  ${name}:\n`);
+    const next = release.slice(start + 1).search(/\n  [a-z-]+:\n/);
+    return release.slice(start, next === -1 ? undefined : start + 1 + next);
+  };
+  it('the tarball is packed in the publish job, passed by artifact, attached to the release with --clobber, and the homebrew job waits for the release, not for npm', () => {
+    expect(job('publish')).toContain('pnpm pack --pack-destination');
+    // npm gets the very file that is attached to the release and installed by Homebrew
+    expect(job('publish')).toContain('pnpm publish "$1" --access public --provenance --no-git-checks --tag "$dist_tag"');
+    expect(job('publish').indexOf('pnpm pack --pack-destination')).toBeLessThan(job('publish').indexOf('pnpm publish "$1"'));
+    expect(job('publish')).not.toMatch(/pnpm publish --/);
+    expect(job('publish')).toMatch(/actions\/upload-artifact@[0-9a-f]{40} # v\d/);
+    expect(job('github-release')).toMatch(/actions\/download-artifact@[0-9a-f]{40} # v\d/);
+    expect(job('github-release')).toContain('gh release upload "$TAG" "$1" --repo "$GITHUB_REPOSITORY" --clobber');
+    expect(job('homebrew')).toContain('needs: github-release');
+    expect(job('homebrew')).toMatch(/actions\/download-artifact@[0-9a-f]{40} # v\d/);
+  });
+  it('the formula url is the release asset and the sha256 is the uploaded file\'s; nothing in the job asks npm', () => {
+    const h = job('homebrew');
+    expect(h).toContain('releases/download/${TAG}/');
+    expect(h).toContain('sha=$(sha256sum "$file"');
+    expect(h).not.toContain('registry.npmjs.org');
+    expect(h).not.toMatch(/sleep 30|seq 1 20/);
+    // it still checks the release serves the very file, and says so when it does not
+    expect(h).toContain('serves another file than the one uploaded');
+  });
+  it('the template formula carries a release asset url (one line each for url and sha256, which the job rewrites)', () => {
+    const rb = read('packaging', 'homebrew', 'gonogo.rb');
+    expect(rb).toMatch(/^  url "https:\/\/github\.com\/ulm0\/gonogo\/releases\/download\/v[\d.]+\/ulm0-gonogo-[\d.]+\.tgz"$/m);
+    expect(rb).toMatch(/^  sha256 "[0-9a-f]{64}"$/m);
+    expect(rb).not.toContain('registry.npmjs.org');
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [
