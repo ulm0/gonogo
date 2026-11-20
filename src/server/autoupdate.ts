@@ -178,7 +178,7 @@ export function createAutoUpdateStore(options: { dir: string; env: NodeJS.Proces
       await save();
     },
     async trip(version, why) {
-      s = { ...s, tried: s.tried.includes(version) ? s.tried : [...s.tried, version].slice(-50), pending: null, enabled: enabledByEnv === null ? false : s.enabled, note: `${version} was rolled back (${why}); it will not be tried again${enabledByEnv === null ? ', and auto-update is off until you turn it on again' : ''}.` };
+      s = { ...s, tried: s.tried.includes(version) ? s.tried : [...s.tried, version].slice(-50), pending: null, enabled: enabledByEnv === null ? false : s.enabled, note: `${version} was not updated (${why}); it will not be tried again${enabledByEnv === null ? ', and auto-update is off until you turn it on again' : ''}.` };
       await save();
     },
     close: () => chain.then(() => undefined),
@@ -260,7 +260,7 @@ export function createAutoUpdater(options: AutoUpdaterOptions): AutoUpdater {
       // an attempt still on record with nothing running for it: how did it end? (a restart between the note and the helper leaves one)
       if (pending !== null && update?.state !== 'failed' && !options.updating() && options.current !== pending.version && (await settleOnce())) return;
       if (pending !== null && update?.state === 'failed' && update.version === pending.version) {
-        const reason = update.note.slice(0, 200);
+        const reason = update.note.slice(0, 300).replace(/[.\s]+$/, '');
         await options.store.trip(pending.version, reason);
         options.notify(`Auto-update to ${pending.version} failed: ${reason} gonogo is running ${options.current} as before. ${pending.version} is not tried again and auto-update is off until you turn it on.`);
         return;
@@ -324,7 +324,7 @@ export function createAutoUpdater(options: AutoUpdaterOptions): AutoUpdater {
       return bad;
     }
     if (bad) {
-      const reason = mine.state === 'interrupted' ? 'the helper stopped half way' : mine.note === '' ? mine.state : mine.note.slice(0, 160).replace(/[.\s]+$/, '');
+      const reason = mine.state === 'interrupted' ? 'the helper stopped half way' : mine.note === '' ? mine.state : mine.note.slice(0, 300).replace(/[.\s]+$/, '');
       await options.store.trip(pending.version, reason);
       options.notify(`Auto-update to ${pending.version} ${mine.state === 'rolled-back' ? 'was rolled back' : 'failed'}: ${reason}. gonogo is running ${options.current} as before. ${pending.version} is not tried again and auto-update is off until you turn it on.`);
       return true;

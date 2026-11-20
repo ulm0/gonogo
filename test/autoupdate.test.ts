@@ -113,7 +113,7 @@ describe('the store', () => {
     expect(store.state()).toMatchObject({ tried: ['0.6.2'], pending: { version: '0.6.2', from: '0.6.1', at: 5 } });
     await store.trip('0.6.2', 'the new container reported unhealthy');
     expect(store.state()).toMatchObject({ enabled: false, pending: null, tried: ['0.6.2'] });
-    expect(store.state().note).toMatch(/0\.6\.2 was rolled back \(the new container reported unhealthy\).*auto-update is off/);
+    expect(store.state().note).toMatch(/0\.6\.2 was not updated \(the new container reported unhealthy\).*auto-update is off/);
     await store.set({ enabled: true });
     expect(store.state().note).toBeNull();
     const forced = createAutoUpdateStore({ dir: tmp(), env: { GONOGO_AUTO_UPDATE: '1' } });
@@ -287,7 +287,7 @@ describe('the controller', () => {
       r.auto.close();
       expect(r.notes[0]).toMatch(/was rolled back: the new container reported unhealthy.*not tried again and auto-update is off/);
       expect(r.store.state()).toMatchObject({ enabled: false, pending: null, tried: ['0.6.2'] });
-      expect(r.store.state().note).toMatch(/rolled back/);
+      expect(r.store.state().note).toMatch(/not updated/);
     });
 
     it('the NEW container is not told "updated" until the helper says ok: it runs a moment before its health check, and a failed one is removed', async () => {
