@@ -2520,7 +2520,7 @@ describe('end to end with the stand-in agent', () => {
       expect(execFileSync('git', ['-C', repo, 'branch', '--list', 'gonogo/ana', '--format=%(refname:short)'], { encoding: 'utf8' }).trim()).toBe('gonogo/ana');
 
       // what was handed to docker: the two mounts, the user, the host name, variables by name, the program after the image
-      const calls = readFileSync(dockerLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { verb: string; name: string; argv: string[]; user: string; addHost: string; volumes: string[]; workdir: string; entrypoint: string; image: string; env: string[]; flags: string[]; args: string[] });
+      const calls = readFileSync(dockerLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { verb: string; name: string; argv: string[]; user: string; capDrop: string[]; securityOpt: string[]; addHost: string; volumes: string[]; workdir: string; entrypoint: string; image: string; env: string[]; flags: string[]; args: string[] });
       const runs = calls.filter((call) => call.verb === 'run');
       expect(runs).toHaveLength(1);
       const [run] = runs;
@@ -2530,6 +2530,8 @@ describe('end to end with the stand-in agent', () => {
       expect(run).toMatchObject({
         image: 'ghcr.io/ulm0/gonogo',
         user: `${process.getuid?.()}:${process.getgid?.()}`,
+        capDrop: ['ALL'],
+        securityOpt: ['no-new-privileges'],
         addHost: 'host.docker.internal:host-gateway',
         name: expect.stringMatching(/^gonogo-ana-[0-9a-f]{12}$/),
         volumes: [`${worktree}:${worktree}`, `${worktree}/.git:${worktree}/.git:ro`, `${agentDir}:${agentDir}`],

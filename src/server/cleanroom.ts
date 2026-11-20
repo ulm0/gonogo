@@ -204,6 +204,8 @@ export function buildDockerArgs(input: {
     'run', '--rm', '-i', '-t', '--init',
     '--name', place.container,
     '--user', `${input.uid}:${input.gid}`,
+    // the container shares gonogo's network namespace (and so its edge network): it needs no capability, and a setuid program in the image must not gain one
+    '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
     ...(place.network === null ? ['--add-host', `${CLEAN_ROOM_HOST}:host-gateway`] : ['--network', place.network]),
     '-e', `HOME=${place.home}`,
     '-e', `CLAUDE_CONFIG_DIR=${place.home}`,

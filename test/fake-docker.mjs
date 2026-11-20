@@ -31,7 +31,7 @@ const refuse = (message) => {
   process.exit(125);
 };
 
-const seen = { verb, flags: [], name: null, user: null, addHost: null, env: [], volumes: [], workdir: null, entrypoint: null, image: null, args: [] };
+const seen = { verb, flags: [], name: null, user: null, capDrop: [], securityOpt: [], addHost: null, env: [], volumes: [], workdir: null, entrypoint: null, image: null, args: [] };
 const BOOLEAN = new Set(['--rm', '-i', '-t', '--init']);
 let i = 0;
 for (; i < args.length; i += 1) {
@@ -40,11 +40,13 @@ for (; i < args.length; i += 1) {
     seen.flags.push(arg);
     continue;
   }
-  if (!['--name', '--user', '--add-host', '--entrypoint', '-e', '-v', '-w'].includes(arg)) break;
+  if (!['--name', '--user', '--cap-drop', '--security-opt', '--add-host', '--entrypoint', '-e', '-v', '-w'].includes(arg)) break;
   const value = args[(i += 1)];
   if (value === undefined) refuse(`${arg} needs a value`);
   if (arg === '--name') seen.name = value;
   else if (arg === '--user') seen.user = value;
+  else if (arg === '--cap-drop') seen.capDrop.push(value);
+  else if (arg === '--security-opt') seen.securityOpt.push(value);
   else if (arg === '--add-host') seen.addHost = value;
   else if (arg === '-e') seen.env.push(value);
   else if (arg === '-v') seen.volumes.push(value);
