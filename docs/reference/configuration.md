@@ -12,30 +12,30 @@ A flag beats its environment variable, which beats the default. `--port=7777` an
 | `--host <addr>` | `GONOGO_HOST` | Bind address. Default `127.0.0.1`; `localhost` means `127.0.0.1`. A non-loopback address (LAN, Tailscale `100.x`) is also served on `127.0.0.1`, where agents connect. |
 | `--home <dir>` | `GONOGO_HOME` | State directory. Default `~/.gonogo`. |
 | `--seed-claude` | `GONOGO_SEED_CLAUDE` (`1` or `true`) | Seed mode (see [Docker](../guide/docker.md)). Off by default. |
-| `--allow-host <name>`, repeatable | `GONOGO_ALLOWED_HOSTS`, comma separated | Extra `Host` names to accept: a reverse proxy's name, and the names Uplink, Relay (GitHub, Linear, Slack, Telegram) and Docking reach this station on. Any `--allow-host` replaces the variable. |
-| (none) | `GONOGO_AUTO_UPDATE` (`1`, `on`, `true` or `yes` turns auto-update on; `0`, `off`, `false` or `no` forces it off; unset: the Flight Rules switch, off by default) | Docker self-update by itself, in a window, patch versions only ([Update](../features/update.md#auto-update-docker-off-unless-you-turn-it-on)). The variable wins over the page. |
-| (none) | `GONOGO_AUTO_UPDATE_WINDOW` (`HH:MM-HH:MM`, comma-separated, up to four; default `02:00-05:00`, local time of the container: set `TZ`) | The windows auto-update may start in; wins over the page. |
-| `--no-update-check` | `GONOGO_UPDATE_CHECK` (`0`, `off`, `false` or `no` turns it off) | Rollout: do not ask the npm registry once a day whether a newer gonogo exists ([Rollout](../features/rollout.md)). Default on; the flag beats the variable. |
+| `--allow-host <name>`, repeatable | `GONOGO_ALLOWED_HOSTS`, comma separated | Extra `Host` names to accept (reverse proxy, Uplink, Relay, Docking). Any `--allow-host` replaces the variable. |
+| (none) | `GONOGO_AUTO_UPDATE` (`1`/`on`/`true`/`yes` on; `0`/`off`/`false`/`no` off; unset: the Flight Rules switch, off) | Docker auto-update, patch versions only, in a window ([Update](../features/update.md#auto-update-docker-off-unless-you-turn-it-on)). Wins over the page. |
+| (none) | `GONOGO_AUTO_UPDATE_WINDOW` (`HH:MM-HH:MM`, up to four, comma-separated; default `02:00-05:00` container time: set `TZ`) | Windows auto-update may start in. Wins over the page. |
+| `--no-update-check` | `GONOGO_UPDATE_CHECK` (`0`, `off`, `false` or `no` turns it off) | Rollout: skip the daily npm registry check ([Rollout](../features/rollout.md)). Default on. |
 | `-h`, `--help` | | Print usage, exit 0. |
-| `-v`, `--version` | | Print `gonogo <version>`, exit 0. When the last check saw a newer version, a second line says so (from `rollout.json`, no network; the home is `GONOGO_HOME` or the default). |
-| `doctor` (a command, no options) | | Pad Check: list the agent CLIs found on the `PATH` with their versions, and for each missing one the vendor's install command ([Engine Bay](../features/engine-bay.md#pad-check)). Exit 1 only when `claude` is missing and `GONOGO_AGENT_CMD` is not set, else 0. |
-| `update` (a command, no options) | | Print the command that updates gonogo the way it was installed, exit 0. Runs nothing, asks nothing ([Rollout](../features/rollout.md)). |
+| `-v`, `--version` | | Print `gonogo <version>`, exit 0; a second line when the last check saw a newer one (from `rollout.json`, no network). |
+| `doctor` (a command, no options) | | Pad Check: agent CLIs on the `PATH` with versions, and the vendor's install command for each missing one ([Engine Bay](../features/engine-bay.md#pad-check)). Exit 1 only when `claude` is missing and `GONOGO_AGENT_CMD` is unset. |
+| `update` (a command, no options) | | Print the update command for this install, exit 0. Runs nothing ([Rollout](../features/rollout.md)). |
 | | `GONOGO_MAX_HOPS` | Hop cap for messages between agents. Default `8`; whole number 1 to 100, else ignored with a warning. |
 | | `GONOGO_REDLINE` | `off` turns off Redline's detectors (loop, error storm, ping-pong). Propellant limits still stop agents. Default on. |
 | | `GONOGO_MAX_WORKING` | Max Q at start: how many agents with hooks (Claude Code, Gemini CLI) may work at once. Whole number 1 to 24, else ignored with a warning. Default no limit; changeable from the wall. |
-| | `GONOGO_AGENT_CMD` | Replaces `claude`: a JSON array of strings, or words separated by spaces. Gets the arguments `claude` would. When set, gonogo does not look for `claude` on the `PATH`. |
-| | `GONOGO_CLEANROOM_IMAGE` | Image for Clean Room consoles. Default `ghcr.io/ulm0/gonogo` (build it locally with `docker build -t ghcr.io/ulm0/gonogo .` if not published yet). A console's own image, set through the API, wins. |
-| | `GONOGO_CLEANROOM_NETWORK` | Only when gonogo runs in a container ([Clean Room in the container](../guide/docker.md#clean-room-in-the-container)): `container:self` or `container:<name of gonogo's container>`. Clean Rooms join that container's network and hosts file. Any other value is refused at hire and start. `compose.yaml` sets it. |
+| | `GONOGO_AGENT_CMD` | Replaces `claude`: a JSON array of strings, or words split on spaces; gets `claude`'s arguments. When set, `claude` is not looked up on the `PATH`. |
+| | `GONOGO_CLEANROOM_IMAGE` | Image for Clean Room consoles. Default `ghcr.io/ulm0/gonogo`. A console's own image (API) wins. |
+| | `GONOGO_CLEANROOM_NETWORK` | Only in a container ([Docker](../guide/docker.md#clean-room-in-the-container)): `container:self` or `container:<name>`. Anything else is refused. `compose.yaml` sets it. |
 | | `TZ` | Time zone for Launch Window rules (machine's zone if unset). |
-| | `GONOGO_STATION` | Station name for Docking (the part after `@` in `name@station`). Cut to lower case letters, digits and `-`, at most 31 characters. Default: first part of the host name. |
+| | `GONOGO_STATION` | Docking station name (`name@station`): lowercase letters, digits, `-`, at most 31. Default: first part of the host name. |
 | | `GONOGO_LOG_LEVEL` | `debug`, `info`, `warn` or `error`. Default `info`. |
-| | `GONOGO_SCRUB_ENV` | Extra variables to remove from every agent (Claude Code session variables are always removed). Comma separated; an entry ending in `_` is a prefix. Example for a terminal-multiplexer pane: `HERDR_,TMUX_PANE`. Do not list `HOME`, `PATH` or credential variables. It works on gonogo's own environment only: the [keys](../features/engine-bay.md#keys-clearance) you set for one agent are not removed by it, and win over a variable of the same name. |
+| | `GONOGO_SCRUB_ENV` | Extra variables removed from every agent (Claude Code session variables always are). Comma separated; a trailing `_` is a prefix (`HERDR_,TMUX_PANE`). Not `HOME`, `PATH` or credentials. Acts on gonogo's own environment only: per-agent [keys](../features/engine-bay.md#keys-clearance) are kept and win over a variable of the same name. |
 
-Exit codes: an unknown flag, or `doctor` or `update` with an argument, prints usage and exits 2. A failed start (port in use, another gonogo on the same home, damaged `agents.json`, no `claude` on the `PATH`) prints `gonogo: <message>` and exits 1. Ctrl-C, SIGTERM and SIGHUP stop every agent and exit; agents stop with gonogo.
+Exit codes: unknown flag, or `doctor`/`update` with an argument: usage, 2. Failed start (port in use, another gonogo on the home, damaged `agents.json`, no `claude`): `gonogo: <message>`, 1. Ctrl-C, SIGTERM and SIGHUP stop every agent and exit.
 
 ## State on disk
 
-Everything lives under the home (`~/.gonogo` by default). Files are mode 0600 and folders 0700 unless noted. A JSON store that cannot be read (`schedules`, `uplinks`, `tasks`, `docking`, `relay`, `downlink`) is renamed `<file>.bad` and the server starts without it.
+Everything lives under the home (`~/.gonogo`). Files are 0600, folders 0700. An unreadable `schedules`, `uplinks`, `tasks`, `docking`, `relay` or `downlink` store is renamed `<file>.bad` and the server starts without it.
 
 | Path | What |
 |---|---|
@@ -67,12 +67,10 @@ Everything lives under the home (`~/.gonogo` by default). Files are mode 0600 an
 
 ### Versions of the saved state
 
-Every JSON file above with a format, and each Mission Log entry's front matter and the front matter of `board.md`, holds `"version": <n>`. All are at version 1 today. Design: [`docs/release-readiness-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/release-readiness-spec.md).
+Every JSON file above, each Mission Log entry and `board.md` holds `"version": <n>` (all 1 today; [design](https://github.com/ulm0/gonogo/blob/main/docs/release-readiness-spec.md)).
 
-- **Older file**: at start, before anything reads it, it is upgraded one version at a time. gonogo first copies it to `<file>.bak-v<old>`, writes the new file atomically and logs one line. If a step fails, the file is left as it was and the start stops, naming the file and the copy.
-- **Newer file** stops the start: `<path> was saved by a newer gonogo (format version 2; this one reads up to 1). Start the gonogo that saved it, or move the file away to start without it.` To go back to an older gonogo, put the `.bak-v<n>` copy back (you lose later changes).
-- **Missing, not JSON or no version**: handled as described in the table. `propellant.json` without a version counts as version 1.
-- **Optional fields**: `model` and `keys` (names only) in `agents.json` are optional, so the file stayed at version 1. An older gonogo ignores them and drops them at its next save; the values in `keys.json` stay and the agent still gets them under the newer gonogo, but the page does not list them until you set them again.
-- **Mission Log entries** are not upgraded; a newer one is skipped with a warning and kept.
-- **`board.md`** is not upgraded; a newer one stops the start with the message above.
+- **Older file**: upgraded at start one version at a time, after a copy to `<file>.bak-v<old>`. If a step fails the file is untouched and the start stops, naming file and copy.
+- **Newer file** stops the start: `<path> was saved by a newer gonogo (format version 2; this one reads up to 1). Start the gonogo that saved it, or move the file away to start without it.` To go back, restore the `.bak-v<n>` copy (later changes are lost).
+- **Optional fields** `model` and `keys` (names) in `agents.json`: an older gonogo drops them at its next save; the values in `keys.json` stay, but the page does not list them until you set them again.
+- Mission Log entries are not upgraded (a newer one is skipped and kept); a newer `board.md` stops the start.
 - **Not versioned**: `messages.jsonl`, `fuel.jsonl`, `telemetry.jsonl` and the day files of `black-box/` (an unreadable line is skipped), `mission-log/.seq`, `token`, `server.lock`, and files under `agents/<name>/` rewritten every start.

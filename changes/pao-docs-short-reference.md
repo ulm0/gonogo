@@ -1,0 +1,1 @@
+- **Shorter reference pages.** Configuration and Security lose about 15% of their prose; every flag, variable, file, limit and warning stays.
