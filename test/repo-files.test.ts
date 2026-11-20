@@ -166,6 +166,74 @@ describe('the image is attested, and the self-update verifies it', () => {
   });
 });
 
+describe('the container starts as root only to fix a bind folder, and drops to uid 1000 before anything of gonogo runs', () => {
+  const entry = read('packaging', 'docker', 'entrypoint.sh');
+  const drop = read('packaging', 'docker', 'drop.sh');
+  const wrapper = read('packaging', 'docker', 'gonogo.sh');
+  const docker = read('Dockerfile');
+  const live = (text: string): string => text.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
+
+  it('the image ends as root (after the build-time proof as node) and has the three scripts, executable', () => {
+    const lines = live(docker).split('\n');
+    const asNode = lines.lastIndexOf('USER node');
+    const asRoot = lines.lastIndexOf('USER root');
+    expect(asNode).toBeGreaterThan(-1);
+    expect(asRoot).toBeGreaterThan(asNode);
+    expect(lines.slice(asRoot).join('\n')).toContain('ENTRYPOINT');
+    for (const [file, name] of [['entrypoint.sh', 'gonogo-entrypoint'], ['drop.sh', 'gonogo-drop'], ['gonogo.sh', 'gonogo']] as const) {
+      expect(docker, file).toContain(`/src/packaging/docker/${file} /usr/local/bin/${name}`);
+      expect(statSync(join(root, 'packaging', 'docker', file)).mode & 0o111, file).not.toBe(0);
+    }
+  });
+
+  it('chowns only the top of gonogo\'s own bind targets, never recursively, never through a symlink, never a system folder, only what root owns and Docker made', () => {
+    const fix = entry.slice(entry.indexOf('fix() {'), entry.indexOf('exec /usr/local/bin/gonogo-drop'));
+    expect(entry).not.toMatch(/chown\s+-[a-zA-Z]*R/);
+    // a path is accepted only as its own canonical spelling
+    expect(fix).toContain('r=$(realpath -e "$p" 2>/dev/null) && [ "$r" = "$p" ] || return 0');
+    expect(fix.indexOf('realpath -e')).toBeLessThan(fix.indexOf('chown'));
+    expect(fix).toContain('chown -h 1000:1000 "$p"');
+    expect(fix).toContain('[ ! -L "$p" ]');
+    expect(fix).toContain('stat -c %u "$p")" = 0');
+    expect(fix).toContain('mountpoint -q "$p" || { d=$(dirname "$p"); [ "$d" != / ] && mountpoint -q "$d"; }');
+    for (const system of ['/', '/etc', '/home', '/root', '/usr', '/var', '/proc']) expect(fix, system).toMatch(new RegExp(`[ |]${system.replaceAll('/', '\\/')}( \\||\\))`));
+    // exactly these four paths are offered to it
+    for (const target of ['fix "$HOME"', 'fix "$(dirname "$GONOGO_HOME")"', 'fix "${CLAUDE_CONFIG_DIR:-}"', 'fix "$PWD"']) expect(entry, target).toContain(target);
+    expect(entry.match(/\bfix "/g)).toHaveLength(4);
+    // as root it only fixes, then drops: nothing of gonogo's runs before the drop
+    const rootPart = entry.slice(entry.indexOf('if [ "$(id -u)" = 0 ]; then'), entry.indexOf('# Past here'));
+    expect(rootPart).not.toMatch(/exec gonogo/);
+    expect(rootPart).toContain('exec /usr/local/bin/gonogo-drop /usr/local/bin/gonogo-entrypoint "$@"');
+  });
+
+  it('drops to uid and gid 1000 with the container\'s supplementary groups but root\'s, and the gonogo command does it too (docker exec starts as root)', () => {
+    expect(drop).toContain('setpriv --reuid=1000 --regid=1000 "--groups=$groups" --inh-caps=-all --bounding-set=-all "$@"');
+    expect(drop).toContain('--clear-groups --inh-caps=-all --bounding-set=-all "$@"');
+    expect(drop).not.toMatch(/^[^#\n]*--no-new-privs/m);
+    expect(drop).toContain('grep -vx 0');
+    expect(drop).toContain('--clear-groups');
+    expect(drop).not.toContain('--init-groups');
+    expect(wrapper).toContain('[ "$(id -u)" = 0 ]');
+    expect(wrapper).toContain('exec /usr/local/bin/gonogo-drop /opt/gonogo/bin/gonogo.js "$@"');
+  });
+
+  it('repairs the files `docker exec` as root left in HOME: regular files and folders only, no symlink followed, no mount crossed, chown run in the directory', () => {
+    const rootPart = entry.slice(entry.indexOf('if [ "$(id -u)" = 0 ]; then'), entry.indexOf('# Past here'));
+    const find = /find "\$HOME" (.*) -execdir chown -h 1000:1000 \{\} \+/.exec(rootPart);
+    expect(find?.[1]).toBeDefined();
+    expect(rootPart).toMatch(/realpath -e "\$HOME"[^\n]*= "\$HOME" \]/);
+    for (const part of ['-xdev', '-mindepth 1', '-user 0', '\\( -type f -links 1 -o -type d \\)', '\\( -type d -exec mountpoint -q {} \\; -prune \\)']) expect(find?.[1], part).toContain(part);
+    expect(rootPart).not.toMatch(/find [^\n]*(-L\b|-follow|-H\b)/);
+    expect(rootPart).not.toContain('-exec chown');
+    expect(rootPart).not.toMatch(/chown\s+-[a-zA-Z]*R/);
+  });
+
+  it('a container started with --user (not root) skips the fix and keeps the warning', () => {
+    expect(entry.indexOf('# Past here')).toBeGreaterThan(entry.indexOf('exec /usr/local/bin/gonogo-drop'));
+    expect(entry).toMatch(/\[ -w "\$HOME" \] \|\| echo "gonogo: \$HOME is not writable by uid \$\(id -u\)/);
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [

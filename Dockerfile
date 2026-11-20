@@ -122,8 +122,10 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global
  && rm -rf /root/.cache /root/.local/share/pnpm
 
 COPY --from=build /app /opt/gonogo
-RUN ln -s /opt/gonogo/bin/gonogo.js /usr/local/bin/gonogo
-# The entrypoint script is not in the npm tarball (/app), so it comes from the build stage's source.
+# The scripts of packaging/docker are not in the npm tarball (/app), so they come from the build stage's source. `gonogo` is a small script that
+# drops from root to uid 1000 (docker exec starts as root, see below); gonogo-drop does the dropping (setpriv, from util-linux).
+COPY --from=build --chmod=0755 /src/packaging/docker/gonogo.sh /usr/local/bin/gonogo
+COPY --from=build --chmod=0755 /src/packaging/docker/drop.sh /usr/local/bin/gonogo-drop
 COPY --from=build --chmod=0755 /src/packaging/docker/entrypoint.sh /usr/local/bin/gonogo-entrypoint
 
 RUN mkdir -p /state /projects \
@@ -142,7 +144,9 @@ ENV HOME=/home/node \
     DISABLE_AUTOUPDATER=1 \
     LANG=C.UTF-8
 
-# uid 1000: Claude Code refuses bypassPermissions as root. The boss starts in /projects.
+# uid 1000: Claude Code refuses bypassPermissions as root. The boss starts in /projects. The build-time proof below runs as node;
+# the container itself starts as root (USER root again after it) so that the entrypoint can give uid 1000 a bind folder Docker made root's,
+# and then drops to uid 1000 before anything of gonogo's runs.
 USER node
 WORKDIR /projects
 
@@ -158,6 +162,8 @@ RUN claude --version \
 VOLUME ["/state", "/projects"]
 EXPOSE 7777
 
+USER root
+
 # /rooms/health is the supervisor's own path (no token, never proxied): 503 until room main has been ready once, then 200 for as
 # long as the supervisor runs, also while main restarts, so a crash loop of main does not flap the container and a main that never
 # starts keeps it unhealthy (the self-update swap then rolls back). It probes the port of CMD below: with another --port, give
@@ -166,7 +172,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:7777/rooms/health').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))"]
 
 # -s: tini acts as a subreaper, so reaping also works under Docker's own --init, where tini is not PID 1.
-# gonogo-entrypoint (packaging/docker/entrypoint.sh): fills a new, empty home from /etc/skel, carries over gh's login and git's config from a 0.5.x /state/config, warns when the home is not writable, then execs gonogo with the CMD.
+# gonogo-entrypoint (packaging/docker/entrypoint.sh): as root, chowns the top of gonogo's own root-owned bind targets to uid 1000 and drops to it; then fills a new, empty home from /etc/skel, carries over gh's login and git's config from a 0.5.x /state/config, warns when the home is not writable, and execs gonogo with the CMD.
 ENTRYPOINT ["tini", "-s", "--", "gonogo-entrypoint"]
 # Inside the container the server must listen on all interfaces; the home comes from GONOGO_HOME.
 CMD ["--host", "0.0.0.0", "--port", "7777"]
