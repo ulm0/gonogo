@@ -414,7 +414,7 @@ describe('a helper that is killed half way', () => {
     expect(settled.note).toMatch(/interrupted.*docker compose up -d.*gonogo-prev-a1b2c3.*No UNDO is offered/);
     expect((await readResult(dir))?.state).toBe('interrupted');
     // an interrupted record is never undone
-    const updater = createUpdater({ kind: 'docker', cwd: dir, current: '0.4.0', rollout: { view: () => ({ enabled: true, current: '0.4.0', latest: null, checkedAt: 1, newer: false, command: 'x' }), setUpdate: () => undefined }, reload: () => false, keepsAgents: false, hook: null, docker: { call: f.call, hostname: ME, home: dir, ready: true, busy: () => null }, fetch: (() => Promise.reject(new Error('no'))) as typeof fetch });
+    const updater = createUpdater({ kind: 'docker', cwd: dir, current: '0.4.0', rollout: { view: () => ({ enabled: true, current: '0.4.0', latest: null, checkedAt: 1, newer: false, command: 'x' }), setUpdate: () => undefined }, reload: () => false, keepsAgents: false, hook: null, docker: { call: f.call, hostname: ME, home: dir, ready: true, verify: async () => ({ kind: 'verified', digest: '' }), busy: () => null }, fetch: (() => Promise.reject(new Error('no'))) as typeof fetch });
     await expect(updater.undo()).rejects.toThrow(/no update to undo/);
     // settled once: asking again changes nothing
     expect(await settleResult(f.call, dir, settled, ME, 1_000_000 + 120_000)).toBe(settled);
@@ -581,6 +581,15 @@ describe('the image is verified before it runs (attest.ts)', () => {
     expect(seen.at(-1)?.state).toBe('handed-off');
   });
 
+  it('no verifier configured is a refusal, never a pass', async () => {
+    const f = fake();
+    const { updater, seen } = build(f, undefined, []);
+    await updater.start('0.4.0');
+    await until(seen, 'failed');
+    expect(seen.at(-1)?.note).toMatch(/could not be verified \(no verifier is configured\)/);
+    expect(f.log.some((l) => l.includes('containers/create'))).toBe(false);
+  });
+
   it('UNDO does not verify: the image was run before', async () => {
     const f = fake();
     let asked = 0;
@@ -616,7 +625,7 @@ describe('the updater in a container with the socket', () => {
       reload: () => false,
       keepsAgents: false,
       hook: null,
-      docker: { call: f.call, hostname: ME.slice(0, 12), home: dir, ready: true, busy: () => busy },
+      docker: { call: f.call, hostname: ME.slice(0, 12), home: dir, ready: true, verify: async () => ({ kind: 'verified', digest: '' }), busy: () => busy },
       fetch: (() => Promise.reject(new Error('no network'))) as typeof fetch,
     });
     return { updater, seen };
@@ -650,7 +659,7 @@ describe('the updater in a container with the socket', () => {
   it('says so when the helper never answers', async () => {
     const f = fake();
     const seen: UpdateView[] = [];
-    const updater = createUpdater({ kind: 'docker', cwd: dir, current: '0.3.0', rollout: { view: () => ({ enabled: true, current: '0.3.0', latest: '0.4.0', checkedAt: 1, newer: true, command: 'x' }), setUpdate: (u) => void seen.push(u) }, reload: () => false, keepsAgents: false, hook: null, handoffMs: 30, docker: { call: f.call, hostname: ME.slice(0, 12), home: dir, ready: true, busy: () => null }, fetch: (() => Promise.reject(new Error('no'))) as typeof fetch });
+    const updater = createUpdater({ kind: 'docker', cwd: dir, current: '0.3.0', rollout: { view: () => ({ enabled: true, current: '0.3.0', latest: '0.4.0', checkedAt: 1, newer: true, command: 'x' }), setUpdate: (u) => void seen.push(u) }, reload: () => false, keepsAgents: false, hook: null, handoffMs: 30, docker: { call: f.call, hostname: ME.slice(0, 12), home: dir, ready: true, verify: async () => ({ kind: 'verified', digest: '' }), busy: () => null }, fetch: (() => Promise.reject(new Error('no'))) as typeof fetch });
     await updater.start('0.4.0');
     await settle(seen, 'handed-off');
     await settle(seen, 'failed');

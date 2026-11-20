@@ -159,7 +159,8 @@ export function createUpdater(options: UpdaterOptions): Updater {
       if (image === 'pull') {
         const prepared = await pullAndCheck(docker.call, docker.hostname, version);
         // the image is run only when GitHub's attestation says this repository's workflow built it (attest.ts); the copy is made from the id of THIS pulled image
-        const verdict = docker.verify === undefined ? ({ kind: 'verified', digest: '' } as const) : await docker.verify(prepared);
+        // no verifier wired is a refusal, never a pass
+        const verdict: Attestation = docker.verify === undefined ? { kind: 'failed', why: 'no verifier is configured' } : await docker.verify(prepared);
         if (verdict.kind === 'failed' || (verdict.kind === 'unattested' && how.unverified !== true)) {
           const note = `${version} was not run: ${verdict.kind === 'failed' ? `its image could not be verified (${verdict.why})` : `its image has no attestation (${verdict.why})`}. Nothing was changed.${verdict.kind === 'unattested' ? ' Update anyway only if you built or trust this image.' : ''}`;
           log.warn(`the Docker update to ${version} was refused: ${note}`);
