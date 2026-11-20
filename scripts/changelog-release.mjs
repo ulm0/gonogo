@@ -17,15 +17,20 @@ export function fold(changelog, fragments, version, date, intro) {
   return `${changelog.slice(0, bodyStart)}\n${section}${changelog.slice(end)}`;
 }
 
-/** The fragment files, in name order; README.md is the explanation, not a change. */
+/** A release version as release.yml reads it: x.y.z, with an optional pre-release (1.0.0-rc.1). */
+export const VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+
+/** The fragment files, in name order; README.md is the explanation, not a change. Anything else that is not a .md file (a folder made from a branch name with a slash) is an error, not skipped. */
 export function fragmentFiles(dir) {
-  return readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md').sort();
+  const odd = readdirSync(dir, { withFileTypes: true }).filter((e) => e.name !== 'README.md' && !(e.isFile() && e.name.endsWith('.md')));
+  if (odd.length > 0) throw new Error(`${dir}/ holds ${odd.map((e) => e.name).join(', ')}: a fragment is one .md file, with a - for each / of the branch name`);
+  return readdirSync(dir).filter((f) => f !== 'README.md').sort();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [version, date, intro] = process.argv.slice(2);
-  if (!/^\d+\.\d+\.\d+$/.test(version ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? '') || !intro) {
-    console.error('usage: pnpm changelog:release <x.y.z> <yyyy-mm-dd> "<intro>"');
+  if (!VERSION.test(version ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? '') || !intro) {
+    console.error('usage: pnpm changelog:release <x.y.z[-pre]> <yyyy-mm-dd> "<intro>"');
     process.exit(2);
   }
   const files = fragmentFiles('changes');

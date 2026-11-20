@@ -1,6 +1,6 @@
 # Changes for the next release
 
-One file per change, named after the branch (`changes/<branch>.md`), holding the CHANGELOG bullet or bullets of that change:
+One file per change, named after the branch with each `/` written as `-` (`eecom/auto-update` is `changes/eecom-auto-update.md`; a folder in `changes/` stops the release), holding the CHANGELOG bullet or bullets of that change:
 
 ```
 - **A short bold name.** What changed for the person who uses gonogo, in one or two sentences.
