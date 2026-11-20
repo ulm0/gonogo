@@ -92,7 +92,7 @@ The version label of an image is a line anyone who can push the tag can write, s
 - **Turning it on asks for your password again** when you sign in with an account (step-up): turning it on or changing its window is the one change here that lets code run unattended; turning it off and SKIP THIS VERSION never ask.
 - **Once per version.** The attempt is recorded before it starts. A version that was rolled back, failed or was interrupted is **never tried again**, and the switch turns itself **off** with the reason (turn it on again after you have read it); a newer patch is then taken as usual. (If the update refused to start at all, because a poll opened in the last second, nothing was touched: it is not an attempt and it tries again at the next quiet moment.)
 
-After the restart the new gonogo says in the Downlink what happened: *updated 0.6.1 to 0.6.2* (the agents start again by themselves per the startup setting; UNDO stays on the strip for a day), or *rolled back: <reason>* with the version marked bad. The record is `<home>/autoupdate.json` (a damaged file means off).
+After the restart the new gonogo says in the Downlink what happened: *updated 0.6.1 to 0.6.2* (the agents start again by themselves per the startup setting; UNDO stays on the strip for a day), or *rolled back: the reason* with the version marked bad. The record is `<home>/autoupdate.json` (a damaged file means off).
 
 Trust, in one sentence, which the page repeats: **turning it on lets the publisher's next patch run on this machine, with the Docker socket, without you reading it**; the day of cooling and the patch-only rule are the only checks. The npm and pnpm installs have no auto-update.
 
