@@ -94,10 +94,15 @@ export function SubagentsBlock(): ReactElement {
 export function CoauthorBlock(): ReactElement {
   const id = useId();
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [footer, setFooter] = useState<boolean | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const apply = (found: { enabled: boolean; prFooter: boolean }): void => {
+    setEnabled(found.enabled);
+    setFooter(found.prFooter);
+  };
   useEffect(() => {
     let live = true;
-    api.coauthorSettings().then((found) => live && setEnabled(found.enabled), (e: unknown) => live && setProblem(e instanceof Error ? e.message : String(e)));
+    api.coauthorSettings().then((found) => live && apply(found), (e: unknown) => live && setProblem(e instanceof Error ? e.message : String(e)));
     return () => {
       live = false;
     };
@@ -105,7 +110,7 @@ export function CoauthorBlock(): ReactElement {
   return (
     <section className="module rules-block" aria-labelledby={`${id}-title`}>
       <h2 className="label" id={`${id}-title`}>
-        CO-AUTHOR LINE
+        CO-AUTHOR LINE AND PR FOOTER
       </h2>
       {enabled !== null && (
         <label className="staff-check">
@@ -114,14 +119,27 @@ export function CoauthorBlock(): ReactElement {
             checked={enabled}
             onChange={(event) => {
               setProblem(null);
-              api.setCoauthorSettings(event.target.checked).then((found) => setEnabled(found.enabled), (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+              api.setCoauthorSettings({ enabled: event.target.checked }).then(apply, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
             }}
           />
           Add a gonogo co-author line to commits agents make
         </label>
       )}
+      {footer !== null && (
+        <label className="staff-check">
+          <input
+            type="checkbox" className="switch" role="switch"
+            checked={footer}
+            onChange={(event) => {
+              setProblem(null);
+              api.setCoauthorSettings({ prFooter: event.target.checked }).then(apply, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+            }}
+          />
+          End the pull requests agents write with &quot;Generated with gonogo&quot; (Claude Code agents)
+        </label>
+      )}
       <p className="hint">
-        A commit an agent makes ends with Co-Authored-By: its name (gonogo) and an address that is never a real account. It is added by a git hook gonogo sets for the agent alone: your repository and your git config are not written. Commits you make through Recorder get none. A console can opt out in its form. The switch and the opt-out apply at each console&apos;s next restart: one that is running keeps what it started with.
+        A commit an agent makes ends with Co-Authored-By: its name (gonogo) and an address that is never a real account. It is added by a git hook gonogo sets for the agent alone: your repository and your git config are not written. Commits you make through Recorder get none. A console can opt out in its form. The switch and the opt-out apply at each console&apos;s next restart: one that is running keeps what it started with. The PR footer is Claude Code&apos;s own pull-request attribution, set to a link to gonogo in place of its default; it applies to Claude Code consoles at their next restart, and commits keep the attribution they have.
       </p>
       {problem !== null && (
         <p className="error" role="alert">

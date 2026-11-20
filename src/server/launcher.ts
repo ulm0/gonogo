@@ -9,7 +9,7 @@ import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, sym
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import type { Payload, Provider, SubagentSettings } from '../shared/protocol.js';
-import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PROVIDER_INFO } from '../shared/protocol.js';
+import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO } from '../shared/protocol.js';
 import type {
   AgentIdentity,
   AgentRecord,
@@ -129,6 +129,8 @@ export function buildSettings(input: {
   apiKeyHelper: boolean;
   /** Plan quota: the status line that posts `rate_limits` to the hub; `next` is the Director's own status-line command, which keeps its output. Absent: none. */
   statusLine?: { node: string; next?: string };
+  /** Claude Code's `attribution.pr` (checked in its settings schema, 2.1.325): the footer of the pull requests the agent writes. The commit attribution is left as it is. */
+  prFooter?: boolean;
 }): Record<string, unknown> {
   const hooks: Record<string, unknown> = {};
   for (const event of HOOK_EVENTS) {
@@ -161,6 +163,7 @@ export function buildSettings(input: {
   };
   if (input.mode === 'bypassPermissions') settings.skipDangerousModePermissionPrompt = true;
   if (input.apiKeyHelper) settings.apiKeyHelper = API_KEY_HELPER_COMMAND;
+  if (input.prFooter === true) settings.attribution = { pr: PR_FOOTER };
   if (input.statusLine) {
     const url = `${input.hubUrl}${HOOK_PATH_PREFIX}${input.name}/StatusLine`;
     const words = [input.statusLine.node, '-e', STATUS_LINE_SHIM, url, ...(input.statusLine.next ? [input.statusLine.next] : [])];
@@ -663,7 +666,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const next = clean === null ? await ownStatusLine(ownConfig) : undefined;
       const statusLine = { node: clean === null ? process.execPath : 'node', ...(next === undefined ? {} : { next }) };
       const subagentSetting = options.subagents?.() ?? { mode: 'allow' as const, limit: 4 };
-      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), subagentSetting), statusLine });
+      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), subagentSetting), statusLine, prFooter: options.coauthor?.().prFooter !== false });
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
       await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, payloadOf(agent, 'claude')?.mcpServers), null, 2), FILE_MODE);
       const pluginDir = await writeSkillsPlugin(base, payloadOf(agent, 'claude')?.skills);

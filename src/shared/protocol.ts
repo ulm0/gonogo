@@ -440,7 +440,11 @@ export interface SubagentSettings {
 /** Co-author (docs/coauthor-spec.md): the room's switch for the `Co-Authored-By: <agent> (gonogo)` line an agent's commits carry. On by default. */
 export interface CoauthorSettings {
   enabled: boolean;
+  /** The footer of the pull requests an agent writes: Claude Code's `attribution.pr` is set to PR_FOOTER (src/server/launcher.ts). On by default. */
+  prFooter: boolean;
 }
+/** The line every pull request an agent writes ends with, in place of Claude Code's own. */
+export const PR_FOOTER = `🤖 Generated with [gonogo](${DOCS_URL})`;
 export const STARTUP_POLICIES = ['boss', 'running', 'off'] as const;
 export type StartupPolicy = (typeof STARTUP_POLICIES)[number];
 export interface StartupSettings {
