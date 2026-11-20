@@ -4,6 +4,8 @@ name: Screens
 # 390x844, light and dark; and the docs site. One artifact, screens-<sha>, with an index.html grid. Not a gate: nothing runs it but a person.
 on:
   workflow_dispatch:
+  push:
+    branches: [surgeon/screens] # TEMPORARY, to iterate before the workflow is on main
 
 permissions: {}
 
