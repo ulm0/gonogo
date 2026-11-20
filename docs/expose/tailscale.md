@@ -22,7 +22,7 @@ gonogo expose check
 ```
 
 - Needs MagicDNS and HTTPS certificates switched on for the tailnet (Tailscale admin console).
-- Not verified: whether Serve puts the client address in X-Forwarded-For. If it does not, gonogo sees every client as 127.0.0.1 and one shared rate-limit bucket does the work.
+- Not verified: whether Serve (and Funnel) put the client address in X-Forwarded-For. If it does not, gonogo sees every client as 127.0.0.1 and one shared rate-limit bucket does the work.
 - A `.ts.net` name is a public name by its shape, so gonogo asks for the login and its second factor and an https public URL, as for any public name.
 
 - The proxy must **overwrite** `X-Forwarded-For` with the address it saw, never pass the client's own through; do not use `cf-connecting-ip` here (it is a header any client can write unless Cloudflare is in front).
@@ -40,7 +40,8 @@ docker compose -f compose.yaml -f compose.tailscale.yaml up -d
 - **Set the login up first** (open gonogo on this machine, make the account, turn on the second factor): gonogo refuses to start on a public name before. So start with `docker compose up -d` alone, do that, then add the overlay.
 - **`.env`** (no secret is in the file; everything comes from here): `TS_AUTHKEY` (an auth key from the Tailscale admin console), optional `TAILSCALE_VERSION` (another tag of `tailscale/tailscale`; the file pins `v1.104.4`), `GONOGO_PUBLIC_NAME` (`<machine>.<tailnet>.ts.net`), optional `TS_HOSTNAME` and `TAILSCALE_MODE=serve` (default) or `funnel`.
 - **Sets for gonogo:** `GONOGO_ALLOWED_HOSTS` (the name; with `GONOGO_HOOKS_ONLY=1` it becomes `name:hooks` and serves only the webhooks), `GONOGO_PUBLIC_URL` (`https://` and the name), `GONOGO_TRUSTED_PROXY` (the sidecar's address on the edge network, `172.29.80.2` unless you set `GONOGO_EDGE_PROXY_IP` and `GONOGO_EDGE_SUBNET`: **not 127.0.0.1**, which is the container itself) and `GONOGO_CLIENT_IP_HEADER`.
-- **Serve or Funnel:** `TAILSCALE_MODE` picks `packaging/overlays/tailscale-serve.json` or `tailscale-funnel.json` (the second adds `AllowFunnel`). The state is kept in `${GONOGO_DATA}/tailscale`. The sidecar runs in user-space networking: no `NET_ADMIN`, no `/dev/net/tun`.
+- **The client address (not verified):** if Serve or Funnel do not set `X-Forwarded-For`, every client reaches gonogo as the sidecar, `172.29.80.2`: one shared rate-limit bucket and no "different network" warning at login. Check the client address LOGIN shows on a real run.
+- **Serve or Funnel:** `TAILSCALE_MODE` picks `packaging/overlays/tailscale-serve.json` or `tailscale-funnel.json` (the second adds `AllowFunnel`). The state (the node key) is kept in the named volume `tailscale_state`, **not** in the data folder: agents of gonogo can read that folder, and the node key lets whoever holds it act as that machine on your tailnet. The sidecar runs in user-space networking: no `NET_ADMIN`, no `/dev/net/tun`.
 - **Not tried:** no real tunnel, certificate or provider was run, and `docker compose config` was not run on these files (no Compose where they were written); the text is checked by tests against `gonogo expose`. Run `gonogo expose check` once it is up.
 
 **Tried:** not run against the real service. The commands follow the provider's documentation as read on 2026-11-18; `gonogo expose check` is the proof for your setup.

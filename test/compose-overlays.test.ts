@@ -83,6 +83,13 @@ describe('the overlays', () => {
     expect(read('compose.tailscale.yaml')).toContain('tailscale-${TAILSCALE_MODE:-serve}.json');
   });
 
+  it('the Tailscale node key is in a named volume, not in the data folder the agents can read', () => {
+    const text = read('compose.tailscale.yaml');
+    expect(text).toContain('- tailscale_state:/var/lib/tailscale');
+    expect(text).toMatch(/^volumes:\n  tailscale_state:$/m);
+    expect(text).not.toMatch(/GONOGO_DATA[^\n]*:\/var\/lib\/tailscale/);
+  });
+
   it('Caddy keeps the public Host and sets the client address; the Caddyfile is the one the page shows', () => {
     const caddyfile = read('packaging/overlays/Caddyfile');
     expect(caddyfile).toContain('{$GONOGO_PUBLIC_NAME} {');
