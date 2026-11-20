@@ -2554,7 +2554,8 @@ describe('end to end with the stand-in agent', () => {
       // mail goes to it through the MCP route and its hooks come back through the hook route, both by that name
       const sent = await send(h, 'ana', 'hello from the Director');
       await itemRead(h, sent.body.id);
-      expect(tools(h, 'ana', 'read_messages').length).toBeGreaterThan(0);
+      // the stand-in logs its call just after the item reads (as in scenario 34)
+      await waitFor(() => tools(h, 'ana', 'read_messages').length > 0, 5000, 'the read_messages call in the stand-in log');
       await waitFor(() => hooks(h, 'ana', 'Stop').length > 0, 5000, 'the Stop hook in the stand-in log');
       expect(hooks(h, 'ana').every((hook) => hook.status === 200), 'no hook was refused').toBe(true);
 
