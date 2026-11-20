@@ -96,6 +96,17 @@ for (const [width, height] of [
     // the list of rooms
     await expect(page.locator('a[href="/r/main/"]').first()).toBeVisible();
     expect(await crossings(page)).toMatchObject({ crossing: [], sideways: false });
+    // every key is inside its card (a card cut short let its keys spill over the next block), and the empty-state text stays in its box
+    const spill = await page.locator('.rl-card').evaluateAll((cards) =>
+      cards.flatMap((card) => {
+        const box = card.getBoundingClientRect();
+        return [...card.querySelectorAll('a, button, p, .tile-sub')].filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && (r.bottom > box.bottom + 1 || r.right > box.right + 1);
+        }).map((el) => `${el.textContent?.slice(0, 20)} leaves its card`);
+      }),
+    );
+    expect(spill).toEqual([]);
     // a tap on the OPEN key
     await page.locator('a[href="/r/main/"]').first().tap();
     await page.waitForURL(`${base}/r/main/`);

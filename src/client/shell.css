@@ -1922,29 +1922,30 @@
     padding: 2px 0;
   }
 
-  .room-tile {
+  /* The dense tile of the Room view is only there: the list of rooms draws the same tile at its full size (it was cut to 64 px high and its keys spilled out of it). */
+  .matrix .room-tile {
     min-height: 0;
     height: 64px;
     padding: 7px 8px 6px;
     border-radius: 9px;
   }
 
-  .tile-head {
+  .matrix .tile-head {
     gap: 6px;
   }
 
-  .tile-num,
-  .tile-right {
+  .matrix .tile-num,
+  .matrix .tile-right {
     display: none;
   }
 
-  .room-tile .tile-legend {
+  .matrix .room-tile .tile-legend {
     font-size: 10.5px;
     letter-spacing: 0.02em;
   }
 
   /* The two-line screen is one plain line here. */
-  .room-tile[data-kind] .tile-lcd {
+  .matrix .room-tile[data-kind] .tile-lcd {
     min-height: 0;
     padding: 0;
     background: transparent;
@@ -1953,20 +1954,20 @@
     line-height: 1.4;
   }
 
-  .tile-lcd .tile-sub:nth-child(2) {
+  .matrix .tile-lcd .tile-sub:nth-child(2) {
     display: none;
   }
 
-  .tile-foot {
+  .matrix .tile-foot {
     justify-content: flex-start;
     gap: 4px;
   }
 
-  .tile-state-vote {
+  .matrix .tile-state-vote {
     display: inline;
   }
 
-  .room-tile .tile-state {
+  .matrix .room-tile .tile-state {
     font-size: 9px;
   }
 

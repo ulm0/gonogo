@@ -26,6 +26,8 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .rl-cards{list-style:none;margin:0;padding:0;display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))}
 .rl-card{gap:10px;padding:12px;cursor:default}
 .rl-card.rl-open{cursor:pointer}
+.rl-card .tile-sub{white-space:normal;overflow-wrap:anywhere;max-width:100%}
+.rl-card .tile-lcd .tile-sub{white-space:nowrap;overflow-wrap:normal}
 .rl-card .tile-head{min-height:28px}
 .rl-name{flex:1 1 auto;min-width:0;margin:0;overflow-wrap:anywhere}
 .rl-card .tile-state{margin-left:auto;white-space:nowrap}
