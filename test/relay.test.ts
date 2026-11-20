@@ -217,7 +217,7 @@ describe('relay: forwarding', () => {
     const relay = await both();
     relay.observe(message({ id: 'm40', body: 'merged, 3 files', subject: 'Re: merge it', inReplyTo: 'm39' }));
     await sent(2);
-    const telegram = calls.find((c) => c.url.includes('api.telegram.org'));
+    const telegram = calls.find((c) => new URL(c.url).host === 'api.telegram.org');
     expect(telegram?.json).toEqual({ chat_id: CHAT, text: 'Message from ana: Re: merge it\n\nmerged, 3 files' });
     await quietly(relay);
     // what the Director chose: no messages forwarded, nothing goes out
