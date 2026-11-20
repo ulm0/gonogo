@@ -41,6 +41,7 @@ import {
   NBSP,
   PASTE_END,
   PASTE_START,
+  POINTER_LINE_MAX_CHARS,
   POINTER_PREFIX,
   PROMPT_GLYPH,
   RULE_CHAR,
@@ -57,8 +58,8 @@ import {
 // The package is CommonJS: the named import is undefined in plain Node ESM (vitest and tsc accept it, which hides that).
 const { Terminal } = xtermHeadless;
 
-/** A pointer is one short line; anything longer is not one (contract 6.7). */
-const SUBMIT_MAX_CHARS = 500;
+/** A pointer is one line, with the Director's own words after it when he wrote them from a checked place; anything longer is not one (contract 6.7). */
+const SUBMIT_MAX_CHARS = POINTER_LINE_MAX_CHARS;
 /** What execvp falls back to when the child environment has no PATH. */
 const FALLBACK_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 

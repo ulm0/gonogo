@@ -27,7 +27,7 @@ agent only ([What was not verified](../reference/not-verified.md)).
 | The page | The wall blocks T-MINUS and MAX Q of the [room editor](../guide/the-room.md) are not drawn while their feature is off (the others settle around the gap, and the saved layout keeps their place, so turning the feature on puts them back); the editor's tray shows them as "off in Features" with no RESTORE. Its top-bar and phone-bar keys, Patch Panel lines, wall blocks and console buttons are not shown; a view that is open falls back to the Room. |
 | The server | A request for an off feature answers `404` with code `feature_off` and `"… is off"`, before its handler runs. The webhook endpoint of Uplink and the calls of Docking answer as an id that is not there. |
 | The agents | The tools of an off feature are not listed (`tools/list` is made for each request) and a call of one is refused. An agent started after the change has them left out of `--allowedTools` too; one that is running keeps the list it started with, and its calls are refused. |
-| Background work | Max Q off: the limit is ignored and no mail waits for load. Telemetry off: tool hooks are not recorded. Launch Window off: schedules do not fire, and **a schedule that came due is not caught up** when you turn it on again. Relay off: nothing is forwarded. Static fire off: a poll with a subject is refused. |
+| Background work | Max Q off: the limit is ignored and no mail waits for load. Director messages as user turns off: a message of yours reaches an agent as the pointer only, and the agent reads your words as data. Telemetry off: tool hooks are not recorded. Launch Window off: schedules do not fire, and **a schedule that came due is not caught up** when you turn it on again. Relay off: nothing is forwarded. Static fire off: a poll with a subject is refused. |
 
 - **A poll that is open** blocks turning off T-minus poll and Static fire: abort or clear it first.
 - **Turning a feature on** reaches a running agent only at its next start (its tool list is fixed when it starts); the plan names the agents to restart. Turning Max Q off lets the mail it held go at once.
@@ -37,7 +37,7 @@ agent only ([What was not verified](../reference/not-verified.md)).
 
 ## What can be switched
 
-**Switchable now:** Max Q, T-minus poll, Static fire, Relief, Flight Plan, Missions, Mission Log, Star Chart, Plot Board,
+**Switchable now:** Director messages as user turns, Max Q, T-minus poll, Static fire, Relief, Flight Plan, Missions, Mission Log, Star Chart, Plot Board,
 Telemetry, Post-Flight Review, Mass Budget, Hangar, Recorder, Launch Window, Uplink, Relay, Docking, Livery.
 
 **Listed, not switchable yet** (the row says so, and the server refuses): Party Line (a view of the messages, with no server

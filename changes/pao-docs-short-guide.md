@@ -1,0 +1,1 @@
+- **Shorter guide pages.** Getting started, The room and Running in Docker are cut by about a third to two fifths, with the same commands, flags, limits and warnings; the README intro is tighter.

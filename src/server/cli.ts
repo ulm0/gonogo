@@ -922,7 +922,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       dir: home.dir,
       trigger: (entry) => triggers.record(entry),
       now: io.now,
-      send: (request) => hubInstance.sendFromUser(request),
+      send: (request, director) => (director === undefined ? hubInstance.sendFromUser(request) : hubInstance.sendFromDirector(request, director.channel, director.said)),
       emit: (list) => web?.broadcast({ t: 'uplinks', uplinks: list }),
       notify: tell,
       inbound: relay,

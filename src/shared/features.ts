@@ -41,6 +41,7 @@ export const FEATURES: readonly Feature[] = [
   core('downlink', 'Downlink', 'Room', 'The inbox where mail to you lands.', 'it is where mail to the Director goes'),
   core('redline', 'Redline and Hold', 'Room', 'The automatic brake, and the Hold key.', 'the only automatic brake; limits and Static fire ride on it'),
   core('controls', 'Flight Rules, Patch Panel, Clearance, Engine Bay', 'Room', 'The controls of everything else.', 'they are how you switch the rest'),
+  f('director-turns', 'Director messages as user turns', 'Room', 'Your own words, from a signed-in browser or your private Telegram chat, are also typed into the agent as your turn.', { enhances: ['downlink'], loses: 'the agent gets only the pointer and reads your words as data, so a go of yours does not authorize anything in auto mode' }),
   f('maxq', 'Max Q', 'Room', 'At most N agents working at once.', { loses: 'there is no load limit and no mail waits for load' }),
   f('tminus', 'T-minus poll', 'Work', 'A go/no-go poll of the agents.', { loses: 'no poll and no go_nogo tool' }),
   f('static-fire', 'Static fire', 'Work', 'A T-minus poll with a subject, tried by SIMSUP and RETRO.', { requires: ['tminus'], loses: 'the ritual is gone, the poll remains' }),
