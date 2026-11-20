@@ -193,6 +193,9 @@ const telegramAuthentic = (_raw: Buffer, headers: IncomingHttpHeaders, secret: s
   return given !== null && same(given, secret);
 };
 
+/** The fields Telegram puts on a message that is not the sender's own writing (the Bot API's `Message`). */
+const FORWARD_FIELDS = ['forward_origin', 'forward_from', 'forward_from_chat', 'forward_from_message_id', 'forward_signature', 'forward_sender_name', 'forward_date', 'is_automatic_forward'];
+
 function telegramRead(raw: Buffer, _headers: IncomingHttpHeaders, inbound: Inbound): Made {
   const update = parse(raw);
   // a button of phone approvals: only from the chat of the target, and what it means is for phone.ts to check (the tag)
@@ -209,7 +212,9 @@ function telegramRead(raw: Buffer, _headers: IncomingHttpHeaders, inbound: Inbou
   // a bot can be found and written to by anybody on Telegram: only the chat of the target is the Director
   if (said === '' || chat === '' || chat !== inbound.telegramChat()) return null;
   // his own words as a user turn only from a PRIVATE chat with him: in a group anybody who is in it is in the chat of the target
-  const own = str(get(message, 'chat.type')) === 'private' && str(get(message, 'from.id')) === chat ? { director: { channel: 'telegram' as const, said } } : {};
+  // and only what he wrote: a forwarded message, an automatic forward from a channel and a message made by an inline bot are somebody else's words in his chat
+  const forwarded = [...FORWARD_FIELDS, 'via_bot'].some((field) => isRecord(message) && message[field] !== undefined && message[field] !== null && message[field] !== false);
+  const own = !forwarded && str(get(message, 'chat.type')) === 'private' && str(get(message, 'from.id')) === chat ? { director: { channel: 'telegram' as const, said } } : {};
   const parent = inbound.find(`telegram:${chat}:${str(get(message, 'reply_to_message.message_id'))}`);
   if (parent !== undefined) return text(excerpt(said, 4000), { to: parent.agent, inReplyTo: parent.id, subject: `Re: ${parent.subject}`.slice(0, 200), ...own });
   const name = line(get(message, 'from.first_name'), 60);

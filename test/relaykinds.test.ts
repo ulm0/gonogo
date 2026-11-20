@@ -276,6 +276,25 @@ describe('relay kinds: Telegram', () => {
       threads.clear();
     });
 
+    it('does not mark a forwarded message, an automatic forward or a message of an inline bot: somebody else wrote it (it still arrives, as a normal message)', () => {
+      const forwards: Array<Record<string, unknown>> = [
+        { forward_origin: { type: 'user', date: 1 } },
+        { forward_from: { id: 3 } },
+        { forward_from_chat: { id: -100 } },
+        { forward_sender_name: 'Hidden' },
+        { forward_date: 1700000000 },
+        { is_automatic_forward: true },
+        { via_bot: { id: 8, is_bot: true } },
+      ];
+      for (const extra of forwards) {
+        const made = read('telegram', from(555, 'private', extra));
+        expect(directorOf(made), Object.keys(extra)[0]).toBeUndefined();
+        expect(textOf(made), Object.keys(extra)[0]).toMatch(/^Telegram message from/);
+      }
+      // an empty or false flag is not a forward
+      expect(directorOf(read('telegram', from(555, 'private', { is_automatic_forward: false })))).toEqual({ channel: 'telegram', said: 'yes, merge it' });
+    });
+
     it('does not mark a group, a supergroup, a channel, or somebody else in the chat of the target', () => {
       for (const type of ['group', 'supergroup', 'channel', 'weird']) expect(directorOf(read('telegram', from(555, type))), type).toBeUndefined();
       expect(directorOf(read('telegram', from(9, 'private')))).toBeUndefined();

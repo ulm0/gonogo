@@ -256,7 +256,7 @@ function collapseWhitespace(text: string): string {
 const ESCAPE_SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|[PX^_][^\u001b]*(?:\u001b\\)?|[@-Z\\-_])?/g;
 // Line breaks and tabs become a space; the rest of C0, DEL, C1, zero-width, bidi, line and paragraph separators, tags and lone surrogates go.
 const BREAKS = /[\u0000-\u0020\u007f-\u009f\u2028\u2029]+/g;
-const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u{e0000}-\u{e007f}]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/gu;
+const INVISIBLE = /[\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufff9-\ufffb\ufeff\u{e0000}-\u{e007f}]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/gu;
 
 /**
  * The Director's words as ONE clean line for the pointer (docs/features/relay.md): no escape sequence (so no paste end, no key, no title), no control or

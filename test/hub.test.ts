@@ -6941,6 +6941,8 @@ describe("the Director's words as a user turn (docs/features/relay.md)", () => {
     it('removes controls, C1, DEL, zero-width, bidi, tag characters and lone surrogates; keeps a real pair', () => {
       expect(directorLine('a\u0000b\u0007c\u0008d\u007fe\u0085f\u009bg')).toBe('abcdefg'.replace(/(.)/g, '$1').length ? directorLine('a\u0000b\u0007c\u0008d\u007fe\u0085f\u009bg') : '');
       expect(directorLine('a\u200bb\u200fc\u202ed\u2066e\ufefff\u2060g')).toBe('abcdefg');
+      // the Arabic letter mark, the Mongolian vowel separator, the interlinear annotation marks
+      expect(directorLine('a\u061cb\u180ec\ufff9d\ufffae\ufffbf')).toBe('abcdef');
       expect(directorLine('a\u{e0041}b')).toBe('ab');
       expect(directorLine('a\ud800b\udc00c')).toBe('abc');
       expect(directorLine('x\u{1f44d}y')).toBe('x\u{1f44d}y');
