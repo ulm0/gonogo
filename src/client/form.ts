@@ -489,7 +489,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     const model = modelOf(values);
     if (model !== (original.model ?? '')) changes.model = model === '' ? null : model;
     // the text itself, not effortOf(): a level this page does not know (a newer server) is kept as it is, never cleared by a save that did not touch it
-    if (values.effort !== (original.effort ?? '')) changes.effort = effortOf(values);
+    if ((values.effort ?? '') !== (original.effort ?? '')) changes.effort = effortOf(values);
   }
   if (values.provider === 'claude') {
     const rules = rulesOf(values.rules);
