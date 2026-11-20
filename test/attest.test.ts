@@ -81,6 +81,8 @@ describe('verifyImage', () => {
   it('uses the gh login kept in room main\'s folder when it is told where it is', () => {
     expect(ghEnv({ PATH: 'p' }, '/state/gh').GH_CONFIG_DIR).toBe('/state/gh');
     expect(ghEnv({ PATH: 'p' }).GH_CONFIG_DIR).toBeUndefined();
+    // one the environment sets (a shared login) wins over the room's folder
+    expect(ghEnv({ PATH: 'p', GH_CONFIG_DIR: '/shared/gh' }, '/state/gh').GH_CONFIG_DIR).toBe('/shared/gh');
   });
 
   it('gh with no login (it refuses before it asks GitHub) is not a bad image: unattested, with what to do; a rejected token is a failure', async () => {

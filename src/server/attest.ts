@@ -56,7 +56,8 @@ export function ghEnv(from: NodeJS.ProcessEnv, configDir?: string): Record<strin
     if (value !== undefined) out[key] = value;
   }
   // the gh login of room main's consoles lives in the room's own folder (`<home>/gh`, where an agent's `gh auth login` goes), not in ~/.config
-  if (configDir !== undefined) out.GH_CONFIG_DIR = configDir;
+  // (a GH_CONFIG_DIR the environment already sets wins: the same precedence as a console's)
+  if (configDir !== undefined && out.GH_CONFIG_DIR === undefined) out.GH_CONFIG_DIR = configDir;
   return out;
 }
 
