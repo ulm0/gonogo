@@ -173,6 +173,27 @@ describe('the layout of room main', () => {
     expect(mainLayout(fresh)).toBe('rooms/main');
   });
 
+  it('after a rollback and a room edit by an older build (no record, an empty main at the root), the real main in rooms/main is still found', () => {
+    recordMainHome(fresh);
+    mkdirSync(join(fresh, 'rooms', 'main'), { recursive: true });
+    writeFileSync(join(fresh, 'rooms', 'main', 'agents.json'), '{}');
+    // the older build: a new main at the root, and a rooms.json it saved without the record
+    writeFileSync(join(fresh, 'agents.json'), '{}');
+    mkdirSync(join(fresh, 'mission-log'));
+    writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [{ id: 'team', name: 'Team', autostart: true }] }));
+    expect(mainLayout(fresh)).toBe('rooms/main');
+    expect(roomHome(fresh, MAIN_ROOM)).toBe(join(fresh, 'rooms', 'main'));
+    // an empty rooms/main (nothing in it) does not take an old home's place
+    const old = mkdtempSync(join(tmpdir(), 'gng-old-'));
+    try {
+      mkdirSync(join(old, 'rooms', 'main'), { recursive: true });
+      writeFileSync(join(old, 'agents.json'), '{}');
+      expect(mainLayout(old)).toBe('.');
+    } finally {
+      rmSync(old, { recursive: true, force: true });
+    }
+  });
+
   it('every file a room can hold alone makes a home old (keys.json, room-keys.json, payload-defaults.json, autoupdate.json, triggers.jsonl ...)', () => {
     for (const name of ['keys.json', 'room-keys.json', 'payload-defaults.json', 'autoupdate.json', 'triggers.jsonl', ...ROOM_STATE_FILES]) {
       const old = mkdtempSync(join(tmpdir(), 'gng-old-'));

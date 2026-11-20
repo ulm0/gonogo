@@ -95,7 +95,10 @@ export function mainLayout(root: string): MainHome {
     throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`, 'conflict');
   }
   if (recorded !== null) return recorded;
-  return ROOM_STATE_AT_ROOT.some((name) => existsSync(join(root, name))) ? '.' : 'rooms/main';
+  // no record: rooms/main first. An older build that edited rooms.json after a rollback dropped the record and started an empty main at the root, but the real one is still in rooms/main
+  const holds = (dir: string): boolean => ROOM_STATE_AT_ROOT.some((name) => existsSync(join(dir, name)));
+  if (holds(join(root, ROOMS_DIR, MAIN_ROOM))) return 'rooms/main';
+  return holds(root) ? '.' : 'rooms/main';
 }
 
 /** Where a room keeps its files: `main` where the home's layout says, a folder under `rooms/` for the others. */
