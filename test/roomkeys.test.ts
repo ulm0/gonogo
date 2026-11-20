@@ -113,6 +113,13 @@ describe('the store', () => {
     await a.load();
     expect(a.refused()).toEqual(['EDITOR']);
     expect(a.values(false)).toEqual({ OK_KEY: 'v' });
+    // rewritten at once: the value is off the disk and the next start refuses nothing
+    expect(readFileSync(join(dir, ROOM_KEYS_FILE), 'utf8')).not.toContain(SECRET);
+    expect(statSync(join(dir, ROOM_KEYS_FILE)).mode & 0o777).toBe(0o600);
+    const b = createRoomKeys({ dir });
+    await b.load();
+    expect(b.refused()).toEqual([]);
+    expect(b.values(false)).toEqual({ OK_KEY: 'v' });
   });
 
   it('a change asks for the password again; a read does not', () => {

@@ -127,6 +127,8 @@ export function createClearance(options: { dir: string; log?: Logger }): Clearan
         if (Object.keys(own).length > 0) agents.set(agent, own);
       }
       if (refused.length > 0) log.warn(`${KEYS_FILE}: ${refused.length} stored key${refused.length === 1 ? '' : 's'} refused because the name is reserved now (the value is not given to the agent): ${refused.join(', ')}`);
+      // written at once, so the value leaves the disk and the note is made once (the next start finds nothing to refuse)
+      if (refused.length > 0) await write(() => new Map(agents)).catch((error: unknown) => log.error(`${KEYS_FILE}: could not rewrite the file without the refused keys`, error));
     },
     refused: () => [...refused],
     values: (name) => ({ ...agents.get(name) }),

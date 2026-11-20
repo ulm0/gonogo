@@ -86,6 +86,8 @@ export function createRoomKeys(options: { dir: string; now?: () => number; log?:
           keys.set(name, { value: entry.value, at: typeof entry.at === 'number' ? entry.at : 0, cleanRoom: entry.cleanRoom === true });
         }
         if (skipped.length > 0) log.warn(`${ROOM_KEYS_FILE}: skipped ${skipped.length} entr${skipped.length === 1 ? 'y' : 'ies'} that cannot be a room key (a reserved or unusable name, or a value that is not printable text without a space): ${skipped.join(', ')}. The next change to the keys writes the file without them.`);
+        // written at once when a reserved name was refused, so the value leaves the disk and the Downlink note is made once
+        if (refused.length > 0) await write(() => new Map(keys)).catch((error: unknown) => log.error(`${ROOM_KEYS_FILE}: could not rewrite the file without the refused keys`, error));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
         // kept aside, so that the next save cannot overwrite the keys; a SyntaxError quotes the text around the fault, which can be a key

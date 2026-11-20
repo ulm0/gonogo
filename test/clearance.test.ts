@@ -188,10 +188,18 @@ describe('the key store', () => {
     expect(store.refused()).toEqual(['ana: EDITOR', 'ben: ZDOTDIR']);
     expect(lines.join('\n')).toContain('ana: EDITOR, ben: ZDOTDIR');
     expect(lines.join('\n')).not.toContain(SECRET);
+    // the file is rewritten at once: the dead value is off the disk, and the next start refuses nothing, so the note is made once
+    expect(await readFile(join(dir, 'keys.json'), 'utf8')).not.toContain(SECRET);
+    expect(JSON.parse(await readFile(join(dir, 'keys.json'), 'utf8')).agents).toEqual({ ana: { OK_KEY: 'v' } });
+    expect((await stat(join(dir, 'keys.json'))).mode & 0o777).toBe(0o600);
+    const again = createClearance({ dir, log });
+    await again.load();
+    expect(again.refused()).toEqual([]);
+    expect(again.values('ana')).toEqual({ OK_KEY: 'v' });
   });
 
   it('warns, and does not refuse, on a CA override', () => {
-    for (const name of ['NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE']) {
+    for (const name of ['NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) {
       expect(keyWarning(name)).toContain('certificate authority');
       expect(keyNameProblem(name)).toBeNull();
     }
