@@ -4,6 +4,12 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.9.2 (2026-11-20)
+
+Agents answer the Director's words with a message (his inbox and, with Relay, his phone) instead of only in their console.
+
+- **Answers to your typed words reach you.** Since your messages arrive as a user turn, agents answered in their console, where you never saw it. The typed line now ends with `(reply with send_message to user)`, the role text says to answer your words with send_message to user, never only in the console, and that message reaches your inbox and, with Relay, your Telegram chat or Slack (as every message to you does; with the *message* kind of Relay switched off it stays in the inbox).
+
 ## 0.9.1 (2026-11-20)
 
 Telegram photos and documents reach the agent; room main's move clears leftover worktrees and shows why when it can't; link previews for the docs site; passkeys library 14.1.0.
