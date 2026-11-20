@@ -290,6 +290,19 @@ describe('moving room main into rooms/main', () => {
       expect(reasons).not.toContain('cleanroom/build');
     });
 
+    it('fails closed: when git cannot list the ignored files the worktree is refused, not removed', async () => {
+      oldHome();
+      const rso = leftover('cleanroom', 'rso');
+      const { run } = await import('../src/server/worktree.js');
+      const failing: typeof run = (file, args, env) => (args.includes('--ignored') ? Promise.reject(new Error('boom')) : run(file, args, env));
+      const plan = await planMigration(root, 'forward', { running: false, clean: true, gitRun: failing });
+      expect(plan.removes).toEqual([]);
+      expect(plan.problems.join('\n')).toMatch(/cleanroom\/rso: git could not list its ignored files[^\n]*run: git -C [^\n]* worktree remove [^\n]*cleanroom\/rso/);
+      expect(existsSync(rso)).toBe(true);
+      // and with git working it is removable, so the refusal above was the listing
+      expect((await planMigration(root, 'forward', { running: false })).removes).toEqual([rso]);
+    });
+
     it('a half-done journal refuses BEFORE anything is removed', async () => {
       oldHome();
       const rso = leftover('cleanroom', 'rso');

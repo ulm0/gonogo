@@ -18,7 +18,10 @@ import net from 'node:net';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { roomLockAlive } from './home.js';
 import { GIT_BIN } from './constants.js';
-import { mainRepoOf, removeWorktreeFolder, run } from './worktree.js';
+import { mainRepoOf, removeWorktreeFolder, run as defaultRun } from './worktree.js';
+
+/** How git is run (a test makes one command fail). */
+export type GitRun = typeof defaultRun;
 import { cleanRoomBranch } from '../shared/protocol.js';
 import { MAIN_ROOM, NESTED_FILES, ROOM_STATE_FILES, ROOMS_DIR, RoomsError, SUPERVISOR_FILES, mainLayout, recordedMainHome, setMainHome } from './rooms.js';
 import type { MainHome } from './rooms.js';
@@ -130,6 +133,8 @@ export interface PlanOptions {
   running: boolean;
   /** Remove the leftover worktrees that are safe to remove (a real move). False: only say which. */
   clean?: boolean;
+  /** For tests: how git is run. */
+  gitRun?: GitRun;
 }
 
 /** Whether something answers on a unix socket (a room or a pty host that is alive). Never throws. */
@@ -191,7 +196,7 @@ export interface Leftover {
 /** Ignored files that are build output: they are regenerated and may go with the worktree. Anything else ignored (.env, local config) may not. */
 const BUILD_DIRS = new Set(['node_modules', 'dist', '.vite', 'build', 'coverage']);
 
-async function leftoverFolders(from: string, used: { worktree: Set<string>; cleanRoom: Set<string> }): Promise<Leftover[]> {
+async function leftoverFolders(from: string, used: { worktree: Set<string>; cleanRoom: Set<string> }, run: GitRun = defaultRun): Promise<Leftover[]> {
   const out: Leftover[] = [];
   const env = process.env;
   const git = (cwd: string, ...args: string[]): Promise<string> => run(GIT_BIN, ['-C', cwd, ...args], env);
@@ -236,7 +241,13 @@ async function leftoverFolders(from: string, used: { worktree: Set<string>; clea
         refuse(`${path} has changes that are not committed: look at them, then run: ${command} (add --force to drop them)`, repo);
         continue;
       }
-      const ignored = (await git(path, 'status', '--porcelain', '--ignored').catch(() => '')).split('\n').filter((line) => line.startsWith('!! ') && !BUILD_DIRS.has(line.slice(3).split('/')[0] ?? ''));
+      // fail closed, as the plain status above: a listing that cannot be made is not "nothing is ignored"
+      const listing = await git(path, 'status', '--porcelain', '--ignored').catch(() => null);
+      if (listing === null) {
+        refuse(`${path}: git could not list its ignored files, so it is not known what removing would delete: look at it, then run: ${command} (add --force to drop it)`, repo);
+        continue;
+      }
+      const ignored = listing.split('\n').filter((line) => line.startsWith('!! ') && !BUILD_DIRS.has(line.slice(3).split('/')[0] ?? ''));
       if (ignored.length > 0) {
         refuse(`${path} holds ignored files that removing would delete (${ignored.slice(0, 3).map((l) => l.slice(3)).join(', ')}${ignored.length > 3 ? ', ...' : ''}): keep what you need, then run: ${command} (add --force to drop them)`, repo);
         continue;
@@ -310,7 +321,7 @@ export async function planMigration(root: string, direction: Direction, options:
   if (note !== null && (note.state === 'moving' || note.state === 'undoing')) problem('an earlier move of room main is not finished');
   const agents = agentsInside(from);
   for (const reason of agents.problems) problem(reason);
-  const leftovers = await leftoverFolders(from, agents.names);
+  const leftovers = await leftoverFolders(from, agents.names, options.gitRun);
   for (const left of leftovers) {
     if (!left.removable) problem(left.reason);
     else plan.removes.push(left.path);
