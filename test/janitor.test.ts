@@ -22,26 +22,35 @@ describe('the JANITOR position', () => {
     expect(new Set(POSITIONS.map((p) => p.color.toLowerCase())).size).toBe(POSITIONS.length);
   });
 
-  it('keeps the rules: inventory first; local, merged and clean without asking; the boss for anything remote or irreversible; a Mission Log entry', () => {
+  it('keeps the rules: inventory first; regenerable and merged things without asking; the boss for anything remote or irreversible; a Mission Log entry', () => {
     const role = janitor?.role ?? '';
     expect(role).toMatch(/Inventory first, delete second/);
     expect(role).toMatch(/Local, safe without asking/);
-    expect(role).toMatch(/merged into origin\/main AND which have no uncommitted or unpushed changes/);
+    expect(role).toMatch(/merged into origin\/main, it has no uncommitted or unpushed changes, and the owner has said it is free/);
     expect(role).toMatch(/git branch -d, never -D/);
     expect(role).toMatch(/Ask the boss first[^]*before anything remote or irreversible/);
     expect(role).toMatch(/Mission Log entry/);
     expect(role.length).toBeLessThanOrEqual(ROLE_MAX_CHARS);
   });
 
-  it('removes without asking only what is regenerable and unused, and never a worktree gonogo made for an agent or one in use', () => {
+  it('removes without asking only what is regenerable; a worktree goes only through list_roster and its owner, /proc is an extra check, and gonogo\'s own worktrees are never touched', () => {
     const role = janitor?.role ?? '';
     const safe = /Local, safe without asking([^]*?)\n/.exec(role)?.[1] ?? '';
-    for (const word of ['regenerable output', 'dist', 'coverage', 'test temp dirs', 'git branch -d, never -D', 'nothing is using']) expect(safe, word).toContain(word);
-    // scratch files are not in the safe list: they are ask-first
-    expect(safe).not.toMatch(/scratch/);
+    for (const word of ['regenerable output', 'dist', 'coverage', 'test temp dirs', 'git branch -d, never -D']) expect(safe, word).toContain(word);
+    // not scratch files, and not worktrees: those are ask-first / owner-gated
+    expect(safe).not.toMatch(/scratch|git worktree remove/);
     expect(/Ask the boss first([^]*?)\n/.exec(role)?.[1] ?? '').toContain('scratch files');
-    expect(role).toMatch(/Never remove a worktree gonogo made for an agent/);
-    expect(role).toMatch(/any agent's console or any process is in[^]*?\/proc\/\*\/cwd/);
+    const gate = /Worktrees are not in that list([^]*?)\n/.exec(role)?.[1] ?? '';
+    expect(gate).toContain('list_roster plus asking its owner');
+    expect(gate).toContain('skip it while its owner shows working');
+    expect(gate).toContain('the owner has said it is free');
+    expect(gate).toContain('merged into origin/main');
+    expect(gate).toContain('no uncommitted or unpushed changes');
+    expect(gate).toContain('/proc/*/cwd is only an extra check, never enough');
+    expect(gate).toContain('Never touch a worktree gonogo made for an agent');
+    // the old, insufficient gate is gone
+    expect(role).not.toContain('which nothing is using');
+    expect(role).not.toContain('for every process');
   });
 
   it('has the never-list: main, tags, releases, open PRs, credentials, containers, a forced delete', () => {
