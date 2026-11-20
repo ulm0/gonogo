@@ -55,6 +55,7 @@
     "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && pnpm run build",
     "smoke:real": "node scripts/smoke-real.mjs",
     "check:pack": "node scripts/check-pack.mjs",
+    "changelog:release": "node scripts/changelog-release.mjs",
     "docs:dev": "vitepress dev",
     "docs:build": "vitepress build",
     "docs:preview": "vitepress preview"

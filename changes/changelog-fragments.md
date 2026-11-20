@@ -1,0 +1,1 @@
+- **CHANGELOG fragments.** A pull request adds `changes/<branch>.md` instead of editing `CHANGELOG.md`, so merged pull requests stop conflicting with each other; `pnpm changelog:release <version> <date> "<intro>"` folds them into a release heading, and CI fails a pull request that edits `CHANGELOG.md` without a version change.
