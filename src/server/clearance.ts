@@ -23,12 +23,17 @@ const RESERVED_EXACT = new Set([
   // shell and interpreter start-up hooks: each runs a file or a command before the program the agent started
   'BASH_ENV', 'SHELLOPTS', 'BASHOPTS', 'PROMPT_COMMAND', 'IFS', 'PYTHONSTARTUP', 'PYTHONPATH', 'PYTHONHOME', 'RUBYOPT', 'RUBYLIB', 'PERL5OPT', 'PERL5LIB',
   'GIT_SSH_COMMAND', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_EXEC_PATH',
+  // more programs a variable makes run: a shell's start-up file (ENV for sh, ZDOTDIR for zsh), git's ssh, proxy, editor and pager, and what many tools open as an editor or pager
+  'ENV', 'ZDOTDIR', 'GIT_SSH', 'GIT_PROXY_COMMAND', 'GIT_EDITOR', 'GIT_PAGER', 'EDITOR', 'VISUAL', 'PAGER',
 ]);
 // DOCKER_: a Clean Room's docker client runs with the agent's keys in its environment, and DOCKER_HOST would move the container to another daemon.
 // shortcut: the usual start-up hooks, not every variable some program reads as a command; the Director owns the agent anyway, so extend the list when one turns up.
 const RESERVED_PREFIXES = ['GONOGO_', 'LD_', 'DYLD_', 'BASH_FUNC_', 'DOCKER_', 'GIT_CONFIG_'];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** A name of the right shape that gonogo reserves (it was a key before a later version reserved it, or it never could be one). */
+export const keyNameReserved = (name: string): boolean => NAME_RE.test(name) && (RESERVED_EXACT.has(name) || RESERVED_PREFIXES.some((prefix) => name.startsWith(prefix)));
 
 /** Why this name cannot be a key, or null. */
 export function keyNameProblem(name: string): string | null {
@@ -68,6 +73,8 @@ export function checkKeys(value: unknown, current: Readonly<Record<string, numbe
 
 export interface Clearance extends KeyStore {
   load(): Promise<void>;
+  /** The stored keys that load refused because their name is reserved: `agent: NAME`. Names only. */
+  refused(): string[];
   close(): Promise<void>;
 }
 
@@ -75,6 +82,8 @@ export function createClearance(options: { dir: string; log?: Logger }): Clearan
   const log = options.log ?? nullLogger;
   const path = join(options.dir, KEYS_FILE);
   let agents = new Map<string, Record<string, string>>();
+  /** `agent: NAME` for each stored key refused at load because its name is reserved now. */
+  let refused: string[] = [];
   let chain: Promise<unknown> = Promise.resolve();
 
   /** One write after the other; a failed one rejects to its caller and does not stop the next. A change that returns the same map writes nothing. */
@@ -113,10 +122,13 @@ export function createClearance(options: { dir: string; log?: Logger }): Clearan
       }
       for (const [agent, keys] of Object.entries((saved as { agents: Record<string, unknown> }).agents)) {
         if (!isRecord(keys)) continue;
+        for (const name of Object.keys(keys)) if (keyNameReserved(name)) refused.push(`${agent}: ${name}`);
         const own = Object.fromEntries(Object.entries(keys).filter(([name, value]) => keyNameProblem(name) === null && typeof value === 'string' && VALUE_RE.test(value))) as Record<string, string>;
         if (Object.keys(own).length > 0) agents.set(agent, own);
       }
+      if (refused.length > 0) log.warn(`${KEYS_FILE}: ${refused.length} stored key${refused.length === 1 ? '' : 's'} refused because the name is reserved now (the value is not given to the agent): ${refused.join(', ')}`);
     },
+    refused: () => [...refused],
     values: (name) => ({ ...agents.get(name) }),
     apply: (name, patch, fresh = false) =>
       write(() => {

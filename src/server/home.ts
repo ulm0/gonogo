@@ -53,7 +53,7 @@ import { parseCleanRoom } from './cleanroom.js';
 import { parseWorktree } from './worktree.js';
 import { parseRemoteControl } from './remotecontrol.js';
 import { parsePermissions } from './permissions.js';
-import { keyNameProblem } from './clearance.js';
+import { keyNameProblem, keyNameReserved } from './clearance.js';
 import { parsePayload, parsePayloadOff, payloadRefusal } from './payload.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
@@ -408,8 +408,9 @@ function parseAgent(a: unknown): AgentRecord | string {
   if (keys !== undefined) {
     if (!isRecord(keys) || Object.keys(keys).length > KEYS_MAX) return `${name}: keys must be an object of at most ${KEYS_MAX} names`;
     const names: Record<string, number> = {};
-    // shortcut: a name that a later gonogo reserves makes the roster unusable here (the start stops and names the agent); delete it from `keys` to go on
     for (const [key, at] of Object.entries(keys)) {
+      // a name that a later gonogo reserves is dropped from the roster (and its value is refused by Clearance at load, with a note), so an upgrade never stops the start over it
+      if (keyNameReserved(key)) continue;
       if (keyNameProblem(key) !== null || typeof at !== 'number' || !Number.isFinite(at)) return `${name}: keys holds a name or a time that is not usable`;
       names[key] = at;
     }

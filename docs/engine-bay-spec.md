@@ -130,7 +130,7 @@ one (see Pad Check).
   `USER`, `LOGNAME`, `PWD`, `TMPDIR`, `TERM`, `COLORTERM`, `IS_DEMO`, `NODE_OPTIONS`, `NODE_PATH`, `CLAUDE_CONFIG_DIR`, the
   shell and interpreter start-up hooks (`BASH_ENV`, `SHELLOPTS`, `BASHOPTS`, `PROMPT_COMMAND`, `IFS`, `PYTHONSTARTUP`,
   `PYTHONPATH`, `PYTHONHOME`, `RUBYOPT`, `RUBYLIB`, `PERL5OPT`, `PERL5LIB`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`,
-  `GIT_EXEC_PATH`), and every `GONOGO_`, `LD_`, `DYLD_`, `BASH_FUNC_`, `DOCKER_` and `GIT_CONFIG_` name: a key is data, not a
+  `GIT_EXEC_PATH`; and, since 0.7.0, `ENV`, `ZDOTDIR`, `GIT_SSH`, `GIT_PROXY_COMMAND`, `GIT_EDITOR`, `GIT_PAGER`, `EDITOR`, `VISUAL` and `PAGER`), and every `GONOGO_`, `LD_`, `DYLD_`, `BASH_FUNC_`, `DOCKER_` and `GIT_CONFIG_` name: a key is data, not a
   way to change what runs (`DOCKER_` because a Clean Room's docker client runs with the keys in its environment). The list is
   the usual start-up hooks, not every variable some program reads as a command. Value: 1 to 4096 printable ASCII
   characters, no space. At most 16 keys per agent. Bad input is 400 with the field `keys`.

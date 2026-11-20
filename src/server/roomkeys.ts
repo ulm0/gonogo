@@ -11,7 +11,7 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX } from '../shared/protocol.js';
 import type { Logger, RoomKeysView } from '../shared/protocol.js';
-import { keyNameProblem } from './clearance.js';
+import { keyNameProblem, keyNameReserved } from './clearance.js';
 import { FILE_MODE, nullLogger, ROOM_KEYS_FILE } from './constants.js';
 import { HubError } from './hub.js';
 
@@ -27,6 +27,8 @@ interface Entry {
 
 export interface RoomKeys {
   load(): Promise<void>;
+  /** The stored keys that load refused because their name is reserved now. Names only. */
+  refused(): string[];
   /** What the page may see: the names, when each was set and whether a Clean Room agent gets it. Never a value. */
   view(): RoomKeysView;
   /** The values an agent gets: all of them, or for a Clean Room agent only the marked ones. For the launcher only. */
@@ -42,6 +44,7 @@ export function createRoomKeys(options: { dir: string; now?: () => number; log?:
   const now = options.now ?? Date.now;
   const path = join(options.dir, ROOM_KEYS_FILE);
   let keys = new Map<string, Entry>();
+  let refused: string[] = [];
   let chain: Promise<unknown> = Promise.resolve();
 
   const view = (): RoomKeysView => ({ keys: [...keys].map(([name, e]) => ({ name, at: e.at, cleanRoom: e.cleanRoom })) });
@@ -77,6 +80,7 @@ export function createRoomKeys(options: { dir: string; now?: () => number; log?:
           if (keyNameProblem(name) !== null || !isRecord(entry) || typeof entry.value !== 'string' || !VALUE_RE.test(entry.value)) {
             // the name only, and only when it has the shape of one: a value pasted in the name field must not reach the log
             skipped.push(NAME_RE.test(name) ? name : '(an entry whose name is not usable)');
+            if (keyNameReserved(name)) refused.push(name);
             continue;
           }
           keys.set(name, { value: entry.value, at: typeof entry.at === 'number' ? entry.at : 0, cleanRoom: entry.cleanRoom === true });
@@ -89,6 +93,7 @@ export function createRoomKeys(options: { dir: string; now?: () => number; log?:
         await rename(path, `${path}.bad`).catch(() => undefined);
       }
     },
+    refused: () => [...refused],
     view,
     values: (cleanRoom) => Object.fromEntries([...keys].filter(([, e]) => !cleanRoom || e.cleanRoom).map(([name, e]) => [name, e.value])),
     set: async (name, body) => {

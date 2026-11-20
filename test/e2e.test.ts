@@ -2675,6 +2675,21 @@ describe('end to end with the stand-in agent', () => {
     expect(logOf<FakeEvent & { action: string }>(h, 'flight', 'dialog').map((event) => event.action)).toHaveLength(4);
   }, 90_000);
 
+  it('Keys: a stored key whose name is reserved now is not given to the agent, and the Director is told its name in the inbox, never its value', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'gonogo-keys-'));
+    const home = join(tmp, 'home');
+    await mkdir(home, { recursive: true });
+    writeFileSync(join(home, 'room-keys.json'), JSON.stringify({ version: 1, keys: { EDITOR: { value: 'room-secret-1' }, FINE_KEY: { value: 'v' } } }));
+    writeFileSync(join(home, 'keys.json'), JSON.stringify({ version: 1, agents: { flight: { ZDOTDIR: 'agent-secret-2' } } }));
+    const h = await startServer({ home });
+    await waitState(h, 'flight', 'idle');
+    const inbox = (await api<DownlinkView>(h, 'GET', '/api/downlink')).body;
+    const note = inbox.items.find((item) => item.type === 'event' && item.kind === 'startup' && /reserved now/.test(item.text));
+    expect(note).toMatchObject({ text: expect.stringContaining('flight: ZDOTDIR, room: EDITOR') });
+    expect(JSON.stringify(inbox)).not.toMatch(/secret/);
+    expect((await api(h, 'GET', '/api/room-keys')).body).toMatchObject({ keys: [{ name: 'FINE_KEY' }] });
+  }, 60_000);
+
   it("Room keys: set, listed by name only, in the environment of an agent at its next start, and an agent's own key wins", async () => {
     const h = await startServer();
     await waitState(h, 'flight', 'idle');

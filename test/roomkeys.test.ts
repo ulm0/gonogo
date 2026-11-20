@@ -107,6 +107,14 @@ describe('the store', () => {
     expect(warned[0]).not.toMatch(/secret|AKIA|spaces/);
   });
 
+  it('a stored key whose name is reserved now is refused at load and listed by name', async () => {
+    writeFileSync(join(dir, ROOM_KEYS_FILE), JSON.stringify({ version: 1, keys: { EDITOR: { value: SECRET }, OK_KEY: { value: 'v' } } }));
+    const a = createRoomKeys({ dir });
+    await a.load();
+    expect(a.refused()).toEqual(['EDITOR']);
+    expect(a.values(false)).toEqual({ OK_KEY: 'v' });
+  });
+
   it('a change asks for the password again; a read does not', () => {
     for (const method of ['PUT', 'DELETE']) expect(stepUpReason(method, '/api/room-keys/AWS_REGION', {}), method).toBe('the keys of the room');
     expect(stepUpReason('GET', '/api/room-keys', null)).toBeNull();

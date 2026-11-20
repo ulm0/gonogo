@@ -982,6 +982,15 @@ describe('home', () => {
     expect(home.loadRoster().agents[2]).not.toHaveProperty('keys');
   });
 
+  it('a key whose name is reserved (now or by a later version) is dropped from the roster, the agent and its other keys stay, and the start is not stopped', () => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [agentRecord('ana', { keys: { EDITOR: 5, PATH: 6, OK_KEY: 7 } })] }));
+    expect(home.loadRoster().agents[0]?.keys).toEqual({ OK_KEY: 7 });
+    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [agentRecord('ana', { keys: { ENV: 5 } })] }));
+    expect(home.loadRoster().agents[0]).not.toHaveProperty('keys');
+  });
+
   it('round-trips an effort of a Claude Code agent', async () => {
     const dir = tmpDir();
     const home = openTestHome(dir);
@@ -1002,7 +1011,6 @@ describe('home', () => {
     ['a model on a custom agent', { provider: 'custom', command: 'ls', model: 'x' }],
     ['keys that are a list', { keys: ['A_KEY'] }],
     ['a key with a lower case name', { keys: { openai: 5 } }],
-    ['a key of a reserved name', { keys: { PATH: 5 } }],
     ['a key whose time is not a number', { keys: { A_KEY: 'now' } }],
     ['17 keys', { keys: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`K${i}`, 1])) }],
   ])('refuses a roster with %s, and the message holds no key name or value', (_what, over) => {
