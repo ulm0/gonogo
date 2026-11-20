@@ -19,6 +19,7 @@ real Docker with the stand-in agent, and since 0.2.0 by RSO and SIMSUP, real Cla
   `agents/<name>/cleanroom-home/`; your `~/.claude` is not shared. Passed by name, never on the command line: the
   agent's token and, if set, `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` (as `GONOGO_API_KEY`); nothing else from
   gonogo's environment. gonogo runs `docker rm -f` on the container after it ends and before every start.
+  It runs with `--cap-drop ALL --security-opt no-new-privileges`: no Linux capability, and a setuid program in the image gains none (inside gonogo's own container the Clean Room shares its network namespace, edge network included, so a capability such as `NET_RAW` or `NET_ADMIN` would reach it). `claude`, `git`, `gh` and `npm install` work as before: they need none as your user.
 - **The way back.** git does not work inside the container. You commit in the worktree and merge `gonogo/<name>`
   yourself:
   `git -C ~/.gonogo/cleanroom/<name> add -A && git -C ~/.gonogo/cleanroom/<name> commit -m ...`.

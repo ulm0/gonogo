@@ -150,6 +150,7 @@ describe('buildDockerArgs', () => {
       'run', '--rm', '-i', '-t', '--init',
       '--name', 'gonogo-ana-0123456789ab',
       '--user', '501:20',
+      '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
       '--add-host', 'host.docker.internal:host-gateway',
       '-e', 'HOME=/h/agents/ana/cleanroom-home',
       '-e', 'CLAUDE_CONFIG_DIR=/h/agents/ana/cleanroom-home',
@@ -165,9 +166,23 @@ describe('buildDockerArgs', () => {
     ]);
   });
 
+  it('drops every capability and forbids gaining one (the container shares gonogo\'s network namespace), on either network, and adds nothing else of that kind', () => {
+    for (const network of [null, 'container:gonogo']) {
+      const args = buildDockerArgs({ ...input, place: { ...place, network } });
+      expect(args.filter((a) => a === '--cap-drop')).toHaveLength(1);
+      expect(args[args.indexOf('--cap-drop') + 1]).toBe('ALL');
+      expect(args[args.indexOf('--security-opt') + 1]).toBe('no-new-privileges');
+      expect(args.filter((a) => a === '--security-opt')).toHaveLength(1);
+      for (const forbidden of ['--privileged', '--cap-add', '--pid', '--ipc', '--userns', '--device']) expect(args, forbidden).not.toContain(forbidden);
+      // all of them come before the image, where docker reads its options
+      expect(args.indexOf('--cap-drop')).toBeLessThan(args.indexOf(input.image));
+    }
+  });
+
   it('on gonogo\'s own network it joins that network in place of the host name', () => {
     const args = buildDockerArgs({ ...input, place: { ...place, network: 'container:gonogo' } });
-    expect(args.slice(0, 11)).toEqual(['run', '--rm', '-i', '-t', '--init', '--name', 'gonogo-ana-0123456789ab', '--user', '501:20', '--network', 'container:gonogo']);
+    expect(args.slice(0, 13)).toEqual(['run', '--rm', '-i', '-t', '--init', '--name', 'gonogo-ana-0123456789ab', '--user', '501:20', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges']);
+    expect(args.slice(13, 15)).toEqual(['--network', 'container:gonogo']);
     expect(args).not.toContain('--add-host');
   });
 
@@ -308,7 +323,7 @@ describe('the launcher starts a Clean Room agent through docker', () => {
     expect(spec.cwd).toBe(worktree);
     const args = spec.args;
     expect(args.slice(0, 7)).toEqual(['run', '--rm', '-i', '-t', '--init', '--name', containerName(worktree)]);
-    expect(args.slice(args.indexOf('--user'), args.indexOf('--user') + 4)).toEqual(['--user', `${process.getuid?.()}:${process.getgid?.()}`, '--add-host', 'host.docker.internal:host-gateway']);
+    expect(args.slice(args.indexOf('--user'), args.indexOf('--user') + 8)).toEqual(['--user', `${process.getuid?.()}:${process.getgid?.()}`, '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--add-host', 'host.docker.internal:host-gateway']);
     const mounts = args.flatMap((arg, i) => (args[i - 1] === '-v' ? [arg] : []));
     expect(mounts).toEqual([`${worktree}:${worktree}`, `${worktree}/.git:${worktree}/.git:ro`, `${base}:${base}`]);
     expect(args[args.indexOf('-w') + 1]).toBe(join(worktree, 'sub'));

@@ -4,6 +4,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Clean Room: no capabilities.** The `docker run` of a Clean Room console now has `--cap-drop ALL --security-opt no-new-privileges` (RSO's S3 on the overlays): inside gonogo's own container it shares gonogo's network namespace, edge network included. Tried in a container with those flags: `CapEff` is empty, `NoNewPrivs` is 1, and `claude`, `git`, `gh` and `npm install` work. **What breaks:** a Clean Room image that relied on a capability or on a setuid helper (`ping` needs `NET_RAW`; `sudo` inside the container) loses it.
 - **A GitHub login per room.** Every agent starts with `GH_CONFIG_DIR=<room home>/gh` (made 0700), so `gh auth login` in a console logs in only that room, and each room can be another GitHub account. It is a default: gonogo's own environment or an agent's Clearance key `GH_CONFIG_DIR` wins. **Agents no longer share the machine user's `~/.config/gh`**: a room has no login until one is made in it (or set `GH_CONFIG_DIR=$HOME/.config/gh` in gonogo's environment to share it as before). A Clean Room has none (the folder is not mounted). **Upgrade note:** if `~/.gitconfig` has `credential.helper = !gh auth git-credential`, an agent's `git push` now fails with a credential error (not a "logged out" message) until you run `gh auth login` in a console of that room.
 
 ## 0.7.0 (2026-11-20)
