@@ -9,10 +9,10 @@
  * shortcut: a file that is the right type by its magic bytes is not scanned for anything else (a PDF with a script, an image with a payload
  * after its end); the agent opens it with its file reader, not a program. Add a scan if a real run needs one.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isRecord } from './hooks.js';
-import { TELEGRAM_FILE_MAX_BYTES, TELEGRAM_FILES_DIR, TELEGRAM_FILES_MAX, TELEGRAM_FILE_TIMEOUT_MS, UPLINK_RATE_WINDOW_MS } from './constants.js';
+import { TELEGRAM_FILE_MAX_BYTES, TELEGRAM_FILES_DIR, TELEGRAM_FILES_KEEP_MS, TELEGRAM_FILES_MAX, TELEGRAM_FILE_TIMEOUT_MS, UPLINK_RATE_WINDOW_MS } from './constants.js';
 import type { Logger } from '../shared/protocol.js';
 
 /** What a message carries to download (the ids come from the update; the path is never taken from it). */
@@ -101,6 +101,8 @@ export interface TelegramFilesOptions {
   token(): string | null;
   /** The folder of an agent (throws for a name that is not one). */
   agentDir(agent: string): string;
+  /** The folder of all the agents: `prune` looks in each of them. */
+  agentsRoot: string;
   now(): number;
   log: Logger;
 }
@@ -108,6 +110,8 @@ export interface TelegramFilesOptions {
 export interface TelegramFiles {
   /** Downloads `file` into the folder of `agent`. Never throws and never says the token: a refusal is a `problem`, a text for the agent. */
   fetchFile(file: TelegramFile, agent: string): Promise<FileResult>;
+  /** Removes the files of every agent's `inbox-files` that are older than 30 days (a start of gonogo does it); the number removed. Never throws. */
+  prune(): Promise<number>;
 }
 
 const TOO_BIG = `(The file was too big for the Telegram Bot API, which gives a bot files of up to ${TELEGRAM_FILE_MAX_BYTES / 1024 / 1024} MB: it was not downloaded.)`;
@@ -162,6 +166,27 @@ export function createTelegramFiles(options: TelegramFilesOptions): TelegramFile
   }
 
   return {
+    async prune() {
+      let removed = 0;
+      for (const agent of await readdir(options.agentsRoot).catch(() => [])) {
+        const folder = join(options.agentsRoot, agent, TELEGRAM_FILES_DIR);
+        for (const name of await readdir(folder).catch(() => [])) {
+          try {
+            // lstat: a link is not followed, and only a plain file is removed
+            const info = await lstat(join(folder, name));
+            if (info.isFile() && options.now() - info.mtimeMs > TELEGRAM_FILES_KEEP_MS) {
+              await unlink(join(folder, name));
+              removed += 1;
+            }
+          } catch {
+            // gone already, or not ours to remove: the next start tries again
+          }
+        }
+      }
+      if (removed > 0) log.info(`telegram files: ${removed} older than 30 days removed`);
+      return removed;
+    },
+
     async fetchFile(file, agent) {
       try {
         return await download(file, agent);

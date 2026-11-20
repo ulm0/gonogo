@@ -25,6 +25,7 @@ import {
   TRANSIENT_ERROR_PREFIXES,
   createLogger,
   nullLogger,
+  AGENTS_DIR,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
 import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
@@ -919,7 +920,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('launch window'),
     });
-    const telegramFiles = createTelegramFiles({ fetch: options.fetch ?? ((url, init) => fetch(url, init)), token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), now: io.now, log: log.child('telegram files') });
+    const telegramFiles = createTelegramFiles({ fetch: options.fetch ?? ((url, init) => fetch(url, init)), token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), agentsRoot: join(home.dir, AGENTS_DIR), now: io.now, log: log.child('telegram files') });
+    void telegramFiles.prune();
     const uplinks = createUplinks({
       dir: home.dir,
       trigger: (entry) => triggers.record(entry),

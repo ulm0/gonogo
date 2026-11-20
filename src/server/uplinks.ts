@@ -291,17 +291,23 @@ export function createUplinks(options: UplinksOptions): Uplinks {
 
   /** The messages whose file is on its way: the endpoint has answered already (a download can take longer than Telegram waits), and `close` waits for them. */
   const pending = new Set<Promise<void>>();
-  /** A message with a file: the file is fetched, then the message goes out with its path (or why there is none) after the words. */
-  const withFile = (u: Uplink, made: Extract<Made, { text: string }>, file: TelegramFile): void => {
+  /**
+   * A message with a file goes out at once, with the words and "a file is on its way" (a restart in the middle of a download must not lose what the
+   * Director said); the file is fetched meanwhile, and a second message, a reply to the first, brings its path or why there is none.
+   */
+  const withFile = (u: Uplink, made: Extract<Made, { text: string }>, file: TelegramFile): SendResult => {
+    const { file: _done, ...rest } = made;
+    const wait = '(A file is on its way: its path follows in a second message.)';
+    const sent = receive(u, { ...rest, text: `${made.text}\n\n${wait}`, ...(made.director === undefined ? {} : { director: { ...made.director, said: `${made.director.said}\n\n${wait}` } }) }, '');
     const run = (async () => {
-      // shortcut: a reply to an agent that was removed meanwhile falls back to the uplink's own agent (receive), and the file stays in the folder of the first
-      const result = options.fetchFile === undefined ? { problem: '(The file was not fetched: this gonogo has no download set up.)' } : await options.fetchFile(file, made.to ?? u.to).catch(() => ({ problem: '(The file could not be downloaded from Telegram.)' }));
+      const result = options.fetchFile === undefined ? { problem: '(The file was not fetched: this gonogo has no download set up.)' } : await options.fetchFile(file, sent.to).catch(() => ({ problem: '(The file could not be downloaded from Telegram.)' }));
       const more = 'path' in result ? `Attached: ${result.path}` : result.problem;
-      const { file: _done, ...rest } = made;
-      receive(u, { ...rest, text: `${made.text}\n\n${more}`, ...(made.director === undefined ? {} : { director: { ...made.director, said: `${made.director.said}\n\n${more}` } }) }, '');
-    })().catch((error: unknown) => log.warn(`telegram: a message with a file was not delivered: ${messageOf(error)}`));
+      // a plain message: the words of the Director were typed in the first
+      receive(u, { text: `The file of message ${sent.id}:\n\n${more}`, cut: false, to: sent.to, inReplyTo: sent.id, ...(made.subject === undefined ? {} : { subject: made.subject }) }, 'file: ');
+    })().catch((error: unknown) => log.warn(`telegram: the file of a message was not delivered: ${messageOf(error)}`));
     pending.add(run);
     void run.finally(() => pending.delete(run));
+    return sent;
   };
 
   /** Sends a message that a kind made and records what became of it. `label` starts the note ("test: "). Throws what `deliver` documents. */
@@ -468,11 +474,7 @@ export function createUplinks(options: UplinksOptions): Uplinks {
       limited.delete(u.id);
       // after the limit: an event that was refused for it is not marked handled, so Slack's retry can still get through
       if (made.once !== undefined && inbound.seen(made.once)) return IGNORED;
-      if (made.file !== undefined) {
-        withFile(u, made, made.file);
-        return { ok: true, answer: { ok: true } };
-      }
-      const sent = receive(u, made, '');
+      const sent = made.file === undefined ? receive(u, made, '') : withFile(u, made, made.file);
       return { ok: sent.ok, id: sent.id, status: sent.status };
     },
 
@@ -485,8 +487,8 @@ export function createUplinks(options: UplinksOptions): Uplinks {
         if (!takeSlot(POLLED)) return log.warn(`telegram polling: more than ${UPLINK_RATE_MAX} messages in a minute: the rest are dropped`);
         if (made.once !== undefined && inbound.seen(made.once)) return;
         const own = { ...made, subject: made.subject ?? 'Telegram' };
-        if (own.file !== undefined) return withFile(POLLED, own, own.file);
-        receive(POLLED, own, '');
+        if (own.file !== undefined) withFile(POLLED, own, own.file);
+        else receive(POLLED, own, '');
       } catch (error) {
         log.warn(`telegram polling: an update was not delivered: ${messageOf(error)}`);
       }

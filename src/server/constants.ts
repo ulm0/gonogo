@@ -590,3 +590,5 @@ export const TELEGRAM_FILES_MAX = 10;
 export const TELEGRAM_FILE_MAX_BYTES = 20 * 1024 * 1024;
 export const TELEGRAM_FILE_TIMEOUT_MS = 30_000;
 export const TELEGRAM_FILES_DIR = 'inbox-files';
+/** A file of the folder is removed at start when it is older than this. */
+export const TELEGRAM_FILES_KEEP_MS = 30 * 24 * 3600_000;

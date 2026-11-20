@@ -55,7 +55,7 @@ beforeEach(async () => {
   urls = [];
   files = new Map();
   clock = Date.UTC(2026, 10, 20, 9, 0);
-  const fetcher = createTelegramFiles({ fetch: stub, token: () => TOKEN, agentDir: (name) => join(dir, 'agents', name), now: () => clock, log: quiet });
+  const fetcher = createTelegramFiles({ fetch: stub, token: () => TOKEN, agentDir: (name) => join(dir, 'agents', name), agentsRoot: join(dir, 'agents'), now: () => clock, log: quiet });
   uplinks = createUplinks({
     dir,
     now: () => clock,
@@ -80,6 +80,7 @@ const poll = async (message: Record<string, unknown>): Promise<void> => {
   await uplinks.close();
 };
 const body = (): string => sent.map((s) => s.request.body).join('\n---\n');
+const WAIT = '(A file is on its way: its path follows in a second message.)';
 const stored = async (): Promise<string[]> => readdir(join(dir, 'agents', 'boss', 'inbox-files')).catch(() => []);
 
 describe('what is read from the update', () => {
@@ -115,15 +116,64 @@ describe('what is read from the update', () => {
   });
 });
 
+describe('a restart in the middle of a download', () => {
+  it('has lost nothing of the words: the message is out before the file is fetched', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const held = new Promise<Response>((r) => (release = r));
+    const slow = createUplinks({
+      dir,
+      now: () => clock,
+      inbound,
+      fetchFile: () => held.then(() => ({ problem: '(late)' })),
+      send: (request): SendResult => (sent.push({ request }), { ok: true, id: `m${sent.length}`, to: 'boss', status: 'queued', note: null }),
+      emit: () => undefined,
+      log: quiet,
+    });
+    slow.deliverPolled(update({ photo: [{ file_id: 'p', width: 9, height: 9 }], caption: 'before the crash' }), 'k');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.request.body).toContain('before the crash');
+    release(new Response(''));
+    await slow.close();
+    expect(sent).toHaveLength(2);
+  });
+});
+
+describe('the folder of files is pruned', () => {
+  it('removes the files older than 30 days from every agent, and nothing else', async () => {
+    const { utimes, writeFile, mkdir, symlink } = await import('node:fs/promises');
+    const f = createTelegramFiles({ fetch: stub, token: () => TOKEN, agentDir: (name) => join(dir, 'agents', name), agentsRoot: join(dir, 'agents'), now: () => clock, log: quiet });
+    const old = new Date(clock - 31 * 24 * 3600_000);
+    const fresh = new Date(clock - 29 * 24 * 3600_000);
+    for (const [agent, name, when] of [['boss', '1-old.png', old], ['boss', '2-fresh.png', fresh], ['ana', '3-old.pdf', old]] as const) {
+      await mkdir(join(dir, 'agents', agent, 'inbox-files'), { recursive: true });
+      await writeFile(join(dir, 'agents', agent, 'inbox-files', name), 'x');
+      await utimes(join(dir, 'agents', agent, 'inbox-files', name), when, when);
+    }
+    // a file elsewhere in the folder of an agent, and a link, are not touched
+    await writeFile(join(dir, 'agents', 'boss', 'memory.md'), 'keep');
+    await utimes(join(dir, 'agents', 'boss', 'memory.md'), old, old);
+    await symlink(join(dir, 'agents', 'boss', 'memory.md'), join(dir, 'agents', 'boss', 'inbox-files', '4-link.png'));
+    expect(await f.prune()).toBe(2);
+    expect(await readdir(join(dir, 'agents', 'boss', 'inbox-files'))).toEqual(['2-fresh.png', '4-link.png']);
+    expect(await readdir(join(dir, 'agents', 'ana', 'inbox-files'))).toEqual([]);
+    expect(await readFile(join(dir, 'agents', 'boss', 'memory.md'), 'utf8')).toBe('keep');
+    // a home without agents is not an error
+    expect(await createTelegramFiles({ fetch: stub, token: () => TOKEN, agentDir: (n) => n, agentsRoot: join(dir, 'none'), now: () => clock, log: quiet }).prune()).toBe(0);
+  });
+});
+
 describe('a photo or a document of the Director', () => {
   it('a photo reaches the boss as a file in its folder, with "(no caption)", as his own words', async () => {
     files.set('big', JPEG);
     await poll({ photo: [{ file_id: 'small', width: 9, height: 9, file_size: 9 }, { file_id: 'big', width: 900, height: 900, file_size: JPEG.length }] });
     const path = join(dir, 'agents', 'boss', 'inbox-files', '40-photo.jpg');
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(2);
     expect(sent[0]?.request.to).toBe('boss');
-    expect(sent[0]?.request.body).toBe(`Telegram message from Ulm in chat 777:\n\n(no caption)\n\nAttached: ${path}`);
-    expect(sent[0]?.director?.said).toBe(`(no caption)\n\nAttached: ${path}`);
+    // the words go at once; the path comes in a second message, a reply to the first
+    expect(sent[0]?.request.body).toBe(`Telegram message from Ulm in chat 777:\n\n(no caption)\n\n${WAIT}`);
+    expect(sent[0]?.director?.said).toBe(`(no caption)\n\n${WAIT}`);
+    expect(sent[1]?.request).toMatchObject({ to: 'boss', inReplyTo: 'm1', body: `The file of message m1:\n\nAttached: ${path}` });
+    expect(sent[1]?.director).toBeUndefined();
     expect(await readFile(path)).toEqual(JPEG);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect((await stat(join(dir, 'agents', 'boss', 'inbox-files'))).mode & 0o777).toBe(0o700);
@@ -132,8 +182,9 @@ describe('a photo or a document of the Director', () => {
   it('a photo with a caption: the caption is the words', async () => {
     files.set('p', JPEG);
     await poll({ photo: [{ file_id: 'p', width: 9, height: 9 }], caption: 'the build fails here' });
-    expect(sent[0]?.request.body).toMatch(/^Telegram message from Ulm in chat 777:\n\nthe build fails here\n\nAttached: .*40-photo\.jpg$/);
-    expect(sent[0]?.director?.said).toMatch(/^the build fails here\n\nAttached: /);
+    expect(sent[0]?.request.body).toBe(`Telegram message from Ulm in chat 777:\n\nthe build fails here\n\n${WAIT}`);
+    expect(sent[0]?.director?.said).toBe(`the build fails here\n\n${WAIT}`);
+    expect(sent[1]?.request.body).toMatch(/Attached: .*40-photo\.jpg$/);
   });
 
   it('a PDF: its own name is cleaned, and the path is the one gonogo made', async () => {
@@ -147,7 +198,8 @@ describe('a photo or a document of the Director', () => {
     files.set('d', Buffer.from('<html><script>alert(1)</script>'));
     await poll({ document: { file_id: 'd', file_name: 'cat.png', mime_type: 'image/png' }, caption: 'a cat' });
     expect(await stored()).toEqual([]);
-    expect(body()).toMatch(/a cat\n\n\(The file was refused: its content is not a image\/png/);
+    expect(body()).toMatch(/a cat\n\n\(A file is on its way/);
+    expect(sent[1]?.request.body).toMatch(/\(The file was refused: its content is not a image\/png/);
     expect(body()).not.toContain('Attached:');
   });
 
@@ -168,19 +220,20 @@ describe('a photo or a document of the Director', () => {
     files.set('big', 'too big');
     await poll({ photo: [{ file_id: 'big', width: 9, height: 9 }], caption: 'the whole log' });
     expect(await stored()).toEqual([]);
-    expect(body()).toContain('the whole log\n\n(The file was too big for the Telegram Bot API');
+    expect(sent[0]?.request.body).toContain('the whole log');
+    expect(sent[1]?.request.body).toContain('(The file was too big for the Telegram Bot API');
     // a size that is known is not even asked for
     urls = [];
     await poll({ document: { file_id: 'd', mime_type: 'application/pdf', file_size: TELEGRAM_FILE_MAX_BYTES + 1 } });
     expect(urls).toEqual([]);
-    expect(sent[1]?.request.body).toContain('too big');
+    expect(sent[3]?.request.body).toContain('too big');
   });
 
   it('a forwarded photo arrives, without the mark of the Director', async () => {
     files.set('p', PNG);
     await poll({ photo: [{ file_id: 'p', width: 9, height: 9 }], forward_origin: { type: 'user' } });
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.request.body).toContain('Attached:');
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.request.body).toContain('Attached:');
     expect(sent[0]?.director).toBeUndefined();
   });
 
@@ -223,6 +276,7 @@ describe('a photo or a document of the Director', () => {
       fetch: async (url) => (url.endsWith('/getFile') ? new Response(JSON.stringify({ ok: true, result: { file_path: '../../etc/passwd' } })) : new Response(JSON.stringify({ ok: true, result: { file_path: 'https://evil.example/x' } }))),
       token: () => TOKEN,
       agentDir: (name) => join(dir, name),
+      agentsRoot: dir,
       now: () => clock,
       log: quiet,
     });
@@ -235,7 +289,7 @@ describe('a photo or a document of the Director', () => {
       dir,
       now: () => clock,
       inbound: { ...inbound, find: (key) => threads.get(key) },
-      fetchFile: (file, agent) => createTelegramFiles({ fetch: stub, token: () => TOKEN, agentDir: (n) => join(dir, 'agents', n), now: () => clock, log: quiet }).fetchFile(file, agent),
+      fetchFile: (file, agent) => createTelegramFiles({ fetch: stub, token: () => TOKEN, agentDir: (n) => join(dir, 'agents', n), agentsRoot: join(dir, 'agents'), now: () => clock, log: quiet }).fetchFile(file, agent),
       send: (request, director): SendResult => (sent.push({ request, ...(director === undefined ? {} : { director }) }), { ok: true, id: 'm9', to: request.to, status: 'queued', note: null }),
       emit: () => undefined,
       log: quiet,
@@ -244,6 +298,7 @@ describe('a photo or a document of the Director', () => {
     withThreads.deliverPolled(update({ photo: [{ file_id: 'p', width: 9, height: 9 }], reply_to_message: { message_id: 55 }, caption: 'this one' }), 'k');
     await withThreads.close();
     expect(sent[0]?.request).toMatchObject({ to: 'ana', inReplyTo: 'm5' });
+    expect(sent[1]?.request).toMatchObject({ to: 'ana' });
     expect(await readdir(join(dir, 'agents', 'ana', 'inbox-files'))).toEqual(['40-photo.png']);
   });
 
@@ -251,17 +306,20 @@ describe('a photo or a document of the Director', () => {
     const made = await uplinks.create({ name: 'Telegram', to: 'ana', kind: 'telegram' });
     files.set('p', JPEG);
     const answer = uplinks.deliver(made.id, update({ photo: [{ file_id: 'p', width: 9, height: 9 }], caption: 'by webhook' }), { 'x-telegram-bot-api-secret-token': made.secret });
-    expect(answer).toEqual({ ok: true, answer: { ok: true } });
+    expect(answer).toMatchObject({ ok: true, id: 'm1' });
+    // the message is out before the download ends
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.request.body).toContain('by webhook');
     await uplinks.close();
-    expect(sent[0]?.request).toMatchObject({ to: 'ana' });
-    expect(sent[0]?.request.body).toMatch(/by webhook\n\nAttached: .*agents\/ana\/inbox-files\/40-photo\.jpg$/);
-    expect(uplinks.list()[0]?.deliveries[0]?.note).toMatch(/^m1/);
+    expect(sent[1]?.request).toMatchObject({ to: 'ana', inReplyTo: 'm1' });
+    expect(sent[1]?.request.body).toMatch(/Attached: .*agents\/ana\/inbox-files\/40-photo\.jpg$/);
+    expect(uplinks.list()[0]?.deliveries.length).toBe(2);
   });
 
   it('without a download set up the agent is told the file was not fetched', async () => {
     const bare = createUplinks({ dir, now: () => clock, inbound, send: (request): SendResult => (sent.push({ request }), { ok: true, id: 'm1', to: 'boss', status: 'queued', note: null }), emit: () => undefined, log: quiet });
     bare.deliverPolled(update({ photo: [{ file_id: 'p', width: 9, height: 9 }], caption: 'x' }), 'k');
     await bare.close();
-    expect(sent[0]?.request.body).toContain('not fetched');
+    expect(sent[1]?.request.body).toContain('not fetched');
   });
 });
