@@ -37,7 +37,7 @@ import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
 import { checkCleanRoom } from './cleanroom.js';
 import { checkWorktree, removeWorktree, worktreeBranch, worktreePath, worktreeStatus } from './worktree.js';
-import { openHome } from './home.js';
+import { acquireSupervisorLock, openHome } from './home.js';
 import { createLauncher, parseAgentCmd } from './launcher.js';
 import { createTerminalHost } from './terminal.js';
 import { createRemoteTerminalHost } from './remoteterminal.js';
@@ -86,7 +86,8 @@ import { verifyImage } from './attest.js';
 import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
 import type { AutoUpdater } from './autoupdate.js';
 import { createUpdater } from './updater.js';
-import { addRoom, loadRooms, MAIN_ROOM, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
+import { migrate, planMigration } from './mainmigrate.js';
+import { addRoom, loadRooms, mainLayout, MAIN_ROOM, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { authCommand } from './authcli.js';
 import { exposeCommand } from './exposecli.js';
 import { startSupervisor } from './supervisor.js';
@@ -174,6 +175,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo reload
        gonogo tui [--room <id>] [--url <address>] [--token <token>] [--home <dir>]
        gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
+      gonogo rooms migrate-main [--dry-run | --undo] [--home <dir>]
        gonogo token rotate [--home <dir>]
        gonogo auth reset | status | key add|list|revoke | confirm [--home <dir>]
        gonogo expose <tailscale|cloudflare|caddy|funnel|ngrok> --public-url https://<name> [--write]  |  gonogo expose check
@@ -230,6 +232,7 @@ export type ParsedArgs =
   | { kind: 'auth'; args: string[]; home?: string }
   | { kind: 'expose'; args: string[]; home?: string }
   | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
+  | { kind: 'migrate-main'; mode: 'move' | 'dry-run' | 'undo'; home?: string }
   | { kind: 'selfupdate'; target: string; expect: string; home: string; image: string }
   | { kind: 'run'; options: StartOptions }
   | { kind: 'error'; message: string };
@@ -273,6 +276,20 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   }
   if (argv[0] === 'rooms') {
     const action = argv[1];
+    if (action === 'migrate-main') {
+      const out: { kind: 'migrate-main'; mode: 'move' | 'dry-run' | 'undo'; home?: string } = { kind: 'migrate-main', mode: 'move' };
+      const rest = argv.slice(2);
+      for (let i = 0; i < rest.length; i += 1) {
+        const arg = rest[i] ?? '';
+        if (arg === '--dry-run' && out.mode === 'move') out.mode = 'dry-run';
+        else if (arg === '--undo' && out.mode === 'move') out.mode = 'undo';
+        else if (arg === '--home' && rest[i + 1] !== undefined && rest[i + 1] !== '') {
+          out.home = rest[i + 1];
+          i += 1;
+        } else return { kind: 'error', message: `rooms migrate-main: unexpected ${arg} (use --dry-run or --undo, not both)` };
+      }
+      return out;
+    }
     // `gonogo rooms` alone (or with flags) is what `gonogo` is now; kept for one release
     if (action !== 'add' && action !== 'list' && action !== 'remove') return parseArgs(argv.slice(1));
     const rest = argv.slice(2);
@@ -1378,6 +1395,47 @@ function logLevel(value: string | undefined): LogLevel {
   return value === 'debug' || value === 'info' || value === 'warn' || value === 'error' ? value : 'info';
 }
 
+/**
+ * `gonogo rooms migrate-main`: moves room main of an old home into rooms/main (`--undo`: back; `--dry-run`: only says what would move). Moving needs
+ * the supervisor lock, so gonogo must be stopped; the page's MIGRATE NOW and UNDO do the same at the next start.
+ */
+async function runMigrateMainCommand(parsed: Extract<ParsedArgs, { kind: 'migrate-main' }>, env: Env): Promise<void> {
+  const root = parsed.home === undefined ? homeOf(env) : resolve(parsed.home);
+  const direction = mainLayout(root) === '.' ? 'forward' : 'undo';
+  if (parsed.mode === 'dry-run') {
+    const plan = await planMigration(root, direction, { running: false });
+    process.stdout.write(`${direction === 'forward' ? 'would move' : 'would move back'} ${plan.entries.length} of room main's files from ${plan.from} to ${plan.to}\n`);
+    for (const name of plan.entries) process.stdout.write(`  ${name}\n`);
+    if (plan.stays.length > 0) process.stdout.write(`stay where they are (not main's, or not known): ${plan.stays.join(', ')}\n`);
+    if (plan.problems.length > 0) process.stdout.write(`it would NOT be done now:\n${plan.problems.map((p) => `  - ${p}`).join('\n')}\n`);
+    else process.stdout.write('nothing stops it. Stop gonogo, then run it without --dry-run (or press MIGRATE NOW on the rooms page).\n');
+    exit(plan.problems.length > 0 ? 1 : 0);
+    return;
+  }
+  const want = parsed.mode === 'undo' ? 'undo' : 'forward';
+  if (want !== direction) {
+    process.stderr.write(want === 'undo' ? 'gonogo rooms migrate-main: room main is at the root of this home, there is nothing to undo\n' : 'gonogo rooms migrate-main: room main already lives in rooms/main\n');
+    exit(1);
+    return;
+  }
+  let release: () => void;
+  try {
+    release = acquireSupervisorLock(root);
+  } catch (error) {
+    process.stderr.write(`gonogo rooms migrate-main: gonogo is running for this home (${error instanceof Error ? error.message : String(error)}). Stop it first, or press ${want === 'undo' ? 'UNDO' : 'MIGRATE NOW'} on the rooms page: it is done at the next start.\n`);
+    exit(1);
+    return;
+  }
+  try {
+    const result = await migrate(root, want);
+    if (result.ok) process.stdout.write(`moved ${result.moved} of room main's files ${want === 'undo' ? `back to ${root}` : `into ${join(root, 'rooms', 'main')}`}. Nothing else was touched.\n`);
+    else process.stderr.write(`not moved; the home is as it was:\n${result.problems.map((p) => `  - ${p}`).join('\n')}\n`);
+    exit(result.ok ? 0 : 1);
+  } finally {
+    release();
+  }
+}
+
 /** `gonogo rooms add|list|remove`: edits rooms.json. */
 async function runRoomsCommand(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, env: Env): Promise<void> {
   const root = parsed.home === undefined ? homeOf(env) : resolve(parsed.home);
@@ -1575,6 +1633,15 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     const { command, docker } = installInfo();
     process.stdout.write(updateText(command, docker, { current, latest, newer: latest !== null && isNewer(latest, current) }));
     exit(0);
+    return;
+  }
+  if (parsed.kind === 'migrate-main') {
+    try {
+      await runMigrateMainCommand(parsed, env);
+    } catch (e) {
+      process.stderr.write(`gonogo rooms migrate-main: ${e instanceof Error ? e.message : String(e)}\n`);
+      exit(1);
+    }
     return;
   }
   if (parsed.kind === 'rooms') {

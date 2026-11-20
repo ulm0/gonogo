@@ -55,7 +55,7 @@ export const ROOM_STATE_FILES: readonly string[] = [
   'tasks.json', 'telegram-poll.json', 'telemetry.jsonl', 'triggers.1.jsonl', 'triggers.jsonl', 'uplinks.json', 'worktrees',
 ];
 /** The supervisor's own files and folders: they stay at the root whatever the layout, and never say where main is. */
-export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run'];
+export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run', 'main-migration.json'];
 /** Names that only exist inside another folder (an agent's, or `run/`): never at a home's root, so they say nothing about the layout. */
 export const NESTED_FILES: readonly string[] = ['.seq', 'agy-hooks.json', 'gemini-settings.json', 'mcp.json', 'memory.md', 'ptyhost.key', 'ptyhost.log', 'ptyhost.sock', 'settings.json', 'tokens.json', 'update.json'];
 /** Where a room that is running has put something besides those: its socket and token. */
@@ -148,11 +148,26 @@ export function loadRooms(root: string): RoomEntry[] {
   return list;
 }
 
-function saveRooms(root: string, rooms: RoomEntry[]): void {
+/** What `rooms.json` says about main, or null when it says nothing (no file, or no `main` key). Throws RoomsError for a damaged file. */
+export function recordedMainHome(root: string): MainHome | null {
+  try {
+    return recordedMain(readRoomsFile(root));
+  } catch (error) {
+    if (error instanceof RoomsError) throw error;
+    throw new RoomsError(`${ROOMS_FILE} is damaged (${(error as Error).message}): fix or delete it. Nothing was stopped.`, 'conflict');
+  }
+}
+
+/** Writes where main lives into `rooms.json` (the migration's last step, and its undo's): the list of rooms is kept as it is. */
+export function setMainHome(root: string, home: MainHome): void {
+  saveRooms(root, loadRooms(root).filter((r) => r.id !== MAIN_ROOM), home);
+}
+
+function saveRooms(root: string, rooms: RoomEntry[], layout?: MainHome): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = join(root, ROOMS_FILE);
   const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, JSON.stringify({ version: 1, main: { home: mainLayout(root) }, rooms }, null, 2), { mode: 0o600 });
+  writeFileSync(temp, JSON.stringify({ version: 1, main: { home: layout ?? mainLayout(root) }, rooms }, null, 2), { mode: 0o600 });
   renameSync(temp, path);
 }
 

@@ -1,0 +1,339 @@
+/**
+ * Moving room main of an old home into `rooms/main/` (and back). A home made before 0.9 keeps main's files at the root, next to the
+ * supervisor's own; this makes it look like a new one. It runs at the supervisor's start, before any room, with the supervisor lock held.
+ *
+ * Only main's files move (the lists in rooms.ts, built from the code's own file names), by `rename` inside one filesystem: nothing is copied,
+ * so no byte is ever in two places. A journal (`main-migration.json`) is written first, so a crash is finished at the next start. What moves is
+ * decided by the files that are there, so a move is idempotent: a name that is already in the destination and gone from the source is done.
+ * `rooms.json` `main.home` is written LAST: it is the marker that says the move is complete.
+ *
+ * Not moved, on purpose: the supervisor's files, a folder or file gonogo does not know (listed for the person), the sockets (made again at
+ * the next start), and anything of an agent that works in a folder inside the home (a worktree or a Clean Room: the folder is the working
+ * directory, and Claude's session history is keyed by it): that refuses the whole move, with the agent's name, and the home stays as it is.
+ * The generated files of an agent (settings, MCP config, hooks) hold paths too, and are written again at every start, so nothing rewrites them.
+ */
+import type { Stats } from 'node:fs';
+import { accessSync, constants, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { roomLockAlive } from './home.js';
+import { MAIN_ROOM, NESTED_FILES, ROOM_STATE_FILES, ROOMS_DIR, RoomsError, SUPERVISOR_FILES, mainLayout, recordedMainHome, setMainHome } from './rooms.js';
+import type { MainHome } from './rooms.js';
+
+export const MIGRATION_FILE = 'main-migration.json';
+/** Files inside `run/` that belong to main (its stable port, the result of a Docker update, the pty host's key and log). The sockets are not moved. */
+export const RUN_FILES: readonly string[] = ['run/port', 'run/update.json', 'run/ptyhost.key', 'run/ptyhost.log'];
+const SOCKETS: readonly string[] = ['run/room.sock', 'run/ptyhost.sock'];
+const REASON_MAX = 12;
+
+export type Direction = 'forward' | 'undo';
+
+/** What `main-migration.json` says. `moving` and `undoing` are the journal; the others are what the rooms page shows. */
+export type MigrationNote =
+  | { state: 'requested'; at: number }
+  | { state: 'undo-requested'; at: number }
+  | { state: 'moving' | 'undoing'; at: number; entries: string[] }
+  | { state: 'skipped'; at: number; reasons: string[] }
+  | { state: 'done'; at: number; moved: number; undoReasons?: string[] };
+
+const STATES = ['requested', 'undo-requested', 'moving', 'undoing', 'skipped', 'done'];
+const text = (value: unknown, max: number): string => (typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, max) : '');
+
+/** The note, or null when there is none. A file that is there and cannot be read THROWS: a half move must never read as "nothing to do". */
+export function readMigration(root: string): MigrationNote | null {
+  let raw: string;
+  try {
+    raw = readFileSync(join(root, MIGRATION_FILE), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new RoomsError(`cannot read ${MIGRATION_FILE}: ${(error as Error).message}`, 'conflict');
+  }
+  try {
+    const saved = JSON.parse(raw) as Record<string, unknown>;
+    const state = saved.state;
+    if (typeof state !== 'string' || !STATES.includes(state)) throw new Error('unknown state');
+    const at = typeof saved.at === 'number' && Number.isFinite(saved.at) ? saved.at : 0;
+    const names = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((x) => text(x, 300)) : []);
+    if (state === 'moving' || state === 'undoing') {
+      const entries = names(saved.entries);
+      // a name from a file is never a path to follow: only what the lists could have produced
+      if (!entries.every(knownEntry)) throw new Error('an entry that is not one of main\'s files');
+      return { state, at, entries };
+    }
+    if (state === 'skipped') return { state, at, reasons: names(saved.reasons).slice(0, REASON_MAX) };
+    if (state === 'done') return { state, at, moved: typeof saved.moved === 'number' ? saved.moved : 0, ...(Array.isArray(saved.undoReasons) ? { undoReasons: names(saved.undoReasons).slice(0, REASON_MAX) } : {}) };
+    return { state: state as 'requested' | 'undo-requested', at };
+  } catch (error) {
+    throw new RoomsError(`${MIGRATION_FILE} is damaged (${(error as Error).message}): a move of room main may be half done. Fix or delete it only after looking at ${ROOMS_DIR}/${MAIN_ROOM}/ and the root. Nothing was started.`, 'conflict');
+  }
+}
+
+/** Every name a journal may hold: one of the lists, or a file of `run/` that moves. */
+function knownEntry(name: string): boolean {
+  return ROOM_STATE_FILES.includes(name) || RUN_FILES.includes(name);
+}
+
+export function writeMigration(root: string, note: MigrationNote): void {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const path = join(root, MIGRATION_FILE);
+  const temp = `${path}.${process.pid}.tmp`;
+  writeFileSync(temp, JSON.stringify({ version: 1, ...note }, null, 2), { mode: 0o600 });
+  renameSync(temp, path);
+}
+
+export function clearMigration(root: string): void {
+  rmSync(join(root, MIGRATION_FILE), { force: true });
+}
+
+const lstatOrNull = (path: string): Stats | null => {
+  try {
+    return lstatSync(path);
+  } catch {
+    return null;
+  }
+};
+
+const real = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+/** Whether `child` is `parent` or below it, by the folders they really are (a link into the home counts). */
+const inside = (parent: string, child: string): boolean => {
+  const rel = relative(real(parent), real(child));
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+};
+
+export interface MigrationPlan {
+  direction: Direction;
+  /** Where main's files are now, and where they would go. */
+  from: string;
+  to: string;
+  /** What would move, as names relative to `from`. */
+  entries: string[];
+  /** Things at `from` that gonogo does not know: they stay where they are. */
+  stays: string[];
+  /** Why it cannot be done now. Empty: it can. */
+  problems: string[];
+}
+
+export interface PlanOptions {
+  /** Look for a room that is running (a live `server.lock`, a pty host that answers). False for a dry run: what runs now stops before the move. */
+  running: boolean;
+}
+
+/** Whether something answers on a unix socket (a room or a pty host that is alive). Never throws. */
+function answers(path: string): Promise<boolean> {
+  return new Promise((done) => {
+    if (lstatOrNull(path) === null) return done(false);
+    const socket = net.connect({ path });
+    const end = (up: boolean): void => {
+      socket.destroy();
+      done(up);
+    };
+    socket.setTimeout(500, () => end(false));
+    socket.once('connect', () => end(true));
+    socket.once('error', () => end(false));
+  });
+}
+
+/** The agents of a roster whose working folder is inside `home`, or that have a worktree or Clean Room (their folder is). Read the file as it is: no parse of what an agent may do. */
+function agentsInside(from: string): { problems: string[] } {
+  const problems: string[] = [];
+  let roster: unknown;
+  try {
+    roster = JSON.parse(readFileSync(join(from, 'agents.json'), 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { problems };
+    return { problems: [`agents.json cannot be read (${(error as Error).message.slice(0, 80)}): the agents' folders are not known`] };
+  }
+  const list = typeof roster === 'object' && roster !== null && Array.isArray((roster as { agents?: unknown }).agents) ? ((roster as { agents: unknown[] }).agents) : null;
+  if (list === null) return { problems: ['agents.json has no list of agents: the agents\' folders are not known'] };
+  for (const item of list) {
+    if (typeof item !== 'object' || item === null) continue;
+    const agent = item as { name?: unknown; dir?: unknown; worktree?: unknown; cleanRoom?: unknown };
+    const name = text(agent.name, 40);
+    if (typeof agent.dir === 'string' && inside(from, agent.dir)) problems.push(`agent ${name} works in ${text(agent.dir, 200)}, inside the folder that would move (its Claude session history is keyed by that folder)`);
+    else if (agent.worktree !== undefined && agent.worktree !== null && agent.worktree !== false) problems.push(`agent ${name} has a worktree in ${join(from, 'worktrees', name)}: its working folder would move and its Claude session history is keyed by it`);
+    else if (agent.cleanRoom !== undefined && agent.cleanRoom !== null && agent.cleanRoom !== false) problems.push(`agent ${name} has a Clean Room in ${join(from, 'cleanroom', name)}: its working folder would move and its Claude session history is keyed by it`);
+  }
+  return { problems };
+}
+
+/** Folders of worktrees or Clean Rooms that are still there (an agent that was removed or changed): git knows them by their path. */
+function leftoverFolders(from: string): string[] {
+  const out: string[] = [];
+  for (const dir of ['worktrees', 'cleanroom']) {
+    try {
+      const names = readdirSync(join(from, dir));
+      if (names.length > 0) out.push(`${join(from, dir)} still holds ${names.slice(0, 3).join(', ')}${names.length > 3 ? ' ...' : ''}: git knows those folders by their path; remove them (git worktree remove) or keep the old layout`);
+    } catch {
+      // not there
+    }
+  }
+  return out;
+}
+
+/** What a move would do, and what stops it. Reads only. */
+export async function planMigration(root: string, direction: Direction, options: PlanOptions): Promise<MigrationPlan> {
+  const mainDir = join(root, ROOMS_DIR, MAIN_ROOM);
+  const from = direction === 'forward' ? root : mainDir;
+  const to = direction === 'forward' ? mainDir : root;
+  const plan: MigrationPlan = { direction, from, to, entries: [], stays: [], problems: [] };
+  const problem = (reason: string): void => void plan.problems.push(reason);
+
+  // what moves: the names of main's files that are there
+  // `server.lock` stays out: a lock that no live process holds is a leftover, and the room at its new place makes its own
+  for (const name of [...ROOM_STATE_FILES, ...RUN_FILES]) if (name !== 'server.lock' && lstatOrNull(join(from, name)) !== null) plan.entries.push(name);
+  if (direction === 'forward') {
+    const known = new Set<string>([...ROOM_STATE_FILES, ...SUPERVISOR_FILES, ...NESTED_FILES]);
+    try {
+      for (const name of readdirSync(root).sort()) if (!known.has(name) && !name.endsWith('.tmp')) plan.stays.push(name);
+    } catch (error) {
+      problem(`the home cannot be read: ${(error as Error).message.slice(0, 80)}`);
+    }
+  }
+  if (plan.entries.length === 0) problem(`there is nothing of room main in ${from}`);
+
+  // the destination: absent or empty, and nothing there under the names that would move
+  const destination = direction === 'forward' ? lstatOrNull(mainDir) : null;
+  if (direction === 'forward') {
+    if (destination !== null && !destination.isDirectory()) problem(`${mainDir} exists and is not a folder`);
+    else if (destination !== null && readdirSync(mainDir).length > 0) problem(`${mainDir} is not empty`);
+  } else {
+    for (const name of plan.entries) if (lstatOrNull(join(root, name)) !== null) problem(`${join(root, name)} is in the way: main's own ${name} would have to replace it`);
+  }
+
+  // the same filesystem (a rename, never a copy) and a folder we may write to
+  try {
+    accessSync(root, constants.R_OK | constants.W_OK | constants.X_OK);
+    const dev = statSync(root).dev;
+    const rooms = lstatOrNull(join(root, ROOMS_DIR));
+    if (rooms !== null && statSync(join(root, ROOMS_DIR)).dev !== dev) problem(`${join(root, ROOMS_DIR)} is on another filesystem than ${root}: a move is a rename and cannot cross it`);
+    if (destination !== null && direction === 'forward' && destination.isDirectory() && statSync(mainDir).dev !== dev) problem(`${mainDir} is on another filesystem than ${root}: a move is a rename and cannot cross it`);
+    for (const name of plan.entries) {
+      const info = lstatOrNull(join(from, name));
+      if (info !== null && info.dev !== dev) problem(`${join(from, name)} is on another filesystem (a mount?): a move is a rename and cannot cross it`);
+    }
+  } catch (error) {
+    problem(`${root} cannot be changed by this user: ${(error as Error).message.slice(0, 80)}`);
+  }
+
+  // nothing of main may be in use
+  if (options.running) {
+    if (roomLockAlive(from)) problem(`room main is running (${join(from, 'server.lock')} names a live process)`);
+    for (const socket of SOCKETS) if (await answers(join(from, socket))) problem(`${join(from, socket)} answers: room main, or its pty host with agents that are alive, is running`);
+  }
+
+  // an agent whose working folder would move, or an earlier half move
+  for (const reason of agentsInside(from).problems) problem(reason);
+  for (const reason of leftoverFolders(from)) problem(reason);
+  const note = readMigration(root);
+  if (note !== null && (note.state === 'moving' || note.state === 'undoing')) problem('an earlier move of room main is not finished');
+  return plan;
+}
+
+/** Hooks for a test to stop a move half way (the crash) or to look at it. */
+export interface MoveHooks {
+  afterEach?(name: string): void;
+}
+
+/** One name from `from` to `to`: done when it is there and gone from here; an error when it is in both. */
+function moveEntry(from: string, to: string, name: string): boolean {
+  const source = join(from, name);
+  const target = join(to, name);
+  const here = lstatOrNull(source) !== null;
+  const there = lstatOrNull(target) !== null;
+  if (here && there) throw new RoomsError(`${name} is in ${from} and in ${to}: nothing was overwritten. Look at both and take one away`, 'conflict');
+  if (!here) return false;
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  renameSync(source, target);
+  return true;
+}
+
+/** Runs the moves of a journal, then writes where main is, then leaves the note. Safe to call again after a crash. */
+function perform(root: string, direction: Direction, entries: string[], hooks: MoveHooks, at: number): number {
+  const mainDir = join(root, ROOMS_DIR, MAIN_ROOM);
+  const from = direction === 'forward' ? root : mainDir;
+  const to = direction === 'forward' ? mainDir : root;
+  mkdirSync(direction === 'forward' ? mainDir : root, { recursive: true, mode: 0o700 });
+  let moved = 0;
+  for (const name of entries) {
+    if (moveEntry(from, to, name)) moved += 1;
+    hooks.afterEach?.(name);
+  }
+  // the sockets of a room that is not running are leftovers (a live one stopped the plan): they would make the old place look in use
+  for (const name of [...SOCKETS, 'run/room-token', 'server.lock']) rmSync(join(from, name), { force: true });
+  if (direction === 'undo') {
+    // the folders of main that are now empty go: an old home has no rooms/main
+    for (const dir of [join(mainDir, 'run'), mainDir]) {
+      try {
+        rmdirSync(dir);
+      } catch {
+        // not empty, or not there
+      }
+    }
+  }
+  setMainHome(root, direction === 'forward' ? 'rooms/main' : '.'); // the marker, last
+  if (direction === 'forward') writeMigration(root, { state: 'done', at, moved: entries.length });
+  else clearMigration(root);
+  return moved;
+}
+
+export type MigrationResult = { ok: true; moved: number; direction: Direction } | { ok: false; direction: Direction; problems: string[] };
+
+/** Plans and, when nothing stops it, moves. The caller holds the supervisor lock. */
+export async function migrate(root: string, direction: Direction, hooks: MoveHooks = {}, now: () => number = Date.now): Promise<MigrationResult> {
+  const plan = await planMigration(root, direction, { running: true });
+  if (plan.problems.length > 0) return { ok: false, direction, problems: plan.problems.slice(0, REASON_MAX) };
+  writeMigration(root, { state: direction === 'forward' ? 'moving' : 'undoing', at: now(), entries: plan.entries });
+  const moved = perform(root, direction, plan.entries, hooks, now());
+  return { ok: true, moved, direction };
+}
+
+/** Finishes a move that a crash left half done (the journal is there). Returns null when there is none. */
+export function resumeMigration(root: string, hooks: MoveHooks = {}, now: () => number = Date.now): MigrationResult | null {
+  const note = readMigration(root);
+  if (note === null || (note.state !== 'moving' && note.state !== 'undoing')) return null;
+  const direction: Direction = note.state === 'moving' ? 'forward' : 'undo';
+  const moved = perform(root, direction, note.entries, hooks, now());
+  return { ok: true, moved, direction };
+}
+
+/** What the start of a supervisor does about the layout of an old home. */
+export type StartupOutcome =
+  | { did: 'nothing' }
+  | { did: 'resumed'; direction: Direction; moved: number }
+  | { did: 'migrated'; direction: Direction; moved: number }
+  | { did: 'skipped'; direction: Direction; problems: string[] };
+
+/**
+ * At the start, before any room: finish a half move; do what the page asked (MIGRATE NOW, UNDO); and move an old home that has never been asked
+ * about (no `main.home` on record). A move that is refused is NOT tried again by itself: the layout is recorded as it is, so the next start leaves
+ * it alone, and the page shows why and offers MIGRATE NOW.
+ */
+export async function startupMigration(root: string, hooks: MoveHooks = {}, now: () => number = Date.now): Promise<StartupOutcome> {
+  const resumed = resumeMigration(root, hooks, now);
+  if (resumed !== null && resumed.ok) return { did: 'resumed', direction: resumed.direction, moved: resumed.moved };
+  const note = readMigration(root);
+  const recorded = recordedMainHome(root);
+  let direction: Direction | null = null;
+  if (note?.state === 'requested') direction = 'forward';
+  else if (note?.state === 'undo-requested') direction = 'undo';
+  else if (recorded === null && mainLayout(root) === '.' && note === null) direction = 'forward';
+  if (direction === null) return { did: 'nothing' };
+  const result = await migrate(root, direction, hooks, now);
+  if (result.ok) return { did: 'migrated', direction, moved: result.moved };
+  if (direction === 'forward') {
+    writeMigration(root, { state: 'skipped', at: now(), reasons: result.problems });
+    setMainHome(root, '.');
+  } else {
+    writeMigration(root, { state: 'done', at: now(), moved: 0, undoReasons: result.problems });
+  }
+  return { did: 'skipped', direction, problems: result.problems };
+}
+
+export type { MainHome };

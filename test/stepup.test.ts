@@ -91,3 +91,17 @@ describe('the rest of the list, and what is not on it', () => {
     for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/room-keys/AWS_REGION'], ['DELETE', '/api/room-keys/AWS_REGION'], ['PUT', '/api/payload-defaults/servers/x'], ['POST', '/api/payload-defaults/skills'], ['DELETE', '/api/payload-defaults/skills/x'], ['PUT', '/api/features/x'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/engines/claude'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['POST', '/api/auth/keys'], ['POST', '/api/auth/password'], ['DELETE', '/api/auth/sessions/abcdef12'], ['POST', '/api/auth/logout-all'], ['POST', '/api/auth/mfa/begin']] as const) expect(stepUpReason(method, path, {}), path).not.toBeNull();
   });
 });
+
+describe('moving room main (MIGRATE NOW, UNDO)', () => {
+  it('asks for the password for a request to move main, and for undoing it; cancelling it and dismissing the note do less and do not', () => {
+    const post = (body: Record<string, unknown> | null) => stepUpReason('POST', '/api/rooms/main/migrate', body);
+    expect(bodyMatters('POST', '/api/rooms/main/migrate')).toBe(true);
+    expect(post({ action: 'request' })).toMatch(/room main keeps its files/);
+    expect(post({ action: 'undo' })).not.toBeNull();
+    expect(post(null)).not.toBeNull();
+    expect(post({ action: 'whatever' })).not.toBeNull();
+    expect(post({ action: 'cancel' })).toBeNull();
+    expect(post({ action: 'dismiss' })).toBeNull();
+    expect(stepUpReason('GET', '/api/rooms/main/migrate', null)).toBeNull();
+  });
+});
