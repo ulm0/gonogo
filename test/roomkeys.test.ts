@@ -95,11 +95,16 @@ describe('the store', () => {
     }
   });
 
-  it('a hand-edited entry with a reserved name or a bad value is skipped, the rest kept', async () => {
-    writeFileSync(join(dir, ROOM_KEYS_FILE), JSON.stringify({ version: 1, keys: { PATH: { value: 'x' }, GOOD_ONE: { value: 'v', at: 3, cleanRoom: true }, BAD_VALUE: { value: 'a b' } } }));
-    const a = createRoomKeys({ dir });
+  it('a hand-edited entry with a reserved name or a bad value is skipped and its name logged (never a value), the rest kept', async () => {
+    writeFileSync(join(dir, ROOM_KEYS_FILE), JSON.stringify({ version: 1, keys: { PATH: { value: 'x' }, GOOD_ONE: { value: 'v', at: 3, cleanRoom: true }, BAD_VALUE: { value: 'secret value with spaces' }, 'AKIA pasted secret': { value: 'x' } } }));
+    const warned: string[] = [];
+    const log = { debug() {}, info() {}, error() {}, warn: (m: string) => void warned.push(m), child() { return log; } };
+    const a = createRoomKeys({ dir, log });
     await a.load();
     expect(a.view().keys).toEqual([{ name: 'GOOD_ONE', at: 3, cleanRoom: true }]);
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain('PATH, BAD_VALUE, (an entry whose name is not usable)');
+    expect(warned[0]).not.toMatch(/secret|AKIA|spaces/);
   });
 
   it('a change asks for the password again; a read does not', () => {

@@ -9,13 +9,14 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { KEY_VALUE_PATTERN, KEYS_MAX } from '../shared/protocol.js';
+import { KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX } from '../shared/protocol.js';
 import type { Logger, RoomKeysView } from '../shared/protocol.js';
 import { keyNameProblem } from './clearance.js';
 import { FILE_MODE, nullLogger, ROOM_KEYS_FILE } from './constants.js';
 import { HubError } from './hub.js';
 
 const VALUE_RE = new RegExp(KEY_VALUE_PATTERN);
+const NAME_RE = new RegExp(KEY_NAME_PATTERN);
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 interface Entry {
@@ -71,10 +72,16 @@ export function createRoomKeys(options: { dir: string; now?: () => number; log?:
       try {
         const saved: unknown = JSON.parse(await readFile(path, 'utf8'));
         if (!isRecord(saved) || saved.version !== 1 || !isRecord(saved.keys)) throw new Error('not a version 1 room keys file');
+        const skipped: string[] = [];
         for (const [name, entry] of Object.entries(saved.keys)) {
-          if (keyNameProblem(name) !== null || !isRecord(entry) || typeof entry.value !== 'string' || !VALUE_RE.test(entry.value)) continue;
+          if (keyNameProblem(name) !== null || !isRecord(entry) || typeof entry.value !== 'string' || !VALUE_RE.test(entry.value)) {
+            // the name only, and only when it has the shape of one: a value pasted in the name field must not reach the log
+            skipped.push(NAME_RE.test(name) ? name : '(an entry whose name is not usable)');
+            continue;
+          }
           keys.set(name, { value: entry.value, at: typeof entry.at === 'number' ? entry.at : 0, cleanRoom: entry.cleanRoom === true });
         }
+        if (skipped.length > 0) log.warn(`${ROOM_KEYS_FILE}: skipped ${skipped.length} entr${skipped.length === 1 ? 'y' : 'ies'} that cannot be a room key (a reserved or unusable name, or a value that is not printable text without a space): ${skipped.join(', ')}. The next change to the keys writes the file without them.`);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
         // kept aside, so that the next save cannot overwrite the keys; a SyntaxError quotes the text around the fault, which can be a key

@@ -64,7 +64,7 @@ export function RoomKeysBlock(): ReactElement {
       </h2>
       <p className="hint">
         Environment variables every agent of this room gets, such as the settings of Amazon Bedrock (<code>CLAUDE_CODE_USE_BEDROCK</code>, <code>AWS_REGION</code>, <code>AWS_BEARER_TOKEN_BEDROCK</code>). A key an agent has of its own (its Clearance fold) wins over the room&apos;s of the same name. A
-        Clean Room agent gets only the keys switched on here for it: the container exists to keep keys out. Values are saved in plain text on this machine (mode 0600) and never shown again: set the same name again to change one. Applies at each agent&apos;s next start.
+        Clean Room agent gets only the keys switched on here for it: the container exists to keep keys out. Values are saved in plain text on this machine (mode 0600) and never shown again: set the same name again to change one. A change applies at each agent&apos;s next start: a running agent keeps what it started with. A value cannot contain a space.
       </p>
       {problem !== null && (
         <p className="error" role="alert">
