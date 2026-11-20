@@ -585,3 +585,10 @@ export const nullLogger: Logger = {
     return nullLogger;
   },
 };
+/** Telegram files (docs/features/relay.md): downloads of a minute, the Bot API's own limit for getFile, and how long one call may take. */
+export const TELEGRAM_FILES_MAX = 10;
+export const TELEGRAM_FILE_MAX_BYTES = 20 * 1024 * 1024;
+export const TELEGRAM_FILE_TIMEOUT_MS = 30_000;
+export const TELEGRAM_FILES_DIR = 'inbox-files';
+/** A file of the folder is removed at start when it is older than this. */
+export const TELEGRAM_FILES_KEEP_MS = 30 * 24 * 3600_000;
