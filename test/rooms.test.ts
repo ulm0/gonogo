@@ -370,6 +370,29 @@ describe('the layout of room main', () => {
     expect((await api(s, '/api/rooms/team/migrate')).status).toBe(404);
   });
 
+  it('DISMISS only clears a skipped or done note: never a journal, nor a request that waits', async () => {
+    const s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    const post = (action: string): Promise<Response> => api(s, '/api/rooms/main/migrate', s.directorToken, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
+    const file = join(fresh, 'main-migration.json');
+    for (const note of [
+      { state: 'moving', at: 1, entries: ['agents.json'] },
+      { state: 'undoing', at: 1, entries: ['agents.json'] },
+      { state: 'requested', at: 1 },
+      { state: 'undo-requested', at: 1 },
+    ]) {
+      writeFileSync(file, JSON.stringify({ version: 1, ...note }));
+      expect((await post('dismiss')).status, note.state).toBe(409);
+      expect(JSON.parse(readFileSync(file, 'utf8')), note.state).toMatchObject({ state: note.state });
+    }
+    for (const note of [{ state: 'skipped', at: 1, reasons: ['x'] }, { state: 'done', at: 1, moved: 1 }]) {
+      writeFileSync(file, JSON.stringify({ version: 1, ...note }));
+      expect((await post('dismiss')).status, note.state).toBe(200);
+      expect(existsSync(file), note.state).toBe(false);
+    }
+    expect((await post('dismiss')).status).toBe(409); // no note
+  });
+
   it('a start after a crash in the middle of a move finishes it before any room starts', async () => {
     writeFileSync(join(fresh, 'agents.json'), JSON.stringify({ version: 1, agents: [] }));
     writeFileSync(join(fresh, 'messages.jsonl'), '{}\n');

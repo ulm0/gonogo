@@ -676,7 +676,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         if (!pending) throw new RoomsError('no move is waiting for the next start', 'conflict');
         clearMigration(options.home);
       } else if (action === 'dismiss') {
-        if (note === null || pending) throw new RoomsError('there is no note to dismiss', 'conflict');
+        // only what the page shows as a note: never the journal of a move (moving, undoing) or a request that waits
+        if (note === null || (note.state !== 'skipped' && note.state !== 'done')) throw new RoomsError('there is no note to dismiss', 'conflict');
         clearMigration(options.home);
       } else {
         throw new RoomsError('action must be request, undo, cancel or dismiss');
