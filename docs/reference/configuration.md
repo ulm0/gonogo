@@ -24,7 +24,7 @@ A flag beats its environment variable, which beats the default. `--port=7777` an
 | | `GONOGO_REDLINE` | `off` turns off Redline's detectors (loop, error storm, ping-pong). Propellant limits still stop agents. Default on. |
 | | `GONOGO_MAX_WORKING` | Max Q at start: how many agents with hooks (Claude Code, Gemini CLI) may work at once. Whole number 1 to 24, else ignored with a warning. Default no limit; changeable from the wall. |
 | | `GONOGO_AGENT_CMD` | Replaces `claude`: a JSON array of strings, or words split on spaces; gets `claude`'s arguments. When set, `claude` is not looked up on the `PATH`. |
-| | `GONOGO_CLEANROOM_IMAGE` | Image for Clean Room consoles. Default `ghcr.io/ulm0/gonogo`. A console's own image (API) wins. |
+| | `GONOGO_CLEANROOM_IMAGE` | Image for Clean Room consoles. Default `ghcr.io/ulm0/gonogo` (build it locally with `docker build -t ghcr.io/ulm0/gonogo .` if not published yet). A console's own image (API) wins. |
 | | `GONOGO_CLEANROOM_NETWORK` | Only in a container ([Docker](../guide/docker.md#clean-room-in-the-container)): `container:self` or `container:<name>`. Anything else is refused. `compose.yaml` sets it. |
 | | `TZ` | Time zone for Launch Window rules (machine's zone if unset). |
 | | `GONOGO_STATION` | Docking station name (`name@station`): lowercase letters, digits, `-`, at most 31. Default: first part of the host name. |
@@ -72,5 +72,6 @@ Every JSON file above, each Mission Log entry and `board.md` holds `"version": <
 - **Older file**: upgraded at start one version at a time, after a copy to `<file>.bak-v<old>`. If a step fails the file is untouched and the start stops, naming file and copy.
 - **Newer file** stops the start: `<path> was saved by a newer gonogo (format version 2; this one reads up to 1). Start the gonogo that saved it, or move the file away to start without it.` To go back, restore the `.bak-v<n>` copy (later changes are lost).
 - **Optional fields** `model` and `keys` (names) in `agents.json`: an older gonogo drops them at its next save; the values in `keys.json` stay, but the page does not list them until you set them again.
+- `propellant.json` without a version counts as version 1.
 - Mission Log entries are not upgraded (a newer one is skipped and kept); a newer `board.md` stops the start.
 - **Not versioned**: `messages.jsonl`, `fuel.jsonl`, `telemetry.jsonl` and the day files of `black-box/` (an unreadable line is skipped), `mission-log/.seq`, `token`, `server.lock`, and files under `agents/<name>/` rewritten every start.
