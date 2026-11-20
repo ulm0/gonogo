@@ -4,6 +4,13 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.8.2 (2026-11-20)
+
+On a fresh install room main lives in rooms/main like every other room (existing installs are not touched yet); Homebrew's formula is built from the release's own tarball, which npm publishes too; dependency updates (Playwright 1.65.1, actions/cache v6, Caddy 2.11.9, cloudflared 2026.11.1, lock maintenance).
+
+- **Homebrew: the formula installs from the release's own tarball.** The `homebrew` job read the npm registry's copy of the new version and failed on 0.7.0 and 0.8.1, because npm still answered 404 after ten minutes. The release workflow now attaches the tarball it packs (`pnpm pack`, `ulm0-gonogo-<version>.tgz`) to the GitHub Release, and the job opens the tap's pull request with the url of that asset and the sha256 of the file it uploaded, without waiting for npm. npm gets that same file (`pnpm publish <tarball> --provenance`), so npm, the release asset and Homebrew carry one tarball with one sha256. **For the tap:** the formula's `url` now points at `github.com/ulm0/gonogo/releases/download/v<version>/…` instead of the npm registry; `brew install ulm0/tap/gonogo` is unchanged. Not run with a real `brew` or a real release yet.
+- **A new install keeps room main in `rooms/main/`.** On a fresh home the default room lives in its own folder, `<home>/rooms/main/`, like every other room; the root holds only what the supervisor owns (`auth.json`, `token`, `rooms.json`, `push.json`, `run/api.sock`). `rooms.json` records it (`main.home`). A home made before keeps main at the root, unchanged and unwritten: nothing is migrated. **Rolling back** to an older build on a home made by this one (it shows an empty main; your main is still in `rooms/main/`, and the new build finds it again even if the older build edited the room list and dropped the record): the older build does not know `rooms/main/`, so it starts a new, empty main at the root and leaves `rooms/main/` untouched (go forward again, and remove the root's room files, to get the old main back). Docker needs no change: `GONOGO_HOME` is still the root.
+
 ## 0.8.1 (2026-11-20)
 
 Room keys (every agent of a room gets the same variables, e.g. Amazon Bedrock), more reserved key names, a stricter image check now that releases are attested, and JANITOR in the hire form.
