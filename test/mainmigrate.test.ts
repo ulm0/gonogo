@@ -1,5 +1,5 @@
 // Moving room main of an old home into rooms/main (src/server/mainmigrate.ts): the plan, the pre-checks, the move with its journal, a crash in the middle, undo.
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -159,12 +159,14 @@ describe('moving room main into rooms/main', () => {
   it('refuses while the lock of a room is held (its holder touches it every beat), and not for a lock nobody holds', async () => {
     oldHome();
     const was = lockHooks.beatMs;
-    lockHooks.beatMs = 60;
+    lockHooks.beatMs = 1000; // a stall of the holder under load must not outlast two beats; a lock nobody holds is judged at once, so this costs nothing
     const lock = join(root, 'server.lock');
     writeFileSync(lock, `${process.ppid}\n`); // a live pid, no stamp: judged by its beat
     // the check waits on the file with a blocking sleep, so the holder must be another process
     const holder = spawn(process.execPath, ['-e', `setInterval(() => require('fs').utimesSync(${JSON.stringify(lock)}, new Date(), new Date()), 10)`], { stdio: 'ignore' });
-    await new Promise((r) => setTimeout(r, 150));
+    // wait until the holder is running and has touched the lock, not for a fixed time: node can take longer than that to start under load
+    const first = statSync(lock).mtimeMs;
+    for (let i = 0; i < 300 && statSync(lock).mtimeMs === first; i += 1) await new Promise((r) => setTimeout(r, 50));
     try {
       expect((await planMigration(root, 'forward', { running: true })).problems.join('\n')).toContain('server.lock names a live process');
     } finally {

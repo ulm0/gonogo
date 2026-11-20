@@ -230,7 +230,7 @@ describe('growth', () => {
     r.record('noisy', { session: 'nope2', total: 1 });
     expect(warnings).toHaveLength(2);
     await r.close();
-  });
+  }, 180_000); // ~10 s alone: 25,000 records, each counting the agent's sessions; 40 to 60 s on a loaded machine
 
   it('RSO: the memory and the file are pruned while it runs, not only at load: an old session goes, an active one keeps its baseline', async () => {
     const r = await make();
