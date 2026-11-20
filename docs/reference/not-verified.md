@@ -69,6 +69,7 @@ Used by nobody in this room, so still **not run**: Hold on a console and ALL STO
 
 - **Reported cost:** one short real run (Claude Code 2.1.325, haiku, a claude.ai subscription) showed `session_id` and `cost.total_cost_usd` in the status line and a new id and a total of 0 after `/clear`. Not run: whether a subagent's spend is inside the total, `--resume`, an API-key account, and the page showing the figures in a real browser. Also not run: `--resume` (whether the id and the total carry over) and an API-key account.
 - **PR footer:** the name and shape of `attribution.pr` were read in Claude Code 2.1.325's own settings schema, and the setting is written and read back in tests; no agent opened a real pull request with it here, so what Claude Code puts in the description is not seen.
+- **Moving an older install's main into `rooms/main/`:** tried in tests with stand-in rooms and real renames (plan, journal, a crash half way, undo, the page's routes, step-up), not with a real gonogo room process or on a real Docker volume with a live pty host. The checks that a room is running (a live `server.lock`, a socket that answers) are the ones a real room leaves; whether a pid that a container reuses is read as alive is the rule of `server.lock` itself.
 
 ### Live reload: what was seen (the stand-in agent, a real host process, 2026-11-18)
 

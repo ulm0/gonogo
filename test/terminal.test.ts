@@ -27,6 +27,7 @@ import {
   TITLE_IDLE_GLYPH,
   createLogger,
   nullLogger,
+  POINTER_LINE_MAX_CHARS,
 } from '../src/server/constants.js';
 import {
   ModeTracker,
@@ -642,10 +643,10 @@ describe('terminal host with a real pty', () => {
       expect(host.submit('a', 1, '!rm -rf /')).toBe(false);
       expect(host.submit('a', 1, ' \n ')).toBe(false);
       expect(host.submit('a', 1, `\u{200b}hello ${POINTER}`)).toBe(false);
-      expect(host.submit('a', 1, `gonogo: ${'x'.repeat(500)}`)).toBe(false);
+      expect(host.submit('a', 1, `gonogo: ${'x'.repeat(POINTER_LINE_MAX_CHARS)}`)).toBe(false);
       expect(host.submit('a', 2, POINTER)).toBe(false);
       expect(host.submit('nobody', 1, POINTER)).toBe(false);
-      const longest = `gonogo: ${'x'.repeat(490)}`; // exactly 500 characters
+      const longest = `gonogo: ${'x'.repeat(POINTER_LINE_MAX_CHARS - 8)}`; // exactly the longest line
       expect(host.submit('a', 1, longest)).toBe(true);
       const expected = hex(`${PASTE_START}${longest}${PASTE_END}${ENTER}`);
       await until(() => readLog().join('').length >= expected.length, 'the one accepted write');

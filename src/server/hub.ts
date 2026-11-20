@@ -69,6 +69,7 @@ import type {
   TitleInfo,
   Transition,
   UserMessageRequest,
+  DirectorChannel,
   VoteResult,
 } from '../shared/protocol.js';
 import {
@@ -113,6 +114,9 @@ import {
   NEEDS_YOU_CLEAR_MS,
   PASTE_END,
   PERMISSION_SUMMARY_CHARS,
+  DIRECTOR_TURN_CHARS,
+  LEGACY_POINTER_MAX_CHARS,
+  DIRECTOR_TURNS_TOTAL_CHARS,
   POINTER_MAX_ATTEMPTS,
   POINTER_MAX_SENDERS,
   POLL_REASON_MAX_CHARS,
@@ -246,6 +250,21 @@ const UNSAFE_IN_REASON = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u
 
 function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+// Escape sequences whole (CSI, OSC, DCS/PM/APC/SOS strings, two-byte escapes of the C1 kind), and any other ESC alone, so that none is left to begin one inside the paste.
+const ESCAPE_SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|[PX^_][^\u001b]*(?:\u001b\\)?|[@-Z\\-_])?/g;
+// Line breaks and tabs become a space; the rest of C0, DEL, C1, zero-width, bidi, line and paragraph separators, tags and lone surrogates go.
+const BREAKS = /[\u0000-\u0020\u007f-\u009f\u2028\u2029]+/g;
+const INVISIBLE = /[\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufff9-\ufffb\ufeff\u{e0000}-\u{e007f}]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/gu;
+
+/**
+ * The Director's words as ONE clean line for the pointer (docs/features/relay.md): no escape sequence (so no paste end, no key, no title), no control or
+ * invisible character, no line break (nothing submits early), runs of white space as one space, cut to `max` with an ellipsis. Empty when nothing is left.
+ */
+export function directorLine(text: string, max: number = DIRECTOR_TURN_CHARS): string {
+  const line = text.replace(ESCAPE_SEQUENCE, '').replace(INVISIBLE, '').replace(BREAKS, ' ').trim();
+  return line.length <= max ? line : `${cutText(line, max - 1).trimEnd()}…`;
 }
 
 /**
@@ -1054,6 +1073,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (index < 0 || !record) continue;
       rt.queue.splice(index, 1);
       rt.pointed.set(id, (rt.pointed.get(id) ?? 0) + 1);
+      directorTurns.delete(id); // typed once
+      directorDeferred.delete(id);
       setMessage(record, 'delivered', note);
     }
   }
@@ -1339,7 +1360,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     const records = queued(rt);
     if (records.length === 0) return;
-    const text = pointerText(records);
+    const text = typedText(rt, records);
     let typed = false;
     try {
       typed = io.typePointer(name, rt.generation, text);
@@ -1347,6 +1368,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       log.warn(`could not type the pointer into ${name}`, error);
     }
     if (!typed) {
+      // A pty host that outlived a reload may still cap a pointer at the old 500 characters: a line with the Director's words over that is refused for ever. Those words are dropped, so the next sweep types the plain pointer.
+      if (text.length > LEGACY_POINTER_MAX_CHARS && text !== pointerText(records)) {
+        for (const record of records) directorTurns.delete(record.id);
+        log.warn(`the pointer with the Director's words for ${name} was refused (${text.length} characters; a pty host from before may take only ${LEGACY_POINTER_MAX_CHARS}): typing the pointer alone`);
+      }
       log.debug(`the pointer for ${name} was not written; the next sweep tries again`);
       return;
     }
@@ -1574,6 +1600,14 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     if (rt.stopBlocks >= MAX_STOP_BLOCKS) {
       // Claude Code ignores the ninth consecutive block: let the agent go idle and type the pointer instead.
+      setState(rt, 'idle');
+      scheduleDelivery(rt, DELIVERY_SETTLE_MS);
+      return {};
+    }
+    // The Director's own words are only his turn when they are TYPED: a block reason is hook output. So the first Stop lets the agent go idle and the delivery check types them.
+    const wanted = candidates.filter((id) => directorTurnOf(rt, id) !== undefined && !directorDeferred.has(id));
+    if (wanted.length > 0 && isClaude(rt)) {
+      for (const id of wanted) directorDeferred.add(id);
       setState(rt, 'idle');
       scheduleDelivery(rt, DELIVERY_SETTLE_MS);
       return {};
@@ -2736,6 +2770,53 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     return send({ kind: 'user' }, request);
   }
 
+  /** The Director's words of a checked message, by message id: kept in memory only, so a restart can only make a message a plain pointer. */
+  const directorTurns = new Map<string, { channel: DirectorChannel; text: string }>();
+  const DIRECTOR_CHANNELS: readonly string[] = ['web', 'telegram'];
+
+  function sendFromDirector(request: UserMessageRequest, channel: DirectorChannel, said?: string): SendResult {
+    const result = send({ kind: 'user' }, request);
+    // only a channel this code names, and only a message that is waiting for a pointer
+    if (!DIRECTOR_CHANNELS.includes(channel)) return result;
+    const record = messages.get(result.id);
+    const text = directorLine(said ?? (typeof request.body === 'string' ? request.body : ''));
+    if (record !== undefined && text !== '' && (record.status === 'queued' || record.status === 'held')) {
+      directorTurns.set(result.id, { channel, text });
+      // bounded: the oldest go first (a Map keeps insertion order)
+      for (const id of directorTurns.keys()) {
+        if (directorTurns.size <= 200) break;
+        directorTurns.delete(id);
+      }
+    }
+    return result;
+  }
+
+  const CHANNEL_LABEL: Record<DirectorChannel, string> = { web: 'web', telegram: 'Telegram' };
+  /** Messages whose Stop was already let go once so that their words could be typed as a turn: the next Stop hands them over the old way, so that nothing waits on a pty that cannot be typed into. */
+  const directorDeferred = new Set<string>();
+
+  /** The Director's words of this message, when they would be typed at its next pointer. */
+  function directorTurnOf(rt: Rt, id: string): { channel: DirectorChannel; text: string } | undefined {
+    if (io.featureOn?.('director-turns') === false || (rt.pointed.get(id) ?? 0) > 0) return undefined;
+    return directorTurns.get(id);
+  }
+
+  /** What is typed for these messages: the pointer, then the Director's words of those he sent from a checked place, once each (a pointer typed again is only the pointer). */
+  function typedText(rt: Rt, records: readonly MessageRecord[]): string {
+    const pointer = pointerText(records);
+    const parts: string[] = [];
+    let total = 0;
+    for (const record of records) {
+      const turn = directorTurnOf(rt, record.id);
+      if (turn === undefined || record.from !== 'user') continue;
+      const part = `[Director via ${CHANNEL_LABEL[turn.channel]}] ${turn.text}`;
+      if (total + part.length + 1 > DIRECTOR_TURNS_TOTAL_CHARS) break;
+      parts.push(part);
+      total += part.length + 1;
+    }
+    return parts.length === 0 ? pointer : `${pointer} ${parts.join(' ')}`;
+  }
+
   function sendFromStation(station: string, request: StationMessage): SendResult {
     const req = asObject(request, 'the message');
     if (typeof req.from !== 'string' || !NAME_RE.test(req.from)) throw new HubError('bad_request', 'from must be an agent name', 'from');
@@ -3294,6 +3375,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       return enqueue(rt, 'remove', () => removeOp(rt), true);
     },
     sendFromUser,
+    sendFromDirector,
     sendFromStation,
     sendFromAgent,
     trip,

@@ -18,6 +18,9 @@ describe('modelNote', () => {
     expect(modelNote('opus', room, 'claude', 'Claude Code')).toContain('This console runs opus.');
     expect(modelNote('', room, 'claude', 'Claude Code')).toContain("the room's default sonnet applies");
     expect(modelNote('', null, 'claude', 'Claude Code')).toContain('Claude Code uses its own default');
+    // the position's default comes before the room's, as at the start
+    expect(modelNote('', { models: { claude: 'sonnet' }, positions: { fido: 'opus' } }, 'claude', 'Claude Code', 'fido')).toContain("the position's default opus applies");
+    expect(modelNote('', { models: { claude: 'sonnet' }, positions: { fido: 'opus' } }, 'claude', 'Claude Code', 'flight')).toContain("the room's default sonnet applies");
     for (const note of [modelNote('', room, 'claude', 'x'), modelNote('', null, 'claude', 'x')]) expect(note).toContain('/model');
   });
 });

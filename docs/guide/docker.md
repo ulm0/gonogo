@@ -1,10 +1,10 @@
 # Running in Docker
 
-The image is Debian bookworm, runs as user `node` (uid 1000; `bypassPermissions` refuses root), and holds git, tini, Claude Code 2.1.325 (`--build-arg CLAUDE_CODE_VERSION=<x.y.z>` changes it) and gonogo.
+The image runs gonogo as user `node` (uid 1000, so `bypassPermissions` works: it refuses root) on Debian bookworm, with git, tini, `gh`, the Docker CLI client, Claude Code 2.1.325 and gonogo.
 
 <DockerRunMock class="doc-mock" />
 
-Build from a clone (the `Dockerfile` is not in the npm package), then run:
+Build from a clone (the `Dockerfile` is not in the npm package) and run:
 
 ```
 docker build -t gonogo:0.1.0 .
@@ -13,82 +13,50 @@ docker run -d --name gonogo --init -p 127.0.0.1:7777:7777 -e CLAUDE_CODE_OAUTH_T
 docker logs gonogo
 ```
 
-`docker logs` shows the `gonogo ready:` line with the URL. **The URL holds the browser token**: anyone who can read the container log can open the UI and run agents as you. The token never rotates on its own. If the log is collected anywhere, build the URL from the volume instead and keep the log out of the collector (`docker run --log-driver none` keeps no log at all, server errors included):
+`docker logs` shows the `gonogo ready:` URL and the setup token ([first run](./getting-started.md#first-run)). **Anyone who can read the log can set up or open gonogo and run agents as you**: if logs are collected, keep them out (`docker run --log-driver none` keeps none at all). On an install without an account the URL holds the browser token; it never rotates on its own. Read it from the volume, or rotate it (the old URL stops working):
 
 ```
 echo "http://127.0.0.1:7777/#token=$(docker exec gonogo cat /state/gonogo/token)"
+docker exec gonogo rm /state/gonogo/token && docker restart gonogo
 ```
 
-To rotate the token: `docker exec gonogo rm /state/gonogo/token`, then `docker restart gonogo`. The old URL stops working.
+Set one credential: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `ANTHROPIC_API_KEY`; `-e NAME` forwards it from your shell. Both set: the API key wins, with a warning.
 
-Set one credential, not both: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `ANTHROPIC_API_KEY`. `-e NAME` without a value forwards it from your shell. If both are set, the API key wins and gonogo logs a warning.
+| Topic | What to know |
+|---|---|
+| Port | Binds `0.0.0.0` inside but prints `127.0.0.1:7777`; with `-p 127.0.0.1:8080:7777` open it with `8080` |
+| Environment, command, health check, stopping, pinning the base image | [Configuration](../reference/configuration.md#in-the-docker-image) |
+| Seed mode, who runs as whom, `docker exec` | [Security](../reference/security.md#the-docker-image). Use `docker exec -u node ...` for `gh auth login` |
+| Update | With the socket mounted (compose does) and a moving tag, Update pulls and recreates the container with a health check, rollback and UNDO; otherwise the page shows `docker compose pull && docker compose up -d`, or calls `GONOGO_UPDATE_HOOK` ([Update](../features/update.md#in-a-container-update-recreates-gonogo-itself)) |
+| Rooms | One front port, one process per room ([Rooms](../features/rooms.md)); `docker compose exec gonogo gonogo rooms add <id>`. `gonogo reload` is refused in Docker |
 
-## Image details
+## Volumes
 
-- **Base image** `node:24-bookworm-slim` is a floating tag. Pin it with `--build-arg NODE_IMAGE=node:24-bookworm-slim@sha256:<digest>` (`docker pull node:24-bookworm-slim` prints the digest). gonogo's dependencies come from the repository's `pnpm-lock.yaml` (`--prod --frozen-lockfile`).
-- **Health check**: every 30 s it fetches `http://127.0.0.1:7777/` inside the container; `docker ps` shows `healthy` on a 200. The probe is fixed to port 7777: if you run with another `--port` or `GONOGO_PORT`, give the container a matching `--health-cmd` (compose: `healthcheck:`), or it is always `unhealthy` and **every Docker self-update rolls back** (the update waits for `healthy`).
-- **Port**: the server binds `0.0.0.0` inside the container but prints `127.0.0.1:7777`. With `-p 127.0.0.1:8080:7777`, open the printed URL with `8080`.
-- **Volumes**: `/state` holds gonogo's home and Claude Code's configuration and sessions. `/home/node` is the container's HOME (the image keeps only dotfiles there: claude, gh and node live in `/usr/local`); mount a volume or a folder on it and gh's login, `~/.gitconfig`, `~/.aws` and every other dotfile survive a new container. `/projects` is the boss's working directory and where your projects go. Named volumes take the image's ownership (uid 1000).
-- **Host folder for `/projects`**: it must belong to uid 1000, or agents cannot write there (you only see Claude errors in a terminal). On Linux Docker creates a missing folder as `root:root`, so:
+- `/state`: gonogo's home and Claude Code's configuration and sessions.
+- `/home/node`: HOME. gh login, `~/.gitconfig`, `~/.aws` and other dotfiles survive a new container only if this is a volume. To keep yours, copy `~/.config/gh`, `~/.aws`, `~/.gitconfig` into `gonogo-data/home` before the first `docker compose up`, owned by uid 1000 (compose from 0.5.x: `gonogo-data/config/gh` goes to `gonogo-data/home/.config/gh`, `config/gitconfig` to `home/.gitconfig`).
+- `/projects`: the boss's directory and your projects. A host folder must belong to uid 1000 or agents cannot write there:
 
   ```
   mkdir projects && sudo chown 1000:1000 projects
   docker run ... -v "$PWD/projects":/projects ...
   ```
 
-  Do not use `--user $(id -u):$(id -g)`: `/state` and `HOME=/home/node` become unwritable. gonogo warns at start when the home or the boss's directory is not writable. Git refuses a repository owned by another uid (`dubious ownership`) except one mounted at `/projects` itself (Debian's git 2.39 ignores the `/projects/*` entry), so `chown` what you mount.
-- **Seed mode** is on. Without it a fresh container stops at five Claude Code dialogs (theme, login method, folder trust, bypass warning, API key). Seed mode:
-  - records folder trust for every folder an agent is hired into, except `/`, your home directory and folders that hold either or the state ([Security](../reference/security.md)). **Add only repositories you trust.**
-  - sets `IS_DEMO=1` for each `claude`, which hides your account name and organisation in Claude's header and `/status`;
-  - moves `ANTHROPIC_API_KEY` out of the agent's environment into an `apiKeyHelper`.
-- **gh and git**: the image has the `gh` CLI (pinned, checked against the release checksum). `gh auth login` keeps its login in `~/.config/gh` and `git config --global` writes `~/.gitconfig`, as on any machine; with `/home/node` on a volume (compose does it: `gonogo-data/home`) both survive a restart or a new container, a self-update included (it keeps the bind). Without a volume on `/home/node` (a bare `docker run` that omits it) they are lost when the container is recreated. At start the container copies `/etc/skel` (`.bashrc`, `.profile`) into the home when it is a new, empty folder, never over a file that exists. **To keep what you already have**: copy it into `gonogo-data/home` before the first `docker compose up` (`~/.config/gh`, `~/.aws`, `~/.gitconfig`; on a compose install from 0.5.x the old `gonogo-data/config/gh` goes to `gonogo-data/home/.config/gh` and `gonogo-data/config/gitconfig` to `gonogo-data/home/.gitconfig`), owned by uid 1000.
-- **Update**: with the Docker socket mounted (the compose file does) and a moving tag, the Update button pulls the image and recreates the container itself, with a health check and a rollback, and UNDO puts the old image back. With a pinned tag or no socket the page shows `docker compose pull && docker compose up -d`, or calls `GONOGO_UPDATE_HOOK` ([Update from the page](../features/update.md#in-a-container-update-recreates-gonogo-itself)).
-- **Environment**: `GONOGO_INSTALL=docker`, `HOME=/home/node`, `CLAUDE_CONFIG_DIR=/state/claude`, `GONOGO_HOME=/state/gonogo`, `GONOGO_SEED_CLAUDE=1`, `DISABLE_AUTOUPDATER=1`, `LANG=C.UTF-8`. Command: `gonogo --host 0.0.0.0 --port 7777`. Every [option](../reference/configuration.md#options) works, as `-e GONOGO_ALLOWED_HOSTS=gonogo.example.com` or as arguments after the image name (these replace the whole command, so repeat `--host 0.0.0.0 --port 7777`).
-- **Stopping**: gonogo stops its agents within 8 s and gives up at 12, past Docker's default 10. Use `docker stop -t 15` or more.
-- **Docker CLI**: the client binary only (from `docker:<version>-cli`; `--build-arg DOCKER_CLI_IMAGE=...` changes it), for Clean Room. No daemon.
-
-## Rooms in the container
-
-The image runs `gonogo`, which is the supervisor: one front port (7777) and one process per room (see [Rooms](../features/rooms.md)). Add rooms from the list page at
-`/rooms`, or with `docker compose exec gonogo gonogo rooms add <id>`. The healthcheck probes `/rooms/health`: 503 until room main has been ready once, then 200
-for as long as gonogo runs, so a restart loop of one room does not flap the container. Give the service `stop_grace_period: 60s` (compose.yaml has it): every room stops
-its own agents within 12 seconds, in parallel, and the supervisor waits 17 before it kills one. The Clean Room, Update and healthcheck work on the container; `gonogo reload` is refused in Docker.
-
-## Who runs as whom
-
-The container **starts as root**, for one job, and the server **runs as uid 1000** (`node`). A folder that did not exist on the host when the container started (compose from ZimaOS or Portainer, where nobody ran `install -d`) is created by Docker as `root:root`, and uid 1000 could not write in it: the entrypoint (`gonogo-entrypoint`) looks at exactly four paths, `$HOME` (`/home/node`), the folder above `$GONOGO_HOME` (your data folder), `$CLAUDE_CONFIG_DIR` and the working directory, and gives uid 1000 the **top** of each that is a real directory, owned by root, and a mount point (or directly inside one). It says so in the container log. **Never** recursively (a root-owned folder with files of someone else keeps every one of them as it was), never through a symlink, never `/` or a system folder, never a folder that is not root's. Then it drops to uid 1000 with the groups the container was given (the Docker socket's `group_add`, not root's group) and runs everything else, `gonogo` and the agents, as that user.
-
-What that means for you:
-
-- `docker run --user 1000:1000` (or compose `user:`) skips all of it: nothing is chowned and an unwritable home gets the old warning, with the `chown` to run on the host.
-- **`docker exec` starts as root now.** The `gonogo` command drops to uid 1000 by itself (so `docker exec gonogo gonogo rooms add team` writes `rooms.json` as `node`, as before), but other programs do not: use `docker exec -u node ...` for `gh auth login` or anything that writes in the home, or the files it writes are root's.
-- A file that `docker exec` (as root) wrote in `/home/node` is root's, and the server could not read it: the next start gives the entries of the home that are root's (regular files with one link and folders only, never across a mount, never a symlink or what one points to, never a hardlink) to uid 1000.
-- PID 1 (`tini`) stays root; gonogo, its rooms and the agents are uid 1000 (`docker top`).
-- A self-update from an older image makes the copy start as root too (the new image's own setting; the old `USER node` is not carried over), and its helper runs as uid 1000.
+  Not `--user $(id -u):$(id -g)` (`/state` and HOME become unwritable). gonogo warns at start when the home or boss directory is not writable. Git refuses a repository owned by another uid (`dubious ownership`) except one mounted at `/projects` itself.
 
 ## Clean Room in the container
 
-`compose.yaml` at the repository root runs gonogo with the host's Docker socket mounted, so a Clean Room console starts its container on the host's Docker, next to gonogo's (not Docker in Docker).
+`compose.yaml` runs gonogo with the host's Docker socket mounted, so Clean Room consoles start on the host's Docker.
 
 ::: danger
-**The mounted socket gives the gonogo container root over the host.** Any agent in it, Clean Room or not, can start a container that mounts the host's `/`; in `bypassPermissions` mode without asking. Use this only where you would let those agents run as root.
+**The mounted socket gives the gonogo container root over the host.** Any agent in it, Clean Room or not, can start a container that mounts the host's `/`, in `bypassPermissions` without asking. Use it only where you would let those agents run as root.
 :::
 
 ```
-sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home   # next to compose.yaml (optional: see "Who runs as whom")
-printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env   # next to compose.yaml; compose reads it for every command
+sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home   # next to compose.yaml
+printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env
 export CLAUDE_CODE_OAUTH_TOKEN=...     # or ANTHROPIC_API_KEY, never both
-docker compose up -d                                       # pulls ghcr.io/ulm0/gonogo:latest
+docker compose up -d                   # pulls ghcr.io/ulm0/gonogo:latest (amd64, arm64), restart: always
 docker compose logs gonogo
 ```
 
-`GONOGO_DATA` has no default: **every** compose command (`up`, `logs`, `ps`, `down`, and the `docker compose pull && docker compose up -d` of an update) stops with "set GONOGO_DATA to the absolute path of the data folder" when it is missing. The `.env` file above covers a shell and a UI alike (a stack in ZimaOS, Portainer or Dockge has no shell and no `$PWD`: put the same two lines in the stack's environment or `.env`, with a path that exists on the host). The alternative is `export GONOGO_DATA=...` and `export DOCKER_GID=...` in the shell that runs compose.
-
-It runs the published image (amd64, arm64) with `restart: always`. Update: `docker compose pull && docker compose up -d`. To use your own build, tag it first: `docker build -t ghcr.io/ulm0/gonogo:latest .`.
-
-Second instance on the same host: own project name, port and data folder, e.g. `GONOGO_PORT=7778 GONOGO_DATA=$PWD/gonogo-data-2 docker compose -p gonogo-2 up -d` (create `gonogo-data-2` and its `projects/` as above).
-
-- **Same paths.** The host's Docker resolves `-v` paths on the host, so gonogo's home must have the same path inside gonogo's container as on the host. `compose.yaml` mounts one data folder at its own path (`GONOGO_DATA`, required, an absolute path) holding `state/`, `claude/` and `projects/`. It must belong to uid 1000 and its path must not contain a colon. Otherwise each Clean Room start refuses with `gonogo's home ... is not mounted into the container ... from the same path of the host`. "The host" is where the daemon runs: in a Lima or Docker Desktop VM, that is the VM.
-- **Network.** `GONOGO_CLEANROOM_NETWORK=container:self` starts each Clean Room with `--network container:<gonogo's container>` (found by host name; `container:<name>` names it explicitly), sharing gonogo's network and hosts file. `extra_hosts` maps `host.docker.internal` to `127.0.0.1` there; the server accepts that name for the hook and tool endpoints only, and each start refuses if it does not resolve to `127.0.0.1`. A Clean Room on this network can reach any port gonogo's container listens on, including a loopback server started by another agent. Recreating the gonogo container breaks it (restart the console). Other networks are refused.
-- **The socket.** `group_add` gives the container user the socket's group; `DOCKER_GID` is required because it differs between hosts. Docker Desktop may need another value or `0` (not tried).
-- The image's `/state` and `/projects` volumes are unused here (Docker still makes two empty anonymous volumes; `docker compose down -v` removes them). The default Clean Room image is `ghcr.io/ulm0/gonogo`.
+Update: `docker compose pull && docker compose up -d` (own build: tag it `ghcr.io/ulm0/gonogo:latest` first). **Every compose command stops without `GONOGO_DATA`**. Paths, network and socket details: [Clean Room](../features/clean-room.md#gonogo-in-a-container-compose).

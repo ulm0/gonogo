@@ -1,5 +1,6 @@
 // The login through the whole supervisor (docs/login-spec.md): real HTTP and WebSocket on a real front port, stand-in rooms (test/fake-room.mjs)
 // behind it on their unix sockets, and the local socket for the TUI and the CLI.
+import { setMainHome } from '../src/server/rooms.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
@@ -50,6 +51,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-login-'));
   // a home made before 0.9: room main's files are at the root (a room's mission-log folder says so); a fresh home puts main in rooms/main (test/rooms.test.ts)
   mkdirSync(join(home, 'mission-log'));
+  setMainHome(home, '.'); // and it has been asked: it stays (a home that was never asked is moved at the start, see test/mainmigrate.test.ts)
   stopped = false;
 });
 afterEach(async () => {
@@ -695,6 +697,22 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     ws.close();
   });
 
+  it('step-up: moving where room main keeps its files (MIGRATE NOW, UNDO) is refused with stepUp:true when the check is old; cancelling it, dismissing the note and the dry run are not', async () => {
+    const { cookies } = await withTotp();
+    const [h] = json(cookieHeader(cookies), {});
+    const post = (action: string): Promise<Answer> => call('POST', '/api/rooms/main/migrate', h, JSON.stringify({ action }));
+    expect((await post('request')).status).toBe(200); // fresh
+    clock += 6 * 60_000;
+    for (const action of ['request', 'undo']) {
+      const refused = await post(action);
+      expect(refused.status, action).toBe(403);
+      expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true });
+    }
+    expect((await post('cancel')).status).toBe(200);
+    expect((await post('dismiss')).status).toBe(409); // not behind step-up; there is just no note
+    expect((await call('GET', '/api/rooms/main/migrate', cookieHeader(cookies))).status).toBe(200);
+  });
+
   describe('push devices (docs/features/mobile.md)', () => {
     const device = (): Record<string, unknown> => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/dev', keys: { p256dh: phone().p256dh, auth: phone().auth }, device: 'Phone' });
     const stored = (): Array<{ session: string }> => (JSON.parse(readFileSync(join(home, 'push.json'), 'utf8')) as { devices: Array<{ session: string }> }).devices;
@@ -1069,6 +1087,39 @@ describe('the device login of a terminal through the supervisor', () => {
     expect(JSON.parse((await poll(flow.device_code)).text)).toEqual({ error: 'access_denied' });
     // the code is spent
     expect((await typeCode(cookies, flow.user_code)).status).toBe(404);
+  });
+
+  it("the Director's words are marked for the room only when a signed-in browser session posts a message: not a key, a terminal, the local socket, another route, and never a header a sender wrote", async () => {
+    const cookies = await bootDevice();
+    const key = String((await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'k', scope: 'full' })).body.key);
+    const approved = await startFlow();
+    await decide(cookies, approved.user_code, 'approve');
+    dclock += 6000;
+    const tui = (JSON.parse((await poll(approved.device_code)).text) as { token: string }).token;
+    const posts = (): Array<{ url: string; director: string | null; other: string[] }> =>
+      readFileSync(join(home, 'posts.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { url: string; director: string | null; other: string[] });
+    const post = async (path: string, headers: Record<string, string>): Promise<{ url: string; director: string | null; other: string[] }> => {
+      const before = existsSync(join(home, 'posts.jsonl')) ? posts().length : 0;
+      const res = await call('POST', path, { ...JSONH, ...headers }, JSON.stringify({ to: 'ana', body: 'go' }));
+      expect(res.status, path).toBe(200);
+      const now = posts();
+      expect(now).toHaveLength(before + 1);
+      return now[before] as { url: string; director: string | null; other: string[] };
+    };
+    const session = { ...cookieHeader(cookies), ...origin() };
+    // the signed-in browser: marked
+    expect(await post('/r/main/api/messages', session)).toMatchObject({ url: '/api/messages', director: 'web', other: ['x-gonogo-director'] });
+    // anything else is not: a key, a terminal's session, a header written by the sender (dropped, even with a good cookie), another route, another spelling of the path
+    expect(await post('/r/main/api/messages', { authorization: `Bearer ${key}` })).toMatchObject({ director: null, other: [] });
+    expect(await post('/r/main/api/messages', { authorization: `Bearer ${tui}` })).toMatchObject({ director: null, other: [] });
+    expect(await post('/r/main/api/messages', { authorization: `Bearer ${key}`, 'x-gonogo-director': 'web' })).toMatchObject({ director: null, other: [] });
+    expect(await post('/r/main/api/messages', { ...session, 'x-gonogo-director': 'telegram', 'x-gonogo-other': '1' })).toMatchObject({ director: 'web', other: ['x-gonogo-director'] });
+    expect(await post('/r/main/api/agents', { ...session, 'x-gonogo-director': 'web' })).toMatchObject({ director: null, other: [] });
+    expect(await post('/r/main/API/messages', session)).toMatchObject({ director: null });
+    // the local socket is the supervisor's own door and carries no mark
+    const before = posts().length;
+    expect((await socketCall(sup.socketPath, 'POST', '/r/main/api/messages', { to: 'ana', body: 'go' })).status).toBe(200);
+    expect(posts()[before]).toMatchObject({ director: null, other: [] });
   });
 
   it('only a browser session approves: a key, a terminal session and a request with no cookie are sent to the login', async () => {

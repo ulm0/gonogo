@@ -20,6 +20,7 @@ const given = (value: unknown): boolean => value !== undefined && value !== null
 /** The body decides these two (hire; edit of an agent), so the proxy reads it first. */
 export function bodyMatters(method: string, path: string): boolean {
   if (method === 'PUT' && path === '/api/autoupdate') return true;
+  if (method === 'POST' && path === '/api/rooms/main/migrate') return true;
   if (method === 'POST' && path === '/api/agents') return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
@@ -56,6 +57,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (/^\/api\/engines?(\/|$)/.test(path)) return 'the keys of an engine';
   // auto-update runs code of the publisher unattended: turning it on or moving its window asks; turning it off and SKIP THIS VERSION never do (they only make it do less)
   if (method === 'PUT' && path === '/api/autoupdate') return body === null || body.enabled === true || body.windows !== undefined ? 'turning on auto-update, or changing when it runs' : null;
+  // moving where room main keeps its files (MIGRATE NOW, UNDO) is done at the next start; cancelling that or dismissing the note only does less
+  if (method === 'POST' && path === '/api/rooms/main/migrate') return body !== null && (body.action === 'cancel' || body.action === 'dismiss') ? null : 'moving where room main keeps its files';
   // a Docker self-update
   if (/^\/api\/update(\/|$)/.test(path)) return 'updating gonogo';
   // the account itself

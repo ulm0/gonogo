@@ -88,7 +88,7 @@ function run(options: { token?: string; rooms: unknown[]; livery?: string; hash?
   const context = {
     document: Object.assign(doc, { getElementById: (id: string) => byId[id] ?? null, createElement: make }),
     localStorage: { getItem: (k: string) => saved[k] ?? null, setItem: (k: string, v: string) => (saved[k] = v) },
-    location: { hash: options.hash ?? '', pathname: '/', replace: (to: string) => void replaced.push(to) },
+    location: { hash: options.hash ?? '', pathname: '/', replace: (to: string) => void replaced.push(to), assign: (to: string) => void replaced.push(`assign:${to}`) },
     history: { replaceState() {} },
     URLSearchParams,
     fetch: async (_url: string, init: { headers?: Record<string, string> } = {}) => {
@@ -157,6 +157,20 @@ describe('the rooms list page script', () => {
     expect(doc.title).toBe('(1) rooms · gonogo');
   });
 
+  it('a tap anywhere on a running room\'s card opens it, a tap on one of its own keys does not, and a stopped room\'s card does nothing', async () => {
+    const { byId, replaced } = run({ token: 'a'.repeat(64), rooms: [room(), room({ id: 'ninah', name: 'ninah', state: 'running', agents: 2, running: 2 }), room({ id: 'old', name: 'Old', state: 'crashed', agents: null })] });
+    await settle();
+    const [main, ninah, old] = (byId.rooms?.children ?? []) as [Node, Node, Node];
+    expect(ninah.className).toContain('rl-open');
+    expect(old.className).not.toContain('rl-open');
+    ninah.fire('click', { target: { closest: () => null } });
+    expect(replaced).toEqual(['assign:/r/ninah/']);
+    // the target is inside a key, a link or a field (RENAME, OPEN itself, the name box): the key does its own work
+    main.fire('click', { target: { closest: () => ({}) } });
+    old.fire('click', { target: { closest: () => null } });
+    expect(replaced).toEqual(['assign:/r/ninah/']);
+  });
+
   it('with only main, the empty state offers a new room', async () => {
     const { byId } = run({ token: 'a'.repeat(64), rooms: [room()] });
     await settle();
@@ -177,6 +191,27 @@ describe('the rooms list page script', () => {
     expect(doc.activeElement?.dataset.f).toBe('keep:team');
     card().querySelector('[data-f="keep:team"]')?.fire('click');
     expect(text(card())).not.toContain('nothing is deleted');
+  });
+
+  it('a tap on the card does not open the room in the middle of a remove or a rename: the half-done action is kept', async () => {
+    const { byId, replaced } = run({ token: 'a'.repeat(64), rooms: [room(), room({ id: 'team', name: 'Team B', state: 'running', agents: 1, running: 1 })] });
+    await settle();
+    const card = (): Node => (byId.rooms?.children ?? [])[1] as Node;
+    const tapCard = (): void => card().fire('click', { target: { closest: () => null } });
+    // removing: a tap on the question (not on one of its keys) leaves it open
+    card().querySelector('[data-f="remove:team"]')?.fire('click');
+    tapCard();
+    expect(replaced).toEqual([]);
+    expect(text(card())).toContain('nothing is deleted');
+    card().querySelector('[data-f="keep:team"]')?.fire('click');
+    // renaming: the card is the form, and a tap on its label does not leave the page
+    card().querySelector('[data-f="rename:team"]')?.fire('click');
+    tapCard();
+    expect(replaced).toEqual([]);
+    // when nothing is half done a tap on the card opens the room
+    card().querySelector('[data-f="cancel:team"]')?.fire('click');
+    tapCard();
+    expect(replaced).toEqual(['assign:/r/team/']);
   });
 
   it('without a token it asks anyway (the login cookie is the credential) and sends no Authorization', async () => {

@@ -166,6 +166,21 @@ describe('buildDockerArgs', () => {
     ]);
   });
 
+  it('never mounts gonogo\'s <home>/run (its sockets: api.sock, room.sock, the pty host) nor the home itself, nor anything above or inside them, on either network', () => {
+    const home = '/h';
+    for (const network of [null, 'container:gonogo']) {
+      const args = buildDockerArgs({ ...input, place: { ...place, network } });
+      const sources = args.flatMap((a, i) => (args[i - 1] === '-v' ? [a.split(':')[0] as string] : []));
+      expect(sources).toEqual(['/h/cleanroom/ana', '/h/cleanroom/ana/.git', '/h/agents/ana']);
+      for (const source of sources) {
+        const inside = (dir: string, path: string): boolean => path === dir || path.startsWith(`${dir}/`);
+        expect(inside(`${home}/run`, source), source).toBe(false); // not inside run/
+        expect(inside(source, `${home}/run`), source).toBe(false); // not a folder that holds run/ (the home, or /)
+        expect(source, source).not.toBe(home);
+      }
+    }
+  });
+
   it('drops every capability and forbids gaining one (the container shares gonogo\'s network namespace), on either network, and adds nothing else of that kind', () => {
     for (const network of [null, 'container:gonogo']) {
       const args = buildDockerArgs({ ...input, place: { ...place, network } });

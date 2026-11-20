@@ -5,6 +5,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import type { ModelDefaults, Provider } from '../shared/protocol.js';
 import { PROVIDERS, providerInfo } from '../shared/protocol.js';
+import { effectiveModel as startModel } from '../shared/details.js';
 import * as api from './api.js';
 
 /** The engines with a model field, in the order the page lists them. */
@@ -19,9 +20,10 @@ export function effectiveModel(own: string | null | undefined, defaults: ModelDe
 }
 
 /** What the model field says under it: where the value comes from, and that a `/model` typed in the console is not kept. */
-export function modelNote(own: string | null | undefined, defaults: ModelDefaults | null, provider: Provider, label: string): string {
-  const eff = effectiveModel(own, defaults, provider);
-  const where = eff === null ? `Empty: ${label} uses its own default.` : eff.from === 'console' ? `This console runs ${eff.model}.` : `Empty: the room's default ${eff.model} applies.`;
+export function modelNote(own: string | null | undefined, defaults: ModelDefaults | null, provider: Provider, label: string, position: string | null = null): string {
+  // the position's default (Claude Code) comes before the room's, as at the start (shared/details.ts)
+  const eff = startModel({ model: own?.trim() || null, provider, position }, defaults);
+  const where = eff === null ? `Empty: ${label} uses its own default.` : eff.from === 'console' ? `This console runs ${eff.name}.` : `Empty: the ${eff.from === 'position' ? "position's" : "room's"} default ${eff.name} applies.`;
   return `${where} A /model typed inside the console only changes that session: set it here to keep it.`;
 }
 

@@ -22,11 +22,11 @@ Flight Rules -> **FEATURES** gives each feature of the room a switch. Off is **t
 | Page | Top-bar and phone-bar keys, Patch Panel lines, wall blocks and console buttons are hidden; an open view falls back to the Room. Wall blocks T-MINUS and MAX Q of the [room editor](../guide/the-room.md) are not drawn (the layout keeps their place); the tray shows them "off in Features" with no RESTORE |
 | Server | `404` with code `feature_off` and `"... is off"`, before the handler. Uplink's webhook endpoint and Docking calls answer as an id that is not there |
 | Agents | Tools are not listed and a call is refused (by the MCP library, in its own words). A new agent also gets them left out of `--allowedTools`; a running one keeps its list but its calls are refused |
-| Background | Max Q off: limit ignored, no mail waits for load. Telemetry off: tool hooks not recorded. Launch Window off: schedules do not fire, and **one that came due is not caught up**. Relay off: nothing forwarded. Static fire off: a poll with a subject is refused |
+| Background | Max Q off: limit ignored, no mail waits for load. Director messages as user turns off: your messages reach an agent as the pointer only, and it reads your words as data. Telemetry off: tool hooks not recorded. Launch Window off: schedules do not fire, and **one that came due is not caught up**. Relay off: nothing forwarded. Static fire off: a poll with a subject is refused |
 
 ## What can be switched
 
-- **Switchable:** Max Q, T-minus poll, Static fire, Relief, Flight Plan, Missions, Mission Log, Star Chart, Plot Board, Telemetry, Post-Flight Review, Mass Budget, Hangar, Recorder, Launch Window, Uplink, Relay, Docking, Livery.
+- **Switchable:** Director messages as user turns, Max Q, T-minus poll, Static fire, Relief, Flight Plan, Missions, Mission Log, Star Chart, Plot Board, Telemetry, Post-Flight Review, Mass Budget, Hangar, Recorder, Launch Window, Uplink, Relay, Docking, Livery.
 - **Listed, not switchable** (the server refuses): Party Line, Propellant and Cost, Phone approvals.
 
 ## Limits

@@ -42,7 +42,7 @@ function LinkLamp(): ReactElement {
   return (
     <span className="lamp" role="status" data-link={connection === 'open' ? 'up' : connection === 'connecting' ? 'wait' : 'down'}>
       <span className="led" data-on={connection === 'open'} data-blink={connection === 'connecting'} aria-hidden="true" />
-      {text}
+      <span className="lamp-text">{text}</span>
     </span>
   );
 }
@@ -95,9 +95,16 @@ function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactE
       )}
       <span className="topbar-grow" />
       <LinkLamp />
-      <a className="btn" data-kind="quiet" href={ROOMS_PATH}>
-        Rooms
-      </a>
+      {/* a round key on a phone: the bar has no room for the word beside the logo, the version, the lamp and the two keys that follow */}
+      {phone ? (
+        <a className="btn topbar-plus" data-kind="quiet" href={ROOMS_PATH} aria-label="Rooms" title="Rooms">
+          <span className="rooms-mark" aria-hidden="true" />
+        </a>
+      ) : (
+        <a className="btn" data-kind="quiet" href={ROOMS_PATH}>
+          Rooms
+        </a>
+      )}
       {!phone && (
         <button type="button" className="btn" data-kind="quiet" aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
           Comms

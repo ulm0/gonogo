@@ -1,6 +1,7 @@
 // Rooms as the only mode (docs/single-mode-spec.md, PR 1): the Director token, the supervisor lock, the health path, the room's own
 // token and port, reload through the supervisor, and `gonogo token rotate`. Stand-in rooms (test/fake-room.mjs) except where a real room
 // (startGonogo with roomChild) is the point.
+import { setMainHome } from '../src/server/rooms.js';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -36,6 +37,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-single-'));
   // a home made before 0.9: room main's files are at the root (a room's mission-log folder says so); a fresh home puts main in rooms/main (test/rooms.test.ts)
   mkdirSync(join(home, 'mission-log'));
+  setMainHome(home, '.'); // and it has been asked: it stays (a home that was never asked is moved at the start, see test/mainmigrate.test.ts)
 });
 afterEach(async () => {
   await sup?.stop();
