@@ -6,6 +6,7 @@ import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
 import { PermissionsEditor } from './PermissionsEditor.js';
+import { effectiveEffort, effectiveModel as startModel } from '../shared/details.js';
 import { modelNote, useModelDefaults } from './models.js';
 import {
   BOSS_POSITION,
@@ -532,7 +533,7 @@ function Staff({ form }: { form: Target }): ReactElement {
     <Control
       id={`${id}-model`}
       label="Model"
-      hint={`Passed to ${providerInfo(values.provider).label} as --model. ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label)}${modelHints.length > 0 ? ` Names it knows: ${modelHints.join(', ')}.` : ''} Any name it accepts works.`}
+      hint={`Passed to ${providerInfo(values.provider).label} as --model. ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label, values.position === '' ? null : values.position)}${modelHints.length > 0 ? ` Names it knows: ${modelHints.join(', ')}.` : ''} Any name it accepts works.`}
       error={modelError}
     >
       <input
@@ -541,7 +542,7 @@ function Staff({ form }: { form: Target }): ReactElement {
         type="text"
         list={`${id}-models`}
         value={values.model}
-        placeholder={roomModels?.models[values.provider] ?? 'its default'}
+        placeholder={startModel({ model: null, provider: values.provider, position: values.position === '' ? null : values.position }, roomModels)?.name ?? 'its default'}
         autoComplete="off"
         autoCapitalize="none"
         spellCheck={false}
@@ -557,10 +558,13 @@ function Staff({ form }: { form: Target }): ReactElement {
       </datalist>
     </Control>
   );
+  const roomEffort = effectiveEffort({ provider: values.provider, effort: null }, roomModels);
   const effortField = takesEffort(values.provider) && (
-    <Control id={`${id}-effort`} label="Effort" hint="Passed to Claude Code as --effort. Empty uses its own. An /effort typed inside the console only changes that session." error={undefined}>
+    <Control id={`${id}-effort`} label="Effort" hint={`Passed to Claude Code as --effort. ${roomEffort === null ? 'Empty uses its own.' : `Empty: the room's default ${roomEffort.level} applies.`} An /effort typed inside the console only changes that session.`} error={undefined}>
       <select id={`${id}-effort`} className="input" value={values.effort} onChange={(event) => change({ effort: event.target.value }, 'effort')}>
-        <option value="">its own</option>
+        <option value="">{roomEffort === null ? 'its own' : `room default (${roomEffort.level})`}</option>
+        {/* a stored level this page does not know (a newer server) stays selected instead of falling back to blank, which a save would clear */}
+        {values.effort !== '' && !(EFFORTS as readonly string[]).includes(values.effort) && <option value={values.effort}>{values.effort}</option>}
         {EFFORTS.map((level) => (
           <option key={level} value={level}>
             {level}
