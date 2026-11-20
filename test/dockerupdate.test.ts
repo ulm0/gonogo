@@ -160,6 +160,19 @@ describe('the copy of the container', () => {
     expect(body.NetworkingConfig.EndpointsConfig.room_default).toEqual({ Aliases: ['gonogo'] });
   });
 
+  it('drops the USER the old image gave (the new image starts as root and drops itself), and keeps one the owner asked for', () => {
+    const fromImage = copyBody({ ...INSPECT, Config: { ...OLD_CONFIG, User: 'node' } }, { Config: { ...OLD_IMAGE_CONFIG, User: 'node' } }, NEW_IMG);
+    expect(fromImage).not.toHaveProperty('User');
+    const owners = copyBody({ ...INSPECT, Config: { ...OLD_CONFIG, User: '2000:2000' } }, { Config: { ...OLD_IMAGE_CONFIG, User: 'node' } }, NEW_IMG);
+    expect(owners.User).toBe('2000:2000');
+  });
+
+  it('the helper runs as uid 1000 when the target starts as root, and as the target\'s own user when it names one', () => {
+    const user = (u: string): unknown => helperBody({ inspect: { ...INSPECT, Config: { ...OLD_CONFIG, User: u } }, image: NEW_IMG, expect: '0.4.0', home: '/state/room', socketPath: '/var/run/docker.sock' }).User;
+    for (const root of ['', 'root', '0', '0:0', 'root:docker']) expect(user(root), root).toBe('1000:1000');
+    for (const own of ['node', '1000:1000', '2000:2000']) expect(user(own), own).toBe(own);
+  });
+
   it('keeps a command the owner set himself', () => {
     const own = copyBody({ ...INSPECT, Config: { ...OLD_CONFIG, Cmd: ['serve', '--port', '9'] } }, { Config: OLD_IMAGE_CONFIG }, NEW_IMG);
     expect(own.Cmd).toEqual(['serve', '--port', '9']);

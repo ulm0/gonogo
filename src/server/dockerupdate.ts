@@ -127,7 +127,8 @@ export function copyBody(inspect: Json, oldImage: Json, image: string, ref: stri
   const id = asText(inspect.Id);
   config.Image = image;
   if (asText(config.Hostname) === id.slice(0, 12) || asText(config.Hostname) === id) delete config.Hostname;
-  for (const key of ['Cmd', 'Entrypoint', 'Healthcheck']) if (same(config[key], base[key])) delete config[key];
+  // `User` too: an older image said `USER node` and its container carries it; the new image starts as root (to fix a bind folder) and drops itself
+  for (const key of ['Cmd', 'Entrypoint', 'Healthcheck', 'User']) if (same(config[key], base[key])) delete config[key];
   const baseEnv: unknown[] = Array.isArray(base.Env) ? base.Env : [];
   if (Array.isArray(config.Env)) config.Env = config.Env.filter((e) => !baseEnv.includes(e));
   const labels = asRecord(config.Labels);
@@ -157,6 +158,11 @@ function mountOf(inspect: Json, path: string): string | null {
   return best?.spec ?? null;
 }
 
+/** The user of the helper: the target's own when it names one that is not root, else uid 1000 (the image's `node`). */
+function helperUser(user: string): string {
+  return user === '' || /^(root|0)(:|$)/.test(user) ? '1000:1000' : user;
+}
+
 /**
  * The helper: the new image, `gonogo self-update` for one target, the socket and the target's home mounted at the same paths, the
  * target's user and groups (to reach the socket), removed when it exits. Nothing else reaches it but the version and the image.
@@ -171,7 +177,8 @@ export function helperBody(input: { inspect: Json; image: string; /** The image 
   return {
     Image: input.helperImage ?? input.image,
     Cmd: ['self-update', '--target', asText(inspect.Id), '--expect', input.expect, '--home', input.home, '--image', input.image],
-    User: asText(asRecord(inspect.Config).User),
+    // a container that starts as root (the image's own USER, since the entrypoint drops privileges itself) gets a helper of uid 1000: update.json is written by it and read by gonogo
+    User: helperUser(asText(asRecord(inspect.Config).User)),
     // the target id lets a new gonogo tell its own helper from another gonogo's on the same host
     Labels: { 'gonogo.helper': '1', 'gonogo.helper.target': asText(inspect.Id) },
     // no network: it talks to the socket only
