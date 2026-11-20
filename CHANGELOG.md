@@ -4,7 +4,7 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
-- **The footer of the pull requests agents write.** A Claude Code agent's pull requests now end with "Generated with gonogo" and a link to these docs, in place of Claude Code's own line (the settings file gets `attribution.pr`; commits keep their attribution and the co-author line). On by default, with a switch next to the co-author line in Flight Rules; it applies at each console's next restart. Other engines have none. [Co-author line](https://gonogo.ulm0.com/features/coauthor.html).
+- **The footer of the pull requests agents write.** A Claude Code agent's pull requests now end with "Generated with gonogo" and a link to these docs, in place of Claude Code's own line (the settings file gets `attribution.pr`; commits keep their attribution and the co-author line). On by default, with a switch next to the co-author line in Flight Rules; it applies at each console's next restart. Other engines have none. **Back to a build without it:** the old build re-saves `coauthor.json` without `prFooter`, so going forward again turns a footer you had switched OFF back ON; switch it off again. [Co-author line](https://gonogo.ulm0.com/features/coauthor.html).
 
 ## 0.7.0 (2026-11-20)
 
