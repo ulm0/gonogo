@@ -78,6 +78,11 @@ describe('verifyImage', () => {
     expect(ghEnv({ PATH: 'p', LANG: 'C', GH_TOKEN: 't', HOME: '/h', SSL_CERT_FILE: '/c', CLAUDE_CODE_OAUTH_TOKEN: 'o', GONOGO_TOKEN: 'g' })).toEqual({ GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1', PATH: 'p', LANG: 'C', GH_TOKEN: 't', HOME: '/h', SSL_CERT_FILE: '/c' });
   });
 
+  it('uses the gh login kept in room main\'s folder when it is told where it is', () => {
+    expect(ghEnv({ PATH: 'p' }, '/state/gh').GH_CONFIG_DIR).toBe('/state/gh');
+    expect(ghEnv({ PATH: 'p' }).GH_CONFIG_DIR).toBeUndefined();
+  });
+
   it('gh with no login (it refuses before it asks GitHub) is not a bad image: unattested, with what to do; a rejected token is a failure', async () => {
     const none: Run = async () => ({ code: 4, out: 'To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.' });
     expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: none })).toMatchObject({ kind: 'unattested', why: expect.stringMatching(/gh auth login.*GH_TOKEN/) as string });

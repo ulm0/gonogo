@@ -1053,7 +1053,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       reload: triggerReload,
       keepsAgents: remote !== null,
       notify: (text) => tell('update', text),
-      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, verify: (prepared) => verifyImage(prepared.repo, prepared.repoDigests), busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
+      ...(dockerCall === null || dockerStatus?.ready !== true ? {} : { docker: { call: dockerCall, hostname: hostname(), home: home.dir, ready: true, verify: (prepared) => verifyImage(prepared.repo, prepared.repoDigests, existsSync(join(home.dir, 'gh')) ? { configDir: join(home.dir, 'gh') } : {}), busy: async () => (hubInstance.poll()?.status === 'open' ? 'a T-minus poll or Static fire is running: wait for its answer, then update' : supervised && options.askBusy !== undefined ? (await options.askBusy()).busy : null) } }),
       hook: /^https?:\/\//.test(hookUrl) ? { url: hookUrl, token: (env.GONOGO_UPDATE_HOOK_TOKEN ?? '').trim() || null } : null,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       log: log.child('update'),
