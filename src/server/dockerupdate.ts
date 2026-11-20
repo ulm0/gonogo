@@ -188,6 +188,9 @@ export interface Prepared {
   previousImage: string;
   from: string;
   inspect: Json;
+  /** The repository the tag belongs to (`ghcr.io/ulm0/gonogo`) and the registry digests the pulled image carries for it: what the attestation is checked against. */
+  repo: string;
+  repoDigests: string[];
 }
 
 /** The running container's own inspect: its id is the hostname. */
@@ -242,7 +245,8 @@ export async function pullAndCheck(call: DockerCall, hostname: string, expect: s
   const previousImage = asText(inspect.Image);
   const running = await json(call, 'GET', `/images/${encodeURIComponent(previousImage)}/json`);
   const from = asText(asRecord(asRecord(running.Config).Labels)[VERSION_LABEL]);
-  return { image: asText(pulled.Id), previousImage, from, inspect };
+  const repoDigests = (Array.isArray(pulled.RepoDigests) ? pulled.RepoDigests : []).filter((d): d is string => typeof d === 'string' && d.startsWith(`${repo}@`)).map((d) => d.slice(repo.length + 1));
+  return { image: asText(pulled.Id), previousImage, from, inspect, repo, repoDigests };
 }
 
 /**

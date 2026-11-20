@@ -12,6 +12,7 @@ import type { RawData } from 'ws';
 import { PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
   UpdateView,
+  AutoUpdateView,
   PropellantView,
   AgentIdentity,
   AnswerRequest,
@@ -170,7 +171,7 @@ export interface WebOptions {
   /** Relay; absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame. */
   /** Live reload (Flight Rules): asks this server to hand over to a new one. Returns what the page shows, or a reason it cannot. Absent: the route says so. */
   /** Update from the page (Flight Rules): installs the named newer version, then reloads. Throws UpdateError with a reason the page shows. */
-  update?: (version: unknown) => UpdateView | Promise<UpdateView>;
+  update?: (version: unknown, how?: { unverified?: boolean }) => UpdateView | Promise<UpdateView>;
   /** Docker self-update: put the previous image back. */
   undoUpdate?: () => Promise<UpdateView>;
   reload?: () => { ok: true; note: string } | { ok: false; reason: string };
@@ -198,6 +199,8 @@ export interface WebOptions {
   relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
   /** The startup policy; absent in tests that do not need it (the routes answer 404). */
   startup?: Pick<StartupStore, 'view' | 'set'>;
+  /** Auto-update (room main under Docker): the switch, the windows and SKIP THIS VERSION; absent elsewhere (the routes answer 404). */
+  autoUpdate?: { view(): AutoUpdateView; set(input: unknown): Promise<AutoUpdateView>; skip(version: string): Promise<AutoUpdateView> };
   /** Feature toggles; absent in tests that do not need it (every feature is then on and the routes answer 404). */
   features?: Pick<FeatureStore, 'view' | 'isOn' | 'label' | 'plan' | 'apply'>;
   /** The subagent setting; absent in tests that do not need it (the routes answer 404). */
@@ -893,7 +896,7 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!body) return;
           if (!options.update) return sendApiError(res, 409, 'update from the page is not available here', 'conflict');
           try {
-            sendJson(res, 202, await options.update(body.version));
+            sendJson(res, 202, await options.update(body.version, body.unverified === true ? { unverified: true } : {}));
           } catch (error) {
             if (error instanceof UpdateError) sendApiError(res, error.code === 'bad_request' ? 400 : 409, error.message, error.code, error.code === 'bad_request' ? 'version' : undefined);
             else throw error;
@@ -1423,6 +1426,27 @@ export function createWebServer(options: WebOptions): WebServer {
           if (req.method === 'GET') return sendJson(res, 200, subagents.view());
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await subagents.set(body));
+        },
+      };
+    }
+    if (s[1] === 'autoupdate' && (s.length === 2 || (s.length === 3 && s[2] === 'skip'))) {
+      const auto = options.autoUpdate;
+      if (!auto) return null;
+      if (s.length === 3) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await auto.skip(typeof body.version === 'string' ? body.version : ''));
+          },
+        };
+      }
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, auto.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await auto.set(body));
         },
       };
     }
