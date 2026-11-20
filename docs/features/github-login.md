@@ -2,7 +2,7 @@
 
 <GithubLoginMock class="doc-mock" />
 
-Every agent of a room starts with `GH_CONFIG_DIR=<the room's home>/gh`, so the **GitHub CLI (`gh`) logs in once per room**, not once for the whole machine. Room `main` has its own folder too (`<gonogo home>/gh`); another room has `<gonogo home>/rooms/<id>/gh`. The folder is made (mode 0700) when an agent starts.
+Every agent of a room starts with `GH_CONFIG_DIR=<the room's home>/gh`, so the **GitHub CLI (`gh`) logs in once per room**, not once for the whole machine. Room `main` has its own folder too (`<gonogo home>/rooms/main/gh` on a new install, `<gonogo home>/gh` on a home made before 0.9); another room has `<gonogo home>/rooms/<id>/gh`. The folder is made (mode 0700) when an agent starts.
 
 - **Log in inside a console of the room:** `gh auth login` there writes only that room's folder. Another room, and your own shell on the machine, are not touched (gonogo changes only the environment it gives its agents). `gh auth status` in a console says who the room is.
 - **Each room can be a different GitHub account:** a client's room with the client's bot, your own room with you. That is the point: an agent of one room cannot push as the account of another.

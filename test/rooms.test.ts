@@ -1,13 +1,13 @@
 // Rooms (docs/rooms-spec.md): the list of rooms, the commands, and the supervisor with stand-in rooms (test/fake-room.mjs).
 // The real thing (built gonogo as the rooms) was tried by hand: docs/features/rooms.md, "What was seen".
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { addRoom, loadRooms, MAIN_ROOM, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
+import { NESTED_FILES, ROOM_STATE_FILES, SUPERVISOR_FILES, addRoom, loadRooms, mainLayout, MAIN_ROOM, recordMainHome, removeRoom, ROOMS_FILE, RoomsError, roomHome, SUPERVISOR_FILE, supervisorRunning } from '../src/server/rooms.js';
 import { startGonogo } from '../src/server/cli.js';
 import { PUSH_FILE } from '../src/server/push.js';
 import { startSupervisor } from '../src/server/supervisor.js';
@@ -20,6 +20,8 @@ let sup: Supervisor | null = null;
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-rooms-'));
+  // the tests below are of a home made before 0.9: room main's files are at the root (a room's own mission-log folder says so). A fresh home is in "the layout of room main".
+  mkdirSync(join(home, 'mission-log'));
 });
 afterEach(async () => {
   await sup?.stop();
@@ -112,6 +114,185 @@ const api = (s: Supervisor, path: string, token: string | null = s.directorToken
   fetch(`http://127.0.0.1:${s.port}${path}`, { ...init, headers: { ...(token === null ? {} : { authorization: `Bearer ${token}` }), ...init.headers } });
 const listed = async (s: Supervisor): Promise<Array<{ id: string; state: string; agents: number | null; needsYou: number | null; note: string | null }>> =>
   ((await (await api(s, '/api/rooms')).json()) as { rooms: Array<{ id: string; state: string; agents: number | null; needsYou: number | null; note: string | null }> }).rooms;
+
+describe('the layout of room main', () => {
+  let fresh: string;
+  beforeEach(() => {
+    fresh = mkdtempSync(join(tmpdir(), 'gng-fresh-'));
+  });
+  afterEach(async () => {
+    await sup?.stop();
+    sup = null;
+    rmSync(fresh, { recursive: true, force: true });
+  });
+  const startFresh = async (dir: string): Promise<Supervisor> => {
+    sup = await startSupervisor({ home: dir, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', GONOGO_PORT: '1', GONOGO_ALLOWED_HOSTS: 'x' } });
+    return sup;
+  };
+
+  it('a fresh home puts main in rooms/main like any other room; the supervisor\'s own files stay at the root', () => {
+    expect(mainLayout(fresh)).toBe('rooms/main');
+    expect(roomHome(fresh, MAIN_ROOM)).toBe(join(fresh, 'rooms', 'main'));
+    expect(roomHome(fresh, 'team')).toBe(join(fresh, 'rooms', 'team'));
+    expect(existsSync(join(fresh, ROOMS_FILE))).toBe(false); // deciding writes nothing
+    recordMainHome(fresh);
+    expect(JSON.parse(readFileSync(join(fresh, ROOMS_FILE), 'utf8'))).toEqual({ version: 1, main: { home: 'rooms/main' }, rooms: [] });
+    expect(statSync(join(fresh, ROOMS_FILE)).mode & 0o777).toBe(0o600);
+    expect(loadRooms(fresh).map((r) => r.id)).toEqual(['main']);
+  });
+
+  it('the layout is on record: files at the root later do not move main, and every save keeps it', () => {
+    recordMainHome(fresh);
+    writeFileSync(join(fresh, 'agents.json'), '{}');
+    mkdirSync(join(fresh, 'mission-log'));
+    expect(mainLayout(fresh)).toBe('rooms/main');
+    addRoom(fresh, 'team');
+    removeRoom(fresh, 'team');
+    expect(JSON.parse(readFileSync(join(fresh, ROOMS_FILE), 'utf8'))).toMatchObject({ main: { home: 'rooms/main' } });
+    expect(roomHome(fresh, MAIN_ROOM)).toBe(join(fresh, 'rooms', 'main'));
+  });
+
+  it('a home that has a room\'s files at the root keeps main there, and nothing is written to it', () => {
+    for (const name of ['agents.json', 'messages.jsonl', 'run-state.json', 'server.lock']) {
+      const old = mkdtempSync(join(tmpdir(), 'gng-old-'));
+      try {
+        writeFileSync(join(old, name), '');
+        expect(mainLayout(old), name).toBe('.');
+        expect(roomHome(old, MAIN_ROOM), name).toBe(old);
+        recordMainHome(old);
+        expect(existsSync(join(old, ROOMS_FILE)), name).toBe(false);
+      } finally {
+        rmSync(old, { recursive: true, force: true });
+      }
+    }
+    // the supervisor's own files are not a room's: they do not make a fresh home an old one
+    for (const name of ['auth.json', 'token', 'setup-token', 'push.json', 'rooms-supervisor.json']) writeFileSync(join(fresh, name), '');
+    mkdirSync(join(fresh, 'run'));
+    writeFileSync(join(fresh, 'run', 'api.sock'), '');
+    writeFileSync(join(fresh, 'run', 'supervisor.lock'), '');
+    expect(mainLayout(fresh)).toBe('rooms/main');
+  });
+
+  it('after a rollback and a room edit by an older build (no record, an empty main at the root), the real main in rooms/main is still found', () => {
+    recordMainHome(fresh);
+    mkdirSync(join(fresh, 'rooms', 'main'), { recursive: true });
+    writeFileSync(join(fresh, 'rooms', 'main', 'agents.json'), '{}');
+    // the older build: a new main at the root, and a rooms.json it saved without the record
+    writeFileSync(join(fresh, 'agents.json'), '{}');
+    mkdirSync(join(fresh, 'mission-log'));
+    writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [{ id: 'team', name: 'Team', autostart: true }] }));
+    expect(mainLayout(fresh)).toBe('rooms/main');
+    expect(roomHome(fresh, MAIN_ROOM)).toBe(join(fresh, 'rooms', 'main'));
+    // an empty rooms/main (nothing in it) does not take an old home's place
+    const old = mkdtempSync(join(tmpdir(), 'gng-old-'));
+    try {
+      mkdirSync(join(old, 'rooms', 'main'), { recursive: true });
+      writeFileSync(join(old, 'agents.json'), '{}');
+      expect(mainLayout(old)).toBe('.');
+    } finally {
+      rmSync(old, { recursive: true, force: true });
+    }
+  });
+
+  it('every file a room can hold alone makes a home old (keys.json, room-keys.json, payload-defaults.json, autoupdate.json, triggers.jsonl ...)', () => {
+    for (const name of ['keys.json', 'room-keys.json', 'payload-defaults.json', 'autoupdate.json', 'triggers.jsonl', ...ROOM_STATE_FILES]) {
+      const old = mkdtempSync(join(tmpdir(), 'gng-old-'));
+      try {
+        writeFileSync(join(old, name), '');
+        expect(mainLayout(old), name).toBe('.');
+      } finally {
+        rmSync(old, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('cannot drift: every *_FILE and *_DIR name in src/ is a room\'s, the supervisor\'s, or lives in a folder', () => {
+    const known = new Set([...ROOM_STATE_FILES, ...SUPERVISOR_FILES, ...NESTED_FILES]);
+    const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith('.ts') ? [join(dir, e.name)] : []));
+    const seen = new Set<string>();
+    for (const file of [...walk(new URL('../src/server', import.meta.url).pathname), ...walk(new URL('../src/shared', import.meta.url).pathname)]) {
+      for (const m of readFileSync(file, 'utf8').matchAll(/\bconst [A-Z][A-Z0-9_]*_(?:FILE|DIR)(?::\s*string)? = '([^']+)'/g)) seen.add(m[1] as string);
+    }
+    expect(seen.size).toBeGreaterThan(40);
+    expect([...seen].filter((name) => !known.has(name))).toEqual([]);
+    expect([...ROOM_STATE_FILES].filter((n) => SUPERVISOR_FILES.includes(n) || NESTED_FILES.includes(n))).toEqual([]);
+  });
+
+  it('an old home with rooms.json and no layout on record stays at the root, and saving the list records it', () => {
+    writeFileSync(join(fresh, 'agents.json'), '{}');
+    writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [{ id: 'team', name: 'Team', autostart: true }] }));
+    expect(mainLayout(fresh)).toBe('.');
+    addRoom(fresh, 'more');
+    expect(JSON.parse(readFileSync(join(fresh, ROOMS_FILE), 'utf8'))).toMatchObject({ main: { home: '.' } });
+    expect(roomHome(fresh, MAIN_ROOM)).toBe(fresh);
+  });
+
+  it('a layout that is not one of the two is a damaged file, never a path to follow', () => {
+    for (const bad of ['../x', '/etc', 'rooms/team', '', 5, null, {}]) {
+      writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, main: { home: bad }, rooms: [] }));
+      expect(() => mainLayout(fresh), String(JSON.stringify(bad))).toThrow(RoomsError);
+      expect(() => roomHome(fresh, MAIN_ROOM)).toThrow(/damaged/);
+      expect(() => loadRooms(fresh)).toThrow(RoomsError);
+    }
+    writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, main: 'rooms/main', rooms: [] }));
+    expect(() => mainLayout(fresh)).toThrow(RoomsError);
+  });
+
+  it('the supervisor starts main in rooms/main on a fresh home, records it, and serves /r/main/ from there', async () => {
+    addRoom(fresh, 'team', 'Team'); // `gonogo rooms add` on a fresh home already records the layout
+    expect(JSON.parse(readFileSync(join(fresh, ROOMS_FILE), 'utf8'))).toMatchObject({ main: { home: 'rooms/main' } });
+    rmSync(join(fresh, ROOMS_FILE));
+    addRoom(fresh, 'team', 'Team');
+    rmSync(join(fresh, ROOMS_FILE), { force: true });
+    writeFileSync(join(fresh, ROOMS_FILE), JSON.stringify({ version: 1, rooms: [{ id: 'team', name: 'Team', autostart: true }] })); // a rooms.json of an older build: no layout on record
+    const s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    const mainDir = join(fresh, 'rooms', 'main');
+    expect(JSON.parse(readFileSync(join(mainDir, 'started-with'), 'utf8'))).toMatchObject({ home: mainDir });
+    expect(lstatSync(join(mainDir, 'run', 'room.sock')).isSocket()).toBe(true);
+    expect(lstatSync(join(fresh, 'rooms', 'team', 'run', 'room.sock')).isSocket()).toBe(true);
+    // nothing of a room at the root; the supervisor's own files are there
+    for (const name of ['started-with', 'dump.json', 'starts', 'agents.json']) expect(existsSync(join(fresh, name)), name).toBe(false);
+    expect(existsSync(join(fresh, 'run', 'room.sock'))).toBe(false);
+    expect(lstatSync(join(fresh, 'run', 'api.sock')).isSocket()).toBe(true);
+    expect(readFileSync(join(fresh, 'token'), 'utf8').trim()).toBe(s.directorToken);
+    expect(existsSync(join(mainDir, 'token'))).toBe(false);
+    expect(JSON.parse(readFileSync(join(fresh, ROOMS_FILE), 'utf8'))).toMatchObject({ main: { home: 'rooms/main' } });
+    expect((await listed(s)).map((r) => r.id)).toEqual(['main', 'team']);
+    for (const id of ['main', 'team']) {
+      const res = await api(s, `/r/${id}/api/state`);
+      expect(res.status, id).toBe(200);
+      expect(await (await api(s, `/r/${id}/`, null)).text()).toContain(roomHome(fresh, id));
+    }
+  });
+
+  it('a fresh home with no rooms.json at all gets main in rooms/main too', async () => {
+    const s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    expect(existsSync(join(fresh, 'rooms', 'main', 'run', 'room.sock'))).toBe(true);
+    expect((await api(s, '/r/main/api/state')).status).toBe(200);
+  });
+
+  it('an old home starts and serves main at the root, as before, and its rooms.json is not written', async () => {
+    writeFileSync(join(fresh, 'agents.json'), '{}');
+    const s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    expect(lstatSync(join(fresh, 'run', 'room.sock')).isSocket()).toBe(true);
+    expect(existsSync(join(fresh, 'rooms', 'main'))).toBe(false);
+    expect(existsSync(join(fresh, ROOMS_FILE))).toBe(false);
+    expect(await (await api(s, '/r/main/', null)).text()).toContain(roomHome(fresh, MAIN_ROOM));
+    expect((await api(s, '/r/main/api/state')).status).toBe(200);
+  });
+
+  it('a damaged rooms.json later does not move main under a running supervisor', async () => {
+    const s = await startFresh(fresh);
+    await until(async () => (await listed(s)).every((r) => r.state === 'running'));
+    writeFileSync(join(fresh, ROOMS_FILE), '{nope');
+    await new Promise((r) => setTimeout(r, 2500));
+    expect((await listed(s)).map((r) => [r.id, r.state])).toEqual([['main', 'running']]);
+    expect((await api(s, '/r/main/api/state')).status).toBe(200);
+  }, 30_000);
+});
 
 describe('the supervisor', () => {
   it('starts main (the root home) and every listed room, each in its own home with its own token, and lists them', async () => {

@@ -30,7 +30,7 @@ import { acquireSupervisorLock } from './home.js';
 import { createPush, PUSH_LINE, parsePushLine } from './push.js';
 import type { Push } from './push.js';
 import { isPushPath, pushApi } from './pushhttp.js';
-import { addRoom, loadRooms, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
+import { addRoom, loadRooms, recordMainHome, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { exposureProblem, parsePublicUrl } from './exposure.js';
 import { splitAllowed } from './hosts.js';
@@ -157,6 +157,13 @@ export function directorTokenOf(home: string, otherRooms: readonly string[] = []
   rmSync(join(home, 'rooms-token'), { force: true });
   // a room's own token of 0.4 must not open anything now (it was never the Director's)
   for (const id of otherRooms) rmSync(join(roomHome(home, id), 'token'), { force: true });
+  // room main in its own folder (a home made by 0.9 or later) has no use for a token file either: the one at the root is the Director's
+  try {
+    const main = roomHome(home, MAIN_ROOM);
+    if (main !== home) rmSync(join(main, 'token'), { force: true });
+  } catch {
+    // a damaged rooms.json: the supervisor says so itself when it reads the list
+  }
   const path = join(home, DIRECTOR_TOKEN_FILE);
   try {
     const existing = readFileSync(path, 'utf8').trim();
@@ -271,7 +278,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   /* ---------------------------------------------------------------- the children */
 
-  const socketOf = (child: Child): string => join(roomHome(options.home, child.entry.id), ROOM_SOCKET);
+  // where room main lives is decided once per supervisor (a damaged rooms.json later must not move it), the others are under rooms/<id>
+  let mainHome: string | null = null;
+  const homeOfRoom = (id: string): string => (id === MAIN_ROOM ? (mainHome ??= roomHome(options.home, MAIN_ROOM)) : roomHome(options.home, id));
+  const socketOf = (child: Child): string => join(homeOfRoom(child.entry.id), ROOM_SOCKET);
 
   /** GET a JSON answer from a room over its local socket (no token: the file permissions are the credential). */
   const askRoom = (child: Child, path: string, timeoutMs: number): Promise<unknown> =>
@@ -295,7 +305,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   function launch(child: Child): void {
     if (stopping || reloading || !child.wanted) return;
-    const home = roomHome(options.home, child.entry.id);
+    const home = homeOfRoom(child.entry.id);
     mkdirSync(home, { recursive: true, mode: 0o700 });
     const env = { ...options.env };
     // the flags below win over these, but a room must not see the supervisor's own settings by mistake
@@ -443,6 +453,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     let listed: RoomEntry[];
     try {
       listed = loadRooms(options.home);
+      recordMainHome(options.home); // a home that has no layout on record gets it now, before any room starts
       lastListError = '';
     } catch (error) {
       // a damaged rooms.json is not "no rooms": keep every room as it is, and say so once
@@ -589,7 +600,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   /** What main's daily check saw, when it is newer than this version: the other rooms run no check of their own, and their pages ask here. Nothing when the check is off. */
   const newerNow = (): { latest: string } | null => {
-    const latest = updateCheckOff(options.env.GONOGO_UPDATE_CHECK) || options.roomArgs?.includes('--no-update-check') === true ? null : cachedLatest(roomHome(options.home, MAIN_ROOM));
+    const latest = updateCheckOff(options.env.GONOGO_UPDATE_CHECK) || options.roomArgs?.includes('--no-update-check') === true ? null : cachedLatest(homeOfRoom(MAIN_ROOM));
     return latest !== null && options.version !== undefined && isNewer(latest, options.version) ? { latest } : null;
   };
 
