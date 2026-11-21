@@ -13,7 +13,7 @@
  *      every claim is \`ok\` (so each escaped literal matched exactly what it said and nothing else), and that the exit code is 0;
  *   5. proves the check has teeth: a line multivac must refuse (\\d) added to a copy makes it print a parse error and exit 1.
  *
- * Multivac runs headless: it is a CLI that reads files and git and needs no terminal, no network and no login (verified: version 0.9.0). The scratch folder, a throwaway HOME and
+ * Multivac runs headless: it is a CLI that reads files and git and needs no terminal, no network and no login (verified: version 0.15.0). The scratch folder, a throwaway HOME and
  * an empty git config keep it away from the person's own settings (\`multivac init\` projects git hooks and a door: it must never touch a real home).
  * The exit code is 1 when anything failed. \`--multivac <bin>\` uses a multivac you already have instead of installing one.
  */
@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 /** The multivac this is checked against. A new version is a deliberate change here, after the conformance has been looked at. */
-export const MULTIVAC_VERSION = '0.9.0';
+export const MULTIVAC_VERSION = '0.15.0';
 const REPO_ID = '0123456789abcdef';
 
 /** What `multivac verify` printed, as numbers: parse errors (the `parse` lines and the count), the states by count, and the exit code's meaning. */
