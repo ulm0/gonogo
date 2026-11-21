@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger, SendResult, UserMessageRequest } from '../src/shared/protocol.js';
-import { createRouter, offerOverSocket, replyKey, roomPrefix, ROUTE_KEY_HEADER, ROUTE_PATH, sameKey, takeOffer } from '../src/server/telegramroute.js';
+import { createRouter, directorMessage, offerOverSocket, replyKey, roomPrefix, ROUTE_KEY_HEADER, ROUTE_PATH, sameKey, SAY_NO_ROOM, SAY_NOT_TAKEN, takeOffer } from '../src/server/telegramroute.js';
 import { createUplinks } from '../src/server/uplinks.js';
 import type { Inbound, Uplinks } from '../src/server/uplinks.js';
 
@@ -65,18 +65,24 @@ describe('what is read of an update', () => {
 
 describe('the router (room main)', () => {
   type Offer = [string, Record<string, unknown>, boolean];
-  function make(over: { peers?: string[]; owns?: boolean; takes?: string[] } = {}) {
+  function make(over: { peers?: string[]; owns?: boolean; takes?: string[]; director?: boolean; allowed?: boolean } = {}) {
     const offers: Offer[] = [];
     const own: Buffer[] = [];
+    const said: string[] = [];
+    const routed: string[] = [];
     const deliver = createRouter({
       self: 'main',
       peers: () => over.peers ?? ['main', 'alpha', 'beta'],
       offer: async (room, u, force) => (offers.push([room, u, force]), (over.takes ?? []).includes(room)),
+      director: () => over.director ?? true,
+      say: (t) => void said.push(t),
+      allowed: () => over.allowed ?? true,
+      routed: (r) => void routed.push(r),
       owns: () => over.owns ?? false,
       deliverOwn: (u) => void own.push(u),
       log,
     });
-    return { deliver, offers, own };
+    return { deliver, offers, own, said, routed };
   }
 
   it('a plain message is main\'s, and nothing is offered to anyone', async () => {
@@ -110,7 +116,7 @@ describe('the router (room main)', () => {
     expect(own).toHaveLength(1);
   });
 
-  it('/room <id> goes to that room with the prefix off and force; main\'s own id stays here; an unknown or unwilling room leaves the message with main, untouched', async () => {
+  it('/room <id> goes to that room with the prefix off and force, one room and no fan-out, and is counted', async () => {
     const a = make({ takes: ['alpha'] });
     await a.deliver(buf(update({ text: '/room alpha do it' })), 'k');
     expect(a.offers).toHaveLength(1);
@@ -118,19 +124,49 @@ describe('the router (room main)', () => {
     expect(a.offers[0]?.[2]).toBe(true);
     expect((a.offers[0]?.[1].message as { text: string }).text).toBe('do it');
     expect(a.own).toEqual([]);
+    expect(a.routed).toEqual(['alpha']);
+    expect(a.said).toEqual([]);
     const m = make();
     await m.deliver(buf(update({ text: '/room main do it' })), 'k');
     expect(JSON.parse(m.own[0]?.toString() as string).message.text).toBe('do it');
     expect(m.offers).toEqual([]);
+  });
+
+  it('an id that is no room, or a room that does not take it, is answered in fixed words and delivers NOTHING', async () => {
     const unknown = make();
-    const raw = buf(update({ text: '/room nowhere do it' }));
-    await unknown.deliver(raw, 'k');
+    await unknown.deliver(buf(update({ text: '/room nowhere do it' })), 'k');
     expect(unknown.offers).toEqual([]);
-    expect(unknown.own[0]?.equals(raw)).toBe(true);
+    expect(unknown.own).toEqual([]);
+    expect(unknown.said).toEqual([SAY_NO_ROOM]);
+    expect(SAY_NO_ROOM).not.toContain('nowhere');
     const unwilling = make({ takes: [] });
     await unwilling.deliver(buf(update({ text: '/room beta hi' })), 'k');
-    expect(unwilling.own).toHaveLength(1);
+    expect(unwilling.offers).toHaveLength(1);
+    expect(unwilling.own).toEqual([]);
+    expect(unwilling.said).toEqual([SAY_NOT_TAKEN]);
+    expect(unwilling.routed).toEqual([]);
     expect(logs.some((l) => l.includes('did not take'))).toBe(true);
+  });
+
+  it('/room is a command only after main\'s gates: from anyone else, in a group, or forwarded it is a plain text, intact, for main', async () => {
+    const raw = buf(update({ text: '/room alpha do it' }));
+    const stranger = make({ director: false, takes: ['alpha'] });
+    await stranger.deliver(raw, 'k');
+    expect(stranger.offers).toEqual([]);
+    expect(stranger.own[0]?.equals(raw)).toBe(true);
+    expect(stranger.said).toEqual([]);
+  });
+
+  it('the limit of this process counts routed updates: one over it is dropped, not offered', async () => {
+    const full = make({ allowed: false, takes: ['alpha'] });
+    await full.deliver(buf(update({ text: '/room alpha hi' })), 'k');
+    expect(full.offers).toEqual([]);
+    expect(full.own).toEqual([]);
+    expect(full.routed).toEqual([]);
+    // a reply over the limit is not offered either: it falls to main, whose own limit says what happens next
+    await full.deliver(buf(update({ text: 'ok', reply_to_message: { message_id: 55 } })), 'k');
+    expect(full.offers).toEqual([]);
+    expect(full.own).toHaveLength(1);
   });
 
   it('a button (phone approvals) and a body that is not JSON are never offered; with no other room, nothing is', async () => {
@@ -148,7 +184,9 @@ describe('the router (room main)', () => {
 });
 
 /** A room as its own process would be: its own uplinks, its own map of what it sent, its own chat. */
-function room(name: string, chat: string | null, threads: Record<string, { id: string; agent: string; subject: string }>): { uplinks: Uplinks; sent: Array<{ request: UserMessageRequest; director?: unknown }> } {
+function room(name: string, chat: string | null, threads: Record<string, { id: string; agent: string; subject: string }>): { uplinks: Uplinks; sent: Array<{ request: UserMessageRequest; director?: unknown }>; fetched: string[]; triggers: Array<{ outcome: string; what: string }> } {
+  const fetched: string[] = [];
+  const triggers: Array<{ outcome: string; what: string }> = [];
   const sent: Array<{ request: UserMessageRequest; director?: unknown }> = [];
   const seen = new Set<string>();
   const inbound: Inbound = { find: (k) => threads[k], seen: (k) => (seen.has(k) ? true : (seen.add(k), false)), telegramChat: () => chat };
@@ -158,9 +196,11 @@ function room(name: string, chat: string | null, threads: Record<string, { id: s
     inbound,
     send: (request, director): SendResult => (sent.push({ request, ...(director === undefined ? {} : { director }) }), { ok: true, id: `${name}${sent.length}`, to: request.to, status: 'queued', note: null }),
     emit: () => undefined,
+    fetchFile: async (file) => (fetched.push(`${name}:${file.fileId}`), { problem: '(no download in this test)' }),
+    trigger: (entry) => void triggers.push({ outcome: entry.outcome, what: entry.what }),
     log,
   });
-  return { uplinks, sent };
+  return { uplinks, sent, fetched, triggers };
 }
 
 describe('two rooms, one bot', () => {
@@ -168,6 +208,7 @@ describe('two rooms, one bot', () => {
     const main = room('main', CHAT, { [`telegram:${CHAT}:10`]: { id: 'm1', agent: 'flight', subject: 'Build' } });
     const alpha = room('alpha', alphaChat, { [`telegram:${CHAT}:55`]: { id: 'a1', agent: 'ana', subject: 'Review' } });
     const rooms = { alpha };
+    const said: string[] = [];
     const deliver = createRouter({
       self: 'main',
       peers: () => ['main', 'alpha'],
@@ -175,11 +216,15 @@ describe('two rooms, one bot', () => {
         const target = rooms[id as keyof typeof rooms];
         return target === undefined ? false : takeOffer({ update: u, force }, { owns: (b) => target.uplinks.ownsReply(b), deliver: (b) => target.uplinks.deliverPolled(b, '') }).claimed;
       },
+      director: (u) => directorMessage(u, CHAT),
+      say: (t) => void said.push(t),
+      allowed: () => main.uplinks.routeAllowed(),
+      routed: (r) => main.uplinks.routed(r),
       owns: (u) => main.uplinks.ownsReply(u),
       deliverOwn: (u, s) => main.uplinks.deliverPolled(u, s),
       log,
     });
-    return { main, alpha, deliver };
+    return { main, alpha, deliver, said };
   }
 
   it('THE BUG: a reply to a message room alpha sent used to land in main\'s boss; now it reaches alpha\'s agent, as the Director\'s own words', async () => {
@@ -200,14 +245,15 @@ describe('two rooms, one bot', () => {
   });
 
   it('/room alpha reaches alpha\'s boss with the prefix off, and the Director mark; /room of an id that is no room stays with main', async () => {
-    const { main, alpha, deliver } = pair();
+    const { main, alpha, deliver, said } = pair();
     await deliver(buf(update({ text: '/room alpha status please' }, 4)), 'k');
     expect(main.sent).toEqual([]);
     expect(alpha.sent[0]?.request.body).toContain('status please');
     expect(alpha.sent[0]?.request.body).not.toContain('/room');
     expect(alpha.sent[0]?.director).toMatchObject({ channel: 'telegram', said: 'status please' });
     await deliver(buf(update({ text: '/room elsewhere hi' }, 5)), 'k');
-    expect(main.sent[0]?.request.body).toContain('/room elsewhere hi');
+    expect(main.sent).toEqual([]);
+    expect(said).toEqual([SAY_NO_ROOM]);
   });
 
   it('the gates are the room\'s own: a forwarded reply has no Director mark, a group or another chat is dropped, a room with another chat refuses', async () => {
@@ -269,5 +315,76 @@ describe('an offer over a socket', () => {
     expect(taken).toHaveLength(1);
     expect(await offerOverSocket(path, 'b'.repeat(64), u, false)).toBe(false);
     expect(await offerOverSocket(join(dir, 'nothing.sock'), KEY, u, false)).toBe(false);
+  });
+});
+
+describe('what the receiving room decides for itself', () => {
+  it('the gates of the Director\'s words: his chat, private, written by him, not forwarded; nothing else makes /room a command', () => {
+    const ok = update({ text: '/room alpha hi' });
+    expect(directorMessage(ok, CHAT)).toBe(true);
+    expect(directorMessage(ok, null)).toBe(false);
+    expect(directorMessage(ok, '555')).toBe(false);
+    expect(directorMessage(update({ text: 'x', chat: { id: -100777, type: 'supergroup' } }), CHAT)).toBe(false);
+    expect(directorMessage(update({ text: 'x', from: { id: 999 } }), CHAT)).toBe(false);
+    expect(directorMessage(update({ text: 'x', forward_origin: { type: 'user' } }), CHAT)).toBe(false);
+    expect(directorMessage(update({ text: 'x', via_bot: { id: 5 } }), CHAT)).toBe(false);
+    expect(directorMessage({ callback_query: { id: 'q' } }, CHAT)).toBe(false);
+  });
+
+  it('R3: an offer carries the update and nothing else is believed: a director, chat or mark in the body changes nothing, and a button is refused', () => {
+    const delivered: Buffer[] = [];
+    const side = { owns: () => true, deliver: (b: Buffer) => void delivered.push(b) };
+    const u = update({ text: 'hi', reply_to_message: { message_id: 55 } });
+    expect(takeOffer({ update: u, director: { channel: 'telegram', said: 'do evil' }, chat: '999', from: 'x', secret: 's' }, side)).toEqual({ claimed: true });
+    expect(JSON.parse(delivered[0]?.toString() as string)).toEqual(u);
+    expect(takeOffer({ update: { callback_query: { id: 'q', data: 'a:perm:p1:go:x' } } }, side)).toEqual({ claimed: false });
+    expect(takeOffer({ update: 'text' }, side)).toEqual({ claimed: false });
+    expect(takeOffer({}, side)).toEqual({ claimed: false });
+    expect(delivered).toHaveLength(1);
+  });
+
+  it('R3: the room re-judges with its OWN chat: an offer whose chat is not that room\'s chat makes no message, claimed or forced', () => {
+    const other = room('other', '555', { [`telegram:${CHAT}:55`]: { id: 'o1', agent: 'ana', subject: 'S' } });
+    const u = update({ text: 'hi', reply_to_message: { message_id: 55 } });
+    takeOffer({ update: u, force: true }, { owns: (b) => other.uplinks.ownsReply(b), deliver: (b) => other.uplinks.deliverPolled(b, '') });
+    expect(other.sent).toEqual([]);
+  });
+
+  it('R6: a photo is fetched by the room that takes it, with its own download, and never by main', async () => {
+    const main = room('main', CHAT, {});
+    const alpha = room('alpha', CHAT, { [`telegram:${CHAT}:55`]: { id: 'a1', agent: 'ana', subject: 'Review' } });
+    const deliver = createRouter({
+      self: 'main',
+      peers: () => ['main', 'alpha'],
+      offer: async (_id, u, force) => takeOffer({ update: u, force }, { owns: (b) => alpha.uplinks.ownsReply(b), deliver: (b) => alpha.uplinks.deliverPolled(b, '') }).claimed,
+      director: (u) => directorMessage(u, CHAT),
+      say: () => undefined,
+      allowed: () => true,
+      routed: (r) => main.uplinks.routed(r),
+      owns: (u) => main.uplinks.ownsReply(u),
+      deliverOwn: (u, k) => main.uplinks.deliverPolled(u, k),
+      log,
+    });
+    await deliver(buf(update({ photo: [{ file_id: 'PHOTO-1', width: 9, height: 9 }], caption: 'here', reply_to_message: { message_id: 55 } })), 'k');
+    await alpha.uplinks.close();
+    await main.uplinks.close();
+    expect(alpha.fetched).toEqual(['alpha:PHOTO-1']);
+    expect(main.fetched).toEqual([]);
+    expect(alpha.sent[0]?.request).toMatchObject({ to: 'ana' });
+    expect(main.sent).toEqual([]);
+  });
+
+  it('R7: a routed update counts against main\'s limit too (30 a minute) and leaves one line in main\'s history of triggers, with the room and nothing of the message', () => {
+    const main = room('main', CHAT, {});
+    expect(main.uplinks.routeAllowed()).toBe(true);
+    for (let i = 0; i < 30; i += 1) main.uplinks.routed('alpha');
+    expect(main.uplinks.routeAllowed()).toBe(false);
+    expect(main.triggers).toHaveLength(30);
+    expect(main.triggers[0]).toEqual({ outcome: 'answered', what: 'routed to room alpha' });
+    // the room that took it counts and records it as a polled update of its own
+    const alpha = room('alpha', CHAT, { [`telegram:${CHAT}:55`]: { id: 'a1', agent: 'ana', subject: 'S' } });
+    alpha.uplinks.deliverPolled(buf(update({ text: 'ok', reply_to_message: { message_id: 55 } })), '');
+    expect(alpha.triggers).toHaveLength(1);
+    expect(alpha.triggers[0]?.what).toContain('ok');
   });
 });

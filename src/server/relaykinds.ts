@@ -195,7 +195,7 @@ const telegramAuthentic = (_raw: Buffer, headers: IncomingHttpHeaders, secret: s
 };
 
 /** The fields Telegram puts on a message that is not the sender's own writing (the Bot API's `Message`). */
-const FORWARD_FIELDS = ['forward_origin', 'forward_from', 'forward_from_chat', 'forward_from_message_id', 'forward_signature', 'forward_sender_name', 'forward_date', 'is_automatic_forward'];
+export const FORWARD_FIELDS = ['forward_origin', 'forward_from', 'forward_from_chat', 'forward_from_message_id', 'forward_signature', 'forward_sender_name', 'forward_date', 'is_automatic_forward'];
 
 function telegramRead(raw: Buffer, _headers: IncomingHttpHeaders, inbound: Inbound): Made {
   const update = parse(raw);

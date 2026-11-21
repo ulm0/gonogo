@@ -62,7 +62,7 @@ import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
 import { captureFetch, parseCaptureEnv } from './telegramcapture.js';
 import { createTelegramPoll } from './telegrampoll.js';
-import { createRouter, offerOverSocket, takeOffer } from './telegramroute.js';
+import { createRouter, directorMessage, offerOverSocket, takeOffer } from './telegramroute.js';
 import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createFeatureStore } from './features.js';
@@ -1124,6 +1124,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       self: env.GONOGO_ROOM ?? MAIN_ROOM,
       peers: () => (routeKey === '' ? [] : roomIds()),
       offer: (room, update, force) => (installRoot === null ? Promise.resolve(false) : offerOverSocket(join(roomHome(installRoot, room), 'run', 'room.sock'), routeKey, update, force)),
+      director: (update) => directorMessage(update, relay.telegramChat()),
+      say: (text) => void relay.telegramCall('sendMessage', { text }),
+      allowed: () => uplinks.routeAllowed(),
+      routed: (room) => uplinks.routed(room),
       owns: (update) => uplinks.ownsReply(update),
       deliverOwn: (update, secret) => uplinks.deliverPolled(update, secret),
       log: log.child('telegram route'),

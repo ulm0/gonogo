@@ -93,6 +93,10 @@ export interface Uplinks {
   deliverPolled(update: Buffer, secret: string): void;
   /** Does this update reply to a message this process forwarded? (Telegram and several rooms: telegramroute.ts.) */
   ownsReply(update: Buffer): boolean;
+  /** Is there room for one more routed update in this minute? (looks, takes nothing) */
+  routeAllowed(): boolean;
+  /** An update went to another room: it counts against this process's limit too, and the history of triggers gets one line (the room's id, nothing of the message). */
+  routed(room: string): void;
   close(): Promise<void>;
 }
 
@@ -479,6 +483,16 @@ export function createUplinks(options: UplinksOptions): Uplinks {
       if (made.once !== undefined && inbound.seen(made.once)) return IGNORED;
       const sent = made.file === undefined ? receive(u, made, '') : withFile(u, made, made.file);
       return { ok: sent.ok, id: sent.id, status: sent.status };
+    },
+
+    routeAllowed() {
+      const t = now();
+      return (taken.get(POLLED.id) ?? []).filter((at) => t - at < UPLINK_RATE_WINDOW_MS).length < UPLINK_RATE_MAX;
+    },
+
+    routed(room) {
+      takeSlot(POLLED);
+      record(POLLED, 'answered', `routed to room ${room}`, { what: `routed to room ${room}` });
     },
 
     ownsReply(update) {
