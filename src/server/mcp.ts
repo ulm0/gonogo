@@ -22,6 +22,8 @@ import {
   ROLE_MAX_CHARS,
   TASK_DETAIL_MAX_CHARS,
   MISSION_GOAL_MAX_CHARS,
+  RITUAL_ITEMS_MAX,
+  RITUAL_ITEM_MAX_CHARS,
   REVIEW_BATCH_MAX,
   REVIEW_BODY_MAX_CHARS,
   REVIEW_SIDES,
@@ -239,7 +241,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
       'mission_create',
       {
         description: MCP_DESCRIPTIONS.mission_create,
-        inputSchema: { name: z.string().min(1).max(MISSION_NAME_MAX_CHARS), goal: z.string().max(MISSION_GOAL_MAX_CHARS).optional(), lead: z.string().min(1).max(64).optional() },
+        inputSchema: { name: z.string().min(1).max(MISSION_NAME_MAX_CHARS), goal: z.string().max(MISSION_GOAL_MAX_CHARS).optional(), lead: z.string().min(1).max(64).optional(), ritual: z.array(z.string().max(RITUAL_ITEM_MAX_CHARS)).max(RITUAL_ITEMS_MAX).optional() },
       },
       (args) =>
         guarded('mission_create', async () => {

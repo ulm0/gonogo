@@ -61,6 +61,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (method === 'PUT' && path === '/api/autoupdate') return body === null || body.enabled === true || body.windows !== undefined ? 'turning on auto-update, or changing when it runs' : null;
   // moving where room main keeps its files (MIGRATE NOW, UNDO) is done at the next start; cancelling that or dismissing the note only does less
   if (method === 'POST' && path === '/api/rooms/main/migrate') return body !== null && (body.action === 'cancel' || body.action === 'dismiss') ? null : 'moving where room main keeps its files';
+  // the template of the closing checklist: its lines are copied into every new mission and shown in the Director's name
+  if (method === 'PUT' && path === '/api/ritual-template') return 'the closing checklist template';
   // a Docker self-update
   if (/^\/api\/update(\/|$)/.test(path)) return 'updating gonogo';
   // the account itself

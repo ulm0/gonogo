@@ -7771,6 +7771,53 @@ describe('missions', () => {
     expect(calls).toContainEqual(['remove', 'ms1', false]);
   });
 
+  describe('the closing checklist of a mission (docs/features/missions.md)', () => {
+    const director = { kind: 'user' };
+    it('adds, ticks, edits and removes through its own routes; each is the Director\'s change of the mission and answers the whole mission', async () => {
+      const { calls, missions } = fakeMissions();
+      const { port } = await startWeb({ missions });
+      expect((await api(port, 'POST', '/api/missions/ms1/ritual', { text: 'the alert was tested' })).status).toBe(200);
+      expect((await api(port, 'PATCH', '/api/missions/ms1/ritual/2', { done: true })).status).toBe(200);
+      expect((await api(port, 'PATCH', '/api/missions/ms1/ritual/0', { text: 'edited', done: false })).status).toBe(200);
+      expect((await api(port, 'DELETE', '/api/missions/ms1/ritual/1')).json()).toMatchObject({ id: 'ms1' });
+      expect(calls.map((c) => c.slice(0, 4))).toEqual([
+        ['update', director, 'ms1', { ritual: { add: 'the alert was tested' } }],
+        ['update', director, 'ms1', { ritual: { index: 2, done: true } }],
+        ['update', director, 'ms1', { ritual: { index: 0, done: false, text: 'edited' } }],
+        ['update', director, 'ms1', { ritual: { remove: 1 } }],
+      ]);
+    });
+
+    it('answers 404 field index to an index that is not a number, 400 to an unknown field, 405 to a wrong method, 401 to an agent token, and nothing without missions', async () => {
+      const { calls, missions } = fakeMissions();
+      const { port } = await startWeb({ missions });
+      for (const bad of ['x', '-1', '1.5', '123', '']) expect((await api(port, 'PATCH', `/api/missions/ms1/ritual/${bad}`, { done: true })).json(), bad).toMatchObject({ code: 'not_found', field: 'index' });
+      expect((await api(port, 'POST', '/api/missions/ms1/ritual', { text: 'x', from: 'room' })).status).toBe(400);
+      expect((await api(port, 'PATCH', '/api/missions/ms1/ritual/0', { by: 'ana' })).status).toBe(400);
+      expect((await api(port, 'GET', '/api/missions/ms1/ritual')).status).toBe(405);
+      expect((await api(port, 'POST', '/api/missions/ms1/ritual/0', {})).status).toBe(405);
+      expect((await api(port, 'POST', '/api/missions/ms1/ritual', { text: 'x' }, ANA_TOKEN)).status).toBe(401);
+      expect((await api(port, 'DELETE', '/api/missions/ms1/ritual/0', undefined, ANA_TOKEN)).status).toBe(401);
+      expect(calls).toEqual([]);
+      const none = await startWeb();
+      expect((await api(none.port, 'POST', '/api/missions/ms1/ritual', { text: 'x' })).status).toBe(404);
+    });
+
+    it('the template: GET for a session, PUT { text } answers the view; an agent token is 401; absent without the store', async () => {
+      const seen: unknown[] = [];
+      const ritualTemplate = { view: async () => ({ text: 't', bytes: 1, max: 8192, updatedAt: null }), set: async (text: unknown) => (seen.push(text), { text: String(text), bytes: 2, max: 8192, updatedAt: 5 }) };
+      const { port } = await startWeb({ ritualTemplate });
+      expect((await api(port, 'GET', '/api/ritual-template')).json()).toEqual({ text: 't', bytes: 1, max: 8192, updatedAt: null });
+      expect((await api(port, 'PUT', '/api/ritual-template', { text: '- a\n' })).json()).toMatchObject({ text: '- a\n', updatedAt: 5 });
+      expect((await api(port, 'PUT', '/api/ritual-template', { text: 'x', more: 1 })).status).toBe(400);
+      expect((await api(port, 'POST', '/api/ritual-template', { text: 'x' })).status).toBe(405);
+      expect((await api(port, 'GET', '/api/ritual-template', undefined, ANA_TOKEN)).status).toBe(401);
+      expect((await api(port, 'PUT', '/api/ritual-template', { text: 'x' }, ANA_TOKEN)).status).toBe(401);
+      expect(seen).toEqual(['- a\n']);
+      expect((await api((await startWeb()).port, 'GET', '/api/ritual-template')).status).toBe(404);
+    });
+  });
+
   it('wants a browser token, answers 405 to other methods, shows the list in the first state frame and is 404 without missions', async () => {
     const { missions } = fakeMissions();
     const { port } = await startWeb({ missions });
@@ -7808,7 +7855,7 @@ describe('missions', () => {
     const ana = await connectMcp(port, ANA_TOKEN);
     const made = toolOutcome(await ana.callTool({ name: 'mission_create', arguments: { name: 'Ship', goal: 'g', lead: 'ben', createdBy: 'user' } }));
     expect(made).toMatchObject({ isError: false, json: { ok: true, mission } });
-    const moved = toolOutcome(await ana.callTool({ name: 'mission_update', arguments: { id: 'ms1', status: 'active', note: 'go', name: 'renamed' } }));
+    const moved = toolOutcome(await ana.callTool({ name: 'mission_update', arguments: { id: 'ms1', status: 'active', note: 'go', name: 'renamed', ritual: { index: 0, done: true } } })); // the closing checklist is not in the tool: an agent cannot tick, whatever it sends
     expect(moved).toMatchObject({ isError: false, json: { ok: true } });
     expect(calls).toEqual([
       ['create', { kind: 'agent', name: 'ana', generation: 3 }, { name: 'Ship', goal: 'g', lead: 'ben' }],

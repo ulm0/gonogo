@@ -519,9 +519,9 @@ export const MCP_DESCRIPTIONS = {
   task_update:
     'Change a task of the Flight Plan by its id: its status (todo, doing, review, done, blocked), its assignee (an agent name, or null to unassign) and a short note for the history. Assigning it to another agent sends that agent a message. missionId links it to a mission (null unlinks it).',
   mission_list:
-    'List the missions of the room, newest change first: a named goal, its status (planned, active, paused, done, aborted), its lead and the tasks that serve it. Optional filter: status. The current mission is the active one that started last.',
+    'List the missions of the room, newest change first: a named goal, its status (planned, active, paused, done, aborted), its lead, its closing checklist (ritual: lines with done and who wrote them) and the tasks that serve it. Optional filter: status. The current mission is the active one that started last.',
   mission_create:
-    'Boss only. Make a mission: a short name, an optional goal (what done means) and optionally its lead (an agent name; default you). It starts as planned; the Director starts it. Link tasks to it with the missionId field of task_create and task_update.',
+    'Boss only. Make a mission: a short name, an optional goal (what done means) and optionally its lead (an agent name; default you). Optionally ritual: up to 20 short lines of what must be true before it is closed (a checklist the Director sees, labelled with your name; the template of the room is added first; you cannot tick or change it afterwards). It starts as planned; the Director starts it. Link tasks to it with the missionId field of task_create and task_update.',
   mission_update:
     'Boss only. Change a mission by its id: its status (planned, active, paused, done, aborted) and a short note for the history. Becoming active briefs you with the goal and the open tasks. Only the Director edits a name or a goal or removes a mission.',
   log_write:

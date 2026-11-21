@@ -92,6 +92,14 @@ describe('the rest of the list, and what is not on it', () => {
   });
 });
 
+describe('the closing checklist template', () => {
+  it('asks for the password again to write it, not to read it', () => {
+    expect(stepUpReason('PUT', '/api/ritual-template', { text: 'x' })).toMatch(/closing checklist template/);
+    expect(stepUpReason('GET', '/api/ritual-template', null)).toBeNull();
+    expect(stepUpReason('PATCH', '/api/missions/ms1/ritual/0', { done: true })).toBeNull(); // a checkbox is not behind it
+  });
+});
+
 describe('moving room main (MIGRATE NOW, UNDO)', () => {
   it('asks for the password for a request to move main, and for undoing it; cancelling it and dismissing the note do less and do not', () => {
     const post = (body: Record<string, unknown> | null) => stepUpReason('POST', '/api/rooms/main/migrate', body);

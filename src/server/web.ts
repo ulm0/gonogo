@@ -103,6 +103,7 @@ import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
 import type { RulesStore } from './rules.js';
 import type { Rollout } from './rollout.js';
+import type { RitualTemplateStore } from './ritual.js';
 import { normalizeHost } from './hosts.js';
 import type { Triggers } from './triggers.js';
 import { UpdateError } from './updater.js';
@@ -209,6 +210,8 @@ export interface WebOptions {
   features?: Pick<FeatureStore, 'view' | 'isOn' | 'label' | 'plan' | 'apply'>;
   /** The subagent setting; absent in tests that do not need it (the routes answer 404). */
   subagents?: Pick<SubagentStore, 'view' | 'set'>;
+  /** The template of the closing ritual of missions; absent in tests that do not need it (the routes answer 404). */
+  ritualTemplate?: RitualTemplateStore;
   /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
   coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
   /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */
@@ -1206,6 +1209,52 @@ export function createWebServer(options: WebOptions): WebServer {
           }
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await room.save(body));
+        },
+      };
+    }
+    // the closing checklist of one mission: the Director's routes (an agent token never reaches these); each answers the whole mission
+    if (s[1] === 'missions' && s[3] === 'ritual' && s.length <= 5) {
+      const missions = options.missions;
+      if (!missions) return null;
+      const director = { kind: 'user' } as const;
+      const id = s[2] ?? '';
+      if (s.length === 4) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body === null) return;
+            if (Object.keys(body).some((k) => k !== 'text')) return sendApiError(res, 400, 'only text is accepted', 'bad_request', 'text');
+            sendJson(res, 200, await missions.update(director, id, { ritual: { add: body.text } }));
+          },
+        };
+      }
+      const raw = s[4] ?? '';
+      return {
+        allow: ['PATCH', 'DELETE'],
+        run: async (req, res) => {
+          if (!/^\d{1,2}$/.test(raw)) return sendApiError(res, 404, 'this mission has no closing item with that number', 'not_found', 'index');
+          const index = Number(raw);
+          if (req.method === 'DELETE') return sendJson(res, 200, await missions.update(director, id, { ritual: { remove: index } }));
+          const body = await jsonObject(req, res);
+          if (body === null) return;
+          if (Object.keys(body).some((k) => k !== 'done' && k !== 'text')) return sendApiError(res, 400, 'only done and text are accepted', 'bad_request', 'ritual');
+          sendJson(res, 200, await missions.update(director, id, { ritual: { index, ...(body.done === undefined ? {} : { done: body.done }), ...(body.text === undefined ? {} : { text: body.text }) } }));
+        },
+      };
+    }
+    // the template of the room's closing checklist (`<home>/ritual.md`): read by any session, written with step-up
+    if (s.length === 2 && s[1] === 'ritual-template') {
+      const template = options.ritualTemplate;
+      if (!template) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, await template.view());
+          const body = await jsonObject(req, res);
+          if (body === null) return;
+          if (Object.keys(body).some((k) => k !== 'text')) return sendApiError(res, 400, 'only text is accepted', 'bad_request', 'text');
+          sendJson(res, 200, await template.set(body.text));
         },
       };
     }
