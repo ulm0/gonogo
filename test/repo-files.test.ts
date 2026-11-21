@@ -292,6 +292,13 @@ describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scri
     expect(script).not.toMatch(/docker pull [^\n]*(docker\.io|quay|gcr|registry\.npmjs)/);
     expect(script).toContain('-e GH_TOKEN \\');
     expect(script).not.toMatch(/-e GH_TOKEN=/);
+    // the Director token of the throwaway instance never reaches a public log: masked by value and by shape, and update.json is read as its owner
+    expect(script).toContain('::add-mask::$token');
+    expect(script).toContain('docker logs --tail 60 "$NAME" 2>&1 | mask');
+    expect(script).toContain('result_file() { $SUDO find');
+    expect(script).toContain('<<<"$(result_text)"');
+    expect(script).not.toMatch(/result_text \| grep/);
+    expect(script).not.toMatch(/cat "\$\(result_file\)"/);
     expect(script).toContain('POST /api/update');
     expect(script).toContain('/api/update/undo');
     expect(script).toContain('E2E_UNVERIFIED');

@@ -31,8 +31,9 @@ fail() { echo "::error::$*"; dump; exit 1; }
 dump() {
   echo "::group::state at the failure"
   docker ps -a --filter "label=gonogo.e2e=$RUN" --format '{{.Names}} {{.Image}} {{.Status}}' || true
-  docker logs --tail 60 "$NAME" 2>&1 || true
-  [ -n "$(result_file)" ] && { echo "update.json:"; cat "$(result_file)"; } || true
+  # the server prints its Director token in the "gonogo ready:" line: never into a log that is public
+  docker logs --tail 60 "$NAME" 2>&1 | mask || true
+  [ -n "$(result_file)" ] && { echo "update.json:"; result_text | mask; } || true
   echo "::endgroup::"
 }
 cleanup() {
@@ -48,7 +49,10 @@ cleanup() {
 trap cleanup EXIT
 
 # where the helper writes its result: <home of room main>/run/update.json (under the supervisor's folder since rooms became the only mode)
-result_file() { find "$DATA/state" -name update.json -path '*/run/*' 2>/dev/null | head -1; }
+# the folders are uid 1000's and private (0700): a runner user reads them with sudo
+result_file() { $SUDO find "$DATA/state" -name update.json -path '*/run/*' 2>/dev/null | head -1; }
+result_text() { local f; f=$(result_file); [ -n "$f" ] && $SUDO cat "$f"; }
+mask() { sed -E 's/(#?token=)[0-9a-f]{16,}/\1***/g'; }
 version_of() { docker exec "$NAME" node -p 'require("/opt/gonogo/package.json").version' 2>/dev/null; }
 health_of() { docker inspect -f '{{.State.Health.Status}}' "$NAME" 2>/dev/null || echo none; }
 # requests to the room's own server with the Director token, from inside the container: `api_post METHOD PATH BODY` prints "<status> <body>"
@@ -118,6 +122,9 @@ docker run -d --name "$NAME" --label "gonogo.e2e=$RUN" --init --restart unless-s
   -e GONOGO_HOME="$DATA/state" -e CLAUDE_CONFIG_DIR="$DATA/claude" -e GH_TOKEN \
   "$IMAGE:latest" >/dev/null
 wait_running "$FROM" 240 || fail "gonogo $FROM did not become healthy"
+# the Director token of this throwaway instance: masked for the rest of the job, whatever prints it
+token=$($SUDO cat "$DATA/state/token" 2>/dev/null || true)
+[ -n "$token" ] && echo "::add-mask::$token"
 echo "running $(version_of), health $(health_of)"
 endstep
 
@@ -141,7 +148,8 @@ settled=$(wait_settled 240) || fail "the update strip did not settle: $settled"
 echo "strip: $settled"
 case "$settled" in *'"state":"done"'*'"undo":true'*) ;; *) fail "after the update the strip should say done with UNDO: $settled" ;; esac
 [ "$(version_of)" = "$TO" ] || fail "version is not $TO"
-grep -q '"state": *"ok"' "$(result_file)" || fail "update.json does not say ok"
+# a variable, not a pipe: with pipefail, a grep -q that quits early would fail the pipe
+grep -q '"state": *"ok"' <<<"$(result_text)" || fail "update.json does not say ok"
 endstep
 
 step "UNDO back to $FROM"
@@ -153,7 +161,7 @@ wait_running "$FROM" 300 || fail "gonogo $FROM did not run healthy after UNDO"
 echo "running $(version_of), health $(health_of)"
 settled=$(wait_settled 240) || fail "the strip did not settle after UNDO: $settled"
 echo "strip: $settled"
-grep -q "\"to\": *\"$FROM\"" "$(result_file)" || fail "update.json does not record the UNDO"
+grep -q "\"to\": *\"$FROM\"" <<<"$(result_text)" || fail "update.json does not record the UNDO"
 endstep
 
 echo "OK: $FROM -> $TO -> $FROM through the real path, each side healthy"
