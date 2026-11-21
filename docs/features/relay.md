@@ -30,6 +30,16 @@ One target each for Slack and Telegram: bot token plus Slack channel id or Teleg
 
 A photo (its largest size) or a document that is a PNG, JPG, WebP, GIF or PDF, sent in the chat of the target, is downloaded into `agents/<name>/inbox-files/<message id>-<name>` (0600) in gonogo's home; the message to the agent goes at once with the caption (or "(no caption)") and "a file is on its way", so a restart in the middle of a download loses nothing; a second message, a reply to it, brings `Attached: <absolute path>` or why there is none. The type is checked by the mime type and by the first bytes of the file, the name is rebuilt from letters and digits, and at most 10 files are downloaded in a minute, and a file older than 30 days is removed when gonogo starts. Past the Bot API's 20 MB the agent is told the file was too big. Webhook and polling alike; the same gates as a text (a forwarded photo arrives without the Director's mark). A Clean Room agent sees it too (its own `agents/<name>/` is mounted at the same path).
 
+## Several rooms, one bot
+
+Every room can send to your Telegram chat with the same bot, but **only room main listens** (Telegram allows one `getUpdates` consumer per bot). So main routes what you write:
+
+- **Reply** to a message a room sent: it reaches that room, and the agent that wrote it, as your own words (same gates as ever: that room's chat, the Director mark only in a private chat and not forwarded, files too). Main asks the other rooms in turn over their local sockets; the first that knows the message takes it.
+- **A plain message** goes to main's boss. To write to another room's boss, start with `/room <id> ` (`/room team status please`): the prefix is taken off. An id that is no room leaves the message with main, prefix and all.
+- **A reply nobody recognises** (a room restarted: the map of what it sent is in memory, as for main) goes to main.
+
+The rooms offer each other updates with a key the supervisor makes at each start and hands to its rooms in the environment, never to agents or a file; the route answers only on the local socket. **Limits:** the phone-approval buttons of rooms other than main are not routed (they have no polling secret); a room that uses a **different bot** from main is not listened to (main polls only its own bot); main must have the Telegram target saved, because main is the one that polls.
+
 ## Telegram needs no public address
 
 With a Telegram **target** saved, gonogo polls Telegram itself (`getUpdates` long polling), so a gonogo nothing can reach from outside still hears you and your button presses ([Phone approvals](./phone-approvals.md)). No uplink, webhook or public URL.

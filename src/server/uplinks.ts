@@ -34,6 +34,7 @@ import { FILE_MODE, UPLINK_BAD_MAX, UPLINK_BAD_WINDOW_MS, UPLINK_NOTE_MAX_CHARS,
 import { HubError } from './hub.js';
 import { bearerToken, isRecord } from './hooks.js';
 import { RELAY_KINDS } from './relaykinds.js';
+import { replyKey } from './telegramroute.js';
 import type { FileResult, TelegramFile } from './telegramfiles.js';
 import type { TriggerInput } from './triggers.js';
 import { UNSAFE_IN_NAME } from './schedules.js';
@@ -90,6 +91,8 @@ export interface Uplinks {
   deliver(id: string, raw: Buffer, headers: IncomingHttpHeaders): Pick<SendResult, 'ok' | 'id' | 'status'> | { ok: true; answer: unknown };
   /** Telegram long polling: one update from getUpdates, read as a webhook delivery is (the chat filter, reply routing, dedup, buttons), for the boss. `secret` signs the buttons. Never throws. */
   deliverPolled(update: Buffer, secret: string): void;
+  /** Does this update reply to a message this process forwarded? (Telegram and several rooms: telegramroute.ts.) */
+  ownsReply(update: Buffer): boolean;
   close(): Promise<void>;
 }
 
@@ -476,6 +479,15 @@ export function createUplinks(options: UplinksOptions): Uplinks {
       if (made.once !== undefined && inbound.seen(made.once)) return IGNORED;
       const sent = made.file === undefined ? receive(u, made, '') : withFile(u, made, made.file);
       return { ok: sent.ok, id: sent.id, status: sent.status };
+    },
+
+    ownsReply(update) {
+      try {
+        const key = replyKey(JSON.parse(update.toString('utf8')) as unknown);
+        return key !== null && inbound.find(key) !== undefined;
+      } catch {
+        return false;
+      }
     },
 
     deliverPolled(update, secret) {

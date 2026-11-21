@@ -104,6 +104,7 @@ import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
 import type { RulesStore } from './rules.js';
+import { ROUTE_BODY_MAX_BYTES, ROUTE_KEY_HEADER, sameKey } from './telegramroute.js';
 import type { Rollout } from './rollout.js';
 import type { RitualTemplateStore } from './ritual.js';
 import { normalizeHost } from './hosts.js';
@@ -222,6 +223,8 @@ export interface WebOptions {
   ritualTemplate?: RitualTemplateStore;
   /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
   coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
+  /** Telegram and several rooms: the key of this install and what to do with an update another room offers (telegramroute.ts). Absent outside a supervisor: the route answers 404. */
+  telegramRoute?: { key: string; take(body: Record<string, unknown>): { claimed: boolean } };
   /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */
   rules?: Pick<RulesStore, 'view' | 'set'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
@@ -1580,6 +1583,21 @@ export function createWebServer(options: WebOptions): WebServer {
     }
     if ((s[1] === 'hold-all' || s[1] === 'resume-all') && s.length === 2) {
       return { allow: ['POST'], run: (_req, res) => sendJson(res, 200, s[1] === 'hold-all' ? hub.holdAll() : hub.resumeAll()) };
+    }
+    // Telegram and several rooms (telegramroute.ts): another room of this install offers this one an update that replies to something this room sent. Only over the
+    // local socket, and only with the key the supervisor gave every room.
+    if (s[1] === 'telegram' && s[2] === 'route' && s.length === 3) {
+      const route = options.telegramRoute;
+      if (!route) return null;
+      return {
+        allow: ['POST'],
+        run: async (req, res) => {
+          const given = req.headers[ROUTE_KEY_HEADER];
+          if (!viaSocket.has(req) || !sameKey(typeof given === 'string' ? given : undefined, route.key)) return sendApiError(res, 404, 'not found', 'not_found');
+          const body = await jsonObject(req, res, ROUTE_BODY_MAX_BYTES);
+          if (body) sendJson(res, 200, route.take(body));
+        },
+      };
     }
     if (s[1] === 'coauthor' && s.length === 2) {
       const coauthor = options.coauthor;

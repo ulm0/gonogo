@@ -482,6 +482,17 @@ describe('PR 2: after review', () => {
     expect(env(join(home, 'rooms', 'team')).GONOGO_KNOWLEDGE_DIR).toBe(join(home, 'knowledge'));
   }, 30_000);
 
+  it('every room gets the same key for the Telegram route, new at each start of the supervisor, and no file holds it', async () => {
+    addRoom(home, 'team');
+    await supervise({ GONOGO_TELEGRAM_ROUTE_KEY: 'from-the-outside' });
+    await until(() => existsSync(join(home, 'rooms', 'team', 'dump.json')) && existsSync(join(home, 'dump.json')));
+    const env = (dir: string): Record<string, string> => (JSON.parse(readFileSync(join(dir, 'dump.json'), 'utf8')) as { env: Record<string, string> }).env;
+    const key = env(home).GONOGO_TELEGRAM_ROUTE_KEY as string;
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(key).not.toBe('from-the-outside');
+    expect(env(join(home, 'rooms', 'team')).GONOGO_TELEGRAM_ROUTE_KEY).toBe(key);
+  }, 30_000);
+
   it('a room other than main has no update route: 409, hook or not', async () => {
     const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: 'team', GONOGO_UPDATE_HOOK: 'http://hook.example/x' } });
     try {

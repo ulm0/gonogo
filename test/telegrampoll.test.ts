@@ -127,6 +127,22 @@ describe('the loop', () => {
     expect(two.poll.secret()).toBe(one.poll.secret());
   });
 
+  it('waits for a slow hand-on (a routed update) before it writes the offset, so a crash in the middle repeats the update and does not lose it', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const t = stand([{ json: { ok: true, result: [{ update_id: 70, message: { text: 'a' } }] } }]);
+    const { poll, delivered } = make(t.fetch, { deliver: async (update, secret) => { await gate; delivered.push({ update: JSON.parse(update.toString('utf8')) as Record<string, unknown>, secret }); } });
+    await poll.load();
+    poll.start();
+    await new Promise((r) => setTimeout(r, 60));
+    expect(JSON.parse(await readFile(join(dir, TELEGRAM_POLL_FILE), 'utf8')).offset).toBe(0);
+    release();
+    await until(() => delivered.length === 1);
+    await until(() => t.calls.length >= 2);
+    await poll.stop();
+    expect(JSON.parse(await readFile(join(dir, TELEGRAM_POLL_FILE), 'utf8')).offset).toBe(71);
+  });
+
   it('a damaged file starts like a first start: the newest update is looked at and nothing is handed on', async () => {
     await writeFile(join(dir, TELEGRAM_POLL_FILE), '{ nope');
     const t = stand([]);

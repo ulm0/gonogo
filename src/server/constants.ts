@@ -241,6 +241,8 @@ export const SCRUB_ENV_EXACT = [
   'GONOGO_ROOM',
   // where the Knowledge store is: agents reach it only through the tools
   'GONOGO_KNOWLEDGE_DIR',
+  // the key the rooms of one install offer each other Telegram updates with (telegramroute.ts)
+  'GONOGO_TELEGRAM_ROUTE_KEY',
   // the Director's own token (gonogo tui): an agent must never inherit it
   'GONOGO_BROWSER_TOKEN',
   // the update hook is the Director's: an agent with it could pull and restart gonogo without the click

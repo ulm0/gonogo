@@ -62,6 +62,7 @@ import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
 import { captureFetch, parseCaptureEnv } from './telegramcapture.js';
 import { createTelegramPoll } from './telegrampoll.js';
+import { createRouter, offerOverSocket, takeOffer } from './telegramroute.js';
 import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
 import { createFeatureStore } from './features.js';
@@ -1109,12 +1110,30 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('relief'),
     });
+    // Telegram and several rooms (telegramroute.ts): main's poller is the one consumer of the bot and offers a reply to the room that sent what it replies to
+    const routeKey = env.GONOGO_TELEGRAM_ROUTE_KEY ?? '';
+    const installRoot = env.GONOGO_KNOWLEDGE_DIR === undefined ? null : dirname(env.GONOGO_KNOWLEDGE_DIR);
+    const roomIds = (): string[] => {
+      try {
+        return installRoot === null ? [] : loadRooms(installRoot).map((r) => r.id);
+      } catch {
+        return [];
+      }
+    };
+    const telegramRouter = createRouter({
+      self: env.GONOGO_ROOM ?? MAIN_ROOM,
+      peers: () => (routeKey === '' ? [] : roomIds()),
+      offer: (room, update, force) => (installRoot === null ? Promise.resolve(false) : offerOverSocket(join(roomHome(installRoot, room), 'run', 'room.sock'), routeKey, update, force)),
+      owns: (update) => uplinks.ownsReply(update),
+      deliverOwn: (update, secret) => uplinks.deliverPolled(update, secret),
+      log: log.child('telegram route'),
+    });
     // Telegram inbound by long polling (no public address): room main's process only, one loop per gonogo, off while a Telegram uplink exists
     const telegramPoll = options.telegramPoll === true && (options.roomChild !== true || env.GONOGO_ROOM === 'main') ? createTelegramPoll({
       dir: home.dir,
       target: () => relay.telegramTarget(),
       hasUplink: () => uplinks.secretOf('telegram') !== null,
-      deliver: (update, secret) => uplinks.deliverPolled(update, secret),
+      deliver: telegramRouter,
       fetch: (url, init) => telegramHttp(String(url), init),
       sleep: (ms, signal) => new Promise<void>((done) => {
         const timer = setTimeout(done, ms);
@@ -1296,6 +1315,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       ...(autoApi === undefined ? {} : { autoUpdate: audited(autoApi, blackBox.record, AUTOUPDATE_AUDIT) }),
       subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),
       coauthor: audited(coauthorStore, blackBox.record, COAUTHOR_AUDIT),
+      ...(routeKey === '' ? {} : { telegramRoute: { key: routeKey, take: (body: Record<string, unknown>) => takeOffer(body, { owns: (u) => uplinks.ownsReply(u), deliver: (u) => uplinks.deliverPolled(u, '') }) } }),
       rules: audited(rulesStore, blackBox.record, RULES_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
