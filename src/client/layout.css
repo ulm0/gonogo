@@ -73,3 +73,23 @@
   .lay-phone-term .pane { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
   .lay-phone-term .term-wrap { flex: 1 1 auto; min-height: 240px; }
 }
+
+/* the top bar and the bottom bar of a phone */
+.lay-topbar { gap: 8px; }
+.lay-topbar .btn, .lay-topbar .lamp { flex: none; white-space: nowrap; }
+.lay-jump { gap: 8px; min-width: 200px; justify-content: flex-start; }
+.lay-jump-text { flex: 1; text-align: left; }
+.lay-kbd { font: inherit; font-size: 11px; opacity: 0.7; }
+.lay-version .btn { font-variant-numeric: tabular-nums; }
+.lay-version .lay-pop { width: 320px; }
+.lay-phone-bar { display: flex; gap: 8px; }
+.lay-phone-bar > * { flex: 1; }
+.lay-phone-bar .lay-anchor .btn { width: 100%; }
+.lay-phone-bar .btn { position: relative; padding-inline: 6px; gap: 4px; }
+.lay-phone-bar .btn .chip { position: absolute; top: -8px; right: 6px; }
+@media (max-width: 700px) {
+  .lay-topbar { padding: 12px 16px 0; }
+  .lay-jump { min-width: 0; flex: 1; }
+  .lay-jump .lay-kbd { display: none; }
+  .lay-phone-bar .btn { min-width: 44px; }
+}
