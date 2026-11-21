@@ -37,6 +37,7 @@ import { createDownlink } from './downlink.js';
 import { createHub } from './hub.js';
 import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
+import { createAnchorEngine } from './anchorengine.js';
 import { createKnowledge } from './knowledge.js';
 import { createProposalStore } from './knowledgeproposals.js';
 import { createKnowledgeStore } from './knowledgestore.js';
@@ -1051,6 +1052,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       store: knowledgeStore,
       proposals: createProposalStore({ dir: join(home.dir, 'knowledge-proposals'), now: io.now, parseLegs }),
       git: createSafeGit({ env }),
+      engine: createAnchorEngine({ now: io.now, log: log.child('anchor engine'), env }),
       parseLegs,
       now: io.now,
       on: () => features.isOn('knowledge-anchors'),

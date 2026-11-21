@@ -14,6 +14,7 @@ import { open, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { sep } from 'node:path';
 import type { Claim, ClaimResult, KnowledgeCounts, KnowledgePromoted, KnowledgeRepo, KnowledgeView, LogAnchor, LogEntry } from '../shared/protocol.js';
+import type { AnchorEngine } from './anchorengine.js';
 import { CLAIMS_FILE_MAX_BYTES, noLegs, parseClaimsFile } from './claimsfile.js';
 import type { ParseLegs } from './claimsfile.js';
 import { HubError } from './hub.js';
@@ -29,10 +30,8 @@ export const KNOWLEDGE_LIST_MAX = 50;
 /** RECHECK of a repository, and a trial run of a proposal: once per this long. */
 export const KNOWLEDGE_RECHECK_MS = 30_000;
 
-/** The engine (K2): evaluates claims in a checkout. Absent, nothing is evaluated and no result is shown. */
-export interface KnowledgeEngine {
-  run(root: string, claims: ReadonlyArray<Pick<Claim, 'id' | 'legs' | 'diagnostics'>>): Promise<ClaimResult[]>;
-}
+/** The engine (anchorengine.ts): evaluates claims in a checkout; `trial` is for claims that are not accepted. Absent, nothing is evaluated and no result is shown. */
+export type KnowledgeEngine = Pick<AnchorEngine, 'run'>;
 
 export interface KnowledgeOptions {
   store: KnowledgeStore;
@@ -200,12 +199,12 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   };
 
   /** Runs the engine on the first checkout of this room that is bound to the repository, and keeps the answer. */
-  async function evaluate(repoId: string, claims: readonly Claim[]): Promise<ClaimResult[]> {
+  async function evaluate(repoId: string, claims: readonly Claim[], trial = false): Promise<ClaimResult[]> {
     const engine = options.engine;
     const mine = (await here()).get(repoId);
     const root = mine?.roots.find((r) => r.bound);
     if (!engine || root === undefined) return [];
-    return engine.run(root.path, claims);
+    return engine.run(root.path, claims, trial ? { trial: true } : undefined);
   }
 
   return {
@@ -285,7 +284,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       const p = all.find((x) => x.id === proposalId);
       if (!p) throw new HubError('not_found', 'unknown proposal');
       // the trial is for the Director only: it is kept with the proposal and goes to no agent
-      const result = (await evaluate(repoId, [{ id: p.id, statement: p.statement, authority: 'proposed', state: 'proposed', date: '', source: 'store', legs: p.legs, diagnostics: [] }]))[0];
+      const result = (await evaluate(repoId, [{ id: p.id, statement: p.statement, authority: 'proposed', state: 'proposed', date: '', source: 'store', legs: p.legs, diagnostics: [] }], true))[0];
       if (result) await proposals.setTrial(repoId, proposalId, result);
       return repoView(repoId);
     },

@@ -45,4 +45,4 @@ A proposal does nothing until you accept it. The agent hears only "proposal p4 a
 - `POST /api/log/<id>/promote` makes a store claim of the anchors of a Mission Log entry (title as the statement, source `from l17`, the entry left as it is).
 - A `knowledge` frame carries counts per repository (stale, vacuous, unevaluated, malformed, pending), no text.
 
-Claims are evaluated by the engine of the next release: until it is there, results and trial runs stay empty.
+Claims are evaluated by the engine (one worker thread per run, at most 5 s, 64 MiB, two at once per room, at most one run per checkout every 30 s). A trial run of a proposal is for you only; a checkout that is not bound is not evaluated.

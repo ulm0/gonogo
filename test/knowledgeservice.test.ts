@@ -11,6 +11,8 @@ import { createProposalStore } from '../src/server/knowledgeproposals.js';
 import { createKnowledgeStore } from '../src/server/knowledgestore.js';
 import type { KnowledgeStore } from '../src/server/knowledgestore.js';
 import { noLegs } from '../src/server/claimsfile.js';
+import { createAnchorEngine } from '../src/server/anchorengine.js';
+import { parseLegLines as realParse } from '../src/server/anchorgrammar.js';
 import { createSafeGit } from '../src/server/safegit.js';
 
 // real git repositories and several git calls per step: slow when the whole suite runs at once
@@ -275,5 +277,76 @@ describe('S2: a repo file', () => {
     await k.propose('ana', { statement: 'x', legs: [leg] });
     const claims = (await k.view({})).repos[0]?.claims ?? [];
     expect(JSON.stringify(claims)).not.toContain('OUTSIDE-SECRET');
+  });
+});
+
+describe('with the real grammar and engine', () => {
+  const buildReal = (): void => {
+    store = createKnowledgeStore({ dir: join(root, 'store-real'), now: () => now, log: quiet, parseLegs: realParse });
+    k = createKnowledge({
+      store,
+      proposals: createProposalStore({ dir: join(root, 'room-real', 'knowledge-proposals'), now: () => now, parseLegs: realParse }),
+      git: createSafeGit({ ms: 30_000 }),
+      engine: createAnchorEngine({ now: () => now, log: quiet, runMs: 20_000 }),
+      parseLegs: realParse,
+      now: () => now,
+      on: () => on,
+      agents: () => Object.keys(places),
+      place: async (n) => places[n] ?? null,
+      tell: (agent, text) => void told.push([agent, text]),
+      changed: (c) => void changed.push(c),
+      log: { warn: () => undefined },
+    });
+  };
+  beforeEach(buildReal);
+
+  it('a claim is evaluated for real: ok where its text is, stale where it is not, and the result is in the view and the counts', async () => {
+    await k.propose('ana', { statement: 'seed', legs: [leg] });
+    const repoId = (await k.view({})).repos[0]?.repoId ?? '';
+    await k.addClaim(repoId, { statement: 'The limit is 5', anchors: 'brain:a.txt "limit is 5" present' });
+    await k.addClaim(repoId, { statement: 'The limit is 7', anchors: 'brain:a.txt "limit is 7" present' });
+    await k.addClaim(repoId, { statement: 'No old name', anchors: 'brain:** /old[[:space:]]name/ absent' });
+    const done = await k.recheck(repoId);
+    const worst = Object.fromEntries(done.results.map((r) => [r.id, r.worst]));
+    expect(worst).toEqual({ 'K-1': 'ok', 'K-2': 'stale', 'K-3': 'ok' });
+    expect(done.results[0]).toMatchObject({ root: places.ana, branch: 'main', commit: expect.stringMatching(/^[0-9a-f]{7}$/) });
+    await vi.waitFor(() => expect(Object.values(changed.at(-1) ?? {})[0]).toMatchObject({ stale: 1 }));
+    // the file changes; after the window the same claim is stale
+    await writeFile(join(places.ana ?? '', 'a.txt'), 'the limit is 6\n');
+    git(places.ana ?? '', 'commit', '-q', '-am', 'six');
+    now += 31_000;
+    expect((await k.recheck(repoId)).results.find((r) => r.id === 'K-1')?.worst).toBe('stale');
+  });
+
+  it('a bad anchor is refused with its line, from the real grammar', async () => {
+    await k.propose('ana', { statement: 'seed', legs: [leg] });
+    const repoId = (await k.view({})).repos[0]?.repoId ?? '';
+    const e = await refused(() => k.addClaim(repoId, { statement: 's', anchors: 'brain:a.txt "x" present\nbrain:../etc "y" present' }));
+    expect(e.code).toBe('bad_request');
+    await expect(k.addClaim(repoId, { statement: 's', anchors: 'brain:a.txt "x" present\nnot an anchor' })).rejects.toMatchObject({ field: 'anchors', diagnostics: [{ line: 2 }] });
+    expect((await k.view({})).repos[0]?.claims).toEqual([]);
+  });
+
+  it('a proposal is trialled on the checkout for the Director only, and after accept its claim is evaluated', async () => {
+    const made = await k.propose('ana', { statement: 'The limit is 5', legs: [leg] });
+    expect(made).toEqual({ id: 'p1' });
+    const repoId = (await k.view({})).repos[0]?.repoId ?? '';
+    const tried = await k.trial(repoId, 'p1');
+    expect(tried.proposals[0]?.trial).toMatchObject({ worst: 'ok', branch: 'main' });
+    // a trial is not a result of the repository, and nothing an agent can call carries it
+    expect(tried.results).toEqual([]);
+    expect(JSON.stringify(await k.list('ana'))).not.toMatch(/ok|stale|trial/i);
+    const accepted = await k.accept(repoId, 'p1');
+    expect(accepted.claims[0]).toMatchObject({ id: 'K-1', authority: 'agent-accepted' });
+    expect(accepted.claims[0]?.legs).toHaveLength(1);
+    expect(accepted.results[0]).toMatchObject({ id: 'K-1', worst: 'ok' });
+  });
+
+  it('an unbound checkout is not evaluated for the Director\'s results either', async () => {
+    await k.propose('ana', { statement: 'seed', legs: [leg] });
+    const repoId = (await k.view({})).repos[0]?.repoId ?? '';
+    await k.bind({ repoId, path: places.ana, action: 'unbind' });
+    await k.addClaim(repoId, { statement: 'x', anchors: 'brain:a.txt "limit" present' });
+    expect((await k.recheck(repoId)).results).toEqual([]);
   });
 });
