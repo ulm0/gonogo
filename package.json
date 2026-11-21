@@ -1,6 +1,6 @@
 {
   "name": "@ulm0/gonogo",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Self-hosted mission control for AI coding agents: real Claude Code terminals in a browser tab (a phone too), agents that message each other, schedules, webhooks and token budgets.",
   "keywords": [
     "claude-code",
@@ -54,6 +54,7 @@
     "test": "vitest run",
     "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && pnpm run build",
     "smoke:real": "node scripts/smoke-real.mjs",
+    "knowledge:bench": "node scripts/knowledge-bench.mjs",
     "check:pack": "node scripts/check-pack.mjs",
     "changelog:release": "node scripts/changelog-release.mjs",
     "docs:dev": "vitepress dev",

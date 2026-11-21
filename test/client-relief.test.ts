@@ -55,6 +55,14 @@ describe('what the Director reads', () => {
     expect(reliefRows(request({ cleanRoom: {} }), 1_000).find((r) => r.label === 'Clean Room')?.value).toBe('yes: its own container and branch');
   });
 
+  it('shows the worktree row only when the boss asked for one', () => {
+    expect(reliefRows(request(), 1_000).some((r) => r.label === 'Worktree')).toBe(false);
+    expect(reliefRows(request({ worktree: null }), 1_000).some((r) => r.label === 'Worktree')).toBe(false);
+    const rows = reliefRows(request({ worktree: {} }), 1_000);
+    expect(rows.map((r) => r.label)).toEqual(['Name', 'Position', 'Engine', 'Mode', 'Folder', 'Worktree', 'Waits']);
+    expect(rows.find((r) => r.label === 'Worktree')?.value).toBe('yes: its own git worktree and branch of the repository of the folder');
+  });
+
   it('tells a failed answer in words, the message of the server in them', () => {
     expect(reliefFailure('guido-1', true, new Error('directory does not exist: /work/x'))).toBe('GO on guido-1 failed: directory does not exist: /work/x');
     expect(reliefFailure('guido-1', false, 'offline')).toBe('NO-GO on guido-1 failed: offline');

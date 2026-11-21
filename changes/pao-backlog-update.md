@@ -1,1 +1,0 @@
-- **Backlog brought up to date.** The tunnel and the publishing items are done, two items are excluded by the owner, three are marked in progress, and the knowledge work of 0.10.0 and 0.11.0 has its own section.
