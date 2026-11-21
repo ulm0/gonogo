@@ -11,7 +11,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type BrowserContext, type Page, test } from '@playwright/test';
+import { geometry } from './geometry.js';
+import { type BrowserContext, type Page, expect, test } from '@playwright/test';
 
 test.skip(process.env.SCREENS !== '1', 'screenshots are taken by the screens workflow (SCREENS=1)');
 
@@ -41,6 +42,8 @@ interface Shot {
 }
 const shots: Shot[] = [];
 const missed: string[] = [];
+/** What browser/geometry.ts found wrong in the views that are measured, one line each. */
+const geo: string[] = [];
 let n = 0;
 
 const children: ChildProcess[] = [];
@@ -84,6 +87,54 @@ async function shoot(page: Page, group: string, title: string, fullPage = false)
   }
 }
 
+/** The geometry rules (no overlap, no sideways scroll, no clipped text, keys 24 px or 44 on a phone) on the view the page shows now. */
+async function measure(page: Page, group: string, title: string, scope = 'body'): Promise<void> {
+  for (const problem of await geometry(page, group.endsWith('phone'), scope)) geo.push(`${group}: ${title}: ${problem}`);
+}
+
+/** A thing the terminal toolbar must do, checked in the page: a failure goes in geometry.txt like a geometry problem. */
+async function proof(group: string, what: string, check: () => Promise<boolean>): Promise<void> {
+  const ok = await check().catch(() => false);
+  if (!ok) geo.push(`${group}: proof failed: ${what}`);
+}
+
+const clipboard = (page: Page): Promise<string> => page.evaluate(() => navigator.clipboard.readText());
+
+/** Copy, Find and Full screen of the terminal toolbar, driven as a person would and checked (the clipboard, the selection, document.fullscreenElement). */
+async function toolbarProofs(page: Page, group: string): Promise<void> {
+  const phone = group.endsWith('phone');
+  const needle = 'Fake model';
+  await page.waitForTimeout(1500);
+  const copyItem = async (name: string): Promise<void> => {
+    await page.getByRole('button', { name: 'Copy' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name, exact: true }).click({ timeout: 3000 });
+  };
+  await copyItem('The screen');
+  await proof(group, 'Copy > The screen puts the terminal text on the clipboard', async () => (await clipboard(page)).includes(needle));
+  if (phone) {
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Find', exact: true }).click({ timeout: 3000 });
+  } else {
+    await page.getByRole('button', { name: 'Find', exact: true }).click({ timeout: 3000 });
+  }
+  await page.getByLabel('Find in the terminal').fill('fake');
+  await page.getByLabel('Find in the terminal').press('Enter');
+  await page.waitForTimeout(600);
+  await proof(group, 'Find highlights a match (xterm selection layer)', async () => (await page.locator('.xterm-selection div').count()) > 0);
+  await copyItem('Selection');
+  await proof(group, 'Copy > Selection puts the found text on the clipboard', async () => (await clipboard(page)).toLowerCase() === 'fake');
+  if (!phone) {
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Full screen', exact: true }).click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    await proof(group, 'Full screen enters', async () => page.evaluate(() => document.fullscreenElement !== null));
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Leave full screen', exact: true }).click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    await proof(group, 'Full screen leaves', async () => page.evaluate(() => document.fullscreenElement === null));
+  }
+}
+
 /** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
 async function view(page: Page, group: string, title: string, get: () => Promise<void>, fullPage = false): Promise<void> {
   try {
@@ -108,7 +159,10 @@ async function open(page: Page, key: string, query = key): Promise<void> {
 }
 
 async function patch(page: Page, query: string): Promise<void> {
-  await page.keyboard.press('Control+k');
+  // the Jump key of the top bar: Ctrl+K typed while the terminal has the focus stays in the terminal (xterm takes it), and a room that has just loaded gives the boss's terminal the focus
+  const jump = page.getByRole('button', { name: /^Jump to/ });
+  if (await jump.isVisible().catch(() => false)) await jump.click({ timeout: 3000 });
+  else await page.keyboard.press('Control+k');
   const field = page.locator('.patch-input');
   await field.waitFor({ timeout: 3000 });
   await field.fill(query);
@@ -160,6 +214,7 @@ test.afterAll(async () => {
     (missed.length ? `<h2>Missed</h2><ul>${missed.map((m) => `<li>${m.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '') +
     groups.map((g) => `<h2>${g}</h2><div class="g">${shots.filter((s) => s.group === g).map((s) => `<figure><a href="${s.file}"><img loading="lazy" src="${s.file}" alt=""></a><figcaption>${s.title}</figcaption></figure>`).join('')}</div>`).join('');
   await writeFile(join(OUT, 'index.html'), html);
+  await writeFile(join(OUT, 'geometry.txt'), geo.length === 0 ? 'no geometry problems\n' : geo.join('\n') + '\n');
 });
 
 /** Every view of the app, in the order a person meets them. `full` is the pass after the seed. */
@@ -169,6 +224,46 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await page.locator('.topbar').waitFor({ timeout: 30_000 });
   await page.locator('.lamp[data-link="up"]').waitFor({ timeout: 30_000 }).catch(() => undefined);
   await shoot(page, group, t('room main'), true);
+  if (full) await measure(page, group, 'room main');
+  if (full) {
+    await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: /^(No mission|Mission )/ }).click({ timeout: 3000 }));
+    await measure(page, group, 'the clock open');
+    await page.keyboard.press('Escape');
+    for (const [title, name] of [['layout', 'Layout of the room'], ['version key', /^\d+\.\d+\.\d+/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
+      await view(page, group, `top bar: ${title}`, () => page.getByRole('button', { name }).last().click({ timeout: 3000 }));
+      await measure(page, group, title);
+      await page.keyboard.press('Escape');
+    }
+    for (const density of ['Full wall', 'Focus', 'Standard'] as const) {
+      await page.getByRole('button', { name: 'Layout of the room' }).click({ timeout: 3000 });
+      await page.getByRole('button', { name: new RegExp('^' + density) }).click({ timeout: 3000 });
+      await page.keyboard.press('Escape');
+      if (density !== 'Standard') {
+        await shoot(page, group, `layout: ${density}`, true);
+        await measure(page, group, `layout: ${density}`);
+      }
+    }
+    await toolbarProofs(page, group);
+    await page.reload();
+    await page.locator('.topbar').waitFor({ timeout: 30_000 });
+    await view(page, group, 'terminal toolbar: copy menu', () => page.getByRole('button', { name: 'Copy' }).first().click({ timeout: 3000 }));
+    await measure(page, group, 'copy menu');
+    await page.keyboard.press('Escape');
+    await view(page, group, 'terminal toolbar: more keys', () => page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 }));
+    await measure(page, group, 'more keys');
+    await page.keyboard.press('Escape');
+    if (group.endsWith('phone')) {
+      await view(page, group, 'terminal: Select', () => page.getByRole('button', { name: 'Select', exact: true }).click({ timeout: 3000 }));
+      await measure(page, group, 'Select');
+      await page.getByRole('button', { name: 'Close' }).click({ timeout: 3000 }).catch(() => undefined);
+    }
+    await view(page, group, 'terminal: expanded', async () => {
+      await page.getByRole('button', { name: 'Expand', exact: true }).click({ timeout: 3000 });
+      await page.waitForTimeout(1200);
+    });
+    await measure(page, group, 'expanded');
+    await page.getByRole('button', { name: /^Back/ }).click({ timeout: 3000 }).catch(() => undefined);
+  }
   await view(page, group, t('comms inbox'), async () => {
     await open(page, 'Comms');
     await page.getByRole('tab', { name: /inbox/i }).click({ timeout: 3000 });
@@ -184,19 +279,14 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await view(page, group, t('recorder'), () => patch(page, 'recorder'), true);
   if (!full) return;
   await view(page, group, 'flight rules', () => open(page, 'Flight Rules', 'rules'), true);
-  // each block of Flight Rules, one by one: the view scrolls inside itself, so a full-page shot would miss the lower ones
-  const blocks = page.locator('.rules-block');
-  const count = await blocks.count().catch(() => 0);
+  // Flight Rules in groups: each group opened by its key of the index, with its rows (the rows are folded; the blocks inside are the old ones)
+  await measure(page, group, 'flight rules');
+  const links = page.locator('.lay-group-nav a');
+  const count = await links.count().catch(() => 0);
   for (let i = 0; i < count; i += 1) {
-    const heading = ((await blocks.nth(i).locator('h2').first().textContent().catch(() => '')) ?? '').trim() || `block ${i + 1}`;
-    n += 1;
-    const file = `${group}/${String(n).padStart(3, '0')}-rules-${slug(heading)}.png`;
-    try {
-      await blocks.nth(i).screenshot({ path: join(OUT, file) });
-      shots.push({ group, file, title: `flight rules: ${heading}` });
-    } catch (error) {
-      missed.push(`${group}: flight rules ${heading}: ${(error as Error).message.split('\n')[0]}`);
-    }
+    const title = ((await links.nth(i).textContent()) ?? '').trim();
+    await view(page, group, `flight rules: ${title}`, () => links.nth(i).click({ timeout: 3000 }));
+    await measure(page, group, `flight rules: ${title}`);
   }
   await view(page, group, 'livery', () => open(page, 'Livery'), true);
   await view(page, group, 'patch panel', async () => {
@@ -206,9 +296,15 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   });
   await page.keyboard.press('Escape');
   await view(page, group, 'hire form', async () => {
+    // the key is in the room view now (it was in the top bar): go back to the room first
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.topbar').waitFor({ timeout: 30_000 });
     await page.getByRole('button', { name: /staff a console/i }).first().click({ timeout: 3000 });
   });
   await page.keyboard.press('Escape');
+  // a fresh room page for what follows: the form must not be open when the Patch Panel is asked for
+  await page.goto(`${base}/r/main/`);
+  await page.locator('.topbar').waitFor({ timeout: 30_000 });
   await view(page, group, 'agent console', async () => {
     await patch(page, 'ana');
     await page.locator('.xterm-rows').first().waitFor({ timeout: 10_000 });
@@ -283,6 +379,12 @@ test('screens of the app and the docs', async ({ browser }) => {
   missed.push(`info: agents after the seed: ${states.join(', ')}${states.some((x) => x.endsWith('=stopped')) ? '; server output: ' + output.slice(-600).replace(/\s+/g, ' ') : ''}`);
   await setupContext.close();
 
+  await seed('second room', async () => {
+    const maker = await browser.newContext({ storageState: state });
+    await api(maker, 'POST', '/api/rooms', { id: 'docs', name: 'Docs' });
+    await maker.close();
+  });
+
   // every view, light then dark (the livery is the server's, so it is chosen once per scheme), desktop and phone
   for (const scheme of SCHEMES) {
     const chooser = await browser.newContext({ storageState: state });
@@ -290,10 +392,17 @@ test('screens of the app and the docs', async ({ browser }) => {
     await chooser.close();
     for (const size of SIZES) {
       const group = `${scheme.name}-${size.name}`;
-      const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+      const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height }, permissions: ['clipboard-read', 'clipboard-write'] });
       const page = await context.newPage();
       await page.goto(`${base}/`);
       await shoot(page, group, 'rooms list', true);
+      await measure(page, group, 'rooms list');
+      await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs', exact: true }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop asks first');
+      await page.getByRole('button', { name: 'Keep Docs running' }).click({ timeout: 3000 }).catch(() => undefined);
+      await view(page, group, 'rooms list: stop all asks first', () => page.getByRole('button', { name: 'Stop every room', exact: true }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop all asks first');
+      await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
       await context.close();
     }
@@ -316,5 +425,6 @@ test('screens of the app and the docs', async ({ browser }) => {
     missed.push('docs: not taken (SCREENS_DOCS=1 and a built docs site are needed)');
   }
   await rm(work, { recursive: true, force: true });
+  expect(geo, 'geometry of the measured views (see geometry.txt)').toEqual([]);
 });
 

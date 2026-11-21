@@ -3,8 +3,8 @@
  * are the wall's own modules; a setting that lives in its own feature (the livery, a console, the schedules and webhooks) is a
  * key that opens it. Commissioning, the checklist of an empty room, is here too: it uses the same keys.
  */
-import { useEffect, useId, useRef, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import * as api from './api.js';
 import { DOCS_URL } from '../shared/protocol.js';
 import { DetailChips } from './DetailChips.js';
@@ -34,6 +34,7 @@ import type { Mark, Step } from './shell.js';
 import { openConsole, openEdit, showLivery, showRoom, showRules, showWindow, useFeature, useStore } from './store.js';
 import { legendOf } from './wall.js';
 import { MaxQ, Propellant } from './WallView.js';
+import { Row, useValue } from './Row.js';
 import './loop.css';
 import './rules.css';
 
@@ -154,6 +155,23 @@ function ReloadBlock(): ReactElement {
   );
 }
 
+/** The open group and how to change it: a context, so that Group is one component for good (one defined inside FlightRules is a new type at every render, and React would rebuild every block in it each time a value arrives). */
+const GroupContext = createContext<{ open: string; setOpen(id: string): void; base: string }>({ open: '', setOpen: () => undefined, base: '' });
+
+function Group({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement {
+  const { open, setOpen, base } = useContext(GroupContext);
+  return (
+    <section className="lay-group" id={`${base}-g-${id}`} aria-label={title} data-open={open === id || undefined}>
+      <h2 className="lay-group-title">
+        <button type="button" className="btn" data-kind="quiet" aria-expanded={open === id} onClick={() => setOpen(open === id ? '' : id)}>
+          {title} {open === id ? '▾' : '▸'}
+        </button>
+      </h2>
+      {open === id && <div className="lay-group-body">{children}</div>}
+    </section>
+  );
+}
+
 export function FlightRules(): ReactElement {
   const maxqOn = useFeature('maxq');
   const titleId = useId();
@@ -161,11 +179,87 @@ export function FlightRules(): ReactElement {
   const { legends } = useSeats();
   const livery = useStore((s) => s.livery);
   const heading = useRef<HTMLHeadingElement | null>(null);
+  const [openGroup, setOpenGroup] = useState('room');
+  const model = useValue(() => api.modelDefaults().then((m) => `${m.engine ?? 'claude'}${m.effort ? `, effort ${m.effort}` : ''}`));
+  const perms = useValue(() => api.permissionDefaults().then((p) => `${Object.values(p.permissions as Record<string, unknown>).flat().length} rules`));
+  const payload = useValue(() => api.payloadDefaults().then((p) => `${p.mcpServers.length} servers, ${p.skills.length} skills`));
+  const sub = useValue(() => api.subagentSettings().then((x) => (x.mode === 'limit' ? `at most ${x.limit}` : x.mode)));
+  const coauthor = useValue(() => api.coauthorSettings().then((c) => (c.enabled ? 'co-author line on' : 'co-author line off') + (c.prFooter ? ', PR footer on' : '')));
+  const auto = useValue(() => api.autoUpdate().then((a) => (a.enabled ? 'on' : 'off')));
+  const version = useStore((s) => s.info?.version ?? '');
+  const tabName = useStore((s) => s.tabName);
+  const governor = useStore((s) => s.governor);
+  const schedules = useStore((s) => s.schedules.length);
+  const uplinks = useStore((s) => s.uplinks.length);
+  const rules = useValue(() => api.rulesView().then((r) => (r.bytes === 0 ? 'none written' : `${r.bytes} bytes`)));
+  const template = useValue(() => api.ritualTemplate().then((r) => (r.bytes === 0 ? 'none written' : `${r.bytes} bytes`)));
+  const startup = useValue(() => api.startupSettings().then((x) => `after a restart: ${x.policy}`));
+  const know = useValue(() => api.knowledge().then((k) => (k.enabled ? `on, ${k.repos.length} repositories` : 'off')));
+  const keys = useValue(() => api.roomKeys().then((k) => `${k.keys.length} keys`));
+  const off = useStore((s) => s.features);
   const current = useMarks();
+  const liveryBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-look`}>
+      <h2 className="label" id={`${titleId}-look`}>
+        LIVERY
+      </h2>
+      <p className="rules-value">{currentEntry(livery).name}</p>
+      <p className="hint">The look of every device.</p>
+      <button type="button" className="btn" onClick={showLivery}>
+        Choose a livery
+      </button>
+    </section>
+  );
+  const launchBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-window`}>
+      <h2 className="label" id={`${titleId}-window`}>
+        LAUNCH WINDOW
+      </h2>
+      <p className="hint">Schedules, Uplink webhooks, Relay chat bridges and Docking with other stations.</p>
+      <button type="button" className="btn" onClick={showWindow}>
+        Open Launch Window
+      </button>
+    </section>
+  );
+  const consolesBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
+      <h2 className="label" id={`${titleId}-consoles`}>
+        CONSOLES
+      </h2>
+      <p className="hint">Each console's directory, role, engine, permission mode and payload are in its Edit form; its own Propellant limit is in its panel.</p>
+      <ul className="rules-consoles">
+        {list.map((a) => (
+          <li key={a.name}>
+            <span className="rules-call">{legendOf(legends, a.name)}</span>
+            <span className="hint rules-name">{a.name}</span>
+            <DetailChips agent={a} />
+            <button type="button" className="btn" data-kind="quiet" aria-label={`Edit ${legendOf(legends, a.name)}`} onClick={() => openEdit(a.name)}>
+              Edit
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+  const browserBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-browser`}>
+      <h2 className="label" id={`${titleId}-browser`}>
+        THIS BROWSER
+      </h2>
+      <Notifications />
+      <PushBlock />
+      <p className="hint">The Commissioning checklist shows on an empty room until you put it away. Only this browser remembers that.</p>
+      <button type="button" className="btn" aria-disabled={current.size === 0 || undefined} onClick={() => current.size > 0 && setMarks(new Set())}>
+        Show Commissioning again
+      </button>
+    </section>
+  );
   // The page replaces the room: the keyboard starts at its title.
   useEffect(() => heading.current?.focus(), []);
+  const groups: ReadonlyArray<[string, string]> = [['room', 'Room'], ['agents', 'Agents'], ['budget', 'Budget and limits'], ['auto', 'Automation and connections'], ['knowledge', 'Knowledge'], ['security', 'Security'], ['system', 'System and update']];
   return (
-    <section className="rules" aria-labelledby={titleId}>
+    <GroupContext.Provider value={{ open: openGroup, setOpen: setOpenGroup, base: titleId }}>
+    <section className="rules lay-rules" aria-labelledby={titleId}>
       <header className="loop-head">
         <h1 id={titleId} ref={heading} tabIndex={-1} className="disp loop-title rules-title">
           FLIGHT RULES
@@ -174,80 +268,55 @@ export function FlightRules(): ReactElement {
           Room
         </button>
       </header>
-      <p className="hint">Every setting of the room. All of them are kept on the server, so every device shows the same; each one also has its place in the room.</p>
-      <div className="rules-grid">
-        {maxqOn && <MaxQ />}
-        <Propellant />
-        <section className="module rules-block" aria-labelledby={`${titleId}-look`}>
-          <h2 className="label" id={`${titleId}-look`}>
-            LIVERY
-          </h2>
-          <p className="rules-value">{currentEntry(livery).name}</p>
-          <p className="hint">The look of every device.</p>
-          <button type="button" className="btn" onClick={showLivery}>
-            Choose a livery
-          </button>
-        </section>
-        <PhoneApprovals />
-        <ReloadBlock />
-        <section className="module rules-block" aria-labelledby={`${titleId}-window`}>
-          <h2 className="label" id={`${titleId}-window`}>
-            LAUNCH WINDOW
-          </h2>
-          <p className="hint">Schedules, Uplink webhooks, Relay chat bridges and Docking with other stations.</p>
-          <button type="button" className="btn" onClick={showWindow}>
-            Open Launch Window
-          </button>
-        </section>
-      </div>
-      <TabNameBlock />
-      <ModelDefaultsBlock />
-      <RoomRulesBlock />
-      <RitualTemplateBlock />
-      <KnowledgeBlock />
-      <SemanticBlock />
-      <PermissionDefaultsBlock />
-      <PayloadDefaultsBlock />
-      <SkillsBlock />
-      <RoomKeysBlock />
-      <StartupBlock />
-      <VersionCheckBlock />
-      <AutoUpdateBlock />
-      <SubagentsBlock />
-      <CoauthorBlock />
-      <AccountBlock />
-      <AllStopBlock />
-      <FeaturesBlock />
-      <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
-        <h2 className="label" id={`${titleId}-consoles`}>
-          CONSOLES
-        </h2>
-        <p className="hint">Each console's directory, role, engine, permission mode and payload are in its Edit form; its own Propellant limit is in its panel.</p>
-        <ul className="rules-consoles">
-          {list.map((a) => (
-            <li key={a.name}>
-              <span className="rules-call">{legendOf(legends, a.name)}</span>
-              <span className="hint rules-name">{a.name}</span>
-              <DetailChips agent={a} />
-              <button type="button" className="btn" data-kind="quiet" aria-label={`Edit ${legendOf(legends, a.name)}`} onClick={() => openEdit(a.name)}>
-                Edit
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section className="module rules-block" aria-labelledby={`${titleId}-browser`}>
-        <h2 className="label" id={`${titleId}-browser`}>
-          THIS BROWSER
-        </h2>
-        <Notifications />
-        <PushBlock />
-        <p className="hint">The Commissioning checklist shows on an empty room until you put it away. Only this browser remembers that.</p>
-        <button type="button" className="btn" aria-disabled={current.size === 0 || undefined} onClick={() => current.size > 0 && setMarks(new Set())}>
-          Show Commissioning again
-        </button>
-      </section>
+      <nav className="lay-group-nav" aria-label="Groups of settings">
+        {groups.map(([id, title]) => (
+          <a key={id} className="btn" data-kind="quiet" href={`#${titleId}-g-${id}`} onClick={(e) => { e.preventDefault(); setOpenGroup(id); requestAnimationFrame(() => document.getElementById(`${titleId}-g-${id}`)?.scrollIntoView({ block: 'start' })); }}>
+            {title}
+          </a>
+        ))}
+      </nav>
+      <Group id="room" title="Room">
+        <Row name="Livery" now={currentEntry(livery).name}>{liveryBlock}</Row>
+        <Row name="Tab name" now={tabName.name ?? tabName.fallback ?? 'not set'}><TabNameBlock /></Row>
+        <Row name="Room rules" now={rules}><RoomRulesBlock /></Row>
+        <Row name="Closing checklist template" now={template}><RitualTemplateBlock /></Row>
+        <Row name="This browser" now="notifications, push, Commissioning">{browserBlock}</Row>
+      </Group>
+      <Group id="agents" title="Agents">
+        <Row name="Consoles" now={`${list.length} staffed`}>{consolesBlock}</Row>
+        <Row name="Engine, model and effort" now={model}><ModelDefaultsBlock /></Row>
+        <Row name="Tool permissions" now={perms}><PermissionDefaultsBlock /></Row>
+        <Row name="Payload: servers and skills" now={payload}><PayloadDefaultsBlock /></Row>
+        <Row name="Skills registry" now="see Edit"><SkillsBlock /></Row>
+        <Row name="Subagents" now={sub}><SubagentsBlock /></Row>
+        <Row name="Co-author and PR footer" now={coauthor}><CoauthorBlock /></Row>
+      </Group>
+      <Group id="budget" title="Budget and limits">
+        {maxqOn && <Row name="Max Q: agents working at once" now={governor.limit === null ? 'no limit' : `at most ${governor.limit}`}><MaxQ /></Row>}
+        <Row name="Propellant: tokens and dollars" now="limits per window"><Propellant /></Row>
+      </Group>
+      <Group id="auto" title="Automation and connections">
+        <Row name="Launch Window: schedules, Uplink, Relay, Docking" now={`${schedules} schedules, ${uplinks} uplinks`}>{launchBlock}</Row>
+        <Row name="Start again after a restart" now={startup}><StartupBlock /></Row>
+      </Group>
+      <Group id="knowledge" title="Knowledge">
+        <Row name="Knowledge" now={know}><KnowledgeBlock /></Row>
+        <Row name="Semantic search" now="see Edit"><SemanticBlock /></Row>
+      </Group>
+      <Group id="security" title="Security">
+        <Row name="Login, sessions, API keys, second factor" now="see Edit"><AccountBlock /></Row>
+        <Row name="Room keys" now={keys}><RoomKeysBlock /></Row>
+        <Row name="Phone approvals" now="see Edit"><PhoneApprovals /></Row>
+        <Row name="All stop" now="holds every agent"><AllStopBlock /></Row>
+      </Group>
+      <Group id="system" title="System and update">
+        <Row name="Version and update check" now={version === '' ? null : `${version}`}><VersionCheckBlock /></Row>
+        <Row name="Update by itself" now={auto}><AutoUpdateBlock /></Row>
+        <Row name="Reload after an update" now="on request"><ReloadBlock /></Row>
+        <Row name="Features" now={off.length === 0 ? 'all on' : `${off.length} switched off`}><FeaturesBlock /></Row>
+      </Group>
     </section>
+    </GroupContext.Provider>
   );
 }
 
@@ -303,7 +372,7 @@ export function Commissioning(): ReactElement | null {
       </button>
     ),
     propellant: (
-      <button type="button" className="btn" onClick={showRules}>
+      <button type="button" className="btn" aria-label="Flight Rules, to set the Propellant limit" onClick={showRules}>
         Flight Rules
       </button>
     ),

@@ -1,0 +1,129 @@
+/* The room view of docs/ui-semantic.md: the status strip, its popovers, the consoles and the rail. The app's own tokens and keys. */
+
+/* a key that opens a small panel (the strip's chips, later the menus) */
+.lay-anchor { position: relative; display: inline-flex; }
+.lay-scrim { position: fixed; inset: 0; z-index: 25; background: rgb(0 0 0 / 0.18); }
+.lay-pop {
+  position: absolute; top: calc(100% + 6px); z-index: 30; min-width: 220px; max-width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 240px); min-height: 120px; overflow-y: auto;
+  padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); background: var(--panel);
+}
+.lay-pop[data-align='start'] { left: 0; }
+.lay-pop[data-align='end'] { right: 0; }
+.lay-pop[data-up] { top: auto; bottom: calc(100% + 6px); }
+.lay-pop-title, .lay-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; }
+.lay-pop-keys { display: flex; flex-wrap: wrap; gap: 8px; }
+.lay-menu { display: flex; flex-direction: column; gap: 4px; }
+.lay-item { justify-content: flex-start; width: 100%; text-align: left; }
+.btn[data-kind='primary'] .hint { color: inherit; opacity: 0.85; }
+
+/* the strip */
+.lay-strip { margin: 12px 24px 0; display: flex; flex-direction: column; gap: 12px; }
+.lay-strip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.lay-chip .lay-pop { width: min(620px, calc(100vw - 32px)); }
+.lay-block { display: flex; flex-direction: column; gap: 8px; }
+.lay-block .wall-block { width: 100%; }
+.lay-block .module { border: 0; box-shadow: none; background: none; padding: 0; }
+.lay-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); align-items: start; gap: 12px; }
+
+/* the consoles */
+.lay-ops-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lay-ops-head h2 { margin: 0; }
+.lay-open-seats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 2px; }
+.lay-matrix { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+/* a console has the room: a rail of names on the left */
+.lay-room[data-expanded] { flex-wrap: nowrap; }
+.lay-room[data-expanded] .panel { flex: 1 1 auto; }
+.lay-room[data-expanded] .term-wrap { min-height: 60vh; }
+.lay-rail { display: flex; flex-direction: column; gap: 6px; flex: 0 0 160px; padding: 12px; align-self: flex-start; }
+.lay-rail-key { justify-content: flex-start; width: 100%; }
+
+/* a phone: the strip is one row that scrolls, a popover is a sheet above the bottom bar, header keys are symbols, a card fits its text */
+@media (max-width: 700px) {
+  .lay-strip { margin: 12px 16px 0; }
+  .lay-strip-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .lay-strip-row::-webkit-scrollbar { display: none; }
+  .lay-strip-row .lay-anchor { flex: none; }
+  .lay-pop, .lay-pop[data-up], .lay-pop[data-align] { position: fixed; left: 16px; right: 16px; top: auto; bottom: 72px; max-width: none; min-width: 0; width: auto; max-height: calc(100vh - 150px); }
+  .lay-chip .lay-pop { width: auto; }
+  .lay-ops-head .btn { min-width: 44px; padding-inline: 10px; }
+  .lay-room .matrix .room-tile { height: auto; min-height: 64px; }
+  .lay-room .matrix .tile-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+}
+
+/* the toolbar of the terminal, the phone's terminal, full screen */
+.lay-termbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; position: relative; }
+.lay-termbar-title { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; }
+.lay-modes { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+/* the find field floats over the top of the terminal: a row of its own made the terminal shrink, which refits it and clears the selection the search had just made */
+.lay-find { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 6; display: flex; gap: 6px; padding: 6px; border-radius: 8px; background: var(--panel); box-shadow: 0 4px 14px rgb(0 0 0 / 0.25); }
+.lay-find .input { flex: 1; min-width: 0; }
+.lay-select { position: fixed; inset: 12px; z-index: 40; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--panel); }
+.lay-select pre { flex: 1; margin: 0; overflow: auto; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.lay-phone-term { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.lay-phone-term[data-full] { position: fixed; inset: 0; z-index: 35; border-radius: 0; overflow: auto; background: var(--body); }
+.lay-phone-term[data-full] .term-wrap { min-height: calc(100vh - 170px); }
+.panel:fullscreen, .lay-phone-term:fullscreen { background: var(--body); overflow: auto; padding: 16px; }
+.panel:fullscreen .term-wrap, .lay-phone-term:fullscreen .term-wrap { min-height: calc(100vh - 220px); }
+@media (max-width: 700px) {
+  .lay-termbar .btn { min-width: 44px; }
+  .lay-termbar-title { display: none; }
+  .lay-room[data-phone] { display: flex; flex-direction: column; flex-wrap: nowrap; min-height: calc(100dvh - 76px - 72px); }
+  .lay-room[data-phone] .lay-phone-term { flex: 1 1 auto; }
+  .lay-phone-term .pane { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  .lay-phone-term .term-wrap { flex: 1 1 auto; min-height: 240px; }
+}
+
+/* the top bar and the bottom bar of a phone */
+.lay-topbar { gap: 8px; }
+.lay-topbar .btn, .lay-topbar .lamp { flex: none; white-space: nowrap; }
+.lay-jump { gap: 8px; min-width: 200px; justify-content: flex-start; }
+.lay-jump-text { flex: 1; text-align: left; }
+.lay-kbd { font: inherit; font-size: 11px; opacity: 0.7; }
+.lay-version .btn { font-variant-numeric: tabular-nums; }
+.lay-version .lay-pop { width: 320px; }
+.lay-phone-bar { display: flex; gap: 8px; }
+.lay-phone-bar > * { flex: 1; }
+.lay-phone-bar .lay-anchor .btn { width: 100%; }
+.lay-phone-bar .btn { position: relative; padding-inline: 6px; gap: 4px; }
+.lay-phone-bar .btn .chip { position: absolute; top: -8px; right: 6px; }
+@media (max-width: 700px) {
+  .lay-topbar { padding: 12px 16px 0; }
+  .lay-jump { min-width: 0; flex: 1; }
+  .lay-jump .lay-kbd { display: none; }
+  .lay-phone-bar .btn { min-width: 44px; }
+}
+
+/* Flight Rules in groups: an index, one open group, rows (name, what it is now, Edit) that open the block in place */
+.lay-group { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; scroll-margin-top: 72px; }
+.lay-group-title { margin: 0; font-size: 18px; }
+.lay-group-body { display: flex; flex-direction: column; gap: 12px; }
+.lay-group-body > * { min-width: 0; max-width: 100%; }
+.lay-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--body); }
+.lay-row { border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); }
+.lay-row > summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 12px; cursor: pointer; list-style: none; }
+.lay-row > summary::-webkit-details-marker { display: none; }
+.lay-row-name { font-weight: 600; flex: 1 1 200px; }
+.lay-row-now { flex: 1 1 200px; opacity: 0.8; }
+.lay-row-edit { pointer-events: none; white-space: nowrap; flex: none; }
+.lay-row-body { padding: 8px 12px 12px; }
+.lay-row-body .module { border: 0; box-shadow: none; padding: 0; background: none; }
+@media (max-width: 700px) {
+  .lay-group .btn { min-height: 44px; min-width: 44px; }
+  .lay-group-nav { flex-wrap: nowrap; overflow-x: auto; }
+  .lay-group-nav .btn { flex: none; }
+  .lay-row > summary { flex-wrap: wrap; }
+  .lay-row-name, .lay-row-now { flex-basis: 100%; }
+  .lay-row-edit { margin-left: auto; }
+}
+
+/* the Layout popover */
+.lay-layout .lay-pop { width: min(420px, calc(100vw - 32px)); }
+.lay-layout-pop { display: flex; flex-direction: column; gap: 8px; }
+.lay-densities { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.lay-density { display: flex; flex-direction: column; align-items: flex-start; height: auto; padding: 8px 12px; text-align: left; white-space: normal; }
+.lay-panel-modes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lay-panel-modes li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+@media (max-width: 700px) {
+  .lay-layout .lay-pop { width: auto; }
+}

@@ -166,10 +166,23 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     const on = await page.request.put(`${base}/api/features`, { headers: { origin: base }, data: { off: [], expect: [], confirm: true } });
     expect(on.status(), await on.text()).toBe(200);
     await page.goto(`${base}/r/main/`);
-    await page.locator('.topbar').getByRole('button', { name: 'Flight Rules', exact: true }).click();
-    for (const heading of ['KNOWLEDGE', 'ROOM RULES', 'CLOSING CHECKLIST TEMPLATE', 'SKILLS']) {
-      await expect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible();
-    }
+    await page.locator('.topbar').getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('group', { name: 'More' }).getByRole('button', { name: 'Flight Rules', exact: true }).click();
+    // the groups are an accordion (one open) and each setting is a row that opens on Edit: open a group and all its rows, then look for the blocks it holds
+    const open = async (group: RegExp): Promise<void> => {
+      const key = page.locator('.lay-group-title button', { hasText: group });
+      if ((await key.getAttribute('aria-expanded')) !== 'true') await key.click();
+      await expect(key).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.locator('.lay-group-body').first()).toBeVisible();
+      await expect(page.locator('details.lay-row').first()).toBeVisible();
+      await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
+    };
+    await open(/^Room/);
+    for (const heading of ['ROOM RULES', 'CLOSING CHECKLIST TEMPLATE']) await expect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible();
+    await open(/^Agents/);
+    await expect(page.getByRole('heading', { name: 'SKILLS', exact: true }), 'SKILLS').toBeVisible();
+    await open(/^Knowledge/);
+    await expect(page.getByRole('heading', { name: 'KNOWLEDGE', exact: true }), 'KNOWLEDGE').toBeVisible();
     // the switch is on: the block says nothing about being off, and shows no error
     const knowledge = page.locator('section', { has: page.getByRole('heading', { name: 'KNOWLEDGE', exact: true }) });
     await expect(knowledge.getByText('Turn on Knowledge in the Features block')).toHaveCount(0);
@@ -177,12 +190,24 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     expectClean('Flight Rules');
   });
 
+  // 7b. Ctrl+K right after the room has loaded opens the Patch Panel: the boss's terminal must not have taken the keyboard (xterm keeps Ctrl+K for itself)
+  await test.step('ctrl+k opens the patch panel right after load', async () => {
+    await page.goto(`${base}/r/main/`);
+    await expectConsoleText(page);
+    // give the terminal the time it would have taken the focus in
+    await page.waitForTimeout(1500);
+    await page.keyboard.press('Control+k');
+    await expect(page.locator('.patch-input')).toBeVisible({ timeout: 5000 });
+    await page.keyboard.press('Escape');
+  });
+
   // 8. a mission and its closing checklist
   await test.step('mission closing checklist', async () => {
     const made = await page.request.post(`${base}/api/missions`, { headers: { origin: base }, data: { name: 'Smoke mission' } });
     expect(made.status(), await made.text()).toBe(201);
     await page.goto(`${base}/r/main/`);
-    await page.locator('.topbar').getByRole('button', { name: 'Missions', exact: true }).click();
+    await page.locator('.topbar').getByRole('button', { name: 'Work', exact: true }).click();
+    await page.getByRole('group', { name: 'Work' }).getByRole('button', { name: 'Missions', exact: true }).click();
     // the row opens the mission; its closing checklist is in it
     await page.getByText('Smoke mission').first().click();
     await expect(page.locator('[aria-label^="Closing checklist of"]').first()).toBeVisible();

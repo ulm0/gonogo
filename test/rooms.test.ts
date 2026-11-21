@@ -1044,7 +1044,9 @@ describe('stop and start rooms through the supervisor (t107)', () => {
     const s = await boot({ FAKE_ROOM_NOSTATE: '1' });
     const refused = await post(s, '/api/rooms/c/stop');
     expect(refused.status).toBe(409);
-    expect(JSON.stringify(await refused.json())).toMatch(/did not answer/);
+    const refusal = (await refused.json()) as { error: string; needsForce?: boolean };
+    expect(refusal.error).toMatch(/did not answer/);
+    expect(refusal.needsForce).toBe(true);
     expect(await state(s, 'c')).toBe('running');
     // force is for one room: stop-all ignores it and still skips a room that does not answer
     const all = (await (await post(s, '/api/rooms/stop-all', s.directorToken, 'POST', { force: true })).json()) as { stopped: string[]; skipped: Array<{ id: string; why: string }> };

@@ -8,6 +8,7 @@ import { RoomDesktop } from '../src/client/RoomLayout.js';
 import { applyServerFrame, emptyState, NO_PROPELLANT, store } from '../src/client/store.js';
 import type { ClientState } from '../src/client/store.js';
 import { defaultView } from '../src/shared/livery.js';
+import { DENSITIES, resetRoomPrefs, setRoomPrefs } from '../src/client/roomPrefs.js';
 
 const agent = (name: string, desk: number, patch: Partial<AgentView> = {}): AgentView =>
   ({ name, desk, boss: desk === 0, role: 'r', dir: '/w', mode: 'default', state: 'idle', stateSince: 1, needsKind: null, needsReason: null, needSeq: null, transition: null, draft: false, held: null, queued: 0, dirty: false, generation: 1, exit: null, position: null, provider: 'claude', command: null, payload: null, cleanRoom: null, worktree: null, model: null, keys: {}, doing: null, subagents: { running: 0, started: 0, types: {} }, history: [], ...patch }) as AgentView;
@@ -18,16 +19,30 @@ function load(patch: Partial<ClientState>): void {
 }
 const html = (): string => renderToString(createElement(RoomDesktop));
 
-afterEach(() => store.setState(emptyState()));
+afterEach(() => {
+  store.setState(emptyState());
+  resetRoomPrefs();
+});
 
 describe('the room drawn to a string', () => {
-  it('is the page as it was with no layout: the wall, then the consoles, and a quiet key to edit', () => {
+  it('with no saved layout is the status strip, then the consoles, and the Layout key', () => {
     load({});
     const out = html();
-    expect(out).toContain('aria-label="The wall"');
-    expect(out).toContain('aria-label="Operations"');
+    expect(out).toContain('aria-label="Status of the room"');
+    expect(out).toContain('aria-label="Consoles"');
+    expect(out).not.toContain('aria-label="The wall"');
     expect(out).not.toContain('room-grid');
-    expect(out).toContain('Edit room');
+    expect(out).toContain('aria-label="Layout of the room"');
+  });
+
+  it('a chip is named by what it shows, and the poll chip comes back when a poll is open although the layout hides it', () => {
+    setRoomPrefs((s) => ({ ...s, panels: { ...DENSITIES.focus } }));
+    load({});
+    expect(html()).not.toContain('Poll: ');
+    load({ poll: { id: 1, status: 'open', startedAt: 1, note: '', entries: [{ agent: 'ana', vote: null, reason: '', at: null }] } });
+    const out = html();
+    expect(out).toMatch(/aria-label="Poll: POLLING"/);
+    expect(out).toMatch(/aria-label="(No mission|Mission )/);
   });
 
   it('puts each block of a saved layout on the grid where it was put, and leaves out a hidden one', () => {

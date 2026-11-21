@@ -45,6 +45,9 @@ import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { DetailChips } from './DetailChips.js';
 import { EditRoomKey } from './EditRoomKey.js';
+import { LayoutPop } from './LayoutPop.js';
+import { useRoomPrefs } from './roomPrefs.js';
+import { TerminalBar } from './TerminalBar.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
 import { AgentTelemetry } from './TelemetryPanel.js';
@@ -602,6 +605,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
           }}
         />
       )}
+      <TerminalBar />
       <TerminalPane agent={agent} />
       <Foot agent={agent} run={run} locked={locked} />
       {agent.provider === 'claude' && (
@@ -805,4 +809,73 @@ export function PhoneConsoleScreen(): ReactElement | null {
   }, [cell]);
   if (cell === undefined || cell.type !== 'agent') return null;
   return <PhoneConsole key={cell.agent.name} agent={cell.agent} legend={legendOf(legends, cell.agent.name)} position={cell.position} n={cell.n} />;
+}
+
+/* ---- the consoles, staffed first (the room view of docs/ui-semantic.md) ---- */
+
+/** The seats nobody holds: one row of names (and a way to staff one), or on a phone one key. */
+function OpenSeats({ cells, phone }: { cells: Cell[]; phone: boolean }): ReactElement {
+  const shown = phone ? [] : cells.slice(0, 6);
+  return (
+    <div className="lay-open-seats" role="group" aria-label="Open seats">
+      <span className="hint">{cells.length} open {cells.length === 1 ? 'seat' : 'seats'}</span>
+      {shown.map((cell) => (cell.type === 'open' ? (
+        <button key={cell.position.id} type="button" className="btn lay-seat" data-kind="quiet" aria-label={`Staff a console: ${cell.position.callSign}, ${cell.position.title}`} onClick={() => openHire(cell.position.id)}>
+          {cell.position.callSign}
+        </button>
+      ) : null))}
+      {!phone && cells.length > shown.length && <span className="hint">+{cells.length - shown.length} more</span>}
+      <button type="button" className="btn" data-kind="quiet" onClick={() => openHire()}>
+        Staff…
+      </button>
+    </div>
+  );
+}
+
+/** CONSOLES: the agents that are staffed come first and big; an open seat is a name in a row, unless Layout asks for a tile each. */
+export function Consoles({ phone }: { phone: boolean }): ReactElement {
+  const { cells } = useSeats();
+  const selected = useStore((s) => s.selected);
+  const seats = useRoomPrefs((s) => s.seats);
+  const staffed = cells.filter((c) => c.type === 'agent');
+  const open = cells.filter((c) => c.type !== 'agent');
+  const tiles = seats === 'tiles' ? cells : staffed;
+  return (
+    <section className="operations module lay-ops" aria-label="Consoles">
+      <div className="lay-ops-head">
+        <h2 className="label">CONSOLES</h2>
+        <span className="hint">{phone ? `${staffed.length} staffed` : `${staffed.length} staffed · ${open.length} open ${open.length === 1 ? 'seat' : 'seats'}`}</span>
+        <span className="topbar-grow" />
+        <button type="button" className="btn" data-kind="primary" aria-label="Staff a console" onClick={() => openHire()}>
+          {phone ? '+' : '+ Staff a console'}
+        </button>
+        <LayoutPop icon={phone} />
+      </div>
+      <div className="matrix lay-matrix">
+        {tiles.map((cell) => (
+          <Tile key={cell.type === 'agent' ? `a:${cell.agent.name}` : cell.type === 'open' ? `p:${cell.position.id}` : 'spare'} cell={cell} selected={cell.type === 'agent' && cell.agent.name === selected} phone={phone} />
+        ))}
+      </div>
+      {seats === 'row' && open.length > 0 && <OpenSeats cells={open} phone={phone} />}
+    </section>
+  );
+}
+
+/** The consoles as a narrow column of names, while one console has the room. */
+export function ConsoleRail(): ReactElement {
+  const { cells, legends } = useSeats();
+  const selected = useStore((s) => s.selected);
+  return (
+    <nav className="lay-rail module" aria-label="Consoles">
+      <span className="label">CONSOLES</span>
+      {cells.map((cell) =>
+        cell.type === 'agent' ? (
+          <button key={cell.agent.name} type="button" className="btn lay-rail-key" data-kind={cell.agent.name === selected ? 'primary' : 'quiet'} aria-current={cell.agent.name === selected ? 'true' : undefined} onClick={() => openConsole(cell.agent.name)}>
+            <Led kind={tileKind(cell.agent)} />
+            {legendOf(legends, cell.agent.name)}
+          </button>
+        ) : null,
+      )}
+    </nav>
+  );
 }
