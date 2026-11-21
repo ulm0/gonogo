@@ -38,6 +38,7 @@ import {
   tripped,
   voteOf,
 } from './room.js';
+import { countsText } from './knowledge.js';
 import type { Cell, TileKind } from './room.js';
 import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showTraffic, useFeature, useNow, useStore } from './store.js';
@@ -158,6 +159,10 @@ function Tile({ cell, selected, phone }: { cell: Cell; selected: boolean; phone:
         {right === '' && subagentChip(agent) !== '' ? (
           <span className="chip tile-right tile-chip" data-tone="amber">
             {subagentChip(agent)}
+          </span>
+        ) : right === '' && countsText(agent.knowledge ?? {}) !== '' ? (
+          <span className="chip tile-right tile-chip" data-tone="amber" title="Claims about this checkout that the last check did not confirm (Flight Rules, Knowledge)">
+            {countsText(agent.knowledge ?? {}).replace('knowledge: ', '').toUpperCase()}
           </span>
         ) : right === '' && (agent.cleanRoom || agent.worktree) ? (
           <span className="chip tile-right tile-chip" data-tone="quiet">

@@ -1,0 +1,109 @@
+/* KNOWLEDGE in Flight Rules: one card for each repository; claims, proposals and checkouts are lists of plain text with keys under them. */
+.know-repo {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.know-repo-head,
+.know-claim-head,
+.know-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.know-repo-head h3 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.know-claims,
+.know-roots-list,
+.know-results,
+.know-notes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.know-claim {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+}
+
+.know-claim[data-state='retired'],
+.know-claim[data-state='rejected'] {
+  background: var(--well);
+}
+
+.know-statement {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.know-legs {
+  margin: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: 5px;
+  background: var(--well);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.know-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.know-notes {
+  flex-basis: 100%;
+  gap: 2px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.know-roots-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.know-root-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.know-form {
+  display: grid;
+  gap: 8px;
+}
+
+.know-anchors {
+  min-height: 90px;
+}
+
+.know-reason {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+
+.know-diagnostics {
+  margin: 0;
+  padding-left: 18px;
+}

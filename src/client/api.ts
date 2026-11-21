@@ -68,6 +68,8 @@ import type {
   MissionRequest,
   Effort,
   ModelDefaults,
+  Claim,
+  KnowledgeRepo,
   PayloadDefaults,
   RoomKeysView,
   PermissionDefaults,
@@ -117,7 +119,7 @@ export interface TerminalListener {
 }
 
 /** An Error from a REST call: the server's message, plus the field it names and the HTTP status. */
-export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boolean; second?: boolean; passkey?: boolean };
+export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boolean; second?: boolean; passkey?: boolean; retryAfter?: number; diagnostics?: Array<{ line: number; message: string }> };
 
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/i;
 
@@ -196,7 +198,13 @@ async function callOnce(method: string, path: string, body?: unknown): Promise<u
   if (!response.ok) {
     const error = asRecord(parsed);
     const message = typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`;
-    throw Object.assign(failure(message, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true, passkey: error.passkey === true } : {});
+    const diagnostics = Array.isArray(error?.diagnostics) ? error.diagnostics.filter((d): d is { line: number; message: string } => typeof asRecord(d)?.line === 'number' && typeof asRecord(d)?.message === 'string') : undefined;
+    throw Object.assign(
+      failure(message, response.status, typeof error?.field === 'string' ? error.field : undefined),
+      error?.stepUp === true ? { stepUp: true, second: error.second === true, passkey: error.passkey === true } : {},
+      typeof error?.retryAfter === 'number' ? { retryAfter: error.retryAfter } : {},
+      diagnostics === undefined ? {} : { diagnostics },
+    );
   }
   return parsed;
 }
@@ -460,6 +468,64 @@ export async function ritualTemplate(): Promise<RulesView> {
 }
 export async function setRitualTemplate(text: string): Promise<RulesView> {
   return rulesOf(await call('PUT', '/ritual-template', { text }));
+}
+
+/**
+ * Knowledge (docs/knowledge-spec.md section 0b): claims about a repository and what the last check found. Reads are for the Director's session; writes need a full key.
+ * A write answers the repo it changed. Nothing here returns a trial result or a proposal to an agent: this is the Director's page.
+ */
+export interface KnowledgeView {
+  /** The `knowledge` switch: off means nothing runs and the block says so. */
+  enabled: boolean;
+  repos: KnowledgeRepo[];
+}
+const toKnowledgeRepo = (value: unknown): KnowledgeRepo => {
+  const record = asRecord(value);
+  if (record === null || typeof record.repoId !== 'string' || !Array.isArray(record.claims) || !Array.isArray(record.roots)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as KnowledgeRepo;
+};
+const repoPath = (repoId: string): string => `/knowledge/${encodeURIComponent(repoId)}`;
+export async function knowledge(): Promise<KnowledgeView> {
+  const record = asRecord(await call('GET', '/knowledge'));
+  if (record === null || typeof record.enabled !== 'boolean' || !Array.isArray(record.repos)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as KnowledgeView;
+}
+export async function recheckRepo(repoId: string): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('POST', `${repoPath(repoId)}/recheck`, {}));
+}
+/** `anchors` is the legs as typed, one per line. A line the parser cannot read is a 400 with `diagnostics`. */
+export async function addClaim(repoId: string, body: { statement: string; anchors: string }): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('POST', `${repoPath(repoId)}/claims`, body));
+}
+export async function updateClaim(repoId: string, id: string, body: { statement?: string; anchors?: string; state?: 'active' | 'retired' }): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('PUT', `${repoPath(repoId)}/claims/${encodeURIComponent(id)}`, body));
+}
+export async function deleteClaim(repoId: string, id: string): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('DELETE', `${repoPath(repoId)}/claims/${encodeURIComponent(id)}`));
+}
+/** The trial run of a proposal on its own checkout: the Director's, rate limited, never shown to the proposing agent. */
+export async function trialProposal(repoId: string, id: string): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('POST', `${repoPath(repoId)}/proposals/${encodeURIComponent(id)}/trial`, {}));
+}
+export async function acceptProposal(repoId: string, id: string): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('POST', `${repoPath(repoId)}/proposals/${encodeURIComponent(id)}/accept`, {}));
+}
+export async function rejectProposal(repoId: string, id: string, reason?: string): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('POST', `${repoPath(repoId)}/proposals/${encodeURIComponent(id)}/reject`, reason === undefined || reason === '' ? {} : { reason }));
+}
+/** BIND a checkout to a repo id, IGNORE it, or UNBIND one that was bound (a forged checkout seen first must not own the id). */
+export async function bindRoot(repoId: string, path: string, action: 'bind' | 'ignore' | 'unbind'): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('POST', '/knowledge/bind', { repoId, path, action }));
+}
+/** MOVE the claims of a candidate id here (one atomic rename, behind the password), or KEEP the two separate. */
+export async function moveRepo(repoId: string, from: string, action: 'move' | 'keep'): Promise<KnowledgeRepo> {
+  return toKnowledgeRepo(await call('POST', `${repoPath(repoId)}/move`, { from, action }));
+}
+/** PROMOTE: a store claim made from a Mission Log entry that carries anchors (the entry stays as it is). */
+export async function promoteEntry(entryId: string): Promise<{ repoId: string; claim: Claim }> {
+  const record = asRecord(await call('POST', `/log/${encodeURIComponent(entryId)}/promote`, {}));
+  if (record === null || typeof record.repoId !== 'string' || asRecord(record.claim) === null) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as { repoId: string; claim: Claim };
 }
 
 /** Payload defaults: what the room gives every agent (docs/payload-spec.md). The answers say what each item is and never a value. */
