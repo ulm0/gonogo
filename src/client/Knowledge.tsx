@@ -5,7 +5,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
-import type { Claim, ClaimResult, KnowledgeRepo, Proposal } from '../shared/protocol.js';
+import type { Claim, ClaimResult, KnowledgeRepo, KnowledgeView, Proposal } from '../shared/protocol.js';
 import * as api from './api.js';
 import './knowledge.css';
 import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledge.js';
@@ -408,7 +408,7 @@ export function RepoCard({ repo, onSaved }: { repo: KnowledgeRepo; onSaved(next:
 
 export function KnowledgeBlock(): ReactElement {
   const id = useId();
-  const [view, setView] = useState<api.KnowledgeView | null>(null);
+  const [view, setView] = useState<KnowledgeView | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
     let live = true;

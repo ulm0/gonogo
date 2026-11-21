@@ -3,7 +3,6 @@ import { CLEAN_ROOM_DIR, cleanRoomBranch, WORKTREE_DIR, HOLD_REASON, MAX_AGENTS,
 import type { DeskOrder } from '../shared/layout.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
-import { countsText } from './knowledge.js';
 import { reliefAnnouncement } from './relief.js';
 import { sinceText } from './wall.js';
 import type { Legends } from './wall.js';
@@ -179,7 +178,6 @@ export function tileLabel(cell: Cell, vote: Vote | null): string {
   if (agent.cleanRoom) label += ', clean room';
   else if (agent.worktree) label += ', own worktree';
   if (subagentChip(agent) !== '') label += `, ${subagentChip(agent).toLowerCase()}`;
-  if (countsText(agent.knowledge ?? {}) !== '') label += `, ${countsText(agent.knowledge ?? {})}`;
   if (agent.queued > 0) label += `, ${agent.queued} ${agent.queued === 1 ? 'message' : 'messages'} waiting`;
   if (agent.held !== null) label += `, ${agent.held.text}`;
   if (vote !== null) label += `, vote ${vote.toLowerCase()}`;

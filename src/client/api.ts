@@ -70,6 +70,7 @@ import type {
   ModelDefaults,
   Claim,
   KnowledgeRepo,
+  KnowledgeView,
   PayloadDefaults,
   RoomKeysView,
   PermissionDefaults,
@@ -474,11 +475,6 @@ export async function setRitualTemplate(text: string): Promise<RulesView> {
  * Knowledge (docs/knowledge-spec.md section 0b): claims about a repository and what the last check found. Reads are for the Director's session; writes need a full key.
  * A write answers the repo it changed. Nothing here returns a trial result or a proposal to an agent: this is the Director's page.
  */
-export interface KnowledgeView {
-  /** The `knowledge` switch: off means nothing runs and the block says so. */
-  enabled: boolean;
-  repos: KnowledgeRepo[];
-}
 const toKnowledgeRepo = (value: unknown): KnowledgeRepo => {
   const record = asRecord(value);
   if (record === null || typeof record.repoId !== 'string' || !Array.isArray(record.claims) || !Array.isArray(record.roots)) throw failure('The server sent an answer gonogo does not understand.');

@@ -597,8 +597,6 @@ export interface StateChange {
 
 /** What browsers see of an agent. The hub sends a whole AgentView in every AgentFrame. */
 export interface AgentView {
-  /** Knowledge (docs/knowledge-spec.md section 0b.4): how many claims about this agent's checkout the last check did not confirm. Counts only, never text; absent when none or when Knowledge is off. */
-  knowledge?: { stale: number; vacuous: number };
   name: string;
   role: string;
   dir: string;
@@ -1171,74 +1169,6 @@ export interface LogEntry extends LogHead {
   /** Only with the feature "knowledge-anchors" on and anchors present; absent until a check has run. */
   anchorState?: LogAnchorState;
 }
-/* ---- Knowledge (docs/knowledge-spec.md section 0b.8): claims about a repository, checked read-only; never a gate, and never text of a repo in a prompt ---- */
-
-export type ClaimSource = 'store' | 'repo' | 'log';
-/** One leg of a claim: a glob of tracked files, a mode, and a pattern (a regex or a fixed string). */
-export interface Leg {
-  mode: 'present' | 'absent' | 'unique' | 'count' | 'each' | 'each!';
-  count?: number;
-  glob: string;
-  excludes: string[];
-  pattern: { kind: 'regex'; source: string; i: boolean } | { kind: 'literal'; text: string };
-  line: number;
-}
-export interface Claim {
-  /** K-1, K-2, ...: never reused. */
-  id: string;
-  /** One line of plain text, cleaned by the server. Shown as text, labelled by `authority`. */
-  statement: string;
-  /** Who stands behind it: the Director, an agent whose proposal the Director accepted, an import, the repo's own file. */
-  authority: string;
-  state: 'active' | 'proposed' | 'retired';
-  date: string;
-  source: ClaimSource;
-  /** For a source of 'log': the entry (l17); for a proposal accepted: who proposed it. */
-  from?: string;
-  legs: Leg[];
-  /** What the parser could not read of the claim, with the line: shown, never skipped. */
-  diagnostics: Array<{ line: number; message: string }>;
-}
-/** What a leg found. `stale` is "not confirmed", never "false"; `vacuous` is "the glob matches no tracked file"; `unevaluated` is "could not check". */
-export type LegState = 'ok' | 'stale' | 'vacuous' | 'unevaluated' | 'malformed';
-/** The result of one claim on one root, with the branch and the short commit it ran on. */
-export interface ClaimResult {
-  id: string;
-  root: string;
-  branch: string;
-  commit: string;
-  worst: LegState | 'unanchored';
-  /** One line per leg, written by gonogo; never text of the repository (a file name at most, for the Director). */
-  legs: Array<{ state: LegState; note: string }>;
-  checkedAt: number;
-}
-/** A claim an agent proposes: unreviewed, no effect until the Director accepts it. The trial result is for the Director only. */
-export interface Proposal {
-  id: string;
-  agent: string;
-  branch: string;
-  commit: string;
-  at: number;
-  statement: string;
-  legs: Leg[];
-  status: 'pending' | 'accepted' | 'rejected';
-  reason?: string;
-  trial?: ClaimResult;
-}
-export interface KnowledgeRepo {
-  repoId: string;
-  /** The folder name of the repo, for humans. */
-  label: string;
-  /** A shallow clone: the root commit is not known, so claims can be read but proposals and binding wait. */
-  provisional: boolean;
-  roots: Array<{ path: string; branch: string; bound: boolean; agents: string[] }>;
-  claims: Claim[];
-  results: ClaimResult[];
-  proposals: Proposal[];
-  /** Other ids that look like this repo (a rewritten root, a moved remote): the Director chooses, nothing moves by itself. */
-  candidates: Array<{ repoId: string; label: string; why: string }>;
-}
-
 /** One result of a search: no body, a piece of it around the best match instead. */
 export interface LogHit {
   id: string;

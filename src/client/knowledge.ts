@@ -60,12 +60,6 @@ export function countsOf(repo: KnowledgeRepo): { stale: number; vacuous: number;
   return counts;
 }
 
-/** The count line of a tile or a start notice: `knowledge: 2 stale, 1 vacuous`, or '' when there is nothing to say. Counts, never text. */
-export function countsText(counts: { stale?: number; vacuous?: number }): string {
-  const parts = [counts.stale ? `${counts.stale} stale` : '', counts.vacuous ? `${counts.vacuous} vacuous` : ''].filter((p) => p !== '');
-  return parts.length === 0 ? '' : `knowledge: ${parts.join(', ')}`;
-}
-
 /** "again in 20 s" for a refused RECHECK; '' without a time. */
 export const retryText = (seconds: number | undefined): string => (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0 ? '' : ` Try again in ${Math.ceil(seconds)} s.`);
 

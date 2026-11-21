@@ -58,7 +58,6 @@ One card for each repository the room works in.
 - **Proposals.** An agent can only *propose* a claim. A proposal is labelled "unreviewed", with who proposed it and on which branch and commit, and **does nothing until you accept it**. TRIAL RUN runs its anchors on that checkout and shows you the result; the agent never sees a trial result, only "accepted" or "rejected". REJECT takes an optional reason.
 - **Checkouts.** An agent can change its own `.git/config`, so a checkout could say it is any repository. Only a checkout you **bound** (or a worktree of one) counts: BIND, IGNORE or UNBIND each checkout, and when two checkouts claim one repository both are shown. An id that looks like another (a rewritten history, a moved remote) offers MOVE CLAIMS HERE (it asks for the password) or KEEP SEPARATE; nothing moves by itself. A shallow clone is "provisional": it can be read, but not bound.
 - **PROMOTE** on a Mission Log entry that carries anchors makes a claim of the store from it (the entry stays).
-- **The tile** of an agent shows `2 STALE, 1 VACUOUS` when its checkout has claims that are not confirmed. Counts, never text.
 
 Every text on the page (a statement, an agent's name, a note) is drawn as plain text: control, direction and zero-width characters are dropped and nothing is read as markup.
 

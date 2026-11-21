@@ -4,7 +4,7 @@ import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Reader } from '../src/client/MissionLog.js';
 import { RepoCard } from '../src/client/Knowledge.js';
-import { anchorsText, atText, countsOf, countsText, folderOf, legText, plain, proposalsOrder, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from '../src/client/knowledge.js';
+import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from '../src/client/knowledge.js';
 import type { Claim, ClaimResult, KnowledgeRepo, Leg, LogEntry, Proposal } from '../src/shared/protocol.js';
 
 const leg = (patch: Partial<Leg> = {}): Leg => ({ mode: 'absent', glob: 'src/**/*.ts', excludes: [], pattern: { kind: 'literal', text: 'parseFloat(' }, line: 1, ...patch });
@@ -40,12 +40,6 @@ describe('the words', () => {
       proposals: [proposal(), proposal({ id: 'p2', status: 'rejected' })],
     });
     expect(countsOf(r)).toEqual({ stale: 1, vacuous: 1, unevaluated: 0, malformed: 0, pending: 1 });
-  });
-  it('the tile count is counts only, and nothing when there is nothing', () => {
-    expect(countsText({ stale: 2, vacuous: 1 })).toBe('knowledge: 2 stale, 1 vacuous');
-    expect(countsText({ stale: 1 })).toBe('knowledge: 1 stale');
-    expect(countsText({ stale: 0, vacuous: 0 })).toBe('');
-    expect(countsText({})).toBe('');
   });
   it('small helpers: ids, badges, folders, waits, order', () => {
     expect(shortId('abcdef0123456789')).toBe('abcdef01');

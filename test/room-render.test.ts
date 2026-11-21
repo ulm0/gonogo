@@ -20,25 +20,6 @@ const html = (): string => renderToString(createElement(RoomDesktop));
 
 afterEach(() => store.setState(emptyState()));
 
-describe('the tile and the claims about its checkout', () => {
-  const withKnowledge = (knowledge: AgentView['knowledge'], extra: Partial<AgentView> = {}): string => {
-    load({});
-    const now = store.getState();
-    store.setState({ ...now, agents: { ...now.agents, ana: { ...now.agents.ana, knowledge, ...extra } } });
-    return html();
-  };
-  it('says "2 stale, 1 vacuous" in the tile and its name, as counts only', () => {
-    const out = withKnowledge({ stale: 2, vacuous: 1 });
-    expect(out).toContain('2 STALE, 1 VACUOUS');
-    expect(out).toContain('knowledge: 2 stale, 1 vacuous');
-  });
-  it('says nothing for a checkout with nothing to say, and a held count keeps its place', () => {
-    expect(withKnowledge({ stale: 0, vacuous: 0 })).not.toContain('STALE');
-    expect(withKnowledge(undefined)).not.toContain('STALE');
-    expect(withKnowledge({ stale: 1, vacuous: 0 }, { cleanRoom: {} })).toContain('1 STALE');
-  });
-});
-
 describe('the room drawn to a string', () => {
   it('is the page as it was with no layout: the wall, then the consoles, and a quiet key to edit', () => {
     load({});
