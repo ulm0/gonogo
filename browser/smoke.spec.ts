@@ -162,7 +162,7 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   // 7. Flight Rules: the blocks the audit listed, drawn from the built client
   await test.step('flight rules blocks', async () => {
     await page.goto(`${base}/r/main/`);
-    await page.getByRole('button', { name: 'Flight Rules', exact: true }).click();
+    await page.locator('.topbar').getByRole('button', { name: 'Flight Rules', exact: true }).click();
     for (const heading of ['KNOWLEDGE', 'ROOM RULES', 'CLOSING CHECKLIST TEMPLATE', 'SKILLS']) {
       await expect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible();
     }
@@ -178,7 +178,7 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     const made = await page.request.post(`${base}/api/missions`, { headers: { origin: base }, data: { name: 'Smoke mission' } });
     expect(made.status(), await made.text()).toBe(201);
     await page.goto(`${base}/r/main/`);
-    await page.getByRole('button', { name: 'Missions', exact: true }).click();
+    await page.locator('.topbar').getByRole('button', { name: 'Missions', exact: true }).click();
     await expect(page.getByText('Smoke mission').first()).toBeVisible();
     await expect(page.locator('[aria-label^="Closing checklist of"]').first()).toBeVisible();
     expectClean('Missions');
