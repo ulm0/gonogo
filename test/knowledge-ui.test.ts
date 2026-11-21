@@ -142,7 +142,7 @@ describe('the repository card', () => {
 
 describe('PROMOTE on a Mission Log entry', () => {
   const entry = (patch: Partial<LogEntry> = {}): LogEntry => ({ id: 'l17', title: 'No parseFloat for money', body: 'We lost a cent.', tags: [], author: 'flight', createdAt: 1, updatedAt: 2, ...patch });
-  const read = (e: LogEntry): string => renderToString(createElement(Reader, { entry: e, onEdit: () => undefined, onClose: () => undefined, onRemoved: () => undefined })).replace(/<!-- -->/g, '');
+  const read = (e: LogEntry): string => renderToString(createElement(Reader, { entry: e, onEdit: () => undefined, onClose: () => undefined, onRemoved: () => undefined, onChanged: () => undefined })).replace(/<!-- -->/g, '');
   it('an entry with anchors offers "Promote to a claim" and says the entry stays', () => {
     const html = read(entry({ anchors: [{ root: '/work/shop', file: 'src/money.ts', text: 'parseFloat(', mode: 'absent' }] }));
     expect(html).toContain('Promote to a claim');

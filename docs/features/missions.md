@@ -43,7 +43,7 @@ The task form has a **Mission** select (when any mission exists); each card has 
 A mission page has a CLOSING CHECKLIST: the lines you want checked before the mission is called done. A new mission copies the **template** of the room (CLOSING CHECKLIST TEMPLATE in [Flight Rules](./flight-rules.md): one line each, up to 20 lines of 200 characters; a line starting with `#` and a blank line are left out). On the mission page you tick a line, reword it, remove it or add one of your own.
 
 - **Only you tick.** An agent can read the list and cannot tick, change or add to it from a mission it already has.
-- **Where a line came from is said.** A line an agent set when it made the mission reads "set by flight"; one from the template reads "room template"; your own says nothing. A line is plain text: it is never a link and never an instruction to an agent.
+- **Where a line came from is said.** A line an agent set when it made the mission reads "set by flight"; one from the template reads "room template"; one copied from the repo's own `.gonogo/ritual.md` reads "from the repo" (a repo file can be written by an agent); your own says nothing. A line is plain text: it is never a link and never an instruction to an agent.
 - **It is never a gate.** DONE and ABORT work with lines open. The page says "2 of 5 closing items left" and the Downlink names the ones left.
 
 Not seen in a browser.

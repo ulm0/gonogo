@@ -91,7 +91,7 @@ function RitualLine({ mission, item, index, count }: { mission: Mission; item: R
         <span className="mis-ritual-text">{item.text}</span>
       </label>
       {source !== '' && (
-        <span className="chip" data-tone={item.from === 'agent' ? 'amber' : 'quiet'}>
+        <span className="chip" data-tone={item.from === 'agent' || item.from === 'repo' ? 'amber' : 'quiet'}>
           {source}
         </span>
       )}

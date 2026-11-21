@@ -35,6 +35,7 @@ describe('where a line came from, and what may be written', () => {
     expect(sourceText(item('a', { from: 'agent', agent: 'flight' }))).toBe('set by flight');
     expect(sourceText(item('a', { from: 'agent' }))).toBe('set by an agent');
     expect(sourceText(item('a', { from: 'room' }))).toBe('room template');
+    expect(sourceText(item('a', { from: 'repo' }))).toBe('from the repo');
     expect(sourceText(item('a', { from: 'director' }))).toBe('');
   });
 
