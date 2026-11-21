@@ -846,6 +846,7 @@ export function Consoles({ phone }: { phone: boolean }): ReactElement {
         <button type="button" className="btn" data-kind="primary" aria-label="Staff a console" onClick={() => openHire()}>
           {phone ? '+' : '+ Staff a console'}
         </button>
+        {!phone && <EditRoomKey />}
       </div>
       <div className="matrix lay-matrix">
         {tiles.map((cell) => (
