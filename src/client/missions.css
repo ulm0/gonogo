@@ -157,3 +157,38 @@
 .mis-row-cost {
   grid-column: 2 / -1;
 }
+
+/* The closing checklist: one line each, the box and its words on one line, the label and the time after it */
+.mis-ritual {
+  display: grid;
+  gap: 6px;
+}
+
+.mis-ritual-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mis-ritual-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 44px;
+}
+
+.mis-ritual-list .input {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+
+.mis-ritual-list label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}

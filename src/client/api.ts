@@ -454,6 +454,14 @@ export async function removeRoomKey(name: string): Promise<RoomKeysView> {
   return toRoomKeys(await call('DELETE', `/room-keys/${encodeURIComponent(name)}`));
 }
 
+/** The template of the closing checklist a new mission copies (one line each; comments, headings and blank lines are dropped). Same shape and step-up as the rules. */
+export async function ritualTemplate(): Promise<RulesView> {
+  return rulesOf(await call('GET', '/ritual-template'));
+}
+export async function setRitualTemplate(text: string): Promise<RulesView> {
+  return rulesOf(await call('PUT', '/ritual-template', { text }));
+}
+
 /** Payload defaults: what the room gives every agent (docs/payload-spec.md). The answers say what each item is and never a value. */
 const toPayloadDefaults = (value: unknown): PayloadDefaults => {
   const record = asRecord(value);
@@ -796,6 +804,18 @@ export async function updateMission(id: string, patch: MissionPatch): Promise<Mi
 /** A mission with tasks needs `unlink`: its tasks then stay on the board without it. */
 export async function deleteMission(id: string, unlink = false): Promise<void> {
   await call('DELETE', `/missions/${encodeURIComponent(id)}${unlink ? '?unlink=1' : ''}`);
+}
+
+/** The closing checklist of a mission, edited by the Director's session only (an agent cannot): each answers the whole mission. */
+export async function addRitualItem(id: string, text: string): Promise<Mission> {
+  return toMission(await call('POST', `/missions/${encodeURIComponent(id)}/ritual`, { text }));
+}
+/** Ticks or unticks a line, or changes its words. */
+export async function setRitualItem(id: string, index: number, patch: { done?: boolean; text?: string }): Promise<Mission> {
+  return toMission(await call('PATCH', `/missions/${encodeURIComponent(id)}/ritual/${index}`, patch));
+}
+export async function removeRitualItem(id: string, index: number): Promise<Mission> {
+  return toMission(await call('DELETE', `/missions/${encodeURIComponent(id)}/ritual/${index}`));
 }
 
 function toMission(value: unknown): Mission {

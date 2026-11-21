@@ -12,11 +12,11 @@ import { currentEntry } from './look.js';
 import { ModelDefaultsBlock } from './ModelDefaults.js';
 import { FeaturesBlock } from './Features.js';
 import { PayloadDefaultsBlock } from './PayloadDefaults.js';
+import { RitualTemplateBlock, RoomRulesBlock } from './RoomRules.js';
 import { RoomKeysBlock } from './RoomKeys.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AccountBlock } from './AccountBlock.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
-import { RoomRulesBlock } from './RoomRules.js';
 import { AutoUpdateBlock } from './AutoUpdateRules.js';
 import { VersionCheckBlock } from './CheckNow.js';
 import { PushBlock } from './PushBlock.js';
@@ -199,6 +199,8 @@ export function FlightRules(): ReactElement {
       </div>
       <TabNameBlock />
       <ModelDefaultsBlock />
+      <RoomRulesBlock />
+      <RitualTemplateBlock />
       <PermissionDefaultsBlock />
       <PayloadDefaultsBlock />
       <RoomKeysBlock />
@@ -207,7 +209,6 @@ export function FlightRules(): ReactElement {
       <AutoUpdateBlock />
       <SubagentsBlock />
       <CoauthorBlock />
-      <RoomRulesBlock />
       <AccountBlock />
       <AllStopBlock />
       <FeaturesBlock />
