@@ -651,7 +651,11 @@ export function runAnchorJob(job: AnchorJob, post: (message: AnchorWorkerMessage
   const reader = trackedReader(job.root, job.caps);
   const source: FileSource = { files: job.files, read: (file) => reader.read(file) };
   const skip = new Set(job.skip ?? []);
-  for (const claim of job.claims) {
+  // the cheapest claims first (the fewest files to read): the run is ended at its time and what was finished by then is kept, so the small claims are never lost to a big one. A tie keeps the order given.
+  // This is done HERE, in the worker: the globs run over every file name, which is work the main thread must never do (nothing can interrupt it there).
+  const cost = (legs: readonly Leg[]): number => legs.reduce((n, leg) => n + (leg.glob === '**' && leg.excludes.length === 0 ? job.files.length : legFiles(leg, job.files).length), 0);
+  const ordered = job.claims.map((claim) => ({ claim, cost: cost(claim.legs) })).sort((a, b) => a.cost - b.cost || a.claim.index - b.claim.index);
+  for (const { claim } of ordered) {
     const legs = claim.legs.map((leg, n): LegVerdict & { moved?: string } => {
       if (skip.has(`${claim.index}:${n}`)) return { state: 'unevaluated', note: 'answered another way' };
       try {

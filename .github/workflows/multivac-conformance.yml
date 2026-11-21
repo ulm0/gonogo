@@ -12,6 +12,7 @@ on:
       - 'src/server/knowledgecli.ts'
       - 'src/server/claimsfile.ts'
       - 'scripts/multivac-conformance.mjs'
+      - 'scripts/multivac-tool/**'
       - '.github/workflows/multivac-conformance.yml'
   workflow_dispatch:
   schedule:
