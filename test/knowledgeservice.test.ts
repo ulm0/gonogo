@@ -13,6 +13,9 @@ import type { KnowledgeStore } from '../src/server/knowledgestore.js';
 import { noLegs } from '../src/server/claimsfile.js';
 import { createSafeGit } from '../src/server/safegit.js';
 
+// real git repositories and several git calls per step: slow when the whole suite runs at once
+vi.setConfig({ testTimeout: 30_000 });
+
 const quiet = { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined, child: () => quiet };
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });

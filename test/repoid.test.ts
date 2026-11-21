@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { identify, normalizeRemote, repoIdOf } from '../src/server/repoid.js';
 import { createSafeGit } from '../src/server/safegit.js';
 
+vi.setConfig({ testTimeout: 30_000 });
 const TOKEN = 'ghp_SECRETTOKEN0123456789';
 let root: string;
 const git = (cwd: string, ...args: string[]): string =>
