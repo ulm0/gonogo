@@ -151,6 +151,11 @@ function Ritual({ mission }: { mission: Mission }): ReactElement {
           </button>
         </form>
       )}
+      {(mission.ritualOmitted ?? 0) > 0 && (
+        <p className="hint">
+          {mission.ritualOmitted} more {mission.ritualOmitted === 1 ? 'line' : 'lines'} of the template {mission.ritualOmitted === 1 ? 'was' : 'were'} left out: a mission holds at most {RITUAL_ITEMS_MAX}.
+        </p>
+      )}
       {problem !== null && <p className="error">{problem}</p>}
       {error !== null && (
         <p className="error" role="alert">

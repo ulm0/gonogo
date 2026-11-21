@@ -85,6 +85,12 @@ describe('the Mission view', () => {
     expect(full.match(/type="checkbox"/g)).toHaveLength(20);
   });
 
+  it('says when the template had more lines than a mission holds', () => {
+    expect(open(mission({ ritual: [item('a')], ritualOmitted: 3 }))).toContain('3 more lines of the template were left out: a mission holds at most 20.');
+    expect(open(mission({ ritual: [item('a')], ritualOmitted: 1 }))).toContain('1 more line of the template was left out');
+    expect(open(mission({ ritual: [item('a')] }))).not.toContain('left out');
+  });
+
   it('every line has its Edit and Remove keys, named with the line, and no "close with items open" note once the mission is done', () => {
     const html = open(mission({ ritual: [item('Tests pass')] }));
     expect(html).toContain('aria-label="Edit closing item 1: Tests pass"');
