@@ -103,3 +103,11 @@
 @media (max-width: 700px) {
   .next-termbar .btn { min-width: 44px; }
 }
+.next-row-edit { white-space: nowrap; flex: none; }
+.next-version .next-pop { width: 320px; }
+@media (max-width: 700px) {
+  .next-termbar-title { display: none; }
+  .next-row > summary { flex-wrap: wrap; }
+  .next-row-name, .next-row-now { flex-basis: 100%; }
+  .next-row-edit { margin-left: auto; }
+}
