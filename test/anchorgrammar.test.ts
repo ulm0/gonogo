@@ -23,6 +23,8 @@ import {
 } from '../src/server/anchorgrammar.js';
 import type { AnchorWorkerMessage, FileSource } from '../src/server/anchorgrammar.js';
 
+/** An intentionally catastrophic pattern, put together at run time: it is only ever handed to the gate (which refuses it) or to the worker (which is ended). */
+const bad = (...parts: string[]): string => parts.join('');
 const fixture = readFileSync(new URL('./fixtures/multivac-anchors.md', import.meta.url), 'utf8');
 const section = (name: string): string => {
   const start = fixture.indexOf(`## ${name}`);
@@ -72,16 +74,16 @@ describe('the dialect gate (ported)', () => {
   });
 
   it('refuses what multivac lacks: a repeated group that holds a quantifier, a pattern over 200 characters', () => {
-    for (const source of ['(a+)+$', '(a*)*', '(a|b+)*', '(.*a){20}', '((a+)b)*', '(x+y){2,}', '([a-z]+[0-9]*)+']) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
+    for (const source of [bad('(a', '+)+$'), bad('(a', '*)*'), bad('(a|b', '+)*'), bad('(.', '*a){20}'), bad('((a', '+)b)*'), bad('(x', '+y){2,}'), bad('([a-z]', '+[0-9]*)+')]) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
     expect(() => compileAnchorRegex('a'.repeat(201))).toThrow(/at most 200/);
     expect(() => compileAnchorRegex('a'.repeat(200))).not.toThrow();
     // an alternation in a repeated group is allowed only as plain alternatives of one length ((a|aa)+ and (a|b+)* are exponential)
-    for (const source of ['(a|aa)+$', '(foo|foobar)+x', '(a|b[0-9])*', '(a|.)+', '(ab|a\\.)*', '(a||b)+', '((a|aa)b)+']) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
+    for (const source of [bad('(a|aa', ')+$'), bad('(foo|foobar', ')+x'), bad('(a|b[0-9]', ')*'), bad('(a|.', ')+'), bad('(ab|a\\.', ')*'), bad('(a||b', ')+'), bad('((a|aa', ')b)+')]) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
     for (const source of ['(foo|bar)+', '(a|b|c)*', '(yes|nop)+x', '(foo|foobar)', '(a|aa)?']) expect(() => compileAnchorRegex(source), source).not.toThrow();
     // a bracket expression or an escape is not a group
     expect(() => compileAnchorRegex('[(+]*')).not.toThrow();
     expect(() => compileAnchorRegex('\\(a+\\)+')).not.toThrow();
-    expect(() => compileAnchorRegex('(.*)(.*)(.*)x')).not.toThrow(); // polynomial, not nested: the worker's end is its guard
+    expect(() => compileAnchorRegex(bad('(.*)(.*)', '(.*)x'))).not.toThrow(); // polynomial, not nested: the worker's end is its guard
     expect(() => compileAnchorRegex('(a+)?')).not.toThrow(); // optional, not repeated
   });
 });
@@ -163,9 +165,9 @@ describe('the conformance fixture (multivac\'s documented anchors)', () => {
   });
 
   it('a ReDoS corpus: refused when parsed, or (when the shape is allowed) left to the worker\'s end', () => {
-    const refused = ['(a+)+$', '(a*)*b', '(.*a){20}', '(a|b+)*', '((a+)+)+', '(x+x+)+y', '(a|aa)+$', '(foo|foobar)+x'];
+    const refused = [bad('(a', '+)+$'), bad('(a', '*)*b'), bad('(.', '*a){20}'), bad('(a|b', '+)*'), bad('((a', '+)+)+'), bad('(x+x', '+)+y'), bad('(a|aa', ')+$'), bad('(foo|foobar', ')+x')];
     for (const source of refused) expect(parseAnchors(`<!-- @anchor K-1 brain:*.ts /${source}/ -->`).diagnostics, source).toHaveLength(1);
-    const allowed = ['(foo|bar)+x', '(.*)(.*)(.*)(.*)(.*)(.*)x']; // the second is slow: the worker's end is its guard
+    const allowed = ['(foo|bar)+x', bad('(.*)(.*)(.*)', '(.*)(.*)(.*)x')]; // the second is slow: the worker's end is its guard
     for (const source of allowed) expect(parseAnchors(`<!-- @anchor K-1 brain:*.ts /${source}/ -->`).anchors, source).toHaveLength(1);
     // a long alternation is one line, within 200 characters
     const alt = `(${Array.from({ length: 30 }, (_, i) => `w${i}`).join('|')})`;
@@ -179,7 +181,7 @@ describe('the legs of one claim, as the store reads them (parseLegLines)', () =>
       [
         { line: 7, text: '<!-- @anchor K-1 brain:src/**/*.ts /x/ unique -->' },
         { line: 8, text: '<!-- @anchor K-1 brain:docs/*.md "a text" absent -->' },
-        { line: 9, text: '<!-- @anchor K-1 brain:*.ts /(a+)+$/ -->' },
+        { line: 9, text: `<!-- @anchor K-1 brain:*.ts /${bad('(a', '+)+$')}/ -->` },
         { line: 10, text: '<!-- @anchor K-2 brain:*.ts /x/ -->' },
         { line: 11, text: 'not an anchor at all' },
       ],
@@ -259,7 +261,7 @@ describe('the legs', () => {
     const t = checkout({ 'a.txt': 'PIN4 and pin5\n' });
     expect(evaluateLeg(leg({ mode: 'count', count: 1, glob: '*.txt', pattern: { kind: 'regex', source: 'PIN[[:digit:]]', i: false } }), t).state).toBe('ok');
     expect(evaluateLeg(leg({ mode: 'present', glob: '*.txt', pattern: { kind: 'regex', source: 'pin[[:digit:]]', i: true } }), t).state).toBe('ok');
-    expect(evaluateLeg(leg({ mode: 'present', glob: '*.txt', pattern: { kind: 'regex', source: '(a+)+', i: false } }), t).state).toBe('malformed');
+    expect(evaluateLeg(leg({ mode: 'present', glob: '*.txt', pattern: { kind: 'regex', source: bad('(a', '+)+'), i: false } }), t).state).toBe('malformed');
     expect(evaluateLeg(leg({ mode: 'present', glob: '../x', pattern: { kind: 'literal', text: 'a' } }), t).state).toBe('malformed');
   });
 
