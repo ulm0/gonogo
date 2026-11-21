@@ -182,7 +182,8 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     expect(made.status(), await made.text()).toBe(201);
     await page.goto(`${base}/r/main/`);
     await page.locator('.topbar').getByRole('button', { name: 'Missions', exact: true }).click();
-    await expect(page.getByText('Smoke mission').first()).toBeVisible();
+    // the row opens the mission; its closing checklist is in it
+    await page.getByText('Smoke mission').first().click();
     await expect(page.locator('[aria-label^="Closing checklist of"]').first()).toBeVisible();
     expectClean('Missions');
   });
