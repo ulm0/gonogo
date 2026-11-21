@@ -45,6 +45,7 @@ import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { DetailChips } from './DetailChips.js';
 import { EditRoomKey } from './EditRoomKey.js';
+import { LayoutPop } from './LayoutPop.js';
 import { useRoomPrefs } from './roomPrefs.js';
 import { TerminalBar } from './TerminalBar.js';
 import { legendOf, sinceText } from './wall.js';
@@ -848,6 +849,7 @@ export function Consoles({ phone }: { phone: boolean }): ReactElement {
         <button type="button" className="btn" data-kind="primary" aria-label="Staff a console" onClick={() => openHire()}>
           {phone ? '+' : '+ Staff a console'}
         </button>
+        <LayoutPop icon={phone} />
       </div>
       <div className="matrix lay-matrix">
         {tiles.map((cell) => (

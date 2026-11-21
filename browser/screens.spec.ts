@@ -226,10 +226,19 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 }));
     await measure(page, group, 'the clock open');
     await page.keyboard.press('Escape');
-    for (const [title, name] of [['version key', /^gonogo \d/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
+    for (const [title, name] of [['layout', 'Layout of the room'], ['version key', /^gonogo \d/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
       await view(page, group, `top bar: ${title}`, () => page.getByRole('button', { name }).last().click({ timeout: 3000 }));
       await measure(page, group, title);
       await page.keyboard.press('Escape');
+    }
+    for (const density of ['Full wall', 'Focus', 'Standard'] as const) {
+      await page.getByRole('button', { name: 'Layout of the room' }).click({ timeout: 3000 });
+      await page.getByRole('button', { name: new RegExp('^' + density) }).click({ timeout: 3000 });
+      await page.keyboard.press('Escape');
+      if (density !== 'Standard') {
+        await shoot(page, group, `layout: ${density}`, true);
+        await measure(page, group, `layout: ${density}`);
+      }
     }
     await toolbarProofs(page, group);
     await page.reload();
