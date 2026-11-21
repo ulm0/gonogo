@@ -52,12 +52,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           INPUT_FROM: ${{ inputs.from }}
           INPUT_TO: ${{ inputs.to }}
+          # set only when the Image run of a pushed tag started this: the tag IS the release that was just built
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
           # the stable releases of this repository, newest first (x.y.z only; a pre-release has a suffix)
           gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name | ltrimstr("v")' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' > "$RUNNER_TEMP/releases.txt"
-          to=${INPUT_TO:-$(sed -n 1p "$RUNNER_TEMP/releases.txt")}
-          from=${INPUT_FROM:-$(grep -vx "$to" "$RUNNER_TEMP/releases.txt" | sed -n 1p)}
+          # TO: what was asked; else the tag of the Image run that triggered this (the GitHub Release may not be marked yet when the image is
+          # pushed, and :latest is already the new one); else the newest stable release
+          to=${INPUT_TO:-${RUN_TAG#v}}
+          to=${to:-$(sed -n 1p "$RUNNER_TEMP/releases.txt")}
+          [[ "$to" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::TO '$to' is not x.y.z"; exit 1; }
+          # FROM: what was asked; else the newest stable release BELOW TO (the list may or may not have TO yet)
+          below() { while read -r v; do [ "$v" != "$to" ] && [ "$(printf '%s\n%s\n' "$v" "$to" | sort -V | head -1)" = "$v" ] && { echo "$v"; return; }; done < <(sort -Vr "$RUNNER_TEMP/releases.txt"); }
+          from=${INPUT_FROM:-$(below)}
           [ -n "$to" ] && [ -n "$from" ] || { echo "::error::could not pick two releases from: $(tr '\n' ' ' < "$RUNNER_TEMP/releases.txt")"; exit 1; }
           echo "from=$from" >> "$GITHUB_OUTPUT"
           echo "to=$to" >> "$GITHUB_OUTPUT"

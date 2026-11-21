@@ -285,6 +285,14 @@ describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scri
     expect(wf.match(/GH_TOKEN: \$\{\{ github\.token \}\}/g)).toHaveLength(2);
     for (const use of wf.match(/uses: [^\n]+/g) ?? []) expect(use, use).toMatch(/@[0-9a-f]{40} # v\d/);
   });
+  it('TO is the tag of the Image run that started it (the release may not be marked latest yet), FROM the newest stable release below it', () => {
+    expect(wf).toContain('RUN_TAG: ${{ github.event.workflow_run.head_branch }}');
+    expect(wf).toContain('to=${INPUT_TO:-${RUN_TAG#v}}');
+    expect(wf).toContain('sort -Vr');
+    expect(wf).toContain("[[ \"$to\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]");
+    // the old pick (the second release of the list) is gone
+    expect(wf).not.toContain('grep -vx "$to"');
+  });
   it('the script pulls only this repository\'s image, updates through the API and then UNDOes, with the token passed by name', () => {
     expect(script).toContain('IMAGE=${E2E_IMAGE:-ghcr.io/ulm0/gonogo}');
     expect(wf).not.toMatch(/E2E_IMAGE/);
