@@ -1,0 +1,78 @@
+name: Platform
+
+# Installs the packed tarball on each operating system and runs `gonogo --version` and `gonogo doctor`: the first user's
+# first minute, on the platforms the docs name. The packed package is what `pnpm pack` makes (its prepack builds dist);
+# `npm i -g` of that file installs its dependencies from the registry, node-pty's prebuilt binary included.
+# Windows is not a supported platform (package.json `os` is darwin and linux, and the README says macOS or Linux): its leg checks that npm
+# refuses the install with EBADPLATFORM, so the guard is seen to work, and runs nothing else.
+on:
+  push:
+    branches: [main]
+    paths: [package.json, pnpm-lock.yaml, bin/**, scripts/check-pack.mjs, .github/workflows/platform.yml]
+  pull_request:
+    paths: [package.json, pnpm-lock.yaml, bin/**, scripts/check-pack.mjs, .github/workflows/platform.yml]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, supported: true }
+          - { os: ubuntu-24.04-arm, supported: true }
+          - { os: macos-latest, supported: true }
+          - { os: windows-latest, supported: false }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No version: it installs the pnpm that package.json `packageManager` pins.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Pack
+        run: |
+          mkdir "$RUNNER_TEMP/pack"
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+          ls "$RUNNER_TEMP/pack"
+      - name: On Windows npm refuses the install
+        if: ${{ !matrix.supported }}
+        run: |
+          if npm install -g "$RUNNER_TEMP"/pack/*.tgz > "$RUNNER_TEMP/install.log" 2>&1; then
+            echo "::error::npm installed gonogo on an unsupported platform"; exit 1
+          fi
+          cat "$RUNNER_TEMP/install.log"
+          grep -q EBADPLATFORM "$RUNNER_TEMP/install.log" || { echo "::error::the install failed, but not with EBADPLATFORM"; exit 1; }
+      - name: Install the tarball globally
+        if: ${{ matrix.supported }}
+        run: npm install -g "$RUNNER_TEMP"/pack/*.tgz
+      - name: gonogo --version is the package's version
+        if: ${{ matrix.supported }}
+        run: |
+          want="gonogo $(node -p 'require("./package.json").version')"
+          got=$(gonogo --version | head -n1)
+          echo "$got"
+          [ "$got" = "$want" ] || { echo "::error::gonogo --version printed '$got', expected '$want'"; exit 1; }
+      # doctor exits 1 when no claude is found; the stand-in command satisfies that check so only a real failure fails the step.
+      - name: gonogo doctor runs
+        if: ${{ matrix.supported }}
+        env:
+          GONOGO_AGENT_CMD: node
+        run: gonogo doctor
