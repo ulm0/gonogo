@@ -75,6 +75,10 @@ Limits:
 
 One POST, no redirect followed, 15 s. The URL comes from the server environment, never a request.
 
+### How gonogo finds its own container
+
+The update needs this very container through the socket, and the hostname is only its id by default: a compose `hostname:` or `container_name` makes it something else ("No such container: 4d1c9b7a02ef" kept the Update key off on one install). It looks, strongest first: (1) at the id its own files carry (`/proc/self/mountinfo`: the bind sources of `/etc/hostname`, `/etc/hosts` and `/etc/resolv.conf` sit in `…/containers/<id>/`, Podman's in `…/overlay-containers/<id>/`; `/proc/self/cgroup`: `docker/<id>`, `docker-<id>.scope`, `libpod-<id>.scope`, Kubernetes forms); (2) at the hostname, accepted only when the container Docker answers with has that id prefix, or is named so and has that hostname; (3) at the container whose network endpoint has this process's MAC address. Two different candidates are never chosen between: it refuses, and **the Update strip and the AUTO-UPDATE block say why** (for example "this container could not be told from the others through the Docker socket: its own files name no container; Docker answered 404 for the hostname …"). On a host network (no address of its own) only the first two can work.
+
 ### Verifying the image (Docker)
 
 The version label can be written by anyone who can push the tag, so it proves nothing. From 0.8.0 each image has a **build provenance attestation** (GitHub's `actions/attest-build-provenance`, on the digest of the manifest list the tags point at). Before it creates anything, the update (the click's and auto-update's) runs `gh attestation verify oci://ghcr.io/ulm0/gonogo@sha256:... --repo ulm0/gonogo --signer-workflow ulm0/gonogo/.github/workflows/image.yml` on the pulled digest, then builds the copy from that image's **id**.

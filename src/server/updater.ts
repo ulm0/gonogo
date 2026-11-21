@@ -11,7 +11,7 @@ import { execFile } from 'node:child_process';
 import type { InstallKind, Logger, UpdateView } from '../shared/protocol.js';
 import { nullLogger } from './constants.js';
 import type { Attestation } from './attest.js';
-import { checkPrevious, DockerUpdateError, pullAndCheck, readResult, startHelper, STABLE_VERSION } from './dockerupdate.js';
+import { checkPrevious, DockerUpdateError, inspectSelf, pullAndCheck, readResult, startHelper, STABLE_VERSION } from './dockerupdate.js';
 import type { Prepared } from './dockerupdate.js';
 import type { DockerCall } from './dockerupdate.js';
 import { installCommand, isNewer } from './rollout.js';
@@ -184,9 +184,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
         inspect = prepared.inspect;
       } else {
         target = image.previous;
-        const found = await docker.call('GET', `/containers/${encodeURIComponent(docker.hostname)}/json`);
-        if (found.status !== 200) throw new DockerUpdateError('this container could not be found through the Docker socket');
-        inspect = JSON.parse(found.text) as Record<string, unknown>;
+        inspect = await inspectSelf(docker.call, docker.hostname);
       }
       log.info(`handing the update to ${version} to a helper container`);
       // UNDO runs the helper from the RUNNING image: the previous one may be too old to have `self-update`

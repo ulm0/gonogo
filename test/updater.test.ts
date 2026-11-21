@@ -22,6 +22,11 @@ describe('which install is this', () => {
   it('an rpm (or any package under lib/node_modules) reads as npm, and the note says so', () => {
     expect(installKind({ file: '/usr/lib/node_modules/@ulm0/gonogo/dist/server/cli.js', docker: false, clone: false })).toBe('npm');
     expect(installNote('npm', true)).toMatch(/rpm.*npm/);
+    // the reason the socket route is off reaches the Director, not only "run the command on the host"
+    expect(installNote('docker', false, { ready: false, text: 'this container could not be told from the others through the Docker socket: x' })).toMatch(/run the command on the host\. Docker self-update is off here: this container could not be told from the others/);
+    expect(installNote('docker', true, { ready: false, text: 'pinned to 0.9.0' })).toMatch(/an update hook is set.*Docker self-update is off here: pinned to 0\.9\.0/);
+    expect(installNote('docker', false)).not.toMatch(/off here/);
+    expect(installNote('docker', true, { ready: true, text: 'ready' })).not.toMatch(/off here/);
   });
 
   it('builds the install of one exact version for npm and pnpm only', () => {

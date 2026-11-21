@@ -16,6 +16,8 @@ import { request } from 'node:http';
 import { join } from 'node:path';
 import type { UpdateView } from '../shared/protocol.js';
 import { FILE_MODE } from './constants.js';
+import { resolveSelf, SelfError } from './selfid.js';
+import type { SelfProbe } from './selfid.js';
 
 export const SOCKET_PATH = '/var/run/docker.sock';
 export const VERSION_LABEL = 'org.opencontainers.image.version';
@@ -210,15 +212,18 @@ export interface Prepared {
   repoDigests: string[];
 }
 
-/** The running container's own inspect: its id is the hostname. */
-export async function inspectSelf(call: DockerCall, hostname: string): Promise<Json> {
-  const found = await json(call, 'GET', `/containers/${encodeURIComponent(hostname)}/json`);
-  if (asText(found.Id) === '') throw new DockerUpdateError('this container could not be found through the Docker socket');
-  return found;
+/** The running container's own inspect: by its own files, by the hostname (its id unless something set it), by its network address (selfid.ts). A DockerUpdateError says why when none names exactly one. */
+export async function inspectSelf(call: DockerCall, hostname: string, probe?: SelfProbe): Promise<Json> {
+  try {
+    return await resolveSelf(call, hostname, probe);
+  } catch (error) {
+    if (error instanceof SelfError) throw new DockerUpdateError(error.message);
+    throw error;
+  }
 }
 
 /** Whether Docker self-update can work here, and what to say when not (Pad Check, the strip). */
-export async function dockerUpdateStatus(call: DockerCall, hostname: string): Promise<{ ready: boolean; text: string }> {
+export async function dockerUpdateStatus(call: DockerCall, hostname: string, probe?: SelfProbe): Promise<{ ready: boolean; text: string }> {
   try {
     const ping = await call('GET', '/_ping');
     if (ping.status !== 200) return { ready: false, text: 'needs the Docker socket (mount /var/run/docker.sock)' };
@@ -230,7 +235,7 @@ export async function dockerUpdateStatus(call: DockerCall, hostname: string): Pr
     return { ready: false, text: 'needs the Docker socket (mount /var/run/docker.sock)' };
   }
   try {
-    const self = await inspectSelf(call, hostname);
+    const self = await inspectSelf(call, hostname, probe);
     const why = pinnedReason(selfRef(self));
     return why === null ? { ready: true, text: 'ready' } : { ready: false, text: why };
   } catch (error) {
