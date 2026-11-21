@@ -33,5 +33,6 @@ The server stamps the author. Agents cannot edit others' entries or delete; you 
 
 - `GET /api/log?q=cache` -> `{ "total": 40, "hits": [{ "id", "title", "author", "tags", "updatedAt", "snippet" }] }`, best first, newest 20 when `q` is empty.
 - `POST /api/log` `{"title": "Cache key", "body": "...", "tags": ["build"]}` (201).
+- `POST /api/log/:id/recheck`: [Knowledge anchors](./knowledge-anchors.md), the Director's key.
 - `GET /api/log/:id`, `PUT /api/log/:id` (fields to change), `DELETE /api/log/:id` (204).
 - WebSocket frame `log`: `{ "t": "log", "changed": [{ "id", "title" }], "removed": [ids] }`, no text.

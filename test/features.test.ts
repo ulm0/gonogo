@@ -42,6 +42,7 @@ describe('the table', () => {
     expect(featureOfRoute(['poll', 'hold'])).toBe('tminus');
     expect(featureOfRoute(['log', 'chart'])).toBe('star-chart');
     expect(featureOfRoute(['log', 'l1'])).toBe('mission-log');
+    expect(featureOfRoute(['knowledge'])).toBe('knowledge-anchors');
     expect(featureOfRoute(['agents', 'ana', 'git', 'log'])).toBe('recorder');
     expect(featureOfRoute(['agents', 'ana', 'review'])).toBe('review');
     expect(featureOfRoute(['agents', 'ana', 'files'])).toBe('hangar');

@@ -28,14 +28,20 @@ If the root is on another branch than the one the anchor was written on, the not
 
 - **A file** is read only when git lists it as tracked, so a `.env` that is not tracked is `unchecked: not tracked`, and is never opened. gonogo reads the real path of the file, which must lie under the root's real path, with no link followed, a regular file, the very file it looked at, up to 1 MiB.
 - **A search** is `git grep -F -l -z --no-textconv --no-recurse-submodules -e <text> --` through the same safe git as the [Recorder](./recorder.md): the repository's own git config cannot name a program to run, the environment is clean, tracked files only, 5 s, output capped.
-- **When:** when an entry is opened (`log_read`, the page) or turns up in a search, the same anchors at most once per 30 s, a whole check at most 5 s, and **one check at a time for a root**. A search shows the last answer and starts the checks of its first five entries for the next look, so a first search can show none yet. The check looks at the working tree of the root, not at a branch.
+- **When:** when an entry is opened (`log_read`, the page) or turns up in a search, when you press **Recheck**, when an agent starts, and when an agent's turn ends (its Stop, at most once a minute per agent). The same anchors are checked at most once per 30 s, a whole check takes at most 5 s, checks of one root run **one at a time**, and past 10 waiting for a root the next answers "unchecked: busy". A search shows the last answer and starts the checks of its first five entries for the next look, so a first search can show none yet. The check looks at the working tree of the root, not at a branch.
+
+## Counts, Recheck and the start of an agent
+
+- **Tile:** an agent's tile in the room says "· 2 STALE" when entries anchored to **its own repository** were last found not confirmed. It is a count of entries, refreshed when the log changes, at an agent's Stop and at its start; it runs no check by itself (`GET /api/knowledge`, `{ "agents": { "ana": 2 } }`).
+- **Start:** an agent that starts with such entries gets one more line in its role text: "Knowledge: 2 Mission Log entries anchored to your repository are not confirmed now (a count; log_search shows which)." Fixed words and a number, nothing from a repository. The start waits for the checks at most 3 s.
+- **Recheck** (your key on an entry that has anchors; `POST /api/log/:id/recheck`): runs the checks again. It is refused ("checked 10 s ago: again in 20 s", 429) while the last answer is under 30 s old, and agents have no such call.
 
 ## What it does not do
 
 - It does not say a sentence is true: `ok` means the text is where the anchor says.
 - Nothing from a repository goes into a prompt, a message or a note: the notes are written by gonogo from fixed words, a branch name, a short hash and a count.
 - It never blocks a task, a commit or an entry.
-- Not built yet: a count on an agent's tile and in its start notice, a RECHECK key, patterns and globs.
+- Not built: a count per Mission. (Patterns and globs are the grammar of the Knowledge claims, below; a log entry's anchors stay literal.)
 
 ## The full grammar and the engine (phase 2, K2)
 

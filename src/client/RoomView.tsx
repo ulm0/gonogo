@@ -154,6 +154,7 @@ function Tile({ cell, selected, phone }: { cell: Cell; selected: boolean; phone:
       <span className="tile-foot" aria-hidden="true">
         <span className="tile-state">{stateText(agent, now, !(phone && vote !== null))}</span>
         {vote !== null && <span className="tile-state tile-state-vote">· {vote}</span>}
+        <StaleMark name={agent.name} />
         {right === '' && subagentChip(agent) !== '' ? (
           <span className="chip tile-right tile-chip" data-tone="amber">
             {subagentChip(agent)}
@@ -168,6 +169,12 @@ function Tile({ cell, selected, phone }: { cell: Cell; selected: boolean; phone:
       </span>
     </button>
   );
+}
+
+/** Knowledge anchors: how many Mission Log entries anchored to this agent's repository were last found not confirmed. A count; nothing of the entries. */
+function StaleMark({ name }: { name: string }): ReactElement | null {
+  const stale = useStore((s) => s.knowledge[name] ?? 0);
+  return stale > 0 ? <span className="tile-state tile-state-vote">· {stale} STALE</span> : null;
 }
 
 export function Operations({ phone }: { phone: boolean }): ReactElement {

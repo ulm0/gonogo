@@ -993,6 +993,25 @@ export async function readBlackBox(): Promise<AuditView> {
   return toAuditView(await call('GET', '/black-box'));
 }
 
+/** Knowledge anchors: the counts for the tiles. An answer the page does not understand, or a refusal (the feature is off), leaves it as it was. */
+export async function loadKnowledge(): Promise<void> {
+  try {
+    const body = asRecord(await call('GET', '/knowledge'));
+    const agents = body === null ? null : asRecord(body.agents);
+    if (agents === null) return;
+    const counts: Record<string, number> = {};
+    for (const [name, n] of Object.entries(agents)) if (typeof n === 'number' && n > 0) counts[name] = n;
+    store.setState((s) => ({ ...s, knowledge: counts }));
+  } catch {
+    // off, or not reachable: the tiles show no count
+  }
+}
+
+/** The Director's RECHECK of an entry's anchors: the entry with the new answer. A refusal ("again in 12 s") is the error. */
+export async function recheckLogEntry(id: string): Promise<LogEntry> {
+  return toLogEntry(await call('POST', `/log/${encodeURIComponent(id)}/recheck`));
+}
+
 /** Star Chart: the newest entries with their tags, authors and mentions. Asked again when a `log` frame says something changed. */
 export async function logChart(): Promise<LogChart> {
   return toLogChart(await call('GET', '/log/chart'));

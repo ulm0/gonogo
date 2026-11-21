@@ -2146,6 +2146,11 @@ describe('mission log', () => {
           return entry;
         },
         verify: async () => undefined,
+        recheck: async (id) => {
+          calls.push(['recheck', id]);
+          known(id);
+          return entry;
+        },
         chart: () => ({ total: 7, shown: 1, nodes: [{ id: 'entry:l1', kind: 'entry', ref: 'l1', label: 'Cache key', weight: 1 }], edges: [] }),
         create: async (author, input) => {
           calls.push(['create', author, input]);
@@ -2203,6 +2208,24 @@ describe('mission log', () => {
     expect((await api(port, 'GET', '/api/log/l1/more')).status).toBe(404);
     expect((await api(port, 'GET', '/api/log?q=cache', undefined, ANA_TOKEN)).status).toBe(401);
     expect((await api(port, 'PUT', '/api/log/l1', { title: 'x' }, ANA_TOKEN)).status).toBe(401);
+  });
+
+  it('RECHECK is the Director\'s POST, and the counts of Knowledge anchors are a GET with counts only', async () => {
+    const { calls, missionLog } = fakeLog();
+    const { port } = await startWeb({ missionLog, knowledge: async () => ({ ana: 2 }) });
+    const done = await api(port, 'POST', '/api/log/l1/recheck');
+    expect([done.status, done.json()]).toEqual([200, entry]);
+    expect(calls.find((c) => c[0] === 'recheck')).toEqual(['recheck', 'l1']);
+    expect((await api(port, 'POST', '/api/log/l9/recheck')).json()).toEqual({ error: 'unknown entry', code: 'not_found' });
+    for (const method of ['GET', 'PUT', 'DELETE'] as const) expect((await api(port, method, '/api/log/l1/recheck', method === 'PUT' ? {} : undefined)).status, method).toBe(405);
+    // an agent's token does not reach it
+    expect((await api(port, 'POST', '/api/log/l1/recheck', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await api(port, 'GET', '/api/knowledge')).json()).toEqual({ agents: { ana: 2 } });
+    expect((await api(port, 'POST', '/api/knowledge', {})).status).toBe(405);
+    expect((await api(port, 'GET', '/api/knowledge', undefined, ANA_TOKEN)).status).toBe(401);
+    // with the switch off both answer feature_off before the handler
+    const off = await startWeb({ missionLog, knowledge: async () => ({}), features: { isOn: (id: string) => id !== 'knowledge-anchors', label: (id: string) => id } as unknown as WebOptions['features'] });
+    expect((await api(off.port, 'GET', '/api/knowledge')).json()).toMatchObject({ code: 'feature_off' });
   });
 
   it('is 404 without a mission log', async () => {
@@ -2638,6 +2661,18 @@ describe('mcp', () => {
     expect([...(livery?.inputSchema.required ?? [])].sort()).toEqual(['name', 'tokens']);
     expect(livery?.inputSchema.properties?.name).toMatchObject({ maxLength: 40 });
     expect(livery?.description).toBe(MCP_DESCRIPTIONS.livery_submit);
+  });
+
+  it('the sentence about anchors is in the description of log_write while Knowledge anchors are on, and not while they are off', async () => {
+    const featuresWith = (off: string[]): WebOptions['features'] => ({ isOn: (id: string) => !off.includes(id) }) as unknown as WebOptions['features'];
+    for (const [off, text] of [
+      [['knowledge-anchors'], MCP_DESCRIPTIONS.log_write],
+      [[], `${MCP_DESCRIPTIONS.log_write} ${MCP_LOG_ANCHORS}`],
+    ] as const) {
+      const { port } = await startWeb({ features: featuresWith([...off]) });
+      const { tools } = await (await connectMcp(port)).listTools();
+      expect(tools.find((t) => t.name === 'log_write')?.description, off.join()).toBe(text);
+    }
   });
 
   it('go_nogo stamps agent and generation from the token and returns the VoteResult', async () => {

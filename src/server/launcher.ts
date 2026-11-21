@@ -604,7 +604,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       name: agent.name,
       mode: agent.mode,
       role: agent.role.trim() + door,
-      roleText: buildRoleText(agent.name, agent.role, memoryPath) + door,
+      roleText: buildRoleText(agent.name, agent.role, memoryPath) + door + ((await options.knowledge?.(agent.name)) ?? ''),
       servers: payloadOf(agent, provider)?.mcpServers,
       hubUrl,
       agentDir: base,
@@ -704,7 +704,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const projectsRoot = join(clean === null ? configDir ?? join(homedir(), '.claude') : clean.home, 'projects');
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
-      const roleText = buildRoleText(name, agent.role, memoryPath) + doorText('claude', options.rules?.() ?? '', await projectFile(clean?.cwd ?? startDir)) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
+      const roleText = buildRoleText(name, agent.role, memoryPath) + doorText('claude', options.rules?.() ?? '', await projectFile(clean?.cwd ?? startDir)) + ((await options.knowledge?.(name)) ?? '') + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       // Effort: the console's own, else the room's. An old claude exits on an option it does not know: its own effort refuses the start (it asked for it), the room's is dropped with a warning (one setting must not stop every console). A Clean Room runs the image's claude, not the host's, so it is not asked.
       let effort = agent.effort ?? options.defaultEffort?.();
