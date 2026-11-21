@@ -69,3 +69,5 @@
   .next-phone-bar .btn { min-width: 44px; }
 }
 .next-phone-bar .btn { padding-inline: 6px; gap: 4px; }
+.next-phone-bar .btn { position: relative; }
+.next-phone-bar .btn .chip { position: absolute; top: -8px; right: 6px; }

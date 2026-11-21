@@ -429,3 +429,8 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.feat-row .chip {
+  white-space: normal;
+  max-width: 100%;
+}
