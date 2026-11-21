@@ -4,7 +4,8 @@
  */
 import { tokenText } from '../shared/fuel.js';
 import { moneyText } from '../shared/prices.js';
-import type { Mission, MissionStatus, SpendOf, Task } from '../shared/protocol.js';
+import { RITUAL_ITEM_MAX_CHARS, RITUAL_ITEMS_MAX } from '../shared/protocol.js';
+import type { Mission, MissionStatus, RitualItem, SpendOf, Task } from '../shared/protocol.js';
 
 export const STATUS_LABELS: Readonly<Record<MissionStatus, string>> = { planned: 'PLANNED', active: 'ACTIVE', paused: 'PAUSED', done: 'DONE', aborted: 'ABORTED' };
 /** The chip tone of a status: an active mission is lit, a finished one is quiet. */
@@ -86,3 +87,27 @@ export function spendText(spend: SpendOf | undefined): string {
 
 /** The share of a mission's budget spent, 0 to 1 and over; null with no budget. */
 export const budgetShare = (spend: SpendOf | undefined): number | null => (spend?.budget === undefined ? null : spend.usd / spend.budget);
+
+/** How much of a mission's closing checklist is left: `2 of 5 closing items left`, `all 5 closing items ticked`, or '' when it has none. Never a gate. */
+export function ritualProgress(mission: Pick<Mission, 'ritual'>): { left: number; total: number; text: string } {
+  const items = mission.ritual ?? [];
+  const left = items.filter((i) => !i.done).length;
+  if (items.length === 0) return { left: 0, total: 0, text: '' };
+  return { left, total: items.length, text: left === 0 ? `All ${items.length} closing ${items.length === 1 ? 'item is' : 'items are'} ticked.` : `${left} of ${items.length} closing ${items.length === 1 ? 'item' : 'items'} left.` };
+}
+
+/** The words that say where a line came from, or '' for the Director's own: a line an agent wrote is never passed off as the Director's. */
+export const sourceText = (item: RitualItem): string => (item.from === 'agent' ? `set by ${item.agent ?? 'an agent'}` : item.from === 'room' ? 'room template' : '');
+
+/** What is wrong with the text of a line before it is sent, or null. */
+export function ritualTextProblem(text: string, count: number, adding: boolean): string | null {
+  const t = text.trim();
+  if (t === '') return 'Write the line.';
+  if (t.length > RITUAL_ITEM_MAX_CHARS) return `At most ${RITUAL_ITEM_MAX_CHARS} characters (${t.length} now).`;
+  if (/[\r\n]/.test(t)) return 'One line only.';
+  if (adding && count >= RITUAL_ITEMS_MAX) return `At most ${RITUAL_ITEMS_MAX} lines.`;
+  return null;
+}
+
+/** Who ticked a line and when, for under it; '' when it is not ticked. */
+export const tickedText = (item: RitualItem): string => (item.done ? `ticked${item.by === undefined ? '' : ` by ${item.by === 'user' ? 'you' : item.by}`}${item.at === undefined ? '' : ` ${new Date(item.at).toLocaleString()}`}` : '');

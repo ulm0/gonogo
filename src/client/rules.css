@@ -398,3 +398,21 @@
 .rules-devices .rules-name {
   flex: 1 1 12em;
 }
+
+/* ROOM RULES: the text box and its keys */
+.rules-text {
+  min-height: 160px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.rules-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rules-block [data-over] {
+  color: var(--nogo-text);
+}

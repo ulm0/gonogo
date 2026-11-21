@@ -407,6 +407,16 @@ export interface PayloadDefaultSkill {
   name: string;
   path: string;
 }
+/** The room's rules for every agent (docs/features/door.md): the Director's own text, `max` bytes at most. */
+export interface RulesView {
+  text: string;
+  /** UTF-8 bytes of `text`. */
+  bytes: number;
+  max: number;
+  /** ms epoch of the last save, or null when none was ever saved. */
+  updatedAt: number | null;
+}
+
 /** The room's Payload defaults for the page (Flight Rules, and the Payload fold of an agent). */
 export interface PayloadDefaults {
   mcpServers: PayloadDefaultServer[];

@@ -37,6 +37,16 @@ The task form has a **Mission** select (when any mission exists); each card has 
 | FLIGHT (boss) | `mission_create { name, goal?, lead? }` (planned), `mission_update { id, status?, note? }`; not name, goal, lead of an existing mission, nor removal |
 | Every agent | `mission_list { status? }` (with progress); `missionId` on `task_create` and `task_update` |
 
+## The closing checklist
+
+A mission page has a CLOSING CHECKLIST: the lines you want checked before the mission is called done. A new mission copies the **template** of the room (CLOSING CHECKLIST TEMPLATE in [Flight Rules](./flight-rules.md): one line each, up to 20 lines of 200 characters; a line starting with `#` and a blank line are left out). On the mission page you tick a line, reword it, remove it or add one of your own.
+
+- **Only you tick.** An agent can read the list and cannot tick, change or add to it from a mission it already has.
+- **Where a line came from is said.** A line an agent set when it made the mission reads "set by flight"; one from the template reads "room template"; your own says nothing. A line is plain text: it is never a link and never an instruction to an agent.
+- **It is never a gate.** DONE and ABORT work with lines open. The page says "2 of 5 closing items left" and the Downlink names the ones left.
+
+Not seen in a browser.
+
 ## Cost
 
 A mission's COST block shows its cost so far (API-equivalent estimate, [Cost](./cost.md#cost-per-mission-and-task-and-a-budget-per-mission)), a dollar budget, and each task's cost. At 80 % of budget the Downlink is told; at 100 % Redline stops agents with a task of the mission on `doing`.

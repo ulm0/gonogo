@@ -26,3 +26,5 @@ A module above the room while FLIGHT is the only console (an empty room). Four s
 4. **Read the security note:** SHOW THE NOTE opens two short paragraphs (the token is a password, the server runs shells as you, an agent in `bypassPermissions` runs as your user, dock only with people you trust) and ticks the step. Full story: [Security](../reference/security.md).
 
 PUT AWAY hides it; it also goes when a second console is staffed. The marks are kept in this browser only (`localStorage` key `gonogo.commissioning`): another device shows the checklist again, and a private window shows it every visit.
+
+**ROOM RULES** is your text for every agent of the room, sent in each agent's role text at the start of a session; changing it asks for the password again, and it shows its size in bytes against the 8 KiB cap. **CLOSING CHECKLIST TEMPLATE** is the list every new mission copies ([Missions](./missions.md#the-closing-checklist)), with the same cap and the same password.

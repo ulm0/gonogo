@@ -5,12 +5,12 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
-import { MISSION_GOAL_MAX_CHARS, MISSION_NAME_MAX_CHARS } from '../shared/protocol.js';
-import type { Mission } from '../shared/protocol.js';
+import { MISSION_GOAL_MAX_CHARS, MISSION_NAME_MAX_CHARS, RITUAL_ITEM_MAX_CHARS, RITUAL_ITEMS_MAX } from '../shared/protocol.js';
+import type { Mission, RitualItem } from '../shared/protocol.js';
 import * as api from './api.js';
 import { parseMoney } from '../shared/fuel.js';
 import { moneyText } from '../shared/prices.js';
-import { actionsOf, budgetShare, emptyMissionValues, progressOf, spendText, sortMissions, STATUS_LABELS, STATUS_TONES, tasksOf, validateMission } from './missions.js';
+import { actionsOf, budgetShare, emptyMissionValues, progressOf, ritualProgress, ritualTextProblem, sourceText, spendText, sortMissions, STATUS_LABELS, STATUS_TONES, tasksOf, tickedText, validateMission } from './missions.js';
 import type { MissionValues } from './missions.js';
 import { cardId, labelOf } from './plan.js';
 import { useAgentList } from './RoomView.js';
@@ -26,6 +26,138 @@ function Status({ mission }: { mission: Mission }): ReactElement {
     <span className="chip" data-tone={STATUS_TONES[mission.status]}>
       {STATUS_LABELS[mission.status]}
     </span>
+  );
+}
+
+/**
+ * The closing checklist: what the Director wants checked before the mission is called done. The Director ticks, adds, rewords and removes lines here (the server
+ * refuses an agent), a line an agent set says which agent set it (it is plain text, never a link or an instruction, and never passes for the Director's), and
+ * it is never a gate: DONE works with items open, and the Downlink says which were left.
+ */
+function RitualLine({ mission, item, index, count }: { mission: Mission; item: RitualItem; index: number; count: number }): ReactElement {
+  const { busy, error, run } = useRun();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(item.text);
+  const id = useId();
+  const problem = ritualTextProblem(text, count, false);
+  const source = sourceText(item);
+  if (editing) {
+    return (
+      <li>
+        <label htmlFor={id} className="sr-only">
+          Words of closing item {index + 1}
+        </label>
+        <input id={id} className="input" value={text} maxLength={RITUAL_ITEM_MAX_CHARS + 20} autoComplete="off" aria-invalid={problem !== null || undefined} onChange={(e) => setText(e.target.value)} />
+        <button
+          type="button"
+          className="btn"
+          data-kind="primary"
+          aria-disabled={problem !== null || busy || undefined}
+          onClick={() =>
+            problem === null &&
+            !busy &&
+            run(async () => {
+              await api.setRitualItem(mission.id, index, { text: text.trim() });
+              setEditing(false);
+            })
+          }
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          className="btn"
+          data-kind="quiet"
+          onClick={() => {
+            setText(item.text);
+            setEditing(false);
+          }}
+        >
+          Cancel
+        </button>
+        {problem !== null && <span className="error">{problem}</span>}
+        {error !== null && (
+          <span className="error" role="alert">
+            {error}
+          </span>
+        )}
+      </li>
+    );
+  }
+  return (
+    <li>
+      <label>
+        <input type="checkbox" className="check" checked={item.done} disabled={busy} onChange={(event) => run(() => api.setRitualItem(mission.id, index, { done: event.target.checked }))} />
+        <span className="mis-ritual-text">{item.text}</span>
+      </label>
+      {source !== '' && (
+        <span className="chip" data-tone={item.from === 'agent' ? 'amber' : 'quiet'}>
+          {source}
+        </span>
+      )}
+      {item.done && <span className="hint">{tickedText(item)}</span>}
+      <button type="button" className="btn" data-kind="quiet" aria-label={`Edit closing item ${index + 1}: ${item.text}`} aria-disabled={busy || undefined} onClick={() => setEditing(true)}>
+        Edit
+      </button>
+      <button type="button" className="btn" data-kind="quiet" aria-label={`Remove closing item ${index + 1}: ${item.text}`} aria-disabled={busy || undefined} onClick={() => !busy && run(() => api.removeRitualItem(mission.id, index))}>
+        Remove
+      </button>
+      {error !== null && (
+        <span className="error" role="alert">
+          {error}
+        </span>
+      )}
+    </li>
+  );
+}
+
+function Ritual({ mission }: { mission: Mission }): ReactElement {
+  const id = useId();
+  const { busy, error, run } = useRun();
+  const [text, setText] = useState('');
+  const items = mission.ritual ?? [];
+  const progress = ritualProgress(mission);
+  const problem = text === '' ? null : ritualTextProblem(text, items.length, true);
+  const add = (event: FormEvent): void => {
+    event.preventDefault();
+    if (ritualTextProblem(text, items.length, true) !== null || busy) return;
+    run(async () => {
+      await api.addRitualItem(mission.id, text.trim());
+      setText('');
+    });
+  };
+  return (
+    <section className="mis-ritual" aria-label={`Closing checklist of ${mission.name}`}>
+      <h3 className="label">CLOSING CHECKLIST</h3>
+      {items.length === 0 ? (
+        <p className="hint">Nothing to check before this mission is called done. Add a line, or set a template in Flight Rules for every new mission.</p>
+      ) : (
+        <p className="hint" role="status">
+          {progress.text}
+          {progress.left > 0 && mission.status !== 'done' ? ' You can close the mission with items open: the Downlink will list them.' : ''}
+        </p>
+      )}
+      <ul className="mis-ritual-list">
+        {items.map((item, index) => (
+          <RitualLine key={`${index}:${item.text}`} mission={mission} item={item} index={index} count={items.length} />
+        ))}
+      </ul>
+      {items.length < RITUAL_ITEMS_MAX && (
+        <form className="mis-budget" onSubmit={add} noValidate>
+          <label htmlFor={id}>New closing item</label>
+          <input id={id} className="input" value={text} autoComplete="off" placeholder="Tests pass on main" aria-invalid={problem !== null || undefined} onChange={(e) => setText(e.target.value)} />
+          <button type="submit" className="btn" aria-disabled={text.trim() === '' || problem !== null || busy || undefined}>
+            Add
+          </button>
+        </form>
+      )}
+      {problem !== null && <p className="error">{problem}</p>}
+      {error !== null && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -264,6 +396,7 @@ function Detail({ mission }: { mission: Mission }): ReactElement {
           </div>
         </section>
       )}
+      <Ritual mission={mission} />
       <MissionCost mission={mission} />
       <h3 className="label">TASKS</h3>
       {linked.length === 0 ? (
