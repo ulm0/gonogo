@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClaimResult, KnowledgeCounts, LogEntry } from '../src/shared/protocol.js';
 import { createKnowledge, KNOWLEDGE_LIST_HEADING, KNOWLEDGE_RECHECK_MS, legOfLogAnchor } from '../src/server/knowledge.js';
 import type { Knowledge, KnowledgeEngine } from '../src/server/knowledge.js';
@@ -35,6 +36,14 @@ async function repo(name: string, remote = 'https://github.com/o/r.git'): Promis
   git(path, 'commit', '-q', '-m', 'x');
   git(path, 'remote', 'add', 'origin', remote);
   return realpath(path);
+}
+
+/** A clone: the same history and the same remote, so the same repository id (two repos made apart would differ by the second their root commit was made in). */
+function cloneOf(src: string, name: string): string {
+  const path = join(root, name);
+  git(root, 'clone', '-q', src, path);
+  git(path, 'remote', 'set-url', 'origin', 'https://github.com/o/r.git');
+  return realpathSync(path);
 }
 
 const engine: KnowledgeEngine = {
@@ -92,7 +101,8 @@ describe('what an agent can do', () => {
     const view = await k.view({});
     expect(view.repos[0]?.proposals[0]).toMatchObject({ id: 'p1', agent: 'ana', status: 'pending', branch: 'main' });
     expect(view.repos[0]?.roots).toEqual([{ path: places.ana, branch: 'main', bound: true, agents: ['ana'] }]);
-    expect(changed.at(-1) && Object.values(changed.at(-1) ?? {})[0]).toMatchObject({ pending: 1 });
+    // the counts go out a moment after the answer
+    await vi.waitFor(() => expect(Object.values(changed.at(-1) ?? {})[0]).toMatchObject({ pending: 1 }));
   });
 
   it('is refused off the switch, outside a repository, for an agent that is not hired, and from a checkout that is not bound (S11)', async () => {
@@ -105,18 +115,18 @@ describe('what an agent can do', () => {
     expect((await refused(() => k.propose('plain', { statement: 's', legs: [leg] }))).message).toMatch(/not in a git repository/);
     expect((await refused(() => k.propose('ghost', { statement: 's', legs: [leg] }))).message).toMatch(/not in a git repository/);
     // a forged checkout seen first owns the id; the real one is not bound until the Director clicks
-    const forged = await repo('forged');
+    const forged = cloneOf(places.ana ?? '', 'forged');
     places.mal = forged;
     await k.list('mal');
-    const real = await repo('real');
+    const real = cloneOf(places.ana ?? '', 'real');
     places.real = real;
     expect((await refused(() => k.propose('real', { statement: 's', legs: [leg] }))).code).toBe('forbidden');
     expect((await refused(() => k.list('real'))).code).toBe('forbidden');
   });
 
   it('S11: forged first, then real: both listed, the real one needs the click, UNBIND of the forged one takes its access away', async () => {
-    const forged = await repo('forged');
-    const real = await repo('real');
+    const forged = cloneOf(places.ana ?? '', 'forged');
+    const real = cloneOf(places.ana ?? '', 'real');
     places = { mal: forged, ana: real };
     // mal is first and binds; its folder claims the id of the real one
     await k.propose('mal', { statement: 'forged', legs: [leg] });
@@ -193,7 +203,7 @@ describe('what the Director does', () => {
     await k.addClaim(repoId, { statement: 'A claim', anchors: '' });
     const done = await k.recheck(repoId);
     expect(done.results[0]).toMatchObject({ id: 'K-1', worst: 'stale' });
-    expect(Object.values(changed.at(-1) ?? {})[0]).toMatchObject({ stale: 1, pending: 1 });
+    await vi.waitFor(() => expect(Object.values(changed.at(-1) ?? {})[0]).toMatchObject({ stale: 1, pending: 1 }));
     now += 12_000;
     const e = (await refused(() => k.recheck(repoId))) as { code: string; message: string };
     expect(e).toMatchObject({ code: 'rate_limited', message: 'checked 12 s ago: again in 18 s' });
