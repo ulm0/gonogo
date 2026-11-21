@@ -21,13 +21,14 @@ const html = (): string => renderToString(createElement(RoomDesktop));
 afterEach(() => store.setState(emptyState()));
 
 describe('the room drawn to a string', () => {
-  it('is the page as it was with no layout: the wall, then the consoles, and a quiet key to edit', () => {
+  it('with no saved layout is the status strip, then the consoles, and the Layout key', () => {
     load({});
     const out = html();
-    expect(out).toContain('aria-label="The wall"');
-    expect(out).toContain('aria-label="Operations"');
+    expect(out).toContain('aria-label="Status of the room"');
+    expect(out).toContain('aria-label="Consoles"');
+    expect(out).not.toContain('aria-label="The wall"');
     expect(out).not.toContain('room-grid');
-    expect(out).toContain('Edit room');
+    expect(out).toContain('aria-label="Layout of the room"');
   });
 
   it('puts each block of a saved layout on the grid where it was put, and leaves out a hidden one', () => {
