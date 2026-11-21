@@ -20,7 +20,7 @@ import {
   MISSION_GOAL_MAX_CHARS,
   MISSION_NAME_MAX_CHARS,
   MISSION_NOTE_MAX_CHARS,
-  MISSION_RITUAL_MAX,
+  RITUAL_ITEMS_MAX,
   MISSION_STATUSES,
   MISSIONS_OPEN_MAX,
   missionSubject,
@@ -131,7 +131,7 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
   }
   if (input.ritual !== undefined) {
     if (whole) {
-      if (!Array.isArray(input.ritual) || input.ritual.length > MISSION_RITUAL_MAX) throw bad(`ritual is a list of at most ${MISSION_RITUAL_MAX} lines of text`, 'ritual');
+      if (!Array.isArray(input.ritual) || input.ritual.length > RITUAL_ITEMS_MAX) throw bad(`ritual is a list of at most ${RITUAL_ITEMS_MAX} lines of text`, 'ritual');
       out.ritualNew = input.ritual.map((t) => itemText(t, 'ritual'));
     } else {
       out.ritualOp = ritualOp(input.ritual);
@@ -145,7 +145,7 @@ function ritualOp(r: unknown): RitualOp {
   if (!isRecord(r)) throw bad(shape, 'ritual');
   const keys = Object.keys(r);
   const number = (v: unknown): number => {
-    if (!Number.isSafeInteger(v) || (v as number) < 0 || (v as number) >= MISSION_RITUAL_MAX) throw bad('index is the number of an item, from 0', 'index');
+    if (!Number.isSafeInteger(v) || (v as number) < 0 || (v as number) >= RITUAL_ITEMS_MAX) throw bad('index is the number of an item, from 0', 'index');
     return v as number;
   };
   if (keys.length === 1 && keys[0] === 'add') return { add: itemText(r.add, 'text') };
@@ -184,7 +184,7 @@ function fromRecord(raw: unknown, at: number): Mission {
 /** The saved items of a ritual: each is cleaned again, so a file edited by hand cannot bring a control character or a long line back, and only the Director can have ticked. */
 function readRitual(raw: unknown[]): RitualItem[] {
   const items: RitualItem[] = [];
-  for (const item of raw.slice(0, MISSION_RITUAL_MAX)) {
+  for (const item of raw.slice(0, RITUAL_ITEMS_MAX)) {
     if (!isRecord(item) || typeof item.text !== 'string') continue;
     const text = cleanLine(item.text);
     if (text === '') continue;
@@ -302,10 +302,10 @@ export function createMissions(options: MissionsOptions): Missions {
       if (missions.filter((m) => !isFinished(m)).length >= MISSIONS_OPEN_MAX) throw full();
       const at = now();
       const lead = request.lead === undefined ? options.boss() : request.lead;
-      // the room's template first, then the lines the boss passed (labelled with its name); at most MISSION_RITUAL_MAX
+      // the room's template first, then the lines the boss passed (labelled with its name); at most RITUAL_ITEMS_MAX
       const template = readTemplate(dir);
       const given: RitualItem[] = (request.ritualNew ?? []).map((text) => (actor.kind === 'agent' ? { text, done: false, from: 'agent' as const, agent: actor.name } : { text, done: false, from: 'director' as const }));
-      const items = [...template.items, ...given].slice(0, MISSION_RITUAL_MAX);
+      const items = [...template.items, ...given].slice(0, RITUAL_ITEMS_MAX);
       const omitted = template.omitted + (template.items.length + given.length - items.length);
       const mission: Mission = {
         id: `ms${seq + 1}`,
@@ -357,7 +357,7 @@ export function createMissions(options: MissionsOptions): Missions {
         const items = (next.ritual ??= []);
         const op = patch.ritualOp;
         if ('add' in op) {
-          if (items.length >= MISSION_RITUAL_MAX) throw new HubError('conflict', `a mission has at most ${MISSION_RITUAL_MAX} closing items`, 'ritual');
+          if (items.length >= RITUAL_ITEMS_MAX) throw new HubError('conflict', `a mission has at most ${RITUAL_ITEMS_MAX} closing items`, 'ritual');
           items.push({ text: op.add, done: false, from: 'director' });
           parts.push(`closing item ${items.length} added`);
         } else if ('remove' in op) {

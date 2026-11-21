@@ -7,7 +7,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpat
 import { rename, stat, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { join, sep } from 'node:path';
-import { MISSION_RITUAL_MAX, MISSION_RITUAL_TEXT_MAX, RITUAL_TEMPLATE_MAX_BYTES } from '../shared/protocol.js';
+import { RITUAL_ITEMS_MAX, RITUAL_ITEM_MAX_CHARS, RITUAL_TEMPLATE_MAX_BYTES } from '../shared/protocol.js';
 import type { RitualItem, RitualTemplateView } from '../shared/protocol.js';
 import { FILE_MODE } from './constants.js';
 import { HubError } from './hub.js';
@@ -20,12 +20,12 @@ const UNSAFE = new RegExp(`[${['0000-001f', '007f-009f', '061c', '180e', '200b-2
 /** One line of text, cleaned and cut. */
 export function cleanLine(text: string): string {
   const line = text.replace(UNSAFE, ' ').replace(/\s+/g, ' ').trim();
-  return line.length <= MISSION_RITUAL_TEXT_MAX ? line : `${line.slice(0, MISSION_RITUAL_TEXT_MAX - 1).trimEnd()}…`;
+  return line.length <= RITUAL_ITEM_MAX_CHARS ? line : `${line.slice(0, RITUAL_ITEM_MAX_CHARS - 1).trimEnd()}…`;
 }
 
 /**
  * The lines of a ritual file: blank lines, headings (`#`) and comments (`<!-- -->`, also over several lines) dropped, a list marker (`-`, `*`, `+`, `1.` and a `[ ]` or `[x]` box)
- * taken off. Returns the first MISSION_RITUAL_MAX and how many there were.
+ * taken off. Returns the first RITUAL_ITEMS_MAX and how many there were.
  */
 export function parseRitual(content: string): { lines: string[]; total: number } {
   const all: string[] = [];
@@ -52,7 +52,7 @@ export function parseRitual(content: string): { lines: string[]; total: number }
     const line = cleanLine(trimmed.replace(/^(?:[-*+]|\d{1,3}[.)])\s+(?:\[[ xX]\]\s+)?/, ''));
     if (line !== '') all.push(line);
   }
-  return { lines: all.slice(0, MISSION_RITUAL_MAX), total: all.length };
+  return { lines: all.slice(0, RITUAL_ITEMS_MAX), total: all.length };
 }
 
 /** A regular file read through its realpath, which must be `root` itself or lie under it, without following a link at the end; null when it is not one or cannot be read. */
@@ -84,7 +84,7 @@ export function readInside(root: string, file: string): string | null {
 
 export const RITUAL_FILE = 'ritual.md';
 
-/** The items of a new mission from the room's template: `from: 'room'`, the first MISSION_RITUAL_MAX; `omitted` is how many more the file had. */
+/** The items of a new mission from the room's template: `from: 'room'`, the first RITUAL_ITEMS_MAX; `omitted` is how many more the file had. */
 export function readTemplate(home: string): { items: RitualItem[]; omitted: number } {
   const file = readInside(home, join(home, RITUAL_FILE));
   if (file === null) return { items: [], omitted: 0 };
@@ -94,12 +94,12 @@ export function readTemplate(home: string): { items: RitualItem[]; omitted: numb
 
 const UNSAFE_ONE = new RegExp(UNSAFE.source, 'u');
 
-/** The line of an item the Director or the boss writes: one line of plain text with no control, escape, direction or zero-width character, 1 to MISSION_RITUAL_TEXT_MAX characters; refused otherwise (named by `field`). */
+/** The line of an item the Director or the boss writes: one line of plain text with no control, escape, direction or zero-width character, 1 to RITUAL_ITEM_MAX_CHARS characters; refused otherwise (named by `field`). */
 export function itemText(value: unknown, field: string): string {
   if (typeof value !== 'string') throw new HubError('bad_request', 'an item is text', field);
   const text = value.trim().replace(/ {2,}/g, ' ');
-  if (text === '' || text.length > MISSION_RITUAL_TEXT_MAX || UNSAFE_ONE.test(text)) {
-    throw new HubError('bad_request', `an item is 1 to ${MISSION_RITUAL_TEXT_MAX} characters on one line, with no control or direction character`, field);
+  if (text === '' || text.length > RITUAL_ITEM_MAX_CHARS || UNSAFE_ONE.test(text)) {
+    throw new HubError('bad_request', `an item is 1 to ${RITUAL_ITEM_MAX_CHARS} characters on one line, with no control or direction character`, field);
   }
   return text;
 }

@@ -239,8 +239,8 @@ export const MISSION_GOAL_MAX_CHARS = 2000;
 export const MISSION_NOTE_MAX_CHARS = 200;
 export const MISSIONS_OPEN_MAX = 50;
 /** The closing ritual of a mission: at most this many items of at most this many characters. */
-export const MISSION_RITUAL_MAX = 20;
-export const MISSION_RITUAL_TEXT_MAX = 200;
+export const RITUAL_ITEMS_MAX = 20;
+export const RITUAL_ITEM_MAX_CHARS = 200;
 export const missionSubject = (name: string): string => `Mission: ${name}`;
 export const taskSubject = (id: string, title: string): string => `Flight Plan: ${id} assigned to you: ${title}`;
 /** Mission Log limits (docs/mission-log-spec.md). A tag is lowercase; the search never returns more than LOG_SEARCH_MAX hits. */
@@ -1033,7 +1033,7 @@ export interface Task {
 /** Missions: a named goal with a status, a lead and a history; its tasks are the ones whose `missionId` is its id. One entry of missions.json. */
 /** One line of the closing checklist of a mission. `from` says whose words it is: the room's template, the Director's own, or an agent's (the boss, when it made the mission). */
 export interface RitualItem {
-  /** One line of plain text, at most MISSION_RITUAL_TEXT_MAX characters, no control or bidi character. */
+  /** One line of plain text, at most RITUAL_ITEM_MAX_CHARS characters, no control or bidi character. */
   text: string;
   done: boolean;
   from: 'room' | 'director' | 'agent';
@@ -1076,7 +1076,7 @@ export interface Mission {
   history: string[];
   /** The closing checklist, copied when the mission was made; absent on a mission that predates it, or when there is no template. Printed, never a gate. */
   ritual?: RitualItem[];
-  /** How many lines the template had when it had more than MISSION_RITUAL_MAX (the rest was dropped). */
+  /** How many lines the template had when it had more than RITUAL_ITEMS_MAX (the rest was dropped). */
   ritualOmitted?: number;
 }
 

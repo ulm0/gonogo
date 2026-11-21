@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { MISSION_RITUAL_MAX, MISSION_RITUAL_TEXT_MAX, RITUAL_TEMPLATE_MAX_BYTES } from '../src/shared/protocol.js';
+import { RITUAL_ITEMS_MAX, RITUAL_ITEM_MAX_CHARS, RITUAL_TEMPLATE_MAX_BYTES } from '../src/shared/protocol.js';
 import type { Logger, Mission } from '../src/shared/protocol.js';
 import { HubError } from '../src/server/hub.js';
 import { createMissions } from '../src/server/missions.js';
@@ -59,10 +59,10 @@ describe('the lines of a ritual file', () => {
 
   it('keeps the first 20, says how many there were, and cuts a long line', () => {
     const out = parseRitual(Array.from({ length: 200 }, (_, i) => `item ${i}`).join('\n'));
-    expect(out.lines).toHaveLength(MISSION_RITUAL_MAX);
+    expect(out.lines).toHaveLength(RITUAL_ITEMS_MAX);
     expect(out.total).toBe(200);
     const long = cleanLine('x'.repeat(500));
-    expect(long).toHaveLength(MISSION_RITUAL_TEXT_MAX);
+    expect(long).toHaveLength(RITUAL_ITEM_MAX_CHARS);
     expect(long.endsWith('…')).toBe(true);
   });
 
@@ -71,16 +71,16 @@ describe('the lines of a ritual file', () => {
     const line = cleanLine(hostile);
     expect(line).not.toMatch(/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩​-‏]/u);
     expect(line).toContain('<script>alert(1)</script>');
-    expect(line.length).toBeLessThanOrEqual(MISSION_RITUAL_TEXT_MAX);
+    expect(line.length).toBeLessThanOrEqual(RITUAL_ITEM_MAX_CHARS);
     expect(parseRitual(`- ${hostile}\n`).lines).toEqual([line]);
   });
 
   it('a line the Director or the boss writes is refused, not cleaned, when it has a control or direction character, a line break, is empty or too long', () => {
     expect(itemText('  the reviewer  read it  ', 'text')).toBe('the reviewer read it');
-    for (const bad of ['', '   ', 'a\nb', 'a\tb', 'a‮b', 'a​b', 'a\u001b[2Jb', 'x'.repeat(MISSION_RITUAL_TEXT_MAX + 1), 5, null, ['a']]) {
+    for (const bad of ['', '   ', 'a\nb', 'a\tb', 'a‮b', 'a​b', 'a\u001b[2Jb', 'x'.repeat(RITUAL_ITEM_MAX_CHARS + 1), 5, null, ['a']]) {
       expect(() => itemText(bad, 'text'), String(bad)).toThrow(HubError);
     }
-    expect(itemText('x'.repeat(MISSION_RITUAL_TEXT_MAX), 'text')).toHaveLength(MISSION_RITUAL_TEXT_MAX);
+    expect(itemText('x'.repeat(RITUAL_ITEM_MAX_CHARS), 'text')).toHaveLength(RITUAL_ITEM_MAX_CHARS);
   });
 });
 
@@ -140,11 +140,11 @@ describe('a new mission', () => {
     writeFileSync(join(home, 'ritual.md'), Array.from({ length: 30 }, (_, i) => `- line ${i}`).join('\n'));
     const m = make();
     const mission = await m.create(USER, { name: 'Ship it' });
-    expect(mission.ritual).toHaveLength(MISSION_RITUAL_MAX);
+    expect(mission.ritual).toHaveLength(RITUAL_ITEMS_MAX);
     expect(mission.ritual?.every((i) => i.from === 'room' && !i.done)).toBe(true);
     expect(mission.ritualOmitted).toBe(10);
     writeFileSync(join(home, 'ritual.md'), '- changed\n');
-    expect(m.list()[0]?.ritual).toHaveLength(MISSION_RITUAL_MAX);
+    expect(m.list()[0]?.ritual).toHaveLength(RITUAL_ITEMS_MAX);
   });
 
   it('has no checklist when there is no template, and the boss may pass lines: after the template, labelled with its name, cleaned by refusal', async () => {
@@ -167,7 +167,7 @@ describe('a new mission', () => {
   it('keeps 20 in all when the template and the boss together have more', async () => {
     writeFileSync(join(home, 'ritual.md'), Array.from({ length: 19 }, (_, i) => `- r${i}`).join('\n'));
     const made = await make().create(FLIGHT, { name: 'E', ritual: ['a1', 'a2', 'a3'] });
-    expect(made.ritual).toHaveLength(MISSION_RITUAL_MAX);
+    expect(made.ritual).toHaveLength(RITUAL_ITEMS_MAX);
     expect(made.ritual?.at(-1)).toMatchObject({ text: 'a1', from: 'agent' });
     expect(made.ritualOmitted).toBe(2);
   });
@@ -203,7 +203,7 @@ describe('the Director changes the checklist', () => {
     expect(removed.ritual?.map((i) => i.text)).toEqual(['two', 'three', 'now the Director\'s words', 'a new line']);
     await fails(m.update(USER, mission.id, { ritual: { index: 9, done: true } }), 'not_found', 'index');
     await fails(m.update(USER, mission.id, { ritual: { remove: 9 } }), 'not_found', 'index');
-    for (let i = removed.ritual?.length ?? 0; i < MISSION_RITUAL_MAX; i += 1) await m.update(USER, mission.id, { ritual: { add: `x${i}` } });
+    for (let i = removed.ritual?.length ?? 0; i < RITUAL_ITEMS_MAX; i += 1) await m.update(USER, mission.id, { ritual: { add: `x${i}` } });
     await fails(m.update(USER, mission.id, { ritual: { add: 'one too many' } }), 'conflict', 'ritual');
     // a mission that had no checklist starts one
     const none = (() => {
@@ -277,7 +277,7 @@ describe('the file', () => {
     expect(edited?.ritual?.[0]).toEqual({ text: 'a b [2Jc', done: true, from: 'room' }); // an unknown source is the room's; "by ana" is not the Director's and is dropped
     expect(edited?.ritual).toHaveLength(3);
     expect(edited?.ritual?.[1]).toMatchObject({ from: 'agent', agent: 'flight', by: 'user' });
-    expect(edited?.ritual?.[1]?.text).toHaveLength(MISSION_RITUAL_TEXT_MAX);
+    expect(edited?.ritual?.[1]?.text).toHaveLength(RITUAL_ITEM_MAX_CHARS);
     expect(edited?.ritual?.[2]).toEqual({ text: 'ok', done: false, from: 'agent' }); // a bad agent name is dropped, not trusted
   });
 });
