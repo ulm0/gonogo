@@ -239,6 +239,8 @@ export const SCRUB_ENV_EXACT = [
   // what a room knows about its supervisor (the reload target): not the agents' business
   'GONOGO_SUPERVISOR_PID',
   'GONOGO_ROOM',
+  // where the Knowledge store is: agents reach it only through the tools
+  'GONOGO_KNOWLEDGE_DIR',
   // the Director's own token (gonogo tui): an agent must never inherit it
   'GONOGO_BROWSER_TOKEN',
   // the update hook is the Director's: an agent with it could pull and restart gonogo without the click
@@ -488,6 +490,10 @@ export const ROLLOUT_MAX_BYTES = 256 * 1024;
 export const ROLLOUT_OFF_WORDS = ['0', 'off', 'false', 'no'] as const;
 /** Mission Log (docs/mission-log-spec.md): the folder under the home, and how long a snippet of a search result is and how much of the text before the match it shows. */
 export const LOG_DIR = 'mission-log';
+/** The Knowledge store: the supervisor's own folder, shared by the rooms of an install (docs/features/knowledge.md). */
+export const KNOWLEDGE_DIR = 'knowledge';
+/** What agents of a room proposed: the room's own folder. */
+export const KNOWLEDGE_PROPOSALS_DIR = 'knowledge-proposals';
 export const LOG_SNIPPET_CHARS = 200;
 export const LOG_SNIPPET_LEAD_CHARS = 40;
 /** Plot Board (docs/plot-board-spec.md): the plan lives in `<home>/board.md`. */

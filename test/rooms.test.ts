@@ -210,6 +210,24 @@ describe('the layout of room main', () => {
     expect(mainLayout(fresh)).toBe('.');
   });
 
+  it('what agents proposed is a room\'s: it makes a home old, so a move keeps it; the Knowledge store is the supervisor\'s and says nothing', () => {
+    const old = mkdtempSync(join(tmpdir(), 'gng-old-'));
+    try {
+      mkdirSync(join(old, 'knowledge'));
+      mkdirSync(join(old, 'knowledge-proposals'));
+      expect(ROOM_STATE_FILES).toContain('knowledge-proposals');
+      expect(SUPERVISOR_FILES).toContain('knowledge');
+      expect(ROOM_STATE_FILES).not.toContain('knowledge');
+      rmSync(join(old, 'knowledge-proposals'), { recursive: true });
+      // the store alone is not a room's file: no layout is read from it
+      expect(mainLayout(old)).toBe('rooms/main');
+      mkdirSync(join(old, 'knowledge-proposals'));
+      expect(mainLayout(old)).toBe('.');
+    } finally {
+      rmSync(old, { recursive: true, force: true });
+    }
+  });
+
   it('every file a room can hold alone makes a home old (keys.json, room-keys.json, payload-defaults.json, autoupdate.json, triggers.jsonl ...)', () => {
     for (const name of ['keys.json', 'room-keys.json', 'payload-defaults.json', 'autoupdate.json', 'triggers.jsonl', ...ROOM_STATE_FILES]) {
       const old = mkdtempSync(join(tmpdir(), 'gng-old-'));

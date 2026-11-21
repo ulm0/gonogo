@@ -26,6 +26,8 @@ import {
   createLogger,
   nullLogger,
   AGENTS_DIR,
+  KNOWLEDGE_DIR,
+  KNOWLEDGE_PROPOSALS_DIR,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
 import { createRitualTemplate } from './ritual.js';
@@ -1047,10 +1049,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     });
     const recorder = createRecorder(roots, env);
     // Knowledge (docs/features/knowledge.md): the Director's accepted claims live in the supervisor's home (GONOGO_KNOWLEDGE_DIR) and are shared by the rooms of an install; what agents propose stays in this room
-    const knowledgeStore = createKnowledgeStore({ dir: env.GONOGO_KNOWLEDGE_DIR || join(home.dir, 'knowledge'), now: io.now, parseLegs, log: log.child('knowledge') });
+    const knowledgeStore = createKnowledgeStore({ dir: env.GONOGO_KNOWLEDGE_DIR || join(home.dir, KNOWLEDGE_DIR), now: io.now, parseLegs, log: log.child('knowledge') });
     const knowledge = createKnowledge({
       store: knowledgeStore,
-      proposals: createProposalStore({ dir: join(home.dir, 'knowledge-proposals'), now: io.now, parseLegs }),
+      proposals: createProposalStore({ dir: join(home.dir, KNOWLEDGE_PROPOSALS_DIR), now: io.now, parseLegs }),
       git: createSafeGit({ env }),
       engine: createAnchorEngine({ now: io.now, log: log.child('anchor engine'), env }),
       parseLegs,

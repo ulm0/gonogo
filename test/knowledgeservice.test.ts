@@ -28,7 +28,7 @@ let on: boolean;
 let places: Record<string, string>;
 let told: Array<[string, string]>;
 let changed: Array<Record<string, KnowledgeCounts>>;
-let engineCalls: Array<{ root: string; ids: string[] }>;
+let engineCalls: Array<{ root: string; ids: string[]; trial: boolean }>;
 let store: KnowledgeStore;
 let k: Knowledge;
 
@@ -52,8 +52,8 @@ function cloneOf(src: string, name: string): string {
 }
 
 const engine: KnowledgeEngine = {
-  run: async (r, claims) => {
-    engineCalls.push({ root: r, ids: claims.map((c) => c.id) });
+  run: async (r, claims, opts) => {
+    engineCalls.push({ root: r, ids: claims.map((c) => c.id), trial: opts?.trial === true });
     return claims.map((c): ClaimResult => ({ id: c.id, root: r, branch: 'main', commit: 'abc1234', worst: 'stale', legs: [{ state: 'stale', note: 'not confirmed' }], checkedAt: now }));
   },
 };
@@ -192,7 +192,8 @@ describe('what the Director does', () => {
     const repoId = (await k.view({})).repos[0]?.repoId ?? '';
     const after = await k.trial(repoId, 'p1');
     expect(after.proposals[0]?.trial).toMatchObject({ worst: 'stale', id: 'p1' });
-    expect(engineCalls).toEqual([{ root: places.ana, ids: ['p1'] }]);
+    // the trial goes through the engine as a trial: it takes a worker slot like any run, and is not merged with a run of the real claims
+    expect(engineCalls).toEqual([{ root: places.ana, ids: ['p1'], trial: true }]);
     const again = await refused(() => k.trial(repoId, 'p1'));
     expect(again).toMatchObject({ code: 'rate_limited', message: 'checked 0 s ago: again in 30 s' });
     now += KNOWLEDGE_RECHECK_MS;
