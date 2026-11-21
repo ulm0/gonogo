@@ -66,7 +66,7 @@ const POSIX_CLASSES: Record<string, string> = {
  * engine take exponential time. Refused here; the worker's end at the total time is the guard for the shapes this does not see. Scans the source the way the dialect walk
  * does: escapes and bracket expressions are skipped.
  */
-function repeatedGroupWithQuantifier(source: string): boolean {
+function repeatedGroupWithQuantifier(source: string, ignoreCase: boolean): boolean {
   const stack: Array<{ start: number; holds: boolean; alt: boolean }> = []; // where the open group starts, does it hold a quantifier, does it hold an alternation
   const quant = (i: number): { len: number; many: boolean } | null => {
     const c = source[i];
@@ -100,7 +100,7 @@ function repeatedGroupWithQuantifier(source: string): boolean {
       if (group !== undefined && after !== null && after.many) {
         if (group.holds) return true;
         // an alternation in a repeated group can be exponential ((a|aa)+): only alternatives that are plain text of one length are safe
-        if (group.alt && !fixedAlternatives(source.slice(group.start + 1, i))) return true;
+        if (group.alt && !fixedAlternatives(source.slice(group.start + 1, i), ignoreCase)) return true;
       }
       if (group !== undefined && stack.length > 0) {
         const outer = stack[stack.length - 1] as { holds: boolean; alt: boolean };
@@ -116,10 +116,13 @@ function repeatedGroupWithQuantifier(source: string): boolean {
   return false;
 }
 
-/** The text of a group is `a|b|c`: every alternative plain text (no metacharacter, no escape, no bracket) and all the same length, so no two can match the same stretch in different ways. */
-function fixedAlternatives(content: string): boolean {
+/** The text of a group is `a|b|c`: every alternative plain text (no metacharacter, no escape, no bracket), all the same length and all different (case folded under the i flag), so no two can match the same stretch in different ways. */
+function fixedAlternatives(content: string, ignoreCase: boolean): boolean {
   const parts = content.split('|');
-  return parts.every((p) => p !== '' && /^[^.*+?[\]{}()^$\\|]+$/.test(p) && p.length === (parts[0] as string).length);
+  const same = parts.every((p) => p !== '' && /^[^.*+?[\]{}()^$\\|]+$/.test(p) && p.length === (parts[0] as string).length);
+  // and pairwise different (under the i flag, with the case folded): `(a|a)+b` is exponential too, two ways to match each letter
+  const seen = new Set(parts.map((p) => (ignoreCase ? p.toLowerCase() : p)));
+  return same && seen.size === parts.length;
 }
 
 /** Compiles an anchor regex (POSIX ERE with [[:class:]]) to a JS RegExp. Throws AnchorSyntaxError, with the fix in the message. */
@@ -173,8 +176,8 @@ export function compileAnchorRegex(source: string, flags = ''): RegExp {
       throw new AnchorSyntaxError(`POSIX ERE quantifiers are greedy: \`${c}?\` is not lazy here; restructure the pattern`);
     }
   }
-  if (repeatedGroupWithQuantifier(source)) {
-    throw new AnchorSyntaxError('a repeated group that holds a quantifier ((a+)+, (a*)*) or an alternation that is not plain text of one length ((a|aa)+, (a|b+)*) can take exponential time: write it without the nesting, or as two legs');
+  if (repeatedGroupWithQuantifier(source, flags === 'i')) {
+    throw new AnchorSyntaxError('a repeated group that holds a quantifier ((a+)+, (a*)*) or an alternation that is not plain, different texts of one length ((a|aa)+, (a|a)+, (a|b+)*) can take exponential time: write it without the nesting, or as two legs');
   }
   let translated = '';
   let at = 0;

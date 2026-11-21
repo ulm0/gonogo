@@ -78,7 +78,10 @@ describe('the dialect gate (ported)', () => {
     expect(() => compileAnchorRegex('a'.repeat(201))).toThrow(/at most 200/);
     expect(() => compileAnchorRegex('a'.repeat(200))).not.toThrow();
     // an alternation in a repeated group is allowed only as plain alternatives of one length ((a|aa)+ and (a|b+)* are exponential)
-    for (const source of [bad('(a|aa', ')+$'), bad('(foo|foobar', ')+x'), bad('(a|b[0-9]', ')*'), bad('(a|.', ')+'), bad('(ab|a\\.', ')*'), bad('(a||b', ')+'), bad('((a|aa', ')b)+')]) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
+    for (const source of [bad('(a|aa', ')+$'), bad('(foo|foobar', ')+x'), bad('(a|b[0-9]', ')*'), bad('(a|.', ')+'), bad('(ab|a\\.', ')*'), bad('(a||b', ')+'), bad('((a|aa', ')b)+'), bad('(a|a', ')+b'), bad('(ab|ab', ')*c')]) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
+    // the same alternatives that differ only in case are the same under the i flag, and different without it
+    expect(() => compileAnchorRegex(bad('(ab|AB', ')+c'), 'i')).toThrow(/repeated group/);
+    expect(() => compileAnchorRegex(bad('(ab|AB', ')+c'))).not.toThrow();
     for (const source of ['(foo|bar)+', '(a|b|c)*', '(yes|nop)+x', '(foo|foobar)', '(a|aa)?']) expect(() => compileAnchorRegex(source), source).not.toThrow();
     // a bracket expression or an escape is not a group
     expect(() => compileAnchorRegex('[(+]*')).not.toThrow();
