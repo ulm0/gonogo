@@ -1,0 +1,1 @@
+- **Telegram reaches every room, not only main.** A reply to a message a room sent now goes to that room (and the agent that wrote it), and `/room <id> text` writes to another room's boss; a plain message still goes to main. Buttons of phone approvals from rooms other than main, and a room with its own bot, are not covered yet.

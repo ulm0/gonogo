@@ -4335,6 +4335,44 @@ describe('web: REST', () => {
       });
     });
 
+    describe('Telegram and several rooms: the route another room offers an update on (telegramroute.ts)', () => {
+      const KEY = 'c'.repeat(64);
+      const offer = (socketPath: string, headers: Record<string, string>): Promise<{ status: number; body: string }> =>
+        new Promise((resolve, reject) => {
+          const req = httpRequest({ socketPath, method: 'POST', path: '/api/telegram/route', headers: { 'Content-Type': 'application/json', ...headers } }, (res) => {
+            let body = '';
+            res.on('data', (c: Buffer) => (body += c.toString()));
+            res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+          });
+          req.on('error', reject);
+          req.end(JSON.stringify({ update: { update_id: 1, message: { message_id: 2, chat: { id: 777 }, text: 'ok', reply_to_message: { message_id: 55 } } } }));
+        });
+      const take = (): { key: string; take: (body: Record<string, unknown>) => { claimed: boolean }; seen: Array<Record<string, unknown>> } => {
+        const seen: Array<Record<string, unknown>> = [];
+        return { key: KEY, take: (body) => (seen.push(body), { claimed: true }), seen };
+      };
+
+      it('with the key over the local socket it is taken; without the key, with another key, or over the TCP port it is a plain 404 and nothing is taken', async () => {
+        const path = join(mkdtempSync(join(tmpdir(), 'gng-tr-')), 's');
+        const route = take();
+        const { port } = await startWeb({ localSocket: path, telegramRoute: { key: route.key, take: route.take } });
+        expect(await offer(path, { 'x-gonogo-route-key': KEY })).toEqual({ status: 200, body: '{"claimed":true}' });
+        expect(route.seen).toHaveLength(1);
+        expect((await offer(path, {})).status).toBe(404);
+        expect((await offer(path, { 'x-gonogo-route-key': 'd'.repeat(64) })).status).toBe(404);
+        // the TCP port: the key and even the browser token are not enough, the route is for the socket
+        const tcp = await send(port, { method: 'POST', path: '/api/telegram/route', headers: { ...bearer(TOKEN), ...JSON_HEADERS, 'x-gonogo-route-key': KEY }, body: JSON.stringify({ update: {} }) });
+        expect([401, 404]).toContain(tcp.status);
+        expect(route.seen).toHaveLength(1);
+      });
+
+      it('a server that was given no key (not under a supervisor) answers 404 to everything', async () => {
+        const path = join(mkdtempSync(join(tmpdir(), 'gng-tr-')), 's');
+        await startWeb({ localSocket: path });
+        expect((await offer(path, { 'x-gonogo-route-key': KEY })).status).toBe(404);
+      });
+    });
+
     it('relays the hub refusals: a message to the user is 400 and an unknown recipient is 404, both with field to', async () => {
       const { port } = await startWeb();
       const toUser = await api(port, 'POST', '/api/messages', { to: 'user', body: 'x' });

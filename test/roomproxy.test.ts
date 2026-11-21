@@ -233,6 +233,13 @@ describe('rooms proxy: HTTP', () => {
     expect(main.seen.map((x) => x.url)).toEqual(['/uplink/u1', '/dock/hello']);
   });
 
+  it('R1: the route the rooms offer each other Telegram updates on is closed to the browser side, whatever the case, encoding or query, at the root and under a room', async () => {
+    for (const path of ['/api/telegram/route', '/Api/Telegram/Route', '/api/%74elegram/route', '/%61pi/telegram/route', '/api/telegram/route?x=1', '/api/telegram/route/', '/api/telegram/anything', '/r/main/api/telegram/route']) {
+      expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
+    }
+    expect(main.seen).toHaveLength(0);
+  });
+
   it('S1: a reserved name cannot be reached or hidden by encoding, case, empty segments or dots: decoded once, same text for both checks', async () => {
     // refused (400) or the supervisor's own: never main
     for (const path of ['/%72ooms', '/%72ooms/health', '/%69nternal/busy', '/api/%72ooms', '//internal/busy', '/internal//busy', '/rooms//health', '/internal/../api/state', '/./internal', '/r%2Fmain/x', '/%2e%2e/rooms', '/a/%2e%2e/b', '/x%5cy', '/x%00y', '/%']) {
@@ -313,7 +320,7 @@ describe('rooms proxy: HTTP', () => {
     expect(a.seen[0]?.headers.authorization).toBeUndefined();
     expect(a.seen[0]?.headers['x-signature']).toBe('sig');
     expect((await get('/r/a/dock/hello', {}, 'POST', '{}')).status).toBe(200);
-    for (const path of ['/r/a/hook/ana/Stop', '/r/a/mcp', '/r/a/mcp/x', '/r/a/%68ook/ana/Stop', '/r/a/%6Dcp']) {
+    for (const path of ['/r/a/hook/ana/Stop', '/r/a/mcp', '/r/a/mcp/x', '/r/a/%68ook/ana/Stop', '/r/a/%6Dcp', '/r/a/api/telegram/route', '/r/a/Api/%54elegram/route?x=1']) {
       expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
     }
     expect(a.seen).toHaveLength(2);

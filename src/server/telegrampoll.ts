@@ -45,7 +45,7 @@ export interface TelegramPollOptions {
   /** A Telegram uplink exists: it gets the updates by webhook, so polling stays off. */
   hasUplink(): boolean;
   /** One update, as Telegram sent it, with the secret that signs the buttons. Never throws. */
-  deliver(update: Buffer, secret: string): void;
+  deliver(update: Buffer, secret: string): void | Promise<void>;
   fetch: typeof fetch;
   /** Waits; resolves early when the signal aborts. */
   sleep(ms: number, signal: AbortSignal): Promise<void>;
@@ -192,7 +192,7 @@ export function createTelegramPoll(options: TelegramPollOptions): TelegramPoll {
             const id = update.update_id;
             if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0) continue;
             try {
-              options.deliver(Buffer.from(JSON.stringify(update)), key);
+              await options.deliver(Buffer.from(JSON.stringify(update)), key);
             } catch (error) {
               log.warn(`telegram polling: an update was not handled (${safe(error)})`);
             }

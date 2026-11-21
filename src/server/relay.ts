@@ -69,7 +69,7 @@ export interface Relay extends Inbound {
   telegramTarget(): { token: string; to: string } | null;
   /** Where Telegram inbound stands (long polling, webhook, uplink, off), asked at each `view()`. */
   setInbound(read: () => TelegramInbound): void;
-  telegramCall(method: 'answerCallbackQuery' | 'editMessageReplyMarkup', body: Record<string, unknown>): Promise<boolean>;
+  telegramCall(method: 'answerCallbackQuery' | 'editMessageReplyMarkup' | 'sendMessage', body: Record<string, unknown>): Promise<boolean>;
   /** Sends one test message, one try, and waits for the answer. A refusal is in `last`, not thrown. */
   test(service: string): Promise<RelayView>;
   /** Every frame the hub emits: a message to the Director is forwarded. */
