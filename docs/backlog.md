@@ -39,10 +39,8 @@ Plan:
       system settings path); not run against a model, because it is not signed in on the build machine.
 - [x] Add a `custom` provider: any command in a terminal, with an avatar but no messaging. Built (2026-11-16); its
       state is working or idle from its output, and it takes no Max Q slot.
-- [ ] Add further CLIs one at a time (about 1 to 2 hours each; each must be installed and signed in to be
-      verified). Engine Bay added Codex, opencode, Kimi, Copilot, pi, Qwen, Grok, Crush and Cursor Agent from their
-      docs (pi from its help); each still needs a real run. The reference gives the non-Claude CLIs live state through a hook shim per CLI. Qwen has no
-      hooks, so the reference watches its model traffic through a loopback proxy instead.
+- Excluded by the owner (2026-11-21): adding further CLIs. Engine Bay already has Codex, opencode, Kimi, Copilot, pi, Qwen, Grok, Crush
+  and Cursor Agent (from their docs; each still needs a real run).
 - [x] Per-provider model picker, API keys and a CLI installer. Built 2026-11-18: a `--model` field per engine and write-only API keys
       (**Clearance**, `keys.json`), and **Pad Check** (`gonogo doctor`, the Engine Bay list): it finds each CLI and prints the vendor's
       install command, but gonogo never runs an installer. Tested with the stand-in agent only (`docs/engine-bay-spec.md`).
@@ -57,7 +55,7 @@ Plan:
 
 ## 3. Memory
 
-- [ ] Semantic search over agent memory (the reference wraps the MemPalace CLI). Not built: it needs an embedding model that gonogo does not ship, and calling the Mission Log's word search "semantic" would be untrue.
+- [ ] *In progress (2026-11-21).* Semantic search over agent memory (the reference wraps the MemPalace CLI). Not built: it needs an embedding model that gonogo does not ship, and calling the Mission Log's word search "semantic" would be untrue.
 - [x] Knowledge graph and its panel. Built 2026-11-18 as the **Star Chart** (the Mission Log as a graph).
 - [x] Reflection: summarising `memory.md` so that it does not grow without bound. Built 2026-11-18 as **Mass Budget**: REFLECT asks the agent to condense it; gonogo keeps one copy and never writes the file.
 
@@ -69,7 +67,7 @@ Plan:
       or Gemini CLI agent on hold through Redline's machinery (Escape if working, mail held) until RESUME
       (`docs/telemetry-spec.md`). Tested with the stand-in agent only.
 - [x] Workers in git worktrees *(inferred)*. Built (2026-11-18): the `Own git worktree` box, `docs/features/worktrees.md`.
-      Tested with real git and the stand-in agent only. Not built: a boss's `hire_agent` carrying the setting.
+      Tested with real git and the stand-in agent only. Open, *in progress (2026-11-21)*: a boss's `hire_agent` carrying the setting.
 - [x] Phone approvals through Claude Code's `/remote-control`. Built (2026-11-18) as two paths chosen in Flight Rules:
       signed Telegram GO/NO-GO buttons, and `--remote-control` per agent. `/remote-control` itself cannot carry
       approvals (`docs/features/phone-approvals.md`). Tested with a fake Telegram and the stand-in agent only.
@@ -93,15 +91,15 @@ tracked. Only what is still missing stays open here.
       become messages. gonogo never writes to GitHub; an agent that must open a PR uses its own `git` or an MCP server.
       Not tried against a real GitHub.
 - [x] Webhooks. Built 2026-11-17 as **Uplink**: a signed `POST /uplink/<id>` that reaches an agent as a message.
-- [ ] A tunnel so that outside services can reach the machine *(inferred)*. Not built: gonogo ships none.
-      `docs/https.md` and the Uplink page describe your own HTTPS reverse proxy that forwards only `/uplink/`.
+- [x] A tunnel so that outside services can reach the machine *(inferred)*. Built (0.8.0): Compose overlays for Tailscale, Cloudflare, ngrok and
+      Caddy, and `gonogo expose` ([Expose](features/expose.md), `docs/https.md`).
 - [x] Triggers. Built 2026-11-17: **Launch Window** (cron schedules) and **Uplink** (webhooks) start work by themselves.
 - [x] History of triggers. Built (0.7.0): one append-only log per room of every uplink delivery, polled Telegram update,
       schedule run and Docking call, with a HISTORY tab in Launch Window (`docs/features/triggers.md`).
-- [ ] Integrations registry, skills tab and MCP defaults. Only part is built: **Payload** sets MCP servers and skills
+- [ ] *In progress (2026-11-21).* Integrations registry, skills tab and MCP defaults. Only part is built: **Payload** sets MCP servers and skills
       per agent from text you write. Defaults for every agent are built (Flight Rules, PAYLOAD DEFAULTS). Missing: a list of known servers and skills to pick from, and a skills tab apart from the hire form.
 
-- [ ] Telegram Mini App *(parked by the owner, 2026-11-19)*: a menu button of the Relay bot opens gonogo's page inside Telegram, signed in by the Mini App's `initData` (HMAC with the bot token) for the Director's Telegram user id only. Needs a public https address (`gonogo expose`), an RSO decision on whether `initData` counts as both factors (anyone with the bot token can sign it), a short lifetime and a Downlink note per sign-in. No separate app: the same page, with Telegram's theme.
+- Excluded by the owner (2026-11-21): Telegram Mini App (parked 2026-11-19): a menu button of the Relay bot opening gonogo's page inside Telegram.
 ## 7. Cost and safety
 
 - [x] Cost and usage tracking with pricing. Built in 0.3 (the ledger with input, output and cache apart, the price table with its source date and the owner's own rows, the DOLLARS meter, budgets, the 14-day chart, cost per mission and task) and extended in 0.7: `GET /api/cost`, the table by kind of token, the engine's own "reported" figure beside the estimate, a room's estimate for today in the room list. See [Cost](features/cost.md).
@@ -253,5 +251,15 @@ Order, one feature per design and commit:
 
 Also needed for an open-source release, without a name (built 2026-11-17, `docs/release-readiness-spec.md`): a version and
 migrations for the saved state, a guide for exposing gonogo behind HTTPS (`docs/https.md`), a short README and a
-`CONTRIBUTING.md`. Still open, only when the owner says so: publishing the npm package and the image, and the `repository`,
-`author`, `homepage` and `bugs` fields of `package.json`.
+`CONTRIBUTING.md`. Published (2026-11-21): the npm package `@ulm0/gonogo`, the image on ghcr.io and Homebrew; `package.json` has
+`repository`, `homepage`, `bugs` and `author`.
+
+## 12. Knowledge (built 0.10.0 and 0.11.0)
+
+What the room knows about a project, kept outside the repository and never read by a model on its own. Specs: `docs/door-spec.md`, `docs/knowledge-spec.md`.
+
+- [x] **Room rules** for every engine, with a pointer to the project's `AGENTS.md` (0.10.0): [Room rules](features/door.md).
+- [x] **Closing ritual**: a mission can carry a checklist for its ending, copied from the room's template; only the Director ticks it ([Missions](features/missions.md), [Flight Rules](features/flight-rules.md)).
+- [x] **Log anchors**: a Mission Log entry can tie itself to literal text in a repository and says when it is not confirmed ([Knowledge anchors](features/knowledge-anchors.md)).
+- [x] **Claims store** (0.11.0): claims about a repository, accepted by the Director, shared by every room of the install ([Knowledge](features/knowledge.md)).
+- [x] **Export and import** of the claims and rituals, with aliases, on the command line ([Knowledge](features/knowledge.md#export-import-aliases-command-line)).
