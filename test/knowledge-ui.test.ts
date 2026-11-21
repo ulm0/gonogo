@@ -105,6 +105,14 @@ describe('the repository card', () => {
     expect(draw(repo({ results: [] }))).toContain('Not checked yet.');
     expect(draw(repo({ claims: [claim({ diagnostics: [{ line: 3, message: 'unknown mode' }] })] }))).toContain('Line 3: unknown mode');
   });
+  it('a claim of a shallow clone says "not checked (shallow clone)", not "not checked yet": it is not waiting, it cannot run', () => {
+    const html = draw(repo({ provisional: true, claims: [claim({ source: 'repo' })], results: [] }));
+    expect(html).toContain('Not checked (shallow clone)');
+    expect(html).not.toContain('Not checked yet.');
+    // a claim with no anchor is still "never checked", and a repo that is not provisional is still "not checked yet"
+    expect(draw(repo({ provisional: true, claims: [claim({ legs: [] })], results: [] }))).toContain('No anchor: never checked.');
+    expect(draw(repo({ results: [] }))).toContain('Not checked yet.');
+  });
   it('a proposal is "unreviewed", says who and where, offers a trial, Accept and Reject, and shows the trial the Director ran', () => {
     const html = draw(repo({ proposals: [proposal(), proposal({ id: 'p2', trial: result({ id: 'p2', worst: 'ok' }) })] }));
     expect(html).toContain('unreviewed');

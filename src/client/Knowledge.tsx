@@ -146,7 +146,7 @@ function ClaimRow({ repo, claim, onSaved }: { repo: KnowledgeRepo; claim: Claim;
       )}
       {claim.state === 'active' &&
         (results.length === 0 ? (
-          <p className="hint">{claim.legs.length === 0 ? 'No anchor: never checked.' : 'Not checked yet.'}</p>
+          <p className="hint">{claim.legs.length === 0 ? 'No anchor: never checked.' : repo.provisional ? 'Not checked (shallow clone): its history is cut, so gonogo cannot tell which repository this is.' : 'Not checked yet.'}</p>
         ) : (
           <ul className="know-results">
             {results.map((r) => (
