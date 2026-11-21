@@ -47,7 +47,8 @@ import { DetailChips } from './DetailChips.js';
 import { EditRoomKey } from './EditRoomKey.js';
 import { LayoutPop } from './NextLayout.js';
 import { NEXT } from './next.js';
-import { setNext, useNext } from './nextState.js';
+import { useNext } from './nextState.js';
+import { TerminalBar } from './NextTerminal.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
 import { AgentTelemetry } from './TelemetryPanel.js';
@@ -844,7 +845,7 @@ export function NextOperations({ phone }: { phone: boolean }): ReactElement {
     <section className="operations module next-ops" aria-label="Consoles">
       <div className="next-ops-head">
         <h2 className="label">CONSOLES</h2>
-        <span className="hint">{staffedText(staffed.length)}</span>
+        <span className="hint">{staffed.length} staffed · {open.length} open {open.length === 1 ? 'seat' : 'seats'}</span>
         <span className="topbar-grow" />
         <button type="button" className="btn" data-kind="primary" onClick={() => openHire()}>
           + Staff a console
@@ -877,19 +878,5 @@ export function NextRail(): ReactElement {
         ) : null,
       )}
     </nav>
-  );
-}
-
-/** The toolbar over the terminal: it gives the terminal the room (a rail of names on the left) and takes it back. */
-function TerminalBar(): ReactElement {
-  const expanded = useNext((s) => s.expanded);
-  return (
-    <div className="next-termbar" role="toolbar" aria-label="Terminal">
-      <span className="hint">Terminal</span>
-      <span className="topbar-grow" />
-      <button type="button" className="btn" data-kind="quiet" aria-pressed={expanded} onClick={() => setNext((s) => ({ ...s, expanded: !s.expanded }))}>
-        {expanded ? 'Back to the room' : 'Expand'}
-      </button>
-    </div>
   );
 }

@@ -173,6 +173,12 @@ async function next(page: Page, group: string): Promise<void> {
   await page.locator('.next-topbar').waitFor({ timeout: 30_000 });
   await page.locator('.lamp[data-link="up"]').waitFor({ timeout: 30_000 }).catch(() => undefined);
   await shoot(page, group, 'room', true);
+  if (group.endsWith('phone')) {
+    await view(page, group, 'terminal select', async () => {
+      await page.getByRole('button', { name: 'Select', exact: true }).click({ timeout: 3000 });
+    });
+    await page.getByRole('button', { name: 'Close' }).click({ timeout: 3000 }).catch(() => undefined);
+  }
   await view(page, group, 'status strip: mission chip open', async () => {
     await page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 });
   });
@@ -193,6 +199,10 @@ async function next(page: Page, group: string): Promise<void> {
     await page.getByRole('button', { name: /^Focus/ }).click({ timeout: 3000 });
     await page.keyboard.press('Escape');
   }, true);
+  // back to the standard layout: it is remembered by the browser, and every later shot should show the same strip
+  await page.getByRole('button', { name: 'Layout of the room' }).click({ timeout: 3000 }).catch(() => undefined);
+  await page.getByRole('button', { name: /^Standard/ }).click({ timeout: 3000 }).catch(() => undefined);
+  await page.keyboard.press('Escape');
   await view(page, group, 'work menu', async () => {
     const work = page.getByRole('button', { name: 'Work' });
     await work.last().click({ timeout: 3000 });
@@ -202,9 +212,17 @@ async function next(page: Page, group: string): Promise<void> {
     await patch(page, 'ana');
     await page.locator('.xterm-rows').first().waitFor({ timeout: 10_000 });
   }, true);
+  await view(page, group, 'copy menu', async () => {
+    await page.getByRole('button', { name: 'Copy' }).first().click({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await view(page, group, 'find open', async () => {
+    await page.getByRole('button', { name: 'Find', exact: true }).click({ timeout: 3000 });
+  });
   await view(page, group, 'console expanded', async () => {
     await page.getByRole('button', { name: 'Expand' }).click({ timeout: 3000 });
     await page.locator('.next-rail').waitFor({ timeout: 3000 });
+    await page.waitForTimeout(1200); // the terminal refits after the layout moves
   }, true);
   await view(page, group, 'flight rules grouped', async () => {
     await page.getByRole('button', { name: 'Back to the room' }).click({ timeout: 3000 }).catch(() => undefined);

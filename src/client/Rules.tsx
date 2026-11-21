@@ -35,6 +35,7 @@ import { openConsole, openEdit, showLivery, showRoom, showRules, showWindow, use
 import { legendOf } from './wall.js';
 import { MaxQ, Propellant } from './WallView.js';
 import { NEXT } from './next.js';
+import { NextRow, useValue } from './NextRow.js';
 import './loop.css';
 import './rules.css';
 
@@ -162,6 +163,15 @@ export function FlightRules(): ReactElement {
   const { legends } = useSeats();
   const livery = useStore((s) => s.livery);
   const heading = useRef<HTMLHeadingElement | null>(null);
+  const [openGroup, setOpenGroup] = useState('room');
+  const model = useValue(() => api.modelDefaults().then((m) => `${m.engine ?? 'claude'}${m.effort ? `, effort ${m.effort}` : ''}`));
+  const perms = useValue(() => api.permissionDefaults().then((p) => `${Object.values(p.permissions as Record<string, unknown>).flat().length} rules`));
+  const payload = useValue(() => api.payloadDefaults().then((p) => `${p.mcpServers.length} servers, ${p.skills.length} skills`));
+  const sub = useValue(() => api.subagentSettings().then((x) => (x.mode === 'limit' ? `at most ${x.limit}` : x.mode)));
+  const coauthor = useValue(() => api.coauthorSettings().then((c) => (c.enabled ? 'co-author line on' : 'co-author line off') + (c.prFooter ? ', PR footer on' : '')));
+  const auto = useValue(() => api.autoUpdate().then((a) => (a.enabled ? 'on' : 'off')));
+  const version = useStore((s) => s.info?.version ?? '');
+  const off = useStore((s) => s.features);
   const current = useMarks();
   const liveryBlock = (
     <section className="module rules-block" aria-labelledby={`${titleId}-look`}>
@@ -223,9 +233,13 @@ export function FlightRules(): ReactElement {
   useEffect(() => heading.current?.focus(), []);
   if (NEXT) {
     const G = ({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement => (
-      <section className="next-group" id={`${titleId}-g-${id}`} aria-label={title}>
-        <h2 className="next-group-title">{title}</h2>
-        <div className="next-group-body">{children}</div>
+      <section className="next-group" id={`${titleId}-g-${id}`} aria-label={title} data-open={openGroup === id || undefined}>
+        <h2 className="next-group-title">
+          <button type="button" className="btn" data-kind="quiet" aria-expanded={openGroup === id} onClick={() => setOpenGroup(openGroup === id ? '' : id)}>
+            {title} {openGroup === id ? '▾' : '▸'}
+          </button>
+        </h2>
+        {openGroup === id && <div className="next-group-body">{children}</div>}
       </section>
     );
     const groups: ReadonlyArray<[string, string]> = [['room', 'Room'], ['agents', 'Agents'], ['budget', 'Budget and limits'], ['auto', 'Automation and connections'], ['knowledge', 'Knowledge'], ['security', 'Security'], ['system', 'System and update']];
@@ -241,18 +255,31 @@ export function FlightRules(): ReactElement {
         </header>
         <nav className="next-group-nav" aria-label="Groups of settings">
           {groups.map(([id, title]) => (
-            <a key={id} className="btn" data-kind="quiet" href={`#${titleId}-g-${id}`} onClick={(e) => { e.preventDefault(); document.getElementById(`${titleId}-g-${id}`)?.scrollIntoView({ block: 'start' }); }}>
+            <a key={id} className="btn" data-kind="quiet" href={`#${titleId}-g-${id}`} onClick={(e) => { e.preventDefault(); setOpenGroup(id); requestAnimationFrame(() => document.getElementById(`${titleId}-g-${id}`)?.scrollIntoView({ block: 'start' })); }}>
               {title}
             </a>
           ))}
         </nav>
         <G id="room" title="Room">{liveryBlock}<TabNameBlock /><RoomRulesBlock /><RitualTemplateBlock />{browserBlock}</G>
-        <G id="agents" title="Agents">{consolesBlock}<ModelDefaultsBlock /><PermissionDefaultsBlock /><PayloadDefaultsBlock /><SkillsBlock /><SubagentsBlock /><CoauthorBlock /></G>
+        <G id="agents" title="Agents">
+          <NextRow name="Consoles" now={`${list.length} staffed`}>{consolesBlock}</NextRow>
+          <NextRow name="Engine, model and effort" now={model}><ModelDefaultsBlock /></NextRow>
+          <NextRow name="Tool permissions" now={perms}><PermissionDefaultsBlock /></NextRow>
+          <NextRow name="Payload: servers and skills" now={payload}><PayloadDefaultsBlock /></NextRow>
+          <NextRow name="Skills registry" now="see Edit"><SkillsBlock /></NextRow>
+          <NextRow name="Subagents" now={sub}><SubagentsBlock /></NextRow>
+          <NextRow name="Co-author and PR footer" now={coauthor}><CoauthorBlock /></NextRow>
+        </G>
         <G id="budget" title="Budget and limits">{maxqOn && <MaxQ />}<Propellant /></G>
         <G id="auto" title="Automation and connections">{launchBlock}<StartupBlock /></G>
         <G id="knowledge" title="Knowledge"><KnowledgeBlock /><SemanticBlock /></G>
         <G id="security" title="Security"><AccountBlock /><RoomKeysBlock /><PhoneApprovals /><AllStopBlock /></G>
-        <G id="system" title="System and update"><VersionCheckBlock /><AutoUpdateBlock /><ReloadBlock /><FeaturesBlock /></G>
+        <G id="system" title="System and update">
+          <NextRow name="Version and update check" now={version === '' ? null : `${version}`}><VersionCheckBlock /></NextRow>
+          <NextRow name="Update by itself" now={auto}><AutoUpdateBlock /></NextRow>
+          <NextRow name="Reload after an update" now="on request"><ReloadBlock /></NextRow>
+          <NextRow name="Features" now={off.length === 0 ? 'all on' : `${off.length} switched off`}><FeaturesBlock /></NextRow>
+        </G>
       </section>
     );
   }

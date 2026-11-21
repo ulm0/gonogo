@@ -76,3 +76,23 @@
 @media (max-width: 700px) {
   .next-pop[data-align] { left: 16px; right: 16px; }
 }
+.next-termbar { flex-wrap: wrap; position: relative; }
+.next-find { display: flex; flex-basis: 100%; gap: 6px; }
+.next-find .input { flex: 1; min-width: 0; }
+.next-select { position: fixed; inset: 12px; z-index: 40; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--panel); }
+.next-select pre { flex: 1; margin: 0; overflow: auto; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.next-phone-term { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.next-room[data-phone] .term-wrap { min-height: 240px; }
+.next-row { border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); }
+.next-row > summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 12px; cursor: pointer; list-style: none; }
+.next-row > summary::-webkit-details-marker { display: none; }
+.next-row-name { font-weight: 600; flex: 1 1 200px; }
+.next-row-now { flex: 1 1 200px; color: inherit; opacity: 0.8; }
+.next-row-edit { pointer-events: none; }
+.next-row-body { padding: 8px 12px 12px; }
+.next-row-body .module { border: 0; box-shadow: none; padding: 0; background: none; }
+.next-panels { align-items: start; }
+.next-group-title { margin: 0; }
+@media (max-width: 700px) {
+  .next-pop, .next-pop[data-up] { top: auto; bottom: 72px; max-height: calc(100vh - 150px); }
+}
