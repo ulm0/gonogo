@@ -87,10 +87,13 @@ step "Pull the two images ($IMAGE:$FROM, and :latest which must be $TO)"
 docker pull -q "$IMAGE:$FROM" >/dev/null
 # the update pulls the container's own MOVING tag: the container runs from :latest, which here is FROM until the pull replaces it
 docker tag "$IMAGE:$FROM" "$IMAGE:latest"
+# images through 0.11.0 say "v0.11.0" (the git tag), later ones the plain number
 label=$(docker image inspect "$IMAGE:$FROM" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+label=${label#v}
 [ "$label" = "$FROM" ] || fail "the image tagged $FROM says it is version '$label'"
 docker pull -q "$IMAGE:latest" >/dev/null
 latest_label=$(docker image inspect "$IMAGE:latest" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+latest_label=${latest_label#v}
 [ "$latest_label" = "$TO" ] || fail ":latest of $IMAGE is version '$latest_label', not $TO (the update takes the moving tag; run this when TO is the latest release)"
 # put FROM back under :latest for the start; the update pulls the registry's again
 docker tag "$IMAGE:$FROM" "$IMAGE:latest"
