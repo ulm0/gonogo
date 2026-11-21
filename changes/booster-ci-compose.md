@@ -1,0 +1,1 @@
+- **CI: every compose file is checked.** CI runs `docker compose config` on `compose.yaml` and on it with each `compose.*.yaml` overlay (placeholder values, nothing started), so a broken overlay fails the pull request. No change for users.
