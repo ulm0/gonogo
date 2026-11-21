@@ -1,0 +1,8 @@
+{
+  "name": "gonogo-multivac-conformance-tool",
+  "private": true,
+  "description": "The multivac that scripts/multivac-conformance.mjs runs, with its dependencies locked (npm ci --ignore-scripts). Move the version here and in the script together, then refresh the lockfile with npm install --package-lock-only --ignore-scripts.",
+  "dependencies": {
+    "multivac": "0.15.0"
+  }
+}
