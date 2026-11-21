@@ -26,6 +26,8 @@ env HOME="$tmp" NPM_CONFIG_USERCONFIG="$tmp/npmrc" pnpm pack --pack-destination 
 env HOME="$tmp" NPM_CONFIG_USERCONFIG="$tmp/npmrc" pnpm dlx "file:$(ls "$tmp"/*.tgz)" --port 0
 ```
 
+**File names.** Never add two files whose names differ only by case (`Missions.tsx` beside `missions.ts`): macOS and Windows disks cannot tell them apart and an import finds the wrong one. A component's helpers are named `<name>Model.ts` (`missionsModel.ts`). `test/case-collisions.test.ts` fails on a pair.
+
 ## Releasing
 
 The npm package is `@ulm0/gonogo` (the unscoped `gonogo` on npm is another project); the command it installs is `gonogo`. `.github/workflows/release.yml` publishes it, with provenance, and creates the GitHub Release with generated notes. It runs on a pushed `v*` tag, or by hand (Actions > Release > Run workflow) with the name of a tag that already exists. It checks out that tag, runs the checks above, and stops when the tag is not `v` plus the `version` of `package.json` or the package name is not `@ulm0/gonogo`. A version like `1.2.0-rc.1` goes to the npm dist-tag `next`. The same tag also makes `.github/workflows/image.yml` push the image.

@@ -9,7 +9,7 @@ import type { Claim, ClaimResult, KnowledgeRepo, KnowledgeView, Proposal } from 
 import * as api from './api.js';
 import { useStore } from './store.js';
 import './knowledge.css';
-import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledge.js';
+import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledgeModel.js';
 
 /** One action at a time, with what failed: the message, and for a refused recheck or trial how long to wait (the server's `retryAfter`). */
 function useRun(): { busy: boolean; error: string | null; retry: number | undefined; run(action: () => Promise<unknown>): void } {

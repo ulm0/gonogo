@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentView, ReviewLine, ReviewNote, ReviewVerdict } from '../src/shared/protocol.js';
 import { REVIEW_BODY_MAX_CHARS } from '../src/shared/protocol.js';
-import { actionProblems, authorText, bodyProblem, commitGate, countThreads, emptyNote, filterThreads, lineDomId, lineKey, noteRequest, numberOf, outdatedThreads, peerCandidates, placeText, sideOf, stepNote, threadsByLine, threadsOf, verdictText } from '../src/client/review.js';
+import { actionProblems, authorText, bodyProblem, commitGate, countThreads, emptyNote, filterThreads, lineDomId, lineKey, noteRequest, numberOf, outdatedThreads, peerCandidates, placeText, sideOf, stepNote, threadsByLine, threadsOf, verdictText } from '../src/client/reviewModel.js';
 
 const note = (id: string, patch: Partial<ReviewNote> = {}): ReviewNote => ({
   id, agent: 'ana', path: 'a.ts', side: 'new', line: 3, text: 'x', body: `b${id}`, tone: 'info', author: 'user', status: 'open', createdAt: Number(id.slice(2)), updatedAt: 1, place: { state: 'exact', line: 3 }, ...patch,
