@@ -169,7 +169,7 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     // the switch is on: the block says nothing about being off, and shows no error
     const knowledge = page.locator('section', { has: page.getByRole('heading', { name: 'KNOWLEDGE', exact: true }) });
     await expect(knowledge.getByText('Turn on Knowledge in the Features block')).toHaveCount(0);
-    await expect(knowledge.getByRole('alert')).toHaveCount(0);
+    expect(await knowledge.getByRole('alert').allTextContents(), 'the Knowledge block shows an error').toEqual([]);
     expectClean('Flight Rules');
   });
 
