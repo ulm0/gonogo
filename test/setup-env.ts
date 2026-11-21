@@ -2,3 +2,6 @@
 // agents get GH_CONFIG_DIR), and the Clean Room tests then asked the stand-in docker to `inspect` a container it does not know. A test that needs one
 // of them sets it itself (cleanroom.test.ts passes its own env; launcher.test.ts stubs GH_CONFIG_DIR).
 delete process.env.GONOGO_CLEANROOM_NETWORK;
+// And a test must not read the files of the container it runs in: selfid.ts would find THAT container's id and refuse the fake Docker's answers.
+import { selfProbe } from '../src/server/selfid.js';
+selfProbe.current = { mountinfo: () => '', cgroup: () => '0::/', macs: () => [], ips: () => [] };

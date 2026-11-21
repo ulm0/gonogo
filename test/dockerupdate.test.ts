@@ -226,6 +226,17 @@ describe('the version label of an image (every published image through 0.11.0 sa
   });
 });
 
+describe('this container is found when its hostname is not its id (the Update key was off with "No such container")', () => {
+  it('dockerUpdateStatus names the reason when nothing tells which container is this one, and finds it by the ids of its own files otherwise', async () => {
+    const f = fake();
+    const status = await dockerUpdateStatus(f.call, 'not-the-id-' + ME.slice(0, 4), { mountinfo: () => '', cgroup: () => '0::/', macs: () => [], ips: () => [] });
+    expect(status.ready).toBe(false);
+    expect(status.text).toMatch(/could not be told from the others.*the hostname not-the-id-.* is not a container id/);
+    const found = await dockerUpdateStatus(f.call, 'not-the-id-' + ME.slice(0, 4), { mountinfo: () => '', cgroup: () => `0::/docker/${ME}`, macs: () => [], ips: () => [] });
+    expect(found).toEqual({ ready: true, text: 'ready' });
+  });
+});
+
 describe('the pull and the checks', () => {
   it('pulls the container\'s own tag and returns the new image id with both versions', async () => {
     const f = fake();

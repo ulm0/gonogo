@@ -75,7 +75,9 @@ export function installNote(kind: InstallKind, canUpdate: boolean, docker?: { re
   switch (kind) {
     case 'docker':
       if (docker?.ready === true) return 'Installed as a container image with the Docker socket: Update pulls this container\'s own tag and recreates it. The agents stop and the page reconnects.';
-      return canUpdate ? 'Installed as a container image; an update hook is set, so Update asks it to pull and restart.' : 'Installed as a container image: a container cannot replace its own image, so run the command on the host.';
+      // the reason the socket route is off, in the words of dockerUpdateStatus, so the Director sees why and not only what to run instead
+      const why = docker === undefined || docker.text === '' ? '' : ` Docker self-update is off here: ${docker.text}.`;
+      return canUpdate ? `Installed as a container image; an update hook is set, so Update asks it to pull and restart.${why}` : `Installed as a container image: a container cannot replace its own image, so run the command on the host.${why}`;
     case 'npm':
       return 'Installed with npm (an rpm or other package under lib/node_modules reads as npm: there is no gonogo rpm).';
     case 'pnpm':
