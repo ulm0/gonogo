@@ -13,6 +13,7 @@ import { cellKey, seat } from './room.js';
 import { autoArrange, cellAt, dragMove, dragResize, EDIT_GAP_PX, EDIT_ROW_PX, hiddenBlocks, keyStep, liveStrips, neighbour, pitchOf, SORT_LABELS, swapDesks } from './roomedit.js';
 import type { EditMode } from './roomedit.js';
 import { Commissioning } from './Rules.js';
+import { RoomScreen } from './RoomScreen.js';
 import { Operations, SelectedConsole, YourConsole, useAgentList } from './RoomView.js';
 import { setEditingRoom, store, useStore } from './store.js';
 import { useRun } from './WallView.js';
@@ -29,19 +30,7 @@ export function RoomDesktop(): ReactElement {
   const editing = useStore((s) => s.editingRoom);
   if (editing) return <RoomEditor />;
   if (layout === null) {
-    return (
-      <>
-        <Wall />
-        <main className="room">
-          <div className="room-main">
-            <Commissioning />
-            <Operations phone={false} />
-            <YourConsole />
-          </div>
-          <SelectedConsole />
-        </main>
-      </>
-    );
+    return <RoomScreen phone={false} />;
   }
   return <RoomGrid blocks={layout.blocks} />;
 }

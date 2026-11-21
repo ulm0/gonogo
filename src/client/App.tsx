@@ -11,6 +11,7 @@ import { BlackBox } from './BlackBox.js';
 import { FlightPlan } from './FlightPlan.js';
 import { Missions } from './Missions.js';
 import { RoomDesktop } from './RoomLayout.js';
+import { RoomScreen } from './RoomScreen.js';
 import { Hangar } from './Hangar.js';
 import { HireForm } from './HireForm.js';
 import { LaunchWindow } from './LaunchWindow.js';
@@ -19,18 +20,17 @@ import { MissionLog } from './MissionLog.js';
 import { Recorder } from './Recorder.js';
 import { PlotBoard } from './PlotBoard.js';
 import { PatchPanel } from './PatchPanel.js';
-import { Commissioning, FlightRules } from './Rules.js';
+import { FlightRules } from './Rules.js';
 import { isPanelKey, VIEW_FEATURE } from './shell.js';
 import { unreadText } from './inbox.js';
 import { activeOf, activeText } from './plan.js';
-import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats } from './RoomView.js';
+import { PhoneConsoleScreen, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
 import { CheckNow } from './CheckNow.js';
 import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useFeature, useStore, writeStored } from './store.js';
 import { agentCounts, updateDialogText } from './selfupdate.js';
 import { BASE, MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
 import { copyText } from './uplink.js';
-import { Wall } from './WallView.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import logo from '../../docs/brand/lockup.svg';
 import './shell.css';
@@ -572,16 +572,7 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'blackbox') return <BlackBox />;
   if (view === 'rules') return <FlightRules />;
   if (view === 'missions') return <Missions />;
-  if (phone) {
-    return (
-      <main className="room room-phone">
-        <Wall />
-        <Needs phone />
-        <Commissioning />
-        <Operations phone />
-      </main>
-    );
-  }
+  if (phone) return <RoomScreen phone />;
   return <RoomDesktop />;
 }
 

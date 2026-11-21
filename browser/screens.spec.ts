@@ -11,7 +11,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type BrowserContext, type Page, test } from '@playwright/test';
+import { geometry } from './geometry.js';
+import { type BrowserContext, type Page, expect, test } from '@playwright/test';
 
 test.skip(process.env.SCREENS !== '1', 'screenshots are taken by the screens workflow (SCREENS=1)');
 
@@ -41,6 +42,8 @@ interface Shot {
 }
 const shots: Shot[] = [];
 const missed: string[] = [];
+/** What browser/geometry.ts found wrong in the views that are measured, one line each. */
+const geo: string[] = [];
 let n = 0;
 
 const children: ChildProcess[] = [];
@@ -82,6 +85,11 @@ async function shoot(page: Page, group: string, title: string, fullPage = false)
   } catch (error) {
     missed.push(`${group}: ${title}: ${(error as Error).message.split('\n')[0]}`);
   }
+}
+
+/** The geometry rules (no overlap, no sideways scroll, no clipped text, keys 24 px or 44 on a phone) on the view the page shows now. */
+async function measure(page: Page, group: string, title: string): Promise<void> {
+  for (const problem of await geometry(page, group.endsWith('phone'))) geo.push(`${group}: ${title}: ${problem}`);
 }
 
 /** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
@@ -160,6 +168,7 @@ test.afterAll(async () => {
     (missed.length ? `<h2>Missed</h2><ul>${missed.map((m) => `<li>${m.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '') +
     groups.map((g) => `<h2>${g}</h2><div class="g">${shots.filter((s) => s.group === g).map((s) => `<figure><a href="${s.file}"><img loading="lazy" src="${s.file}" alt=""></a><figcaption>${s.title}</figcaption></figure>`).join('')}</div>`).join('');
   await writeFile(join(OUT, 'index.html'), html);
+  await writeFile(join(OUT, 'geometry.txt'), geo.length === 0 ? 'no geometry problems\n' : geo.join('\n') + '\n');
 });
 
 /** Every view of the app, in the order a person meets them. `full` is the pass after the seed. */
@@ -169,6 +178,12 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await page.locator('.topbar').waitFor({ timeout: 30_000 });
   await page.locator('.lamp[data-link="up"]').waitFor({ timeout: 30_000 }).catch(() => undefined);
   await shoot(page, group, t('room main'), true);
+  if (full) await measure(page, group, 'room main');
+  if (full) {
+    await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 }));
+    await measure(page, group, 'the clock open');
+    await page.keyboard.press('Escape');
+  }
   await view(page, group, t('comms inbox'), async () => {
     await open(page, 'Comms');
     await page.getByRole('tab', { name: /inbox/i }).click({ timeout: 3000 });
@@ -316,5 +331,6 @@ test('screens of the app and the docs', async ({ browser }) => {
     missed.push('docs: not taken (SCREENS_DOCS=1 and a built docs site are needed)');
   }
   await rm(work, { recursive: true, force: true });
+  expect(geo, 'geometry of the measured views (see geometry.txt)').toEqual([]);
 });
 

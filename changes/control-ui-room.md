@@ -1,0 +1,1 @@
+The room view is new: a status strip (the clock, activity, poll, Max Q and fuel as keys that open their panel), the staffed consoles first with the open seats in one row, and the selected console's terminal. The old wall of five boxes comes back as the "Full wall" density in the Layout popover (a later change); until then a room with a saved layout keeps its grid.
