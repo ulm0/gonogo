@@ -133,3 +133,14 @@ describe('Search by meaning', () => {
     expect(stepUpReason('POST', '/api/semantic/test', null)).toBeNull();
   });
 });
+
+describe('stopping and starting rooms', () => {
+  it('asks for the password to stop a room, stop all, start all and remove a room; starting one room does not', () => {
+    expect(stepUpReason('POST', '/api/rooms/docs/stop', null)).toMatch(/stopping a room/);
+    expect(stepUpReason('POST', '/api/rooms/stop-all', null)).toMatch(/every room/);
+    expect(stepUpReason('POST', '/api/rooms/start-all', null)).toMatch(/every room/);
+    expect(stepUpReason('DELETE', '/api/rooms/docs', null)).toMatch(/removing a room/);
+    expect(stepUpReason('POST', '/api/rooms/docs/start', null)).toBeNull();
+    expect(stepUpReason('PATCH', '/api/rooms/docs', { autostart: false })).toBeNull();
+  });
+});

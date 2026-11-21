@@ -940,3 +940,141 @@ describe('the supervisor', () => {
     await expect(fetch(`http://127.0.0.1:${port}/`)).rejects.toThrow();
   }, 40_000);
 });
+
+describe('stop and start rooms through the supervisor (t107)', () => {
+  const json = { 'content-type': 'application/json' };
+  const post = (s: Supervisor, path: string, token: string | null = s.directorToken, method = 'POST', body?: unknown): Promise<Response> =>
+    api(s, path, token, { method, headers: json, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const state = async (s: Supervisor, id: string): Promise<string | undefined> => s.rooms().find((r) => r.id === id)?.state;
+  const boot = async (extraEnv: Record<string, string> = {}): Promise<Supervisor> => {
+    addRoom(home, 'b');
+    addRoom(home, 'c');
+    const s = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', GONOGO_PORT: '1', GONOGO_ALLOWED_HOSTS: 'x', ...extraEnv }, authCosts: { argon2: { memory: 16, passes: 1, parallelism: 1 }, scrypt: { N: 16, r: 1, p: 1 } }, tamperEveryMs: 0 });
+    sup = s;
+    await until(async () => (await state(s, 'main')) === 'running' && (await state(s, 'b')) === 'running' && (await state(s, 'c')) === 'running', 30_000, 'main, b and c');
+    return s;
+  };
+  /** Makes the account, so that API keys exist (a key is refused on an install with no account). */
+  const account = async (s: Supervisor): Promise<void> => {
+    const res = await fetch(`http://127.0.0.1:${s.port}/api/auth/setup`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: `http://127.0.0.1:${s.port}` }, body: new URLSearchParams({ token: s.setupToken ?? '', user: 'director', password: 'correct horse battery staple' }).toString() });
+    expect(res.status).toBe(303);
+  };
+
+  it('stops and starts one room: the answers, the states, autostart unchanged; 404 and 409', async () => {
+    const s = await boot();
+    const stopped = await post(s, '/api/rooms/c/stop');
+    expect(stopped.status).toBe(200);
+    expect(await stopped.json()).toMatchObject({ id: 'c', state: 'stopped', autostart: true });
+    expect(readFileSync(join(home, 'rooms', 'c', 'stopped'), 'utf8')).toBe('graceful');
+    expect((await post(s, '/api/rooms/c/stop')).status).toBe(409);
+    expect(await state(s, 'main')).toBe('running');
+    expect((await post(s, '/api/rooms/nope/stop')).status).toBe(404);
+    expect((await post(s, '/api/rooms/nope/start')).status).toBe(404);
+    const started = await post(s, '/api/rooms/c/start');
+    expect(started.status).toBe(200);
+    expect(await started.json()).toMatchObject({ id: 'c', state: 'starting' });
+    expect((await post(s, '/api/rooms/c/start')).status).toBe(409);
+    await until(async () => (await state(s, 'c')) === 'running');
+    expect(loadRooms(home).find((r) => r.id === 'c')?.autostart).toBe(true);
+    expect((await post(s, '/api/rooms/c/stop', s.directorToken, 'GET')).status).toBe(405);
+  }, 60_000);
+
+  it('answers 401 to no token, a wrong one and an agent-looking one, and does nothing', async () => {
+    const s = await boot();
+    for (const token of [null, 'f'.repeat(64)]) for (const path of ['/api/rooms/c/stop', '/api/rooms/stop-all', '/api/rooms/start-all']) expect((await post(s, path, token)).status).toBe(401);
+    expect(await state(s, 'c')).toBe('running');
+  }, 60_000);
+
+  it('PATCH autostart: kept in rooms.json, refused for main and for a non-boolean; the id stop-all is not a room', async () => {
+    const s = await boot();
+    const off = await post(s, '/api/rooms/c', s.directorToken, 'PATCH', { autostart: false });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ id: 'c', autostart: false });
+    expect(loadRooms(home).find((r) => r.id === 'c')?.autostart).toBe(false);
+    expect(await state(s, 'c')).toBe('running');
+    expect((await post(s, '/api/rooms/main', s.directorToken, 'PATCH', { autostart: false })).status).toBe(400);
+    expect((await post(s, '/api/rooms/c', s.directorToken, 'PATCH', { autostart: 'no' })).status).toBe(400);
+    expect((await post(s, '/api/rooms/c', s.directorToken, 'PATCH', {})).status).toBe(400);
+    expect((await post(s, '/api/rooms', s.directorToken, 'POST', { id: 'stop-all' })).status).toBe(400);
+  }, 60_000);
+
+  it('stop-all and start-all say what was done and what was skipped; a Relief request or an open poll keeps a room running', async () => {
+    const s = await boot({ FAKE_ROOM_RELIEF: '1' });
+    const stopAll = (await (await post(s, '/api/rooms/stop-all')).json()) as { stopped: string[]; skipped: Array<{ id: string; why: string }> };
+    expect(stopAll.stopped).toEqual(['main']); // the stand-in rooms other than main each hold a Relief request
+    expect(stopAll.skipped.map((k) => k.id)).toEqual(['b', 'c']);
+    expect(stopAll.skipped.every((k) => /Relief request waits/.test(k.why))).toBe(true);
+    expect(await state(s, 'b')).toBe('running');
+    const again = (await (await post(s, '/api/rooms/stop-all')).json()) as { stopped: string[]; skipped: unknown[] };
+    expect(again.stopped).toEqual([]);
+    const startAll = (await (await post(s, '/api/rooms/start-all')).json()) as { started: string[] };
+    expect(startAll.started).toEqual(['main']);
+    await until(async () => (await state(s, 'main')) === 'running');
+    const refused = await post(s, '/api/rooms/b/stop');
+    expect(refused.status).toBe(409);
+    expect(JSON.stringify(await refused.json())).toMatch(/Relief request waits/);
+  }, 90_000);
+
+  it('refuses to stop main while it is being moved or an update runs; says so', async () => {
+    const s = await boot({ FAKE_ROOM_UPDATE: 'running' });
+    const blocked = await post(s, '/api/rooms/main/stop');
+    expect(blocked.status).toBe(409);
+    expect(JSON.stringify(await blocked.json())).toMatch(/update is running/);
+    expect(await state(s, 'main')).toBe('running');
+  }, 60_000);
+
+  it('an API key: read and write are refused, full may stop one room but not main and not all; the refusals are audited', async () => {
+    const s = await boot();
+    await account(s);
+    const full = s.auth.addKey('ops', 'full', null, false).secret;
+    const write = s.auth.addKey('w', 'act', null, false).secret;
+    const read = s.auth.addKey('r', 'read', null, false).secret;
+    for (const key of [write, read]) expect((await post(s, '/api/rooms/c/stop', key)).status).toBe(403);
+    expect((await post(s, '/api/rooms/stop-all', full)).status).toBe(403);
+    expect((await post(s, '/api/rooms/main/stop', full)).status).toBe(403);
+    expect(await state(s, 'main')).toBe('running');
+    expect((await post(s, '/api/rooms/c/stop', full)).status).toBe(200);
+    expect(await state(s, 'c')).toBe('stopped');
+    const notices = readFileSync(join(home, 'notices'), 'utf8');
+    expect(notices).toMatch(/key \\"ops\\": stop room c: done/);
+    expect(notices).toMatch(/refused: an API key may not stop every room/);
+  }, 60_000);
+
+  it('a room that does not answer /api/state is refused with 409 until the stop is forced; the audit says so', async () => {
+    const s = await boot({ FAKE_ROOM_NOSTATE: '1' });
+    const refused = await post(s, '/api/rooms/c/stop');
+    expect(refused.status).toBe(409);
+    expect(JSON.stringify(await refused.json())).toMatch(/did not answer/);
+    expect(await state(s, 'c')).toBe('running');
+    // force is for one room: stop-all ignores it and still skips a room that does not answer
+    const all = (await (await post(s, '/api/rooms/stop-all', s.directorToken, 'POST', { force: true })).json()) as { stopped: string[]; skipped: Array<{ id: string; why: string }> };
+    expect(all.skipped.every((k) => /did not answer/.test(k.why))).toBe(true);
+    expect(all.skipped.map((k) => k.id)).toEqual(['b', 'c']);
+    expect(all.stopped).toEqual(['main']); // main answers, so it was stopped: the audit is held until it runs again
+    expect((await post(s, '/api/rooms/main/start')).status).toBe(200);
+    await until(async () => (await state(s, 'main')) === 'running');
+    const forced = await post(s, '/api/rooms/c/stop', s.directorToken, 'POST', { force: true });
+    expect(forced.status).toBe(200);
+    expect(await state(s, 'c')).toBe('stopped');
+    await until(() => existsSync(join(home, 'notices')) && /stop room c: done \(the room did not answer.*by force/.test(readFileSync(join(home, 'notices'), 'utf8')));
+  }, 60_000);
+
+  it('one request at a time per room: two stops at once, one answers 409', async () => {
+    const s = await boot();
+    const both = await Promise.all([post(s, '/api/rooms/c/stop'), post(s, '/api/rooms/c/stop')]);
+    expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
+  }, 60_000);
+
+  it('holds the audit and alerts while main is stopped, and says them once when it is ready; a queued mail is not the supervisor\'s', async () => {
+    const s = await boot();
+    expect((await post(s, '/api/rooms/main/stop')).status).toBe(200);
+    expect(await state(s, 'main')).toBe('stopped');
+    expect((await post(s, '/api/rooms/c/stop')).status).toBe(200); // audited while main is down: held
+    expect((await post(s, '/api/rooms/main/start')).status).toBe(200);
+    await until(async () => (await state(s, 'main')) === 'running');
+    await until(() => existsSync(join(home, 'notices')) && /stop room c: done/.test(readFileSync(join(home, 'notices'), 'utf8')));
+    const lines = readFileSync(join(home, 'notices'), 'utf8').split('\n').filter((l) => /stop room (c|main): done/.test(l));
+    expect(lines.filter((l) => /stop room c: done/.test(l)).length).toBe(1);
+    expect(lines.filter((l) => /stop room main: done/.test(l)).length).toBe(1);
+  }, 60_000);
+});

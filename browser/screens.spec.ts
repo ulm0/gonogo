@@ -370,6 +370,12 @@ test('screens of the app and the docs', async ({ browser }) => {
   missed.push(`info: agents after the seed: ${states.join(', ')}${states.some((x) => x.endsWith('=stopped')) ? '; server output: ' + output.slice(-600).replace(/\s+/g, ' ') : ''}`);
   await setupContext.close();
 
+  await seed('second room', async () => {
+    const maker = await browser.newContext({ storageState: state });
+    await api(maker, 'POST', '/api/rooms', { id: 'docs', name: 'Docs' });
+    await maker.close();
+  });
+
   // every view, light then dark (the livery is the server's, so it is chosen once per scheme), desktop and phone
   for (const scheme of SCHEMES) {
     const chooser = await browser.newContext({ storageState: state });
@@ -381,6 +387,13 @@ test('screens of the app and the docs', async ({ browser }) => {
       const page = await context.newPage();
       await page.goto(`${base}/`);
       await shoot(page, group, 'rooms list', true);
+      await measure(page, group, 'rooms list');
+      await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs' }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop asks first');
+      await page.getByRole('button', { name: 'Keep Docs running' }).click({ timeout: 3000 }).catch(() => undefined);
+      await view(page, group, 'rooms list: stop all asks first', () => page.getByRole('button', { name: 'Stop every room', exact: true }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop all asks first');
+      await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
       await context.close();
     }
