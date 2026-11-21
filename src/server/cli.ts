@@ -26,6 +26,8 @@ import {
   createLogger,
   nullLogger,
   AGENTS_DIR,
+  KNOWLEDGE_DIR,
+  KNOWLEDGE_PROPOSALS_DIR,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
 import { createRitualTemplate } from './ritual.js';
@@ -37,6 +39,12 @@ import { createDownlink } from './downlink.js';
 import { createHub } from './hub.js';
 import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
+import { createAnchorEngine } from './anchorengine.js';
+import { createKnowledge } from './knowledge.js';
+import { createProposalStore } from './knowledgeproposals.js';
+import { createKnowledgeStore } from './knowledgestore.js';
+import { parseLegs } from './knowledgeparse.js';
+import { createSafeGit } from './safegit.js';
 import { checkCleanRoom } from './cleanroom.js';
 import { checkWorktree, removeWorktree, worktreeBranch, worktreePath, worktreeStatus } from './worktree.js';
 import { acquireSupervisorLock, openHome } from './home.js';
@@ -1040,6 +1048,22 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       },
     });
     const recorder = createRecorder(roots, env);
+    // Knowledge (docs/features/knowledge.md): the Director's accepted claims live in the supervisor's home (GONOGO_KNOWLEDGE_DIR) and are shared by the rooms of an install; what agents propose stays in this room
+    const knowledgeStore = createKnowledgeStore({ dir: env.GONOGO_KNOWLEDGE_DIR || join(home.dir, KNOWLEDGE_DIR), now: io.now, parseLegs, log: log.child('knowledge') });
+    const knowledge = createKnowledge({
+      store: knowledgeStore,
+      proposals: createProposalStore({ dir: join(home.dir, KNOWLEDGE_PROPOSALS_DIR), now: io.now, parseLegs }),
+      git: createSafeGit({ env }),
+      engine: createAnchorEngine({ now: io.now, log: log.child('anchor engine'), env }),
+      parseLegs,
+      now: io.now,
+      on: () => features.isOn('knowledge-anchors'),
+      agents: () => hubInstance.views().map((v) => v.name),
+      place: (name) => roots(name).then((r) => r.root).catch(() => null),
+      tell: (agent, text) => void hubInstance.sendFromUser({ to: agent, subject: 'Knowledge', body: text }),
+      changed: (counts) => web?.broadcast({ t: 'knowledge', counts }),
+      log: log.child('knowledge'),
+    });
     const review = audited(createReview({
       dir: home.dir,
       now: io.now,
@@ -1227,7 +1251,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       tabName,
       downlink,
       missionLog,
-      knowledge: async () => {
+      knowledgeAgents: async () => {
         const out: Record<string, number> = {};
         for (const v of hubInstance.views()) {
           const n = await staleFor(v.name, false);
@@ -1235,6 +1259,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         }
         return out;
       },
+      knowledgeStore: knowledge,
       massBudget,
       board: audited(board, audit, BOARD_AUDIT),
       blackBox,
@@ -1298,6 +1323,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the open count of each active mission is seeded here, so the last task done after a restart is announced
     missions.observe(tasks.list());
     await missionLog.load();
+    await knowledgeStore.load();
     await board.load();
     await blackBox.load();
     audit('audit', `gonogo ${version} started`);

@@ -163,6 +163,10 @@ export type { InputEffect };
 export class HubError extends Error {
   readonly code: ApiErrorCode;
   readonly field?: string;
+  /** For rate_limited: the seconds until it may be asked again. */
+  retryAfter?: number;
+  /** For a request with text to parse: what is wrong, with the line. */
+  diagnostics?: Array<{ line: number; message: string }>;
 
   constructor(code: ApiErrorCode, message: string, field?: string) {
     super(message);

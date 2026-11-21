@@ -473,6 +473,15 @@ describe('PR 2: after review', () => {
     expect(env(join(home, 'rooms', 'team')).GONOGO_ROOM).toBe('team');
   }, 30_000);
 
+  it('every room is told where the Knowledge store is: the supervisor\'s own folder, whatever the environment says', async () => {
+    addRoom(home, 'team');
+    await supervise({ GONOGO_KNOWLEDGE_DIR: '/somewhere/else' });
+    await until(() => existsSync(join(home, 'rooms', 'team', 'dump.json')) && existsSync(join(home, 'dump.json')));
+    const env = (dir: string): Record<string, string> => (JSON.parse(readFileSync(join(dir, 'dump.json'), 'utf8')) as { env: Record<string, string> }).env;
+    expect(env(home).GONOGO_KNOWLEDGE_DIR).toBe(join(home, 'knowledge'));
+    expect(env(join(home, 'rooms', 'team')).GONOGO_KNOWLEDGE_DIR).toBe(join(home, 'knowledge'));
+  }, 30_000);
+
   it('a room other than main has no update route: 409, hook or not', async () => {
     const running = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: home, seed: false, allowedHosts: [], agentCmd: [process.execPath, FAKE_CLAUDE], staticDir: null, checkClaude: false, updateCheck: true, roomChild: true, env: { PATH: process.env.PATH ?? '', FAKE_CLAUDE_LOG_DIR: home, GONOGO_ROOM: 'team', GONOGO_UPDATE_HOOK: 'http://hook.example/x' } });
     try {

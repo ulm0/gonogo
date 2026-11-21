@@ -242,6 +242,7 @@ export const FEATURE_TOOLS: Readonly<Record<string, readonly string[]>> = {
   'flight-plan': ['task_list', 'task_create', 'task_update'],
   missions: ['mission_list', 'mission_create', 'mission_update'],
   'mission-log': ['log_write', 'log_search', 'log_read'],
+  'knowledge-anchors': ['knowledge_propose', 'knowledge_list'],
   'plot-board': ['board_read', 'board_write'],
   livery: ['livery_submit'],
   review: ['review_read', 'review_note'],

@@ -1012,6 +1012,13 @@ describe('tokens', () => {
     expect(spec.env.GONOGO_ROOM).toBeUndefined();
   });
 
+  it('a started agent never gets the place of the Knowledge store', async () => {
+    const l = launcher({ env: { ...baseEnv(), GONOGO_KNOWLEDGE_DIR: '/state/knowledge' } });
+    const { spec } = await l.prepareStart(agent(), { generation: 1, flag: null });
+    expect(spec.env.GONOGO_KNOWLEDGE_DIR).toBeUndefined();
+    expect(JSON.stringify(spec)).not.toContain('/state/knowledge');
+  });
+
   it('answers null for anything that is not a live token', () => {
     const l = launcher();
     for (const value of ['', ' ', 'x'.repeat(100_000), '__proto__', 'constructor', 'toString', '\u0000']) {

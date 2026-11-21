@@ -127,6 +127,7 @@ export default defineConfig({
           { text: 'The phone app', link: '/features/mobile' },
           { text: 'Mission Log', link: '/features/mission-log' },
           { text: 'Star Chart', link: '/features/star-chart' },
+          { text: 'Knowledge', link: '/features/knowledge' },
           { text: 'Knowledge anchors', link: '/features/knowledge-anchors' },
           { text: 'Mass Budget', link: '/features/mass-budget' },
           { text: 'Plot Board', link: '/features/plot-board' },

@@ -79,6 +79,7 @@ import { HANGAR_BODY_MAX_BYTES } from './hangar.js';
 import type { Hangar } from './hangar.js';
 import type { WorktreeRemoval, WorktreeStatus } from './worktree.js';
 import type { Docking } from './docking.js';
+import type { Knowledge } from './knowledge.js';
 import { createMcpHandler } from './mcp.js';
 import { parsePropellantRequest } from './propellant.js';
 import { parsePricesRequest } from './prices.js';
@@ -163,8 +164,10 @@ export interface WebOptions {
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'recheck' | 'chart' | 'create' | 'update' | 'remove'>;
-  /** Knowledge anchors: for each agent with entries anchored to its repository that are not confirmed, how many. Counts only; runs no check. */
-  knowledge?: () => Promise<Record<string, number>>;
+  /** Knowledge (the store, the proposals, the claims): the Director's routes and the agents' two tools. Absent, /api/knowledge is 404. */
+  knowledgeStore?: Knowledge;
+  /** For each agent, how many Mission Log entries anchored to its own repository were last found not confirmed (the tile). */
+  knowledgeAgents?: () => Promise<Record<string, number>>;
   /** Mass Budget; absent in tests that do not need it (the routes answer 404). The page asks; no frame. */
   massBudget?: Pick<MassBudget, 'view' | 'reflect'>;
   /** Plot Board; absent in tests that do not need it (the route answers 404 and the board tools say it is not available). The page asks again every few seconds; no frame. */
@@ -624,6 +627,7 @@ export function createWebServer(options: WebOptions): WebServer {
     missions: options.missions,
     review: options.review,
     missionLog: options.missionLog,
+    knowledge: options.knowledgeStore,
     board: options.board,
     liveries: options.liveries,
     relief: options.relief,
@@ -729,7 +733,10 @@ export function createWebServer(options: WebOptions): WebServer {
   const sendHubError = (res: ServerResponse, e: unknown): void => {
     const info = hubErrorInfo(e);
     if (info) {
-      sendApiError(res, ERROR_STATUS[info.code], info.message, info.code, info.field, info.code === 'rate_limited' ? { 'Retry-After': '60' } : {});
+      sendApiError(res, ERROR_STATUS[info.code], info.message, info.code, info.field, info.code === 'rate_limited' ? { 'Retry-After': String(info.retryAfter ?? 60) } : {}, {
+        ...(info.retryAfter === undefined ? {} : { retryAfter: info.retryAfter }),
+        ...(info.diagnostics === undefined ? {} : { diagnostics: info.diagnostics }),
+      });
       return;
     }
     log.error('request failed', e);
@@ -1293,15 +1300,66 @@ export function createWebServer(options: WebOptions): WebServer {
         },
       };
     }
-    // GET /api/knowledge: counts for the tiles (the feature switch is checked before the handler)
-    if (s[1] === 'knowledge' && s.length === 2 && options.knowledge) {
-      const knowledge = options.knowledge;
-      return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, { agents: await knowledge() }) };
-    }
     // POST /api/log/:id/recheck: the Director's RECHECK (an agent's tool has no such call)
     if (s[1] === 'log' && s.length === 4 && s[3] === 'recheck' && options.missionLog) {
       const missionLog = options.missionLog;
       return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await missionLog.recheck(s[2] ?? '')) };
+    }
+    const knowledge = options.knowledgeStore;
+    // the Director's Knowledge routes (docs/knowledge-spec.md 0b.4): a write answers the whole repository as it is now
+    if (knowledge && s[1] === 'knowledge') {
+      /** The JSON object of a request that may have none. */
+      const optionalBody = async (req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown> | null> => (hasBody(req) ? jsonObject(req, res) : {});
+      const post = (run: (req: IncomingMessage, res: ServerResponse) => Promise<void>) => ({ allow: ['POST'], run });
+      const repoId = s[2] ?? '';
+      if (s.length === 2) return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, await knowledge.view(await (options.knowledgeAgents?.() ?? Promise.resolve({})))) };
+      if (s.length === 3 && repoId === 'bind') {
+        return post(async (req, res) => {
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await knowledge.bind({ repoId: body.repoId, path: body.path, action: body.action }));
+        });
+      }
+      if (s.length === 4 && s[3] === 'recheck') return post(async (_req, res) => sendJson(res, 200, await knowledge.recheck(repoId)));
+      if (s.length === 4 && s[3] === 'claims') {
+        return post(async (req, res) => {
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 201, await knowledge.addClaim(repoId, { statement: body.statement, anchors: body.anchors }));
+        });
+      }
+      if (s.length === 4 && s[3] === 'move') {
+        return post(async (req, res) => {
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await knowledge.move(repoId, { from: body.from, action: body.action }));
+        });
+      }
+      if (s.length === 5 && s[3] === 'claims') {
+        const claimId = s[4] ?? '';
+        return {
+          allow: ['PUT', 'DELETE'],
+          run: async (req, res) => {
+            if (req.method === 'DELETE') {
+              sendJson(res, 200, await knowledge.deleteClaim(repoId, claimId));
+              return;
+            }
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await knowledge.updateClaim(repoId, claimId, { statement: body.statement, anchors: body.anchors, state: body.state }));
+          },
+        };
+      }
+      if (s.length === 6 && s[3] === 'proposals' && (s[5] === 'trial' || s[5] === 'accept' || s[5] === 'reject')) {
+        const pid = s[4] ?? '';
+        const what = s[5];
+        return post(async (req, res) => {
+          const body = await optionalBody(req, res);
+          if (body === null) return;
+          sendJson(res, 200, what === 'trial' ? await knowledge.trial(repoId, pid) : what === 'accept' ? await knowledge.accept(repoId, pid) : await knowledge.reject(repoId, pid, { reason: body.reason }));
+        });
+      }
+    }
+    // POST /api/log/:id/promote: the claim made from an entry's anchors
+    if (knowledge && options.missionLog && s[1] === 'log' && s.length === 4 && s[3] === 'promote') {
+      const missionLog = options.missionLog;
+      return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await knowledge.promote(missionLog.get(s[2] ?? ''))) };
     }
     if (s[1] === 'log' && s.length <= 3) {
       const missionLog = options.missionLog;

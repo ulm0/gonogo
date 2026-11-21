@@ -32,6 +32,8 @@ export interface HubErrorInfo {
   code: ApiErrorCode;
   message: string;
   field?: string;
+  retryAfter?: number;
+  diagnostics?: Array<{ line: number; message: string }>;
 }
 
 /** Recognises a HubError by its name and code, not by instanceof (protocol.ts: the hub's class is not imported here). */
@@ -42,6 +44,8 @@ export function hubErrorInfo(e: unknown): HubErrorInfo | null {
   const field = 'field' in e && typeof e.field === 'string' ? e.field : undefined;
   const info: HubErrorInfo = { code: code as ApiErrorCode, message: e.message };
   if (field !== undefined) info.field = field;
+  if ('retryAfter' in e && typeof e.retryAfter === 'number') info.retryAfter = e.retryAfter;
+  if ('diagnostics' in e && Array.isArray(e.diagnostics)) info.diagnostics = e.diagnostics as Array<{ line: number; message: string }>;
   return info;
 }
 
@@ -71,8 +75,9 @@ export function sendApiError(
   code: ApiErrorCode,
   field?: string,
   headers: Record<string, string> = {},
+  extra: Pick<ApiError, 'retryAfter' | 'diagnostics'> = {},
 ): void {
-  const body: ApiError = field === undefined ? { error, code } : { error, code, field };
+  const body: ApiError = { error, code, ...(field === undefined ? {} : { field }), ...extra };
   sendJson(res, status, body, headers);
 }
 

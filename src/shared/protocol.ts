@@ -164,7 +164,7 @@ export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 export const WORKTREE_DIR = 'worktrees';
 /** The online documentation: the one address every install surface (startup, --help, doctor, the page) links to. The site has one version only, so the link is not versioned. */
 export const DOCS_URL = 'https://gonogo.ulm0.com/';
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'knowledge_propose', 'knowledge_list', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -1679,6 +1679,10 @@ export interface ApiError {
   code: ApiErrorCode;
   /** Name of the offending request field, when there is one. */
   field?: string;
+  /** rate_limited from Knowledge: seconds until it may be asked again. */
+  retryAfter?: number;
+  /** A 400 for text that is parsed (Knowledge anchors): what is wrong, with the line. */
+  diagnostics?: Array<{ line: number; message: string }>;
 }
 
 /* ---- WebSocket: browser to server (JSON text frames) ---- */
