@@ -958,6 +958,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       now: io.now,
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
       boss: () => hubInstance.views().find((v) => v.boss)?.name ?? null,
+      agentDirs: () => hubInstance.views().map((v) => ({ name: v.name, dir: v.dir })),
       tasks: () => tasks.list(),
       unlink: (id) => tasks.unlinkMission(id),
       send: (actor, request) => (actor.kind === 'user' ? hubInstance.sendFromUser(request) : hubInstance.sendFromAgent(actor.name, actor.generation, request)),

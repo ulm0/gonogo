@@ -238,6 +238,9 @@ export const MISSION_NAME_MAX_CHARS = 80;
 export const MISSION_GOAL_MAX_CHARS = 2000;
 export const MISSION_NOTE_MAX_CHARS = 200;
 export const MISSIONS_OPEN_MAX = 50;
+/** The closing ritual of a mission: at most this many items of at most this many characters. */
+export const MISSION_RITUAL_MAX = 20;
+export const MISSION_RITUAL_TEXT_MAX = 200;
 export const missionSubject = (name: string): string => `Mission: ${name}`;
 export const taskSubject = (id: string, title: string): string => `Flight Plan: ${id} assigned to you: ${title}`;
 /** Mission Log limits (docs/mission-log-spec.md). A tag is lowercase; the search never returns more than LOG_SEARCH_MAX hits. */
@@ -1028,6 +1031,17 @@ export interface Task {
 }
 
 /** Missions: a named goal with a status, a lead and a history; its tasks are the ones whose `missionId` is its id. One entry of missions.json. */
+/** One line of the closing checklist of a mission. `from` says whose words it is: the room's own file (the Director's) or a file of the repo (written by agents). */
+export interface RitualItem {
+  /** One line of plain text, at most MISSION_RITUAL_TEXT_MAX characters, no control or bidi character. */
+  text: string;
+  done: boolean;
+  from: 'room' | 'repo';
+  /** Who ticked it and when, once it is ticked: always the Director. */
+  by?: string;
+  at?: number;
+}
+
 export interface Mission {
   /** ms1, ms2, ...: never reused. */
   id: string;
@@ -1048,6 +1062,12 @@ export interface Mission {
   endedAt: number | null;
   /** One line per change, oldest first: "2026-11-18 14:03 UTC user: status active; kicked off". */
   history: string[];
+  /** The git top level of a hired agent's folder in this room that this mission is about, or absent: checked when it is set and at every read. */
+  repo?: string;
+  /** The closing checklist, copied when the mission was made; absent on a mission that predates it, or when there is no template. Printed, never a gate. */
+  ritual?: RitualItem[];
+  /** How many lines the template had when it had more than MISSION_RITUAL_MAX (the rest was dropped). */
+  ritualOmitted?: number;
 }
 
 /** Downlink: a message to the Director, with what the inbox keeps of it. The log keeps the whole body. */

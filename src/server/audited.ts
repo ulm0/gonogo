@@ -106,7 +106,7 @@ export const MISSIONS_AUDIT: Table = {
     (args) => {
       const input = isRecord(args[2]) ? args[2] : {};
       const status = (MISSION_STATUSES as readonly unknown[]).includes(input.status) ? ` status ${String(input.status)}` : '';
-      const other = ['name', 'goal', 'lead', 'note'].filter((k) => input[k] !== undefined).join(' ');
+      const other = ['name', 'goal', 'lead', 'note', 'repo', 'ritual'].filter((k) => input[k] !== undefined).join(' ');
       return `${actorName(args[0])} updated mission ${plain(args[1]) ?? '?'}:${status}${other === '' ? '' : ` ${other}`}`;
     },
   ],

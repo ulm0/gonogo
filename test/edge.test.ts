@@ -7804,7 +7804,7 @@ describe('missions', () => {
     const ana = await connectMcp(port, ANA_TOKEN);
     const made = toolOutcome(await ana.callTool({ name: 'mission_create', arguments: { name: 'Ship', goal: 'g', lead: 'ben', createdBy: 'user' } }));
     expect(made).toMatchObject({ isError: false, json: { ok: true, mission } });
-    const moved = toolOutcome(await ana.callTool({ name: 'mission_update', arguments: { id: 'ms1', status: 'active', note: 'go', name: 'renamed' } }));
+    const moved = toolOutcome(await ana.callTool({ name: 'mission_update', arguments: { id: 'ms1', status: 'active', note: 'go', name: 'renamed', ritual: { index: 0, done: true }, repo: '/' } })); // the closing ritual and the repo are not in the tool: an agent cannot tick, whatever it sends
     expect(moved).toMatchObject({ isError: false, json: { ok: true } });
     expect(calls).toEqual([
       ['create', { kind: 'agent', name: 'ana', generation: 3 }, { name: 'Ship', goal: 'g', lead: 'ben' }],
