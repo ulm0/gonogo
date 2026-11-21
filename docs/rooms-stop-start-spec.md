@@ -1,6 +1,6 @@
 # Stop and start a room from the rooms page: the routes
 
-Status: proposal for GUIDO to design and RSO to review. Nothing here is built. Written by CONTROL (task t106) for the rooms page in `docs/ui-semantic.md`, "The rooms page".
+Status: proposal; GUIDO has answered the open decisions (below); RSO still has to review the security section. Order of work once the direction is approved: supervisor routes, step-up and tests (GUIDO), then the page keys (CONTROL). Nothing here is built. Written by CONTROL (task t106) for the rooms page in `docs/ui-semantic.md`, "The rooms page".
 
 ## What the page needs
 
@@ -20,26 +20,26 @@ All of them are the supervisor's own (reserved, never proxied: `/api/rooms` is a
 
 `RoomView` gains `autostart: boolean` (it is in `RoomEntry` already) so the card can show "starts at boot" and its tick.
 
-## Decisions for GUIDO
+## Decisions (GUIDO's answers, read and agreed)
 
-1. **Is `stop` persistent?** Proposed: `stop` and `start` change `wanted` only, so a restart of the server starts the room again if `autostart` is true. "Starts at boot" is the PATCH above. Say if a stop should also clear `autostart`.
-2. **Stopping `main`.** It runs the auto-update and carries the Director's login for the supervisor's pages. Proposed: allowed, with the page warning "this also stops updates" in the confirm; refused (409) while `gonogo-ask busy` says a poll or static fire is open elsewhere, and while a main migration is `moving` or `undoing`.
-3. **Starting a room whose last start failed.** `crashed` rooms have a restart timer (`failures` backoff). `start` should clear it and launch at once; it should not hide the last error (`lastError`).
-4. **The "all" routes are not atomic.** They answer with what was done and what was skipped; the page shows both.
+1. **Persistence.** `stop` and `start` change `wanted` only; `autostart` stays the "starts at boot" flag (the PATCH). `wanted` lives in memory, so after a supervisor restart a stopped room comes back if and only if `autostart` is true. The page says so on a stopped card ("stopped until the next restart"). A "also do not start at boot" tick in the stop confirm is left out of the first version.
+2. **Stopping `main`.** Allowed, with a confirm that says it also stops the Telegram poll, auto-update and the update hook. Refused with 409 while a migration is `moving` or `undoing` (`main-migration.json`) and while a Docker update is running or handed off (asked through the existing `gonogo-ask busy` pipe, which also answers the poll and static-fire rule).
+3. **A `crashed` room.** `start` clears the restart timer, resets `failures`, launches at once; `lastError` stays until the new run is ready (it clears on ready already).
+4. **The "all" routes** are not atomic; they answer `{ done, skipped: [{ id, why }] }`. `halt()` resolves when the process exits, so `stop` answers 202 after about 5 s when the room is still stopping (the grace is `STOP_WAIT_MS`, long).
 
 ## Security (for RSO)
 
-- These routes stop and start processes that run agents with the user's rights, and `stop` kills work in progress. They are as sensitive as `DELETE /api/rooms/<id>`, which is not in the step-up table I read (`stepup.ts`: `bodyMatters` lists migrate, autoupdate, knowledge move, hire and edit; I did not read the rest of the table); **proposed: a step-up** (the Director's password again, `src/server/stepup.ts`, the same table the migrate route is in) for `stop`, `stop-all` and `start-all`, none for `start`, because starting is what the server does at boot anyway. State this in `stepup.ts` so the page's existing step-up dialog handles the 403 `stepUp` answer.
-- API keys: `roomsApi` is called only after "the Director token was checked" (comment in `supervisor.ts`); the new routes should sit behind the same check, so a room key or an agent's token cannot call them. **Not verified by CONTROL**: how keys are scoped there; GUIDO and RSO should read it.
-- Origin: the same `originOk` check; no CORS.
-- No agent can call these: the room's own routes and tools do not reach the supervisor's `/api/rooms`. A test should show that an agent's token gets 403.
+- **Keys.** `roomsApi` is behind `authHttp.grant('api')` then `keyMayDo(scope, method, path)`. A `full` key may do any `/api` path except `/api/auth`, so it **can** call these routes (and `DELETE /api/rooms/<id>` today); `write` and `read` keys cannot. Open for RSO: keep full keys allowed (consistent with DELETE; GUIDO's lean) or refuse keys on `stop` and `stop-all`, since a route that stops every agent of every room is more than "full" of one room.
+- **Step-up.** `DELETE /api/rooms/<id>`, rename and add are **not** in `stepup.ts` today. Proposed (GUIDO's preference): step-up for `stop`, `stop-all`, `start-all` **and** DELETE in the same change, none for `start`; sessions only (keys have no step-up). The supervisor's own routes call `authHttp.stepUpNeeded` themselves (see `migrateApi`): the new routes must do the same; the room proxy's check does not cover them. A `tui` grant is told to do it in the browser.
+- **Origin.** The same `originOk` check; no CORS.
+- **Agents.** On the supervisor port an agent's token is a 401 (it is not a grant), and a room's own token never reaches the supervisor.
 
 ## Tests the build must have
 
 - Each route on a supervisor with two fake rooms (the existing fake child in the supervisor tests): state before and after, the 404 and 409 answers, `autostart` unchanged.
 - `stop-all` skips `main` during a pending migration and says why.
-- A session with an old password check gets 403 `stepUp` on `stop`, `stop-all` and `start-all`, and 200 after the check.
-- A room key and an agent's token get 403.
+- A session with an old password check gets 403 `stepUp` on `stop`, `stop-all`, `start-all` (and DELETE, if added), and 200 after the check.
+- An agent's token gets 401; a `read` or `write` key is refused.
 - The rooms page (`roomspage.ts`, inline script with CSP hashes): the new keys are named by what they do ("Stop Docs", "Start Docs", "Stop all rooms"), are 44 px on a phone, and the page does not offer Start on a `starting` or `running` room.
 
 ## Not in this spec
