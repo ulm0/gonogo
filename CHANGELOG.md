@@ -4,6 +4,14 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.12.1 (2026-11-21)
+
+The Docker self-update finds its own container from /proc, so it works when the hostname no longer matches the container (a recreate by a host app manager); CI's update test takes its versions from the release tag.
+
+- **CI: the update e2e checks the version it starts from.** A run by hand takes `from` as free text; it is now checked as x.y.z, like `to`, before it is used. No change for users.
+- **CI: the update e2e takes the version it updates to from the release tag.** On v0.12.0 the workflow picked its two versions from the list of GitHub Releases, which did not yet mark the new one, so it tried 0.11.0 to 0.11.1 while `latest` was already 0.12.0. When the Image run of a pushed tag starts it, TO is now that tag and FROM the newest stable release below it. No change for users.
+- **Fix: the Docker self-update finds its own container when the hostname is not its id.** On an install whose container has a compose `hostname:` (or another name the daemon gave), the Update key was off with "No such container: <hostname>". gonogo now takes its container id from its own files (the mounts of `/etc/hostname`, `/etc/hosts` and `/etc/resolv.conf` in `/proc/self/mountinfo`, the cgroup in `/proc/self/cgroup`: Docker, rootless Docker, Podman, Kubernetes forms); if they name an id only that container counts (two ids, or one this Docker does not know, is a refusal). With the files silent it uses the hostname only when it is a container id (12 to 64 hex), then the one running container whose MAC and IP address and configured hostname are its own; it never chooses between two. When it cannot tell, the Update strip and the AUTO-UPDATE block say why instead of only "run the command on the host".
+
 ## 0.12.0 (2026-11-21)
 
 A new room view: a status strip instead of the wall, consoles first, the terminal in the first screen with Copy, Find, Expand and Full screen, and a phone layout that fits; a top bar with Work, Jump and a version key with Check now; Flight Rules in seven groups; rooms can be stopped and started; Telegram reaches every room; a registry of MCP servers and skills; semantic search over the Mission Log (optional, Ollama).
