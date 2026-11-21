@@ -1040,12 +1040,21 @@ describe('stop and start rooms through the supervisor (t107)', () => {
     expect(notices).toMatch(/refused: an API key may not stop every room/);
   }, 60_000);
 
-  it('a room that does not answer /api/state can still be stopped (the audit says so)', async () => {
+  it('a room that does not answer /api/state is refused with 409 until the stop is forced; the audit says so', async () => {
     const s = await boot({ FAKE_ROOM_NOSTATE: '1' });
-    const res = await post(s, '/api/rooms/c/stop');
-    expect(res.status).toBe(200);
+    const refused = await post(s, '/api/rooms/c/stop');
+    expect(refused.status).toBe(409);
+    expect(JSON.stringify(await refused.json())).toMatch(/did not answer/);
+    expect(await state(s, 'c')).toBe('running');
+    const all = (await (await post(s, '/api/rooms/stop-all')).json()) as { stopped: string[]; skipped: Array<{ id: string }> };
+    expect(all.skipped.map((k) => k.id)).toEqual(['b', 'c']);
+    expect(all.stopped).toEqual(['main']); // main answers, so it was stopped: the audit is held until it runs again
+    expect((await post(s, '/api/rooms/main/start')).status).toBe(200);
+    await until(async () => (await state(s, 'main')) === 'running');
+    const forced = await post(s, '/api/rooms/c/stop', s.directorToken, 'POST', { force: true });
+    expect(forced.status).toBe(200);
     expect(await state(s, 'c')).toBe('stopped');
-    await until(() => existsSync(join(home, 'notices')) && /stop room c: done \(the room did not answer/.test(readFileSync(join(home, 'notices'), 'utf8')));
+    await until(() => existsSync(join(home, 'notices')) && /stop room c: done \(the room did not answer.*by force/.test(readFileSync(join(home, 'notices'), 'utf8')));
   }, 60_000);
 
   it('one request at a time per room: two stops at once, one answers 409', async () => {

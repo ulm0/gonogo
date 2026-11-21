@@ -56,6 +56,10 @@ The supervisor has routes for it (the page keys come later). All are the Directo
 
 `DELETE /api/rooms/<id>` asks for the password again too.
 
+A stop does not survive a restart of gonogo: a stopped room with autostart on starts again with the next start. To keep a room down, turn its autostart off. The ids `stop-all` and `start-all` are reserved (no new room may have them); a room that already has one of them cannot be renamed or removed through these routes.
+
+A room that does not answer the question whether it is busy (it may be hung) is not stopped: 409 "did not answer". Send `{ "force": true }` in the body of the stop to stop it anyway; the audit line says it was forced. Main is never stopped without an answer. `stop-all` stops the other rooms together, then main last, and does not force.
+
 A stop is refused with 409 while a T-minus poll or Static fire is open in that room, a Relief request waits there, room main is being moved, or (for main) an update runs. One stop or start per room at a time: a second one answers 409 "room x is stopping". An API key may not stop `main` or every room (403): do it in the browser.
 
 Every stop and start is written to the supervisor's log and to the Downlink of room `main`, with who did it and the result. While main is stopped, login alerts and these lines are held (20 of each) and said when it is running again, with a count of what was dropped. Stopping main also stops the Telegram poll, phone approvals, the update hook and auto-update until it starts.

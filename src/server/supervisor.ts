@@ -739,7 +739,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     return null;
   }
 
-  async function stopOne(child: Child, byKey: boolean): Promise<Power> {
+  async function stopOne(child: Child, byKey: boolean, force = false): Promise<Power> {
     const id = child.entry.id;
     const doing = inFlight.get(id);
     if (doing !== undefined) return { ok: false, status: 409, why: `room ${id} is ${doing}` };
@@ -749,6 +749,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     let unanswered = false;
     try {
       const refusal = await stopRefusal(child);
+      if (refusal === 'unanswered' && !force) {
+        inFlight.delete(id);
+        return { ok: false, status: 409, why: `room "${id}" did not answer whether it is busy: it may be hung; send {"force":true} to stop it anyway` };
+      }
       if (refusal !== null && refusal !== 'unanswered') {
         inFlight.delete(id);
         return { ok: false, status: 409, why: refusal };
@@ -760,7 +764,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     }
     const done = halt(child).finally(() => inFlight.delete(id));
     const quick = await Promise.race([done.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), STOP_ANSWER_MS).unref())]);
-    return { ok: true, status: quick ? 200 : 202, ...(unanswered ? { note: 'the room did not answer whether it is busy: stopped anyway' } : {}) };
+    return { ok: true, status: quick ? 200 : 202, ...(unanswered ? { note: 'the room did not answer whether it is busy: stopped by force' } : {}) };
   }
 
   function startOne(child: Child): Power {
@@ -794,6 +798,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       const path = id === undefined ? `/api/rooms/${action}` : `/api/rooms/${id}/${action}`;
       const reason = authHttp.stepUpNeeded(grant, 'POST', path, {});
       if (reason !== null) return authHttp.stepUpDenied(req, res, reason, grant.kind === 'tui');
+      // {"force":true} stops a room that does not answer the question whether it is busy; no body is no force
+      const force = ((await readBody(req).catch(() => ({}))) as { force?: unknown }).force === true;
       const byKey = grant.kind === 'key';
       const actor = byKey ? `key "${auth.keys().find((k) => k.id === grant.keyId)?.name ?? 'unknown'}"` : grant.kind === 'session' ? 'the Director (browser session)' : `the Director (${grant.kind})`;
       // the supervisor writes the audit, before and after, so a page cannot skip it
@@ -808,19 +814,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         }
         const done: string[] = [];
         const skipped: Array<{ id: string; why: string }> = [];
-        for (const child of [...children.values()]) {
-          if (action === 'stop-all' ? child.state === 'stopped' && !child.wanted : child.state !== 'stopped' && child.state !== 'crashed') continue;
-          const r = action === 'stop-all' ? await stopOne(child, false) : startOne(child);
+        const todo = [...children.values()].filter((child) => (action === 'stop-all' ? !(child.state === 'stopped' && !child.wanted) : child.state === 'stopped' || child.state === 'crashed'));
+        const note = (child: Child, r: Power): void => {
           if (r.ok) done.push(child.entry.id);
           else skipped.push({ id: child.entry.id, why: r.why });
-        }
+        };
+        if (action === 'stop-all') {
+          // the other rooms together, then main last: main carries the audit and the updates, and the others should not wait for each other's shutdown
+          const others = todo.filter((c) => c.entry.id !== MAIN_ROOM);
+          const results = await Promise.all(others.map((c) => stopOne(c, false, force)));
+          others.forEach((c, i) => note(c, results[i] as Power));
+          for (const main of todo.filter((c) => c.entry.id === MAIN_ROOM)) note(main, await stopOne(main, false, force));
+        } else for (const child of todo) note(child, startOne(child));
         audit(`${action}: ${done.length === 0 ? 'nothing done' : `done ${done.join(', ')}`}${skipped.length === 0 ? '' : `; skipped ${skipped.map((s) => `${s.id} (${s.why})`).join(', ')}`}`);
         return sendJson(res, 200, action === 'stop-all' ? { stopped: done, skipped } : { started: done, skipped });
       }
       if (id === undefined) return sendApiError(res, 400, 'bad room id', 'bad_request', 'id');
       const child = children.get(id);
       if (child === undefined) return sendApiError(res, 404, `there is no room "${id}"`, 'not_found');
-      const r = action === 'stop' ? await stopOne(child, byKey) : startOne(child);
+      const r = action === 'stop' ? await stopOne(child, byKey, force) : startOne(child);
       audit(`${action} room ${id}: ${r.ok ? `done${r.note === undefined ? '' : ` (${r.note})`}` : `refused (${r.why})`}`);
       if (!r.ok) return sendApiError(res, r.status, r.why, r.status === 403 ? 'forbidden' : 'conflict');
       return sendJson(res, r.status, (await roomView(id)) ?? { id });
