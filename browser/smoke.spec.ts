@@ -168,12 +168,18 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     await page.goto(`${base}/r/main/`);
     await page.locator('.topbar').getByRole('button', { name: 'More', exact: true }).click();
     await page.getByRole('group', { name: 'More' }).getByRole('button', { name: 'Flight Rules', exact: true }).click();
-    // the groups are folded and each setting is a row that opens on Edit: open all of them, then look for the blocks
-    await page.locator('.lay-group-title button[aria-expanded=false]').evaluateAll((keys) => keys.forEach((key) => (key as HTMLElement).click()));
-    await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
-    for (const heading of ['KNOWLEDGE', 'ROOM RULES', 'CLOSING CHECKLIST TEMPLATE', 'SKILLS']) {
-      await expect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible();
-    }
+    // the groups are an accordion (one open) and each setting is a row that opens on Edit: open a group and all its rows, then look for the blocks it holds
+    const open = async (group: RegExp): Promise<void> => {
+      const key = page.locator('.lay-group-title button', { hasText: group });
+      if ((await key.getAttribute('aria-expanded')) !== 'true') await key.click();
+      await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
+    };
+    await open(/^Room/);
+    for (const heading of ['ROOM RULES', 'CLOSING CHECKLIST TEMPLATE']) await expect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible();
+    await open(/^Agents/);
+    await expect(page.getByRole('heading', { name: 'SKILLS', exact: true }), 'SKILLS').toBeVisible();
+    await open(/^Knowledge/);
+    await expect(page.getByRole('heading', { name: 'KNOWLEDGE', exact: true }), 'KNOWLEDGE').toBeVisible();
     // the switch is on: the block says nothing about being off, and shows no error
     const knowledge = page.locator('section', { has: page.getByRole('heading', { name: 'KNOWLEDGE', exact: true }) });
     await expect(knowledge.getByText('Turn on Knowledge in the Features block')).toHaveCount(0);
