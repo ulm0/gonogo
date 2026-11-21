@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { Missions } from '../src/client/Missions.js';
 import { ritualProgress, ritualTextProblem, sourceText, tickedText } from '../src/client/missions.js';
 import { RitualTemplateBlock, RoomRulesBlock } from '../src/client/RoomRules.js';
-import { bytesOf, bytesText, RULES_MAX_BYTES, rulesProblem } from '../src/client/roomrules.js';
+import { asSaved, bytesOf, bytesText, RULES_MAX_BYTES, rulesProblem } from '../src/client/roomrules.js';
 import { emptyState, selectMission, showMissions, store } from '../src/client/store.js';
 import type { Mission, RitualItem } from '../src/shared/protocol.js';
 
@@ -111,7 +111,7 @@ describe('the rules text', () => {
     expect(rulesProblem('é'.repeat(4096))).toBeNull();
     expect(rulesProblem('é'.repeat(4096) + 'a')).toContain('at most 8,192');
     expect(rulesProblem('a'.repeat(RULES_MAX_BYTES))).toBeNull();
-    expect(rulesProblem('a\u0000b')).toContain('NUL');
+    expect(rulesProblem('a\u0000b')).toContain('control');
     expect(rulesProblem('x'.repeat(11), 10)).toContain('at most 10');
     expect(rulesProblem('')).toBeNull();
   });
@@ -121,6 +121,20 @@ describe('the rules text', () => {
     expect(html).toContain('CLOSING CHECKLIST TEMPLATE');
     expect(html).toContain('copies it');
     expect(html).toContain('never a gate');
+  });
+
+  it('counts what the server keeps: line breaks as one byte, the rules trimmed (and an all-space text is empty), the template as typed', () => {
+    expect(asSaved('  a\r\nb\r  ', true)).toBe('a\nb');
+    expect(asSaved('  a  ', false)).toBe('  a  ');
+    expect(asSaved('   \n ', true)).toBe('');
+    // spaces around the text do not count against the cap for the rules, and do for a template
+    expect(rulesProblem(' '.repeat(10) + 'a'.repeat(8192) + ' '.repeat(10))).toBeNull();
+    expect(rulesProblem(' '.repeat(10) + 'a'.repeat(8192), 8192, false)).toContain('at most 8,192');
+  });
+
+  it('refuses the characters the server refuses: control, bidi, zero-width, a byte order mark; a tab and a line break are fine', () => {
+    for (const bad of ['a\u001bb', 'a\u202eb', 'a\u200bb', 'a\ufeffb', 'a\u0085b']) expect(rulesProblem(bad), JSON.stringify(bad)).toContain('control, direction');
+    expect(rulesProblem('a\tb\nc')).toBeNull();
   });
 
   it('the block draws its title, its note about the role text and the password, and nothing of the rules before they arrive', () => {

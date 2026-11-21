@@ -7,7 +7,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import type { RulesView } from '../shared/protocol.js';
 import * as api from './api.js';
-import { bytesOf, bytesText, rulesProblem } from './roomrules.js';
+import { asSaved, bytesOf, bytesText, rulesProblem } from './roomrules.js';
 import { useRun } from './WallView.js';
 
 interface TextBlockProps {
@@ -16,12 +16,14 @@ interface TextBlockProps {
   hint: ReactNode;
   placeholder: string;
   label: string;
+  /** The server trims this text (the rules do; the template is kept as typed). */
+  trims: boolean;
   load(): Promise<RulesView>;
   save(text: string): Promise<RulesView>;
 }
 
 /** An editor for one of the Director's texts kept by the server (the rules, the template of the closing checklist): the size in bytes, the cap, SAVE, DISCARD and CLEAR. */
-function TextBlock({ title, hint, placeholder, label, load, save: send }: TextBlockProps): ReactElement {
+function TextBlock({ title, hint, placeholder, label, trims, load, save: send }: TextBlockProps): ReactElement {
   const id = useId();
   const [view, setView] = useState<RulesView | null>(null);
   const [text, setText] = useState('');
@@ -42,9 +44,9 @@ function TextBlock({ title, hint, placeholder, label, load, save: send }: TextBl
     };
   }, []);
   const max = view?.max ?? 8192;
-  const bytes = bytesOf(text);
-  const invalid = rulesProblem(text, max);
-  const changed = view !== null && text !== view.text;
+  const bytes = bytesOf(asSaved(text, trims));
+  const invalid = rulesProblem(text, max, trims);
+  const changed = view !== null && asSaved(text, trims) !== view.text;
   const apply = (next: string): void =>
     run(async () => {
       const saved = await send(next);
@@ -115,12 +117,13 @@ export function RoomRulesBlock(): ReactElement {
     <TextBlock
       title="ROOM RULES"
       label="Rules"
+      trims
       placeholder="Always branch from main. Report in two lines. Never touch the migrations folder."
       load={api.rulesView}
       save={api.setRules}
       hint={
         <>
-          Your rules for every agent of this room: how you branch, how you report, what never to touch. They are added at the end of the role text, under &ldquo;Room rules, written by the Director&rdquo;, when an agent starts, so a console reads them as your own words: only you can change them here, and the
+          Your rules for every agent of this room: how you branch, how you report, what never to touch. They are added at the end of the role text, under &ldquo;Room rules, written by the Director&rdquo; (the system prompt on Claude Code and pi, the first prompt on the other engines), when an agent starts, so a console reads them as your own words: only you can change them here, and the
           password is asked again. They reach the engines gonogo can give a role to (Claude Code, Gemini CLI, Codex, opencode, Antigravity, pi); the others, and a custom command, get nothing. A repo&apos;s own <code>AGENTS.md</code> is never copied into them: an agent is only told to read it, and the project&apos;s rules win over these.
         </>
       }
@@ -133,6 +136,7 @@ export function RitualTemplateBlock(): ReactElement {
     <TextBlock
       title="CLOSING CHECKLIST TEMPLATE"
       label="Template"
+      trims={false}
       placeholder={'Tests pass on main\nNotes written in the Mission Log\n# a line that starts with # is a comment'}
       load={api.ritualTemplate}
       save={api.setRitualTemplate}
