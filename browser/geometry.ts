@@ -2,10 +2,11 @@ import type { Page } from '@playwright/test';
 
 /**
  * The geometry rules of the prototype layout, measured in the page as it is drawn: no two visible interactive elements overlap, nothing makes the page scroll sideways,
- * no label is clipped, and every key is at least 24 px (44 px on a phone) high and wide. "Visible" = the element is what the browser draws at its centre (not covered, not hidden).
+ * no label is clipped (`scope`: only what is inside that selector, so a view is measured for what it changed), and every key is at least 24 px (44 px on a phone) high and wide. "Visible" = the element is what the browser draws at its centre (not covered, not hidden).
  */
-export async function geometry(page: Page, phone: boolean): Promise<string[]> {
-  return page.evaluate((min) => {
+export async function geometry(page: Page, phone: boolean, scope = 'body'): Promise<string[]> {
+  return page.evaluate(({ min, scope }) => {
+    const inScope = (el: Element): boolean => scope === 'body' || el.closest(scope) !== null;
     const problems: string[] = [];
     const name = (el: Element): string => `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 30)}"`;
     if (document.documentElement.scrollWidth > window.innerWidth + 1) problems.push(`page scrolls sideways: ${document.documentElement.scrollWidth} > ${window.innerWidth}`);
@@ -14,6 +15,7 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
       for (const e of wide) problems.push(`  wider than the screen: ${name(e)} right=${Math.round(e.getBoundingClientRect().right)}`);
     }
     const keys = [...document.querySelectorAll<HTMLElement>('button, a[href], input, select, summary, [role=button]')].filter((el) => {
+      if (!inScope(el)) return false;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') return false;
       if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) return false;
@@ -33,6 +35,7 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
       if (!inText && (a.height < min - 0.5 || a.width < min - 0.5) && !keys[i].matches('input[type=checkbox], input[type=radio]')) problems.push(`small key (${Math.round(a.width)}x${Math.round(a.height)}, need ${min}): ${name(keys[i])}`);
     }
     for (const el of document.querySelectorAll<HTMLElement>('.btn, .chip, .label, .hint, .lamp-text, h1, h2')) {
+      if (!inScope(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       if (el.clientWidth <= 1) continue; // visually hidden on purpose (a screen-reader label)
@@ -41,6 +44,7 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
     }
     // text cut at the bottom: a box that hides its overflow and holds more than it shows (a card whose second line is cut in the middle of a glyph)
     for (const el of document.querySelectorAll<HTMLElement>('body *')) {
+      if (!inScope(el)) continue;
       if (el.closest('.xterm, .term-wrap, .next-select, .next-strip-row') !== null || (el.textContent ?? '').trim() === '') continue;
       const style = getComputedStyle(el);
       if (style.overflowY !== 'hidden' && style.overflowY !== 'clip') continue;
@@ -50,5 +54,5 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
       if (el.scrollHeight > el.clientHeight + 1) problems.push(`text cut at the bottom: ${name(el)} (${el.scrollHeight} > ${el.clientHeight})`);
     }
     return problems;
-  }, phone ? 44 : 24);
+  }, { min: phone ? 44 : 24, scope });
 }
