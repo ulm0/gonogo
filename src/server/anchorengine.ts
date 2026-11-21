@@ -50,6 +50,8 @@ export interface AnchorEngineOptions {
   gitMs?: number;
   /** The worker's V8 limits. A test may lower them, but never the old space below about 32 MB: V8 then ends the WHOLE process, not just the thread. */
   limits?: ResourceLimits;
+  /** For tests: the most bytes `git ls-files -z` may print before the run says it could not list (default 8 MiB). */
+  listCap?: number;
   /** For tests: smaller caps for the worker's reading (a file, a whole run). */
   caps?: { fileMax?: number; runMax?: number };
   /** The worker's file; default: anchorgrammar.js next to this file (anchorgrammar.ts when this one is run from source). */
@@ -100,8 +102,8 @@ export function createAnchorEngine(options: AnchorEngineOptions): AnchorEngine {
     return new Promise((resolve) => {
       if (signal.aborted) return resolve(null);
       execFile(bin, [...BASE_ARGS, ...args], { cwd: root, env, timeout: gitMs, killSignal: 'SIGTERM', maxBuffer: cap, encoding: 'utf8', signal }, (error, stdout) => {
-        // output over the cap is a failure for a listing; `git grep -l` over its small cap is a hit all the same (handled by the caller through `code`)
-        if (error !== null) return resolve((error as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? String(stdout) : null);
+        // output over the cap is a FAILURE: a list of files cut short would let an `absent` or `each` leg read ok over some of the files (`git grep -l` has its own function, where a hit over its small cap is a hit all the same)
+        if (error !== null) return resolve(null);
         resolve(stdout);
       });
     });
@@ -181,7 +183,7 @@ export function createAnchorEngine(options: AnchorEngineOptions): AnchorEngine {
         return all(claims, root, started, `too many claims or legs in one run (at most ${ANCHOR_CLAIMS_MAX} claims, ${ANCHOR_LEGS_MAX} legs)`);
       }
       const where = await stamp(root, stop.signal);
-      const listing = await git(root, ['ls-files', '-z'], stop.signal);
+      const listing = await git(root, ['ls-files', '-z'], stop.signal, options.listCap ?? GIT_CAP);
       if (listing === null) return all(claims, root, started, stop.signal.aborted ? 'too slow' : 'git could not list the files of this checkout', where);
       const files = listing.split('\0').filter((f) => f !== '');
       if (files.length > ANCHOR_FILES_MAX) return all(claims, root, started, `more than ${ANCHOR_FILES_MAX} tracked files: too many to check`, where);
