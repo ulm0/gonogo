@@ -1,0 +1,1 @@
+- **Knowledge, with its switch off, says so kindly.** The KNOWLEDGE block in Flight Rules showed "Knowledge anchors are off" as an error alert when the switch was off; it now shows the one-line hint to turn it on in Features.

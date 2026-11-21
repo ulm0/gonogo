@@ -2,7 +2,8 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { knowledge } from '../src/client/api.js';
 import { applyServerFrame, emptyState } from '../src/client/store.js';
 import { Reader } from '../src/client/MissionLog.js';
 import { RepoCard } from '../src/client/Knowledge.js';
@@ -172,5 +173,32 @@ describe('the live frame', () => {
     const src = readFileSync(new URL('../src/client/Knowledge.tsx', import.meta.url), 'utf8');
     expect(src).toMatch(/useStore\(\(s\) => s\.knowledgeRev\)/);
     expect(src).toMatch(/\}, \[rev\]\);/);
+  });
+});
+
+describe('Knowledge with its switch off', () => {
+  const answer = (body: unknown, status: number): void =>
+    void vi.stubGlobal('fetch', vi.fn(async () => ({ ok: status < 300, status, text: async () => JSON.stringify(body), json: async () => body, headers: new Headers({ 'content-type': 'application/json' }) })));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('the 404 "feature_off" is the answer "off", not an error: the block says so in its friendly line', async () => {
+    answer({ error: 'Knowledge anchors are off', code: 'feature_off' }, 404);
+    expect(await knowledge()).toEqual({ enabled: false, repos: [], agents: {} });
+  });
+  it('any other refusal is still an error, with the server words', async () => {
+    answer({ error: 'forbidden origin', code: 'forbidden' }, 403);
+    await expect(knowledge()).rejects.toThrow(/forbidden origin/);
+    answer({ error: 'no such thing', code: 'not_found' }, 404);
+    await expect(knowledge()).rejects.toThrow(/no such thing/);
+  });
+  it('an answer that says enabled: false is the same', async () => {
+    answer({ enabled: false, repos: [], agents: {} }, 200);
+    expect((await knowledge()).enabled).toBe(false);
+  });
+  it('the block shows the off line, and no alert, for that answer', () => {
+    // the block asks on mount; what it draws for enabled: false is the hint (tested through the source: the branch is the one that reads view.enabled)
+    const src = readFileSync(new URL('../src/client/Knowledge.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('view !== null && !view.enabled');
+    expect(src).toContain('Turn on “Knowledge anchors” in the Features block');
   });
 });

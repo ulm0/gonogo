@@ -438,7 +438,7 @@ export function KnowledgeBlock(): ReactElement {
           {problem}
         </p>
       )}
-      {view !== null && !view.enabled && <p className="hint">Off. Turn on Knowledge in the Features block of this page to check claims.</p>}
+      {view !== null && !view.enabled && <p className="hint">Off. Turn on “Knowledge anchors” in the Features block of this page to check claims.</p>}
       {view !== null && view.enabled && view.repos.length === 0 && <p className="hint">No repository yet. One appears here once an agent of this room works in a git folder.</p>}
       {view !== null && view.enabled && view.repos.map((repo) => <RepoCard key={repo.repoId} repo={repo} onSaved={put} />)}
     </section>
