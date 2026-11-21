@@ -2,22 +2,22 @@
 
 Written 2026-11-21 by CONTROL for the Director (task t104). It replaces the first audit (`ux-audit.md`, never merged), which listed findings; this one ends in layouts. Every proposal has a mock in [`ui-mocks/`](ui-mocks/index.html) (open `index.html` in a browser; they are drawings in the app's own colours, not the app). Nothing here is built.
 
-**How it was made, and what it cannot say.** From the screenshots of the 0.8.2 run of `screens.yml` (2026-11-20; the run 44866758846 was not available on this host, so the room, Flight Rules, Launch Window, Mission Log, Patch Panel, console and rooms-list shots are from the older run, and the code is `main` at 0.11), measured in pixels at 1280 and 390 wide, and from the code. **Frequencies of use are my estimates from what each part does**: gonogo has no usage telemetry, so please correct them where you know better. I have no browser here, so the mocks were not looked at in one (the HTML is balanced and plain). A window of 1280 × 800 and a phone of 390 × 844 are the two sizes used throughout.
+**How it was made, and what it cannot say.** From the screenshots of `screens.yml` run 44866758846 (0.11, unpacked by SURGEON; the room view measures the same as in the 0.8.2 run before it) and the code (`main` at 0.11). **Not in that run: the edit-room editor and the update strip**, so those two sections are from the code only, measured in pixels at 1280 and 390 wide, and from the code. **Frequencies of use are my estimates from what each part does**: gonogo has no usage telemetry, so please correct them where you know better. I have no browser here, so the mocks were not looked at in one (the HTML is balanced and plain). A window of 1280 × 800 and a phone of 390 × 844 are the two sizes used throughout.
 
 ## 1. The finding that explains most of it
 
 **At 1280 × 800 the first screen shows the top bar and the wall, and nothing you work with.**
 
-| Measured at 1280 × 800 (0.8.2) | Size | Share |
+| Measured at 1280 × 800 (0.11) | Size | Share |
 |---|---|---|
 | Top bar (wraps to two rows: nine keys, then “+ STAFF A CONSOLE”) | 116 px | 14.5 % of the height |
 | The wall, boxes A to F (Mission, Sequence, T-minus, Max Q, Propellant) | 520 px | **65 %** |
 | Operations (the consoles) starts at y = 668: **132 px of it** is above the fold | | |
 | The selected console's terminal | 410 × 360 px, wholly **below** the fold (y 925 to 1285) | 0 % of the first screen |
 | Tiles of the 24 seats that are empty seats | 21 of 24 | 87 % |
-| Flight Rules (24 blocks) | 7 652 px (9.6 screens) | |
+| Flight Rules (24 blocks, more with every release) | 8 696 px (10.9 screens) | |
 
-On a phone (390 × 844): top bar 52 px, the wall 353 px (42 %), the bottom bar 68 px; of the first 12 tiles only 1 is staffed; the terminal is two taps away and then 255 px tall (30 %) with the comm loop and telemetry under it; Flight Rules is 10 713 px (12.7 screens).
+On a phone (390 × 844): top bar 52 px, the wall 353 px (42 %), the bottom bar 68 px; of the first 12 tiles only 1 is staffed; the terminal is two taps away and then 255 px tall (30 %) with the comm loop and telemetry under it; Flight Rules is 12 166 px (14.4 screens).
 
 So “boxes A, B, C, D, F take too much space” is measured: they take two thirds of the window to show a clock that says *no mission yet*, an empty chart, STANDBY, a dial that says OFF and a paragraph. Each of the five holds about 150 px of content in a 520-px box.
 
@@ -84,8 +84,8 @@ Used every day (Comms) or weekly. They are views, not settings; each fills its p
 | | |
 |---|---|
 | **For** | Every setting of the room. |
-| **Use** | S: most visits are once, at set-up; ALL STOP is the exception (emergency) and it is block 21 of 24, about 5 800 px down. |
-| **Space** | 24 blocks, 7 652 px (1280) / 10 713 px (390); no index, no search, no anchors. |
+| **Use** | S: most visits are once, at set-up; ALL STOP is the exception (emergency) and it is block 21 of 24, about 5 900 px down. |
+| **Space** | 24 blocks, 8 696 px (1280) / 12 166 px (390); no index, no search, no anchors. |
 | **Problems** | No order: a model default sits between the budget and the rules; Login (security) and Room keys (credentials) are 2 200 px apart; **Max Q and Propellant appear on the wall and again here**; “FEATURES” is a block of 25 switches; “CONSOLES” repeats the consoles list. Each block's first line is a paragraph, not what it is now. |
 | **Proposal** | Seven groups with an index (a list on a phone) and **rows**: the setting's name, **what it is now**, and a key that opens it in place. **Find a setting** filters the rows. A badge on a group says something needs you. [mock](ui-mocks/rules.html) |
 
