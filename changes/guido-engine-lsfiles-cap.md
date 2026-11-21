@@ -1,1 +1,0 @@
-- **A very large repository no longer reads as clean.** When the list of tracked files is too big to read (over 8 MiB), a check now says it could not list them instead of answering from part of the list.
