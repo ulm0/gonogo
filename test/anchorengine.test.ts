@@ -195,7 +195,9 @@ describe('the bounds', () => {
     expect(cut.every((r) => r.legs.every((l) => l.state === 'unevaluated'))).toBe(true);
   });
 
-  it('claims go to the worker cheapest first (the fewest files to read), so that a cut at the time keeps the small ones; the answers come back in the order they were given', async () => {
+  it('claims go to the worker in the order given (the worker puts the cheapest first); the main thread never runs a glob: the engine does not even import the matcher', async () => {
+    const source = readFileSync(new URL('../src/server/anchorengine.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/legFiles|picomatch|globMatcher/);
     repo({ 'a.txt': 'x\n', 'b.txt': 'x\n', 'c.txt': 'x\n', 'd/e.txt': 'x\n' });
     const jobs: AnchorJob[] = [];
     const engine = make({
@@ -205,8 +207,8 @@ describe('the bounds', () => {
       },
     });
     const out = await engine.run(root, [claim('K-1', '*.txt "x"'), claim('K-2', 'd/*.txt "x"'), claim('K-3', '*.txt "x"\n**/*.txt "x" absent'), claim('K-4', '*.txt "x"')]);
-    // costs: K-1 3 files, K-2 1, K-3 3 + 4, K-4 3: the job goes K-2, K-1, K-4 (a tie keeps the order given), K-3
-    expect(jobs[0]?.claims.map((c) => c.index)).toEqual([1, 0, 3, 2]);
+    // the main thread sends them as they are: ordering runs the globs over every file name, which only the worker may do (nothing interrupts the main thread)
+    expect(jobs[0]?.claims.map((c) => c.index)).toEqual([0, 1, 2, 3]);
     expect(out.map((r) => r.id)).toEqual(['K-1', 'K-2', 'K-3', 'K-4']);
     expect(out.every((r) => r.worst === 'ok')).toBe(true);
   });

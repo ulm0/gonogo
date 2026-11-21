@@ -189,6 +189,24 @@ async function main() {
       check('no worker is left running', engine.load().running === 0, JSON.stringify(engine.load()));
     }
 
+    /* ---- 2b. the largest claim set: 500 legs over every file, and this process must not stall (RETRO: the glob work runs in the worker) ---- */
+    {
+      const engine = createAnchorEngine({ now: Date.now, log: quiet });
+      const lines = Array.from({ length: 500 }, (_, i) => `**/*.ts "ABSENT${i}" present`);
+      // 100 claims of 5 legs each: the cap is 200 claims and 500 legs
+      const many = Array.from({ length: 100 }, (_, c) => {
+        const text = lines.slice(c * 5, c * 5 + 5).map((l) => `<!-- @anchor L-${c} brain:${l} -->`).join('\n');
+        const { anchors, diagnostics } = parseAnchors(text);
+        return { id: `L-${c}`, statement: 'x', authority: 'bench', state: 'active', date: '2026-11-21', source: 'store', legs: anchors.map((a) => a.leg), diagnostics };
+      });
+      lagMax = 0;
+      const t = Date.now();
+      const out = await engine.run(big, many);
+      numbers.largeSetMs = Date.now() - t;
+      numbers.largeSetLagMs = lagMax;
+      check('500 legs over every file: the run ends at its time and this process does not stall', out.length === 100 && numbers.largeSetMs < 9000 && numbers.largeSetLagMs < 500, `${numbers.largeSetMs} ms, longest event-loop stall ${numbers.largeSetLagMs} ms, ${out.filter((r) => r.worst === 'unevaluated').length} of 100 claims cut`);
+    }
+
     /* ---- 3. the file list over the cap ---- */
     {
       const engine = createAnchorEngine({ now: Date.now, log: quiet, listCap: Math.max(1024, Math.floor(listed / 2)) });

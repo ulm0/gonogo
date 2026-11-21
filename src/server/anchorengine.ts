@@ -22,7 +22,7 @@ import { Worker } from 'node:worker_threads';
 import type { ResourceLimits } from 'node:worker_threads';
 import type { Claim, ClaimResult, Leg, LegState, Logger } from '../shared/protocol.js';
 import { GIT_BIN } from './constants.js';
-import { ANCHOR_CLAIMS_MAX, ANCHOR_FILES_MAX, ANCHOR_LEGS_MAX, legFiles } from './anchorgrammar.js';
+import { ANCHOR_CLAIMS_MAX, ANCHOR_FILES_MAX, ANCHOR_LEGS_MAX } from './anchorgrammar.js';
 import type { AnchorJob, AnchorWorkerMessage } from './anchorgrammar.js';
 import { BASE_ARGS, KEEP_ENV } from './recorder.js';
 
@@ -202,11 +202,8 @@ export function createAnchorEngine(options: AnchorEngineOptions): AnchorEngine {
         kind: 'gonogo-anchor-run',
         root,
         files,
-        // the cheapest first (the fewest files to read): the run ends at its time, and what was finished by then is kept, so the claims that cost little are never lost to one that costs a lot
-        claims: claims
-          .flatMap((claim, index) => (claim.diagnostics.length > 0 || claim.legs.length === 0 ? [] : [{ index, legs: claim.legs, cost: claim.legs.reduce((n, leg) => n + (leg.glob === '**' && leg.excludes.length === 0 ? files.length : legFiles(leg, files).length), 0) }]))
-          .sort((a, b) => a.cost - b.cost || a.index - b.index)
-          .map(({ index, legs }) => ({ index, legs })),
+        // in the order given: the WORKER puts the cheapest first (it has the file list and runs the globs; doing it here would run them on the main thread, which the time limit cannot interrupt)
+        claims: claims.flatMap((claim, index) => (claim.diagnostics.length > 0 || claim.legs.length === 0 ? [] : [{ index, legs: claim.legs }])),
         skip: [...answered.keys()],
         ...(options.caps === undefined ? {} : { caps: options.caps }),
       };
