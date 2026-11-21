@@ -4,6 +4,16 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.10.0 (2026-11-21)
+
+Room rules reach every engine, with a pointer to the project's AGENTS.md; Missions get a closing checklist only the Director ticks; Mission Log entries can carry literal anchors checked against the code (off by default); CHECK NOW for updates.
+
+- **Flight Rules: ROOM RULES and a CLOSING CHECKLIST TEMPLATE; the Mission view: a CLOSING CHECKLIST.** Two editors in Flight Rules (your text for every agent of the room, and the list every new mission copies), each with its size in bytes against the 8 KiB cap, SAVE, DISCARD and CLEAR; a change asks for the password again. On a mission page you tick, reword, remove and add closing lines; a line an agent set says "set by <agent>", one from the template says "room template", and the page says "2 of 5 closing items left" without ever blocking DONE. Not seen in a browser.
+- **Knowledge anchors on Mission Log entries (off until you turn them on).** An entry can say "this file holds this text" or "no tracked file holds it" about the repository of an agent of the room (an agent names its own; you may name any), and the page, `log_read` and `log_search` show "not confirmed on main@abc1234" when it no longer holds. Literal text only, no pattern, never a gate; switch it on in Flight Rules -> FEATURES.
+- **A closing ritual on Missions.** A mission can carry a short checklist for its ending, copied from the room's template (`ritual.md`, edited in Flight Rules) when the mission is made, up to 20 items. You add, edit, remove and tick items; the boss may pass lines when it makes a mission (shown as "set by" its name). Only you tick. Closing with items open works and the Downlink lists what was left. It is printed, never a gate. **Going back to 0.9.2 or older** drops the checklists of every mission (`ritual`, `ritualOmitted`) at the first save of `missions.json`.
+- **CHECK NOW for the version check.** The check ran once a day, so a release that came out since could not be installed from the page ("0.9.2 is not the newer version the check found (0.9.0)"). The update strip and FLIGHT RULES (VERSION CHECK) now have a CHECK NOW key that asks the registry right away (at most once a minute, room main only), and asking to update to a version newer than the cache knows makes one such check first and decides on what it found.
+- **Room rules and a pointer to AGENTS.md.** Flight Rules has a RULES block: one text (8 KiB) every agent of the room gets in its role text when it starts, on every engine that takes one. Saving asks for your password, and the Black Box records only that it changed and how long it is. When the agent's folder has an `AGENTS.md` (or a `CLAUDE.md`) that its engine does not load itself, it is also told in one fixed sentence where it is; `gonogo doctor` lists which engine loads what. gonogo never writes in your repository and never copies its text into a role text. Qwen, Grok, Kimi, Crush, Copilot CLI, Cursor Agent and custom commands take no role from gonogo, so they get neither.
+
 ## 0.9.2 (2026-11-20)
 
 Agents answer the Director's words with a message (his inbox and, with Relay, his phone) instead of only in their console.
