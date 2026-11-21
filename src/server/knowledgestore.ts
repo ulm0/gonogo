@@ -22,7 +22,7 @@ import { mkdir, open, readFile, rename, rm, rmdir, writeFile } from 'node:fs/pro
 import { join } from 'node:path';
 import type { Claim, KnowledgeRepo, Logger } from '../shared/protocol.js';
 import { DIR_MODE, FILE_MODE } from './constants.js';
-import { cleanStatement, noLegs, parseClaimsFile, renderClaimsFile } from './claimsfile.js';
+import { CLAIMS_MAX, cleanStatement, noLegs, parseClaimsFile, renderClaimsFile } from './claimsfile.js';
 import type { ParseLegs, Row } from './claimsfile.js';
 import { HubError } from './hub.js';
 import type { RepoIdentity } from './repoid.js';
@@ -98,6 +98,22 @@ export interface ClaimInput {
   source: string;
 }
 
+/** A repository as an export bundle names it. */
+export interface ImportRepo {
+  /** The first 16 characters of `full`. */
+  repoId: string;
+  full: string;
+  label: string;
+  remoteKey: string | null;
+  rootCommit: string | null;
+}
+export interface ImportResult {
+  added: string[];
+  replaced: string[];
+  skipped: string[];
+  ritual: 'written' | 'kept' | 'none';
+}
+
 export interface KnowledgeStore {
   load(): Promise<void>;
   /** A checkout was seen; `hired` is true when it is the top level of an agent hired in this install. Writes the index when something is new. */
@@ -122,6 +138,12 @@ export interface KnowledgeStore {
   deleteClaim(repoId: string, id: string): Promise<void>;
   /** The Director's ritual template for the repository, or null. */
   ritual(repoId: string): Promise<string | null>;
+  /**
+   * K3 (the CLI `gonogo knowledge import --apply`): claims of a bundle, with the ids they had, into a repository (an alias is followed; a repository the index
+   * does not know is added with no checkout, so nothing is bound: the first sighting asks). A claim whose id is there is skipped, or replaced. `rows` were
+   * parsed by the caller; their anchor lines are read again by this store's grammar. Under the lock, one write of the file.
+   */
+  importRepo(meta: ImportRepo, rows: readonly Row[], options: { replace: boolean; ritual?: string }): Promise<ImportResult>;
 }
 
 const bad = (message: string, field?: string): HubError => new HubError('bad_request', message, field);
@@ -468,6 +490,50 @@ export function createKnowledgeStore(options: StoreOptions): KnowledgeStore {
           rows.filter((r) => r.id !== claimId),
         );
         await writeIndex(index);
+      }),
+
+    importRepo: (meta, rows, opts) =>
+      locked(async () => {
+        const index = await readIndex();
+        const id = canonical(index, meta.repoId);
+        let repo = index.repos[id];
+        if (repo === undefined) {
+          if (Object.values(index.repos).some((r) => r.full.startsWith(meta.repoId) && r.full !== meta.full)) throw new HubError('conflict', 'two repositories have the same short id', 'repoId');
+          repo = { full: meta.full, label: meta.label, remoteKey: meta.remoteKey, rootCommit: meta.rootCommit, roots: [], nextClaim: 1 };
+          index.repos[id] = repo;
+        }
+        const { rows: have } = await readRows(id, index);
+        const result: ImportResult = { added: [], replaced: [], skipped: [], ritual: 'none' };
+        const next = [...have];
+        for (const row of rows) {
+          const at = next.findIndex((r) => r.id === row.id);
+          const checked = parseLegs(row.anchors.map((text, i) => ({ line: i + 1, text })), row.id);
+          if (checked.diagnostics.length > 0) throw claimsError(`${row.id}: the anchors do not parse`, checked.diagnostics);
+          if (at >= 0 && !opts.replace) result.skipped.push(row.id);
+          else if (at >= 0) {
+            next[at] = row;
+            result.replaced.push(row.id);
+          } else {
+            next.push(row);
+            result.added.push(row.id);
+          }
+          const n = /^K-(\d{1,6})$/.exec(row.id);
+          if (n !== null) repo.nextClaim = Math.max(repo.nextClaim, Number(n[1]) + 1);
+        }
+        if (next.length > CLAIMS_MAX) throw new HubError('conflict', `a repository holds at most ${CLAIMS_MAX} claims`, 'claims');
+        if (result.added.length > 0 || result.replaced.length > 0) await saveRows(id, index, next);
+        if (opts.ritual !== undefined) {
+          const path = join(repoDir(id), 'ritual.md');
+          const there = (await readFile(path, 'utf8').catch(() => null)) !== null;
+          if (there && !opts.replace) result.ritual = 'kept';
+          else {
+            await mkdir(repoDir(id), { recursive: true, mode: DIR_MODE });
+            await writeAtomic(path, opts.ritual);
+            result.ritual = 'written';
+          }
+        }
+        await writeIndex(index);
+        return result;
       }),
 
     async ritual(repoId) {
