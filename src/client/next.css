@@ -96,3 +96,4 @@
 @media (max-width: 700px) {
   .next-pop, .next-pop[data-up] { top: auto; bottom: 72px; max-height: calc(100vh - 150px); }
 }
+.next-group { margin-top: 8px; }
