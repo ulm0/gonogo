@@ -69,7 +69,7 @@ Plan:
       or Gemini CLI agent on hold through Redline's machinery (Escape if working, mail held) until RESUME
       (`docs/telemetry-spec.md`). Tested with the stand-in agent only.
 - [x] Workers in git worktrees *(inferred)*. Built (2026-11-18): the `Own git worktree` box, `docs/features/worktrees.md`.
-      Tested with real git and the stand-in agent only. Not built: a boss's `hire_agent` carrying the setting.
+      Tested with real git and the stand-in agent only. A boss's `hire_agent` carries the setting (`worktree: true`, shown in the Relief request).
 - [x] Phone approvals through Claude Code's `/remote-control`. Built (2026-11-18) as two paths chosen in Flight Rules:
       signed Telegram GO/NO-GO buttons, and `--remote-control` per agent. `/remote-control` itself cannot carry
       approvals (`docs/features/phone-approvals.md`). Tested with a fake Telegram and the stand-in agent only.

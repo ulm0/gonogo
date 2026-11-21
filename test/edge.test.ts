@@ -2503,6 +2503,20 @@ describe('relief', () => {
     expect(calls).toEqual([['request', { agent: 'ana', generation: 3 }, { name: 'guido-1', position: 'guido', dir: '/work', engine: 'claude', mode: 'acceptEdits' }]]);
   });
 
+  it('takes worktree (true or false) in hire_agent and nothing else of the kind', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'hire_agent', arguments: { name: 'w1', role: 'r', dir: '/work', worktree: true } })).isError).toBe(false);
+    expect(calls.at(-1)).toEqual(['request', { agent: 'ana', generation: 3 }, { name: 'w1', role: 'r', dir: '/work', worktree: true }]);
+    // a string is not a boolean, and cleanRoom is still not a field of the tool
+    for (const args of [{ name: 'w2', role: 'r', dir: '/work', worktree: 'yes' }, { name: 'w3', role: 'r', dir: '/work', cleanRoom: {} }]) {
+      const out = await ana.callTool({ name: 'hire_agent', arguments: args }).catch(() => ({ isError: true }));
+      expect((out as { isError?: boolean }).isError).toBe(true);
+    }
+    expect(calls).toHaveLength(1);
+  });
+
   it('tells the agent why when the request is refused', async () => {
     const { relief } = fakeRelief();
     const { port } = await startWeb({ relief });

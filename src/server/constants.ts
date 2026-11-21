@@ -552,7 +552,7 @@ export const MCP_DESCRIPTIONS = {
   start_agent:
     'Boss only. Starts an agent that is stopped (not one that is running or on hold), as the Director\'s START key does. Takes {name}. It is limited to a few starts a minute and recorded in the Black Box.',
   hire_agent:
-    'Boss only. Ask the Director to hire an agent: name (lowercase letters, digits and hyphens), position (a call sign such as guido or surgeon, which gives the role text) and/or role (the role text itself), dir (an absolute folder; a Clean Room boss leaves it out), engine (default claude) and mode (default or acceptEdits; nothing higher is possible). It only makes a request: the Director sees every field and decides, and you are told his answer by message. At most 3 requests wait at once, 5 per 10 minutes, and one expires after 30 minutes.',
+    'Boss only. Ask the Director to hire an agent: name (lowercase letters, digits and hyphens), position (a call sign such as guido or surgeon, which gives the role text) and/or role (the role text itself), dir (an absolute folder; a Clean Room boss leaves it out), engine (default claude), mode (default or acceptEdits; nothing higher is possible) and worktree (true: the new agent starts in its own git worktree and branch of the repository of dir, like the Own git worktree box of the form; not for a Clean Room boss, whose agents have one already). It only makes a request: the Director sees every field and decides, and you are told his answer by message. At most 3 requests wait at once, 5 per 10 minutes, and one expires after 30 minutes.',
 } as const;
 
 /* ---- the tiny logger ---- */
