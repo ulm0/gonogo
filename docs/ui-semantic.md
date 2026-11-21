@@ -159,7 +159,7 @@ The product's mission-control vocabulary is a strength once a person has learned
 
 ## 5. The pictures (all real)
 
-Every image is a browser screenshot of the app built from this branch (`screens.yml`, run 44874882305, commit dad369e), at 1280 × 800 and 390 × 844, light and dark. **Before** is the default layout, which the prototype does not touch; **after** is the same build with `?layout=next`, a prototype made of the app's own components and CSS (`src/client/Next*.tsx`, `StatusStrip.tsx`, `next.css`; off unless the address has `?layout=next`, remembered for the tab, `?layout=old` turns it off). Pairs are in the folder `ui-v2/` (an `index.html` shows them side by side).
+Every image is a browser screenshot of the app built from this branch (`screens.yml`, run 44876689489, commit ac63552), at 1280 × 800 and 390 × 844, light and dark. **Before** is the default layout, which the prototype does not touch; **after** is the same build with `?layout=next`, a prototype made of the app's own components and CSS (`src/client/Next*.tsx`, `StatusStrip.tsx`, `next.css`; off unless the address has `?layout=next`, remembered for the tab, `?layout=old` turns it off). Pairs are in the folder `ui-v2/` (an `index.html` shows them side by side).
 
 `browser/geometry.ts` measures every prototype screen in the real page: no two visible keys overlap, nothing scrolls sideways, no label is clipped, keys are at least 24 px (44 px on a phone). The last run says "no geometry problems". That check found real faults on the way (see below), and one that was in the app already: the FEATURES block of Flight Rules was 415 px wide on a 390 px phone because a long chip does not wrap (fixed in `rules.css`, it is in the old layout too).
 
@@ -173,16 +173,17 @@ Found by reading the PNGs, not by the check:
 - **Phone Flight Rules:** the group index wrapped to three rows and covered the first block; Budget keys were under 44 px. Fixed.
 - **Full wall (all five panels as boxes):** the boxes stretched to the height of the tallest (Propellant) and left empty areas. Fixed (they keep their own height).
 - **Chip popovers on a phone** covered the chip that opened them. Fixed: on a phone every popover is a sheet above the bottom bar.
-- **Flight Rules grouped** was one page of about 14 000 px on a phone. Fixed: the groups are an accordion with one open (the page is 2 700 px with Room open), and Agents and System and update are rows (name, what it is now, Edit ▾ opening the existing block in place). The other five groups still show the old blocks as they were.
+- **Flight Rules grouped** was one page of about 14 000 px on a phone. Fixed: the groups are an accordion with one open (the page is 2 700 px with Room open), and Agents and System and update are rows (name, what it is now, Edit ▾ opening the existing block in place). All seven groups are rows now; the value of some is a placeholder ("see Edit": Semantic search, Login/sessions/keys, Phone approvals).
 - **Terminal toolbar** (was only Expand): A−, A+, Copy ▾ (selection, last answer, the screen, all scrollback), Find with ↑ ↓, ↓ Latest, Full screen, Expand; Select on a phone. Built on xterm's own buffer; no new dependency. **Not checked in a browser run:** what Copy puts on the clipboard, Full screen, and Find's match (the shots show the menu and the open Find field only). “Last answer” is a guess: the text after the last line that starts with `>` or `❯`, so it fits Claude Code and nothing else.
 - **Phone room** had no terminal and a screen two thirds empty. Now the selected console's terminal is under the list with the same toolbar (53 columns wide, small but usable).
 - **Counts** said "3 staffed · 21 open" over "16 open seats". Both now say 16 (the positions that are free).
 - **Strip on every view:** the strip showed one chip in the console shots because the browser remembered the Focus layout from the shot before. The spec now goes back to Standard; every shot has the same strip.
 - **Expanded console:** a line of the stand-in agent's output is cut at the right edge ("[Directo"). The terminal is wide again (114 columns, it reflows), so this looks like the stand-in drawing its line at the old width, not a refit fault; **I could not confirm that without a real agent**.
-- **Still open, seen in the shots:** the toolbar wraps to two rows in the 410 px console panel; the group headings of the accordion repeat the index above them (one of the two can go); two rows are placeholders ("Skills registry: see Edit", "Reload: on request").
-- **Phone console** (the full-screen console) is today's screen, not a prototype: there is no phone Expand to show.
-- **Version popover:** the screens run uses `--no-update-check`, so it shows "up to date" and no CHECK NOW; the update-available state is not captured.
-- **Rooms page start/stop:** not prototyped. The supervisor has no stop or start route, so there is nothing to draw it from; the "before" (rooms list with two rooms) is in the pairs.
+- **Still open, seen in the shots:** the toolbar wraps to two rows in the 410 px console panel; the group headings of the accordion repeat the index above them (one of the two can go); some rows' values are placeholders.
+- **Phone Expand** is built: the terminal fills the screen (Copy, Select, Back, ⋯). The header row with Open console stays above it.
+- **Toolbar** is one row at 1280 now: Copy ▾, Find, Expand and a ⋯ menu (A−, A+, Latest, Full screen).
+- **Version popover:** shows CHECK NOW and Update to… in the update state, captured with a **stub** (`?layout=next&update=1` makes the page say 9.9.9 is out; the registry cannot be reached from a test). With the stub on, the real update strip under the top bar also offers CHECK NOW, so there are two.
+- **Rooms page start/stop:** not prototyped. The supervisor has no stop or start route, so there is nothing to draw it from; the "before" (rooms list with two rooms) is in the pairs. The route spec is in `docs/rooms-stop-start-spec.md` (GUIDO has answered; RSO has not reviewed).
 
 ## 6. Build plan: six PRs, in order of gain over effort
 
