@@ -64,6 +64,10 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
+          # No tag is pushed here (the image goes by digest), but the first tag decides the label org.opencontainers.image.version: with the default (the git
+          # ref) it was "v0.11.0", and the Docker self-update, which reads that label as the release number, refused every image. Now it is "0.11.0".
+          tags: |
+            type=semver,pattern={{version}}
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io

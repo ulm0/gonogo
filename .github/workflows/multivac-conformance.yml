@@ -1,0 +1,39 @@
+name: Multivac conformance
+
+# Does `gonogo knowledge export --multivac` read as multivac's own file? scripts/multivac-conformance.mjs installs multivac at an exact version (npm, --ignore-scripts)
+# in a scratch folder, exports a fixture store with the built gonogo, writes it as .multivac/invariants.md in a temp repository and runs `multivac verify --check`
+# (read-only, offline, headless): every anchor must parse and every claim must be ok. It runs on the pull requests that touch the grammar or the export, weekly
+# (a new multivac release is not picked up: the version is pinned in the script, and moving it is a deliberate change), and by hand.
+on:
+  pull_request:
+    paths:
+      - 'src/server/anchorgrammar.ts'
+      - 'src/server/knowledgeio.ts'
+      - 'src/server/knowledgecli.ts'
+      - 'src/server/claimsfile.ts'
+      - 'scripts/multivac-conformance.mjs'
+      - '.github/workflows/multivac-conformance.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '41 4 * * 1'
+
+permissions: {}
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:server
+      - run: node scripts/multivac-conformance.mjs

@@ -1497,6 +1497,8 @@ export interface ReliefRequest {
   mode: PermissionMode;
   /** The boss is a Clean Room agent: the new agent is one too. */
   cleanRoom: CleanRoom | null;
+  /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */
+  worktree?: Worktree | null;
 }
 export interface ReliefView {
   requests: ReliefRequest[];

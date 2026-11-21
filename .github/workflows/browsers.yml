@@ -1,0 +1,72 @@
+name: Browsers
+
+# The browser smoke (browser/smoke.spec.ts) on Firefox and WebKit, beside the Chromium gate of browser.yml. They are not part of the release gate:
+# Chromium stays the gate, and these two report engine differences (a CSP, a cookie rule, a layout) on the pull requests that touch the page.
+on:
+  pull_request:
+    paths:
+      - 'src/client/**'
+      - 'src/server/auth*'
+      - 'src/server/roomproxy*'
+      - 'src/server/roomspage*'
+      - 'src/server/supervisor*'
+      - 'src/server/web*'
+      - '**/*.css'
+      - 'public/**'
+      - 'index.html'
+      - 'src/shared/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'browser/**'
+      - 'playwright.config.ts'
+      - '.github/workflows/browsers.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: browsers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No version: it installs the pnpm that package.json `packageManager` pins.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - id: playwright
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ matrix.engine }}-${{ steps.playwright.outputs.version }}
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
+      - if: steps.cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps ${{ matrix.engine }}
+      - run: pnpm exec playwright test browser/smoke.spec.ts
+        env:
+          PW_BROWSERS: ${{ matrix.engine }}
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browsers-failure-${{ matrix.engine }}
+          path: browser-results/
+          retention-days: 7

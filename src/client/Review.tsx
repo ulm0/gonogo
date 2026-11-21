@@ -39,8 +39,8 @@ import {
   TONE_CHIPS,
   TONE_LABELS,
   verdictText,
-} from './review.js';
-import type { Filter, NoteValues, Thread } from './review.js';
+} from './reviewModel.js';
+import type { Filter, NoteValues, Thread } from './reviewModel.js';
 import './review.css';
 
 /** The console whose diff is under review: the pieces below read it instead of being passed it through every level. */

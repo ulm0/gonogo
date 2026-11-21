@@ -7,7 +7,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import type { RulesView } from '../shared/protocol.js';
 import * as api from './api.js';
-import { asSaved, bytesOf, bytesText, rulesProblem } from './roomrules.js';
+import { asSaved, bytesOf, bytesText, rulesProblem } from './roomRulesModel.js';
 import { useRun } from './WallView.js';
 
 interface TextBlockProps {

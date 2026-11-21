@@ -306,6 +306,14 @@ describe('the Homebrew formula is tried on macOS and Linux (brew.yml)', () => {
   });
 });
 
+describe('the image label that the Docker self-update reads is the plain release number', () => {
+  it('the publish job names the semver version as its tag, whose version becomes the label (the git ref gave "v0.11.0")', () => {
+    const image = read('.github', 'workflows', 'image.yml');
+    const publish = image.slice(image.indexOf('\n  publish:'), image.indexOf('\n  merge:'));
+    expect(publish).toMatch(/id: meta[\s\S]*?tags: \|\n\s+type=semver,pattern=\{\{version\}\}/);
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [

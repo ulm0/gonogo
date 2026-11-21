@@ -136,7 +136,8 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   expectClean('/r/main/');
 
   // 5. the service worker registers and a reload still shows the page
-  await page.evaluate(() => navigator.serviceWorker.ready);
+  // WebKit under Playwright hangs the page once a service worker is installed (the project blocks them, see playwright.config.ts)
+  if (test.info().project.use.serviceWorkers !== 'block') await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await expect(page.locator('.topbar')).toBeVisible();
   expectClean('after the reload');

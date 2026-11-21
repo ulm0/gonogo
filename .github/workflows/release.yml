@@ -12,6 +12,11 @@ name: Release
 #
 # One tarball: `pnpm pack` makes it once, `pnpm publish <tarball>` publishes that file to npm (with provenance), the same file is attached to the
 # GitHub Release, and the Homebrew formula installs from it.
+# Verify: the job `verify` runs after the publish and the release's tarball and replaces the by-hand check: npm's sha1 must be the sha1 of the
+# release's own tarball (a pack rebuilt from the tag if the release has none), and npm must hold a provenance attestation. `clean-install` then
+# installs the version in a clean node:24 container (pinned by digest; Renovate bumps it) and checks that `gonogo --version` is the tag. Both wait
+# for npm to serve the version, up to 20 minutes (it took longer than ten for 0.7.0 and 0.8.1).
+#
 # Homebrew: the tarball that `pnpm pack` makes is attached to the GitHub Release, and the job `homebrew` opens a pull request on the
 # tap ulm0/homebrew-tap with the url of THAT asset and its sha256, computed here from the very file that was uploaded. Nothing waits for
 # npm's CDN to serve the version it just accepted (it took longer than ten minutes for 0.7.0 and 0.8.1). It is off until the repository
@@ -170,6 +175,83 @@ jobs:
           set -- "$RUNNER_TEMP"/asset/*.tgz
           [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one tarball in the artifact"; exit 1; }
           gh release upload "$TAG" "$1" --repo "$GITHUB_REPOSITORY" --clobber
+
+  verify:
+    needs: [publish, github-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # The tarball the release carries is the one that was published (publish packs once; github-release uploads that file).
+      - name: Download the release's tarball
+        id: asset
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "$RUNNER_TEMP/asset"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.tgz' --dir "$RUNNER_TEMP/asset"
+          ls "$RUNNER_TEMP/asset"
+      # Only if the release has no tarball (a release older than the asset): rebuild it from the tag. The pack is reproducible.
+      - if: steps.asset.outcome == 'failure'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - if: steps.asset.outcome == 'failure'
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - if: steps.asset.outcome == 'failure'
+        run: |
+          echo "::warning::$TAG has no tarball asset: comparing with a pack rebuilt from the tag"
+          pnpm install --frozen-lockfile
+          pnpm pack --pack-destination "$RUNNER_TEMP/asset"
+      - name: npm serves that tarball, with provenance
+        run: |
+          name="@${GITHUB_REPOSITORY_OWNER}/gonogo"
+          version=${TAG#v}
+          set -- "$RUNNER_TEMP"/asset/*.tgz
+          [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one tarball in $RUNNER_TEMP/asset"; exit 1; }
+          have=$(sha1sum "$1" | cut -d' ' -f1)
+          # npm can take a while to serve a version it just accepted
+          served=
+          for i in $(seq 1 40); do
+            served=$(npm view "$name@$version" dist.shasum 2>/dev/null || true)
+            [ -n "$served" ] && break
+            echo "npm does not serve $name@$version yet ($i of 40)"
+            sleep 30
+          done
+          [ -n "$served" ] || { echo "::error::npm did not serve $name@$version within 20 minutes"; exit 1; }
+          echo "release asset $have, npm $served"
+          [ "$have" = "$served" ] || { echo "::error::npm's sha1 $served is not the release asset's ($have)"; exit 1; }
+          predicate=$(npm view "$name@$version" dist.attestations.provenance.predicateType 2>/dev/null || true)
+          echo "provenance: $predicate"
+          [ -n "$predicate" ] || { echo "::error::$name@$version has no provenance attestation on npm"; exit 1; }
+
+  # A clean machine: nothing of the repository, only the registry. The image is pinned by digest; Renovate bumps it.
+  clean-install:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions: {}
+    container: node:24@sha256:9d266751ca3d7fdbe651c878ffd5ad0a42fed49a18c283509267c97f025b7496
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: |
+          version=${TAG#v}
+          for i in $(seq 1 40); do
+            npm install -g "@${GITHUB_REPOSITORY_OWNER}/gonogo@$version" && break
+            echo "install failed ($i of 40), retrying"
+            sleep 30
+          done
+          got=$(gonogo --version | head -n1)
+          echo "$got"
+          [ "$got" = "gonogo $version" ] || { echo "::error::gonogo --version printed '$got', expected 'gonogo $version'"; exit 1; }
 
   homebrew:
     needs: github-release
