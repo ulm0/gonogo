@@ -780,3 +780,44 @@
   gap: 8px;
   min-height: 44px;
 }
+
+/* "Add from the list" (the registry picker): a card inside a fold or a block */
+.registry {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--well);
+}
+
+.registry-line {
+  display: block;
+  padding: 6px 8px;
+  overflow-wrap: anywhere;
+  border-radius: 5px;
+  background: var(--key);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.registry-checked[data-old] {
+  color: var(--you-ink);
+}
+
+.registry-runs {
+  margin: 0;
+}
+
+.registry-warnings {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.registry-warn {
+  color: var(--you-ink);
+}

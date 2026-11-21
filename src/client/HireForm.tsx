@@ -8,6 +8,8 @@ import * as api from './api.js';
 import { PermissionsEditor } from './PermissionsEditor.js';
 import { effectiveEffort, effectiveModel as startModel } from '../shared/details.js';
 import { modelNote, useModelDefaults } from './models.js';
+import { hasServer, mergeServer } from './registry.js';
+import { RegistryPicker } from './RegistryPicker.js';
 import {
   BOSS_POSITION,
   callOf,
@@ -813,6 +815,15 @@ function Staff({ form }: { form: Target }): ReactElement {
             onBlur={touch('payload.mcpServers')}
           />
         </Control>
+        <RegistryPicker
+          payload={payloadKind}
+          has={(serverId) => hasServer(values.servers, serverId)}
+          onAdd={(entry) => {
+            const merged = mergeServer(values.servers, entry);
+            if (merged.ok) change({ servers: merged.text }, 'payload.mcpServers');
+            else setServerProblems((p) => ({ ...p, 'payload.mcpServers': 'The servers box is not a JSON object: fix it, then add from the list.' }));
+          }}
+        />
         {payloadKind === 'all' && (
           <Control
             id={`${id}-skills`}

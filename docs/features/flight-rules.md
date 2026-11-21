@@ -28,3 +28,5 @@ A module above the room while FLIGHT is the only console (an empty room). Four s
 PUT AWAY hides it; it also goes when a second console is staffed. The marks are kept in this browser only (`localStorage` key `gonogo.commissioning`): another device shows the checklist again, and a private window shows it every visit.
 
 **ROOM RULES** is your text for every agent of the room, sent in each agent's role text at the start of a session ([Room rules](./door.md)); changing it asks for the password again, and it shows its size in bytes against the 8 KiB cap. **CLOSING CHECKLIST TEMPLATE** is the list every new mission copies ([Missions](./missions.md#the-closing-checklist)), with the same cap and the same password.
+
+**SKILLS** lists the skill folders of the room and of each agent, who gets which, and adds or removes the room's; **Add from the list** in it and in PAYLOAD DEFAULTS picks a checked entry ([Registry](registry.md)).
