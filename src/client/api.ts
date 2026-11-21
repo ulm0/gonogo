@@ -95,6 +95,8 @@ import type {
   UserMessageRequest,
   WorktreeStatus,
   CostReport,
+  SemanticRequest,
+  SemanticView,
 } from '../shared/protocol.js';
 import { withBase } from './base.js';
 import {
@@ -1081,6 +1083,21 @@ export async function loadKnowledge(): Promise<void> {
 /** The Director's RECHECK of an entry's anchors: the entry with the new answer. A refusal ("again in 12 s") is the error. */
 export async function recheckLogEntry(id: string): Promise<LogEntry> {
   return toLogEntry(await call('POST', `/log/${encodeURIComponent(id)}/recheck`));
+}
+
+/** Search by meaning: the status of the index and the endpoint (the route is there only while the feature is on). */
+export async function getSemantic(): Promise<SemanticView> {
+  return (await call('GET', '/semantic')) as SemanticView;
+}
+
+/** Saves the endpoint, the model and the host that may get the notes: behind a step-up. */
+export async function putSemantic(request: SemanticRequest): Promise<SemanticView> {
+  return (await call('PUT', '/semantic', request)) as SemanticView;
+}
+
+/** One request to the endpoint: the size of the vectors it answers with. */
+export async function testSemantic(): Promise<{ dimension: number }> {
+  return (await call('POST', '/semantic/test')) as { dimension: number };
 }
 
 /** Star Chart: the newest entries with their tags, authors and mentions. Asked again when a `log` frame says something changed. */

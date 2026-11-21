@@ -41,6 +41,7 @@ import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
 import { createAnchorEngine } from './anchorengine.js';
 import { createKnowledge } from './knowledge.js';
+import { createSemantic, SEMANTIC_DIR } from './semantic.js';
 import { createProposalStore } from './knowledgeproposals.js';
 import { createKnowledgeStore } from './knowledgestore.js';
 import { parseLegs } from './knowledgeparse.js';
@@ -1018,6 +1019,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('docking'),
     });
     io.dock = docking;
+    // Search by meaning (docs/features/semantic-search.md): off until the Director turns it on and names an endpoint; the index is this room's
+    const semantic = createSemantic({
+      dir: join(home.dir, SEMANTIC_DIR),
+      now: io.now,
+      entries: () => missionLog.all(),
+      on: () => features.isOn('semantic-search'),
+      notify: (text) => tell('semantic', text),
+      changed: () => web?.broadcast({ t: 'log', changed: [], removed: [] }),
+      log: log.child('semantic'),
+    });
     const missionLog = createMissionLog({
       dir: home.dir,
       now: io.now,
@@ -1025,6 +1036,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('mission log'),
       anchors: createAnchorChecker({ agents: () => hubInstance.views().map((v) => v.name), place: (name) => roots(name).then((r) => r.root).catch(() => null), now: io.now, env, log: log.child('anchors') }),
       anchorsOn: () => features.isOn('knowledge-anchors'),
+      semantic,
     });
     /** The count of entries anchored to an agent's own repository that were last found not confirmed; checked again first when `fresh`. */
     const lastKnowledgeStop = new Map<string, number>();
@@ -1268,6 +1280,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return out;
       },
       knowledgeStore: knowledge,
+      semantic,
       massBudget,
       board: audited(board, audit, BOARD_AUDIT),
       blackBox,
@@ -1331,6 +1344,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the open count of each active mission is seeded here, so the last task done after a restart is announced
     missions.observe(tasks.list());
     await missionLog.load();
+    await semantic.load();
+    semantic.start();
     await knowledgeStore.load();
     await board.load();
     await blackBox.load();
@@ -1376,6 +1391,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('missions close', () => missions.close());
       await step('room close', () => room.close());
       await step('tab name close', () => tabName.close());
+      await step('semantic stop', () => semantic.stop());
       await step('mission log close', () => missionLog.close());
       await step('board close', () => board.close());
       audit('audit', 'gonogo stopped');

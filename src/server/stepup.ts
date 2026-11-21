@@ -64,6 +64,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (method === 'POST' && path === '/api/rooms/main/migrate') return body !== null && (body.action === 'cancel' || body.action === 'dismiss') ? null : 'moving where room main keeps its files';
   // Knowledge: taking the claims of one repository to another is one rename of a folder the Director's decisions live in (keeping two apart changes nothing)
   if (method === 'POST' && /^\/api\/knowledge\/[^/]+\/move$/.test(path)) return body !== null && body.action === 'keep' ? null : 'moving the claims of a repository';
+  // Search by meaning sends the notes of the room to the endpoint that is named here
+  if (method === 'PUT' && path === '/api/semantic') return 'the endpoint of Search by meaning';
   // the template of the closing checklist: its lines are copied into every new mission and shown in the Director's name
   if (method === 'PUT' && path === '/api/ritual-template') return 'the closing checklist template';
   // a Docker self-update

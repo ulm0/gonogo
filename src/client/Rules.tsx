@@ -14,6 +14,7 @@ import { FeaturesBlock } from './Features.js';
 import { PayloadDefaultsBlock } from './PayloadDefaults.js';
 import { SkillsBlock } from './SkillsBlock.js';
 import { KnowledgeBlock } from './Knowledge.js';
+import { SemanticBlock } from './Semantic.js';
 import { RitualTemplateBlock, RoomRulesBlock } from './RoomRules.js';
 import { RoomKeysBlock } from './RoomKeys.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
@@ -204,6 +205,7 @@ export function FlightRules(): ReactElement {
       <RoomRulesBlock />
       <RitualTemplateBlock />
       <KnowledgeBlock />
+      <SemanticBlock />
       <PermissionDefaultsBlock />
       <PayloadDefaultsBlock />
       <SkillsBlock />
