@@ -293,6 +293,9 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   });
   await page.keyboard.press('Escape');
   await view(page, group, 'hire form', async () => {
+    // the key is in the room view now (it was in the top bar): go back to the room first
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.topbar').waitFor({ timeout: 30_000 });
     await page.getByRole('button', { name: /staff a console/i }).first().click({ timeout: 3000 });
   });
   await page.keyboard.press('Escape');
