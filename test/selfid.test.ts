@@ -88,6 +88,19 @@ describe('resolveSelf', () => {
     expect(viaCgroup.Id).toBe(ID);
   });
 
+  it('the real case on an install: hostname and /etc/hostname say one 12-hex name, mountinfo names the real id, cgroup is "0::/" (a private cgroup namespace)', async () => {
+    const real = '805cf0e3ee5132eac4010c48186b5a6d0ca2666ff9eb35fbd408677b21a1b18a';
+    // Docker has no container by the hostname's name, and the id the files give is the one it knows
+    const call = engine([{ id: real, name: 'gonogo', hostname: '4d1c9b7a02ef' }, { id: OTHER, name: 'other' }]);
+    const found = await resolveSelf(call, '4d1c9b7a02ef', probe({ mountinfo: mountinfo(`/DATA/AppData/docker/containers/${real}`), cgroup: '0::/' }));
+    expect(found.Id).toBe(real);
+    // the mountinfo id is asked for first: the hostname is not even tried when the files answer
+    expect(call.asked[0]).toBe(`/containers/${real}/json`);
+    expect(call.asked.some((p) => p.includes('4d1c9b7a02ef'))).toBe(false);
+    // and when the hostname DOES equal the id's start, the same container comes back
+    expect((await resolveSelf(call, real.slice(0, 12), probe({ mountinfo: mountinfo(`/var/lib/docker/containers/${real}`), cgroup: '0::/' }))).Id).toBe(real);
+  });
+
   it('the plain case still works with no help from the files: the hostname is the first 12 of the id', async () => {
     const call = engine([{ id: ID, name: 'gonogo' }, { id: OTHER, name: 'other' }]);
     expect((await resolveSelf(call, ID.slice(0, 12), probe())).Id).toBe(ID);
