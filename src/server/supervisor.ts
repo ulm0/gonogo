@@ -32,7 +32,7 @@ import type { MigrationNote, StartupOutcome } from './mainmigrate.js';
 import { createPush, PUSH_LINE, parsePushLine } from './push.js';
 import type { Push } from './push.js';
 import { isPushPath, pushApi } from './pushhttp.js';
-import { addRoom, loadRooms, recordMainHome, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, renameRoom, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
+import { addRoom, updateRoom, loadRooms, recordMainHome, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { exposureProblem, parsePublicUrl } from './exposure.js';
 import { splitAllowed } from './hosts.js';
@@ -60,6 +60,8 @@ export interface RoomView {
   id: string;
   name: string;
   state: RoomState;
+  /** Whether the room starts when gonogo starts (`main` always does). */
+  autostart: boolean;
   /** Agents of the room, running ones, and those that need the Director; null while it cannot be asked. */
   agents: number | null;
   running: number | null;
@@ -190,18 +192,25 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   let directorToken: string | null = null;
   const children = new Map<string, Child>();
   const alertsWaiting: string[] = [];
+  /** Alerts and notices that could not be handed to main (stopped, starting) and were not kept (ALERTS_KEPT each): said once when main is ready. */
+  let heldDropped = 0;
+  const noticesWaiting: string[] = [];
   /** Alerts go to room main (its Downlink and Relay) over the pipe the supervisor holds. */
   const tell = (text: string): void => {
     log.warn(`login: ${text}`);
     const main = children.get(MAIN_ROOM);
     if (main?.proc != null && main.state === 'running' && main.proc.stdin !== null && !main.proc.stdin.destroyed) main.proc.stdin.write(`gonogo-alert ${JSON.stringify(text)}\n`);
     else if (alertsWaiting.length < ALERTS_KEPT) alertsWaiting.push(text);
+    else heldDropped += 1;
   };
   /** The open pages of room main hear it (its Downlink), nobody is pushed to: not Relay, not a redline. */
   const notice = (text: string): void => {
     log.info(`login: ${text}`);
     const main = children.get(MAIN_ROOM);
     if (main?.proc != null && main.state === 'running' && main.proc.stdin !== null && !main.proc.stdin.destroyed) main.proc.stdin.write(`gonogo-notice ${JSON.stringify(text)}\n`);
+    // held while main is stopped or starting, and said when it is ready (a notice is a line in its Downlink, so it is cheap to keep a few)
+    else if (noticesWaiting.length < ALERTS_KEPT) noticesWaiting.push(text);
+    else heldDropped += 1;
   };
   // an old home's room main is moved into rooms/main before anything reads where it lives (docs/features/rooms.md); a refusal leaves the home as it is
   let startupMove: StartupOutcome;
@@ -211,7 +220,6 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     releaseLock();
     throw error;
   }
-  const noticesWaiting: string[] = [];
   const moveNotice = ((): string | null => {
     const o = startupMove;
     if (o.did === 'migrated' || o.did === 'resumed') return o.direction === 'forward' ? `Room main now lives in rooms/main/ (${o.moved} files moved${o.did === 'migrated' && o.removed.length > 0 ? `; leftover worktrees removed first: ${o.removed.join(', ')}; their branches are kept` : ''}). UNDO is on the rooms page.` : 'Room main is back at the root of the home.';
@@ -376,6 +384,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
             markMainReady();
             for (const text of alertsWaiting.splice(0)) proc.stdin?.write(`gonogo-alert ${JSON.stringify(text)}\n`);
             for (const text of noticesWaiting.splice(0)) proc.stdin?.write(`gonogo-notice ${JSON.stringify(text)}\n`);
+            if (heldDropped > 0) {
+              proc.stdin?.write(`gonogo-alert ${JSON.stringify(`${String(heldDropped)} login alerts or notices were dropped while this room was not running (only ${String(ALERTS_KEPT)} of each are kept): check the sessions and keys in Settings`)}\n`);
+              heldDropped = 0;
+            }
           }
           log.info(`room ${child.entry.id} is up on 127.0.0.1:${child.port}`);
         } else if (line.trim() !== '') {
@@ -538,7 +550,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   }
 
   const viewsNow = async (): Promise<RoomView[]> =>
-    Promise.all([...children.values()].map(async (c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.state === 'running' ? null : c.lastError, ...(await statusOf(c)) })));
+    Promise.all([...children.values()].map(async (c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, autostart: c.entry.id === MAIN_ROOM || c.entry.autostart, note: c.state === 'running' ? null : c.lastError, ...(await statusOf(c)) })));
 
   /* ---------------------------------------------------------------- the front port */
 
@@ -696,6 +708,120 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   const roomView = async (id: string): Promise<RoomView | undefined> => (await viewsNow()).find((r) => r.id === id);
 
+  /* ---------------------------------------------------------------- stop and start (docs/features/rooms.md) */
+
+  /** One stop or start per room at a time: a second request for the same room is refused while the first is in flight. */
+  const inFlight = new Map<string, 'stopping' | 'starting'>();
+  const STOP_ANSWER_MS = 5000;
+  type Power = { ok: true; status: 200 | 202 } | { ok: false; status: number; why: string };
+
+  /** The reasons a room must not be stopped now (an open poll, a waiting Relief request, a running update, a main move), or null. */
+  async function stopRefusal(child: Child): Promise<string | null> {
+    const id = child.entry.id;
+    if (id === MAIN_ROOM) {
+      const note = readMigration(options.home);
+      if (note?.state === 'moving' || note?.state === 'undoing') return 'room main is being moved: wait for it to finish';
+    }
+    if (child.port === null) return null;
+    try {
+      const body = (await askRoom(child, '/api/state', 2000)) as { poll?: { status?: string } | null; relief?: { requests?: Array<{ id?: string }> } };
+      if (body.poll?.status === 'open') return `a T-minus poll or Static fire is open in room "${id}": wait for its answer`;
+      const waiting = body.relief?.requests ?? [];
+      if (waiting.length > 0) return `a Relief request waits in room "${id}" (${waiting.map((r) => String(r.id)).join(', ')}): answer it first`;
+      if (id === MAIN_ROOM) {
+        const update = (await askRoom(child, '/api/update', 2000)) as { state?: string };
+        if (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off') return 'an update is running in room main: wait for it to finish';
+      }
+    } catch {
+      return `room "${id}" did not say whether it is busy: try again`;
+    }
+    return null;
+  }
+
+  async function stopOne(child: Child, byKey: boolean): Promise<Power> {
+    const id = child.entry.id;
+    const doing = inFlight.get(id);
+    if (doing !== undefined) return { ok: false, status: 409, why: `room ${id} is ${doing}` };
+    if (byKey && id === MAIN_ROOM) return { ok: false, status: 403, why: 'an API key may not stop room main (it carries the updates and the Telegram poll): do it in the browser' };
+    if (child.state === 'stopped' && !child.wanted) return { ok: false, status: 409, why: `room ${id} is already stopped` };
+    inFlight.set(id, 'stopping');
+    try {
+      const refusal = await stopRefusal(child);
+      if (refusal !== null) {
+        inFlight.delete(id);
+        return { ok: false, status: 409, why: refusal };
+      }
+    } catch (error) {
+      inFlight.delete(id);
+      throw error;
+    }
+    const done = halt(child).finally(() => inFlight.delete(id));
+    const quick = await Promise.race([done.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), STOP_ANSWER_MS).unref())]);
+    return { ok: true, status: quick ? 200 : 202 };
+  }
+
+  function startOne(child: Child): Power {
+    const id = child.entry.id;
+    const doing = inFlight.get(id);
+    if (doing !== undefined) return { ok: false, status: 409, why: `room ${id} is ${doing}` };
+    if (child.state === 'starting' || child.state === 'running') return { ok: false, status: 409, why: `room ${id} is ${child.state}` };
+    if (child.timer !== null) clearTimeout(child.timer);
+    child.timer = null;
+    child.wanted = true;
+    child.failures = 0;
+    launch(child);
+    return (child.state as RoomState) === 'starting' ? { ok: true, status: 200 } : { ok: false, status: 409, why: 'gonogo is stopping' };
+  }
+
+  /** POST /api/rooms/<id>/stop|start and /api/rooms/stop-all|start-all. The grant was checked; step-up and the audit are here, not in the proxy. */
+  async function powerApi(req: http.IncomingMessage, res: http.ServerResponse, grant: NonNullable<ReturnType<typeof authHttp.grant>>, action: string, rawId: string | undefined): Promise<void> {
+    try {
+      if (req.method !== 'POST') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'POST' });
+      if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      const path = rawId === undefined ? `/api/rooms/${action}` : `/api/rooms/${rawId}/${action}`;
+      const reason = authHttp.stepUpNeeded(grant, 'POST', path, {});
+      if (reason !== null) return authHttp.stepUpDenied(req, res, reason, grant.kind === 'tui');
+      const byKey = grant.kind === 'key';
+      const actor = byKey ? `key "${auth.keys().find((k) => k.id === grant.keyId)?.name ?? 'unknown'}"` : grant.kind === 'session' ? 'the Director (browser session)' : `the Director (${grant.kind})`;
+      // the supervisor writes the audit, before and after, so a page cannot skip it
+      const audit = (text: string): void => {
+        log.warn(`rooms: ${actor}: ${text}`);
+        notice(`${actor}: ${text}`);
+      };
+      if (rawId === undefined) {
+        if (byKey && action === 'stop-all') {
+          audit('refused: an API key may not stop every room');
+          return sendApiError(res, 403, 'an API key may not stop every room: do it in the browser', 'forbidden');
+        }
+        const done: string[] = [];
+        const skipped: Array<{ id: string; why: string }> = [];
+        for (const child of [...children.values()]) {
+          if (action === 'stop-all' ? child.state === 'stopped' && !child.wanted : child.state !== 'stopped' && child.state !== 'crashed') continue;
+          const r = action === 'stop-all' ? await stopOne(child, false) : startOne(child);
+          if (r.ok) done.push(child.entry.id);
+          else skipped.push({ id: child.entry.id, why: r.why });
+        }
+        audit(`${action}: ${done.length === 0 ? 'nothing done' : `done ${done.join(', ')}`}${skipped.length === 0 ? '' : `; skipped ${skipped.map((s) => `${s.id} (${s.why})`).join(', ')}`}`);
+        return sendJson(res, 200, action === 'stop-all' ? { stopped: done, skipped } : { started: done, skipped });
+      }
+      let id: string;
+      try {
+        id = decodeURIComponent(rawId);
+      } catch {
+        return sendApiError(res, 400, 'bad room id', 'bad_request', 'id');
+      }
+      const child = children.get(id);
+      if (child === undefined) return sendApiError(res, 404, `there is no room "${id}"`, 'not_found');
+      const r = action === 'stop' ? await stopOne(child, byKey) : startOne(child);
+      audit(`${action} room ${id}: ${r.ok ? 'done' : `refused (${r.why})`}`);
+      if (!r.ok) return sendApiError(res, r.status, r.why, r.status === 403 ? 'forbidden' : 'conflict');
+      return sendJson(res, r.status, (await roomView(id)) ?? { id });
+    } catch (error) {
+      log.error('rooms power api failed', error);
+      return sendApiError(res, 500, 'internal error', 'internal');
+    }
+  }
+
   /** GET lists; POST adds; PATCH renames; DELETE takes a room off the list (its folder stays). The Director token was checked. */
   async function roomsApi(req: http.IncomingMessage, res: http.ServerResponse, rawId: string | undefined): Promise<void> {
     try {
@@ -724,7 +850,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         reconcile();
         return sendJson(res, 201, (await roomView(entry.id)) ?? entry);
       }
-      const entry = renameRoom(options.home, id, body.name);
+      const entry = updateRoom(options.home, id, { name: body.name, autostart: body.autostart });
       reconcile();
       return sendJson(res, 200, (await roomView(entry.id)) ?? entry);
     } catch (error) {
@@ -793,13 +919,14 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       void pushApi(push, req, res, path, grant.kind === 'session' ? (grant.sessionId ?? null) : null);
       return;
     }
-    const rooms = /^\/api\/rooms(?:\/([^/]+)(?:\/(migrate))?)?$/.exec(path);
+    const rooms = /^\/api\/rooms(?:\/([^/]+)(?:\/(migrate|stop|start))?)?$/.exec(path);
     if (rooms !== null) {
       const grant = authHttp.grant(req, 'api');
       if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
       if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
       if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
       if (rooms[2] === 'migrate') void (rooms[1] === 'main' ? migrateApi(req, res, grant) : sendApiError(res, 404, 'not found', 'not_found'));
+      else if (rooms[2] === 'stop' || rooms[2] === 'start' || rooms[1] === 'stop-all' || rooms[1] === 'start-all') void powerApi(req, res, grant, rooms[2] ?? (rooms[1] as string), rooms[2] === undefined ? undefined : rooms[1]);
       else void roomsApi(req, res, rooms[1]);
       return;
     }
@@ -868,7 +995,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     socketPath,
     setupToken: madeSetupToken,
     url: `http://${shownHost}:${port}/${directorToken === null ? '' : `#token=${directorToken}`}`,
-    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, note: c.lastError, ...NO_COUNTS })),
+    rooms: () => [...children.values()].map((c) => ({ id: c.entry.id, name: c.entry.name, state: c.state, autostart: c.entry.id === MAIN_ROOM || c.entry.autostart, note: c.lastError, ...NO_COUNTS })),
     whenReady: (ms) => Promise.race([mainReady, new Promise<void>((resolve) => setTimeout(resolve, ms).unref())]),
     async reload() {
       if (reloading || stopping) return;

@@ -25,9 +25,10 @@ if (process.env.FAKE_ROOM_FAIL) {
 const server = http.createServer((req, res) => {
   // a request on the unix socket has no remote address; one on TCP has no way in
   const ok = req.socket.remoteAddress === undefined;
+  if (req.url === '/api/update') return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ state: process.env.FAKE_ROOM_UPDATE || 'idle' }));
   if (req.url === '/api/state') {
     if (!ok) return void res.writeHead(401).end('no');
-    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ propellant: { cost: { days: [{ usd: 0.12 }, { usd: 1.5 }] } }, agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], poll: process.env.FAKE_ROOM_POLL_OPEN && home.includes('/rooms/') ? { status: 'open' } : null, tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
+    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ propellant: { cost: { days: [{ usd: 0.12 }, { usd: 1.5 }] } }, agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], relief: { requests: process.env.FAKE_ROOM_RELIEF && home.includes('/rooms/') ? [{ id: 'r1' }] : [] }, poll: process.env.FAKE_ROOM_POLL_OPEN && home.includes('/rooms/') ? { status: 'open' } : null, tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
   }
   // what the proxy puts on a message of the Director (test/login.test.ts: the user turns); every request is written, the last one is read
   if (ok && req.method === 'POST' && req.url?.toLowerCase().startsWith('/api/')) {
