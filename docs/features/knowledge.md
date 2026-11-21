@@ -26,6 +26,21 @@ A `claims.md` that cannot be read (over 256 KiB, over 200 claims or 500 anchors,
 
 **One channel between rooms:** the rooms of one install share the claims you accepted for a repository, and nothing else: proposals stay in the room (`<room>/knowledge-proposals/`). Agents that run as your user outside a Clean Room can read the store's files on disk anyway; the rules above protect Clean Room agents and other rooms' tool output.
 
+## Export, import, aliases (command line)
+
+`gonogo knowledge ...` runs on the machine gonogo runs on (in Docker: `docker exec <container> gonogo knowledge ...`), reads `GONOGO_KNOWLEDGE_DIR` or `<home>/knowledge` (`--home` for another), and works while gonogo is up (the same lock). **Nothing here has a route:** it cannot be done from the page or with an API key.
+
+| Command | Does |
+|---|---|
+| `list` | the repositories, their claims, and the ones that look like another ("the same remote, another root commit") |
+| `export [--repo <id or path>] [--out <file>] [--multivac]` | one JSON bundle of the accepted claims (and rituals): to stdout, or to a **new** file (0600; an existing file or a link is never written). No checkout path, binding or proposal is in it. `--multivac` adds, per repository, `multivac`: the claims as a multivac `invariants.md` (a `"literal"` leg becomes an escaped regex; a leg that would pass 200 characters is left out and named on stderr) |
+| `import <file> [--apply] [--replace]` | a **dry run** that lists what it would add, skip and reject; `--apply` writes. A claim whose id is already there is skipped, or replaced with `--replace`. Imported claims have authority `imported` and `import: <file name>` as source |
+| `alias <fork> <canonical>` | a fork reads and writes the knowledge of another repository (what the fork held stays where it is, unread) |
+| `move <from> <to>` | after a rewritten root commit or a moved remote: the claims go to the new id (one rename) and the old id becomes an alias. Its checkouts come along **unbound** |
+| `keep <a> <b>` | two repositories that look alike are kept apart |
+
+**Limits and checks on import:** a bundle over **8 MiB** is refused before it is parsed, as is one with more than **50** repositories; per repository 256 KiB of claims, 200 claims and 500 anchors. A repository's id must be the hash of its remote and root commit (a bundle cannot put claims under another repository's id); a remote with a scheme, user, token or query is refused; every claim goes through the same parser as the store and a statement is cleaned as when you accept it. **Bindings are never imported:** the first checkout seen for the repository asks for one.
+
 ## Agents
 
 | Tool | Does |

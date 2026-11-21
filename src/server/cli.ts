@@ -94,6 +94,7 @@ import { createStartupStore } from './startup.js';
 import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { createRules } from './rules.js';
+import { runKnowledgeCli } from './knowledgecli.js';
 import { doorTable } from './door.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { verifyImage } from './attest.js';
@@ -195,6 +196,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
       gonogo rooms migrate-main [--dry-run | --undo] [--home <dir>]
        gonogo token rotate [--home <dir>]
+       gonogo knowledge list | export | import <file> | alias | move | keep  (the Director's claims: docs/features/knowledge.md)
        gonogo auth reset | status | key add|list|revoke | confirm [--home <dir>]
        gonogo expose <tailscale|cloudflare|caddy|funnel|ngrok> --public-url https://<name> [--write]  |  gonogo expose check
 
@@ -249,6 +251,7 @@ export type ParsedArgs =
   | { kind: 'token'; home?: string }
   | { kind: 'auth'; args: string[]; home?: string }
   | { kind: 'expose'; args: string[]; home?: string }
+  | { kind: 'knowledge'; args: string[]; home?: string }
   | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
   | { kind: 'migrate-main'; mode: 'move' | 'dry-run' | 'undo'; home?: string }
   | { kind: 'selfupdate'; target: string; expect: string; home: string; image: string }
@@ -274,7 +277,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     const room = parseArgs(argv.slice(1));
     return room.kind === 'run' ? { kind: 'room', options: { ...room.options, roomChild: true } } : room;
   }
-  if (argv[0] === 'auth' || argv[0] === 'expose') {
+  if (argv[0] === 'auth' || argv[0] === 'expose' || argv[0] === 'knowledge') {
     const args: string[] = [];
     let home: string | undefined;
     for (let i = 1; i < argv.length; i += 1) {
@@ -1752,6 +1755,12 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   if (parsed.kind === 'expose') {
     // prints (and with --write, writes files); runs no tunnel and no installer
     exit(await exposeCommand(parsed.args, parsed.home === undefined ? homeOf(env) : resolve(parsed.home), env, { out: (t) => void process.stdout.write(t), err: (t) => void process.stderr.write(t) }));
+    return;
+  }
+  if (parsed.kind === 'knowledge') {
+    // export, import, alias, move, keep: the Director's own commands on the store's folder; no route, no key
+    const root = parsed.home === undefined ? homeOf(env) : resolve(parsed.home);
+    exit(await runKnowledgeCli(parsed.args, { dir: env.GONOGO_KNOWLEDGE_DIR || join(root, 'knowledge'), now: Date.now, io: { out: (t) => void process.stdout.write(t), err: (t) => void process.stderr.write(t) } }));
     return;
   }
   if (parsed.kind === 'token') {
