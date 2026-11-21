@@ -21,7 +21,7 @@ export function LayoutPop({ icon = false }: { icon?: boolean }): ReactElement {
   const seats = useNext((s) => s.seats);
   const density = densityOf(panels);
   return (
-    <NextPop label={icon ? '⚙' : 'Layout ▾'} name="Layout of the room" align="end" className="next-layout">
+    <NextPop label={icon ? '≡' : 'Layout ▾'} name="Layout of the room" align="end" className="next-layout">
       {(close) => (
         <div className="next-layout-pop">
           <div className="next-pop-head">
