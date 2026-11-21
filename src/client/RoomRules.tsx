@@ -63,7 +63,7 @@ export function RoomRulesBlock(): ReactElement {
         </>
       )}
       <p className="hint">
-        These words reach every agent of the room at the start of its next session, as part of its system prompt, so saving asks for your password. The project&apos;s own AGENTS.md is only pointed to, never copied: gonogo tells an engine that does not load it itself where it is, and reads nothing of it.
+        These words reach every agent of the room at the start of its next session, in its role text (the system prompt on Claude Code and pi, the first prompt on the other engines), so saving asks for your password. The project&apos;s own AGENTS.md is only pointed to, never copied: gonogo tells an engine that does not load it itself where it is, and reads nothing of it.
       </p>
       {problem !== null && (
         <p className="error" role="alert">

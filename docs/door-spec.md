@@ -4,6 +4,8 @@ PR 1 of `docs/knowledge-spec.md` (piece B, with RSO's M4 and M5). The user page 
 
 ## What it does
 
+- **Authority differs by engine:** `claude` and `pi` get the role through `--append-system-prompt` (system prompt); `gemini` (`--prompt-interactive`), `codex`, `opencode` (`--prompt`) and `antigravity` (`-i`) get it as the first user prompt. Do not promise system-prompt level.
+
 - `<home>/rules.md`, at most 8 KiB, edited only through `PUT /api/rules` (`GET` reads). A change needs a **step-up** (`stepup.ts`), is refused to a terminal's session (`stepUpRequired`, "do this in the browser") and to any API key below scope `full` (`keyMayDo`); a key that only reads or acts cannot read it either. An agent's token is refused on every `/api` route (401). The Black Box line carries the length, never the text.
 - `door.ts` builds the text after the role: the room's rules under one heading, then the fixed pointer sentence "The project's rules are in the file AGENTS.md in your working directory: read it first." when the working directory has that file (`lstat`, regular file, a link or folder does not count; nothing is read) and the engine does not load it itself. With only `CLAUDE.md`, every engine but Claude Code gets the same sentence naming `CLAUDE.md`. Both go through the one channel each engine has; the pointer has **no word that comes from a repository** (two constants for the file name), and a test puts a sentinel in `AGENTS.md` and `CLAUDE.md` and checks that no argument of any engine contains it (RSO S1) and that the sentence is the same whatever the file holds.
 - The room's rules are read when a console starts (not live).

@@ -8,7 +8,8 @@ One text of **rules for every agent of the room**, and a pointer to the reposito
 
 - **Where:** Flight Rules, block RULES; the file is `rules.md` in the room's home (0600). At most **8 KiB** of plain text (control and text-direction characters are refused). An empty text removes the rules.
 - **Who can write them:** only you, in the page, **with a fresh password check** (step-up), or an API key of scope `full`. A key that only reads or acts cannot read or write them; a terminal's session is told to do it in the browser. No agent route reads or writes the file. The Black Box says "Director changed the room rules (N bytes)", never the text.
-- **Why so careful:** the text reaches every agent as part of its system prompt. Whoever can change it instructs all of them.
+- **Why so careful:** the text reaches every agent as part of its role text. Whoever can change it instructs all of them.
+- **How it arrives:** Claude Code and pi get it in the **system prompt** (`--append-system-prompt`); Gemini CLI, Codex, opencode and Antigravity get the role text as their **first user prompt**, so it carries less authority there: an engine may weigh it like any message. Do not rely on it for what must never happen; use the engine's own permissions for that.
 - **When:** at the next start of each agent (it is read when the console starts). Running consoles keep what they have.
 
 ## The project's AGENTS.md

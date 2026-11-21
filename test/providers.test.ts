@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRecord, Launcher, Provider } from '../src/shared/protocol.js';
-import { doorText } from '../src/server/door.js';
 import { buildRoleText, createLauncher } from '../src/server/launcher.js';
 import { AGY_HOOK_SHIM, AGY_MODES, buildAgyHooks, buildGeminiSettings, GEMINI_HOOKS, GEMINI_SETTINGS_FILE, HOOK_SHIM, installedProviders, shellQuote } from '../src/server/providers.js';
 
@@ -47,7 +46,7 @@ const agent = (provider: Provider, over: Partial<AgentRecord> = {}): AgentRecord
   ...over,
 });
 const agentDir = (): string => join(home, 'agents', 'ana');
-const roleText = (provider: Provider): string => buildRoleText('ana', 'Reviews pull requests.', join(agentDir(), 'memory.md')) + doorText(provider, '');
+const roleText = (): string => buildRoleText('ana', 'Reviews pull requests.', join(agentDir(), 'memory.md'));
 
 describe('prepareStart for another agent CLI', () => {
   it('the PR footer is Claude Code\'s setting: with it on in the room, another engine\'s files carry no attribution', async () => {
@@ -65,7 +64,7 @@ describe('prepareStart for another agent CLI', () => {
     const prepared = await l.prepareStart(agent('gemini'), START);
     const { spec } = prepared;
     expect(spec.file).toBe('gemini');
-    expect(spec.args).toStrictEqual(['--approval-mode', 'default', '--prompt-interactive', roleText('gemini')]);
+    expect(spec.args).toStrictEqual(['--approval-mode', 'default', '--prompt-interactive', roleText()]);
     expect(spec.cwd).toBe(work);
     const settingsPath = join(agentDir(), GEMINI_SETTINGS_FILE);
     expect(spec.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBe(settingsPath);
@@ -105,7 +104,7 @@ describe('prepareStart for another agent CLI', () => {
       '-c',
       'mcp_servers.gonogo.bearer_token_env_var="GONOGO_TOKEN"',
       '--dangerously-bypass-approvals-and-sandbox',
-      roleText('codex'),
+      roleText(),
     ]);
     expect(spec.env.CODEX_HOME).toBeUndefined();
   });
@@ -114,7 +113,7 @@ describe('prepareStart for another agent CLI', () => {
     const l = launcher();
     const open = await l.prepareStart(agent('opencode'), START);
     expect(open.spec.env.OPENCODE_CONFIG).toBe(join(agentDir(), 'opencode.json'));
-    expect(open.spec.args).toStrictEqual(['--prompt', roleText('opencode')]);
+    expect(open.spec.args).toStrictEqual(['--prompt', roleText()]);
     expect(JSON.parse(await readFile(join(agentDir(), 'opencode.json'), 'utf8'))).toStrictEqual({
       mcp: { gonogo: { type: 'remote', url: `${HUB}/mcp`, headers: { Authorization: 'Bearer {env:GONOGO_TOKEN}' }, enabled: true } },
     });
@@ -150,7 +149,7 @@ describe('prepareStart for another agent CLI', () => {
 
   it('pi gets the bare role in its system prompt; the screen-only CLIs are started by name alone', async () => {
     const l = launcher();
-    expect((await l.prepareStart(agent('pi'), START)).spec).toMatchObject({ file: 'pi', args: ['--append-system-prompt', `Reviews pull requests.${doorText('pi', '')}`] });
+    expect((await l.prepareStart(agent('pi'), START)).spec).toMatchObject({ file: 'pi', args: ['--append-system-prompt', 'Reviews pull requests.'] });
     for (const provider of ['qwen', 'grok', 'crush'] as const) {
       expect((await l.prepareStart(agent(provider), START)).spec).toMatchObject({ file: provider, args: [] });
     }

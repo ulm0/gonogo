@@ -34,7 +34,6 @@ import {
 } from '../src/server/constants.js';
 import { signCall } from '../src/server/docking.js';
 import { pointerText } from '../src/server/hub.js';
-import { doorText } from '../src/server/door.js';
 import { buildRoleText } from '../src/server/launcher.js';
 import { BUILTIN_LIVERIES } from '../src/shared/livery.js';
 import { WORKTREE_NOTE } from '../src/server/constants.js';
@@ -460,7 +459,7 @@ function expectedArgv(h: Harness, name: string, role: string, flag: 'session-id'
     ...(pluginDir === undefined ? [] : ['--plugin-dir', pluginDir]),
     ...(model === undefined ? [] : ['--model', model]),
     '--append-system-prompt',
-    buildRoleText(name, role, join(dir, 'memory.md')) + doorText('claude', ''),
+    buildRoleText(name, role, join(dir, 'memory.md')),
     '--system-prompt-snapshot',
     'off',
     '--allowedTools',

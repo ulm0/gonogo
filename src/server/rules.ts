@@ -1,6 +1,6 @@
 /**
  * Room rules (docs/features/door.md): one text, `<home>/rules.md`, written by the Director in Flight Rules and appended to the role text of every
- * agent at its start (door.ts). It reaches every engine at the authority of a system prompt, so only the API writes it (with a step-up, audited by
+ * agent at its start (door.ts). It reaches every engine in its role text (the system prompt of claude and pi, the first prompt of the others), so only the API writes it (with a step-up, audited by
  * name and length, never by text), no agent route reads or writes it, and it is at most RULES_MAX_BYTES of plain text.
  */
 import { randomBytes } from 'node:crypto';
