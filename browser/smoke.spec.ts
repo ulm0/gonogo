@@ -119,7 +119,11 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   // 3. the style sheet is applied and the fonts came
   await page.goto(`${base}/r/main/`);
   await expect(page.locator('.topbar')).toBeVisible();
-  const topbar = await page.locator('.topbar').evaluate((el) => ({ display: getComputedStyle(el).display, height: el.getBoundingClientRect().height }));
+  // DEBUG webkit
+  await page.screenshot({ path: 'browser-results/debug-room.png' }).catch(() => undefined);
+  console.log('DEBUG url', page.url(), 'count', await page.locator('.topbar').count(), 'html', (await page.content().catch((e) => String(e))).slice(0, 600));
+  console.log('DEBUG problems', JSON.stringify(problems));
+  const topbar = await page.locator('.topbar').evaluate((el) => ({ display: getComputedStyle(el).display, height: el.getBoundingClientRect().height }), undefined, { timeout: 8000 });
   expect(topbar.display).toBe('flex');
   expect(topbar.height).toBeGreaterThan(40);
   expect(topbar.height).toBeLessThan(200);
