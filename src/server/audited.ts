@@ -192,6 +192,10 @@ export const ROOM_KEYS_AUDIT: Table = {
   set: ['config', (args) => `Director set the room key ${plain(args[0]) ?? '(unnamed)'}`],
   remove: ['config', (args) => `Director removed the room key ${plain(args[0]) ?? '(unnamed)'}`],
 };
+/** Room rules: who changed them and how long they are, never the text (it is the system prompt of every agent). */
+export const RULES_AUDIT: Table = {
+  set: ['config', (_args, result) => (isRecord(result) && typeof result.bytes === 'number' ? (result.bytes === 0 ? 'Director removed the room rules' : `Director changed the room rules (${result.bytes} bytes)`) : null)],
+};
 export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const AUTOUPDATE_AUDIT: Table = { set: ['config', 'Director changed auto-update'], skip: ['config', 'Director skipped a version for auto-update'] };
