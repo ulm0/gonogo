@@ -81,6 +81,7 @@ test.afterAll(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
+test.use({ serviceWorkers: process.env.SW_BLOCK ? 'block' : 'allow' });
 test('setup, login with a second factor, styles, a room with a live link and a console, the service worker', async ({ page }) => {
   // every console error and every page error fails the run: a CSP block ("Refused to ...") is a console error
   const problems: string[] = [];
@@ -119,11 +120,9 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   // 3. the style sheet is applied and the fonts came
   await page.goto(`${base}/r/main/`);
   await expect(page.locator('.topbar')).toBeVisible();
-  // DEBUG webkit
-  await page.screenshot({ path: 'browser-results/debug-room.png' }).catch(() => undefined);
-  console.log('DEBUG url', page.url(), 'count', await page.locator('.topbar').count(), 'html', (await page.content().catch((e) => String(e))).slice(0, 600));
-  console.log('DEBUG problems', JSON.stringify(problems));
-  const topbar = await page.locator('.topbar').evaluate((el) => ({ display: getComputedStyle(el).display, height: el.getBoundingClientRect().height }), undefined, { timeout: 8000 });
+  const t0 = Date.now();
+  console.log('DEBUG alive', await page.evaluate(() => document.readyState, undefined).catch(() => 'hung'), Date.now() - t0);
+  const topbar = await page.locator('.topbar').evaluate((el) => ({ display: getComputedStyle(el).display, height: el.getBoundingClientRect().height }));
   expect(topbar.display).toBe('flex');
   expect(topbar.height).toBeGreaterThan(40);
   expect(topbar.height).toBeLessThan(200);
@@ -140,7 +139,7 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   expectClean('/r/main/');
 
   // 5. the service worker registers and a reload still shows the page
-  await page.evaluate(() => navigator.serviceWorker.ready);
+  if (!process.env.SW_BLOCK) await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await expect(page.locator('.topbar')).toBeVisible();
   expectClean('after the reload');
