@@ -52,7 +52,7 @@ jobs:
           mkdir "$RUNNER_TEMP/pack"
           pnpm pack --pack-destination "$RUNNER_TEMP/pack"
           ls "$RUNNER_TEMP/pack"
-      - name: Windows: npm refuses the install
+      - name: On Windows npm refuses the install
         if: ${{ !matrix.supported }}
         run: |
           if npm install -g "$RUNNER_TEMP"/pack/*.tgz > "$RUNNER_TEMP/install.log" 2>&1; then
