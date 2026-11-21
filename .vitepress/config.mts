@@ -98,6 +98,7 @@ export default defineConfig({
           { text: 'Subagents', link: '/features/subagents' },
           { text: 'Login', link: '/features/login' },
           { text: 'Co-author line', link: '/features/coauthor' },
+          { text: 'Room rules and AGENTS.md', link: '/features/door' },
           { text: 'Tool permissions', link: '/features/permissions' },
           { text: 'Start again after a restart', link: '/features/autostart' },
           { text: 'Redline', link: '/features/redline' },

@@ -15,6 +15,7 @@ import {
   TRUST_VERIFY_ATTEMPTS,
   TRUST_VERIFY_DELAY_MS,
 } from '../src/server/constants.js';
+import { doorText } from '../src/server/door.js';
 import {
   buildArgv,
   buildChildEnv,
@@ -138,6 +139,9 @@ const renamesTo = (file: string): number =>
   vi.mocked(rename).mock.calls.filter(([, to]) => basename(String(to)) === file).length;
 
 /** The same text as ROLE_PREAMBLE with the three placeholders filled, built without String.replace so the test is not the code under test. */
+/** What a Claude Code start adds after the role: no rules in the room, and the pointer to the project's AGENTS.md (door.ts). */
+const DOOR_CLAUDE = doorText('claude', '');
+
 function expectedRole(name: string, role: string, memoryPath: string): string {
   const values: Record<string, string> = { '{name}': name, '{memory}': memoryPath, '{role}': role.trim() };
   return ROLE_PREAMBLE.split(/(\{name\}|\{memory\}|\{role\})/)
@@ -162,7 +166,7 @@ function expectedArgs(
     '--mcp-config',
     join(base, 'mcp.json'),
     '--append-system-prompt',
-    expectedRole(name, over.role ?? ROLE, join(base, 'memory.md')),
+    expectedRole(name, over.role ?? ROLE, join(base, 'memory.md')) + DOOR_CLAUDE,
     '--system-prompt-snapshot',
     'off',
     '--allowedTools',
@@ -738,9 +742,9 @@ describe('prepareStart', () => {
     const role = "Budget is $$5 and cost $& more, $' and $` and {memory} and {name}.";
     const prepared = await launcher().prepareStart(agent({ role }), START);
     const element = prepared.spec.args[prepared.spec.args.indexOf('--append-system-prompt') + 1];
-    expect(element).toBe(expectedRole('ana', role, agentFile('ana', 'memory.md')));
+    expect(element).toBe(expectedRole('ana', role, agentFile('ana', 'memory.md')) + DOOR_CLAUDE);
     expect(element).toContain(role);
-    expect(element).toBe(buildRoleText('ana', role, agentFile('ana', 'memory.md')));
+    expect(element).toBe(buildRoleText('ana', role, agentFile('ana', 'memory.md')) + DOOR_CLAUDE);
   });
 
   it('replaces the executable with claudeBin and prepends the agentCmd arguments', async () => {
@@ -1615,7 +1619,7 @@ describe('Payload: MCP servers and skills', () => {
     const base = join(home, 'agents', 'ana');
     const plugin = join(base, 'payload-plugin');
     expect(prepared.spec.args).toStrictEqual(
-      buildArgv({ flag: 'session-id', sessionId: SID, mode: 'default', settingsPath: join(base, 'settings.json'), mcpPath: join(base, 'mcp.json'), roleText: expectedRole('ana', ROLE, join(base, 'memory.md')), pluginDir: plugin }),
+      buildArgv({ flag: 'session-id', sessionId: SID, mode: 'default', settingsPath: join(base, 'settings.json'), mcpPath: join(base, 'mcp.json'), roleText: expectedRole('ana', ROLE, join(base, 'memory.md')) + DOOR_CLAUDE, pluginDir: plugin }),
     );
     const mcp = await mcpOf();
     expect(Object.keys(mcp.mcpServers)).toEqual(['files', 'remote', 'gonogo']);

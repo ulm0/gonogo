@@ -28,7 +28,7 @@ import {
   AGENTS_DIR,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -83,6 +83,7 @@ import { createRunState } from './runstate.js';
 import { createStartupStore } from './startup.js';
 import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
+import { createRules } from './rules.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { verifyImage } from './attest.js';
 import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
@@ -653,6 +654,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await startupStore.load();
     const coauthorStore = createCoauthorStore({ dir: home.dir, log: log.child('coauthor') });
     await coauthorStore.load();
+    const rulesStore = createRules({ dir: home.dir, now: Date.now, log: log.child('rules') });
+    await rulesStore.load();
     const subagentStore = createSubagentStore({ dir: home.dir, log: log.child('subagents') });
     await subagentStore.load();
     const launcher = createLauncher({
@@ -666,6 +669,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       roomKeys: (cleanRoom) => roomKeys.values(cleanRoom),
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
+      rules: () => rulesStore.text(),
       defaultEffort: () => modelDefaults.effort(),
       defaultPermissions: () => permissionDefaults.get(),
       payloadDefaults: () => payloadDefaults.get(),
@@ -1208,6 +1212,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       ...(autoApi === undefined ? {} : { autoUpdate: audited(autoApi, blackBox.record, AUTOUPDATE_AUDIT) }),
       subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),
       coauthor: audited(coauthorStore, blackBox.record, COAUTHOR_AUDIT),
+      rules: audited(rulesStore, blackBox.record, RULES_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -1313,6 +1318,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('permissions close', () => permissionDefaults.close());
       await step('subagents close', () => subagentStore.close());
       await step('coauthor close', () => coauthorStore.close());
+      await step('rules close', () => rulesStore.close());
       await step('startup close', async () => {
         await startupStore.close();
         await runState.close();

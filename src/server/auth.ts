@@ -1319,7 +1319,7 @@ export function keyMayDo(scope: KeyScope, method: string, path: string): boolean
   if (path.startsWith('/api/auth')) return false;
   const get = method === 'GET' || method === 'HEAD';
   if (scope === 'full') return true;
-  if (get) return !/^\/(?:api\/)?(?:terminal|clearance|keys)/.test(path);
+  if (get) return !/^\/(?:api\/)?(?:terminal|clearance|keys|rules)/.test(path);
   if (scope === 'read') return false;
   return method === 'POST' && (/^\/api\/messages$/.test(path) || /^\/api\/agents\/[^/]+\/(?:hold|resume|answer)$/.test(path) || /^\/api\/(?:poll\/(?:hold|abort)|relief\/[^/]+\/(?:go|no-go))$/.test(path));
 }

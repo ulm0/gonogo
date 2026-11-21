@@ -30,6 +30,9 @@ export const RUN_STATE_MAX_AGE_MS = 7 * 24 * 3_600_000;
 export const RUN_STATE_FILE = 'run-state.json';
 export const STARTUP_FILE = 'startup.json';
 export const COAUTHOR_FILE = 'coauthor.json';
+/** The rules of the room (docs/features/door.md): one text file in the room's home, at most this many bytes. */
+export const RULES_FILE = 'rules.md';
+export const RULES_MAX_BYTES = 8 * 1024;
 export const SUBAGENTS_FILE = 'subagents.json';
 /** The variable Claude Code reads for the most subagents running at once; a Clean Room container gets it by name. */
 export const SUBAGENT_LIMIT_ENV = 'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS';

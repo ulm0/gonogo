@@ -697,6 +697,17 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     ws.close();
   });
 
+  it('step-up: the rules of the room (the system prompt of every agent) are refused with stepUp:true when the check is old; reading them is not; a terminal and a key never write them', async () => {
+    const { cookies } = await withTotp();
+    const [h, b] = json(cookieHeader(cookies), { text: 'Never push to main.' });
+    expect((await call('PUT', '/api/rules', h, b)).status).not.toBe(403);
+    clock += 6 * 60_000;
+    const refused = await call('PUT', '/api/rules', h, b);
+    expect(refused.status).toBe(403);
+    expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true });
+    expect((await call('GET', '/api/rules', h, b)).status).not.toBe(403);
+  });
+
   it('step-up: moving where room main keeps its files (MIGRATE NOW, UNDO) is refused with stepUp:true when the check is old; cancelling it, dismissing the note and the dry run are not', async () => {
     const { cookies } = await withTotp();
     const [h] = json(cookieHeader(cookies), {});
@@ -1240,7 +1251,7 @@ describe('the device login of a terminal through the supervisor', () => {
     const token = (JSON.parse((await poll(flow.device_code)).text) as { token: string }).token;
     const bearer = { authorization: `Bearer ${token}`, ...JSONH };
     // what a step-up guards: always "do this in the browser", however fresh
-    for (const [method, path, body] of [['PUT', '/api/permissions', {}], ['POST', '/api/agents', { name: 'x', command: 'sh' }], ['PUT', '/api/features/relay', {}], ['POST', '/api/update', {}]] as const) {
+    for (const [method, path, body] of [['PUT', '/api/permissions', {}], ['POST', '/api/agents', { name: 'x', command: 'sh' }], ['PUT', '/api/features/relay', {}], ['PUT', '/api/rules', { text: 'x' }], ['POST', '/api/update', {}]] as const) {
       const res = await call(method, path, bearer, JSON.stringify(body));
       expect(res.status, path).toBe(403);
       expect(JSON.parse(res.text)).toMatchObject({ stepUpRequired: true });
