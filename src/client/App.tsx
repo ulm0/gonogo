@@ -31,6 +31,10 @@ import { agentCounts, updateDialogText } from './selfupdate.js';
 import { BASE, MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
 import { copyText } from './uplink.js';
 import { Wall } from './WallView.js';
+import { NEXT } from './next.js';
+import { NextRoom } from './NextRoom.js';
+import { NextPhoneBar, NextTopBar } from './NextTopBar.js';
+import './next.css';
 import { SERVER_GONE_TEXT } from './wording.js';
 import logo from '../../docs/brand/lockup.svg';
 import './shell.css';
@@ -572,6 +576,7 @@ function Screen({ phone }: { phone: boolean }): ReactElement {
   if (view === 'blackbox') return <BlackBox />;
   if (view === 'rules') return <FlightRules />;
   if (view === 'missions') return <Missions />;
+  if (NEXT && view === 'room') return <NextRoom phone={phone} />;
   if (phone) {
     return (
       <main className="room room-phone">
@@ -613,12 +618,12 @@ function Office(): ReactElement {
   }
   return (
     <>
-      <TopBar phone={phone} onPanel={() => setPanel(true)} />
+      {NEXT ? <NextTopBar phone={phone} onPanel={() => setPanel(true)} /> : <TopBar phone={phone} onPanel={() => setPanel(true)} />}
       <GoneStrip />
       <RolloutStrip />
       <OtherRoomStrip />
       <Screen phone={phone} />
-      {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
+      {phone && form === null && (NEXT ? <NextPhoneBar /> : <PhoneBar onPanel={() => setPanel(true)} />)}
       <LiveRegion />
       {patch}
     </>

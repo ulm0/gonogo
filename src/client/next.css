@@ -1,0 +1,59 @@
+/* The prototype layout (src/client/next.ts). Only classes of the prototype; the app's own tokens and keys. */
+.next-anchor { position: relative; display: inline-flex; }
+.next-pop {
+  position: absolute; top: calc(100% + 6px); z-index: 30; min-width: 220px; max-width: min(380px, calc(100vw - 32px));
+  padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  background: var(--panel);
+}
+.next-pop[data-align='start'] { left: 0; }
+.next-pop[data-align='end'] { right: 0; }
+.next-pop[data-up] { top: auto; bottom: calc(100% + 6px); }
+.next-pop-title, .next-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; }
+.next-pop-keys { display: flex; flex-wrap: wrap; gap: 8px; }
+.next-menu { display: flex; flex-direction: column; gap: 4px; }
+.next-item { justify-content: flex-start; width: 100%; text-align: left; }
+.next-topbar { gap: 8px; }
+.next-jump { gap: 8px; min-width: 200px; justify-content: flex-start; }
+.next-jump-text { flex: 1; text-align: left; }
+.next-kbd { font: inherit; font-size: 11px; opacity: 0.7; }
+.next-version .btn { font-variant-numeric: tabular-nums; }
+.next-strip { margin: 12px 24px 0; display: flex; flex-direction: column; gap: 12px; }
+.next-strip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.next-chip .next-pop { width: min(620px, calc(100vw - 32px)); }
+.next-block { display: flex; flex-direction: column; gap: 8px; }
+.next-block .wall-block { width: 100%; }
+.next-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.next-ops-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.next-ops-head h2 { margin: 0; }
+.next-open-seats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 2px; }
+.next-matrix { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.next-layout .next-pop { width: min(420px, calc(100vw - 32px)); }
+.next-layout-pop { display: flex; flex-direction: column; gap: 8px; }
+.next-densities { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.next-density { display: flex; flex-direction: column; align-items: flex-start; height: auto; padding: 8px 12px; text-align: left; white-space: normal; }
+.next-panel-modes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.next-panel-modes li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.next-modes { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.next-termbar { display: flex; align-items: center; gap: 8px; }
+.next-room[data-expanded] { flex-wrap: nowrap; }
+.next-room[data-expanded] .panel { flex: 1 1 auto; }
+.next-room[data-expanded] .term-wrap { min-height: 60vh; }
+.next-rail { display: flex; flex-direction: column; gap: 6px; flex: 0 0 160px; padding: 12px; align-self: flex-start; }
+.next-rail-key { justify-content: flex-start; width: 100%; }
+.next-phone-bar { display: flex; gap: 8px; }
+.next-phone-bar > * { flex: 1; }
+.next-phone-bar .next-anchor .btn { width: 100%; }
+.next-phone-bar .next-pop { left: auto; right: 0; }
+@media (max-width: 700px) {
+  .next-strip { margin: 12px 16px 0; }
+  .next-topbar { padding: 12px 16px 0; }
+  .next-jump { min-width: 0; flex: 1; }
+  .next-jump .next-kbd { display: none; }
+  .next-pop { position: fixed; left: 16px; right: 16px; top: 72px; max-width: none; min-width: 0; width: auto; }
+  .next-pop[data-up] { top: auto; bottom: 72px; }
+  .next-chip .next-pop, .next-layout .next-pop { width: auto; }
+}
+.next-group { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; scroll-margin-top: 72px; }
+.next-group-title { margin: 0; font-size: 18px; }
+.next-group-body { display: flex; flex-direction: column; gap: 12px; }
+.next-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--bg, inherit); }

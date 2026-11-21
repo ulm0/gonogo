@@ -4,7 +4,7 @@
  * key that opens it. Commissioning, the checklist of an empty room, is here too: it uses the same keys.
  */
 import { useEffect, useId, useRef, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import * as api from './api.js';
 import { DOCS_URL } from '../shared/protocol.js';
 import { DetailChips } from './DetailChips.js';
@@ -34,6 +34,7 @@ import type { Mark, Step } from './shell.js';
 import { openConsole, openEdit, showLivery, showRoom, showRules, showWindow, useFeature, useStore } from './store.js';
 import { legendOf } from './wall.js';
 import { MaxQ, Propellant } from './WallView.js';
+import { NEXT } from './next.js';
 import './loop.css';
 import './rules.css';
 
@@ -162,8 +163,99 @@ export function FlightRules(): ReactElement {
   const livery = useStore((s) => s.livery);
   const heading = useRef<HTMLHeadingElement | null>(null);
   const current = useMarks();
+  const liveryBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-look`}>
+      <h2 className="label" id={`${titleId}-look`}>
+        LIVERY
+      </h2>
+      <p className="rules-value">{currentEntry(livery).name}</p>
+      <p className="hint">The look of every device.</p>
+      <button type="button" className="btn" onClick={showLivery}>
+        Choose a livery
+      </button>
+    </section>
+  );
+  const launchBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-window`}>
+      <h2 className="label" id={`${titleId}-window`}>
+        LAUNCH WINDOW
+      </h2>
+      <p className="hint">Schedules, Uplink webhooks, Relay chat bridges and Docking with other stations.</p>
+      <button type="button" className="btn" onClick={showWindow}>
+        Open Launch Window
+      </button>
+    </section>
+  );
+  const consolesBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
+      <h2 className="label" id={`${titleId}-consoles`}>
+        CONSOLES
+      </h2>
+      <p className="hint">Each console's directory, role, engine, permission mode and payload are in its Edit form; its own Propellant limit is in its panel.</p>
+      <ul className="rules-consoles">
+        {list.map((a) => (
+          <li key={a.name}>
+            <span className="rules-call">{legendOf(legends, a.name)}</span>
+            <span className="hint rules-name">{a.name}</span>
+            <DetailChips agent={a} />
+            <button type="button" className="btn" data-kind="quiet" aria-label={`Edit ${legendOf(legends, a.name)}`} onClick={() => openEdit(a.name)}>
+              Edit
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+  const browserBlock = (
+    <section className="module rules-block" aria-labelledby={`${titleId}-browser`}>
+      <h2 className="label" id={`${titleId}-browser`}>
+        THIS BROWSER
+      </h2>
+      <Notifications />
+      <PushBlock />
+      <p className="hint">The Commissioning checklist shows on an empty room until you put it away. Only this browser remembers that.</p>
+      <button type="button" className="btn" aria-disabled={current.size === 0 || undefined} onClick={() => current.size > 0 && setMarks(new Set())}>
+        Show Commissioning again
+      </button>
+    </section>
+  );
   // The page replaces the room: the keyboard starts at its title.
   useEffect(() => heading.current?.focus(), []);
+  if (NEXT) {
+    const G = ({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement => (
+      <section className="next-group" id={`${titleId}-g-${id}`} aria-label={title}>
+        <h2 className="next-group-title">{title}</h2>
+        <div className="next-group-body">{children}</div>
+      </section>
+    );
+    const groups: ReadonlyArray<[string, string]> = [['room', 'Room'], ['agents', 'Agents'], ['budget', 'Budget and limits'], ['auto', 'Automation and connections'], ['knowledge', 'Knowledge'], ['security', 'Security'], ['system', 'System and update']];
+    return (
+      <section className="rules next-rules" aria-labelledby={titleId}>
+        <header className="loop-head">
+          <h1 id={titleId} ref={heading} tabIndex={-1} className="disp loop-title rules-title">
+            FLIGHT RULES
+          </h1>
+          <button type="button" className="btn loop-room" data-kind="quiet" onClick={showRoom}>
+            Room
+          </button>
+        </header>
+        <nav className="next-group-nav" aria-label="Groups of settings">
+          {groups.map(([id, title]) => (
+            <a key={id} className="btn" data-kind="quiet" href={`#${titleId}-g-${id}`} onClick={(e) => { e.preventDefault(); document.getElementById(`${titleId}-g-${id}`)?.scrollIntoView({ block: 'start' }); }}>
+              {title}
+            </a>
+          ))}
+        </nav>
+        <G id="room" title="Room">{liveryBlock}<TabNameBlock /><RoomRulesBlock /><RitualTemplateBlock />{browserBlock}</G>
+        <G id="agents" title="Agents">{consolesBlock}<ModelDefaultsBlock /><PermissionDefaultsBlock /><PayloadDefaultsBlock /><SkillsBlock /><SubagentsBlock /><CoauthorBlock /></G>
+        <G id="budget" title="Budget and limits">{maxqOn && <MaxQ />}<Propellant /></G>
+        <G id="auto" title="Automation and connections">{launchBlock}<StartupBlock /></G>
+        <G id="knowledge" title="Knowledge"><KnowledgeBlock /><SemanticBlock /></G>
+        <G id="security" title="Security"><AccountBlock /><RoomKeysBlock /><PhoneApprovals /><AllStopBlock /></G>
+        <G id="system" title="System and update"><VersionCheckBlock /><AutoUpdateBlock /><ReloadBlock /><FeaturesBlock /></G>
+      </section>
+    );
+  }
   return (
     <section className="rules" aria-labelledby={titleId}>
       <header className="loop-head">
@@ -178,27 +270,10 @@ export function FlightRules(): ReactElement {
       <div className="rules-grid">
         {maxqOn && <MaxQ />}
         <Propellant />
-        <section className="module rules-block" aria-labelledby={`${titleId}-look`}>
-          <h2 className="label" id={`${titleId}-look`}>
-            LIVERY
-          </h2>
-          <p className="rules-value">{currentEntry(livery).name}</p>
-          <p className="hint">The look of every device.</p>
-          <button type="button" className="btn" onClick={showLivery}>
-            Choose a livery
-          </button>
-        </section>
+        {liveryBlock}
         <PhoneApprovals />
         <ReloadBlock />
-        <section className="module rules-block" aria-labelledby={`${titleId}-window`}>
-          <h2 className="label" id={`${titleId}-window`}>
-            LAUNCH WINDOW
-          </h2>
-          <p className="hint">Schedules, Uplink webhooks, Relay chat bridges and Docking with other stations.</p>
-          <button type="button" className="btn" onClick={showWindow}>
-            Open Launch Window
-          </button>
-        </section>
+        {launchBlock}
       </div>
       <TabNameBlock />
       <ModelDefaultsBlock />
@@ -218,35 +293,8 @@ export function FlightRules(): ReactElement {
       <AccountBlock />
       <AllStopBlock />
       <FeaturesBlock />
-      <section className="module rules-block" aria-labelledby={`${titleId}-consoles`}>
-        <h2 className="label" id={`${titleId}-consoles`}>
-          CONSOLES
-        </h2>
-        <p className="hint">Each console's directory, role, engine, permission mode and payload are in its Edit form; its own Propellant limit is in its panel.</p>
-        <ul className="rules-consoles">
-          {list.map((a) => (
-            <li key={a.name}>
-              <span className="rules-call">{legendOf(legends, a.name)}</span>
-              <span className="hint rules-name">{a.name}</span>
-              <DetailChips agent={a} />
-              <button type="button" className="btn" data-kind="quiet" aria-label={`Edit ${legendOf(legends, a.name)}`} onClick={() => openEdit(a.name)}>
-                Edit
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section className="module rules-block" aria-labelledby={`${titleId}-browser`}>
-        <h2 className="label" id={`${titleId}-browser`}>
-          THIS BROWSER
-        </h2>
-        <Notifications />
-        <PushBlock />
-        <p className="hint">The Commissioning checklist shows on an empty room until you put it away. Only this browser remembers that.</p>
-        <button type="button" className="btn" aria-disabled={current.size === 0 || undefined} onClick={() => current.size > 0 && setMarks(new Set())}>
-          Show Commissioning again
-        </button>
-      </section>
+      {consolesBlock}
+      {browserBlock}
     </section>
   );
 }

@@ -11,7 +11,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type BrowserContext, type Page, test } from '@playwright/test';
+import { geometry } from './geometry.js';
+import { type BrowserContext, type Page, expect, test } from '@playwright/test';
 
 test.skip(process.env.SCREENS !== '1', 'screenshots are taken by the screens workflow (SCREENS=1)');
 
@@ -41,6 +42,8 @@ interface Shot {
 }
 const shots: Shot[] = [];
 const missed: string[] = [];
+/** What browser/geometry.ts found wrong in the prototype layout, one line each. */
+const geo: string[] = [];
 let n = 0;
 
 const children: ChildProcess[] = [];
@@ -79,6 +82,7 @@ async function shoot(page: Page, group: string, title: string, fullPage = false)
     await page.waitForTimeout(250);
     await page.screenshot({ path: join(OUT, file), fullPage });
     shots.push({ group, file, title });
+    if (group.startsWith('next-')) for (const p of await geometry(page, group.endsWith('phone'))) geo.push(`${group}: ${title}: ${p}`);
   } catch (error) {
     missed.push(`${group}: ${title}: ${(error as Error).message.split('\n')[0]}`);
   }
@@ -160,7 +164,60 @@ test.afterAll(async () => {
     (missed.length ? `<h2>Missed</h2><ul>${missed.map((m) => `<li>${m.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '') +
     groups.map((g) => `<h2>${g}</h2><div class="g">${shots.filter((s) => s.group === g).map((s) => `<figure><a href="${s.file}"><img loading="lazy" src="${s.file}" alt=""></a><figcaption>${s.title}</figcaption></figure>`).join('')}</div>`).join('');
   await writeFile(join(OUT, 'index.html'), html);
+  await writeFile(join(OUT, 'geometry.txt'), geo.length === 0 ? 'no geometry problems\n' : geo.join('\n') + '\n');
 });
+
+/** The prototype layout (?layout=next, src/client/next.ts): the same room, looked at in the same browser. */
+async function next(page: Page, group: string): Promise<void> {
+  await page.goto(`${base}/r/main/?layout=next`);
+  await page.locator('.next-topbar').waitFor({ timeout: 30_000 });
+  await page.locator('.lamp[data-link="up"]').waitFor({ timeout: 30_000 }).catch(() => undefined);
+  await shoot(page, group, 'room', true);
+  await view(page, group, 'status strip: mission chip open', async () => {
+    await page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await view(page, group, 'version popover', async () => {
+    await page.locator('.next-version .btn').click({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await view(page, group, 'layout popover', async () => {
+    await page.getByRole('button', { name: 'Layout of the room' }).click({ timeout: 3000 });
+  });
+  await view(page, group, 'layout: full wall', async () => {
+    await page.getByRole('button', { name: /^Full wall/ }).click({ timeout: 3000 });
+    await page.keyboard.press('Escape');
+  }, true);
+  await view(page, group, 'layout: focus', async () => {
+    await page.getByRole('button', { name: 'Layout of the room' }).click({ timeout: 3000 });
+    await page.getByRole('button', { name: /^Focus/ }).click({ timeout: 3000 });
+    await page.keyboard.press('Escape');
+  }, true);
+  await view(page, group, 'work menu', async () => {
+    const work = page.getByRole('button', { name: 'Work' });
+    await work.last().click({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await view(page, group, 'console terminal toolbar', async () => {
+    await patch(page, 'ana');
+    await page.locator('.xterm-rows').first().waitFor({ timeout: 10_000 });
+  }, true);
+  await view(page, group, 'console expanded', async () => {
+    await page.getByRole('button', { name: 'Expand' }).click({ timeout: 3000 });
+    await page.locator('.next-rail').waitFor({ timeout: 3000 });
+  }, true);
+  await view(page, group, 'flight rules grouped', async () => {
+    await page.getByRole('button', { name: 'Back to the room' }).click({ timeout: 3000 }).catch(() => undefined);
+    await open(page, 'Flight Rules', 'rules');
+    await page.locator('.next-group').first().waitFor({ timeout: 3000 });
+  }, true);
+  const links = page.locator('.next-group-nav a');
+  const count = await links.count().catch(() => 0);
+  for (let i = 0; i < count; i += 1) {
+    const title = ((await links.nth(i).textContent()) ?? '').trim();
+    await view(page, group, `flight rules group: ${title}`, () => links.nth(i).click({ timeout: 3000 }));
+  }
+}
 
 /** Every view of the app, in the order a person meets them. `full` is the pass after the seed. */
 async function app(page: Page, group: string, full: boolean): Promise<void> {
@@ -198,6 +255,12 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
       missed.push(`${group}: flight rules ${heading}: ${(error as Error).message.split('\n')[0]}`);
     }
   }
+  await view(page, group, 'edit room', async () => {
+    await open(page, 'Room', 'room');
+    await page.getByRole('button', { name: /edit room/i }).first().click({ timeout: 3000 });
+    await page.locator('.room-edit').waitFor({ timeout: 3000 });
+  }, true);
+  await page.getByRole('button', { name: 'Cancel' }).first().click({ timeout: 3000 }).catch(() => undefined);
   await view(page, group, 'livery', () => open(page, 'Livery'), true);
   await view(page, group, 'patch panel', async () => {
     await page.keyboard.press('Escape');
@@ -283,6 +346,12 @@ test('screens of the app and the docs', async ({ browser }) => {
   missed.push(`info: agents after the seed: ${states.join(', ')}${states.some((x) => x.endsWith('=stopped')) ? '; server output: ' + output.slice(-600).replace(/\s+/g, ' ') : ''}`);
   await setupContext.close();
 
+  await seed('second room', async () => {
+    const maker = await browser.newContext({ storageState: state });
+    await api(maker, 'POST', '/api/rooms', { id: 'docs', name: 'Docs' });
+    await maker.close();
+  });
+
   // every view, light then dark (the livery is the server's, so it is chosen once per scheme), desktop and phone
   for (const scheme of SCHEMES) {
     const chooser = await browser.newContext({ storageState: state });
@@ -296,6 +365,9 @@ test('screens of the app and the docs', async ({ browser }) => {
       await shoot(page, group, 'rooms list', true);
       await app(page, group, true);
       await context.close();
+      const ahead = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+      await next(await ahead.newPage(), `next-${group}`);
+      await ahead.close();
     }
   }
 
@@ -316,5 +388,6 @@ test('screens of the app and the docs', async ({ browser }) => {
     missed.push('docs: not taken (SCREENS_DOCS=1 and a built docs site are needed)');
   }
   await rm(work, { recursive: true, force: true });
+  expect(geo, 'geometry of the prototype layout (see geometry.txt)').toEqual([]);
 });
 

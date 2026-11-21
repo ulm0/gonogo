@@ -45,6 +45,9 @@ import { TerminalPane } from './TerminalPane.js';
 import { useRun } from './WallView.js';
 import { DetailChips } from './DetailChips.js';
 import { EditRoomKey } from './EditRoomKey.js';
+import { LayoutPop } from './NextLayout.js';
+import { NEXT } from './next.js';
+import { setNext, useNext } from './nextState.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
 import { AgentTelemetry } from './TelemetryPanel.js';
@@ -602,6 +605,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
           }}
         />
       )}
+      {NEXT && <TerminalBar />}
       <TerminalPane agent={agent} />
       <Foot agent={agent} run={run} locked={locked} />
       {agent.provider === 'claude' && (
@@ -805,4 +809,87 @@ export function PhoneConsoleScreen(): ReactElement | null {
   }, [cell]);
   if (cell === undefined || cell.type !== 'agent') return null;
   return <PhoneConsole key={cell.agent.name} agent={cell.agent} legend={legendOf(legends, cell.agent.name)} position={cell.position} n={cell.n} />;
+}
+
+/* ---- the prototype layout (src/client/next.ts): the consoles, staffed first ---- */
+
+/** The seats nobody holds: one row of names (and a way to staff one), or on a phone one key. */
+function OpenSeats({ cells, phone }: { cells: Cell[]; phone: boolean }): ReactElement {
+  const shown = phone ? [] : cells.slice(0, 6);
+  return (
+    <div className="next-open-seats" role="group" aria-label="Open seats">
+      <span className="hint">{cells.length} open {cells.length === 1 ? 'seat' : 'seats'}</span>
+      {shown.map((cell) => (cell.type === 'open' ? (
+        <button key={cell.position.id} type="button" className="btn next-seat" data-kind="quiet" aria-label={`Staff a console: ${cell.position.callSign}, ${cell.position.title}`} onClick={() => openHire(cell.position.id)}>
+          {cell.position.callSign}
+        </button>
+      ) : null))}
+      {!phone && cells.length > shown.length && <span className="hint">+{cells.length - shown.length} more</span>}
+      <button type="button" className="btn" data-kind="quiet" onClick={() => openHire()}>
+        Staff…
+      </button>
+    </div>
+  );
+}
+
+/** CONSOLES: the agents that are staffed come first and big; an open seat is a name in a row, unless Layout asks for a tile each. */
+export function NextOperations({ phone }: { phone: boolean }): ReactElement {
+  const { cells } = useSeats();
+  const selected = useStore((s) => s.selected);
+  const seats = useNext((s) => s.seats);
+  const staffed = cells.filter((c) => c.type === 'agent');
+  const open = cells.filter((c) => c.type !== 'agent');
+  const tiles = seats === 'tiles' ? cells : staffed;
+  return (
+    <section className="operations module next-ops" aria-label="Consoles">
+      <div className="next-ops-head">
+        <h2 className="label">CONSOLES</h2>
+        <span className="hint">{staffedText(staffed.length)}</span>
+        <span className="topbar-grow" />
+        <button type="button" className="btn" data-kind="primary" onClick={() => openHire()}>
+          + Staff a console
+        </button>
+        <LayoutPop />
+      </div>
+      <div className="matrix next-matrix">
+        {tiles.map((cell) => (
+          <Tile key={cell.type === 'agent' ? `a:${cell.agent.name}` : cell.type === 'open' ? `p:${cell.position.id}` : 'spare'} cell={cell} selected={cell.type === 'agent' && cell.agent.name === selected} phone={phone} />
+        ))}
+      </div>
+      {seats === 'row' && open.length > 0 && <OpenSeats cells={open} phone={phone} />}
+    </section>
+  );
+}
+
+/** The consoles as a narrow column of names, while one console has the room. */
+export function NextRail(): ReactElement {
+  const { cells, legends } = useSeats();
+  const selected = useStore((s) => s.selected);
+  return (
+    <nav className="next-rail module" aria-label="Consoles">
+      <span className="label">CONSOLES</span>
+      {cells.map((cell) =>
+        cell.type === 'agent' ? (
+          <button key={cell.agent.name} type="button" className="btn next-rail-key" data-kind={cell.agent.name === selected ? 'primary' : 'quiet'} aria-current={cell.agent.name === selected ? 'true' : undefined} onClick={() => openConsole(cell.agent.name)}>
+            <Led kind={tileKind(cell.agent)} />
+            {legendOf(legends, cell.agent.name)}
+          </button>
+        ) : null,
+      )}
+    </nav>
+  );
+}
+
+/** The toolbar over the terminal: it gives the terminal the room (a rail of names on the left) and takes it back. */
+function TerminalBar(): ReactElement {
+  const expanded = useNext((s) => s.expanded);
+  return (
+    <div className="next-termbar" role="toolbar" aria-label="Terminal">
+      <span className="hint">Terminal</span>
+      <span className="topbar-grow" />
+      <button type="button" className="btn" data-kind="quiet" aria-pressed={expanded} onClick={() => setNext((s) => ({ ...s, expanded: !s.expanded }))}>
+        {expanded ? 'Back to the room' : 'Expand'}
+      </button>
+    </div>
+  );
 }
