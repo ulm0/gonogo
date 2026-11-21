@@ -137,7 +137,7 @@ function parse(text: string, id: string): LogEntry {
   const body = (found[2] ?? '').replace(/\n$/, '');
   const entry: LogEntry = { id, title, body: body.slice(0, LOG_BODY_MAX_CHARS), tags: tags as string[], author, createdAt: at(createdAt), updatedAt: at(updatedAt) };
   // the same shape rules as a request; a file that holds a bad list is skipped like any bad file
-  if (anchors !== undefined) entry.anchors = anchorShape(anchors);
+  if (anchors !== undefined) entry.anchors = anchorShape(anchors, true);
   return entry;
 }
 
@@ -172,11 +172,11 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
   };
 
   /** The anchors of a request, checked against the repositories of the room; refused while the switch is off. */
-  const anchorsOf = async (input: unknown): Promise<LogAnchor[] | undefined> => {
+  const anchorsOf = async (input: unknown, author: string): Promise<LogAnchor[] | undefined> => {
     const given = (input as Record<string, unknown>).anchors;
     if (given === undefined) return undefined;
     if (!on() || !options.anchors) throw bad('knowledge anchors are off: the Director turns them on in FLIGHT RULES', 'anchors');
-    return options.anchors.validate(given);
+    return options.anchors.validate(given, author);
   };
 
   const find = (id: string): LogEntry => {
@@ -187,7 +187,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
 
   const on = (): boolean => options.anchors !== undefined && options.anchorsOn?.() === true;
   /** The last answer for the entry's anchors; nothing while the switch is off. */
-  const stateOf = (e: LogEntry): LogEntry['anchorState'] => (on() && e.anchors ? options.anchors?.peek(e.anchors) : undefined);
+  const stateOf = (e: LogEntry): LogEntry['anchorState'] => (on() && e.anchors ? options.anchors?.peek(e.anchors, e.author) : undefined);
   const shown = (e: LogEntry): LogEntry => {
     const out = copy(e);
     const state = stateOf(e);
@@ -223,7 +223,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
       const cap = Math.min(Math.max(Math.trunc(limit), 1), LOG_SEARCH_MAX);
       const found = q.trim() === '' ? [...entries.values()].sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt).slice(0, cap) : index.search(q, cap).map((r) => find(r.id));
       // the answers of a search are the last ones known; the checks of the first few run now, for the next look
-      if (on()) for (const e of found.slice(0, 5)) if (e.anchors) void options.anchors?.check(e.anchors);
+      if (on()) for (const e of found.slice(0, 5)) if (e.anchors) void options.anchors?.check(e.anchors, e.author);
       return { total: entries.size, hits: found.map((e) => hit(e, q)) };
     },
 
@@ -231,7 +231,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
 
     async verify(id) {
       const entry = entries.get(id);
-      if (on() && entry?.anchors) await options.anchors?.check(entry.anchors);
+      if (on() && entry?.anchors) await options.anchors?.check(entry.anchors, entry.author);
     },
 
     chart: () => buildChart([...entries.values()]),
@@ -239,7 +239,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
     create(author, input) {
       return locked(async () => {
         const fields = validate(input, true);
-        const anchors = await anchorsOf(input);
+        const anchors = await anchorsOf(input, author);
         if (entries.size >= LOG_ENTRIES_MAX) throw new HubError('conflict', `the Mission Log holds at most ${LOG_ENTRIES_MAX} entries: remove one first`, 'log');
         const at = now();
         const entry: LogEntry = { id: `l${seq + 1}`, title: fields.title ?? '', body: fields.body ?? '', tags: fields.tags ?? [], author, createdAt: at, updatedAt: at };
@@ -257,7 +257,8 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
         const old = find(id);
         if (by !== null && old.author !== by) throw new HubError('forbidden', `${id} was written by ${old.author}: only its author or the Director may change it`);
         const fields = validate(input, false);
-        const anchors = await anchorsOf(input);
+        // the entry's author, not the caller: the Director's change of an agent's entry still names that agent's own repository
+        const anchors = await anchorsOf(input, old.author);
         const next: LogEntry = { ...old, ...fields, updatedAt: now() };
         if (anchors?.length) next.anchors = anchors;
         else if (anchors) delete next.anchors;

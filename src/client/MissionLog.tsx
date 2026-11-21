@@ -43,7 +43,7 @@ function Tags({ tags }: { tags: readonly string[] }): ReactElement | null {
   );
 }
 
-const ANCHOR_CHIPS = { ok: { tone: 'go', text: 'anchors ok' }, stale: { tone: 'amber', text: 'not confirmed' }, unknown: { tone: 'quiet', text: 'anchors unchecked' } } as const;
+const ANCHOR_CHIPS = { ok: { tone: 'go', text: 'anchors ok' }, stale: { tone: 'amber', text: 'anchors' }, vacuous: { tone: 'amber', text: 'anchors' }, unchecked: { tone: 'quiet', text: 'anchors' } } as const;
 
 /** What the last check of an entry's anchors found (docs/features/knowledge-anchors.md); nothing when there is none. Text from gonogo only, set as text. */
 function AnchorChip({ state }: { state: LogAnchorState | undefined }): ReactElement | null {

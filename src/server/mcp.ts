@@ -12,7 +12,7 @@ import {
   LOG_QUERY_MAX_CHARS,
   LOG_SEARCH_MAX,
   LOG_ANCHOR_FILE_MAX_CHARS,
-  LOG_ANCHOR_REPO_MAX_CHARS,
+  LOG_ANCHOR_ROOT_MAX_CHARS,
   LOG_ANCHOR_TEXT_MAX_CHARS,
   LOG_ANCHORS_MAX,
   LOG_TAGS_MAX,
@@ -35,7 +35,7 @@ import {
 } from '../shared/protocol.js';
 import type { AgentIdentity, AgentSendRequest, Hub, Logger, Task } from '../shared/protocol.js';
 import { FEATURE_TOOLS } from '../shared/features.js';
-import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
+import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, MCP_LOG_ANCHORS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
 import type { Board } from './board.js';
 import type { Liveries } from './livery.js';
@@ -339,13 +339,14 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
     server.registerTool(
       'log_write',
       {
-        description: MCP_DESCRIPTIONS.log_write,
+        // the sentence about anchors is there only while the Director has them on (and the tool list is made when the agent's session opens)
+        description: deps.featureOff !== undefined && !deps.featureOff('knowledge-anchors') ? `${MCP_DESCRIPTIONS.log_write} ${MCP_LOG_ANCHORS}` : MCP_DESCRIPTIONS.log_write,
         inputSchema: {
           id: z.string().min(1).max(16).optional(),
           title: z.string().min(1).max(LOG_TITLE_MAX_CHARS).optional(),
           body: z.string().min(1).max(LOG_BODY_MAX_CHARS).optional(),
           tags: z.array(z.string().min(1).max(64)).max(LOG_TAGS_MAX).optional(),
-          anchors: z.array(z.object({ repo: z.string().min(1).max(LOG_ANCHOR_REPO_MAX_CHARS), file: z.string().min(1).max(LOG_ANCHOR_FILE_MAX_CHARS), kind: z.enum(['present', 'absent']), text: z.string().min(1).max(LOG_ANCHOR_TEXT_MAX_CHARS) }).strict()).max(LOG_ANCHORS_MAX).optional(),
+          anchors: z.array(z.object({ root: z.string().min(1).max(LOG_ANCHOR_ROOT_MAX_CHARS), file: z.string().min(1).max(LOG_ANCHOR_FILE_MAX_CHARS).optional(), text: z.string().min(1).max(LOG_ANCHOR_TEXT_MAX_CHARS), mode: z.enum(['present', 'absent']) }).strict()).max(LOG_ANCHORS_MAX).optional(),
         },
       },
       ({ id, ...fields }) =>

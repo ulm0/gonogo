@@ -985,7 +985,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       now: io.now,
       emit: (frame) => web?.broadcast(frame),
       log: log.child('mission log'),
-      anchors: createAnchorChecker({ dirs: () => hubInstance.views().map((v) => v.dir), now: io.now, env, log: log.child('anchors') }),
+      anchors: createAnchorChecker({ agents: () => hubInstance.views().map((v) => v.name), place: (name) => roots(name).then((r) => r.root).catch(() => null), now: io.now, env, log: log.child('anchors') }),
       anchorsOn: () => features.isOn('knowledge-anchors'),
     });
     const board = createBoard({ dir: home.dir, now: io.now });

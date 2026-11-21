@@ -71,6 +71,7 @@ import {
   MESSAGES_ROTATED_FILE,
   MESSAGES_ROTATE_BYTES,
   MCP_DESCRIPTIONS,
+  MCP_LOG_ANCHORS,
   MESSAGES_TAIL_BYTES,
   MIN_COLS,
   POLL_REASON_MAX_CHARS,
@@ -2629,7 +2630,9 @@ describe('mcp', () => {
     expect(search?.inputSchema.properties?.limit).toMatchObject({ maximum: 20 });
     const read = tools.find((t) => t.name === 'log_read');
     expect([...(read?.inputSchema.required ?? [])]).toEqual(['id']);
-    for (const name of ['log_write', 'log_search', 'log_read'] as const) expect(tools.find((t) => t.name === name)?.description).toBe(MCP_DESCRIPTIONS[name]);
+    for (const name of ['log_search', 'log_read'] as const) expect(tools.find((t) => t.name === name)?.description).toBe(MCP_DESCRIPTIONS[name]);
+    // this server has no feature store, so nothing is off and the sentence about anchors is there; a room with them off does not add it (see the anchors test)
+    expect(write?.description).toBe(`${MCP_DESCRIPTIONS.log_write} ${MCP_LOG_ANCHORS}`);
     const livery = tools.find((t) => t.name === 'livery_submit');
     expect(Object.keys(livery?.inputSchema.properties ?? {}).sort()).toEqual(['description', 'name', 'tokens']);
     expect([...(livery?.inputSchema.required ?? [])].sort()).toEqual(['name', 'tokens']);
