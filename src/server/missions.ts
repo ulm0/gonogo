@@ -414,7 +414,7 @@ export function createMissions(options: MissionsOptions): Missions {
         const counted = linked(next.id);
         // closing with items open is allowed and says so, with the lines (cleaned; those of an agent are labelled by being quoted, and cut)
         const left = (next.ritual ?? []).filter((i) => !i.done);
-        const ritual = left.length === 0 ? '' : `; ${left.length} of ${(next.ritual ?? []).length} closing items left: ${left.slice(0, 5).map((i) => `"${i.text.slice(0, 60)}"`).join(', ')}${left.length > 5 ? ', ...' : ''}`;
+        const ritual = left.length === 0 ? '' : `; ${left.length} of ${(next.ritual ?? []).length} closing items left: ${left.slice(0, 5).map((i) => `"${i.text.slice(0, 60)}"${i.from === 'agent' ? ` (by ${i.agent ?? 'an agent'})` : ''}`).join(', ')}${left.length > 5 ? ', ...' : ''}`;
         options.notify?.('mission', `Mission ${next.status}: ${next.name} (${counted.filter((t) => t.status === 'done').length} of ${counted.length} tasks done${ritual})`);
       }
       if (next.status !== 'active') openBefore.delete(next.id);
