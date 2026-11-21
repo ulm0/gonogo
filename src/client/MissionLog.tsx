@@ -7,6 +7,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { LOG_BODY_MAX_CHARS, LOG_QUERY_MAX_CHARS, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
+import { plain } from './knowledge.js';
 import type { LogAnchorState, LogChart, LogEntry, LogHit, LogSearch } from '../shared/protocol.js';
 import * as api from './api.js';
 import { whenText } from './inbox.js';
@@ -179,12 +180,13 @@ function EntryForm({ entry, onDone }: { entry: LogEntry | null; onDone(saved: Lo
   );
 }
 
-function Reader({ entry, onEdit, onClose, onRemoved, onChanged }: { entry: LogEntry; onEdit(): void; onClose(): void; onRemoved(): void; onChanged(entry: LogEntry): void }): ReactElement {
+export function Reader({ entry, onEdit, onClose, onRemoved, onChanged }: { entry: LogEntry; onEdit(): void; onClose(): void; onRemoved(): void; onChanged(entry: LogEntry): void }): ReactElement {
   const titleId = useId();
   const agents = useStore((s) => s.agents);
   const { busy, error, run } = useRun();
   const anchorsOn = useFeature('knowledge-anchors');
   const [confirming, setConfirming] = useState(false);
+  const [promoted, setPromoted] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement | null>(null);
   const keep = useRef<HTMLButtonElement | null>(null);
   const del = useRef<HTMLButtonElement | null>(null);
@@ -217,6 +219,24 @@ function Reader({ entry, onEdit, onClose, onRemoved, onChanged }: { entry: LogEn
         {anchorsOn && entry.anchors !== undefined && (
           <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => void run(async () => onChanged(await api.recheckLogEntry(entry.id)))}>
             Recheck
+          </button>
+        )}
+        {(entry.anchors?.length ?? 0) > 0 && (
+          <button
+            type="button"
+            className="btn"
+            data-kind="quiet"
+            aria-describedby={`${titleId}-promote`}
+            aria-disabled={busy || undefined}
+            onClick={() =>
+              !busy &&
+              run(async () => {
+                const made = await api.promoteEntry(entry.id);
+                setPromoted(`${plain(made.claim.id, 20)} in ${made.repoId.slice(0, 8)}`);
+              })
+            }
+          >
+            Promote to a claim
           </button>
         )}
         {confirming ? (
@@ -252,6 +272,11 @@ function Reader({ entry, onEdit, onClose, onRemoved, onChanged }: { entry: LogEn
           Close
         </button>
       </div>
+      {(entry.anchors?.length ?? 0) > 0 && (
+        <p className="hint" id={`${titleId}-promote`}>
+          {promoted === null ? 'Promote makes a claim of the store from this entry (its title and anchors); the entry stays as it is.' : `Promoted: claim ${promoted}. See Flight Rules, Knowledge.`}
+        </p>
+      )}
       {error !== null && (
         <p className="error" role="alert">
           {error}

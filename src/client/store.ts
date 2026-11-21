@@ -93,6 +93,8 @@ export interface ClientState {
   features: string[];
   /** Knowledge anchors: for each agent, how many Mission Log entries anchored to its repository were last found not confirmed (counts only; agents with none are absent). */
   knowledge: Record<string, number>;
+  /** Bumped by each `knowledge` frame (counts per repository, no text): the Knowledge block asks again when it changes. */
+  knowledgeRev: number;
   /** Rollout: what the daily update check saw, or null from an older server. */
   rollout: RolloutView | null;
 }
@@ -214,6 +216,7 @@ export function emptyState(): ClientState {
     relief: [],
     features: [],
     knowledge: {},
+    knowledgeRev: 0,
     rollout: null,
   };
 }
@@ -522,6 +525,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
     case 'models':
       publishModelDefaults(frame.models);
       return s;
+    case 'knowledge':
+      return { ...s, knowledgeRev: s.knowledgeRev + 1 };
     case 'log':
       return { ...s, log: { rev: s.log.rev + 1, changed: frame.changed, removed: frame.removed } };
     default:

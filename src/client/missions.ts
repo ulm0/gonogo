@@ -97,7 +97,7 @@ export function ritualProgress(mission: Pick<Mission, 'ritual'>): { left: number
 }
 
 /** The words that say where a line came from, or '' for the Director's own: a line an agent wrote is never passed off as the Director's. */
-export const sourceText = (item: RitualItem): string => (item.from === 'agent' ? `set by ${item.agent ?? 'an agent'}` : item.from === 'room' ? 'room template' : '');
+export const sourceText = (item: RitualItem): string => (item.from === 'agent' ? `set by ${item.agent ?? 'an agent'}` : item.from === 'room' ? 'room template' : item.from === 'repo' ? 'from the repo' : '');
 
 /** What is wrong with the text of a line before it is sent, or null. */
 export function ritualTextProblem(text: string, count: number, adding: boolean): string | null {

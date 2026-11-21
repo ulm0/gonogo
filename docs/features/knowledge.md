@@ -61,3 +61,19 @@ A proposal does nothing until you accept it. The agent hears only "proposal p4 a
 - A `knowledge` frame carries counts per repository (stale, vacuous, unevaluated, malformed, pending), no text.
 
 Claims are evaluated by the engine (one worker thread per run, at most 5 s, 64 MiB, two at once per room, at most one run per checkout every 30 s). A trial run of a proposal is for you only; a checkout that is not bound is not evaluated.
+
+<KnowledgeMock class="doc-mock" />
+
+## The Knowledge block in Flight Rules
+
+One card for each repository the room works in.
+
+- **Claims.** Each claim shows its id, where it is kept (`store` is yours, `repo` is the repository's own file, `log l17` is a Mission Log entry), who stands behind it, its statement and its anchors, and, for each checkout, a word (confirmed, not confirmed, path matches nothing, could not check, cannot be read), the branch and short commit it ran on, when, and a severity: a failed *absent* is "likely real", a failed *present* "may have moved". You add, edit, retire (keeps it) and delete (asks first) the claims of the store; a claim from the repo or a log entry is changed where it lives. An anchor you cannot parse is shown with its line, never skipped. A claim with no anchor is kept and never checked.
+- **RECHECK** runs the checks again. It is rate limited; when it is refused the page says in how many seconds to try again.
+- **Proposals.** An agent can only *propose* a claim. A proposal is labelled "unreviewed", with who proposed it and on which branch and commit, and **does nothing until you accept it**. TRIAL RUN runs its anchors on that checkout and shows you the result; the agent never sees a trial result, only "accepted" or "rejected". REJECT takes an optional reason.
+- **Checkouts.** An agent can change its own `.git/config`, so a checkout could say it is any repository. Only a checkout you **bound** (or a worktree of one) counts: BIND, IGNORE or UNBIND each checkout, and when two checkouts claim one repository both are shown. An id that looks like another (a rewritten history, a moved remote) offers MOVE CLAIMS HERE (it asks for the password) or KEEP SEPARATE; nothing moves by itself. A shallow clone is "provisional": it can be read, but not bound.
+- **PROMOTE** on a Mission Log entry that carries anchors makes a claim of the store from it (the entry stays).
+
+Every text on the page (a statement, an agent's name, a note) is drawn as plain text: control, direction and zero-width characters are dropped and nothing is read as markup.
+
+Not seen in a browser.
