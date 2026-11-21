@@ -1048,7 +1048,7 @@ export interface RitualItem {
   /** One line of plain text, at most RITUAL_ITEM_MAX_CHARS characters, no control or bidi character. */
   text: string;
   done: boolean;
-  from: 'room' | 'director' | 'agent';
+  from: 'room' | 'director' | 'agent' | 'repo';
   /** The agent that wrote it, when `from` is 'agent'. */
   agent?: string;
   /** Who ticked it and when, once it is ticked: always the Director ("user"). */
@@ -1090,6 +1090,8 @@ export interface Mission {
   ritual?: RitualItem[];
   /** How many lines the template had when it had more than RITUAL_ITEMS_MAX (the rest was dropped). */
   ritualOmitted?: number;
+  /** The git top level of a hired agent's folder in this room that this mission is about, or absent: checked when it is set and at every read. It only chooses the template of the checklist. */
+  repo?: string;
 }
 
 /** Downlink: a message to the Director, with what the inbox keeps of it. The log keeps the whole body. */
