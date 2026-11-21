@@ -81,7 +81,6 @@ test.afterAll(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-test.use({ serviceWorkers: process.env.SW_BLOCK ? 'block' : 'allow' });
 test('setup, login with a second factor, styles, a room with a live link and a console, the service worker', async ({ page }) => {
   // every console error and every page error fails the run: a CSP block ("Refused to ...") is a console error
   const problems: string[] = [];
@@ -120,8 +119,6 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   // 3. the style sheet is applied and the fonts came
   await page.goto(`${base}/r/main/`);
   await expect(page.locator('.topbar')).toBeVisible();
-  const t0 = Date.now();
-  console.log('DEBUG alive', await page.evaluate(() => document.readyState, undefined).catch(() => 'hung'), Date.now() - t0);
   const topbar = await page.locator('.topbar').evaluate((el) => ({ display: getComputedStyle(el).display, height: el.getBoundingClientRect().height }));
   expect(topbar.display).toBe('flex');
   expect(topbar.height).toBeGreaterThan(40);
@@ -139,7 +136,8 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   expectClean('/r/main/');
 
   // 5. the service worker registers and a reload still shows the page
-  if (!process.env.SW_BLOCK) await page.evaluate(() => navigator.serviceWorker.ready);
+  // WebKit under Playwright hangs the page once a service worker is installed (the project blocks them, see playwright.config.ts)
+  if (test.info().project.use.serviceWorkers !== 'block') await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await expect(page.locator('.topbar')).toBeVisible();
   expectClean('after the reload');

@@ -13,5 +13,5 @@ export default defineConfig({
   reporter: [['list']],
   outputDir: 'browser-results',
   use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
-  projects: engines.map((name) => ({ name, use: { browserName: name as 'chromium' | 'firefox' | 'webkit' } })),
+  projects: engines.map((name) => ({ name, use: { browserName: name as 'chromium' | 'firefox' | 'webkit', ...(name === 'webkit' ? { serviceWorkers: 'block' as const } : {}) } })),
 });
