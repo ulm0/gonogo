@@ -364,7 +364,7 @@ export function Commissioning(): ReactElement | null {
       </button>
     ),
     propellant: (
-      <button type="button" className="btn" onClick={showRules}>
+      <button type="button" className="btn" aria-label="Flight Rules, to set the Propellant limit" onClick={showRules}>
         Flight Rules
       </button>
     ),
