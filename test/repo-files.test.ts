@@ -303,6 +303,8 @@ describe('the Homebrew formula is tried on macOS and Linux (brew.yml)', () => {
     const rb = read('packaging', 'homebrew', 'gonogo.rb');
     expect(rb.match(/^  url "/gm)).toHaveLength(1);
     expect(rb.match(/^  sha256 "/gm)).toHaveLength(1);
+    // `brew audit --strict` refuses a line longer than 118 characters (its first run on this formula found five)
+    for (const [i, line] of rb.split('\n').entries()) expect(line.length, `gonogo.rb line ${i + 1}`).toBeLessThanOrEqual(118);
   });
 });
 
