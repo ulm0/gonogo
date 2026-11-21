@@ -1,8 +1,62 @@
-# Spec: project knowledge, one door, and the closing ritual (draft 3)
+# Spec: project knowledge, one door, and the closing ritual (draft 4: phase 1 lean decided)
 
 Design by FIDO, 2026-11-21, task t86 (scope widened by FLIGHT: a thorough analysis, not one page). Status: draft 3, not built. **No code in this branch.** Draft 3 folds in RSO's M1 to M5 and M7 (m2060) and the Director's change of direction (m2066): gonogo **takes multivac's ideas and code and owns them**; it has **no runtime dependency on multivac, never runs it, and shows no multivac row** (RSO's M6 and my piece D are dropped for that reason). **Storage (where claims live) is undecided: section 4A marks it; do not build until it is settled.**
 
 How it was made. multivac was read in full where it matters (`DESIGN.md`, `package.json`, the file list of `ulm0/multivac` at v0.15.0, `src/anchor/{parse,evaluate,match}.ts`, `src/lib/ritual.ts`, `src/doors/{link,block}.ts`, `src/types.ts`, `.multivac/*`, the commands reference) **and run**: `multivac@0.15.0` from npm, installed with `--ignore-scripts` in my scratchpad and used on a throwaway git repository there (never on the gonogo repo or `main`). gonogo was read on `origin/main` (file and line cited). Not read: multivac's `src/lib/{config,regex,git}.ts`, `src/commands/*` (except through running them) and its tests. Not tried: multivac with several repos (`repos sync`, `change apply/land`), `seed`, and the SDD adapters.
+
+## 0. Phase 1: lean (decided by the Director, 2026-11-21; this section wins over sections 4 to 8 where they differ)
+
+The Director said go on all three, lean (FLIGHT, m2092; analysis in `docs/multivac-fit.md`): **door, ritual, and literal anchors on Mission Log entries**. Three independent PRs, three builders. **Parked until a four-week measurement:** any claims store in or beside a repo (section 4A, Options R and H), regex, globs, the Knowledge block, and everything in section 4A not repeated here.
+
+**What changed from draft 3 because of "lean".** (1) No new store: anchors live in the Mission Log entry's front matter. (2) No regex and no glob, so no worker thread and no dialect gate; the only matching is a fixed string. (3) `Mission.repo` is **not needed**: the ritual template is the room's own, and an anchor carries its own validated root. (4) The repo's `.gonogo/ritual.md` and `.multivac/ritual.md` are **not read** in phase 1 (no repo reading except anchors).
+
+### 0.1 PR A, the door (builder INCO, about 200 lines)
+
+Section 4B as written, with these fixed choices.
+- **Room rules:** `<home>/rules.md`, 0600, at most 8 KiB, text. `GET /api/rules` and `PUT /api/rules` (body `{ text }`); the PUT needs **step-up**, is refused for an API key below scope `full`, answers 404 to an agent token, and writes an **audit line** to the Downlink (`info`: who, byte count; never the text). Add the route to the step-up list of `docs/login-spec.md`. A Flight Rules block edits it ("How we work"), with the "reaches every agent, at system-prompt level" warning visible.
+- **Delivery:** added at the end of the role text through the channel each engine already has (`providers.ts:181-232`), after `buildRoleText` (`launcher.ts:99`), once per start. No rules file, no added text.
+- **Project pointer (M4):** for an engine that does not load `AGENTS.md` itself, the fixed sentence "The project's rules are in the file AGENTS.md in your working directory: read it first", only when that file exists in the agent's directory (checked with `lstat`, a regular file); nothing taken from the file. If only `CLAUDE.md` exists and the engine is not Claude Code, the same sentence with `CLAUDE.md`. Which engines auto-load which file is **not verified**: the builder reads each CLI's current docs and fills a table in `gonogo doctor` (`reads AGENTS.md: yes / no / unknown`); unknown is treated as "not loaded" (one extra read, harmless).
+- **Not built:** writing any file in a repo, symlinks, managed blocks, skills.
+- **Tests:** section 8 PR 1 list; plus the pointer sentence is byte-identical whatever the file contains.
+
+### 0.2 PR B, the ritual (builders GUIDO and CONTROL, about 250 lines)
+
+Section 4C, with these fixed choices.
+- **Data:** `Mission.ritual?: { text: string; done: boolean; by?: string; at?: number; from: 'room' | 'director' | 'agent'; agent?: string }[]` in `missions.json` (optional field, stays `version: 1`); at most 20 items, 200 characters, one line, control, bidi and zero-width characters stripped (S6), no links rendered.
+- **Template:** `<home>/ritual.md` (room default; the Director edits it in the same Flight Rules block family as the rules, with step-up; same 8 KiB cap; comment, heading and blank lines dropped, as multivac's `ritualChecklist`). Copied into a mission **when it is created**, items marked `from: 'room'`. The Director may add, edit and remove items on the mission page (`from: 'director'`). An agent that creates a mission (`mission_create`, boss only) may pass `ritual` items; they get `from: 'agent'` with the agent's name, are **cleaned**, and are shown with their source ("set by flight").
+- **Ticking:** only a logged-in Director session sets `done`; no agent tool, no `mission_update` field and no key below scope `full` can (RSO's M4). `mission_list` returns the items with `from` and `done` so agents can read, never write, the state.
+- **Behavior:** never a gate. A mission can become `done` or `aborted` with items open; the page says "2 of 5 closing items left" and the Downlink line for the status change lists them (counts and the item texts, cleaned).
+- **Tests:** section 8 PR 2 list, minus the `Mission.repo` cases (not in phase 1), plus: items from an agent are labelled and cleaned; a read-scope key cannot tick.
+
+### 0.3 PR C, literal anchors on Mission Log entries (builder DPS, about 250 lines, behind a switch)
+
+**Data.** `LogEntry.anchors?: Anchor[]` (`src/shared/protocol.ts:1097`), at most 5 per entry, stored in the entry's front matter as one JSON line like its other fields (`missionlog.ts:4`):
+
+```
+Anchor = { root: string; file?: string; text: string; mode: 'present' | 'absent' }
+```
+
+- `root`: an absolute path that **must be the git top level of the start directory of an agent hired in this room**; checked **when the entry is written and at every check** (the agent may have been removed; the root then reads `unchecked: no hired agent works there`). Anything else is refused at write with the field name. (RSO's M3 rule, moved from `Mission.repo` to the anchor.)
+- `file`: a relative path; refused if empty segments, `..`, absolute, `~`, a backslash, a NUL or a drive prefix. **Required for `present`**; for `absent` it may be omitted, meaning "anywhere in the repo's tracked files".
+- `text`: a fixed string, 1 to 200 characters, one line (no newline), compared literally (no regex, no glob, no case folding).
+- Written through the existing `log_write` tool and the browser route (an optional `anchors` field; an invalid one fails the whole write with a `HubError` naming the field). The tool description gains one fixed sentence about anchors when the switch is on.
+
+**Check.**
+- `present`: `realpath` of `root/file` must lie under the realpath of `root`; `lstat` regular file; open with `O_NOFOLLOW`; read at most 1 MiB; `includes(text)`. Missing or not a regular file: `stale` ("file not found here"). A file over 1 MiB: `unchecked: too large`.
+- `absent` with `file`: the same read; present means `stale`; a missing file means `vacuous` (the path is probably wrong; shown as "check the path", counted separately).
+- `absent` without `file`: `git grep -F -l -z -q`-style search through the Recorder's runner (`recorder.ts:35`: `-c core.fsmonitor=false -c core.hooksPath=/dev/null`, `--literal-pathspecs`, a clean environment with no `GIT_*`), **tracked files only, a child-process timeout of 5 s, output capped**; any hit means `stale`. gonogo shows the **count of files**, never their names or lines (a stale anchor must not become a way to read other files).
+- Results: `ok`, `stale`, `vacuous`, `unchecked: <reason>`. Each result carries the branch and short commit it ran on, and says "not confirmed here" where the branch differs from the one the entry was written on.
+- **Bounds:** 64 MiB of file bytes per check run, at most 100 anchors per run, one run per root at a time, at most one run per root every 30 s whatever triggers it (agent start, an agent's Stop debounced to 60 s, Log open, the RECHECK key). The whole run is bounded by 5 s; what is not finished is `unchecked: too slow`.
+
+**Surfaces.** A badge on a stale entry in the Mission Log list and page; a count on the tile of an agent whose repo root matches (`knowledge: 2 stale`); one count line in the agent's start notice. **Counts only, never entry or file text, in notices and messages** (M4). Informational: nothing blocks.
+
+**Switch.** Default **off for one release**. gonogo's Features table lists what can be switched *off* (everything is on unless the Director turns it off, `src/shared/features.ts:39`); the builder picks the smaller of two ways to get a default-off: a `defaultOff` flag on the row, or its own opt-in setting file. With the switch off, `anchors` is still stored (no data lost) and never evaluated, and the tool sentence is not added.
+
+**Tests.** `present` and `absent` with and without `file`; each bad `file` value refused; a root that is not a hired agent's top level refused at write and at check (including after the agent is removed); a symlinked claims target, **a symlinked parent directory (also a Clean Room worktree whose parent directory is a link pointing outside): nothing is read** (RSO); the git runner's argument list and environment (no `GIT_*`, `fsmonitor` and `hooksPath` overrides); an output flood and a slow search end at 5 s with `unchecked: too slow` and the server still answers; the rate limit (two RECHECKs in 30 s run once); results carry counts, not names; with the switch off nothing runs and nothing is lost; the entry's other fields and search are unchanged by `anchors`.
+
+### 0.4 What the builders can ask me
+
+Name, size and ordering questions about these three PRs go to FIDO. Not decided here and not to be invented: where repo claims live (parked), whether regex or globs ever come (decided by the four-week measurement of `docs/multivac-fit.md` section 5: how many entries carry anchors, how many flagged entries get fixed or retired, whether people ask for globs).
 
 ## 1. Summary and recommendation
 
