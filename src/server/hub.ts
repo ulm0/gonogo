@@ -1499,6 +1499,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       case 'Stop':
         reply = onStop(rt);
         meter(rt, payload, true);
+        try {
+          io.stopped?.(rt.record.name);
+        } catch (error) {
+          log.warn('stopped hook failed', error);
+        }
         break;
       case 'StopFailure':
         onStopFailure(rt);

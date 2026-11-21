@@ -26,7 +26,7 @@ import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, Needs, Operations, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
 import { CheckNow } from './CheckNow.js';
-import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore, writeStored } from './store.js';
+import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useFeature, useStore, writeStored } from './store.js';
 import { agentCounts, updateDialogText } from './selfupdate.js';
 import { BASE, MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
 import { copyText } from './uplink.js';
@@ -626,6 +626,14 @@ function Office(): ReactElement {
 }
 
 export function App(): ReactElement {
+  // the counts of Knowledge anchors on the tiles: asked again when the log changes (an agent's Stop makes the server say so)
+  const anchorsOn = useFeature('knowledge-anchors');
+  // before the first state the page does not know which features are off (it assumes none); the route of an off feature answers 404, which the console would show
+  const known = useStore((s) => s.info !== null);
+  const logRev = useStore((s) => s.log.rev);
+  useEffect(() => {
+    if (anchorsOn && known) void api.loadKnowledge();
+  }, [anchorsOn, known, logRev]);
   // browser notifications and the unread count in the tab title: the switch is in Flight Rules, and nothing asks for permission here
   useEffect(() => startNotifications(), []);
   // the service worker of the installed app (shell and push): only where the browser allows one
