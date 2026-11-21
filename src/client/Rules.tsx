@@ -3,7 +3,7 @@
  * are the wall's own modules; a setting that lives in its own feature (the livery, a console, the schedules and webhooks) is a
  * key that opens it. Commissioning, the checklist of an empty room, is here too: it uses the same keys.
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import * as api from './api.js';
 import { DOCS_URL } from '../shared/protocol.js';
@@ -155,6 +155,23 @@ function ReloadBlock(): ReactElement {
   );
 }
 
+/** The open group and how to change it: a context, so that Group is one component for good (one defined inside FlightRules is a new type at every render, and React would rebuild every block in it each time a value arrives). */
+const GroupContext = createContext<{ open: string; setOpen(id: string): void; base: string }>({ open: '', setOpen: () => undefined, base: '' });
+
+function Group({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement {
+  const { open, setOpen, base } = useContext(GroupContext);
+  return (
+    <section className="lay-group" id={`${base}-g-${id}`} aria-label={title} data-open={open === id || undefined}>
+      <h2 className="lay-group-title">
+        <button type="button" className="btn" data-kind="quiet" aria-expanded={open === id} onClick={() => setOpen(open === id ? '' : id)}>
+          {title} {open === id ? '▾' : '▸'}
+        </button>
+      </h2>
+      {open === id && <div className="lay-group-body">{children}</div>}
+    </section>
+  );
+}
+
 export function FlightRules(): ReactElement {
   const maxqOn = useFeature('maxq');
   const titleId = useId();
@@ -239,18 +256,9 @@ export function FlightRules(): ReactElement {
   );
   // The page replaces the room: the keyboard starts at its title.
   useEffect(() => heading.current?.focus(), []);
-  const G = ({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement => (
-    <section className="lay-group" id={`${titleId}-g-${id}`} aria-label={title} data-open={openGroup === id || undefined}>
-      <h2 className="lay-group-title">
-        <button type="button" className="btn" data-kind="quiet" aria-expanded={openGroup === id} onClick={() => setOpenGroup(openGroup === id ? '' : id)}>
-          {title} {openGroup === id ? '▾' : '▸'}
-        </button>
-      </h2>
-      {openGroup === id && <div className="lay-group-body">{children}</div>}
-    </section>
-  );
   const groups: ReadonlyArray<[string, string]> = [['room', 'Room'], ['agents', 'Agents'], ['budget', 'Budget and limits'], ['auto', 'Automation and connections'], ['knowledge', 'Knowledge'], ['security', 'Security'], ['system', 'System and update']];
   return (
+    <GroupContext.Provider value={{ open: openGroup, setOpen: setOpenGroup, base: titleId }}>
     <section className="rules lay-rules" aria-labelledby={titleId}>
       <header className="loop-head">
         <h1 id={titleId} ref={heading} tabIndex={-1} className="disp loop-title rules-title">
@@ -267,14 +275,14 @@ export function FlightRules(): ReactElement {
           </a>
         ))}
       </nav>
-      <G id="room" title="Room">
+      <Group id="room" title="Room">
         <Row name="Livery" now={currentEntry(livery).name}>{liveryBlock}</Row>
         <Row name="Tab name" now={tabName.name ?? tabName.fallback ?? 'not set'}><TabNameBlock /></Row>
         <Row name="Room rules" now={rules}><RoomRulesBlock /></Row>
         <Row name="Closing checklist template" now={template}><RitualTemplateBlock /></Row>
         <Row name="This browser" now="notifications, push, Commissioning">{browserBlock}</Row>
-      </G>
-      <G id="agents" title="Agents">
+      </Group>
+      <Group id="agents" title="Agents">
         <Row name="Consoles" now={`${list.length} staffed`}>{consolesBlock}</Row>
         <Row name="Engine, model and effort" now={model}><ModelDefaultsBlock /></Row>
         <Row name="Tool permissions" now={perms}><PermissionDefaultsBlock /></Row>
@@ -282,34 +290,34 @@ export function FlightRules(): ReactElement {
         <Row name="Skills registry" now="see Edit"><SkillsBlock /></Row>
         <Row name="Subagents" now={sub}><SubagentsBlock /></Row>
         <Row name="Co-author and PR footer" now={coauthor}><CoauthorBlock /></Row>
-      </G>
-      <G id="budget" title="Budget and limits">
+      </Group>
+      <Group id="budget" title="Budget and limits">
         {maxqOn && <Row name="Max Q: agents working at once" now={governor.limit === null ? 'no limit' : `at most ${governor.limit}`}><MaxQ /></Row>}
         <Row name="Propellant: tokens and dollars" now="limits per window"><Propellant /></Row>
-      </G>
-      <G id="auto" title="Automation and connections">
+      </Group>
+      <Group id="auto" title="Automation and connections">
         <Row name="Launch Window: schedules, Uplink, Relay, Docking" now={`${schedules} schedules, ${uplinks} uplinks`}>{launchBlock}</Row>
         <Row name="Start again after a restart" now={startup}><StartupBlock /></Row>
-      </G>
-      <G id="knowledge" title="Knowledge">
+      </Group>
+      <Group id="knowledge" title="Knowledge">
         <Row name="Knowledge" now={know}><KnowledgeBlock /></Row>
         <Row name="Semantic search" now="see Edit"><SemanticBlock /></Row>
-      </G>
-      <G id="security" title="Security">
+      </Group>
+      <Group id="security" title="Security">
         <Row name="Login, sessions, API keys, second factor" now="see Edit"><AccountBlock /></Row>
         <Row name="Room keys" now={keys}><RoomKeysBlock /></Row>
         <Row name="Phone approvals" now="see Edit"><PhoneApprovals /></Row>
         <Row name="All stop" now="holds every agent"><AllStopBlock /></Row>
-      </G>
-      <G id="system" title="System and update">
+      </Group>
+      <Group id="system" title="System and update">
         <Row name="Version and update check" now={version === '' ? null : `${version}`}><VersionCheckBlock /></Row>
         <Row name="Update by itself" now={auto}><AutoUpdateBlock /></Row>
         <Row name="Reload after an update" now="on request"><ReloadBlock /></Row>
         <Row name="Features" now={off.length === 0 ? 'all on' : `${off.length} switched off`}><FeaturesBlock /></Row>
-      </G>
+      </Group>
     </section>
+    </GroupContext.Provider>
   );
-
 }
 
 /** Browser notifications: a switch for this browser. The key is the user action that lets the browser ask for permission. */

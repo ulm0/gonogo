@@ -3,11 +3,16 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync('src/client/Rules.tsx', 'utf8');
-const grouped = source.slice(source.indexOf('<G id="room"'), source.indexOf('</section>', source.indexOf('<G id="system"')));
+const grouped = source.slice(source.indexOf('<Group id="room"'), source.indexOf('</section>', source.indexOf('<Group id="system"')));
 
 describe('Flight Rules groups', () => {
   it('has the seven groups', () => {
-    expect([...grouped.matchAll(/<G id="([a-z]+)" title="([^"]+)"/g)].map((m) => m[1])).toEqual(['room', 'agents', 'budget', 'auto', 'knowledge', 'security', 'system']);
+    expect([...grouped.matchAll(/<Group id="([a-z]+)" title="([^"]+)"/g)].map((m) => m[1])).toEqual(['room', 'agents', 'budget', 'auto', 'knowledge', 'security', 'system']);
+  });
+
+  it('Group is one component for good, not one made again at every render (that would rebuild every block each time a value arrives)', () => {
+    expect(source).toMatch(/^function Group\(/m);
+    expect(source).not.toMatch(/const Group = /);
   });
 
   it('puts each block in one place only', () => {

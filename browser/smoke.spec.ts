@@ -172,6 +172,9 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     const open = async (group: RegExp): Promise<void> => {
       const key = page.locator('.lay-group-title button', { hasText: group });
       if ((await key.getAttribute('aria-expanded')) !== 'true') await key.click();
+      await expect(key).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.locator('.lay-group-body').first()).toBeVisible();
+      await expect(page.locator('details.lay-row').first()).toBeVisible();
       await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
     };
     await open(/^Room/);
@@ -185,6 +188,17 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     await expect(knowledge.getByText('Turn on Knowledge in the Features block')).toHaveCount(0);
     expect(await knowledge.getByRole('alert').allTextContents(), 'the Knowledge block shows an error').toEqual([]);
     expectClean('Flight Rules');
+  });
+
+  // 7b. Ctrl+K right after the room has loaded opens the Patch Panel: the boss's terminal must not have taken the keyboard (xterm keeps Ctrl+K for itself)
+  await test.step('ctrl+k opens the patch panel right after load', async () => {
+    await page.goto(`${base}/r/main/`);
+    await expectConsoleText(page);
+    // give the terminal the time it would have taken the focus in
+    await page.waitForTimeout(1500);
+    await page.keyboard.press('Control+k');
+    await expect(page.locator('.patch-input')).toBeVisible({ timeout: 5000 });
+    await page.keyboard.press('Escape');
   });
 
   // 8. a mission and its closing checklist

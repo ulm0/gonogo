@@ -192,11 +192,6 @@ export function createPaneController(host: HTMLElement, onSizeHint: (show: boole
     if (stale && !inFlight) attachTo(agent);
   }
 
-  function takeFocusIfFree(): void {
-    const active = document.activeElement;
-    if (active === null || active === document.body) term.focus();
-  }
-
   function onSnapshot(frame: SnapshotFrame): void {
     pending = null;
     if (disposed || !sane(frame.cols, frame.rows)) return;
@@ -208,7 +203,6 @@ export function createPaneController(host: HTMLElement, onSizeHint: (show: boole
     term.write(frame.data, () => {
       if (disposed) return;
       updateHint();
-      takeFocusIfFree();
     });
     updateHint();
   }
