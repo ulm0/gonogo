@@ -159,7 +159,10 @@ async function open(page: Page, key: string, query = key): Promise<void> {
 }
 
 async function patch(page: Page, query: string): Promise<void> {
-  await page.keyboard.press('Control+k');
+  // the Jump key of the top bar: Ctrl+K typed while the terminal has the focus stays in the terminal (xterm takes it), and a room that has just loaded gives the boss's terminal the focus
+  const jump = page.getByRole('button', { name: /^Jump to/ });
+  if (await jump.isVisible().catch(() => false)) await jump.click({ timeout: 3000 });
+  else await page.keyboard.press('Control+k');
   const field = page.locator('.patch-input');
   await field.waitFor({ timeout: 3000 });
   await field.fill(query);
