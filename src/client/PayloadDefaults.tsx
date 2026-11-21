@@ -7,12 +7,14 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PayloadDefaultServer, PayloadDefaults } from '../shared/protocol.js';
 import * as api from './api.js';
+import { asDefault } from './registry.js';
+import { RegistryPicker } from './RegistryPicker.js';
 import { useRun } from './WallView.js';
 
 const SERVER_EXAMPLE = '{"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]}';
 
 /** One line of an item: what it is, and the call that removes it. */
-function Item({ name, chip, detail, remove, onSaved }: { name: string; chip: string; detail: string; remove(): Promise<PayloadDefaults>; onSaved(next: PayloadDefaults): void }): ReactElement {
+export function Item({ name, chip, detail, remove, onSaved }: { name: string; chip: string; detail: string; remove(): Promise<PayloadDefaults>; onSaved(next: PayloadDefaults): void }): ReactElement {
   const { busy, error, run } = useRun();
   return (
     <li className="rules-model">
@@ -45,10 +47,8 @@ export function PayloadDefaultsBlock(): ReactElement {
   const [problem, setProblem] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [config, setConfig] = useState('');
-  const [folder, setFolder] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
   const addServer = useRun();
-  const addSkill = useRun();
   useEffect(() => {
     let live = true;
     api.payloadDefaults().then(
@@ -104,6 +104,17 @@ export function PayloadDefaultsBlock(): ReactElement {
               ))}
             </ul>
           )}
+          <RegistryPicker
+            payload="servers"
+            only="mcp"
+            has={(serverId) => defaults.mcpServers.some((x) => x.name === serverId)}
+            onAdd={(entry) => {
+              const filled = asDefault(entry);
+              setName(filled.name);
+              setConfig(filled.config);
+              setParseError(null);
+            }}
+          />
           <div className="rules-model">
             <label htmlFor={`${id}-name`} className="rules-call">
               Server name
@@ -138,42 +149,7 @@ export function PayloadDefaultsBlock(): ReactElement {
               </p>
             )}
           </div>
-          <h3 className="label">SKILLS</h3>
-          {defaults.skills.length === 0 ? (
-            <p className="hint">None. Skills are for Claude Code agents.</p>
-          ) : (
-            <ul className="rules-model-list">
-              {defaults.skills.map((s) => (
-                <Item key={s.name} name={s.name} chip="skill" detail={s.path} remove={() => api.removeDefaultSkill(s.name)} onSaved={setDefaults} />
-              ))}
-            </ul>
-          )}
-          <div className="rules-model">
-            <label htmlFor={`${id}-folder`} className="rules-call">
-              Skill folder
-            </label>
-            <input id={`${id}-folder`} className="input" type="text" value={folder} placeholder="/Users/you/skills/my-skill" autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setFolder(event.target.value)} />
-            <button
-              type="button"
-              className="btn"
-              aria-disabled={folder.trim() === '' || addSkill.busy || undefined}
-              onClick={() =>
-                folder.trim() !== '' &&
-                !addSkill.busy &&
-                addSkill.run(async () => {
-                  setDefaults(await api.addDefaultSkill(folder.trim()));
-                  setFolder('');
-                })
-              }
-            >
-              Add folder
-            </button>
-            {addSkill.error !== null && (
-              <p className="error" role="alert">
-                {addSkill.error}
-              </p>
-            )}
-          </div>
+          <p className="hint">Skills (folders for Claude Code) are in the SKILLS block below.</p>
         </>
       )}
     </section>

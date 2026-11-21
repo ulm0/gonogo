@@ -36,6 +36,14 @@ The list ships inside gonogo and is **never fetched at runtime**. A maintainer r
 
 **Changing an entry is reviewed.** The list ends up as commands that run on people's machines, so RSO reviews every change to an entry's command, package, version or address, as for code. (The repository has no CODEOWNERS file, so this is a rule of the room, not enforced by GitHub.)
 
+## Where it is in the page
+
+- **Hire and edit form, PAYLOAD fold.** "Add from the list" sits under the MCP servers box. "Add (the server) to the box" reads the box as JSON, adds the server under its id and writes the whole back, pretty-printed; a server of that name that is already there is **never overwritten** (you may have edited it): the key is off and says so. A box that is not a JSON object is left alone, with a message. The card shows the summary, the licence, a link to the repository ("Read it first"), the day it was checked (dimmed with a warning after about six months), the runtime it needs (Node or uv), what you edit in it, and the key names it reads ("Set these in Clearance or the room's keys: NAME"; the box holds only the names). An engine that takes servers only (Gemini CLI, Kimi CLI) is offered no skill, and one with no payload has no fold.
+- **Flight Rules, PAYLOAD DEFAULTS.** The same picker for servers; it fills the name and the JSON of the form, which you still set with SET SERVER.
+- **Flight Rules, SKILLS.** The room's skills (with who gets each: Claude Code agents that are not in a Clean Room, minus the ones that replaced or switched it off), ADD FOLDER and REMOVE (the same storage as PAYLOAD DEFAULTS), the skill part of the list, and the skills of each agent's own with a key that opens its Edit form. For a skill from the list the page shows the `git clone` line and a key that **copies** it; you run it yourself, then give the absolute path of the folder to ADD FOLDER. The page runs, downloads and installs nothing, and the link is shown only when the address is https.
+
+Not seen in a browser.
+
 ## Limits
 
 - Remote servers (GitHub, Context7) are run by someone else: what the agent asks goes to them. The check cannot open them without a key.
