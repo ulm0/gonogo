@@ -38,7 +38,7 @@ It proves gonogo's side only. A change to how a real CLI starts, reports state o
 
 ## The browser smoke
 
-`browser/smoke.spec.ts` drives Chromium (Playwright) through the built server with the stand-in agent: setup and login with a second factor (real form posts, so the browser sends its own `Origin`), no console or CSP errors, styles and fonts applied, a room whose link lamp comes up and whose console draws text, the service worker. It exists because a browser found bugs that Node clients and jsdom cannot. It spends nothing. It checks a few exact design values (the link lamp's 10.5px font, the logo's 26px height) as a canary for a broken style sheet: change them in the spec together with the design.
+`browser/smoke.spec.ts` drives Chromium (Playwright) through the built server with the stand-in agent: setup and login with a second factor (real form posts, so the browser sends its own `Origin`), no console or CSP errors, the cookie flags and Content-Security-Policy headers the browser got, styles and fonts applied, a room whose link lamp comes up and whose console draws text, the service worker, the Flight Rules blocks (Knowledge with its switch on, room rules, the closing checklist template, skills) and a mission with its closing checklist. It exists because a browser found bugs that Node clients and jsdom cannot. It spends nothing. It checks a few exact design values (the link lamp's 10.5px font, the logo's 26px height) as a canary for a broken style sheet: change them in the spec together with the design.
 
 ```
 pnpm build

@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Fix: the Knowledge block showed "unknown repository" when an agent worked in a shallow clone.** `GET /api/knowledge` failed as a whole for a room with a shallow checkout (a CI clone, `git clone --depth 1`), so the block showed an error instead of the repository. A shallow clone is now listed as provisional, with no claims, as the page already described. Found by the browser smoke, which now also checks the cookie flags, the Content-Security-Policy headers, the Flight Rules blocks and a mission with its closing checklist.
+
 ## 0.11.0 (2026-11-21)
 
 Knowledge: claims about your code, verified against it and shared by every room of the install; agents propose, the Director accepts; multivac's anchor grammar in a bounded worker; export and import; a Mission can take its closing checklist from the repo. Off by default (the knowledge-anchors switch).
