@@ -138,14 +138,14 @@ describe('a run on a real checkout, in a real worker', () => {
 });
 
 describe('the bounds', () => {
-  it('a pattern the gate lets through that backtracks for ever is ended at the total time, and the process keeps answering', async () => {
-    repo({ 'a.txt': `${'a'.repeat(60)}!\n` });
+  it('a pattern the gate lets through (six `(.*)` in a row, polynomial of high degree) that takes for ever is ended at the total time, and the process keeps answering', async () => {
+    repo({ 'a.txt': `${'a'.repeat(400)}\n` });
     const engine = make({ runMs: 2500 });
     // the event loop must keep turning while the worker spins
     let ticks = 0;
     const ticker = setInterval(() => (ticks += 1), 20);
     const started = Date.now();
-    const results = await engine.run(root, [claim('K-1', 'a.txt /(a|aa)+$/'), claim('K-2', 'a.txt "aaa"')]);
+    const results = await engine.run(root, [claim('K-1', 'a.txt /(.*)(.*)(.*)(.*)(.*)(.*)x/'), claim('K-2', 'a.txt "aaa"')]);
     clearInterval(ticker);
     expect(Date.now() - started).toBeLessThan(6000);
     expect(ticks).toBeGreaterThan(10);
@@ -156,8 +156,8 @@ describe('the bounds', () => {
   });
 
   it('what a worker finished before the time was up is kept, and the rest says it was too slow', async () => {
-    repo({ 'a.txt': `${'a'.repeat(60)}!\n` });
-    const results = await make({ runMs: 2500 }).run(root, [claim('K-1', 'a.txt "aaa"'), claim('K-2', 'a.txt /(a|aa)+$/'), claim('K-3', 'a.txt "zzz"')]);
+    repo({ 'a.txt': `${'a'.repeat(400)}\n` });
+    const results = await make({ runMs: 2500 }).run(root, [claim('K-1', 'a.txt "aaa"'), claim('K-2', 'a.txt /(.*)(.*)(.*)(.*)(.*)(.*)x/'), claim('K-3', 'a.txt "zzz"')]);
     expect(results[0]?.worst).toBe('ok');
     expect(results[1]?.legs[0]?.note).toMatch(/^too slow/);
     expect(results[2]?.legs[0]?.note).toMatch(/^too slow/);

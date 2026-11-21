@@ -32,6 +32,8 @@ export const ANCHOR_QUEUE_LIMIT = 10;
 export const ANCHOR_TOTAL_MS = 5000;
 /** At most one run per checkout in this time, whatever asks. */
 export const ANCHOR_WINDOW_MS = 30_000;
+/** The most a run waits for a thread it has ended to be gone before it gives the slot back. */
+const TERMINATE_WAIT_MS = 1000;
 const GIT_CAP = 8 * 1024 * 1024;
 const GREP_CAP = 64 * 1024;
 const BRANCH = /^[\w./-]{1,80}$/;
@@ -46,6 +48,7 @@ export interface AnchorEngineOptions {
   runMs?: number;
   windowMs?: number;
   gitMs?: number;
+  /** The worker's V8 limits. A test may lower them, but never the old space below about 32 MB: V8 then ends the WHOLE process, not just the thread. */
   limits?: ResourceLimits;
   /** For tests: smaller caps for the worker's reading (a file, a whole run). */
   caps?: { fileMax?: number; runMax?: number };
@@ -69,7 +72,6 @@ export interface AnchorEngine {
 
 interface Kept {
   at: number;
-  signature: string;
   results: ClaimResult[];
 }
 
@@ -93,8 +95,6 @@ export function createAnchorEngine(options: AnchorEngineOptions): AnchorEngine {
   const waiting: Array<() => void> = [];
   const runningOf = new Map<string, Promise<ClaimResult[]>>();
   const kept = new Map<string, Kept>();
-
-  const signatureOf = (claims: readonly Claim[]): string => JSON.stringify(claims.map((c) => [c.id, c.legs, c.diagnostics.length]));
 
   function git(root: string, args: string[], signal: AbortSignal, cap = GIT_CAP): Promise<string | null> {
     return new Promise((resolve) => {
@@ -153,8 +153,10 @@ export function createAnchorEngine(options: AnchorEngineOptions): AnchorEngine {
         if (settled) return;
         settled = true;
         signal.removeEventListener('abort', onAbort);
-        void worker.terminate().catch(() => undefined);
-        resolve({ messages, ended });
+        // the slot is given back only when the thread is really gone (or after a short cap), so that "2 workers" stays true under a flood of runs
+        const gone = worker.terminate().then(() => undefined, () => undefined);
+        const cap = new Promise<void>((done) => setTimeout(done, TERMINATE_WAIT_MS).unref());
+        void Promise.race([gone, cap]).then(() => resolve({ messages, ended }));
       };
       const onAbort = (): void => finish('failed');
       signal.addEventListener('abort', onAbort, { once: true });
@@ -256,14 +258,13 @@ export function createAnchorEngine(options: AnchorEngineOptions): AnchorEngine {
     load: () => ({ running, queued: waiting.length }),
     async run(root, claims, opts = {}) {
       if (opts.trial === true) return guarded(root, claims);
-      const signature = signatureOf(claims);
       const merged = runningOf.get(root);
       if (merged !== undefined) return merged.then((results) => reorder(claims, results, root, now()));
       const last = kept.get(root);
       if (last !== undefined && now() >= last.at && now() - last.at < windowMs) return reorder(claims, last.results, root, now());
       const run = guarded(root, claims).then((results) => {
         // a run that did not happen (busy) is not a run: it does not use up the window
-        if (!results.every((r) => r.legs.every((l) => l.state === 'unevaluated' && l.note.startsWith('busy')))) kept.set(root, { at: now(), signature, results });
+        if (!results.every((r) => r.legs.every((l) => l.state === 'unevaluated' && l.note.startsWith('busy')))) kept.set(root, { at: now(), results });
         return results;
       });
       runningOf.set(root, run);

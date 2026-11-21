@@ -75,10 +75,13 @@ describe('the dialect gate (ported)', () => {
     for (const source of ['(a+)+$', '(a*)*', '(a|b+)*', '(.*a){20}', '((a+)b)*', '(x+y){2,}', '([a-z]+[0-9]*)+']) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
     expect(() => compileAnchorRegex('a'.repeat(201))).toThrow(/at most 200/);
     expect(() => compileAnchorRegex('a'.repeat(200))).not.toThrow();
-    // alternation inside a repeated group is allowed (the worker's end is the guard), and a bracket expression or an escape is not a group
-    expect(() => compileAnchorRegex('(a|aa)+$')).not.toThrow();
+    // an alternation in a repeated group is allowed only as plain alternatives of one length ((a|aa)+ and (a|b+)* are exponential)
+    for (const source of ['(a|aa)+$', '(foo|foobar)+x', '(a|b[0-9])*', '(a|.)+', '(ab|a\\.)*', '(a||b)+', '((a|aa)b)+']) expect(() => compileAnchorRegex(source), source).toThrow(/repeated group/);
+    for (const source of ['(foo|bar)+', '(a|b|c)*', '(yes|nop)+x', '(foo|foobar)', '(a|aa)?']) expect(() => compileAnchorRegex(source), source).not.toThrow();
+    // a bracket expression or an escape is not a group
     expect(() => compileAnchorRegex('[(+]*')).not.toThrow();
     expect(() => compileAnchorRegex('\\(a+\\)+')).not.toThrow();
+    expect(() => compileAnchorRegex('(.*)(.*)(.*)x')).not.toThrow(); // polynomial, not nested: the worker's end is its guard
     expect(() => compileAnchorRegex('(a+)?')).not.toThrow(); // optional, not repeated
   });
 });
@@ -160,9 +163,9 @@ describe('the conformance fixture (multivac\'s documented anchors)', () => {
   });
 
   it('a ReDoS corpus: refused when parsed, or (when the shape is allowed) left to the worker\'s end', () => {
-    const refused = ['(a+)+$', '(a*)*b', '(.*a){20}', '(a|b+)*', '((a+)+)+', '(x+x+)+y'];
+    const refused = ['(a+)+$', '(a*)*b', '(.*a){20}', '(a|b+)*', '((a+)+)+', '(x+x+)+y', '(a|aa)+$', '(foo|foobar)+x'];
     for (const source of refused) expect(parseAnchors(`<!-- @anchor K-1 brain:*.ts /${source}/ -->`).diagnostics, source).toHaveLength(1);
-    const allowed = ['(a|aa)+$', '(foo|foobar)+x'];
+    const allowed = ['(foo|bar)+x', '(.*)(.*)(.*)(.*)(.*)(.*)x']; // the second is slow: the worker's end is its guard
     for (const source of allowed) expect(parseAnchors(`<!-- @anchor K-1 brain:*.ts /${source}/ -->`).anchors, source).toHaveLength(1);
     // a long alternation is one line, within 200 characters
     const alt = `(${Array.from({ length: 30 }, (_, i) => `w${i}`).join('|')})`;

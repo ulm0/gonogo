@@ -67,7 +67,7 @@ const POSIX_CLASSES: Record<string, string> = {
  * does: escapes and bracket expressions are skipped.
  */
 function repeatedGroupWithQuantifier(source: string): boolean {
-  const stack: boolean[] = []; // does the open group hold a quantifier yet
+  const stack: Array<{ start: number; holds: boolean; alt: boolean }> = []; // where the open group starts, does it hold a quantifier, does it hold an alternation
   const quant = (i: number): { len: number; many: boolean } | null => {
     const c = source[i];
     if (c === '*' || c === '+') return { len: 1, many: true };
@@ -90,19 +90,36 @@ function repeatedGroupWithQuantifier(source: string): boolean {
       while (j < source.length && source[j] !== ']') j += source[j] === '[' && source[j + 1] === ':' ? Math.max(2, source.indexOf(':]', j + 2) + 2 - j) : 1;
       i = j;
     } else if (c === '(') {
-      stack.push(false);
+      stack.push({ start: i, holds: false, alt: false });
+    } else if (c === '|') {
+      const open = stack[stack.length - 1];
+      if (open !== undefined) open.alt = true;
     } else if (c === ')') {
-      const holds = stack.pop() ?? false;
+      const group = stack.pop();
       const after = quant(i + 1);
-      if (holds && after !== null && after.many) return true;
-      if (stack.length > 0 && holds) stack[stack.length - 1] = true; // a group inside holds a quantifier for the group around it
+      if (group !== undefined && after !== null && after.many) {
+        if (group.holds) return true;
+        // an alternation in a repeated group can be exponential ((a|aa)+): only alternatives that are plain text of one length are safe
+        if (group.alt && !fixedAlternatives(source.slice(group.start + 1, i))) return true;
+      }
+      if (group !== undefined && stack.length > 0) {
+        const outer = stack[stack.length - 1] as { holds: boolean; alt: boolean };
+        if (group.holds) outer.holds = true; // a group inside holds a quantifier for the group around it
+        if (group.alt) outer.alt = true; // and an alternation, which the outer group's own check sees as not plain
+      }
     } else {
       const q = quant(i);
-      if (q !== null && q.many && stack.length > 0) stack[stack.length - 1] = true;
+      if (q !== null && q.many && stack.length > 0) (stack[stack.length - 1] as { holds: boolean }).holds = true;
       if (q !== null && c === '{') i += q.len - 1;
     }
   }
   return false;
+}
+
+/** The text of a group is `a|b|c`: every alternative plain text (no metacharacter, no escape, no bracket) and all the same length, so no two can match the same stretch in different ways. */
+function fixedAlternatives(content: string): boolean {
+  const parts = content.split('|');
+  return parts.every((p) => p !== '' && /^[^.*+?[\]{}()^$\\|]+$/.test(p) && p.length === (parts[0] as string).length);
 }
 
 /** Compiles an anchor regex (POSIX ERE with [[:class:]]) to a JS RegExp. Throws AnchorSyntaxError, with the fix in the message. */
@@ -157,7 +174,7 @@ export function compileAnchorRegex(source: string, flags = ''): RegExp {
     }
   }
   if (repeatedGroupWithQuantifier(source)) {
-    throw new AnchorSyntaxError('a repeated group that holds a quantifier ((a+)+, (a*)*, (a|b+)*) can take exponential time: write it without the nesting, or as two legs');
+    throw new AnchorSyntaxError('a repeated group that holds a quantifier ((a+)+, (a*)*) or an alternation that is not plain text of one length ((a|aa)+, (a|b+)*) can take exponential time: write it without the nesting, or as two legs');
   }
   let translated = '';
   let at = 0;
