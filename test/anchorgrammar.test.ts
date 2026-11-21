@@ -17,6 +17,7 @@ import {
   matchingLines,
   movedTo,
   parseAnchors,
+  parseLegLines,
   runAnchorJob,
   trackedReader,
 } from '../src/server/anchorgrammar.js';
@@ -166,6 +167,37 @@ describe('the conformance fixture (multivac\'s documented anchors)', () => {
     // a long alternation is one line, within 200 characters
     const alt = `(${Array.from({ length: 30 }, (_, i) => `w${i}`).join('|')})`;
     expect(parseAnchors(`<!-- @anchor K-1 brain:*.ts /${alt}/ -->`).anchors).toHaveLength(1);
+  });
+});
+
+describe('the legs of one claim, as the store reads them (parseLegLines)', () => {
+  it('gives the legs with the line each had in the file, and a diagnostic with its line for each line that is not one', () => {
+    const out = parseLegLines(
+      [
+        { line: 7, text: '<!-- @anchor K-1 brain:src/**/*.ts /x/ unique -->' },
+        { line: 8, text: '<!-- @anchor K-1 brain:docs/*.md "a text" absent -->' },
+        { line: 9, text: '<!-- @anchor K-1 brain:*.ts /(a+)+$/ -->' },
+        { line: 10, text: '<!-- @anchor K-2 brain:*.ts /x/ -->' },
+        { line: 11, text: 'not an anchor at all' },
+      ],
+      'K-1',
+    );
+    expect(out.legs.map((l) => [l.line, l.mode])).toEqual([[7, 'unique'], [8, 'absent']]);
+    expect(out.diagnostics.map((d) => d.line)).toEqual([9, 10, 11]);
+    expect(out.diagnostics[1]?.message).toMatch(/names K-2, not K-1/);
+    expect(out.diagnostics[2]?.message).toMatch(/not an anchor/);
+  });
+
+  it('reads what a proposal sends (claim id "p"), keeps one anchor to a line, and caps the number of legs', () => {
+    expect(parseLegLines([{ line: 1, text: '<!-- @anchor p brain:*.ts "x" -->' }], 'p').legs).toHaveLength(1);
+    const two = parseLegLines([{ line: 4, text: '<!-- @anchor p brain:*.ts "x" --> <!-- @anchor p brain:*.ts "y" -->' }, { line: 5, text: '<!-- @anchor p brain:*.ts "x" -->\n<!-- @anchor p brain:*.ts "y" -->' }], 'p');
+    expect(two.legs).toEqual([]);
+    expect(two.diagnostics).toEqual([{ line: 4, message: 'one anchor to a line' }, { line: 5, message: 'one anchor to a line' }]);
+    const many = Array.from({ length: 501 }, (_, i) => ({ line: i + 1, text: '<!-- @anchor p brain:*.ts "x" -->' }));
+    const out = parseLegLines(many, 'p');
+    expect(out.legs).toHaveLength(500);
+    expect(out.diagnostics.at(-1)).toMatchObject({ line: 501, message: expect.stringMatching(/at most 500 legs/) });
+    expect(parseLegLines([], 'p')).toEqual({ legs: [], diagnostics: [] });
   });
 });
 

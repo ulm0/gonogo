@@ -391,6 +391,31 @@ export function parseAnchors(text: string): { anchors: ParsedAnchor[]; diagnosti
   return { anchors, diagnostics };
 }
 
+/**
+ * The legs of ONE claim from its anchor lines, as the store reads them (DPS's `ParseLegs` of src/server/claimsfile.ts): `lines` are the anchor comment lines under the claim's
+ * row, each with its 1-based line in the file; `claimId` is the row's id. A line that is not a well-formed anchor, or names another claim, is a diagnostic with ITS line, and
+ * the claim then reads as malformed; the other lines still give their legs. At most ANCHOR_LEGS_MAX lines.
+ */
+export function parseLegLines(lines: ReadonlyArray<{ line: number; text: string }>, claimId: string): { legs: Leg[]; diagnostics: AnchorDiagnostic[] } {
+  const legs: Leg[] = [];
+  const diagnostics: AnchorDiagnostic[] = [];
+  for (const { line, text } of lines.slice(0, ANCHOR_LEGS_MAX)) {
+    if ((text.match(/@anchor\b/g) ?? []).length > 1 || /[\r\n]/.test(text.trim())) {
+      diagnostics.push({ line, message: 'one anchor to a line' });
+      continue;
+    }
+    const one = parseAnchors(text);
+    for (const d of one.diagnostics) diagnostics.push({ line, message: d.message });
+    for (const a of one.anchors) {
+      if (a.claimId !== claimId) diagnostics.push({ line, message: `this anchor names ${a.claimId.slice(0, 40)}, not ${claimId.slice(0, 40)}: an anchor line sits under its own claim` });
+      else legs.push({ ...a.leg, line });
+    }
+    if (one.anchors.length === 0 && one.diagnostics.length === 0) diagnostics.push({ line, message: 'this line is not an anchor' });
+  }
+  if (lines.length > ANCHOR_LEGS_MAX) diagnostics.push({ line: lines[ANCHOR_LEGS_MAX]?.line ?? 0, message: `a claim has at most ${ANCHOR_LEGS_MAX} legs` });
+  return { legs, diagnostics };
+}
+
 /* ---------------------------------------------------------------- matching and the semantics of the legs */
 
 /** Where the files come from: their names (tracked, repo-relative), and their text, or null for a file that cannot be read here (binary, too large, a link, gone). */
