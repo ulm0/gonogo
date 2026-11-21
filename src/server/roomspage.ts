@@ -35,6 +35,7 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .rl-card .tile-foot{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);overflow:hidden}
 .rl-card .tile-foot span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .rl-keys{display:flex;flex-wrap:wrap;gap:8px}
+.version-mark{display:inline-flex;align-items:center;min-height:24px}
 .rl-keys .btn{flex:1 1 auto}
 .rl-keys .btn[data-kind=primary]{flex-grow:2}
 .rl-keys .input{flex:1 1 9em;min-width:0}
@@ -47,7 +48,7 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .rl-move{margin:0 0 12px}.rl-move:empty{display:none}
 .rl-confirm p{margin:0}
 .rl-error{padding:10px 12px;margin:0}
-@media (max-width:699px){.rl-main{padding:10px 12px 40px}.rl-keys .btn[data-kind=primary]{flex-basis:100%}}
+@media (max-width:699px){.version-mark{min-height:44px}.rl-main{padding:10px 12px 40px}.rl-keys .btn[data-kind=primary]{flex-basis:100%}}
 `;
 
 /**
@@ -98,7 +99,7 @@ const SCRIPT = `
 const KEY=${JSON.stringify(TOKEN_STORAGE_KEY)},FRAG=${JSON.stringify(TOKEN_FRAGMENT_KEY)};
 const $=id=>document.getElementById(id);
 const list=$('rooms'),note=$('note'),form=$('add'),gate=$('gate'),sum=$('sum'),title=$('title');
-let token=null,rooms=null,layout=null,renaming=null,removing=null,seen='',said=-1,dry=null,ask=null;
+let token=null,rooms=null,layout=null,renaming=null,removing=null,stopping=null,forcing=null,seen='',said=-1,dry=null,ask=null;
 try{
   const h=new URLSearchParams(location.hash.slice(1));
   if(/^[0-9a-f]{64}$/i.test(h.get(FRAG)||'')){token=h.get(FRAG);try{localStorage.setItem(KEY,token)}catch{}history.replaceState(null,'',location.pathname)}
@@ -113,7 +114,7 @@ function ago(at){
 async function call(method,path,body){
   const res=await fetch(path,{method,headers:Object.assign(token?{Authorization:'Bearer '+token}:{},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,cache:'no-store'});
   const data=await res.json().catch(()=>({}));
-  if(!res.ok)throw Object.assign(new Error(data.error||('error '+res.status)),{stepUp:data.stepUp===true,second:data.second===true});
+  if(!res.ok)throw Object.assign(new Error(data.error||('error '+res.status)),{stepUp:data.stepUp===true,second:data.second===true,status:res.status});
   return data;
 }
 function fail(e){note.textContent=e instanceof Error?e.message:String(e);note.hidden=false}
@@ -149,7 +150,7 @@ function card(r){
     if(typeof r.costToday==='number'&&r.costToday>0)lcd.append(el('span','tile-sub','about $'+r.costToday.toFixed(2)+' today (estimate)'));
     if(r.lastActivity){const t=el('span','tile-sub','last activity '+ago(r.lastActivity));t.dataset.at=String(r.lastActivity);lcd.append(t)}
   }else if(up)lcd.append(el('span','tile-sub','running'));
-  else{lcd.append(el('span','tile-sub',r.state==='crashed'?'crashed, starting again':r.state==='starting'?'starting':'stopped'));if(r.note)lcd.append(el('span','tile-sub',r.note))}
+  else{lcd.append(el('span','tile-sub',r.state==='crashed'?'crashed, starting again':r.state==='starting'?'starting':r.autostart?'stopped until gonogo starts again':'stopped'));if(r.note)lcd.append(el('span','tile-sub',r.note))}
   li.append(lcd);
   const foot=el('div','tile-foot');foot.append(el('span','','r/'+r.id));if(r.tabName)foot.append(el('span','','tab: '+r.tabName));if(r.id==='main'&&layout)foot.append(el('span','','files: '+layout.path));
   li.append(foot);
@@ -158,6 +159,10 @@ function card(r){
     // a tap anywhere on a running room's card opens it (the OPEN key stays the one for a keyboard and a screen reader)
     li.className+=' rl-open';li.addEventListener('click',e=>{if(renaming!==r.id&&removing!==r.id&&!e.target.closest('a,button,input'))location.assign(a.href)})}
   else{const b=key('OPEN','primary',()=>{},'open:'+r.id,'Open '+name);b.disabled=true;keys.append(b)}
+  const path='/api/rooms/'+encodeURIComponent(r.id);
+  if(r.state==='stopped'||r.state==='crashed')keys.append(key('START','',()=>power(path+'/start'),'start:'+r.id,'Start '+name));
+  if(r.state!=='stopped')keys.append(key('STOP','',()=>{stopping=r.id;forcing=null;removing=null;renaming=null;draw();focus('keep-running:'+r.id)},'stop:'+r.id,'Stop '+name));
+  if(r.id!=='main')keys.append(key('AT BOOT: '+(r.autostart?'YES':'NO'),'',()=>boot(r),'boot:'+r.id,(r.autostart?'Do not start ':'Start ')+name+' when gonogo starts'));
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);
   if(removing===r.id){
@@ -167,7 +172,45 @@ function card(r){
     row.append(key('KEEP','',()=>{removing=null;draw();focus('remove:'+r.id)},'keep:'+r.id,'Keep '+name),key('REMOVE','danger',async()=>{try{await call('DELETE','/api/rooms/'+encodeURIComponent(r.id));removing=null;clear();load();title.focus()}catch(e){fail(e)}},'confirm:'+r.id,'Remove '+name+' now'));
     box.append(row);li.append(box);
   }
+  if(stopping===r.id){
+    const box=el('div','flood rl-confirm');box.dataset.tone='nogo';box.setAttribute('role','group');box.setAttribute('aria-label','Stop '+name);
+    box.append(el('p','','Stop '+name+'? Its agents stop with it, and mail waiting for them is kept. '+(r.autostart?'It starts again when gonogo starts.':'It stays stopped until you start it.')));
+    if(r.id==='main')box.append(el('p','','Room main also carries the updates, the Telegram poll, phone approvals and webhooks: they are off until it starts, and alerts are held until then.'));
+    const row=el('div','rl-keys');
+    row.append(key('KEEP RUNNING','',()=>{stopping=null;draw();focus('stop:'+r.id)},'keep-running:'+r.id,'Keep '+name+' running'),key('STOP','danger',()=>power(path+'/stop'),'stop-go:'+r.id,'Stop '+name+' now'));
+    box.append(row);li.append(box);
+  }
+  if(forcing===r.id){
+    const box=el('div','flood rl-confirm');box.dataset.tone='amber';box.setAttribute('role','group');box.setAttribute('aria-label','Stop '+name+' anyway');
+    box.append(el('p','','The room didn\u2019t answer whether it\u2019s busy. Stop it anyway?'));
+    const row=el('div','rl-keys');
+    row.append(key('KEEP RUNNING','',()=>{forcing=null;draw();focus('stop:'+r.id)},'force-keep:'+r.id,'Keep '+name+' running'),key('STOP ANYWAY','danger',()=>power(path+'/stop',{force:true}),'force:'+r.id,'Stop '+name+' anyway'));
+    box.append(row);li.append(box);
+  }
   return li;
+}
+async function power(path,body){
+  try{
+    const res=await call('POST',path,body||{});
+    clear();stopping=null;forcing=null;seen='';await load();
+    if(res&&res.skipped&&res.skipped.length)fail('Not done: '+res.skipped.map(x=>x.id+' ('+x.why+')').join('; '));
+  }catch(e){
+    if(e.stepUp){ask={again:()=>power(path,body),second:e.second,msg:e.message};seen='';draw();focus('step:password')}
+    else if(e.status===409&&/did not answer whether it is busy/.test(e.message)){const m=/rooms\\/([^/]+)\\/stop$/.exec(path);forcing=m?decodeURIComponent(m[1]):null;stopping=null;seen='';draw();if(forcing)focus('force:'+forcing)}
+    else{stopping=null;forcing=null;seen='';fail(e);draw()}
+  }
+}
+async function boot(r){
+  try{await call('PATCH','/api/rooms/'+encodeURIComponent(r.id),{autostart:!r.autostart});clear();seen='';await load()}catch(e){fail(e)}
+}
+function allBox(){
+  if(stopping!=='*')return null;
+  const live=rooms.filter(r=>r.state!=='stopped').length;
+  const box=el('div','flood rl-confirm');box.dataset.tone='nogo';box.setAttribute('role','group');box.setAttribute('aria-label','Stop every room');
+  box.append(el('p','','Stop every room? '+live+(live===1?' room':' rooms')+' and their agents stop, main last. Mail waiting for them is kept. Room main also carries the updates, the Telegram poll, phone approvals and webhooks: they are off until it starts. A room that does not answer whether it is busy is skipped, not forced.'));
+  const row=el('div','rl-keys');
+  row.append(key('KEEP RUNNING','',()=>{stopping=null;draw();focus('stop-all')},'keep-all','Keep every room running'),key('STOP ALL','danger',()=>power('/api/rooms/stop-all'),'stop-all-go','Stop every room now'));
+  box.append(row);return box;
 }
 function lines(box,items){for(const t of items)box.append(el('p','',t))}
 async function act(action){
@@ -178,17 +221,17 @@ async function act(action){
 }
 async function confirmStep(){
   const box=$('move').querySelector('.rl-step'),pw=box.querySelector('[name=password]').value,code=box.querySelector('[name=code]');
-  try{await call('POST','/api/auth/stepup',Object.assign({password:pw},code&&code.value?{code:code.value}:{}));const a=ask.action;ask=null;await act(a)}
+  try{await call('POST','/api/auth/stepup',Object.assign({password:pw},code&&code.value?{code:code.value}:{}));const a=ask.action,again=ask.again;ask=null;if(again)await again();else await act(a)}
   catch(e){note.textContent=e.message;note.hidden=false}
 }
 async function showDry(){
   try{dry=await call('GET','/api/rooms/main/migrate');clear();seen='';draw();focus('dry:close')}catch(e){fail(e)}
 }
 function moveBox(){
-  if(!layout)return null;
-  const m=layout.migration,old=layout.main==='.';
+  if(!layout&&!(ask&&ask.again))return null;
+  const m=layout?layout.migration:null,old=layout?layout.main==='.':false;
   if(!m&&!old&&!dry&&!ask)return null;
-  const box=el('div','flood rl-confirm');box.dataset.tone='amber';box.setAttribute('role','group');box.setAttribute('aria-label','Where room main keeps its files');
+  const box=el('div','flood rl-confirm');box.dataset.tone='amber';box.setAttribute('role','group');box.setAttribute('aria-label',ask&&ask.again?'Confirm with your password':'Where room main keeps its files');
   const row=el('div','rl-keys');
   if(m&&m.state==='skipped'){
     box.append(el('p','','Room main was not moved into rooms/main, so its files stay at the root of the home. Nothing was changed.'));lines(box,m.reasons||[]);
@@ -229,11 +272,11 @@ function moveBox(){
   if(row.childNodes.length)box.append(row);
   return box;
 }
-function focus(f){const t=list.querySelector('[data-f="'+f+'"]')||$('move').querySelector('[data-f="'+f+'"]');if(t){t.focus();if(t.select)t.select()}return !!t}
+function focus(f){const t=list.querySelector('[data-f="'+f+'"]')||$('move').querySelector('[data-f="'+f+'"]')||sum.querySelector('[data-f="'+f+'"]');if(t){t.focus();if(t.select)t.select()}return !!t}
 function draw(){
-  const had=document.activeElement&&(list.contains(document.activeElement)||$('move').contains(document.activeElement))?document.activeElement.dataset.f:null;
+  const had=document.activeElement&&(list.contains(document.activeElement)||$('move').contains(document.activeElement)||sum.contains(document.activeElement))?document.activeElement.dataset.f:null;
   // where main keeps its files comes first and is amber when something needs doing: a refused move must not hide in a card
-  const mb=moveBox();$('move').replaceChildren(...(mb?[mb]:[]));
+  const mb=moveBox(),ab=allBox();$('move').replaceChildren(...(mb?[mb]:[]),...(ab?[ab]:[]));
   const cards=rooms.map(card);
   if(rooms.length===1){
     const open=el('li','tile rl-card rl-new');open.dataset.kind='open';
@@ -244,6 +287,8 @@ function draw(){
   const needs=rooms.reduce((n,r)=>n+(r.needsYou||0),0);
   sum.replaceChildren(el('span','chip',rooms.length+(rooms.length===1?' room':' rooms')));
   if(needs){const c=el('span','chip',needs+' need you');c.dataset.tone='amber';sum.append(c)}
+  if(rooms.some(r=>r.state==='stopped'||r.state==='crashed'))sum.append(key('START ALL','',()=>power('/api/rooms/start-all'),'start-all','Start every stopped room'));
+  if(rooms.some(r=>r.state!=='stopped'))sum.append(key('STOP ALL','',()=>{stopping='*';forcing=null;draw();focus('keep-all')},'stop-all','Stop every room'));
   // said aloud only when the count changes, not at every redraw
   if(needs!==said){said=needs;$('live').textContent=needs===0?'No room needs you.':needs+(needs===1?' agent needs you.':' agents need you.')}
   document.title=(needs?'('+needs+') ':'')+'rooms \\u00b7 gonogo';

@@ -226,10 +226,19 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 }));
     await measure(page, group, 'the clock open');
     await page.keyboard.press('Escape');
-    for (const [title, name] of [['version key', /^gonogo \d/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
+    for (const [title, name] of [['layout', 'Layout of the room'], ['version key', /^gonogo \d/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
       await view(page, group, `top bar: ${title}`, () => page.getByRole('button', { name }).last().click({ timeout: 3000 }));
       await measure(page, group, title);
       await page.keyboard.press('Escape');
+    }
+    for (const density of ['Full wall', 'Focus', 'Standard'] as const) {
+      await page.getByRole('button', { name: 'Layout of the room' }).click({ timeout: 3000 });
+      await page.getByRole('button', { name: new RegExp('^' + density) }).click({ timeout: 3000 });
+      await page.keyboard.press('Escape');
+      if (density !== 'Standard') {
+        await shoot(page, group, `layout: ${density}`, true);
+        await measure(page, group, `layout: ${density}`);
+      }
     }
     await toolbarProofs(page, group);
     await page.reload();
@@ -361,6 +370,12 @@ test('screens of the app and the docs', async ({ browser }) => {
   missed.push(`info: agents after the seed: ${states.join(', ')}${states.some((x) => x.endsWith('=stopped')) ? '; server output: ' + output.slice(-600).replace(/\s+/g, ' ') : ''}`);
   await setupContext.close();
 
+  await seed('second room', async () => {
+    const maker = await browser.newContext({ storageState: state });
+    await api(maker, 'POST', '/api/rooms', { id: 'docs', name: 'Docs' });
+    await maker.close();
+  });
+
   // every view, light then dark (the livery is the server's, so it is chosen once per scheme), desktop and phone
   for (const scheme of SCHEMES) {
     const chooser = await browser.newContext({ storageState: state });
@@ -372,6 +387,13 @@ test('screens of the app and the docs', async ({ browser }) => {
       const page = await context.newPage();
       await page.goto(`${base}/`);
       await shoot(page, group, 'rooms list', true);
+      await measure(page, group, 'rooms list');
+      await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs' }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop asks first');
+      await page.getByRole('button', { name: 'Keep Docs running' }).click({ timeout: 3000 }).catch(() => undefined);
+      await view(page, group, 'rooms list: stop all asks first', () => page.getByRole('button', { name: 'Stop every room', exact: true }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop all asks first');
+      await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
       await context.close();
     }

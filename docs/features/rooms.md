@@ -43,6 +43,27 @@ gonogo token rotate                       # new Director token; the old one stop
 
 `gonogo reload` (and the Reload key) makes every room hand its agents to its pty host, frees the port and restarts the installed gonogo with the same arguments. The front port is down a few seconds; with `--pty-host` agents keep running. It only signals a real supervisor of this gonogo (a stale lock reused by another program is reported, not signalled). **Refused in Docker**: use the Update key or `docker compose pull && docker compose up -d`. No per-room reload.
 
+## Stop and start a room
+
+The supervisor has routes for it (the page keys come later). All are the Director's: a login session, or a `full` API key where said; the old Director token and the local socket work too. A `read` or `write` key, an agent and a room get 401 or 403.
+
+| Route | What it does |
+|---|---|
+| `POST /api/rooms/<id>/stop` | SIGTERM, then SIGKILL after the room's shutdown time. The room's agents, its pty host and their tokens end with it; mail that is queued is on disk and is delivered after the next start. 200 when it has exited, 202 when it is still stopping after 5 s. Asks for the password again. |
+| `POST /api/rooms/<id>/start` | Clears a restart wait and the failure count, starts the room at once (200, state `starting`). Does not ask for the password. |
+| `POST /api/rooms/stop-all`, `start-all` | The same for every room that can be, answering `{ stopped | started, skipped: [{ id, why }] }`. They are not atomic. Both ask for the password again. |
+| `PATCH /api/rooms/<id>` `{ autostart }` | Whether the room starts when gonogo starts. `main` always does. A stop does not change it: a stopped room with autostart on starts again at the next start of gonogo. |
+
+`DELETE /api/rooms/<id>` asks for the password again too.
+
+A stop does not survive a restart of gonogo: a stopped room with autostart on starts again with the next start. To keep a room down, turn its autostart off. The ids `stop-all` and `start-all` are reserved (no new room may have them); a room that already has one of them cannot be renamed or removed through these routes.
+
+A room that does not answer the question whether it is busy (it may be hung) is not stopped: 409 "did not answer". Send `{ "force": true }` in the body of the stop to stop it anyway; the audit line says it was forced. Main is never stopped without an answer. `stop-all` stops the other rooms together, then main last, and does not force.
+
+A stop is refused with 409 while a T-minus poll or Static fire is open in that room, a Relief request waits there, room main is being moved, or (for main) an update runs. One stop or start per room at a time: a second one answers 409 "room x is stopping". An API key may not stop `main` or every room (403): do it in the browser.
+
+Every stop and start is written to the supervisor's log and to the Downlink of room `main`, with who did it and the result. While main is stopped, login alerts and these lines are held (20 of each) and said when it is running again, with a count of what was dropped. Stopping main also stops the Telegram poll, phone approvals, the update hook and auto-update until it starts.
+
 ## The list page
 
 Open the printed address. Each room is a card: a light (green running, amber blinking needs you, red crashed, dim stopped), name (else id; main is "Main"), a state word, agents running of all, how many need you or work, last activity, tab name, `r/<id>`, and the reason if crashed. OPEN goes to `/r/<id>/` (disabled while not running). With only main, the page offers a new room. The ROOMS key in every room's top bar goes back. The page uses the livery of this browser and plain styles without a build.
