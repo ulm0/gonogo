@@ -100,3 +100,6 @@
 .next-termbar-title { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; }
 .next-phone-term[data-full] { position: fixed; inset: 0; z-index: 35; border-radius: 0; overflow: auto; background: var(--body); }
 .next-phone-term[data-full] .term-wrap { min-height: calc(100vh - 170px); }
+@media (max-width: 700px) {
+  .next-termbar .btn { min-width: 44px; }
+}
