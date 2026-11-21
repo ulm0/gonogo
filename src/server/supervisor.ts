@@ -724,12 +724,12 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     }
     if (child.port === null) return null;
     try {
-      const body = (await askRoom(child, '/api/state', 2000)) as { poll?: { status?: string } | null; relief?: { requests?: Array<{ id?: string }> } };
+      const body = (await askRoom(child, '/api/state', 4000)) as { poll?: { status?: string } | null; relief?: { requests?: Array<{ id?: string }> } };
       if (body.poll?.status === 'open') return `a T-minus poll or Static fire is open in room "${id}": wait for its answer`;
       const waiting = body.relief?.requests ?? [];
       if (waiting.length > 0) return `a Relief request waits in room "${id}" (${waiting.map((r) => String(r.id)).join(', ')}): answer it first`;
       if (id === MAIN_ROOM) {
-        const update = (await askRoom(child, '/api/update', 2000)) as { state?: string };
+        const update = (await askRoom(child, '/api/update', 4000)) as { state?: string };
         if (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off') return 'an update is running in room main: wait for it to finish';
       }
     } catch {

@@ -951,7 +951,7 @@ describe('stop and start rooms through the supervisor (t107)', () => {
     addRoom(home, 'c');
     const s = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', GONOGO_PORT: '1', GONOGO_ALLOWED_HOSTS: 'x', ...extraEnv }, authCosts: { argon2: { memory: 16, passes: 1, parallelism: 1 }, scrypt: { N: 16, r: 1, p: 1 } }, tamperEveryMs: 0 });
     sup = s;
-    await until(async () => (await state(s, 'main')) === 'running' && (await state(s, 'c')) === 'running', 20_000, 'main and c');
+    await until(async () => (await state(s, 'main')) === 'running' && (await state(s, 'b')) === 'running' && (await state(s, 'c')) === 'running', 30_000, 'main, b and c');
     return s;
   };
   /** Makes the account, so that API keys exist (a key is refused on an install with no account). */
