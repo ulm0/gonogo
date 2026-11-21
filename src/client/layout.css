@@ -93,3 +93,26 @@
   .lay-jump .lay-kbd { display: none; }
   .lay-phone-bar .btn { min-width: 44px; }
 }
+
+/* Flight Rules in groups: an index, one open group, rows (name, what it is now, Edit) that open the block in place */
+.lay-group { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; scroll-margin-top: 72px; }
+.lay-group-title { margin: 0; font-size: 18px; }
+.lay-group-body { display: flex; flex-direction: column; gap: 12px; }
+.lay-group-body > * { min-width: 0; max-width: 100%; }
+.lay-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--body); }
+.lay-row { border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); }
+.lay-row > summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 12px; cursor: pointer; list-style: none; }
+.lay-row > summary::-webkit-details-marker { display: none; }
+.lay-row-name { font-weight: 600; flex: 1 1 200px; }
+.lay-row-now { flex: 1 1 200px; opacity: 0.8; }
+.lay-row-edit { pointer-events: none; white-space: nowrap; flex: none; }
+.lay-row-body { padding: 8px 12px 12px; }
+.lay-row-body .module { border: 0; box-shadow: none; padding: 0; background: none; }
+@media (max-width: 700px) {
+  .lay-group .btn { min-height: 44px; min-width: 44px; }
+  .lay-group-nav { flex-wrap: nowrap; overflow-x: auto; }
+  .lay-group-nav .btn { flex: none; }
+  .lay-row > summary { flex-wrap: wrap; }
+  .lay-row-name, .lay-row-now { flex-basis: 100%; }
+  .lay-row-edit { margin-left: auto; }
+}
