@@ -1,4 +1,4 @@
-# Spec: project knowledge, one door, and the closing ritual (draft 4: phase 1 lean decided)
+# Spec: project knowledge, one door, and the closing ritual (draft 5: phase 2 designed)
 
 Design by FIDO, 2026-11-21, task t86 (scope widened by FLIGHT: a thorough analysis, not one page). Status: draft 3, not built. **No code in this branch.** Draft 3 folds in RSO's M1 to M5 and M7 (m2060) and the Director's change of direction (m2066): gonogo **takes multivac's ideas and code and owns them**; it has **no runtime dependency on multivac, never runs it, and shows no multivac row** (RSO's M6 and my piece D are dropped for that reason). **Storage (where claims live) is undecided: section 4A marks it; do not build until it is settled.**
 
@@ -57,6 +57,130 @@ Anchor = { root: string; file?: string; text: string; mode: 'present' | 'absent'
 ### 0.4 What the builders can ask me
 
 Name, size and ordering questions about these three PRs go to FIDO. Not decided here and not to be invented: where repo claims live (parked), whether regex or globs ever come (decided by the four-week measurement of `docs/multivac-fit.md` section 5: how many entries carry anchors, how many flagged entries get fixed or retired, whether people ask for globs).
+
+## 0b. Phase 2: claims store, full anchor grammar, repo ritual (decided by the Director, 2026-11-21: go on all phases, no four-week wait)
+
+Written for t90 on `fido/knowledge-phase2`. It builds on phase 1 (section 0, shipped in 0.10.0: door, ritual, literal anchors on log entries) and on sections 4 to 8 plus RSO's M1 to M7 and C1 to C2. **Where this section differs from sections 4 to 8, this section wins; section 4A's "UNDECIDED" block is closed by 0b.1.** Not built; RSO reviews before anyone builds.
+
+### 0b.1 Storage: gonogo-owned by default, a read-only repo file as an option
+
+**Default store: `<root home>/knowledge/<repo-id>/`** (the supervisor's home, which is what `GONOGO_DATA` points under in the compose file: `<GONOGO_DATA>/state/knowledge/`). Why the root home and not a room's: it must survive a deleted room, and a repo is the same repo whichever room works on it. The supervisor passes the path to each room process as `GONOGO_KNOWLEDGE_DIR`. Files, all 0600 in 0700 folders, written by lock file (`wx`) plus temp file and rename so two room processes never tear one:
+- `claims.md`: the accepted claims, **in multivac's six-column table with anchor comment lines** (`ID | statement | authority | state | date | source`), so the file is a valid multivac `invariants.md`; ids `K-1`, `K-2`, ... allocated under the lock and never reused.
+- `index.json` (one for the whole store): `{ version: 1, repos: { <repo-id>: { label, remoteKey|null, rootCommit, roots: [{ gitCommonDir, firstSeen }], alias?: <repo-id> } } }`. `label` is the repo's folder name, for humans.
+- `ritual.md` (optional, the Director's): a ritual template for this repo, same format as `<home>/ritual.md`.
+- **Proposals are not here.** They are **per room**, in `<room home>/knowledge-proposals/<repo-id>.json` (see 0b.2): a room never sees another room's pending proposals. Only **accepted** claims are shared across the rooms of an install, which makes rooms share one thing, the Director's decisions about a repo, and nothing an agent wrote unreviewed. This is a deliberate, named exception to "rooms share nothing"; RSO decides whether it stands.
+
+**Optional, per project: `<repo>/.gonogo/claims.md`** (same format) and `<repo>/.gonogo/ritual.md`: committed by the user, **read-only for gonogo**, read like any repo file (S2: `realpath` under the repo, `O_NOFOLLOW`, regular file, at most 256 KiB). Source label **"repo"** on every claim; shown but **never returned to agents as text** (they can read the file themselves). When both files hold the same id the **repo file wins** and the block shows "id repeated". A repo claim's anchors can only target its own repo (see the grammar below).
+
+**repo-id.** `sha256(remoteKey + "\n" + rootCommit)`, hex, first 16 characters for the folder name (the full 64 are in `index.json`; a collision on 16 is detected and refused).
+- **remoteKey:** `origin` if it exists, else the only remote, else none. Normalized: scheme and `user@` dropped, `host:path` and `ssh://host/path` and `https://host/path` all become `host/path`, host lower-cased, a trailing `.git` and `/` removed, credentials never stored. The URL is not sent anywhere.
+- **rootCommit:** the lexicographically smallest of `git rev-list --max-parents=0 HEAD` (a repo may have several roots).
+- **No remote:** id from the root commit alone, marked `local`. Two clones of the same history share the id, which is the intent.
+- **A shallow clone** (`git rev-parse --is-shallow-repository` is `true`): the root commit is not known, so the id is `provisional`: the block says so, claims can be read but **proposals and binding wait** until it is unshallowed or the remote alone is used (the Director may choose "identify by remote only", a flag on that index entry).
+- **A fork:** another remote, usually the same root commit: a **different** id by design (it may diverge). If the Director wants one knowledge base, `gonogo knowledge alias <fork-id> <canonical-id>` (also a button) sets `alias` in the index; reads and writes then go to the canonical id.
+- **A rewritten root or a moved remote** (history filtered, a repo renamed): the computed id is new, but the index finds a candidate by the other half (same remote and a different root commit, or the same root and a different remote). **Never automatic:** the block shows "looks like <label>: MOVE claims here / KEEP SEPARATE", and a move is one atomic rename of the folder plus an index edit.
+- **Worktrees and Clean Room worktrees** compute the same id as their main checkout (the same git common directory).
+- **Binding (S11).** An agent can edit its own `.git/config` and history, so it could make its checkout *claim* another project's id. The index therefore records, per repo-id, the **git common directories** (real paths) that are **bound**. A checkout is bound when it is a worktree of a bound common directory, or when the Director binds it (the block lists "unbound root: <path> reports itself as <label>: BIND / IGNORE"); a **first sighting of a new id** binds automatically. **Until a root is bound, the agent tools (0b.2) answer "not bound" for it** and nothing from the store is returned to it; Director-facing evaluation still runs.
+
+**`gonogo knowledge export` and `import`** (CLI, local, like `gonogo rooms`; works with `--home <root>`; in Docker through `docker exec`):
+- `export [--repo <id|path>] [--out <file>]`: one JSON bundle `{ version: 1, exportedAt, repos: [{ repoId, label, remoteKey, rootCommit, claims: "<claims.md text>", ritual?: "<text>" }] }`, 0600, a symlink at `--out` refused. No roots, no bindings, no proposals. `--multivac` also writes the claims with literal legs converted to escaped regexes (0b.3), for use with multivac. gonogo never writes into a repo, so "put it in the repo" is the user's copy.
+- `import <file> [--apply] [--replace]`: **dry run by default** (lists what would be added, skipped and rejected); every claim is parsed with the same parser as the store, malformed ones are listed and skipped; an id collision skips unless `--replace`; sizes capped (the caps of 0b.3); imported claims get `authority: imported` and the file name in `source`. Bindings are not imported: the first sighting of the repo asks for them. `--apply` needs the local socket (the Director); there is no API route, so no step-up question arises.
+
+### 0b.2 Who writes claims: the Director directly, agents by proposal
+
+- **The Director** adds, edits, retires and deletes claims in the Knowledge block (0b.4) or by editing the store's `claims.md` on the host. Session only; keys below scope `full` cannot write.
+- **Agents propose.** A new MCP tool **`knowledge_propose { statement, legs[] }`** writes **only** to `<room home>/knowledge-proposals/<repo-id>.json`, for the repo-id of **the agent's own top level** (for a Clean Room agent, its own worktree), and **only when that root is bound** (S11). Fields: `statement` (at most 300 characters, one line, cleaned as S6) and up to 5 `legs`, each structured, not a pasted comment: `{ mode, glob, exclude?: string[], regex?: string, flags?: 'i', literal?: string, count?: number }`; gonogo serializes them into the grammar after validating them with the same parser. Caps: 20 pending proposals per agent per repo, 10 proposals per agent per hour. A proposal is stamped by gonogo with the agent, room, branch and short commit, and is **never** an active claim: it has no effect until accepted.
+- **The Director accepts or rejects** in the block, seeing statement, legs, the stamp and the **result of a trial run** of the legs on that checkout ("would be ok", "would be stale"). Accept: becomes `K-<n>` in the store with `authority: agent-accepted`, `source: proposed by <agent>`, and the Director's date. Reject: archived (the proposal keeps `rejected` and a reason line) and the agent gets a one-line message ("proposal p4 rejected"). Session only, **no step-up** (a claim has no prompt authority and runs read-only in the worker; RSO may disagree).
+- **Agents read claims through `knowledge_list`**: returns the **accepted store claims** of its own bound repo (id, statement, state, last check), **never repo-file claims or proposals**, capped at 50. The statements are text the Director accepted, handed over on request as tool output, not injected into the role text, the pointer or the start notice (S1 holds).
+- The start notice, tile and Downlink carry **counts only**.
+
+### 0b.3 The full anchor grammar, ported
+
+**Source and licence.** Ported from multivac (MIT, the Director's own code): the parser (`anchor/parse`), the regex gate (`lib/regex`), the leg semantics (`anchor/evaluate`, `anchor/match`), with an MIT notice and a header naming the source in each ported file. **Not ported:** `evaluateAnchors`' rewriting of moved anchors, git helpers, config, anything writing the repo.
+
+**Grammar.** `<!-- @anchor <CLAIM-ID> brain:<glob> [!<glob> ...] /<regex>/[i] [mode] -->` exactly as multivac, with:
+- the repo key fixed to **`brain`** (one repo per claim set); any other key is `malformed: this store has one repo` (multivac's `*:` and cross-repo keys are not supported, and `!brain:<glob>` exclusions are read as `!<glob>`);
+- modes `present` (default), `absent`, `unique`, `count=N`, `each`, `each!`; legs of one claim are ANDed; severity labels for display only: `absent`, `count`, `each` failures are "likely real", `present` and `unique` "may have moved"; **nothing blocks anything**;
+- **one gonogo extension, `"literal"` in place of `/regex/`**: a fixed string (at most 200 characters, `\"` and `\\` escapes, no newline), compared as text with no regex engine. It is what phase 1's log anchors become, and it needs no worker for single-file legs. It is not valid multivac; `export --multivac` rewrites it as an escaped POSIX-ERE regex.
+- globs: picomatch dialect (`**`, `{a,b}`, dotfiles match) over tracked paths. **Decision for the Director (question 2):** use `path.matchesGlob` if it is stable in Node 24, else add `picomatch` (MIT, no dependencies); the builder checks and says. Refused at parse: `..`, absolute, `~`, backslash, NUL, drive prefix, empty segments.
+- regex dialect: the ported gate (POSIX ERE with `[[:class:]]`, `\s \d \w \b` and backreferences refused with a hint, only the `i` flag), **plus** refusals multivac lacks: a **repeated group that contains a quantifier** (`(a+)+`, `(a*)*`, `(a|b+)*`), a pattern over 200 characters, and lookaround. Alternation inside a repeated group (`(foo|bar)+`) is allowed; the worker's kill (below) is the real guard, and a corpus of known ReDoS patterns is a test.
+
+**The worker (M1, M2).** One evaluation per checkout runs in a **`worker_threads` worker** with `resourceLimits` (`maxOldGenerationSizeMb: 128`, `maxYoungGenerationSizeMb: 16`, `stackSizeMb: 4`), the **whole run bounded at 5 s** by a timer in the main thread that calls `worker.terminate()` (results not finished become `unevaluated: too slow`), **64 MiB of file bytes in total**, at most 20,000 files, 1 MiB per file, 200 claims and 500 legs per repo, one run per checkout at a time (later triggers merge into one rerun), at most one run per checkout every 30 s. The main thread lists files with `git ls-files -z` through the Recorder's runner (`-c core.fsmonitor=false -c core.hooksPath=/dev/null`, no `GIT_*`, a clean environment, child timeout) and sends the paths to the worker, which reads them (`realpath` under the root, `O_NOFOLLOW`, `fstat` ino/dev equal to `lstat`, regular files only, tracked only). Literal `absent` legs on `**` keep phase 1's `git grep -F -l -z --no-textconv --no-recurse-submodules -e <text> --` fast path (C1) for big repos. Results per leg: `ok`, `stale`, `vacuous` (the glob, after exclusions, matches no tracked file), `unevaluated: <reason>`; per claim: the worst leg, plus `unanchored` (no legs) and `malformed` (file:line and the defect, never skipped). Every result carries the branch and short commit it ran on; a note is **written by gonogo** (never repo text), at most one file name from the glob for `present` ("found in src/lib.ts instead", shown to the Director only).
+
+**Conformance and tests.** A fixture `test/fixtures/multivac-anchors.md` holds the anchor lines of multivac's public documentation (the INV-01 four-leg example, the dead-term tombstone, exclusions, `each`, `count`) with the repo key rewritten to `brain`, plus multivac's regex-gate cases that apply (ported from its tests under MIT with the notice); gonogo must accept and reject exactly what multivac's grammar does for the supported subset, and report the unsupported keys as `malformed` without crashing. ReDoS corpus (`(a+)+`, `(a*)*`, `(a|aa)+`, `(.*a){20}`, long alternations): refused at parse or killed at 5 s with the server answering. Plus the S2, S4 and C1/C2 tests of section 0.3, now for the generalized engine.
+
+### 0b.4 The Knowledge block, the tile and the start notice
+
+- **Flight Rules, a Knowledge block** (below the rules and ritual editors): per repo: label, repo-id (short), roots (path, branch, agents), `provisional` or `unbound` notices, **claims** with source badge (`store`, `repo`, `log l17`), severity label and state per root, last check time; **RECHECK** (rate limited), **ADD CLAIM**, edit, retire, delete (with a confirm); the **proposal queue** with trial-run result, ACCEPT and REJECT; the "looks like <label>: MOVE / KEEP SEPARATE" and "BIND / IGNORE" prompts; PROMOTE for a log entry with anchors (0b.5). Text is `textContent`, cleaned, cut; claim statements are labelled by authority.
+- **API** (Director session; `read` keys for GET, `full` for writes; Origin/CSRF as the other routes): `GET /api/knowledge`, `POST /api/knowledge/<repo-id>/recheck`, `POST|PUT|DELETE /api/knowledge/<repo-id>/claims[/<id>]`, `POST /api/knowledge/<repo-id>/proposals/<pid>/accept|reject`, `POST /api/knowledge/bind`, `POST /api/knowledge/<repo-id>/move`, `POST /api/log/<id>/promote`. A `knowledge` WebSocket frame carries **counts and states only** (no statements) so tiles update.
+- **Tile and start notice:** `knowledge: 2 stale, 1 vacuous` on the tile of an agent whose checkout has any; one count line in its start notice. Counts, never text (M4).
+- **Triggers:** agent start; an agent's Stop, debounced 60 s per checkout; opening the block; RECHECK; accepting a claim (a one-off check). Never on a timer.
+- **Switch:** the feature `knowledge-anchors` (phase 1) grows into `knowledge`; **default off for one release** again; with it off nothing runs, nothing is lost, and `knowledge_propose`/`knowledge_list` are not offered.
+
+### 0b.5 Phase 1's log anchors: keep both, one engine, a promote action
+
+**Decision: keep the log anchors, evaluate them with the new engine, add PROMOTE; do not migrate.** Reasons: a log entry is the journal of a lesson (who found it, when, why) and an anchor there is cheap to write with the tool agents already use; a claim is the Director-curated fact. Migrating would delete the lesson's context and move data that phase 1 only just shipped (off by default; few entries carry anchors). So: (1) `LogAnchor` is read as a **literal claim leg** (`brain`-rooted at its `root`, `file` as the glob, `"text"`, `present|absent`) and run by the **same engine** with the same bounds; phase 1's results and notes do not change (its tests stay green); (2) the block lists them with the badge `log l17`; (3) **PROMOTE** on a log entry with anchors creates a store claim (`statement` = the entry's title, `source: from l17`, legs converted), leaving the entry as it is.
+
+### 0b.6 Ritual from the repo, and `Mission.repo`
+
+Reuse GUIDO's commit **`8692a2d`** (it exists in the repository history; the merged #180 shipped without its repo half): `Mission.repo` (create and patch fields), `repoValid` (the git top level of a hired agent's start folder **in this room**, **checked when set and at every read**; dropped when that agent is gone, M3), `readInside` (realpath under root, `O_NOFOLLOW`, regular file, 16 KiB), `readTemplate(home, repo)`. Order of sources for a new mission's template: the store's `ritual.md` for that repo-id (the Director's, label "project"), then `<repo>/.gonogo/ritual.md` (label "from the repo"), then `<home>/ritual.md` (label "room"). Items from the repo are cleaned and labelled; **only the Director's session ticks** (already so in #180). The repo-id for a mission's repo comes from 0b.1.
+
+### 0b.7 Security additions for RSO (on top of S1 to S10 and C1 to C2)
+
+| Id | Threat | Must hold |
+|---|---|---|
+| **S11** | An agent edits `.git/config` and history so its checkout claims another repo's id, then reads that project's claims through `knowledge_list` or files proposals into it. | Roots are **bound** per repo-id by git common directory; unbound roots get "not bound" from every agent tool; first sighting of a new id binds; any other binding is the Director's click. Test: a repo whose remote and root commit are forged to match another gets nothing. |
+| **S12** | The store is shared by the rooms of one install; a room should not read what another room's agent wrote unreviewed. | Only **accepted** claims are shared; proposals are per room; `knowledge_list` returns accepted claims of bound roots only. Said in the docs as the one cross-room channel. |
+| **S13** | A proposal is agent-written text shown to the Director; it can be social engineering. | Cleaned and cut like S6, labelled with the agent and "unreviewed", shown with a trial run; accept is a deliberate click; no proposal text enters a prompt; rate caps (20 pending, 10 per hour). |
+| **S14** | The worker reads files the claim names. | Same S2/C2 rules inside the worker (tracked only, `O_NOFOLLOW`, `fstat` check, realpath under root); a repo-file claim can only name its own repo. Test: a symlinked parent directory, in a Clean Room worktree too, reads nothing. |
+| **S15** | Import and export move claim text across machines. | Import is local-socket only, dry run by default, parsed by the same parser, size capped, no bindings imported; export writes 0600 and refuses a symlink target. |
+| **S16** | A malformed or huge `claims.md` (store or repo). | Parse caps (256 KiB, 200 claims, 500 legs), diagnostics not exceptions; a damaged store file is renamed `.bad` and the repo shows "damaged", never an empty claim set that looks fine. |
+| **S17** | Lock files and two processes. | `wx` lock with a stale-lock rule (age and pid), temp file plus rename, 0600; a test starts two writers. |
+
+### 0b.8 PR plan, owners, order and tests
+
+| PR | Owner | What | Size | Depends on |
+|---|---|---|---|---|
+| **K5 ritual repo** | GUIDO | cherry-pick `8692a2d`'s repo half (`Mission.repo`, `repoValid`, `readInside`, `readTemplate(home, repo)`) onto current `main`; source order and labels of 0b.6; the project ritual file once K1 lands | S, ~150 | none (start now) |
+| **K1 store and API** | DPS | repo-id resolution and index, `claims.md` read/write with locks, per-room proposals, binding, `knowledge_propose` and `knowledge_list` MCP tools, the `/api/knowledge` routes and `knowledge` frame, `GONOGO_KNOWLEDGE_DIR` from the supervisor, promote | L, ~650 | the shared types below |
+| **K2 grammar and engine** | GUIDO | ported parser, regex gate with the added refusals, glob matcher, the worker evaluator with the M1 bounds, literal legs, fast path, result states, caches and triggers, phase 1's log anchors moved onto it, conformance fixture and ReDoS corpus | L, ~750 | the shared types below |
+| **K3 export and import** | INCO | `gonogo knowledge export/import/alias`, bundle format, dry run, `--multivac`, tests | S to M, ~250 | K1 (store), K2 (parser) |
+| **K4 UI** | CONTROL | the Knowledge block, the proposal queue, bind/move prompts, tile and start-notice counts, PROMOTE button; against the API types | M to L, ~500 | K1 API shapes, K2 states |
+
+**Order.** K5 now, in parallel with K1 and K2, which start together from the shared types (below); K3 after K1 and K2 merge; K4 starts from the types with fixtures and finishes against K1 and K2. One feature page, `docs/features/knowledge.md`, written by whoever merges last; `docs/knowledge-spec.md` stays the design. Each PR has an independent reviewer; **RSO reviews K1 and K2 before merge** (they hold S11 to S17 and the worker).
+
+**Shared types (agree first, `src/shared/protocol.ts`).**
+```
+ClaimSource = 'store' | 'repo' | 'log'
+Leg = { mode: 'present'|'absent'|'unique'|'count'|'each'|'each!'; count?: number; glob: string; excludes: string[];
+        pattern: { kind: 'regex'; source: string; i: boolean } | { kind: 'literal'; text: string }; line: number }
+Claim = { id: string; statement: string; authority: string; state: 'active'|'proposed'|'retired'; date: string;
+          source: ClaimSource; from?: string; legs: Leg[]; diagnostics: { line: number; message: string }[] }
+LegState = 'ok'|'stale'|'vacuous'|'unevaluated'|'malformed'
+ClaimResult = { id: string; root: string; branch: string; commit: string; worst: LegState | 'unanchored';
+                legs: { state: LegState; note: string }[]; checkedAt: number }
+Proposal = { id: string; agent: string; branch: string; commit: string; at: number; statement: string; legs: Leg[];
+             status: 'pending'|'accepted'|'rejected'; reason?: string; trial?: ClaimResult }
+KnowledgeRepo = { repoId: string; label: string; provisional: boolean; roots: { path: string; branch: string; bound: boolean; agents: string[] }[];
+                  claims: Claim[]; results: ClaimResult[]; proposals: Proposal[]; candidates: { repoId: string; label: string; why: string }[] }
+```
+
+**Tests (by area; each rule above has one).**
+- **K1:** repo-id for each case (remote forms normalize to one key; no remote; shallow is provisional; fork gives another id, alias redirects; rewritten root gives a candidate and never moves by itself; a worktree and a Clean Room worktree share the id); lock and rename with two concurrent writers; ids never reused; proposals are per room and capped; a proposal is never active; accept makes `K-n` with the right authority; reject messages the agent; **binding** (a forged remote and root commit gets "not bound" from both tools); `knowledge_list` returns accepted store claims only and never repo-file claims; repo file wins on a repeated id; damaged `claims.md` renamed `.bad`; routes need the Director session, writes need scope `full`, Origin/CSRF; frames carry no text.
+- **K2:** the conformance fixture; each mode and leg combination; refusals (`..`, absolute, `~`, nested quantifier, over 200 characters, lookaround, wrong repo key); literal legs; the ReDoS corpus with the server answering; the 5 s, 64 MiB, 20,000-file, per-file and per-repo caps; one run per checkout and 30 s rate limit; results carry branch and commit and counts, never repo text in notes (one file name only for `present`, Director-facing); the S2/S14 symlink tests; the tree is byte-identical before and after a run; **phase 1's tests still pass on the new engine**.
+- **K3:** export then import into an empty store is identical; dry run changes nothing; `--apply` collisions skip and `--replace` replaces; malformed claims listed and skipped; `--multivac` output parses as multivac would (the escape rules); a symlink `--out` refused; 0600.
+- **K4:** the block renders each state and source badge; proposal accept and reject; bind and move prompts; tile and notice show counts only; text is inert for a statement like `<img onerror>` and U+202E; keyboard focus and phone layout as the design system requires.
+- **K5:** the 0b.6 order of sources; `Mission.repo` refused for a folder that is not a hired agent's top level, dropped on read when the agent is gone; repo items labelled and cleaned; only the Director ticks.
+
+### 0b.9 Open questions for the Director
+
+1. **Store location and sharing:** the root home (`<root>/knowledge/`), shared by all rooms of the install for **accepted** claims only (proposals per room). Or per room, with export/import as the only way across? My pick is the root home.
+2. **Glob library:** `path.matchesGlob` if stable in Node 24, else add `picomatch`, or write a small matcher?
+3. **The `"literal"` extension** to multivac's grammar (not valid multivac; converted on `--multivac` export): acceptable?
+4. **Agents read claims** through `knowledge_list` (accepted store claims only): acceptable, or counts only?
+5. **No step-up** for accept and reject (a claim has no prompt authority); step-up only for import and for deleting a repo's store?
+6. **Default off for one release** again for `knowledge`?
+7. **Identify by remote only** for shallow clones, offered per repo: acceptable?
 
 ## 1. Summary and recommendation
 
@@ -124,7 +248,7 @@ A **project** below means the git repository (top level, by `git rev-parse --sho
 
 - **User value.** The thing agents most often get wrong is acting on stale knowledge ("we don't use X", "the limit is 5"). A claim with an anchor says which files must contain or not contain what; when code changes and the claim stops being true, the room says so at the moment work starts. No model in the loop; plain matching.
 - **Data model.** `<repo>/.gonogo/claims.md`, **multivac's own table and anchor grammar** (six columns, `<!-- @anchor ... -->` legs, repo key `brain`), so the file can move under `.multivac/invariants.md` unchanged and back. gonogo supports modes `present`, `absent`, `unique`, `count=N`, `each`, `each!`; states ok, **stale** (a leg fails), **vacuous** (the glob, after exclusions, matches no tracked file), **unanchored**, **malformed** (file:line and the defect, never skipped). Row states: `active`, `proposed` (shown, never flagged), `retired` (ignored). `authority` is free text (multivac's values are `published|specified|open`; the builder reads `lib/config` to confirm). Not supported in v1: `moved` self-heal, `pending` (changes), `drift`.
-- **Where files live: UNDECIDED, pending the Director (FLIGHT, m2066).** Two options are on the table, and this section's text below was written for the first:
+- **Where files live: decided in section 0b.1 (phase 2).** The text below is kept for the options it weighed. Two options are on the table, and this section's text below was written for the first:
   - *Option R (draft 2):* in the repo, `<repo>/.gonogo/claims.md`, versioned with the code; agents write claims by editing the file; gonogo only reads it. Only in repos where the user wants it.
   - *Option H (FLIGHT's proposal):* gonogo-owned, at `<GONOGO_DATA>/knowledge/<repo-id>/` (`repo-id` = normalized remote plus root commit; survives a deleted room), with `gonogo knowledge export` and `import`; optionally, per project, committed in `<repo>/.gonogo/` for the user's own repos.
   - *What the choice changes (not decided here):* H removes the symlink and agent-written-file risks for the claims themselves (S2 below still applies to the matched files) but agents then need a way to propose a claim (an API or tool, with the Director approving) because they can no longer just edit a file; claims no longer travel with a branch or a clone; the identity of a repo (`repo-id`) becomes a design problem (a repo with no remote, forks, a rewritten root); R keeps one source of truth with the code but puts agent-writable claims in front of other agents. The sections below hold for both unless they say R.
