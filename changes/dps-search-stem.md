@@ -1,1 +1,0 @@
-- **The Mission Log search finds other forms of a word.** `builds`, `building` and `build` now find each other (English and Spanish endings), and a few letters of a word (`anch`) find the words it begins, ranked below the whole word. On this room's own log, `anchored`, `merging`, `rebased` and `knowl` went from no result to several.
