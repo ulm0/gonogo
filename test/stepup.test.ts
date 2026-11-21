@@ -124,3 +124,12 @@ describe('Knowledge', () => {
     expect(stepUpReason('GET', '/api/knowledge', null)).toBeNull();
   });
 });
+
+describe('Search by meaning', () => {
+  it('asks again to name the endpoint your notes go to, not to read the status or to test it', () => {
+    expect(stepUpReason('PUT', '/api/semantic', { endpoint: 'http://127.0.0.1:11434' })).toMatch(/endpoint of Search by meaning/);
+    expect(stepUpReason('PUT', '/api/semantic', null)).toMatch(/endpoint of Search by meaning/);
+    expect(stepUpReason('GET', '/api/semantic', null)).toBeNull();
+    expect(stepUpReason('POST', '/api/semantic/test', null)).toBeNull();
+  });
+});

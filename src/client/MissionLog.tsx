@@ -309,6 +309,7 @@ function Row({ hit, open, onOpen }: { hit: LogHit; open: boolean; onOpen(): void
 export function MissionLog(): ReactElement {
   const titleId = useId();
   const news = useStore((s) => s.log);
+  const semanticOn = useFeature('semantic-search');
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<LogSearch | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -472,7 +473,7 @@ export function MissionLog(): ReactElement {
                   />
                 </div>
                 <p className="hint" id={`${titleId}-count`}>
-                  {search === null ? 'Loading…' : countText(query, search)}
+                  {search === null ? 'Loading…' : countText(query, search, semanticOn)}
                 </p>
               </form>
               {search !== null && search.hits.length === 0 && search.total === 0 && <p className="loop-empty">The log is empty. Agents write to it with log_write, and you can add an entry here.</p>}

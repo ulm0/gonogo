@@ -80,6 +80,7 @@ import type { Hangar } from './hangar.js';
 import type { WorktreeRemoval, WorktreeStatus } from './worktree.js';
 import type { Docking } from './docking.js';
 import type { Knowledge } from './knowledge.js';
+import type { Semantic } from './semantic.js';
 import { createMcpHandler } from './mcp.js';
 import { parsePropellantRequest } from './propellant.js';
 import { parsePricesRequest } from './prices.js';
@@ -163,7 +164,9 @@ export interface WebOptions {
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
-  missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'recheck' | 'chart' | 'create' | 'update' | 'remove'>;
+  missionLog?: Pick<MissionLog, 'search' | 'searchMeaning' | 'get' | 'verify' | 'recheck' | 'chart' | 'create' | 'update' | 'remove'>;
+  /** Search by meaning: the status, the endpoint and the test. Absent, /api/semantic is 404. */
+  semantic?: Pick<Semantic, 'status' | 'setConfig' | 'test'>;
   /** Knowledge (the store, the proposals, the claims): the Director's routes and the agents' two tools. Absent, /api/knowledge is 404. */
   knowledgeStore?: Knowledge;
   /** For each agent, how many Mission Log entries anchored to its own repository were last found not confirmed (the tile). */
@@ -1305,6 +1308,24 @@ export function createWebServer(options: WebOptions): WebServer {
       const missionLog = options.missionLog;
       return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await missionLog.recheck(s[2] ?? '')) };
     }
+    const semantic = options.semantic;
+    // Search by meaning: GET the status, PUT the endpoint (behind a step-up, scope full), POST test
+    if (semantic && s[1] === 'semantic' && s.length <= 3) {
+      if (s.length === 2) {
+        return {
+          allow: ['GET', 'PUT'],
+          run: async (req, res) => {
+            if (req.method === 'GET') {
+              sendJson(res, 200, semantic.status());
+              return;
+            }
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await semantic.setConfig(body));
+          },
+        };
+      }
+      if (s[2] === 'test') return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await semantic.test()) };
+    }
     const knowledge = options.knowledgeStore;
     // the Director's Knowledge routes (docs/knowledge-spec.md 0b.4): a write answers the whole repository as it is now
     if (knowledge && s[1] === 'knowledge') {
@@ -1369,7 +1390,7 @@ export function createWebServer(options: WebOptions): WebServer {
           allow: ['GET', 'POST'],
           run: async (req, res) => {
             if (req.method === 'GET') {
-              sendJson(res, 200, missionLog.search(new URL(req.url ?? '/', 'http://localhost').searchParams.get('q') ?? ''));
+              sendJson(res, 200, await missionLog.searchMeaning(new URL(req.url ?? '/', 'http://localhost').searchParams.get('q') ?? '', undefined, 'user'));
               return;
             }
             const body = await jsonObject(req, res);

@@ -47,10 +47,11 @@ export function validate(v: Values): Problems {
 export const requestOf = (v: Values): LogRequest => ({ title: v.title.trim(), body: v.body.trim(), tags: parseTags(v.tags) });
 
 /** "20 newest of 340 entries." for no query, "3 found in 340 entries." for one. */
-export function countText(query: string, search: LogSearch): string {
+export function countText(query: string, search: LogSearch, labelled = false): string {
   const entries = `${search.total} ${search.total === 1 ? 'entry' : 'entries'}`;
   if (query.trim() === '') return search.total === 0 ? 'No entries yet.' : search.hits.length < search.total ? `${search.hits.length} newest of ${entries}.` : `${entries}.`;
-  return `${search.hits.length === 0 ? 'Nothing' : `${search.hits.length} found`} in ${entries}.`;
+  // with Search by meaning on, a result list says which search it was
+  return `${search.hits.length === 0 ? 'Nothing' : `${search.hits.length} found`} in ${entries}.${labelled ? (search.mode === 'meaning' ? ' Meaning + word search.' : ' Word search.') : ''}`;
 }
 
 /** What a `log` frame says, for the status line: "Written or changed: Cache key", "Removed: l3". */

@@ -119,6 +119,7 @@ describe('plan, with what the room is doing', () => {
 });
 
 const KA = 'knowledge-anchors';
+const SS = 'semantic-search';
 
 describe('the store', () => {
   let dir: string;
@@ -132,7 +133,7 @@ describe('the store', () => {
   it('has everything on but the features that are off by default, and a plan changes nothing', async () => {
     const store = createFeatureStore({ dir });
     await store.load();
-    expect(store.view()).toEqual({ off: [KA] });
+    expect(store.view()).toEqual({ off: [KA, SS] });
     expect(store.isOn('maxq')).toBe(true);
     expect(store.plan({ off: ['maxq'] })).toMatchObject({ turnOff: ['maxq'] });
     expect(store.isOn('maxq')).toBe(true);
@@ -143,27 +144,27 @@ describe('the store', () => {
     const told: string[][] = [];
     const store = createFeatureStore({ dir, emit: (view) => told.push(view.off) });
     await store.load();
-    const done = await store.apply({ off: ['tminus', KA], expect: ['tminus', 'static-fire', KA] });
+    const done = await store.apply({ off: ['tminus', KA, SS], expect: ['tminus', 'static-fire', KA, SS] });
     expect(done.plan.forced).toEqual(['static-fire']);
-    expect(done.view).toEqual({ off: ['tminus', 'static-fire', KA] });
+    expect(done.view).toEqual({ off: ['tminus', 'static-fire', KA, SS] });
     expect(store.isOn('static-fire')).toBe(false);
-    expect(told).toEqual([['tminus', 'static-fire', KA]]);
+    expect(told).toEqual([['tminus', 'static-fire', KA, SS]]);
     expect((await stat(join(dir, 'features.json'))).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(await readFile(join(dir, 'features.json'), 'utf8'))).toEqual({ version: 1, off: ['tminus', 'static-fire', KA], on: [] });
+    expect(JSON.parse(await readFile(join(dir, 'features.json'), 'utf8'))).toEqual({ version: 1, off: ['tminus', 'static-fire', KA, SS], on: [] });
     const again = createFeatureStore({ dir });
     await again.load();
-    expect(again.view()).toEqual({ off: ['tminus', 'static-fire', KA] });
+    expect(again.view()).toEqual({ off: ['tminus', 'static-fire', KA, SS] });
     expect(store.label('tminus')).toBe('T-minus poll');
   });
 
   it('applies only the plan that was read: another one is a 409 and changes nothing, and a missing expect is a 400', async () => {
     const store = createFeatureStore({ dir });
     await store.load();
-    await expect(store.apply({ off: ['tminus', KA], confirm: true })).rejects.toMatchObject({ code: 'bad_request', field: 'expect' });
-    await expect(store.apply({ off: ['tminus', KA], expect: ['tminus'] })).rejects.toMatchObject({ code: 'conflict', field: 'expect' });
-    expect(store.view()).toEqual({ off: [KA] });
-    await store.apply({ off: ['tminus', KA], expect: ['tminus', 'static-fire', KA] });
-    expect(store.view().off).toEqual(['tminus', 'static-fire', KA]);
+    await expect(store.apply({ off: ['tminus', KA, SS], confirm: true })).rejects.toMatchObject({ code: 'bad_request', field: 'expect' });
+    await expect(store.apply({ off: ['tminus', KA, SS], expect: ['tminus'] })).rejects.toMatchObject({ code: 'conflict', field: 'expect' });
+    expect(store.view()).toEqual({ off: [KA, SS] });
+    await store.apply({ off: ['tminus', KA, SS], expect: ['tminus', 'static-fire', KA, SS] });
+    expect(store.view().off).toEqual(['tminus', 'static-fire', KA, SS]);
   });
 
   it('does not turn T-minus off while a poll is open, and tells the hub when something changed', async () => {
@@ -171,18 +172,18 @@ describe('the store', () => {
     let changed = 0;
     const store = createFeatureStore({ dir, context: () => ({ pollOpen: poll }), changed: () => (changed += 1) });
     await store.load();
-    await expect(store.apply({ off: ['tminus', KA], expect: ['tminus', 'static-fire', KA] })).rejects.toMatchObject({ code: 'conflict', field: 'off' });
+    await expect(store.apply({ off: ['tminus', KA, SS], expect: ['tminus', 'static-fire', KA, SS] })).rejects.toMatchObject({ code: 'conflict', field: 'off' });
     expect(changed).toBe(0);
     poll = false;
-    await store.apply({ off: ['maxq', KA], expect: ['maxq', KA] });
+    await store.apply({ off: ['maxq', KA, SS], expect: ['maxq', KA, SS] });
     expect(changed).toBe(1);
   });
 
   it('refuses a blocked plan with a 409 and keeps what was', async () => {
     const store = createFeatureStore({ dir });
     await store.load();
-    await expect(store.apply({ off: ['redline', KA], expect: [] })).rejects.toMatchObject({ code: 'conflict', field: 'off' });
-    expect(store.view()).toEqual({ off: [KA] });
+    await expect(store.apply({ off: ['redline', KA, SS], expect: [] })).rejects.toMatchObject({ code: 'conflict', field: 'off' });
+    expect(store.view()).toEqual({ off: [KA, SS] });
     await expect(store.apply({ off: 'maxq', expect: [] })).rejects.toMatchObject({ code: 'bad_request', field: 'off' });
     await expect(store.apply({ off: [], expect: [], extra: 1 })).rejects.toMatchObject({ code: 'bad_request', field: 'extra' });
     expect(() => store.plan([])).toThrow(/JSON object/);
@@ -192,11 +193,11 @@ describe('the store', () => {
     await writeFile(join(dir, 'features.json'), JSON.stringify({ version: 1, off: ['maxq', 'something-new', 'redline', 'black-box', 'propellant', 'party-line', 'tminus'] }));
     const store = createFeatureStore({ dir });
     await store.load();
-    expect(store.view()).toEqual({ off: ['maxq', 'tminus', 'static-fire', KA] });
+    expect(store.view()).toEqual({ off: ['maxq', 'tminus', 'static-fire', KA, SS] });
     await writeFile(join(dir, 'features.json'), '{ nope');
     const damaged = createFeatureStore({ dir });
     await damaged.load();
-    expect(damaged.view()).toEqual({ off: [KA] });
+    expect(damaged.view()).toEqual({ off: [KA, SS] });
     expect((await stat(join(dir, 'features.json.bad'))).isFile()).toBe(true);
   });
 
@@ -204,7 +205,7 @@ describe('the store', () => {
     await mkdir(join(dir, 'features.json'));
     const store = createFeatureStore({ dir });
     await store.load();
-    expect(store.view()).toEqual({ off: [KA] });
+    expect(store.view()).toEqual({ off: [KA, SS] });
     expect(await stat(join(dir, 'features.json.bad')).catch(() => null)).toBeNull();
   });
 });
@@ -239,12 +240,12 @@ describe('a feature that is off by default', () => {
     expect(store.isOn(KA)).toBe(false);
     await store.apply({ off: [], expect: [] });
     expect(store.isOn(KA)).toBe(true);
-    expect(JSON.parse(await readFile(join(dir, 'features.json'), 'utf8'))).toEqual({ version: 1, off: [], on: [KA] });
+    expect(JSON.parse(await readFile(join(dir, 'features.json'), 'utf8'))).toEqual({ version: 1, off: [], on: [KA, SS] });
     const again = createFeatureStore({ dir });
     await again.load();
     expect(again.isOn(KA)).toBe(true);
     // Mission Log off takes it off too; the saved `on` is kept, so it is back with the Mission Log
-    await again.apply({ off: ['mission-log'], expect: ['mission-log', 'star-chart', KA] });
+    await again.apply({ off: ['mission-log'], expect: ['mission-log', 'star-chart', KA, SS] });
     expect(again.isOn(KA)).toBe(false);
   });
 });

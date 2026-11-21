@@ -2874,8 +2874,8 @@ describe('end to end with the stand-in agent', () => {
     await waitState(h, 'flight', 'idle');
     await hire(h, 'ana');
     // Knowledge anchors are off until the Director turns them on; they are on here so that the lists below are about the rest
-    expect((await api(h, 'GET', '/api/features')).body).toEqual({ off: ['knowledge-anchors'] });
-    expect((await getState(h)).features).toEqual({ off: ['knowledge-anchors'] });
+    expect((await api(h, 'GET', '/api/features')).body).toEqual({ off: ['knowledge-anchors', 'semantic-search'] });
+    expect((await getState(h)).features).toEqual({ off: ['knowledge-anchors', 'semantic-search'] });
     expect((await api(h, 'PUT', '/api/features', { off: [], expect: [], confirm: true })).status).toBe(200);
     expect((await api(h, 'GET', '/api/features')).body).toEqual({ off: [] });
 
@@ -2899,7 +2899,7 @@ describe('end to end with the stand-in agent', () => {
     expect(done.body).toMatchObject({ applied: true, off: ['maxq', 'tminus', 'static-fire', 'flight-plan', 'missions'] });
     await c.waitFrame((f) => f.t === 'features' && f.features.off.includes('missions'), 5000, 'the features frame', mark);
     expect((await getState(h)).poll, 'the finished poll went with T-minus').toBeNull();
-    expect(JSON.parse(readFileSync(join(h.home, 'features.json'), 'utf8'))).toEqual({ version: 1, off: ['maxq', 'tminus', 'static-fire', 'flight-plan', 'missions'], on: ['knowledge-anchors'] });
+    expect(JSON.parse(readFileSync(join(h.home, 'features.json'), 'utf8'))).toEqual({ version: 1, off: ['maxq', 'tminus', 'static-fire', 'flight-plan', 'missions'], on: ['knowledge-anchors', 'semantic-search'] });
 
     // routes: an off feature answers feature_off, the core and the features that are on still work
     expect(await api<ApiError>(h, 'POST', '/api/poll')).toMatchObject({ status: 404, body: { code: 'feature_off', error: 'T-minus poll is off' } });

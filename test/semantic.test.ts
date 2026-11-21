@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { LogEntry, Logger } from '../src/shared/protocol.js';
 import { EmbedError } from '../src/server/embedder.js';
+import { createMissionLog } from '../src/server/missionlog.js';
+import type { MissionLog } from '../src/server/missionlog.js';
 import { chunkEntry, CHUNK_CHARS, CHUNKS_PER_ENTRY_MAX, createSemantic, fuse, VectorIndex } from '../src/server/semantic.js';
 import type { Semantic, SemanticConfig, SemanticOptions } from '../src/server/semantic.js';
 
@@ -243,6 +245,37 @@ describe('the index of a room', () => {
   });
 });
 
+describe('with a real endpoint', () => {
+  it('embeds through an Ollama-shaped server on this machine, end to end, and never sends the title of nothing it was not asked', async () => {
+    const { createServer } = await import('node:http');
+    const seen: string[] = [];
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { input: string[] };
+        seen.push(req.url ?? '', ...body.input);
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ embeddings: body.input.map(vectorOf) }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const port = (server.address() as { port: number }).port;
+      const s = make({ embedder: undefined });
+      await s.load();
+      await s.setConfig({ endpoint: `http://127.0.0.1:${port}`, model: 'm' });
+      expect(await s.test()).toEqual({ dimension: 5 });
+      await s.idle();
+      expect(s.status()).toMatchObject({ indexed: 3, dimension: 5 });
+      expect(seen.filter((x) => x === '/api/embed').length).toBeGreaterThan(0);
+      expect(seen.some((x) => x.includes('Build') && x.includes('compile'))).toBe(true);
+      expect((await ask(s, 'compiling', 'user'))?.[0]).toBe('l1');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+
 describe('the budget (E5)', () => {
   it('one writer may use half of the day, an edit counts again, and past the cap nothing is embedded and the Director is told once, with counts', async () => {
     entries = Array.from({ length: 8 }, (_, i) => entry(`l${i + 1}`, `T${i}`, `build ${i}`, i < 6 ? 'loop' : 'ben'));
@@ -344,5 +377,80 @@ describe('the setting of the endpoint', () => {
     await s.idle();
     expect(calls.length).toBe(n);
     await mkdir(join(dir, 'x'), { recursive: true });
+  });
+});
+
+describe('the Mission Log with meaning', () => {
+  let logDir: string;
+  beforeEach(async () => {
+    logDir = await mkdtemp(join(tmpdir(), 'gonogo-semantic-log-'));
+  });
+  afterEach(async () => {
+    await rm(logDir, { recursive: true, force: true });
+  });
+  const open = async (rank: ((q: string, who: string) => Promise<string[] | null>) | null, seen: string[] = []): Promise<MissionLog> => {
+    const log = createMissionLog({
+      dir: logDir,
+      now: () => now,
+      emit: () => undefined,
+      log: quiet,
+      ...(rank === null ? {} : { semantic: { rank, changed: (id) => void seen.push(`changed ${id}`), removed: (id) => void seen.push(`removed ${id}`) } }),
+    });
+    await log.load();
+    return log;
+  };
+
+  it('with no meaning a search is the word search, byte for byte, and says nothing of meaning', async () => {
+    const log = await open(null);
+    await log.create('ana', { title: 'Cache key', body: 'the cache key has the node version' });
+    const words = log.search('cache');
+    expect(await log.searchMeaning('cache', undefined, 'user')).toEqual(words);
+    expect(words).not.toHaveProperty('mode');
+    // and the same when meaning has no answer (off, no index, over budget, slow)
+    const none = await open(async () => null);
+    expect(await none.searchMeaning('cache', undefined, 'user')).toEqual(none.search('cache'));
+  });
+
+  it('fuses the words with the entries nearest in meaning, labels it, and an entry with no vector yet still ranks by its words', async () => {
+    const log = await open(async () => ['l2', 'l1']);
+    await log.create('ana', { title: 'Compile the project', body: 'steps to build it' });
+    await log.create('ana', { title: 'Invoices', body: 'payment run on friday' });
+    await log.create('ana', { title: 'Release notes', body: 'what shipped, with the build number' });
+    // 'build' by words: l1 (body) and l3 (body); by meaning the index says l2 then l1
+    const found = await log.searchMeaning('build', undefined, 'user');
+    expect(found.mode).toBe('meaning');
+    expect(found.total).toBe(3);
+    const ids = found.hits.map((h) => h.id);
+    expect(ids).toContain('l2');
+    expect(ids).toContain('l3');
+    // l1 is in both lists
+    expect(ids[0]).toBe('l1');
+    expect(found.hits.find((h) => h.id === 'l3')?.snippet).toContain('build');
+  });
+
+  it('drops what is no longer an entry, honours the limit, and does not ask for meaning for an empty query', async () => {
+    const asked: string[] = [];
+    const log = await open(async (q) => {
+      asked.push(q);
+      return ['l9', 'l1'];
+    });
+    await log.create('ana', { title: 'One', body: 'text' });
+    expect((await log.searchMeaning('text', 1, 'ana')).hits.map((h) => h.id)).toEqual(['l1']);
+    expect(asked).toEqual(['text']);
+    const empty = await log.searchMeaning('   ', undefined, 'ana');
+    expect(empty).toEqual(log.search('   '));
+    expect(asked).toEqual(['text']);
+  });
+
+  it('tells the index of every write, change and removal, and lists the entries', async () => {
+    const seen: string[] = [];
+    const log = await open(async () => null, seen);
+    await log.create('ana', { title: 'One', body: 'text' });
+    await log.update('l1', { body: 'changed' }, 'ana');
+    await log.remove('l1');
+    expect(seen).toEqual(['changed l1', 'changed l1', 'removed l1']);
+    expect(log.all()).toEqual([]);
+    await log.create('ana', { title: 'Two', body: 'text' });
+    expect(log.all().map((e) => e.id)).toEqual(['l2']);
   });
 });
