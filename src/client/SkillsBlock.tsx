@@ -51,7 +51,7 @@ export function SkillsBlock(): ReactElement {
         <>
           <h3 className="label">THE ROOM&apos;S SKILLS</h3>
           {defaults.skills.length === 0 ? (
-            <p className="hint">None. Add a folder below, or get one from the list.</p>
+            <p className="hint">None. Skills are for Claude Code agents. Add a folder below, or get one from the list.</p>
           ) : (
             <ul className="rules-model-list">
               {defaults.skills.map((s) => {

@@ -60,7 +60,7 @@ for (const e of REGISTRY) {
     const name = at > 0 ? spec.slice(0, at) : spec;
     const version = at > 0 ? spec.slice(at + 1) : '';
     if (version === '' || version === 'latest') fail(`${spec} is not pinned to a version`);
-    const pkg = await get(`https://registry.npmjs.org/${name.replace('/', '%2f')}`);
+    const pkg = await get(`https://registry.npmjs.org/${name.replaceAll('/', '%2f')}`);
     if (pkg.json === null) fail(`npm package ${name} answered ${pkg.status}`);
     else {
       const v = pkg.json.versions?.[version];
