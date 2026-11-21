@@ -4,7 +4,8 @@
  *
  * Does the Knowledge store's export read as multivac's own file (docs/features/knowledge.md, `gonogo knowledge export --multivac`)? The grammar is ported from
  * multivac (MIT, the same author) and the export turns a gonogo-only `"literal"` leg into an escaped POSIX regex, so the two must agree. This installs multivac at an EXACT
- * pinned version in a scratch folder (npm, --ignore-scripts, no network afterwards), and then:
+ * pinned version, with its dependencies LOCKED (scripts/multivac-tool/package-lock.json, `npm ci --ignore-scripts`: a weekly run cannot pick up a changed dependency),
+ * in a scratch folder, and then:
  *
  *   1. makes a fixture store (claims with every mode, literals full of regex metacharacters, a glob exclusion, a dotfile);
  *   2. runs the BUILT gonogo (`node bin/gonogo.js knowledge export --multivac`, `pnpm build:server` first) on it;
@@ -18,7 +19,7 @@
  * The exit code is 1 when anything failed. \`--multivac <bin>\` uses a multivac you already have instead of installing one.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,10 +101,11 @@ async function main() {
     if (bin === null) {
       const tool = join(scratch, 'tool');
       mkdirSync(tool, { recursive: true });
-      writeFileSync(join(tool, 'package.json'), '{"name":"scratch","private":true}\n');
-      const install = run('npm', ['install', `multivac@${MULTIVAC_VERSION}`, '--save-exact', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', tool], { env, cwd: tool });
+      // multivac AND its dependencies as locked in scripts/multivac-tool: `npm ci` takes nothing the lockfile does not name, and checks its integrity hashes
+      for (const file of ['package.json', 'package-lock.json']) copyFileSync(join(ROOT, 'scripts', 'multivac-tool', file), join(tool, file));
+      const install = run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { env, cwd: tool });
       bin = join(tool, 'node_modules', '.bin', 'multivac');
-      check(`multivac ${MULTIVAC_VERSION} installs from npm (exact, no scripts)`, install.code === 0 && existsSync(bin), install.code === 0 ? bin : install.out.slice(-300));
+      check(`multivac ${MULTIVAC_VERSION} installs from npm (locked, no scripts)`, install.code === 0 && existsSync(bin), install.code === 0 ? bin : install.out.slice(-300));
     }
     const version = run(bin, ['--version'], { env }).stdout.trim();
     check(`the multivac that runs is ${MULTIVAC_VERSION}`, given !== null || version === MULTIVAC_VERSION, version);

@@ -1,5 +1,6 @@
 // scripts/multivac-conformance.mjs: the reading of `multivac verify` and the fixture. The conformance itself installs multivac and runs in the workflow
 // (.github/workflows/multivac-conformance.yml), not here: a unit test must not need the network.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseAnchors } from '../src/server/anchorgrammar.js';
 import { FIXTURE, MULTIVAC_VERSION, readVerify } from '../scripts/multivac-conformance.mjs';
@@ -12,6 +13,22 @@ describe('reading what multivac verify prints', () => {
     expect(bad.parseLines).toHaveLength(1);
     expect(bad.parseErrors).toBe(1);
     expect(bad.counts).toEqual({ broken: 1, ok: 6 });
+  });
+});
+
+describe('the locked tool (scripts/multivac-tool)', () => {
+  const read = (name: string): { dependencies?: Record<string, string>; packages?: Record<string, { version?: string; integrity?: string; resolved?: string }> } => JSON.parse(readFileSync(new URL(`../scripts/multivac-tool/${name}`, import.meta.url), 'utf8')) as never;
+
+  it('names the pinned multivac exactly, in the package and in the lockfile, and every locked package has an integrity hash from the npm registry', () => {
+    expect(read('package.json').dependencies).toEqual({ multivac: MULTIVAC_VERSION });
+    const lock = read('package-lock.json').packages ?? {};
+    expect(lock['node_modules/multivac']?.version).toBe(MULTIVAC_VERSION);
+    const locked = Object.entries(lock).filter(([name]) => name !== '');
+    expect(locked.length).toBeGreaterThanOrEqual(4); // multivac and the three it needs
+    for (const [name, entry] of locked) {
+      expect(entry.integrity, name).toMatch(/^sha512-/);
+      expect(entry.resolved, name).toMatch(/^https:\/\/registry\.npmjs\.org\//);
+    }
   });
 });
 
