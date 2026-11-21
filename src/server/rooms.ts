@@ -13,6 +13,8 @@ import { join } from 'node:path';
 export const MAIN_ROOM = 'main';
 /** Names the front port answers itself at its root: not offered as ids for new rooms (rooms already so named keep working under /r/<id>/). */
 export const RESERVED_ROOT_NAMES = ['r', 'ws', 'internal', 'api', 'assets', 'rooms'] as const;
+/** The last parts of `/api/rooms/<x>` that are actions on all the rooms: not room ids. */
+export const ROOM_ACTION_NAMES = ['stop-all', 'start-all'] as const;
 export const ROOMS_FILE = 'rooms.json';
 export const ROOMS_DIR = 'rooms';
 export const ROOMS_MAX = 12;
@@ -49,7 +51,7 @@ const MAIN_HOMES: readonly unknown[] = ['.', 'rooms/main'];
  */
 export const ROOM_STATE_FILES: readonly string[] = [
   'agents.json', 'agents', 'autoupdate.json', 'black-box', 'board.md', 'cleanroom', 'cleanroom-home', 'coauthor.json', 'docking.json', 'downlink.json', 'features.json', 'fuel.jsonl',
-  'gh', 'hub-state.json', 'keys.json', 'keys.refused.json', 'knowledge-proposals', 'liveries', 'livery.json', 'messages.jsonl', 'messages.jsonl.1', 'mission-log', 'missions.json', 'models.json', 'ritual.md',
+  'gh', 'hub-state.json', 'keys.json', 'keys.refused.json', 'knowledge-proposals', 'semantic', 'liveries', 'livery.json', 'messages.jsonl', 'messages.jsonl.1', 'mission-log', 'missions.json', 'models.json', 'ritual.md',
   'payload-defaults.json', 'payload-plugin', 'permissions.json', 'prices.json', 'propellant.json', 'quota.json', 'relay.json', 'reported.jsonl', 'reviews.json', 'rollout.json',
   'room-keys.json', 'room-keys.refused.json', 'room.json', 'rules.md', 'run-state.json', 'schedules.json', 'server.lock', 'startup.json', 'station.json', 'subagents.json', 'tabname.json',
   'tasks.json', 'telegram-poll.json', 'telemetry.jsonl', 'triggers.1.jsonl', 'triggers.jsonl', 'uplinks.json', 'worktrees',
@@ -181,6 +183,7 @@ function saveRooms(root: string, rooms: RoomEntry[], layout?: MainHome): void {
 export function addRoom(root: string, id: unknown, name?: string): RoomEntry {
   if (!validRoomId(id)) throw new RoomsError('a room id is a lower-case letter, then up to 23 lower-case letters, digits or dashes');
   if (id === MAIN_ROOM) throw new RoomsError('main is the home itself: pick another id');
+  if ((ROOM_ACTION_NAMES as readonly string[]).includes(id)) throw new RoomsError(`"${id}" is an action on all the rooms: pick another id`);
   if ((RESERVED_ROOT_NAMES as readonly string[]).includes(id)) throw new RoomsError(`"${id}" is a name of the front port (${RESERVED_ROOT_NAMES.join(', ')}): pick another id`);
   const rooms = loadRooms(root);
   if (rooms.some((r) => r.id === id)) throw new RoomsError(`there is already a room "${id}"`, 'conflict');
@@ -198,14 +201,19 @@ export function removeRoom(root: string, id: unknown): void {
   saveRooms(root, rooms.filter((r) => r.id !== id && r.id !== MAIN_ROOM));
 }
 
-/** Gives a room another name (its id and folder stay). `main` has no entry in the file, so its name is fixed. */
-export function renameRoom(root: string, id: unknown, name: unknown): RoomEntry {
-  if (id === MAIN_ROOM) throw new RoomsError('the name of main is fixed');
-  if (typeof name !== 'string' || cleanName(name) === '') throw new RoomsError(`a name is 1 to ${NAME_MAX} characters of text`);
+/**
+ * Changes a room's name and/or whether it starts with gonogo (`autostart`); its id and folder stay. `main` has no entry in the file: its name is fixed and it always
+ * starts, so asking to change either is refused. At least one field must be given.
+ */
+export function updateRoom(root: string, id: unknown, patch: { name?: unknown; autostart?: unknown }): RoomEntry {
+  if (patch.name === undefined && patch.autostart === undefined) throw new RoomsError('nothing to change: give a name or autostart');
+  if (id === MAIN_ROOM) throw new RoomsError(patch.autostart !== undefined ? 'main always starts with gonogo: its autostart cannot be changed' : 'the name of main is fixed');
+  if (patch.autostart !== undefined && typeof patch.autostart !== 'boolean') throw new RoomsError('autostart is true or false');
+  if (patch.name !== undefined && (typeof patch.name !== 'string' || cleanName(patch.name) === '')) throw new RoomsError(`a name is 1 to ${NAME_MAX} characters of text`);
   const rooms = loadRooms(root);
   const found = rooms.find((r) => r.id === id);
   if (found === undefined) throw new RoomsError(`there is no room "${String(id)}"`, 'not_found');
-  const next: RoomEntry = { ...found, name: cleanName(name).slice(0, NAME_MAX) };
+  const next: RoomEntry = { ...found, ...(typeof patch.name === 'string' ? { name: cleanName(patch.name).slice(0, NAME_MAX) } : {}), ...(typeof patch.autostart === 'boolean' ? { autostart: patch.autostart } : {}) };
   saveRooms(root, rooms.filter((r) => r.id !== MAIN_ROOM).map((r) => (r.id === id ? next : r)));
   return next;
 }

@@ -25,6 +25,8 @@ import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
 import { buildChart } from './logchart.js';
 import { createIndex, snippet } from './logsearch.js';
+import { fuse } from './semantic.js';
+import type { Semantic } from './semantic.js';
 import { UNSAFE_IN_NAME } from './schedules.js';
 
 /** How many entries one look at a repository (an agent's start, its Stop) may check. */
@@ -46,6 +48,8 @@ export interface MissionLogOptions {
   /** Knowledge anchors (anchors.ts): without it, or while `anchorsOn` says no, an entry takes no anchors and shows no state. */
   anchors?: AnchorChecker;
   anchorsOn?(): boolean;
+  /** Search by meaning (semantic.ts): told of every write, asked for the entries nearest a query. Without it, or off, search is words only. */
+  semantic?: Pick<Semantic, 'changed' | 'removed' | 'rank'>;
 }
 
 export interface MissionLog {
@@ -53,6 +57,10 @@ export interface MissionLog {
   load(): Promise<void>;
   /** The entries that hold a word of the query, best first; an empty query gives the newest. At most `limit` hits. */
   search(query: string, limit?: number): LogSearch;
+  /** `search`, fused with the entries nearest in meaning when that is on and answers at once (`mode: 'meaning'`); the same as `search` otherwise. `who` is the agent that asks, or "user". Never waits for the embedder past a moment. */
+  searchMeaning(query: string, limit: number | undefined, who: string): Promise<LogSearch>;
+  /** Every entry (for the index of meaning). Not copies: read only. */
+  all(): LogEntry[];
   get(id: string): LogEntry;
   /** Runs the checks of the entry's anchors (when the switch is on) so that `get` shows a fresh state; never throws. */
   verify(id: string): Promise<void>;
@@ -217,7 +225,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
     return { id: e.id, title: e.title, author: e.author, tags: e.tags, updatedAt: e.updatedAt, snippet: snippet(e.body, query), ...(state ? { anchorState: state } : {}) };
   };
 
-  return {
+  const api: MissionLog = {
     async load() {
       await mkdir(dir, { recursive: true, mode: DIR_MODE });
       for (const name of await readdir(dir)) {
@@ -243,6 +251,19 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
       if (on()) for (const e of found.slice(0, 5)) if (e.anchors) void options.anchors?.check(e.anchors, e.author);
       return { total: entries.size, hits: found.map((e) => hit(e, q)) };
     },
+
+    async searchMeaning(query, limit, who) {
+      const words = api.search(query, limit);
+      if (options.semantic === undefined || query.trim() === '') return words;
+      const near = await options.semantic.rank(query.slice(0, LOG_QUERY_MAX_CHARS), who);
+      if (near === null) return words;
+      const q = query.slice(0, LOG_QUERY_MAX_CHARS);
+      const cap = Math.min(Math.max(Math.trunc(limit ?? LOG_SEARCH_MAX), 1), LOG_SEARCH_MAX);
+      const ranked = fuse([index.search(q, 50).map((r) => r.id), near]).filter((id) => entries.has(id)).slice(0, cap);
+      return { total: entries.size, hits: ranked.map((id) => hit(find(id), q)), mode: 'meaning' };
+    },
+
+    all: () => [...entries.values()],
 
     get: (id) => shown(find(id)),
 
@@ -293,6 +314,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
         await writeFileAtomic(`${entry.id}.md`, render(entry));
         seq += 1;
         keep(entry);
+        options.semantic?.changed(entry.id);
         options.emit({ t: 'log', changed: [{ id: entry.id, title: entry.title }], removed: [] });
         return copy(entry);
       });
@@ -311,6 +333,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
         if (next.title === old.title && next.body === old.body && next.tags.join() === old.tags.join() && JSON.stringify(next.anchors) === JSON.stringify(old.anchors)) return copy(old);
         await writeFileAtomic(`${id}.md`, render(next));
         keep(next);
+        options.semantic?.changed(id);
         options.emit({ t: 'log', changed: [{ id, title: next.title }], removed: [] });
         return copy(next);
       });
@@ -324,6 +347,7 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
         await rm(join(dir, `${id}.md`), { force: true });
         entries.delete(id);
         index.remove(id);
+        options.semantic?.removed(id);
         options.emit({ t: 'log', changed: [], removed: [id] });
       });
     },
@@ -332,4 +356,5 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
       return chain.then(() => undefined);
     },
   };
+  return api;
 }

@@ -1,0 +1,2 @@
+# the packed bin must keep an LF shebang when checked out on Windows (pnpm pack refuses CRLF)
+bin/*.js text eol=lf

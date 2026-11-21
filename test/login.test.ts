@@ -1,6 +1,6 @@
 // The login through the whole supervisor (docs/login-spec.md): real HTTP and WebSocket on a real front port, stand-in rooms (test/fake-room.mjs)
 // behind it on their unix sockets, and the local socket for the TUI and the CLI.
-import { setMainHome } from '../src/server/rooms.js';
+import { loadRooms, setMainHome } from '../src/server/rooms.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
@@ -708,6 +708,35 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     expect((await call('GET', '/api/rules', h, b)).status).not.toBe(403);
   });
 
+  it('step-up: stopping rooms, stop-all, start-all and removing a room are refused with stepUp:true when the check is old, with a plain and with an encoded id; after the check they pass', async () => {
+    const { cookies, secret } = await withTotp();
+    const [h] = json(cookieHeader(cookies), {});
+    const made = await call('POST', '/api/rooms', h, JSON.stringify({ id: 'c' }));
+    expect(made.status).toBe(201);
+    await until(() => sup.rooms().some((r) => r.id === 'c' && r.state === 'running'));
+    clock += 6 * 60_000;
+    const refused: Array<[string, string]> = [['POST', '/api/rooms/c/stop'], ['POST', '/api/rooms/%63/stop'], ['POST', '/api/rooms/main/stop'], ['POST', '/api/rooms/%6Dain/stop'], ['POST', '/api/rooms/stop-all'], ['POST', '/api/rooms/start-all'], ['DELETE', '/api/rooms/c'], ['DELETE', '/api/rooms/%63']];
+    for (const [method, path] of refused) {
+      const res = await call(method, path, h, '{}');
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect(JSON.parse(res.text), path).toMatchObject({ stepUp: true });
+    }
+    expect(sup.rooms().map((r) => `${r.id}:${r.state}`).sort()).toEqual(['c:running', 'main:running']); // nothing was stopped or removed
+    expect(loadRooms(home).map((r) => r.id)).toContain('c');
+    // a bad encoded id is a 400, not a step-up bypass and not a stop
+    expect((await call('POST', '/api/rooms/%2e%2e/stop', h, '{}')).status).toBe(400);
+    // starting one room is not asked for
+    expect((await call('POST', '/api/rooms/c/start', h, '{}')).status).toBe(409); // not refused for the password: it runs already
+    await new Promise((r) => setTimeout(r, 1100));
+    clock += 31_000;
+    const done = await call('POST', '/api/auth/stepup', h, JSON.stringify({ password: PASSWORD, code: codeOf(secret) }));
+    expect(done.status).toBe(200);
+    const [fresh] = json(cookieHeader({ ...cookies, 'gonogo-session': done.cookies['gonogo-session'] as string }), {});
+    expect((await call('POST', '/api/rooms/%63/stop', fresh, '{}')).status).toBe(200);
+    expect(sup.rooms().find((r) => r.id === 'c')?.state).toBe('stopped');
+    expect((await call('POST', '/api/rooms/start-all', fresh, '{}')).status).toBe(200);
+    expect((await call('DELETE', '/api/rooms/%63', fresh, '{}')).status).toBe(200);
+  }, 40_000);
   it('step-up: moving where room main keeps its files (MIGRATE NOW, UNDO) is refused with stepUp:true when the check is old; cancelling it, dismissing the note and the dry run are not', async () => {
     const { cookies } = await withTotp();
     const [h] = json(cookieHeader(cookies), {});

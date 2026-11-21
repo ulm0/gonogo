@@ -9,7 +9,7 @@ import type { Claim, ClaimResult, KnowledgeRepo, KnowledgeView, Proposal } from 
 import * as api from './api.js';
 import { useStore } from './store.js';
 import './knowledge.css';
-import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledge.js';
+import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledgeModel.js';
 
 /** One action at a time, with what failed: the message, and for a refused recheck or trial how long to wait (the server's `retryAfter`). */
 function useRun(): { busy: boolean; error: string | null; retry: number | undefined; run(action: () => Promise<unknown>): void } {
@@ -146,7 +146,7 @@ function ClaimRow({ repo, claim, onSaved }: { repo: KnowledgeRepo; claim: Claim;
       )}
       {claim.state === 'active' &&
         (results.length === 0 ? (
-          <p className="hint">{claim.legs.length === 0 ? 'No anchor: never checked.' : 'Not checked yet.'}</p>
+          <p className="hint">{claim.legs.length === 0 ? 'No anchor: never checked.' : repo.provisional ? 'Not checked (shallow clone): its history is cut, so gonogo cannot tell which repository this is.' : 'Not checked yet.'}</p>
         ) : (
           <ul className="know-results">
             {results.map((r) => (
@@ -438,7 +438,7 @@ export function KnowledgeBlock(): ReactElement {
           {problem}
         </p>
       )}
-      {view !== null && !view.enabled && <p className="hint">Off. Turn on Knowledge in the Features block of this page to check claims.</p>}
+      {view !== null && !view.enabled && <p className="hint">Off. Turn on “Knowledge anchors” in the Features block of this page to check claims.</p>}
       {view !== null && view.enabled && view.repos.length === 0 && <p className="hint">No repository yet. One appears here once an agent of this room works in a git folder.</p>}
       {view !== null && view.enabled && view.repos.map((repo) => <RepoCard key={repo.repoId} repo={repo} onSaved={put} />)}
     </section>

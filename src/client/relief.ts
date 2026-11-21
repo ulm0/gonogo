@@ -49,6 +49,7 @@ export function reliefRows(request: ReliefRequest, now: number): ReliefRow[] {
     { label: 'Folder', value: request.dir },
   ];
   if (request.cleanRoom !== null) rows.push({ label: 'Clean Room', value: request.cleanRoom.image === undefined ? 'yes: its own container and branch' : `yes: its own container and branch, image ${request.cleanRoom.image}` });
+  if (request.worktree !== undefined && request.worktree !== null) rows.push({ label: 'Worktree', value: 'yes: its own git worktree and branch of the repository of the folder' });
   rows.push({ label: 'Waits', value: expiresText(request, now) });
   return rows;
 }

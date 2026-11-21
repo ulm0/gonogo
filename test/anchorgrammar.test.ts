@@ -352,6 +352,26 @@ describe('reading a repository safely', () => {
     expect(reader.bytes()).toBe(600);
   });
 
+  it('the worker answers the cheapest claims first (the fewest files to read; a tie keeps the order given), each with the index it was sent with', () => {
+    writeFileSync(join(root, 'a.txt'), 'NEEDLE\n');
+    const messages: AnchorWorkerMessage[] = [];
+    runAnchorJob(
+      {
+        kind: 'gonogo-anchor-run',
+        root,
+        files: ['a.txt', 'b.txt', 'c.txt', 'd/e.txt'],
+        claims: [
+          { index: 0, legs: [leg({ mode: 'present', glob: '*.txt' })] }, // 3 files
+          { index: 1, legs: [leg({ mode: 'present', glob: 'd/*.txt' })] }, // 1
+          { index: 2, legs: [leg({ mode: 'present', glob: '*.txt' }), leg({ mode: 'absent', glob: '**' })] }, // 3 + 4
+          { index: 3, legs: [leg({ mode: 'present', glob: '*.txt' })] }, // 3
+        ],
+      },
+      (m) => void messages.push(m),
+    );
+    expect(messages.filter((m) => m.type === 'claim').map((m) => (m as { index: number }).index)).toEqual([1, 0, 3, 2]);
+  });
+
   it('a whole job in this thread: claims in order, the fast-path legs left alone, the tree not touched', () => {
     writeFileSync(join(root, 'a.txt'), 'NEEDLE\n');
     const messages: AnchorWorkerMessage[] = [];
@@ -368,9 +388,9 @@ describe('reading a repository safely', () => {
       },
       (m) => void messages.push(m),
     );
-    expect(messages.map((m) => m.type)).toEqual(['claim', 'claim', 'done']);
-    expect(messages[0]).toMatchObject({ index: 0, legs: [{ state: 'ok' }, { state: 'unevaluated', note: 'answered another way' }] });
-    expect(messages[1]).toMatchObject({ index: 2, legs: [{ state: 'stale' }] });
+    expect(messages.map((m) => m.type)).toEqual(['claim', 'claim', 'done']); // (the cheaper claim, index 2, is answered first)
+    expect(messages.find((m) => m.type === 'claim' && m.index === 0)).toMatchObject({ index: 0, legs: [{ state: 'ok' }, { state: 'unevaluated', note: 'answered another way' }] });
+    expect(messages.find((m) => m.type === 'claim' && m.index === 2)).toMatchObject({ index: 2, legs: [{ state: 'stale' }] });
     expect(readFileSync(join(root, 'a.txt'), 'utf8')).toBe('NEEDLE\n');
   });
 });

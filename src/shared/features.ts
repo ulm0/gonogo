@@ -52,6 +52,7 @@ export const FEATURES: readonly Feature[] = [
   f('missions', 'Missions', 'Work', 'A named goal with its tasks.', { requires: ['flight-plan'], loses: 'the mission tools are gone' }),
   f('mission-log', 'Mission Log', 'Records', 'The shared memory of the room.', { loses: 'the log tools are gone' }),
   f('knowledge-anchors', 'Knowledge anchors', 'Records', 'A Mission Log entry may name a file and a literal text that must be, or must not be, in it; the page says when that is not confirmed.', { requires: ['mission-log'], loses: 'the anchors of entries are kept but not checked or shown', defaultOff: true }),
+  f('semantic-search', 'Search by meaning', 'Records', 'The Mission Log is also searched by what an entry means, with an embedding model on your own Ollama: your notes go to the endpoint you name.', { requires: ['mission-log'], loses: 'search stays a word search', defaultOff: true }),
   f('star-chart', 'Star Chart', 'Records', 'The log as a graph.', { requires: ['mission-log'], loses: 'the chart and links' }),
   f('plot-board', 'Plot Board', 'Records', 'The one current plan.', { loses: 'the board tools and view are gone' }),
   f('party-line', 'Party Line', 'Records', 'Messages grouped in threads.', { wired: false }),
@@ -200,6 +201,8 @@ export function featureOfRoute(segments: readonly string[]): string | null {
       return second === 'chart' ? 'star-chart' : 'mission-log';
     case 'knowledge':
       return 'knowledge-anchors';
+    case 'semantic':
+      return 'semantic-search';
     case 'board':
       return 'plot-board';
     case 'schedules':

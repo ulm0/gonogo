@@ -14,6 +14,8 @@ The PAYLOAD fold of the hire and edit form gives one agent its own MCP servers a
 - **Permissions**: payload tools are not pre-allowed; the permission mode decides. In `default` and `acceptEdits` a use shows as needs you with GO and NO-GO (not checked with a real model).
 - **Edit**: a saved payload replaces the old; empty boxes remove it. Applies at the next start.
 
+**Pick from a list:** [Registry](registry.md) lists servers and skills that were checked against their repository and package; picking one fills these boxes and nothing is installed or run. RSO reviews any change to what an entry runs.
+
 ## Room defaults: PAYLOAD DEFAULTS in Flight Rules
 
 The same servers and skills for **every** agent, set in [Flight Rules](flight-rules.md), PAYLOAD DEFAULTS.

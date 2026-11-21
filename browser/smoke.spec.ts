@@ -81,7 +81,7 @@ test.afterAll(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-test('setup, login with a second factor, styles, a room with a live link and a console, the service worker', async ({ page }) => {
+test('setup, login with a second factor, styles, a room with a live link and a console, the service worker', async ({ page, request }) => {
   // every console error and every page error fails the run: a CSP block ("Refused to ...") is a console error
   const problems: string[] = [];
   page.on('console', (message) => {
@@ -136,10 +136,58 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   expectClean('/r/main/');
 
   // 5. the service worker registers and a reload still shows the page
-  await page.evaluate(() => navigator.serviceWorker.ready);
+  // WebKit under Playwright hangs the page once a service worker is installed (the project blocks them, see playwright.config.ts)
+  if (test.info().project.use.serviceWorkers !== 'block') await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await expect(page.locator('.topbar')).toBeVisible();
   expectClean('after the reload');
+
+  // 6. the headers and the cookie the browser really got (a Node client sees them too, but only a browser enforces them)
+  await test.step('cookie flags and CSP headers', async () => {
+    const cookie = (await page.context().cookies()).find((c) => c.name === 'gonogo-session');
+    expect(cookie, 'the session cookie of a loopback name').toBeDefined();
+    expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Strict', path: '/', secure: false });
+    expect(await page.evaluate(() => document.cookie), 'script cannot read the session cookie').not.toContain('gonogo-session');
+    // the login page, asked without the cookie
+    const login = await request.get(`${base}/login`);
+    expect(login.status()).toBe(200);
+    expect(login.headers()['content-security-policy']).toMatch(/default-src 'none'.*frame-ancestors 'none'/);
+    expect(login.headers()['referrer-policy']).toBe('same-origin');
+    // the built client of a room, asked with it
+    const room = await page.request.get(`${base}/r/main/`);
+    expect(room.status()).toBe(200);
+    expect(room.headers()['content-security-policy']).toMatch(/script-src 'self'.*frame-ancestors 'none'/);
+    expect(room.headers()['referrer-policy']).toBe('same-origin');
+  });
+
+  // 7. Flight Rules: the blocks the audit listed, drawn from the built client
+  await test.step('flight rules blocks', async () => {
+    // the switch of Knowledge anchors is off in a new room: turn it on, as the owner would in the Features block
+    const on = await page.request.put(`${base}/api/features`, { headers: { origin: base }, data: { off: [], expect: [], confirm: true } });
+    expect(on.status(), await on.text()).toBe(200);
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.topbar').getByRole('button', { name: 'Flight Rules', exact: true }).click();
+    for (const heading of ['KNOWLEDGE', 'ROOM RULES', 'CLOSING CHECKLIST TEMPLATE', 'SKILLS']) {
+      await expect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible();
+    }
+    // the switch is on: the block says nothing about being off, and shows no error
+    const knowledge = page.locator('section', { has: page.getByRole('heading', { name: 'KNOWLEDGE', exact: true }) });
+    await expect(knowledge.getByText('Turn on Knowledge in the Features block')).toHaveCount(0);
+    expect(await knowledge.getByRole('alert').allTextContents(), 'the Knowledge block shows an error').toEqual([]);
+    expectClean('Flight Rules');
+  });
+
+  // 8. a mission and its closing checklist
+  await test.step('mission closing checklist', async () => {
+    const made = await page.request.post(`${base}/api/missions`, { headers: { origin: base }, data: { name: 'Smoke mission' } });
+    expect(made.status(), await made.text()).toBe(201);
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.topbar').getByRole('button', { name: 'Missions', exact: true }).click();
+    // the row opens the mission; its closing checklist is in it
+    await page.getByText('Smoke mission').first().click();
+    await expect(page.locator('[aria-label^="Closing checklist of"]').first()).toBeVisible();
+    expectClean('Missions');
+  });
 });
 
 /** The boss is started with the room: its console is an xterm that has drawn something. */

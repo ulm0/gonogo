@@ -41,6 +41,7 @@ import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
 import { createAnchorEngine } from './anchorengine.js';
 import { createKnowledge } from './knowledge.js';
+import { createSemantic, SEMANTIC_DIR } from './semantic.js';
 import { createProposalStore } from './knowledgeproposals.js';
 import { createKnowledgeStore } from './knowledgestore.js';
 import { parseLegs } from './knowledgeparse.js';
@@ -59,6 +60,7 @@ import { createWebServer } from './web.js';
 import { createReported } from './reported.js';
 import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
+import { captureFetch, parseCaptureEnv } from './telegramcapture.js';
 import { createTelegramPoll } from './telegrampoll.js';
 import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
@@ -954,7 +956,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('launch window'),
     });
-    const telegramFiles = createTelegramFiles({ fetch: options.fetch ?? ((url, init) => fetch(url, init)), token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), agentsRoot: join(home.dir, AGENTS_DIR), now: io.now, log: log.child('telegram files') });
+    // GONOGO_TELEGRAM_CAPTURE=<folder>[:N] (docs/telegram-capture.md): the answers of getUpdates and getFile, redacted, kept for the tests; off when unset
+    const capture = parseCaptureEnv(env.GONOGO_TELEGRAM_CAPTURE);
+    const telegramHttp = capture === null ? (options.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init))) : captureFetch(options.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init)), { ...capture, token: () => relay.telegramTarget()?.token ?? null, log: log.child('telegram capture') });
+    const telegramFiles = createTelegramFiles({ fetch: telegramHttp, token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), agentsRoot: join(home.dir, AGENTS_DIR), now: io.now, log: log.child('telegram files') });
     void telegramFiles.prune();
     const uplinks = createUplinks({
       dir: home.dir,
@@ -1014,6 +1019,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('docking'),
     });
     io.dock = docking;
+    // Search by meaning (docs/features/semantic-search.md): off until the Director turns it on and names an endpoint; the index is this room's
+    const semantic = createSemantic({
+      dir: join(home.dir, SEMANTIC_DIR),
+      now: io.now,
+      entries: () => missionLog.all(),
+      on: () => features.isOn('semantic-search'),
+      notify: (text) => tell('semantic', text),
+      changed: () => web?.broadcast({ t: 'log', changed: [], removed: [] }),
+      log: log.child('semantic'),
+    });
     const missionLog = createMissionLog({
       dir: home.dir,
       now: io.now,
@@ -1021,6 +1036,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('mission log'),
       anchors: createAnchorChecker({ agents: () => hubInstance.views().map((v) => v.name), place: (name) => roots(name).then((r) => r.root).catch(() => null), now: io.now, env, log: log.child('anchors') }),
       anchorsOn: () => features.isOn('knowledge-anchors'),
+      semantic,
     });
     /** The count of entries anchored to an agent's own repository that were last found not confirmed; checked again first when `fresh`. */
     const lastKnowledgeStop = new Map<string, number>();
@@ -1085,6 +1101,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       hub: hubInstance,
       defaultEngine: () => modelDefaults.engine(),
       checkDirectory: io.checkDirectory,
+      checkWorktree: (dir) => checkWorktree(dir, env),
       now: io.now,
       setTimer: io.setTimer,
       clearTimer: io.clearTimer,
@@ -1098,7 +1115,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       target: () => relay.telegramTarget(),
       hasUplink: () => uplinks.secretOf('telegram') !== null,
       deliver: (update, secret) => uplinks.deliverPolled(update, secret),
-      fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      fetch: (url, init) => telegramHttp(String(url), init),
       sleep: (ms, signal) => new Promise<void>((done) => {
         const timer = setTimeout(done, ms);
         timer.unref();
@@ -1263,6 +1280,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return out;
       },
       knowledgeStore: knowledge,
+      semantic,
       massBudget,
       board: audited(board, audit, BOARD_AUDIT),
       blackBox,
@@ -1326,6 +1344,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the open count of each active mission is seeded here, so the last task done after a restart is announced
     missions.observe(tasks.list());
     await missionLog.load();
+    await semantic.load();
+    semantic.start();
     await knowledgeStore.load();
     await board.load();
     await blackBox.load();
@@ -1371,6 +1391,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('missions close', () => missions.close());
       await step('room close', () => room.close());
       await step('tab name close', () => tabName.close());
+      await step('semantic stop', () => semantic.stop());
       await step('mission log close', () => missionLog.close());
       await step('board close', () => board.close());
       audit('audit', 'gonogo stopped');

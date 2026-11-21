@@ -195,6 +195,24 @@ describe('the bounds', () => {
     expect(cut.every((r) => r.legs.every((l) => l.state === 'unevaluated'))).toBe(true);
   });
 
+  it('claims go to the worker in the order given (the worker puts the cheapest first); the main thread never runs a glob: the engine does not even import the matcher', async () => {
+    const source = readFileSync(new URL('../src/server/anchorengine.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/legFiles|picomatch|globMatcher/);
+    repo({ 'a.txt': 'x\n', 'b.txt': 'x\n', 'c.txt': 'x\n', 'd/e.txt': 'x\n' });
+    const jobs: AnchorJob[] = [];
+    const engine = make({
+      spawn: async (job) => {
+        jobs.push(job);
+        return { messages: job.claims.map((c): AnchorWorkerMessage => ({ type: 'claim', index: c.index, legs: c.legs.map(() => ({ state: 'ok' as const, note: 'ok' })) })).concat([{ type: 'done', bytes: 0 } as never]), ended: 'done' };
+      },
+    });
+    const out = await engine.run(root, [claim('K-1', '*.txt "x"'), claim('K-2', 'd/*.txt "x"'), claim('K-3', '*.txt "x"\n**/*.txt "x" absent'), claim('K-4', '*.txt "x"')]);
+    // the main thread sends them as they are: ordering runs the globs over every file name, which only the worker may do (nothing interrupts the main thread)
+    expect(jobs[0]?.claims.map((c) => c.index)).toEqual([0, 1, 2, 3]);
+    expect(out.map((r) => r.id)).toEqual(['K-1', 'K-2', 'K-3', 'K-4']);
+    expect(out.every((r) => r.worst === 'ok')).toBe(true);
+  });
+
   it('a worker that fails is `the check could not finish`, not a hang; a git that cannot list is said', async () => {
     repo({ 'a.txt': 'x\n' });
     const failing = make({ spawn: async () => ({ messages: [], ended: 'failed' }) });

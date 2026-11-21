@@ -36,6 +36,32 @@ jobs:
       # The site is published on a release, so a broken page is caught here, on the pull request.
       - run: pnpm docs:build
 
+  # Every compose file must parse and interpolate: compose.yaml alone, and with each overlay (compose.*.yaml). Placeholder values only;
+  # nothing is pulled or started, so no real tunnel or secret is involved.
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          GONOGO_DATA: /srv/gonogo
+          DOCKER_GID: '999'
+          GONOGO_PUBLIC_NAME: gonogo.example.com
+          TS_AUTHKEY: tskey-auth-placeholder
+          NGROK_AUTHTOKEN: placeholder
+          TUNNEL_TOKEN: placeholder
+        run: |
+          docker compose version
+          docker compose -f compose.yaml config --quiet
+          for overlay in compose.*.yaml; do
+            echo "== $overlay"
+            docker compose -f compose.yaml -f "$overlay" config --quiet
+          done
+
   # CHANGELOG.md is changed only by the release pull request (it also changes the version); everyone else adds changes/<branch>.md.
   changelog:
     if: github.event_name == 'pull_request'

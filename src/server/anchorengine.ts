@@ -202,6 +202,7 @@ export function createAnchorEngine(options: AnchorEngineOptions): AnchorEngine {
         kind: 'gonogo-anchor-run',
         root,
         files,
+        // in the order given: the WORKER puts the cheapest first (it has the file list and runs the globs; doing it here would run them on the main thread, which the time limit cannot interrupt)
         claims: claims.flatMap((claim, index) => (claim.diagnostics.length > 0 || claim.legs.length === 0 ? [] : [{ index, legs: claim.legs }])),
         skip: [...answered.keys()],
         ...(options.caps === undefined ? {} : { caps: options.caps }),

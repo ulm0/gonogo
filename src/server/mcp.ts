@@ -37,7 +37,7 @@ import {
 } from '../shared/protocol.js';
 import type { AgentIdentity, AgentSendRequest, Hub, Logger, Task } from '../shared/protocol.js';
 import { FEATURE_TOOLS } from '../shared/features.js';
-import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, MCP_LOG_ANCHORS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
+import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, LOG_RESULTS_NOTE, MCP_DESCRIPTIONS, MCP_LOG_ANCHORS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
 import type { Board } from './board.js';
 import type { Liveries } from './livery.js';
@@ -60,7 +60,7 @@ export interface McpDeps {
   review?: Pick<Review, 'read' | 'addNotes'>;
   /** Knowledge: the claims of the repository of the caller's folder; absent in tests that do not need it. */
   knowledge?: Pick<Knowledge, 'propose' | 'list'>;
-  missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'create' | 'update'>;
+  missionLog?: Pick<MissionLog, 'search' | 'searchMeaning' | 'get' | 'verify' | 'create' | 'update'>;
   /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
   board?: Pick<Board, 'get' | 'write'>;
   /** Livery; absent in tests that do not need it (the tool then answers that it is not available). */
@@ -370,10 +370,11 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
         inputSchema: { query: z.string().min(1).max(LOG_QUERY_MAX_CHARS), limit: z.number().int().min(1).max(LOG_SEARCH_MAX).optional() },
       },
       ({ query, limit }) =>
-        guarded('log_search', () => {
+        guarded('log_search', async () => {
           if (!missionLog) return noLog();
-          const { hits } = missionLog.search(query, limit ?? LOG_SEARCH_MAX);
-          return toolResult({ count: hits.length, results: hits }, false);
+          const { hits, mode } = await missionLog.searchMeaning(query, limit ?? LOG_SEARCH_MAX, agent);
+          // the results are notes: data, not instructions (docs/semantic-search-spec.md E3); `mode` says whether meaning took part
+          return toolResult({ note: LOG_RESULTS_NOTE, mode: mode === 'meaning' ? 'meaning + word search' : 'word search', count: hits.length, results: hits }, false);
         }),
     );
 
@@ -490,6 +491,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           dir: z.string().max(DIR_MAX_CHARS).optional(),
           engine: z.string().max(32).optional(),
           mode: z.string().max(32).optional(),
+          worktree: z.boolean().optional(),
         }),
       },
       (args) =>

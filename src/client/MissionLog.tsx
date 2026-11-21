@@ -7,7 +7,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { LOG_BODY_MAX_CHARS, LOG_QUERY_MAX_CHARS, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
-import { plain } from './knowledge.js';
+import { plain } from './knowledgeModel.js';
 import type { LogAnchorState, LogChart, LogEntry, LogHit, LogSearch } from '../shared/protocol.js';
 import * as api from './api.js';
 import { whenText } from './inbox.js';
@@ -309,6 +309,7 @@ function Row({ hit, open, onOpen }: { hit: LogHit; open: boolean; onOpen(): void
 export function MissionLog(): ReactElement {
   const titleId = useId();
   const news = useStore((s) => s.log);
+  const semanticOn = useFeature('semantic-search');
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<LogSearch | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -472,7 +473,7 @@ export function MissionLog(): ReactElement {
                   />
                 </div>
                 <p className="hint" id={`${titleId}-count`}>
-                  {search === null ? 'Loading…' : countText(query, search)}
+                  {search === null ? 'Loading…' : countText(query, search, semanticOn)}
                 </p>
               </form>
               {search !== null && search.hits.length === 0 && search.total === 0 && <p className="loop-empty">The log is empty. Agents write to it with log_write, and you can add an entry here.</p>}

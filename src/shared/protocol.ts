@@ -272,7 +272,7 @@ export const AUDIT_TEXT_MAX_CHARS = 200;
 /** How a part of the server tells the Black Box of an event: names, ids and words of the server, never a text somebody wrote. */
 export type AuditRecord = (kind: AuditKind, text: string) => void;
 /** Downlink (docs/downlink-spec.md): what besides a message to the Director lands in his inbox. */
-export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission', 'review', 'startup', 'update'] as const;
+export const DOWNLINK_EVENT_KINDS = ['redline', 'tminus', 'launch-window', 'uplink', 'flight-plan', 'livery', 'relief', 'permission', 'mission', 'review', 'startup', 'update', 'semantic'] as const;
 export type DownlinkEventKind = (typeof DOWNLINK_EVENT_KINDS)[number];
 /** How a part of the server tells the inbox of something the Director should see (`Downlink.post`). */
 /** What a `permission` or `relief` event is about, for the buttons of a phone (docs/phone-approvals-spec.md): the dialog of an agent, or a hire request. */
@@ -1180,9 +1180,31 @@ export interface LogHit {
   anchorState?: LogAnchorState;
 }
 /** GET /api/log?q=: the ranked hits, or the newest entries when q is empty. `total` is every entry the log holds. */
+/** GET /api/semantic: Search by meaning (docs/features/semantic-search.md). Never the text of an entry, never what the endpoint said. */
+export interface SemanticView {
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+  confirmed: string | null;
+  state: 'off' | 'idle' | 'indexing' | 'error' | 'cap';
+  reason: string;
+  indexed: number;
+  total: number;
+  dimension: number;
+  used: number;
+  cap: number;
+}
+/** PUT /api/semantic: the fields given change. `confirm` is the host that may get your notes when it is not this machine. */
+export interface SemanticRequest {
+  endpoint?: string;
+  model?: string;
+  confirm?: string;
+}
 export interface LogSearch {
   total: number;
   hits: LogHit[];
+  /** `meaning` when the ranking is words fused with meaning (the Director turned Search by meaning on and its index answered); absent for a word search. */
+  mode?: 'meaning';
 }
 /** POST /api/log needs a title and a body; PUT /api/log/:id changes the fields it carries. */
 export interface LogRequest {
@@ -1497,6 +1519,8 @@ export interface ReliefRequest {
   mode: PermissionMode;
   /** The boss is a Clean Room agent: the new agent is one too. */
   cleanRoom: CleanRoom | null;
+  /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */
+  worktree?: Worktree | null;
 }
 export interface ReliefView {
   requests: ReliefRequest[];

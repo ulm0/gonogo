@@ -95,6 +95,8 @@ import type {
   UserMessageRequest,
   WorktreeStatus,
   CostReport,
+  SemanticRequest,
+  SemanticView,
 } from '../shared/protocol.js';
 import { withBase } from './base.js';
 import {
@@ -120,7 +122,7 @@ export interface TerminalListener {
 }
 
 /** An Error from a REST call: the server's message, plus the field it names and the HTTP status. */
-export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boolean; second?: boolean; passkey?: boolean; retryAfter?: number; diagnostics?: Array<{ line: number; message: string }> };
+export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boolean; second?: boolean; passkey?: boolean; retryAfter?: number; code?: string; diagnostics?: Array<{ line: number; message: string }> };
 
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/i;
 
@@ -204,6 +206,7 @@ async function callOnce(method: string, path: string, body?: unknown): Promise<u
       failure(message, response.status, typeof error?.field === 'string' ? error.field : undefined),
       error?.stepUp === true ? { stepUp: true, second: error.second === true, passkey: error.passkey === true } : {},
       typeof error?.retryAfter === 'number' ? { retryAfter: error.retryAfter } : {},
+      typeof error?.code === 'string' ? { code: error.code } : {},
       diagnostics === undefined ? {} : { diagnostics },
     );
   }
@@ -482,7 +485,15 @@ const toKnowledgeRepo = (value: unknown): KnowledgeRepo => {
 };
 const repoPath = (repoId: string): string => `/knowledge/${encodeURIComponent(repoId)}`;
 export async function knowledge(): Promise<KnowledgeView> {
-  const record = asRecord(await call('GET', '/knowledge'));
+  let answer: unknown;
+  try {
+    answer = await call('GET', '/knowledge');
+  } catch (e) {
+    // the switch is off: the server answers the route itself with `feature_off` (404) before it reaches the view that says `enabled: false`; either way it is not a failure
+    if ((e as ApiFailure).code === 'feature_off') return { enabled: false, repos: [], agents: {} };
+    throw e;
+  }
+  const record = asRecord(answer);
   if (record === null || typeof record.enabled !== 'boolean' || !Array.isArray(record.repos)) throw failure('The server sent an answer gonogo does not understand.');
   return record as unknown as KnowledgeView;
 }
@@ -1072,6 +1083,21 @@ export async function loadKnowledge(): Promise<void> {
 /** The Director's RECHECK of an entry's anchors: the entry with the new answer. A refusal ("again in 12 s") is the error. */
 export async function recheckLogEntry(id: string): Promise<LogEntry> {
   return toLogEntry(await call('POST', `/log/${encodeURIComponent(id)}/recheck`));
+}
+
+/** Search by meaning: the status of the index and the endpoint (the route is there only while the feature is on). */
+export async function getSemantic(): Promise<SemanticView> {
+  return (await call('GET', '/semantic')) as SemanticView;
+}
+
+/** Saves the endpoint, the model and the host that may get the notes: behind a step-up. */
+export async function putSemantic(request: SemanticRequest): Promise<SemanticView> {
+  return (await call('PUT', '/semantic', request)) as SemanticView;
+}
+
+/** One request to the endpoint: the size of the vectors it answers with. */
+export async function testSemantic(): Promise<{ dimension: number }> {
+  return (await call('POST', '/semantic/test')) as { dimension: number };
 }
 
 /** Star Chart: the newest entries with their tags, authors and mentions. Asked again when a `log` frame says something changed. */

@@ -124,3 +124,23 @@ describe('Knowledge', () => {
     expect(stepUpReason('GET', '/api/knowledge', null)).toBeNull();
   });
 });
+
+describe('Search by meaning', () => {
+  it('asks again to name the endpoint your notes go to, not to read the status or to test it', () => {
+    expect(stepUpReason('PUT', '/api/semantic', { endpoint: 'http://127.0.0.1:11434' })).toMatch(/endpoint of Search by meaning/);
+    expect(stepUpReason('PUT', '/api/semantic', null)).toMatch(/endpoint of Search by meaning/);
+    expect(stepUpReason('GET', '/api/semantic', null)).toBeNull();
+    expect(stepUpReason('POST', '/api/semantic/test', null)).toBeNull();
+  });
+});
+
+describe('stopping and starting rooms', () => {
+  it('asks for the password to stop a room, stop all, start all and remove a room; starting one room does not', () => {
+    expect(stepUpReason('POST', '/api/rooms/docs/stop', null)).toMatch(/stopping a room/);
+    expect(stepUpReason('POST', '/api/rooms/stop-all', null)).toMatch(/every room/);
+    expect(stepUpReason('POST', '/api/rooms/start-all', null)).toMatch(/every room/);
+    expect(stepUpReason('DELETE', '/api/rooms/docs', null)).toMatch(/removing a room/);
+    expect(stepUpReason('POST', '/api/rooms/docs/start', null)).toBeNull();
+    expect(stepUpReason('PATCH', '/api/rooms/docs', { autostart: false })).toBeNull();
+  });
+});
