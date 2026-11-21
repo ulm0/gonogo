@@ -64,7 +64,7 @@ import { mergePayload } from './payload.js';
 import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { isRecord } from './hooks.js';
-import { doorText } from './door.js';
+import { doorText, projectFile } from './door.js';
 import { buildProviderStart, knowsEffort, shellQuote, STATUS_LINE_SHIM } from './providers.js';
 import type { OtherProvider } from './providers.js';
 
@@ -597,8 +597,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
     mergePayload(agent.cleanRoom === undefined ? options.payloadDefaults?.() : undefined, agent.payload, agent.payloadOff, PROVIDER_INFO[provider].payload);
 
   const prepareOther = async (agent: AgentRecord, provider: OtherProvider, base: string, hubUrl: string, memoryPath: string, token: string): Promise<PreparedStart> => {
-    // the room's rules and the pointer to the project's AGENTS.md, for an engine that takes a role (door.ts); `role` alone is what pi and agy get
-    const door = doorText(provider, options.rules?.() ?? '');
+    // the room's rules and the pointer to the project's file, for an engine that takes a role (door.ts); `role` alone is what pi and agy get
+    const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
+    const door = doorText(provider, options.rules?.() ?? '', await projectFile(where));
     const ctx = {
       name: agent.name,
       mode: agent.mode,
@@ -614,7 +615,6 @@ export function createLauncher(options: LauncherOptions): Launcher {
     };
     const start = buildProviderStart(provider, ctx);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
-    const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
     const env = await withCoauthor(agent, { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: keysOf(agent), gh: await ensureGh() }), ...start.env }, where, base);
     log.debug(`prepared ${agent.name} to run ${provider}`);
     return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
@@ -704,7 +704,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const projectsRoot = join(clean === null ? configDir ?? join(homedir(), '.claude') : clean.home, 'projects');
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
-      const roleText = buildRoleText(name, agent.role, memoryPath) + doorText('claude', options.rules?.() ?? '') + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
+      const roleText = buildRoleText(name, agent.role, memoryPath) + doorText('claude', options.rules?.() ?? '', await projectFile(clean?.cwd ?? startDir)) + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
       const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
       // Effort: the console's own, else the room's. An old claude exits on an option it does not know: its own effort refuses the start (it asked for it), the room's is dropped with a warning (one setting must not stop every console). A Clean Room runs the image's claude, not the host's, so it is not asked.
       let effort = agent.effort ?? options.defaultEffort?.();

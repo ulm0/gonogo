@@ -63,8 +63,7 @@ export function RoomRulesBlock(): ReactElement {
         </>
       )}
       <p className="hint">
-        An agent&apos;s own words are never added here: the project&apos;s rules stay in its repository (AGENTS.md), and gonogo only tells an engine that does not load that file where it is. Where the two disagree, the project&apos;s file
-        wins. Saving asks for your password: these words reach every agent as part of its system prompt.
+        These words reach every agent of the room at the start of its next session, as part of its system prompt, so saving asks for your password. The project&apos;s own AGENTS.md is only pointed to, never copied: gonogo tells an engine that does not load it itself where it is, and reads nothing of it.
       </p>
       {problem !== null && (
         <p className="error" role="alert">

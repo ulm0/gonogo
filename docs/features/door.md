@@ -13,7 +13,7 @@ One text of **rules for every agent of the room**, and a pointer to the reposito
 
 ## The project's AGENTS.md
 
-gonogo never writes in your repository and **never puts text of a repository into a role text**: an agent can write that file, and the role text is read as a system prompt. Instead an engine that does not load `AGENTS.md` on its own gets one fixed sentence: the project's rules are in `AGENTS.md` at the root of the repository it works in, read it first, and where it disagrees with the room rules the project's file wins.
+gonogo never writes in your repository and **never puts text of a repository into a role text**: an agent can write that file, and the role text is read as a system prompt. Instead, when the agent's working directory has an `AGENTS.md` (a regular file; a link does not count) and the engine does not load it on its own, it gets one fixed sentence: "The project's rules are in the file AGENTS.md in your working directory: read it first." With only a `CLAUDE.md`, every engine but Claude Code gets the same sentence naming that file. gonogo checks that the file is there and reads nothing of it.
 
 | Engine | Loads `AGENTS.md` itself | Gets the rules and the pointer |
 |---|---|---|
@@ -21,10 +21,11 @@ gonogo never writes in your repository and **never puts text of a repository int
 | Claude Code, Gemini CLI, Antigravity, pi | no, or not known | rules and pointer |
 | Qwen Code, Grok CLI, Kimi, Crush, Copilot CLI, Cursor Agent, custom command | (see the spec) | **nothing**: gonogo has no checked way to pass them a role |
 
-For Claude Code, `CLAUDE.md` can contain `@AGENTS.md` to share one file; you add that line yourself.
+For Claude Code, `CLAUDE.md` can contain `@AGENTS.md` to share one file; you add that line yourself. The pointer is only added when the file exists in the agent's directory (its own worktree or Clean Room checkout when it has one).
 
 ## Limits
 
 - Engines in the last row get no rules (a terminal with a lamp). Put the rules in their own files.
-- Two sources can disagree: the sentence says the project's file wins, and nothing checks it.
+- The room rules and the project's file can disagree; nothing says which wins and nothing checks it.
+- `gonogo doctor` prints this table (which engine loads `AGENTS.md`, which takes a role from gonogo).
 - "Not known" means the engine's documentation was not clear; the pointer is then sent, and an engine that reads the file anyway sees one extra sentence.

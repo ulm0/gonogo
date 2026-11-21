@@ -84,6 +84,7 @@ import { createStartupStore } from './startup.js';
 import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { createRules } from './rules.js';
+import { doorTable } from './door.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { verifyImage } from './attest.js';
 import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
@@ -1639,7 +1640,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   if (parsed.kind === 'doctor') {
     const checks = await checkEngines(env);
     const { kind } = installInfo(env);
-    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null, kind === 'brew' ? `gonogo itself: ${installNote(kind, false)}` : null).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\ndoctor never runs`));
+    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null, kind === 'brew' ? `gonogo itself: ${installNote(kind, false)}` : null).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\n${doorTable()}\n\ndoctor never runs`));
     // Docker self-update: only in a container
     if (installInfo(env).kind === 'docker') {
       const socket = env.GONOGO_DOCKER_SOCKET || SOCKET_PATH;
