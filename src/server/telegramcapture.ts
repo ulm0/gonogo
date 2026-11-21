@@ -4,8 +4,10 @@
  * no flag and no page for it. It wraps the one `fetch` that Telegram polling and Telegram files share, so the bot token never leaves the process:
  * what is written is the answer of `getUpdates` (one file per update) and of `getFile` (the whole answer, errors included), after REDACTION.
  *
- * Redaction is an allowlist: a string is "<redacted>" unless its key is one of a few structural ones (`type`, `mime_type`, `description`, ...), an
- * identifying number (an id, a date) becomes a fixed fake one of the same kind, and `file_path` keeps its folder and its extension. The file download
+ * Redaction is an allowlist for strings and for numbers: a string is "<redacted>" unless its key is a structural one (`type`, `mime_type`, ...; the
+ * `description` of an error answer is kept at its top only), an identifying number (an id, a date) becomes a fixed fake one of the same kind, a number of
+ * the shape of a file or an answer (`file_size`, `width`, `height`, `duration`, `error_code`, ...) is kept, any other number (a location, a count) is 0,
+ * and `file_path` keeps its folder and its extension. The file download
  * (`/file/bot.../`) is never read, so no byte of a file is kept. Before a file is written its text is searched for the token and for every real id
  * that was seen: a hit refuses the file (and says so, without saying what). Files are 0600 in a 0700 folder and are never replaced; after N the capture stops.
  */
@@ -28,7 +30,9 @@ export function parseCaptureEnv(value: string | undefined): { dir: string; max: 
 }
 
 /** String values that are structure, not content: kept as they are. */
-const KEEP = new Set(['type', 'mime_type', 'description', 'language_code', 'file_path', 'status', 'ok_note']);
+const KEEP = new Set(['type', 'mime_type', 'language_code', 'file_path']);
+/** Numbers that are the shape of a file or of an answer: kept. Every other number (a latitude, a count, a duration of a call, a poll's votes) is 0, and an id or a date becomes a fake one. */
+const KEEP_NUMBERS = new Set(['file_size', 'width', 'height', 'duration', 'offset', 'length', 'error_code', 'retry_after']);
 
 export interface Redactor {
   /** The redacted copy of a JSON value. */
@@ -59,22 +63,26 @@ export function createRedactor(): Redactor {
     const m = /^([A-Za-z0-9_-]{1,40})\/[A-Za-z0-9_-]{1,80}(\.[A-Za-z0-9]{1,5})?$/.exec(path);
     return m === null ? '<redacted>' : `${m[1]}/file_1${m[2] ?? ''}`;
   };
-  const walk = (value: unknown, key: string): unknown => {
+  /** `top`: this value is the answer itself (not something inside it); `failed`: that answer is `ok: false`. */
+  const walk = (value: unknown, key: string, top = false, failed = false): unknown => {
     if (Array.isArray(value)) return value.map((v) => walk(v, key));
-    if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v, k)]));
+    if (value !== null && typeof value === 'object') {
+      const isFailed = top && (value as { ok?: unknown }).ok === false;
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v, k, false, isFailed && k === 'description')]));
+    }
     if (typeof value === 'number') {
       const kind = kindOf(key);
-      if (kind === null) return value;
+      if (kind === null) return KEEP_NUMBERS.has(key) ? value : 0;
       real.add(String(value));
       return fake(kind, value);
     }
     if (typeof value === 'string') {
       if (key === 'file_path') return filePath(value);
-      return KEEP.has(key) ? value : '<redacted>';
+      return KEEP.has(key) || failed ? value : '<redacted>';
     }
     return value;
   };
-  return { redact: (value) => walk(value, ''), seen: () => [...real] };
+  return { redact: (value) => walk(value, '', true), seen: () => [...real] };
 }
 
 export interface CaptureOptions {
@@ -86,9 +94,11 @@ export interface CaptureOptions {
 }
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+/** The wrapped fetch, and a way to wait until everything it was asked to keep has been written (for the tests and for a clean stop). */
+export type CapturingFetch = Fetch & { flush(): Promise<void> };
 
 /** The `fetch` to give Telegram polling and files: the same, with a copy of the answers it is asked to keep. */
-export function captureFetch(inner: Fetch, options: CaptureOptions): Fetch {
+export function captureFetch(inner: Fetch, options: CaptureOptions): CapturingFetch {
   const redactor = createRedactor();
   let count = 0;
   let writing: Promise<void> = Promise.resolve();
@@ -114,7 +124,7 @@ export function captureFetch(inner: Fetch, options: CaptureOptions): Fetch {
     }
   }
 
-  return async (url, init) => {
+  const wrapped: Fetch = async (url, init) => {
     const res = await inner(url, init);
     // the method is the last part of the address; the file download (`/file/bot.../`) has none of these and is never read
     const method = /^https:\/\/api\.telegram\.org\/bot[^/]+\/(getUpdates|getFile)$/.exec(url)?.[1];
@@ -125,4 +135,5 @@ export function captureFetch(inner: Fetch, options: CaptureOptions): Fetch {
       .catch((error: unknown) => options.log.warn(`telegram capture: not written (${error instanceof Error ? error.name : 'error'})`));
     return res;
   };
+  return Object.assign(wrapped, { flush: () => writing });
 }

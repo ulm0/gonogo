@@ -113,9 +113,47 @@ function fakeApi(updates: unknown[][], files: Array<{ status: number; body: unkn
     },
   };
 }
-const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 40));
 const GETUPDATES = `https://api.telegram.org/bot${TOKEN}/getUpdates`;
 const GETFILE = `https://api.telegram.org/bot${TOKEN}/getFile`;
+
+describe('numbers', () => {
+  it('a shared location, a count and a call duration are 0; ids and dates are fake; the shape of a file is kept', () => {
+    const out = createRedactor().redact({
+      update_id: 77_777_777,
+      message: {
+        message_id: 5_555_555,
+        date: 1_795_236_000,
+        chat: { id: CHAT, type: 'private' },
+        location: { latitude: -12.046374, longitude: -77.042793, horizontal_accuracy: 12.5, live_period: 3600, heading: 90, proximity_alert_radius: 150 },
+        venue: { location: { latitude: 51.5007, longitude: -0.1246 }, title: 'Big Ben', foursquare_id: 'x' },
+        document: { file_id: 'a', file_unique_id: 'b', file_size: 4096, thumbnail: { width: 90, height: 51, file_size: 800 } },
+        voice: { duration: 7, file_size: 1000 },
+        poll: { total_voter_count: 41, options: [{ text: 'a', voter_count: 17 }] },
+        entities: [{ type: 'bold', offset: 3, length: 5 }],
+        giveaway: { winner_count: 3, premium_subscription_month_count: 6 },
+      },
+    });
+    const text = JSON.stringify(out);
+    for (const real of ['12.046374', '77.042793', '51.5007', '0.1246', '12.5', '3600', '77777777', '5555555', '1795236000', String(CHAT), 'Big Ben']) expect(text, real).not.toContain(real);
+    const m = (out as { message: Record<string, Record<string, unknown>> }).message;
+    expect(m.location).toEqual({ latitude: 0, longitude: 0, horizontal_accuracy: 0, live_period: 0, heading: 0, proximity_alert_radius: 0 });
+    expect((m.venue?.location as Record<string, number>)).toEqual({ latitude: 0, longitude: 0 });
+    expect(m.poll).toMatchObject({ total_voter_count: 0 });
+    expect(m.giveaway).toEqual({ winner_count: 0, premium_subscription_month_count: 0 });
+    expect(m.document).toMatchObject({ file_size: 4096, thumbnail: { width: 90, height: 51, file_size: 800 } });
+    expect(m.voice).toEqual({ duration: 7, file_size: 1000 });
+    expect(out).toMatchObject({ message: { entities: [{ type: 'bold', offset: 3, length: 5 }] } });
+  });
+
+  it('a description is kept only at the top of an error answer', () => {
+    const r = createRedactor();
+    expect(r.redact({ ok: false, error_code: 400, description: 'Bad Request: file is too big' })).toEqual({ ok: false, error_code: 400, description: 'Bad Request: file is too big' });
+    // a description inside a message (a group's, a poll's, a venue's) is somebody's text
+    expect(r.redact({ message: { chat: { type: 'group', description: 'our secret plans' } } })).toEqual({ message: { chat: { type: 'group', description: '<redacted>' } } });
+    // and at the top of an answer that did not fail
+    expect(r.redact({ ok: true, description: 'something' })).toEqual({ ok: true, description: '<redacted>' });
+  });
+});
 
 describe('the wrapped fetch', () => {
   const open = (api: ReturnType<typeof fakeApi>, max = 12) => captureFetch(api.fetch, { dir: join(dir, 'cap'), max, token: () => TOKEN, log });
@@ -128,7 +166,7 @@ describe('the wrapped fetch', () => {
     expect(updates.result).toHaveLength(2);
     expect(((await (await fetcher(GETFILE)).json()) as { ok: boolean }).ok).toBe(true);
     expect((await fetcher(GETFILE)).status).toBe(400);
-    await settle();
+    await fetcher.flush();
     expect(await names()).toEqual(['01-getUpdates.json', '02-getUpdates.json', '03-getFile.json', '04-getFile.json']);
     const third = JSON.parse(await readFile(join(dir, 'cap', '03-getFile.json'), 'utf8')) as { method: string; status: number; body: { result: { file_path: string } } };
     expect(third).toMatchObject({ method: 'getFile', status: 200, body: { ok: true, result: { file_path: 'photos/file_1.jpg', file_size: 98_765 } } });
@@ -143,7 +181,7 @@ describe('the wrapped fetch', () => {
     const api = fakeApi([], []);
     const fetcher = open(api);
     const res = await fetcher(`https://api.telegram.org/file/bot${TOKEN}/photos/file_7.jpg`);
-    await settle();
+    await fetcher.flush();
     expect(api.downloadReads()).toBeLessThanOrEqual(1);
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50]));
     expect(await names()).toEqual([]);
@@ -155,7 +193,7 @@ describe('the wrapped fetch', () => {
     for (let i = 0; i < 5; i += 1) await fetcher(GETUPDATES);
     await fetcher(`https://api.telegram.org/bot${TOKEN}/sendMessage`);
     await fetcher(`https://api.telegram.org/bot${TOKEN}/getMe`);
-    await settle();
+    await fetcher.flush();
     expect(await names()).toEqual(['01-getUpdates.json', '02-getUpdates.json']);
   });
 
@@ -165,7 +203,7 @@ describe('the wrapped fetch', () => {
     const fetcher = open(api);
     await fetcher(GETFILE);
     await fetcher(GETFILE);
-    await settle();
+    await fetcher.flush();
     expect(await names()).toEqual(['01-getFile.json']);
     expect(logs).toHaveLength(1);
     expect(logs[0]).toContain('not written');
@@ -178,7 +216,7 @@ describe('the wrapped fetch', () => {
     await writeFile(join(dir, 'plain'), 'x');
     const fetcher = captureFetch(api.fetch, { dir: join(dir, 'plain', 'cap'), max: 3, token: () => TOKEN, log });
     expect((await fetcher(GETUPDATES)).status).toBe(200);
-    await settle();
+    await fetcher.flush();
     expect(logs.some((l) => l.includes('not written'))).toBe(true);
   });
 });
@@ -188,10 +226,11 @@ describe('with the file download', () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
     const inner = async (url: string): Promise<Response> =>
       url.endsWith('/getFile') ? new Response(JSON.stringify({ ok: true, result: { file_id: 'p', file_unique_id: 'u', file_size: png.length, file_path: 'photos/file_3.png' } })) : new Response(png);
-    const files = createTelegramFiles({ fetch: captureFetch(inner, { dir: join(dir, 'cap'), max: 5, token: () => TOKEN, log }), token: () => TOKEN, agentDir: (n) => join(dir, 'agents', n), agentsRoot: join(dir, 'agents'), now: () => 1, log });
+    const capturing = captureFetch(inner, { dir: join(dir, 'cap'), max: 5, token: () => TOKEN, log });
+    const files = createTelegramFiles({ fetch: capturing, token: () => TOKEN, agentDir: (n) => join(dir, 'agents', n), agentsRoot: join(dir, 'agents'), now: () => 1, log });
     const got = await files.fetchFile({ fileId: 'p', messageId: '40', name: 'photo', mime: null, size: null }, 'boss');
     expect('path' in got).toBe(true);
-    await settle();
+    await capturing.flush();
     const kept = await readdir(join(dir, 'cap'));
     expect(kept).toEqual(['01-getFile.json']);
     expect(await readFile(join(dir, 'cap', kept[0] as string), 'utf8')).not.toContain('PNG');
