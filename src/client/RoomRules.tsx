@@ -116,12 +116,12 @@ export function RoomRulesBlock(): ReactElement {
       title="ROOM RULES"
       label="Rules"
       placeholder="Always branch from main. Report in two lines. Never touch the migrations folder."
-      load={api.rules}
+      load={api.rulesView}
       save={api.setRules}
       hint={
         <>
-          Your rules for every agent of this room: how you branch, how you report, what never to touch. They go to each agent at the start of its next session, in its role text, whatever its engine, and a console reads them as your own words, so only you can change them here, and the
-          password is asked again. A repo&apos;s own <code>AGENTS.md</code> is never copied into them: an agent is only told to read it, and the project&apos;s rules win over these.
+          Your rules for every agent of this room: how you branch, how you report, what never to touch. They are added at the end of the role text, under &ldquo;Room rules, written by the Director&rdquo;, when an agent starts, so a console reads them as your own words: only you can change them here, and the
+          password is asked again. They reach the engines gonogo can give a role to (Claude Code, Gemini CLI, Codex, opencode, Antigravity, pi); the others, and a custom command, get nothing. A repo&apos;s own <code>AGENTS.md</code> is never copied into them: an agent is only told to read it, and the project&apos;s rules win over these.
         </>
       }
     />

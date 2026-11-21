@@ -461,7 +461,7 @@ function toRules(value: unknown): RulesView {
   if (record === null || typeof record.text !== 'string' || typeof record.max !== 'number') throw failure('The server sent an answer gonogo does not understand.');
   return record as unknown as RulesView;
 }
-export async function rules(): Promise<RulesView> {
+export async function rulesView(): Promise<RulesView> {
   return toRules(await call('GET', '/rules'));
 }
 export async function setRules(text: string): Promise<RulesView> {

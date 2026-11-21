@@ -122,6 +122,8 @@ describe('the rules text', () => {
     expect(html).toContain('ROOM RULES');
     expect(html).toContain('password is asked again');
     expect(html).toContain('AGENTS.md');
+    expect(html).toContain('Room rules, written by the Director');
+    expect(html).toContain('a custom command, get nothing');
     expect(html).not.toContain('<textarea');
   });
 });
