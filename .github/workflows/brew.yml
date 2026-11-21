@@ -1,0 +1,114 @@
+name: Homebrew
+
+# Tries the Homebrew formula (packaging/homebrew/gonogo.rb) on the two platforms Homebrew supports, on a runner of its own: macOS (arm64) and
+# Linux (Linuxbrew). Runs for a pushed v* tag, by hand, and for a pull request that touches the formula or this file.
+#
+# Homebrew no longer installs a formula passed as a path ("requires formulae to be in a tap"), so the job makes a throwaway local tap
+# (`brew tap-new`), puts the formula in it and installs from there. The url of the template is a placeholder, so the formula is rewritten the
+# way the release workflow rewrites it for the real tap: the url and sha256 of the tarball `pnpm pack` makes from THIS checkout (installed
+# from a file:// url, so nothing depends on a release or on npm having the version). The audit runs on a second copy that carries the
+# release-asset url, the form the real tap has, because the audit refuses a file:// one.
+#
+# Checks: `brew install --build-from-source`, `brew test`, `brew audit --strict --formula`, and that the prebuilt node-pty of the platform
+# came with its `spawn-helper` executable (macOS needs it to start any terminal; npm's install of the formula must not drop the mode).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - packaging/homebrew/**
+      - .github/workflows/brew.yml
+
+permissions: {}
+
+concurrency:
+  group: brew-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formula:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Put brew on the PATH (Linux)
+        if: runner.os == 'Linux'
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+      # No version: it installs the pnpm that package.json `packageManager` pins.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      # `prepack` builds the client and the server; the tarball is the file the release workflow attaches to the release
+      - name: Pack the tarball
+        run: |
+          mkdir "$RUNNER_TEMP/asset"
+          pnpm pack --pack-destination "$RUNNER_TEMP/asset"
+          ls -l "$RUNNER_TEMP/asset"
+      - name: Make a local tap with the formula
+        run: |
+          set -eu
+          brew --version
+          set -- "$RUNNER_TEMP"/asset/*.tgz
+          [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one tarball"; exit 1; }
+          tarball=$1
+          version=$(node -p 'require("./package.json").version')
+          sha=$(shasum -a 256 "$tarball" | cut -d' ' -f1)
+          brew tap-new --no-git ulm0/ci
+          formulas="$(brew --repository ulm0/ci)/Formula"
+          mkdir -p "$formulas"
+          # the install copy: the tarball of this checkout, from a file
+          sed -e "s|^  url .*|  url \"file://$tarball\"|" -e "s|^  sha256 .*|  sha256 \"$sha\"|" packaging/homebrew/gonogo.rb > "$formulas/gonogo.rb"
+          # the audit copy: the release-asset url the real tap carries
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}/$(basename "$tarball")"
+          mkdir -p "$RUNNER_TEMP/audit"
+          sed -e "s|^  url .*|  url \"$url\"|" -e "s|^  sha256 .*|  sha256 \"$sha\"|" packaging/homebrew/gonogo.rb > "$RUNNER_TEMP/audit/gonogo.rb"
+          grep -E '^  (url|sha256)' "$formulas/gonogo.rb"
+      - name: brew install --build-from-source
+        run: brew install --build-from-source --verbose ulm0/ci/gonogo
+      - name: brew test
+        run: brew test --verbose ulm0/ci/gonogo
+      - name: The terminal helper of node-pty is executable
+        run: |
+          set -eu
+          prefix=$(brew --prefix ulm0/ci/gonogo)
+          echo "gonogo --version: $("$prefix/bin/gonogo" --version)"
+          libexec=$(brew --prefix ulm0/ci/gonogo)/libexec
+          # the prebuilt native part of THIS platform: macOS ships spawn-helper next to pty.node and cannot start a terminal without it executable
+          found=$(find -L "$libexec" -path '*node-pty-*/prebuilds/*' -name 'spawn-helper' 2>/dev/null | head -5)
+          if [ "$RUNNER_OS" = macOS ]; then
+            [ -n "$found" ] || { echo "::error::no spawn-helper found under $libexec: the prebuilt node-pty of macOS is missing"; exit 1; }
+          fi
+          for f in $found; do
+            if [ -x "$f" ]; then echo "ok, executable: $f"; else echo "::error::$f is not executable"; ls -l "$f"; exit 1; fi
+          done
+          [ -z "$found" ] && echo "no spawn-helper on this platform (Linux has none): nothing to check"
+          pty=$(find -L "$libexec" -path '*node-pty-*/prebuilds/*' -name 'pty.node' | head -1)
+          [ -n "$pty" ] || { echo "::error::the prebuilt pty.node is missing under $libexec"; exit 1; }
+          echo "pty.node: $pty"
+      - name: brew audit --strict --formula
+        run: |
+          set -eu
+          # an audit of a formula by path is refused too: it goes in the tap first, with the release-asset url
+          cp "$RUNNER_TEMP/audit/gonogo.rb" "$(brew --repository ulm0/ci)/Formula/gonogo.rb"
+          # each problem is also an annotation of the run (the log of a run is not readable without a login)
+          if ! out=$(brew audit --strict --formula ulm0/ci/gonogo 2>&1); then
+            echo "$out"
+            printf '%s\n' "$out" | while IFS= read -r line; do [ -n "$line" ] && echo "::error::audit: $line"; done
+            exit 1
+          fi
+          echo "$out"
