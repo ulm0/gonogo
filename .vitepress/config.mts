@@ -91,6 +91,7 @@ export default defineConfig({
         items: [
           { text: 'Engine Bay', link: '/features/engine-bay' },
           { text: 'Payload', link: '/features/payload' },
+          { text: 'Registry', link: '/features/registry' },
           { text: 'Room keys', link: '/features/room-keys' },
           { text: 'Knowledge', link: '/features/knowledge' },
           { text: 'Clean Room', link: '/features/clean-room' },
