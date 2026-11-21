@@ -28,7 +28,8 @@ import {
   AGENTS_DIR,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
-import { audited, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { createRitualTemplate } from './ritual.js';
+import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, stationName } from './docking.js';
@@ -958,7 +959,6 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       now: io.now,
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
       boss: () => hubInstance.views().find((v) => v.boss)?.name ?? null,
-      agentDirs: () => hubInstance.views().map((v) => ({ name: v.name, dir: v.dir })),
       tasks: () => tasks.list(),
       unlink: (id) => tasks.unlinkMission(id),
       send: (actor, request) => (actor.kind === 'user' ? hubInstance.sendFromUser(request) : hubInstance.sendFromAgent(actor.name, actor.generation, request)),
@@ -1205,6 +1205,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       roomKeys: audited(roomKeys, blackBox.record, ROOM_KEYS_AUDIT),
       payloadDefaults: audited(payloadDefaults, blackBox.record, PAYLOAD_DEFAULTS_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
+      ritualTemplate: audited(createRitualTemplate({ dir: home.dir, now: io.now }), blackBox.record, RITUAL_TEMPLATE_AUDIT),
       startup: audited(startupStore, blackBox.record, STARTUP_AUDIT),
       ...(autoApi === undefined ? {} : { autoUpdate: audited(autoApi, blackBox.record, AUTOUPDATE_AUDIT) }),
       subagents: audited(subagentStore, blackBox.record, SUBAGENTS_AUDIT),

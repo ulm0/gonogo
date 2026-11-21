@@ -14,8 +14,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
-import { isAbsolute, join, resolve as resolvePath } from 'node:path';
+import { join } from 'node:path';
 import {
   AGENT_NAME_PATTERN,
   MISSION_GOAL_MAX_CHARS,
@@ -33,14 +32,15 @@ import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
 import { UNSAFE_IN_NAME } from './schedules.js';
 import type { Actor } from './tasks.js';
-import { cleanLine, gitTopLevel, readTemplate } from './ritual.js';
+import { cleanLine, itemText, readTemplate } from './ritual.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const ID_RE = /^ms[1-9]\d{0,5}$/;
-const CREATE_FIELDS = ['name', 'goal', 'lead', 'repo'];
-const PATCH_FIELDS = ['name', 'goal', 'status', 'lead', 'note', 'repo', 'ritual'];
-/** A path a mission may name: absolute, one line, no NUL, at most this long. */
-const REPO_MAX_CHARS = 1024;
+const CREATE_FIELDS = ['name', 'goal', 'lead', 'ritual'];
+const PATCH_FIELDS = ['name', 'goal', 'status', 'lead', 'note', 'ritual'];
+
+/** What a change of the closing ritual does (the Director's only, after the mission is made). */
+export type RitualOp = { add: string } | { remove: number } | { index: number; done?: boolean; text?: string };
 /** The Director of a docked station never changes missions: only the browser and the agents do. */
 export type MissionActor = Exclude<Actor, { kind: 'dock' }>;
 
@@ -54,10 +54,6 @@ export interface MissionsOptions {
   boss(): string | null;
   /** The tasks of the Flight Plan: a mission's progress and its briefing are derived from them. */
   tasks(): Task[];
-  /** The agents of the room and their start folders: a mission's repo must be the git top level of one of them. */
-  agentDirs?(): Array<{ name: string; dir: string }>;
-  /** The git top level of a folder as a real path, or null. Tests give their own. */
-  topLevel?(dir: string): Promise<string | null>;
   /** Unlinks every task of a mission (the tasks stay on the board). Called by `remove`. */
   unlink(missionId: string): Promise<void>;
   /** Hub.sendFromUser or Hub.sendFromAgent: the briefing of the boss. May throw a HubError. */
@@ -98,10 +94,10 @@ interface Fields {
   status?: MissionStatus;
   lead?: string | null;
   note?: string;
-  /** A path to check (null: no repo). */
-  repo?: string | null;
-  /** Tick or untick one item of the ritual. */
-  ritual?: { index: number; done: boolean };
+  /** At creation: items the boss passes. */
+  ritualNew?: string[];
+  /** After: one change of the checklist. */
+  ritualOp?: RitualOp;
 }
 
 function validate(input: unknown, whole: boolean, isAgent: (name: string) => boolean): Fields {
@@ -133,22 +129,38 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
     if (note === '' || note.length > MISSION_NOTE_MAX_CHARS || UNSAFE_IN_NAME.test(note)) throw bad(`note must be 1 to ${MISSION_NOTE_MAX_CHARS} characters`, 'note');
     out.note = note;
   }
-  if (input.repo !== undefined) {
-    if (input.repo !== null && (typeof input.repo !== 'string' || input.repo === '' || input.repo.length > REPO_MAX_CHARS || input.repo.includes('\0') || /[\r\n]/.test(input.repo) || !isAbsolute(input.repo) || input.repo.split('/').some((part) => part === '..' || part === '.'))) throw bad('repo must be an absolute path on one line, or null', 'repo');
-    out.repo = input.repo;
-  }
   if (input.ritual !== undefined) {
-    const r = input.ritual;
-    if (!isRecord(r) || Object.keys(r).some((k) => k !== 'index' && k !== 'done') || !Number.isSafeInteger(r.index) || (r.index as number) < 0 || (r.index as number) >= MISSION_RITUAL_MAX || typeof r.done !== 'boolean') throw bad('ritual must be { index, done }: the number of an item and whether it is done', 'ritual');
-    out.ritual = { index: r.index as number, done: r.done };
+    if (whole) {
+      if (!Array.isArray(input.ritual) || input.ritual.length > MISSION_RITUAL_MAX) throw bad(`ritual is a list of at most ${MISSION_RITUAL_MAX} lines of text`, 'ritual');
+      out.ritualNew = input.ritual.map((t) => itemText(t, 'ritual'));
+    } else {
+      out.ritualOp = ritualOp(input.ritual);
+    }
   }
   return out;
+}
+
+function ritualOp(r: unknown): RitualOp {
+  const shape = 'ritual must be { add: text }, { remove: number } or { index: number, done?: boolean, text?: string }';
+  if (!isRecord(r)) throw bad(shape, 'ritual');
+  const keys = Object.keys(r);
+  const number = (v: unknown): number => {
+    if (!Number.isSafeInteger(v) || (v as number) < 0 || (v as number) >= MISSION_RITUAL_MAX) throw bad('index is the number of an item, from 0', 'index');
+    return v as number;
+  };
+  if (keys.length === 1 && keys[0] === 'add') return { add: itemText(r.add, 'text') };
+  if (keys.length === 1 && keys[0] === 'remove') return { remove: number(r.remove) };
+  if (r.index !== undefined && keys.every((k) => k === 'index' || k === 'done' || k === 'text') && (r.done !== undefined || r.text !== undefined)) {
+    if (r.done !== undefined && typeof r.done !== 'boolean') throw bad('done is true or false', 'done');
+    return { index: number(r.index), ...(r.done === undefined ? {} : { done: r.done as boolean }), ...(r.text === undefined ? {} : { text: itemText(r.text, 'text') }) };
+  }
+  throw bad(shape, 'ritual');
 }
 
 /** A saved record read back; one that is not a mission throws, and the caller skips it. */
 function fromRecord(raw: unknown, at: number): Mission {
   if (!isRecord(raw) || typeof raw.id !== 'string' || !ID_RE.test(raw.id)) throw new Error('no valid id');
-  const { id, name, goal, status, lead, createdBy, createdAt, updatedAt, startedAt, endedAt, history, repo, ritual, ritualOmitted } = raw;
+  const { id, name, goal, status, lead, createdBy, createdAt, updatedAt, startedAt, endedAt, history, ritual, ritualOmitted } = raw;
   if (typeof name !== 'string' || name === '' || name.length > MISSION_NAME_MAX_CHARS) throw new Error('no valid name');
   if (typeof status !== 'string' || !(MISSION_STATUSES as readonly string[]).includes(status)) throw new Error('no valid status');
   const time = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -164,20 +176,27 @@ function fromRecord(raw: unknown, at: number): Mission {
     startedAt: time(startedAt),
     endedAt: time(endedAt),
     history: Array.isArray(history) ? history.filter((n): n is string => typeof n === 'string').slice(-MISSION_NOTES_MAX) : [],
-    ...(typeof repo === 'string' && isAbsolute(repo) && repo.length <= REPO_MAX_CHARS && !repo.includes('\0') ? { repo } : {}),
     ...(Array.isArray(ritual) ? { ritual: readRitual(ritual) } : {}),
     ...(typeof ritualOmitted === 'number' && Number.isSafeInteger(ritualOmitted) && ritualOmitted > 0 ? { ritualOmitted } : {}),
   };
 }
 
-/** The saved items of a ritual: each one is cleaned again, so a file that was edited by hand cannot bring a control character or a long line back. */
+/** The saved items of a ritual: each is cleaned again, so a file edited by hand cannot bring a control character or a long line back, and only the Director can have ticked. */
 function readRitual(raw: unknown[]): RitualItem[] {
   const items: RitualItem[] = [];
   for (const item of raw.slice(0, MISSION_RITUAL_MAX)) {
     if (!isRecord(item) || typeof item.text !== 'string') continue;
     const text = cleanLine(item.text);
     if (text === '') continue;
-    items.push({ text, done: item.done === true, from: item.from === 'repo' ? 'repo' : 'room', ...(typeof item.by === 'string' && item.by === 'Director' ? { by: 'Director' } : {}), ...(typeof item.at === 'number' && Number.isFinite(item.at) ? { at: item.at } : {}) });
+    const from = item.from === 'director' || item.from === 'agent' ? item.from : 'room';
+    items.push({
+      text,
+      done: item.done === true,
+      from,
+      ...(from === 'agent' && typeof item.agent === 'string' && NAME_RE.test(item.agent) ? { agent: item.agent } : {}),
+      ...(item.by === 'user' ? { by: 'user' } : {}),
+      ...(typeof item.at === 'number' && Number.isFinite(item.at) ? { at: item.at } : {}),
+    });
   }
   return items;
 }
@@ -207,53 +226,7 @@ export function createMissions(options: MissionsOptions): Missions {
     });
   };
 
-  /* ---- the repo of a mission: the git top level of a hired agent's folder, checked when it is set and at every read ---- */
-  const top = options.topLevel ?? gitTopLevel;
-  /** Start folder of an agent -> its top level as a real path, or null when it has none; a folder not in the map is not known yet. */
-  const tops = new Map<string, string | null>();
-  const dirsNow = (): Array<{ name: string; dir: string }> => options.agentDirs?.() ?? [];
-  /** Asks git for the folders that are not known yet. Resolves true when something new was learned. */
-  async function learn(): Promise<boolean> {
-    const unknown = [...new Set(dirsNow().map((a) => a.dir))].filter((d) => !tops.has(d));
-    await Promise.all(unknown.map(async (d) => void tops.set(d, await top(d).catch(() => null))));
-    return unknown.length > 0;
-  }
-  const repoValid = (repo: string): boolean => dirsNow().some((a) => tops.get(a.dir) === repo);
-  /** A repo as the Director typed it, accepted only when it is its own real path and the top level of a hired agent's folder. */
-  async function checkRepo(repo: string): Promise<string> {
-    await learn();
-    let real: string;
-    try {
-      real = realpathSync(repo);
-    } catch {
-      throw bad('that folder does not exist', 'repo');
-    }
-    if (resolvePath(repo) !== real) throw bad('repo must be the real path of a folder (no link, no ..)', 'repo');
-    if (!repoValid(real)) throw bad('repo must be the top of the git repository of the folder an agent of this room works in', 'repo');
-    return real;
-  }
-  /** What a page and an agent see: the repo only while an agent of the room still works in it. */
-  const view = (m: Mission): Mission => {
-    const out = copy(m);
-    if (out.repo !== undefined && !repoValid(out.repo)) delete out.repo;
-    return out;
-  };
-  let warming = false;
-  /** A folder that appeared (an agent hired, a restart) is looked at in the background, and the pages are told when that gives a mission its repo back. */
-  function warm(): void {
-    if (warming || !dirsNow().some((a) => !tops.has(a.dir))) return;
-    warming = true;
-    void learn()
-      .then((learned) => {
-        if (learned && missions.some((m) => m.repo !== undefined)) options.emit(list());
-      })
-      .catch(() => undefined)
-      .finally(() => (warming = false));
-  }
-  const list = (): Mission[] => {
-    warm();
-    return missions.map(view);
-  };
+  const list = (): Mission[] => missions.map(copy);
   const changed = (): Promise<void> => {
     options.emit(list());
     return save();
@@ -329,16 +302,11 @@ export function createMissions(options: MissionsOptions): Missions {
       if (missions.filter((m) => !isFinished(m)).length >= MISSIONS_OPEN_MAX) throw full();
       const at = now();
       const lead = request.lead === undefined ? options.boss() : request.lead;
-      // the repo: the one given (checked), else the lead's own; none when the lead works in no repository
-      let repo: string | undefined;
-      if (typeof request.repo === 'string') repo = await checkRepo(request.repo);
-      else if (request.repo === undefined && lead !== null) {
-        await learn();
-        const dir = dirsNow().find((a) => a.name === lead)?.dir;
-        const found = dir === undefined ? null : (tops.get(dir) ?? null);
-        if (found !== null) repo = found;
-      }
-      const template = readTemplate(dir, repo ?? null);
+      // the room's template first, then the lines the boss passed (labelled with its name); at most MISSION_RITUAL_MAX
+      const template = readTemplate(dir);
+      const given: RitualItem[] = (request.ritualNew ?? []).map((text) => (actor.kind === 'agent' ? { text, done: false, from: 'agent' as const, agent: actor.name } : { text, done: false, from: 'director' as const }));
+      const items = [...template.items, ...given].slice(0, MISSION_RITUAL_MAX);
+      const omitted = template.omitted + (template.items.length + given.length - items.length);
       const mission: Mission = {
         id: `ms${seq + 1}`,
         name: request.name ?? '',
@@ -351,15 +319,14 @@ export function createMissions(options: MissionsOptions): Missions {
         startedAt: null,
         endedAt: null,
         history: [line(actor, lead === null ? 'created' : `created; lead ${lead}`, at)],
-        ...(repo === undefined ? {} : { repo }),
-        ...(template.items.length === 0 ? {} : { ritual: template.items }),
-        ...(template.omitted > 0 ? { ritualOmitted: template.omitted } : {}),
+        ...(items.length === 0 ? {} : { ritual: items }),
+        ...(omitted > 0 ? { ritualOmitted: omitted } : {}),
       };
       seq += 1;
       missions.push(mission);
       prune();
       await changed();
-      return view(mission);
+      return copy(mission);
     },
 
     async update(actor, id, input) {
@@ -367,7 +334,9 @@ export function createMissions(options: MissionsOptions): Missions {
       const patch = validate(input, false, options.isAgent);
       // an agent (the boss) changes the status and writes notes; the name, the goal and the lead are the Director's
       if (actor.kind === 'agent') {
-        for (const key of ['name', 'goal', 'lead', 'repo', 'ritual'] as const) if (patch[key] !== undefined) throw new HubError('forbidden', `only the Director changes the ${key} of a mission`, key);
+        for (const key of ['name', 'goal', 'lead'] as const) if (patch[key] !== undefined) throw new HubError('forbidden', `only the Director changes the ${key} of a mission`, key);
+        // the closing checklist: an agent can read it (mission_list) and give lines when it makes a mission, never tick, edit or remove
+        if (patch.ritualOp !== undefined) throw new HubError('forbidden', 'only the Director changes the closing checklist of a mission', 'ritual');
       }
       const at = now();
       const next = copy(mission);
@@ -384,26 +353,36 @@ export function createMissions(options: MissionsOptions): Missions {
         next.lead = patch.lead;
         parts.push(patch.lead === null ? 'lead removed' : `lead ${patch.lead}`);
       }
-      if (patch.repo !== undefined) {
-        const wanted = patch.repo === null ? undefined : await checkRepo(patch.repo);
-        if (wanted !== mission.repo) {
-          if (wanted === undefined) delete next.repo;
-          else next.repo = wanted;
-          parts.push(wanted === undefined ? 'repo removed' : 'repo set');
-        }
-      }
-      if (patch.ritual !== undefined) {
-        // only the Director ticks (an agent was refused above), and only an item that is there
-        const item = next.ritual?.[patch.ritual.index];
-        if (item === undefined) throw bad('this mission has no closing item with that number', 'ritual');
-        if (item.done !== patch.ritual.done) {
-          item.done = patch.ritual.done;
-          if (item.done) Object.assign(item, { by: 'Director', at });
-          else {
-            delete item.by;
-            delete item.at;
+      if (patch.ritualOp !== undefined) {
+        const items = (next.ritual ??= []);
+        const op = patch.ritualOp;
+        if ('add' in op) {
+          if (items.length >= MISSION_RITUAL_MAX) throw new HubError('conflict', `a mission has at most ${MISSION_RITUAL_MAX} closing items`, 'ritual');
+          items.push({ text: op.add, done: false, from: 'director' });
+          parts.push(`closing item ${items.length} added`);
+        } else if ('remove' in op) {
+          if (items[op.remove] === undefined) throw new HubError('not_found', 'this mission has no closing item with that number', 'index');
+          items.splice(op.remove, 1);
+          parts.push(`closing item ${op.remove + 1} removed`);
+        } else {
+          const item = items[op.index];
+          if (item === undefined) throw new HubError('not_found', 'this mission has no closing item with that number', 'index');
+          if (op.text !== undefined && op.text !== item.text) {
+            // the Director's words now, whoever wrote the line before
+            item.text = op.text;
+            item.from = 'director';
+            delete item.agent;
+            parts.push(`closing item ${op.index + 1} edited`);
           }
-          parts.push(`closing item ${patch.ritual.index + 1} ${item.done ? 'ticked' : 'unticked'}`);
+          if (op.done !== undefined && op.done !== item.done) {
+            item.done = op.done;
+            if (op.done) Object.assign(item, { by: 'user', at });
+            else {
+              delete item.by;
+              delete item.at;
+            }
+            parts.push(`closing item ${op.index + 1} ${op.done ? 'ticked' : 'unticked'}`);
+          }
         }
       }
       let started = false;
@@ -420,7 +399,7 @@ export function createMissions(options: MissionsOptions): Missions {
         ended = isFinished(next);
       }
       if (patch.note !== undefined) parts.push(patch.note);
-      if (parts.length === 0) return view(mission);
+      if (parts.length === 0) return copy(mission);
       next.updatedAt = at;
       next.history.push(line(actor, parts.join('; '), at));
       if (started) brief(actor, next, at);
@@ -433,15 +412,15 @@ export function createMissions(options: MissionsOptions): Missions {
       if (ended) {
         openBefore.delete(next.id);
         const counted = linked(next.id);
-        // closing with items open is allowed and says so: counts only, never the text of an item (a line of a repo file is written by agents)
-        const left = (next.ritual ?? []).filter((i) => !i.done).length;
-        const ritual = left === 0 ? '' : `; ${left} of ${(next.ritual ?? []).length} closing items left`;
+        // closing with items open is allowed and says so, with the lines (cleaned; those of an agent are labelled by being quoted, and cut)
+        const left = (next.ritual ?? []).filter((i) => !i.done);
+        const ritual = left.length === 0 ? '' : `; ${left.length} of ${(next.ritual ?? []).length} closing items left: ${left.slice(0, 5).map((i) => `"${i.text.slice(0, 60)}"`).join(', ')}${left.length > 5 ? ', ...' : ''}`;
         options.notify?.('mission', `Mission ${next.status}: ${next.name} (${counted.filter((t) => t.status === 'done').length} of ${counted.length} tasks done${ritual})`);
       }
       if (next.status !== 'active') openBefore.delete(next.id);
       prune();
       await changed();
-      return view(next);
+      return copy(next);
     },
 
     async remove(id, unlink) {

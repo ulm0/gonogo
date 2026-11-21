@@ -106,12 +106,15 @@ export const MISSIONS_AUDIT: Table = {
     (args) => {
       const input = isRecord(args[2]) ? args[2] : {};
       const status = (MISSION_STATUSES as readonly unknown[]).includes(input.status) ? ` status ${String(input.status)}` : '';
-      const other = ['name', 'goal', 'lead', 'note', 'repo', 'ritual'].filter((k) => input[k] !== undefined).join(' ');
+      const other = ['name', 'goal', 'lead', 'note', 'ritual'].filter((k) => input[k] !== undefined).join(' ');
       return `${actorName(args[0])} updated mission ${plain(args[1]) ?? '?'}:${status}${other === '' ? '' : ` ${other}`}`;
     },
   ],
   remove: ['plan', (args) => `Director removed mission ${plain(args[0]) ?? '?'}${args[1] === true ? ' and unlinked its tasks' : ''}`],
 };
+
+/** The template of the closing ritual: that it changed and how big it is, never a line of it. */
+export const RITUAL_TEMPLATE_AUDIT: Table = { set: ['config', (_args, result) => `Director changed the closing checklist template (${isRecord(result) && typeof result.bytes === 'number' ? result.bytes : '?'} bytes)`] };
 
 /** Post-Flight Review: who added notes to whose diff and what the Director did with them: ids, names and counts, never a body, a path or a line. */
 export const REVIEW_AUDIT: Table = {

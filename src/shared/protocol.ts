@@ -1031,16 +1031,28 @@ export interface Task {
 }
 
 /** Missions: a named goal with a status, a lead and a history; its tasks are the ones whose `missionId` is its id. One entry of missions.json. */
-/** One line of the closing checklist of a mission. `from` says whose words it is: the room's own file (the Director's) or a file of the repo (written by agents). */
+/** One line of the closing checklist of a mission. `from` says whose words it is: the room's template, the Director's own, or an agent's (the boss, when it made the mission). */
 export interface RitualItem {
   /** One line of plain text, at most MISSION_RITUAL_TEXT_MAX characters, no control or bidi character. */
   text: string;
   done: boolean;
-  from: 'room' | 'repo';
-  /** Who ticked it and when, once it is ticked: always the Director. */
+  from: 'room' | 'director' | 'agent';
+  /** The agent that wrote it, when `from` is 'agent'. */
+  agent?: string;
+  /** Who ticked it and when, once it is ticked: always the Director ("user"). */
   by?: string;
   at?: number;
 }
+
+/** The template of the room's closing ritual, `<home>/ritual.md`: what the Director edits in Flight Rules. */
+export interface RitualTemplateView {
+  text: string;
+  bytes: number;
+  max: number;
+  /** ms since the epoch the file was last written, or null when there is no file. */
+  updatedAt: number | null;
+}
+export const RITUAL_TEMPLATE_MAX_BYTES = 8192;
 
 export interface Mission {
   /** ms1, ms2, ...: never reused. */
@@ -1062,8 +1074,6 @@ export interface Mission {
   endedAt: number | null;
   /** One line per change, oldest first: "2026-11-18 14:03 UTC user: status active; kicked off". */
   history: string[];
-  /** The git top level of a hired agent's folder in this room that this mission is about, or absent: checked when it is set and at every read. */
-  repo?: string;
   /** The closing checklist, copied when the mission was made; absent on a mission that predates it, or when there is no template. Printed, never a gate. */
   ritual?: RitualItem[];
   /** How many lines the template had when it had more than MISSION_RITUAL_MAX (the rest was dropped). */

@@ -49,7 +49,7 @@ const MAIN_HOMES: readonly unknown[] = ['.', 'rooms/main'];
  */
 export const ROOM_STATE_FILES: readonly string[] = [
   'agents.json', 'agents', 'autoupdate.json', 'black-box', 'board.md', 'cleanroom', 'cleanroom-home', 'coauthor.json', 'docking.json', 'downlink.json', 'features.json', 'fuel.jsonl',
-  'gh', 'hub-state.json', 'keys.json', 'keys.refused.json', 'liveries', 'livery.json', 'messages.jsonl', 'messages.jsonl.1', 'mission-log', 'missions.json', 'models.json',
+  'gh', 'hub-state.json', 'keys.json', 'keys.refused.json', 'liveries', 'livery.json', 'messages.jsonl', 'messages.jsonl.1', 'mission-log', 'missions.json', 'models.json', 'ritual.md',
   'payload-defaults.json', 'payload-plugin', 'permissions.json', 'prices.json', 'propellant.json', 'quota.json', 'relay.json', 'reported.jsonl', 'reviews.json', 'rollout.json',
   'room-keys.json', 'room-keys.refused.json', 'room.json', 'run-state.json', 'schedules.json', 'server.lock', 'startup.json', 'station.json', 'subagents.json', 'tabname.json',
   'tasks.json', 'telegram-poll.json', 'telemetry.jsonl', 'triggers.1.jsonl', 'triggers.jsonl', 'uplinks.json', 'worktrees',
