@@ -27,6 +27,8 @@ import { buildChart } from './logchart.js';
 import { createIndex, snippet } from './logsearch.js';
 import { UNSAFE_IN_NAME } from './schedules.js';
 
+/** How many entries one look at a repository (an agent's start, its Stop) may check. */
+export const KNOWLEDGE_CHECKS_MAX = 5;
 const ID_RE = /^l[1-9]\d{0,5}$/;
 const FILE_RE = /^(l[1-9]\d{0,5})\.md$/;
 const TAG_RE = new RegExp(LOG_TAG_PATTERN);
@@ -60,7 +62,7 @@ export interface MissionLog {
   staleCount(root: string): number;
   /** The one repository an anchor of the agent `name` may name (anchors.ts), or null. */
   anchorRoot(name: string): Promise<string | null>;
-  /** Checks the entries anchored to `root` (the newest 20, each at most once per 30 s) and then counts the stale ones. 0 with the switch off. */
+  /** Checks the entries anchored to `root` whose last answer is older than 30 s (the newest KNOWLEDGE_CHECKS_MAX of them) and then counts the stale ones. 0 with the switch off. */
   knowledge(root: string): Promise<number>;
   /** Star Chart: the newest entries with their tags, authors and mentions of each other (logchart.ts). */
   chart(): LogChart;
@@ -262,7 +264,14 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
     async knowledge(root) {
       const checker = options.anchors;
       if (!on() || !checker) return 0;
-      await Promise.all(anchoredTo(root).map((e) => checker.check(e.anchors ?? [], e.author)));
+      // only the answers that have gone out of date, and at most KNOWLEDGE_CHECKS_MAX of them: the rest are counted as they were and checked at the next look
+      const due = anchoredTo(root)
+        .filter((e) => {
+          const kept = checker.peek(e.anchors ?? [], e.author);
+          return kept === undefined || options.now() - kept.checkedAt >= ANCHOR_CACHE_MS;
+        })
+        .slice(0, KNOWLEDGE_CHECKS_MAX);
+      await Promise.all(due.map((e) => checker.check(e.anchors ?? [], e.author)));
       return anchoredTo(root).filter((e) => stateOf(e)?.state === 'stale').length;
     },
 

@@ -485,6 +485,25 @@ describe('RECHECK and the counts of Knowledge anchors', () => {
     expect((await log.recheck('l1')).anchorState).toMatchObject({ state: 'stale' });
   });
 
+  it('a look at a repository checks at most 5 entries whose answer is out of date, and none that were checked in the last 30 s', async () => {
+    const calls: string[] = [];
+    const real = checkerFor();
+    const log = createMissionLog({ dir: logDir, now: () => now, emit: () => undefined, log: quiet, anchors: { ...real, check: (a, au) => (calls.push(a[0]?.text ?? ''), real.check(a, au)) }, anchorsOn: () => true });
+    await log.load();
+    for (let i = 0; i < 8; i += 1) await log.create('ana', { title: `E${i}`, body: 'b', anchors: [anchor({ text: `t${i}` })] });
+    expect(await log.knowledge(repo)).toBe(5);
+    expect(calls).toHaveLength(5);
+    // the next look takes the three that were left, and not the five just checked
+    expect(await log.knowledge(repo)).toBe(8);
+    expect(calls).toHaveLength(8);
+    expect(await log.knowledge(repo)).toBe(8);
+    expect(calls).toHaveLength(8);
+    // after 30 s they are due again, five at a time
+    now += 30_000;
+    await log.knowledge(repo);
+    expect(calls).toHaveLength(13);
+  });
+
   it('RECHECK is refused with no anchors, and with the switch off', async () => {
     let on = true;
     const log = make(() => on);
