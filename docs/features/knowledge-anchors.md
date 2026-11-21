@@ -63,3 +63,7 @@ The anchors of a Mission Log entry (above) are two modes over one file and a fix
 
 Not ported from multivac: the rewriting of moved anchors, the SQL statement normalization (a `*.sql` file is matched per line), git helpers, anything that writes a repository. **Not verified:** the phase 1 log anchors still run on their own checker (`src/server/anchors.ts`); moving them onto this engine is a separate change.
 
+
+## Big repositories
+
+- `node scripts/knowledge-bench.mjs` (the workflow *Knowledge bench*, by hand and weekly) makes a repository of 100,000 tracked files and runs the built engine: over the 20,000-file cap it is refused at once ("more than 20000 tracked files"), a repository just under it is checked, a pattern that never ends is ended at 5 s with the event loop of the process still turning, a file list over the byte cap reads "could not check", 20 runs at once never have more than 2 workers (12 are served, 8 told busy), and the RSS stays bounded. Numbers of a run on a development machine: 100,007 files generated in 37 s; the refusal in 95 ms; a run over 19,007 files in about 5.0 s (the whole budget: a long claim list may be cut at 5 s and say so); the kill at 5.01 s with a longest stall of the event loop of 19 ms; at most 2 workers and 10 waiting; RSS 98 MiB before, 151 MiB at the peak.
