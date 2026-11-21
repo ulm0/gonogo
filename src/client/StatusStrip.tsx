@@ -37,9 +37,12 @@ export function StatusStrip({ phone }: { phone: boolean }): ReactElement | null 
   const panels = useRoomPrefs((s) => s.panels);
   const tminus = useFeature('tminus');
   const maxq = useFeature('maxq');
+  const poll = useStore((s) => s.poll);
   const values = useValues();
   const allowed = (id: PanelId): boolean => !(id === 'tminus' && !tminus) && !(id === 'maxq' && !maxq);
-  const chips = PANELS.filter((p) => panels[p.id] === 'strip' && allowed(p.id));
+  // a poll or a static fire that is open is shown whatever the layout says: it asks for an answer
+  const live = !pollWord(poll).ghost;
+  const chips = PANELS.filter((p) => (panels[p.id] === 'strip' || (p.id === 'tminus' && panels[p.id] === 'hidden' && live)) && allowed(p.id));
   const boxes = PANELS.filter((p) => panels[p.id] === 'panel' && allowed(p.id));
   if (chips.length === 0 && boxes.length === 0) return null;
   return (
@@ -49,7 +52,7 @@ export function StatusStrip({ phone }: { phone: boolean }): ReactElement | null 
           {chips.map((p) => {
             const Block = BLOCK[p.id];
             return (
-              <Pop key={p.id} label={values[p.id]} name={p.label} className="lay-chip">
+              <Pop key={p.id} label={values[p.id]} name={values[p.id]} dialog={p.label} className="lay-chip">
                 {() => (
                   <div className="lay-block">
                     <Block />

@@ -1707,6 +1707,8 @@ export interface ApiError {
   retryAfter?: number;
   /** A 400 for text that is parsed (Knowledge anchors): what is wrong, with the line. */
   diagnostics?: Array<{ line: number; message: string }>;
+  /** A 409 from a room stop: the room did not answer whether it is busy, and a repeat with `{"force":true}` stops it anyway. */
+  needsForce?: boolean;
 }
 
 /* ---- WebSocket: browser to server (JSON text frames) ---- */

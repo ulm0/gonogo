@@ -386,7 +386,7 @@ describe('stopping and starting rooms', () => {
     const { byId, calls } = run({
       token: 'a'.repeat(64),
       rooms,
-      respond: (call) => (call.url === '/api/rooms/docs/stop' && call.body?.force !== true ? { status: 409, body: { error: 'room "docs" did not answer whether it is busy: it may be hung; send {"force":true} to stop it anyway' } } : { status: 200, body: {} }),
+      respond: (call) => (call.url === '/api/rooms/docs/stop' && call.body?.force !== true ? { status: 409, body: { error: 'room "docs" did not answer whether it is busy: it may be hung; send {"force":true} to stop it anyway', needsForce: true } } : { status: 200, body: {} }),
     });
     await settle();
     cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')?.fire('click');
@@ -398,13 +398,13 @@ describe('stopping and starting rooms', () => {
     expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{}, { force: true }]);
   });
 
-  it('a refusal that is not "did not answer" is shown, not forced', async () => {
-    const { byId } = run({ token: 'a'.repeat(64), rooms, respond: () => ({ status: 409, body: { error: 'room "docs" has an open poll' } }) });
+  it('a refusal without needsForce is shown, not forced, whatever its words', async () => {
+    const { byId } = run({ token: 'a'.repeat(64), rooms, respond: () => ({ status: 409, body: { error: 'room "docs" did not answer: but the server did not ask for force' } }) });
     await settle();
     cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')?.fire('click');
     cardOf(byId, 'docs').querySelector('[data-f="stop-go:docs"]')?.fire('click');
     await settle();
-    expect(text(byId.note)).toContain('has an open poll');
+    expect(text(byId.note)).toContain('the server did not ask for force');
     expect(cardOf(byId, 'docs').querySelector('[data-f="force:docs"]')).toBeNull();
   });
 

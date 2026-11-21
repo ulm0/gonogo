@@ -223,10 +223,10 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await shoot(page, group, t('room main'), true);
   if (full) await measure(page, group, 'room main');
   if (full) {
-    await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 }));
+    await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: /^(No mission|Mission )/ }).click({ timeout: 3000 }));
     await measure(page, group, 'the clock open');
     await page.keyboard.press('Escape');
-    for (const [title, name] of [['layout', 'Layout of the room'], ['version key', /^gonogo \d/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
+    for (const [title, name] of [['layout', 'Layout of the room'], ['version key', /^\d+\.\d+\.\d+/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
       await view(page, group, `top bar: ${title}`, () => page.getByRole('button', { name }).last().click({ timeout: 3000 }));
       await measure(page, group, title);
       await page.keyboard.press('Escape');

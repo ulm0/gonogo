@@ -183,7 +183,7 @@ export function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }):
           <WorkMenu phone={false} />
         </>
       )}
-      <button type="button" className="btn lay-jump" data-kind="quiet" aria-label="Jump to a console, a view or an action" aria-keyshortcuts="Meta+K Control+K" onClick={onPanel}>
+      <button type="button" className="btn lay-jump" data-kind="quiet" aria-label="Jump to… a console, a view or an action" aria-keyshortcuts="Meta+K Control+K" onClick={onPanel}>
         <span aria-hidden="true">⌕</span>
         <span className="lay-jump-text">{phone ? 'Jump' : 'Jump to…'}</span>
         <kbd className="lay-kbd">⌘K</kbd>

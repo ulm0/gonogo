@@ -713,7 +713,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   /** One stop or start per room at a time: a second request for the same room is refused while the first is in flight. */
   const inFlight = new Map<string, 'stopping' | 'starting'>();
   const STOP_ANSWER_MS = 5000;
-  type Power = { ok: true; status: 200 | 202; note?: string } | { ok: false; status: number; why: string };
+  type Power = { ok: true; status: 200 | 202; note?: string } | { ok: false; status: number; why: string; needsForce?: true };
 
   /** The reasons a room must not be stopped now (an open poll, a waiting Relief request, a running update, a main move), or null. */
   async function stopRefusal(child: Child): Promise<string | null | 'unanswered'> {
@@ -751,7 +751,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       const refusal = await stopRefusal(child);
       if (refusal === 'unanswered' && !force) {
         inFlight.delete(id);
-        return { ok: false, status: 409, why: `room "${id}" did not answer whether it is busy: it may be hung; send {"force":true} to stop it anyway` };
+        return { ok: false, status: 409, why: `room "${id}" did not answer whether it is busy: it may be hung; send {"force":true} to stop it anyway`, needsForce: true };
       }
       if (refusal !== null && refusal !== 'unanswered') {
         inFlight.delete(id);
@@ -834,7 +834,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       if (child === undefined) return sendApiError(res, 404, `there is no room "${id}"`, 'not_found');
       const r = action === 'stop' ? await stopOne(child, byKey, force) : startOne(child);
       audit(`${action} room ${id}: ${r.ok ? `done${r.note === undefined ? '' : ` (${r.note})`}` : `refused (${r.why})`}`);
-      if (!r.ok) return sendApiError(res, r.status, r.why, r.status === 403 ? 'forbidden' : 'conflict');
+      if (!r.ok) return sendApiError(res, r.status, r.why, r.status === 403 ? 'forbidden' : 'conflict', undefined, {}, r.needsForce === true ? { needsForce: true } : {});
       return sendJson(res, r.status, (await roomView(id)) ?? { id });
     } catch (error) {
       log.error('rooms power api failed', error);

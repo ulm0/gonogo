@@ -5,8 +5,10 @@ import type { ReactElement, ReactNode } from 'react';
 interface Props {
   /** What the key says. */
   label: ReactNode;
-  /** The name for a screen reader when the label is a symbol. */
+  /** The name of the key for a screen reader. It must contain the words the key shows (WCAG 2.5.3, label in name). */
   name?: string;
+  /** The name of the panel it opens, when that is not the key's name. */
+  dialog?: string;
   kind?: 'quiet' | 'primary';
   /** The panel opens above the key (the bottom bar of a phone). */
   up?: boolean;
@@ -16,7 +18,7 @@ interface Props {
   children: (close: () => void) => ReactNode;
 }
 
-export function Pop({ label, name, kind = 'quiet', up = false, align = 'start', className = '', children }: Props): ReactElement {
+export function Pop({ label, name, dialog, kind = 'quiet', up = false, align = 'start', className = '', children }: Props): ReactElement {
   const id = useId();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement | null>(null);
@@ -46,7 +48,7 @@ export function Pop({ label, name, kind = 'quiet', up = false, align = 'start', 
       </button>
       {open && <div className="lay-scrim" aria-hidden="true" onClick={() => setOpen(false)} />}
       {open && (
-        <div id={id} className="lay-pop module" role="dialog" aria-label={name ?? (typeof label === 'string' ? label : undefined)} data-up={up || undefined} data-align={align}>
+        <div id={id} className="lay-pop module" role="dialog" aria-label={dialog ?? name ?? (typeof label === 'string' ? label : undefined)} data-up={up || undefined} data-align={align}>
           {children(() => setOpen(false))}
         </div>
       )}

@@ -75,7 +75,7 @@ export function sendApiError(
   code: ApiErrorCode,
   field?: string,
   headers: Record<string, string> = {},
-  extra: Pick<ApiError, 'retryAfter' | 'diagnostics'> = {},
+  extra: Pick<ApiError, 'retryAfter' | 'diagnostics' | 'needsForce'> = {},
 ): void {
   const body: ApiError = { error, code, ...(field === undefined ? {} : { field }), ...extra };
   sendJson(res, status, body, headers);

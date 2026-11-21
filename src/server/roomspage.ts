@@ -114,7 +114,7 @@ function ago(at){
 async function call(method,path,body){
   const res=await fetch(path,{method,headers:Object.assign(token?{Authorization:'Bearer '+token}:{},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,cache:'no-store'});
   const data=await res.json().catch(()=>({}));
-  if(!res.ok)throw Object.assign(new Error(data.error||('error '+res.status)),{stepUp:data.stepUp===true,second:data.second===true,status:res.status});
+  if(!res.ok)throw Object.assign(new Error(data.error||('error '+res.status)),{stepUp:data.stepUp===true,second:data.second===true,needsForce:data.needsForce===true,status:res.status});
   return data;
 }
 function fail(e){note.textContent=e instanceof Error?e.message:String(e);note.hidden=false}
@@ -162,7 +162,7 @@ function card(r){
   const path='/api/rooms/'+encodeURIComponent(r.id);
   if(r.state==='stopped'||r.state==='crashed')keys.append(key('START','',()=>power(path+'/start'),'start:'+r.id,'Start '+name));
   if(r.state!=='stopped')keys.append(key('STOP','',()=>{stopping=r.id;forcing=null;removing=null;renaming=null;draw();focus('keep-running:'+r.id)},'stop:'+r.id,'Stop '+name));
-  if(r.id!=='main')keys.append(key('AT BOOT: '+(r.autostart?'YES':'NO'),'',()=>boot(r),'boot:'+r.id,(r.autostart?'Do not start ':'Start ')+name+' when gonogo starts'));
+  if(r.id!=='main')keys.append(key('AT BOOT: '+(r.autostart?'YES':'NO'),'',()=>boot(r),'boot:'+r.id,'At boot: '+(r.autostart?'yes':'no')+'. Press to '+(r.autostart?'stop ':'start ')+name+' starting when gonogo starts'));
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);
   if(removing===r.id){
@@ -196,7 +196,7 @@ async function power(path,body){
     if(res&&res.skipped&&res.skipped.length)fail('Not done: '+res.skipped.map(x=>x.id+' ('+x.why+')').join('; '));
   }catch(e){
     if(e.stepUp){ask={again:()=>power(path,body),second:e.second,msg:e.message};seen='';draw();focus('step:password')}
-    else if(e.status===409&&/did not answer whether it is busy/.test(e.message)){const m=/rooms\\/([^/]+)\\/stop$/.exec(path);forcing=m?decodeURIComponent(m[1]):null;stopping=null;seen='';draw();if(forcing)focus('force:'+forcing)}
+    else if(e.status===409&&e.needsForce){const m=/rooms\\/([^/]+)\\/stop$/.exec(path);forcing=m?decodeURIComponent(m[1]):null;stopping=null;seen='';draw();if(forcing)focus('force:'+forcing)}
     else{stopping=null;forcing=null;seen='';fail(e);draw()}
   }
 }
