@@ -69,7 +69,6 @@ import type {
   Effort,
   ModelDefaults,
   PayloadDefaults,
-  RulesView,
   RoomKeysView,
   PermissionDefaults,
   PermissionRules,
@@ -455,24 +454,12 @@ export async function removeRoomKey(name: string): Promise<RoomKeysView> {
   return toRoomKeys(await call('DELETE', `/room-keys/${encodeURIComponent(name)}`));
 }
 
-/** Room rules (docs/features/door.md): the Director's text for every agent. Changing it asks for the password again (the step-up dialog). */
-function toRules(value: unknown): RulesView {
-  const record = asRecord(value);
-  if (record === null || typeof record.text !== 'string' || typeof record.max !== 'number') throw failure('The server sent an answer gonogo does not understand.');
-  return record as unknown as RulesView;
-}
-export async function rulesView(): Promise<RulesView> {
-  return toRules(await call('GET', '/rules'));
-}
-export async function setRules(text: string): Promise<RulesView> {
-  return toRules(await call('PUT', '/rules', { text }));
-}
 /** The template of the closing checklist a new mission copies (one line each; comments, headings and blank lines are dropped). Same shape and step-up as the rules. */
 export async function ritualTemplate(): Promise<RulesView> {
-  return toRules(await call('GET', '/ritual-template'));
+  return rulesOf(await call('GET', '/ritual-template'));
 }
 export async function setRitualTemplate(text: string): Promise<RulesView> {
-  return toRules(await call('PUT', '/ritual-template', { text }));
+  return rulesOf(await call('PUT', '/ritual-template', { text }));
 }
 
 /** Payload defaults: what the room gives every agent (docs/payload-spec.md). The answers say what each item is and never a value. */
