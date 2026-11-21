@@ -61,98 +61,131 @@ describe('the id in /proc/self/cgroup', () => {
 });
 
 /** A fake Engine: the containers it knows by id (full or the first 12), by name, and the list with network addresses. */
-function engine(boxes: Array<{ id: string; name: string; hostname?: string; mac?: string }>): SelfCall & { asked: string[] } {
+interface Box {
+  id: string;
+  name: string;
+  hostname?: string;
+  mac?: string;
+  ip?: string;
+}
+function engine(boxes: Box[]): SelfCall & { asked: string[] } {
   const asked: string[] = [];
+  const nets = (b: Box) => ({ bridge: { MacAddress: b.mac ?? '', IPAddress: b.ip ?? '' } });
   const call = (async (_method: string, path: string) => {
     asked.push(path);
     const route = /^\/containers\/([^/]+)\/json$/.exec(path);
     if (route !== null) {
       const ref = decodeURIComponent(route[1] as string);
       const box = boxes.find((b) => b.id === ref || b.id.startsWith(ref) || b.name === ref);
-      return box === undefined ? { status: 404, text: `{"message":"No such container: ${ref}"}` } : { status: 200, text: JSON.stringify({ Id: box.id, Name: `/${box.name}`, Config: { Hostname: box.hostname ?? box.id.slice(0, 12), Image: 'ghcr.io/ulm0/gonogo:latest' } }) };
+      return box === undefined ? { status: 404, text: `{"message":"No such container: ${ref}"}` } : { status: 200, text: JSON.stringify({ Id: box.id, Name: `/${box.name}`, Config: { Hostname: box.hostname ?? box.id.slice(0, 12), Image: 'ghcr.io/ulm0/gonogo:latest' }, NetworkSettings: { Networks: nets(box) } }) };
     }
-    if (path === '/containers/json') return { status: 200, text: JSON.stringify(boxes.map((b) => ({ Id: b.id, Names: [`/${b.name}`], NetworkSettings: { Networks: { bridge: { MacAddress: b.mac ?? '' } } } }))) };
+    if (path === '/containers/json') return { status: 200, text: JSON.stringify(boxes.map((b) => ({ Id: b.id, Names: [`/${b.name}`], NetworkSettings: { Networks: nets(b) } }))) };
     return { status: 404, text: '' };
   }) as SelfCall & { asked: string[] };
   call.asked = asked;
   return call;
 }
-const probe = (over: Partial<{ mountinfo: string; cgroup: string; macs: string[] }> = {}): SelfProbe => ({ mountinfo: () => over.mountinfo ?? '', cgroup: () => over.cgroup ?? '0::/', macs: () => over.macs ?? [] });
+const probe = (over: Partial<{ mountinfo: string; cgroup: string; macs: string[]; ips: string[] }> = {}): SelfProbe => ({ mountinfo: () => over.mountinfo ?? '', cgroup: () => over.cgroup ?? '0::/', macs: () => over.macs ?? [], ips: () => over.ips ?? [] });
+const docker = (id: string): string => mountinfo(`/var/lib/docker/containers/${id}`);
+const MAC = '02:42:ac:11:00:02';
+const IP = '172.17.0.2';
 
-describe('resolveSelf', () => {
-  it('the case that was reported: the hostname is not an id (a compose `hostname:`), and its own files name the container', async () => {
-    const call = engine([{ id: ID, name: 'gonogo-gonogo-1', hostname: 'zimaos-gonogo' }, { id: OTHER, name: 'other' }]);
-    const found = await resolveSelf(call, '4d1c9b7a02ef-typo', probe({ mountinfo: mountinfo(`/var/lib/docker/containers/${ID}`) }));
-    expect(found.Id).toBe(ID);
-    const viaCgroup = await resolveSelf(call, 'whatever', probe({ cgroup: `0::/docker/${ID}` }));
-    expect(viaCgroup.Id).toBe(ID);
-  });
-
+describe('resolveSelf: its own files first, and when they name an id nothing else counts', () => {
   it('the real case on an install: hostname and /etc/hostname say one 12-hex name, mountinfo names the real id, cgroup is "0::/" (a private cgroup namespace)', async () => {
     const real = '805cf0e3ee5132eac4010c48186b5a6d0ca2666ff9eb35fbd408677b21a1b18a';
-    // Docker has no container by the hostname's name, and the id the files give is the one it knows
     const call = engine([{ id: real, name: 'gonogo', hostname: '4d1c9b7a02ef' }, { id: OTHER, name: 'other' }]);
     const found = await resolveSelf(call, '4d1c9b7a02ef', probe({ mountinfo: mountinfo(`/DATA/AppData/docker/containers/${real}`), cgroup: '0::/' }));
     expect(found.Id).toBe(real);
-    // the mountinfo id is asked for first: the hostname is not even tried when the files answer
-    expect(call.asked[0]).toBe(`/containers/${real}/json`);
-    expect(call.asked.some((p) => p.includes('4d1c9b7a02ef'))).toBe(false);
-    // and when the hostname DOES equal the id's start, the same container comes back
-    expect((await resolveSelf(call, real.slice(0, 12), probe({ mountinfo: mountinfo(`/var/lib/docker/containers/${real}`), cgroup: '0::/' }))).Id).toBe(real);
+    // the id of the files is asked for first and alone: the hostname is not even tried when they answer
+    expect(call.asked).toEqual([`/containers/${real}/json`]);
   });
 
-  it('the plain case still works with no help from the files: the hostname is the first 12 of the id', async () => {
-    const call = engine([{ id: ID, name: 'gonogo' }, { id: OTHER, name: 'other' }]);
-    expect((await resolveSelf(call, ID.slice(0, 12), probe())).Id).toBe(ID);
+  it('a compose hostname and the cgroup form work the same', async () => {
+    const call = engine([{ id: ID, name: 'gonogo-gonogo-1', hostname: 'zimaos-gonogo' }, { id: OTHER, name: 'other' }]);
+    expect((await resolveSelf(call, 'zimaos-gonogo', probe({ cgroup: `0::/docker/${ID}` }))).Id).toBe(ID);
+    expect((await resolveSelf(call, 'zimaos-gonogo', probe({ mountinfo: docker(ID) }))).Id).toBe(ID);
   });
 
-  it('a hostname that is the NAME of another container is not this container; one that is this container\'s configured hostname is, when the files agree or are silent', async () => {
-    const call = engine([{ id: ID, name: 'gonogo', hostname: 'box' }, { id: OTHER, name: 'box', hostname: 'elsewhere' }]);
-    // "box" resolves to the container NAMED box (OTHER), whose hostname is not box: refused (no files, no address)
-    await expect(resolveSelf(call, 'box', probe())).rejects.toThrow(/name of another container/);
-    // the files name this one: found without the hostname
-    expect((await resolveSelf(call, 'box', probe({ cgroup: `0::/docker/${ID}` }))).Id).toBe(ID);
-    // configured hostname matches and nothing contradicts it
-    // a container NAMED like the hostname whose configured hostname is that too: it is this one (compose: container_name and hostname equal)
-    const call2 = engine([{ id: ID, name: 'gonogo', hostname: 'gonogo' }]);
-    expect((await resolveSelf(call2, 'gonogo', probe())).Id).toBe(ID);
+  it('two ids in its own files: refused, with no fallback to the hostname or the address', async () => {
+    const call = engine([{ id: ID, name: 'a', hostname: 'h', mac: MAC, ip: IP }, { id: OTHER, name: 'b' }]);
+    const two = `${docker(ID)}\n1514 1500 8:1 /var/lib/docker/containers/${OTHER}/hosts /etc/hosts rw - ext4 /dev/sda1 rw`;
+    await expect(resolveSelf(call, ID.slice(0, 12), probe({ mountinfo: two, macs: [MAC], ips: [IP] }))).rejects.toThrow(/name 2 containers.*not guessing/);
+    expect(call.asked).toEqual([]);
   });
 
-  it('files that name another container than the hostname does are refused when the match is only by configured hostname', async () => {
-    const call = engine([{ id: ID, name: 'a', hostname: 'same' }, { id: OTHER, name: 'same-too', hostname: 'same' }]);
-    // "a" is found by name; its configured hostname is `same`, not `a`: it is refused whatever
-    await expect(resolveSelf(call, 'same', probe({ cgroup: `0::/docker/${THIRD}` }))).rejects.toThrow(SelfError);
-  });
-
-  it('never guesses: two ids in its own files, or no evidence at all, say so and name what failed', async () => {
-    const call = engine([{ id: ID, name: 'a' }, { id: OTHER, name: 'b' }]);
-    const two = `${mountinfo(`/var/lib/docker/containers/${ID}`)}\n1514 1500 8:1 /var/lib/docker/containers/${OTHER}/hosts /etc/hosts rw - ext4 /dev/sda1 rw`;
-    await expect(resolveSelf(call, 'nothing', probe({ mountinfo: two }))).rejects.toThrow(/name 2 containers.*not guessing/);
-    await expect(resolveSelf(call, 'nothing', probe())).rejects.toThrow(/could not be told from the others.*name no container.*404 for the hostname nothing/);
-  });
-
-  it('the network address is the last evidence: exactly one running container has it', async () => {
-    const mac = '02:42:ac:11:00:02';
-    const one = engine([{ id: ID, name: 'a', mac }, { id: OTHER, name: 'b', mac: '02:42:ac:11:00:03' }]);
-    expect((await resolveSelf(one, 'nope', probe({ macs: [mac] }))).Id).toBe(ID);
-    // upper case in the file, lower case here
-    expect((await resolveSelf(one, 'nope', probe({ macs: [mac.toUpperCase()] }))).Id).toBe(ID);
-    const two = engine([{ id: ID, name: 'a', mac }, { id: OTHER, name: 'b', mac }]);
-    await expect(resolveSelf(two, 'nope', probe({ macs: [mac] }))).rejects.toThrow(/2 containers have this process's network address: not guessing/);
-    const none = engine([{ id: ID, name: 'a', mac: '02:42:ac:11:00:09' }]);
-    await expect(resolveSelf(none, 'nope', probe({ macs: [mac] }))).rejects.toThrow(/no running container has this process's network address/);
-    await expect(resolveSelf(none, 'nope', probe({ macs: [] }))).rejects.toThrow(/no network address of its own/);
-  });
-
-  it('an unreadable /proc says so, and the other evidence still works', async () => {
-    const call = engine([{ id: ID, name: 'gonogo' }]);
-    const broken: SelfProbe = { mountinfo: () => { throw new Error('no /proc'); }, cgroup: () => { throw new Error('no /proc'); }, macs: () => [] };
-    expect((await resolveSelf(call, ID.slice(0, 12), broken)).Id).toBe(ID);
-    await expect(resolveSelf(call, 'nope', broken)).rejects.toThrow(/could not be read/);
-  });
-
-  it('an id from its files that Docker answers for with another id is not trusted', async () => {
+  it('one id that this Docker does not know (the socket of another daemon): refused even when the hostname or the address would match', async () => {
+    const call = engine([{ id: ID, name: 'a', hostname: 'h', mac: MAC, ip: IP }]);
+    // the files name THIRD; the hostname is ID's own start and the MAC and IP are ID's: none of it may be used
+    await expect(resolveSelf(call, ID.slice(0, 12), probe({ mountinfo: docker(THIRD), macs: [MAC], ips: [IP] }))).rejects.toThrow(/does not know under that id/);
+    expect(call.asked).toEqual([`/containers/${THIRD}/json`]);
+    // and Docker answering for that id with another id is not trusted either
     const lying: SelfCall = async (_m, path) => (path.includes(ID) ? { status: 200, text: JSON.stringify({ Id: OTHER, Config: {} }) } : { status: 404, text: '' });
     await expect(resolveSelf(lying, 'nope', probe({ cgroup: `0::/docker/${ID}` }))).rejects.toThrow(/does not know under that id/);
+  });
+});
+
+describe('resolveSelf: with the files silent, the hostname only as an id', () => {
+  it('the plain case: the default hostname is the first 12 hex characters of the id (or the whole id)', async () => {
+    const call = engine([{ id: ID, name: 'gonogo' }, { id: OTHER, name: 'other' }]);
+    expect((await resolveSelf(call, ID.slice(0, 12), probe())).Id).toBe(ID);
+    expect((await resolveSelf(call, ID, probe())).Id).toBe(ID);
+  });
+
+  it('a hostname that is a NAME ("db") never stands for a container, even one named so', async () => {
+    const call = engine([{ id: ID, name: 'gonogo', hostname: 'db' }, { id: OTHER, name: 'db', hostname: 'db' }]);
+    await expect(resolveSelf(call, 'db', probe())).rejects.toThrow(/the hostname db is not a container id/);
+    expect(call.asked.some((p) => p.includes('/db/'))).toBe(false);
+  });
+
+  it('hex shorter than 12 is not an id; a 12-hex name that is not the start of an id is not either', async () => {
+    const call = engine([{ id: ID, name: 'gonogo' }]);
+    await expect(resolveSelf(call, ID.slice(0, 8), probe())).rejects.toThrow(/not a container id/);
+    await expect(resolveSelf(call, 'abcdef012345', probe())).rejects.toThrow(/Docker answered 404 for the hostname abcdef012345/);
+  });
+
+  it('a hostname that is the id of one container and the NAME of another goes to the id only', async () => {
+    const call = engine([{ id: ID, name: 'x' }, { id: OTHER, name: ID.slice(0, 12) }]);
+    // the fake resolves ids before names, as Docker does
+    expect((await resolveSelf(call, ID.slice(0, 12), probe())).Id).toBe(ID);
+  });
+});
+
+describe('resolveSelf: the network address, and only with the hostname and the IP', () => {
+  const me = (over: Partial<Box> = {}): Box => ({ id: ID, name: 'a', hostname: 'zimaos-gonogo', mac: MAC, ip: IP, ...over });
+
+  it('MAC, IP and configured hostname all agree on exactly one container: found', async () => {
+    const call = engine([me(), { id: OTHER, name: 'b', hostname: 'other', mac: '02:42:ac:11:00:03', ip: '172.17.0.3' }]);
+    expect((await resolveSelf(call, 'zimaos-gonogo', probe({ macs: [MAC.toUpperCase()], ips: [IP] }))).Id).toBe(ID);
+  });
+
+  it('a MAC collision with a different hostname (MACs derive from IPs and collide across daemons): refused', async () => {
+    const call = engine([me({ hostname: 'someone-else' })]);
+    await expect(resolveSelf(call, 'zimaos-gonogo', probe({ macs: [MAC], ips: [IP] }))).rejects.toThrow(/no running container has this process's network address, hostname and MAC together/);
+  });
+
+  it('the same MAC and hostname but another IP: refused', async () => {
+    const call = engine([me({ ip: '172.17.0.9' })]);
+    await expect(resolveSelf(call, 'zimaos-gonogo', probe({ macs: [MAC], ips: [IP] }))).rejects.toThrow(/no running container/);
+  });
+
+  it('two containers with the same configured hostname and no ids: refused unless the MAC and the IP also agree (and then it is the one that agrees)', async () => {
+    const same = engine([me({ id: ID, name: 'a', mac: '02:42:ac:11:00:07', ip: '172.17.0.7' }), me({ id: OTHER, name: 'b', mac: '02:42:ac:11:00:08', ip: '172.17.0.8' })]);
+    await expect(resolveSelf(same, 'zimaos-gonogo', probe({ macs: [MAC], ips: [IP] }))).rejects.toThrow(SelfError);
+    const both = engine([me({ id: ID, name: 'a' }), me({ id: OTHER, name: 'b' })]);
+    await expect(resolveSelf(both, 'zimaos-gonogo', probe({ macs: [MAC], ips: [IP] }))).rejects.toThrow(/2 containers have this process's address, hostname and MAC: not guessing/);
+    const one = engine([me({ id: ID, name: 'a' }), me({ id: OTHER, name: 'b', mac: '02:42:ac:11:00:08', ip: '172.17.0.8' })]);
+    expect((await resolveSelf(one, 'zimaos-gonogo', probe({ macs: [MAC], ips: [IP] }))).Id).toBe(ID);
+  });
+
+  it('no address of its own to match: refused with that reason', async () => {
+    const call = engine([me()]);
+    await expect(resolveSelf(call, 'zimaos-gonogo', probe())).rejects.toThrow(/no network address of its own/);
+  });
+
+  it('an unreadable /proc says so, and the hostname as an id still works', async () => {
+    const call = engine([{ id: ID, name: 'gonogo' }]);
+    const broken: SelfProbe = { mountinfo: () => { throw new Error('no /proc'); }, cgroup: () => { throw new Error('no /proc'); }, macs: () => [], ips: () => [] };
+    expect((await resolveSelf(call, ID.slice(0, 12), broken)).Id).toBe(ID);
+    await expect(resolveSelf(call, 'nope', broken)).rejects.toThrow(/could not be read/);
   });
 });
