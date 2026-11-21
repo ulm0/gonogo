@@ -36,20 +36,22 @@ const range = (v4: Array<[string, number]>, v6: Array<[string, number]>): BlockL
   for (const [net, bits] of v6) list.addSubnet(net, bits, 'ipv6');
   return list;
 };
-const REFUSED = range([['0.0.0.0', 8], ['169.254.0.0', 16]], [['::', 128], ['fe80::', 10]]);
+// the metadata services of the clouds (AWS over IPv6, Alibaba) beside link-local
+const REFUSED = range([['0.0.0.0', 8], ['169.254.0.0', 16], ['100.100.100.200', 32]], [['::', 128], ['fe80::', 10], ['fd00:ec2::254', 128]]);
 const LOOPBACK = range([['127.0.0.0', 8]], [['::1', 128]]);
 const PRIVATE = range([['10.0.0.0', 8], ['172.16.0.0', 12], ['192.168.0.0', 16], ['100.64.0.0', 10]], [['fc00::', 7]]);
 
-/** What an address is, by its range: IPv4-mapped IPv6 (`::ffff:127.0.0.1` and `::ffff:7f00:1`) is the IPv4 address inside it. Not an address: refused. */
+/** What an address is, by its range: IPv4-mapped IPv6 (`::ffff:127.0.0.1`), IPv4-compatible (`::127.0.0.1`) and NAT64 (`64:ff9b::127.0.0.1`) are the IPv4 address inside them. Not an address: refused. */
 export function classifyAddress(address: string): AddressClass {
   let a = address.trim().replace(/^\[|\]$/g, '').replace(/%.*$/, '');
   let family = isIP(a);
   if (family === 6) {
     // the URL parser writes every form of an address the same way, so the mapped forms are one pattern
     const written = new URL(`http://[${a}]/`).hostname;
-    const mapped = /^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/.exec(written);
+    // IPv4-mapped (::ffff:a.b.c.d), IPv4-compatible (::a.b.c.d) and NAT64 (64:ff9b::a.b.c.d) all carry an IPv4 address: it is the one classified. ::1 is the IPv6 loopback, not 0.0.0.1.
+    const mapped = written === '[::1]' ? null : /^\[(?:::ffff:|::|64:ff9b::)(?:(?:([0-9a-f]{1,4}):)?([0-9a-f]{1,4}))?\]$/.exec(written);
     if (mapped !== null) {
-      const [hi, lo] = [Number.parseInt(mapped[1] as string, 16), Number.parseInt(mapped[2] as string, 16)];
+      const [hi, lo] = [Number.parseInt(mapped[1] ?? '0', 16), Number.parseInt(mapped[2] ?? '0', 16)];
       a = `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
       family = 4;
     }

@@ -45,6 +45,9 @@ describe('what an address is', () => {
       ['8.8.8.8', 'public'], ['172.32.0.1', 'public'], ['2606:4700::1111', 'public'], ['100.128.0.1', 'public'],
       ['0.0.0.0', 'refused'], ['0.1.2.3', 'refused'], ['::', 'refused'], ['169.254.169.254', 'refused'], ['169.254.0.1', 'refused'], ['fe80::1', 'refused'], ['febf::1', 'refused'],
       ['::ffff:169.254.169.254', 'refused'], ['::ffff:a9fe:a9fe', 'refused'], ['::ffff:0.0.0.0', 'refused'], ['::FFFF:7F00:1', 'loopback'], ['::ffff:127.0.0.1', 'loopback'], ['0:0:0:0:0:ffff:7f00:1', 'loopback'], ['::ffff:10.0.0.1', 'private'], ['::ffff:8.8.8.8', 'public'],
+      ['100.100.100.200', 'refused'], ['100.100.100.201', 'private'], ['fd00:ec2::254', 'refused'], ['fd00:ec2::255', 'private'], ['FD00:EC2:0:0:0:0:0:254', 'refused'], ['::ffff:100.100.100.200', 'refused'],
+      ['::169.254.169.254', 'refused'], ['::a9fe:a9fe', 'refused'], ['::0.0.0.0', 'refused'], ['::127.0.0.1', 'loopback'], ['::7f00:1', 'loopback'], ['::10.0.0.1', 'private'], ['::8.8.8.8', 'public'], ['::100.100.100.200', 'refused'],
+      ['64:ff9b::169.254.169.254', 'refused'], ['64:ff9b::a9fe:a9fe', 'refused'], ['64:ff9b::7f00:1', 'loopback'], ['64:ff9b::127.0.0.1', 'loopback'], ['64:ff9b::10.0.0.1', 'private'], ['64:ff9b::808:808', 'public'], ['64:ff9b::0.0.0.0', 'refused'], ['64:ff9b::6464:64c8', 'refused'],
       ['localhost', 'refused'], ['', 'refused'], ['300.1.1.1', 'refused'], ['1.2.3', 'refused'],
     ];
     for (const [address, want] of cases) expect(classifyAddress(address), address).toBe(want);
@@ -83,7 +86,7 @@ describe('who is allowed', () => {
   });
 
   it('refuses 0.0.0.0, link-local, and their IPv4-mapped forms, even with a confirmation', async () => {
-    for (const host of ['0.0.0.0', '169.254.169.254', '[fe80::1]', '[::ffff:169.254.169.254]', '[::ffff:a9fe:a9fe]', '[::]']) {
+    for (const host of ['0.0.0.0', '169.254.169.254', '[fe80::1]', '[::ffff:169.254.169.254]', '[::ffff:a9fe:a9fe]', '[::]', '100.100.100.200', '[fd00:ec2::254]', '[::169.254.169.254]', '[64:ff9b::169.254.169.254]', '[64:ff9b::a9fe:a9fe]']) {
       const bare = host.replace(/^\[|\]$/g, '');
       expect(await checkEndpoint(`http://${host}:11434`, bare), host).toMatch(/never used/);
     }

@@ -14,7 +14,7 @@ The text of every Mission Log entry (the title in front of each piece of about 8
 
 - **A host and a port only.** No user name, password, path, query or fragment; the path is always `/api/embed`.
 - **This machine is decided by the address, not the name.** The host is resolved when a request is made, the address it gives is classified, and the connection goes to that address and no other. A name that looks local but resolves elsewhere, or that resolves somewhere else a moment later, is not this machine.
-- **Refused whatever you confirm:** `0.0.0.0`, `::`, link-local (`169.254.0.0/16`, where cloud metadata lives, and `fe80::/10`), and the IPv4-mapped forms of them.
+- **Refused whatever you confirm:** `0.0.0.0`, `::`, link-local (`169.254.0.0/16`, where cloud metadata lives, and `fe80::/10`), the metadata addresses `fd00:ec2::254` and `100.100.100.200`, and the IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible (`::a.b.c.d`) and NAT64 (`64:ff9b::a.b.c.d`) forms of any address: the IPv4 address inside is the one classified.
 - **Another machine** (a private address like `192.168.x.x` or `10.x.x.x`, a public one) needs you to type that host in "Send my notes to this host", and a public one needs `https`.
 - Redirects are not followed. The answer is read while it streams and stopped past 4 MiB; vectors are checked (numbers, one size, at most 4096). **What the endpoint says in an error is never shown or logged**: a status number and fixed words.
 
