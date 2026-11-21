@@ -56,4 +56,4 @@
 .next-group { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; scroll-margin-top: 72px; }
 .next-group-title { margin: 0; font-size: 18px; }
 .next-group-body { display: flex; flex-direction: column; gap: 12px; }
-.next-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--bg, inherit); }
+.next-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--body); }
