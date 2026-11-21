@@ -32,7 +32,7 @@ If the root is on another branch than the one the anchor was written on, the not
 
 ## Counts, Recheck and the start of an agent
 
-- **Tile:** an agent's tile in the room says "· 2 STALE" when entries anchored to **its own repository** were last found not confirmed. It is a count of entries, refreshed when the log changes, at an agent's Stop and at its start; it runs no check by itself (`GET /api/knowledge`, `{ "agents": { "ana": 2 } }`).
+- **Tile:** an agent's tile in the room says "· 2 STALE" when entries anchored to **its own repository** were last found not confirmed. It is a count of entries, refreshed when the log changes, at an agent's Stop and at its start; it runs no check by itself (the `agents` part of `GET /api/knowledge`, `{ "ana": 2 }`; the rest of that answer is [Knowledge](./knowledge.md)).
 - **Start:** an agent that starts with such entries gets one more line in its role text: "Knowledge: 2 Mission Log entries anchored to your repository are not confirmed now (a count; log_search shows which)." Fixed words and a number, nothing from a repository. The start waits for the checks at most 3 s.
 - **Recheck** (your key on an entry that has anchors; `POST /api/log/:id/recheck`): runs the checks again. It is refused ("checked 10 s ago: again in 20 s", 429) while the last answer is under 30 s old, and agents have no such call.
 

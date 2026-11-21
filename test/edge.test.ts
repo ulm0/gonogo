@@ -2210,9 +2210,12 @@ describe('mission log', () => {
     expect((await api(port, 'PUT', '/api/log/l1', { title: 'x' }, ANA_TOKEN)).status).toBe(401);
   });
 
+  /** A Knowledge that answers the view and nothing else: what the tile counts need. */
+  const countsOnly = { view: async (agents: Record<string, number>) => ({ enabled: true, repos: [], agents }) } as unknown as NonNullable<WebOptions['knowledgeStore']>;
+
   it('RECHECK is the Director\'s POST, and the counts of Knowledge anchors are a GET with counts only', async () => {
     const { calls, missionLog } = fakeLog();
-    const { port } = await startWeb({ missionLog, knowledge: async () => ({ ana: 2 }) });
+    const { port } = await startWeb({ missionLog, knowledgeStore: countsOnly, knowledgeAgents: async () => ({ ana: 2 }) });
     const done = await api(port, 'POST', '/api/log/l1/recheck');
     expect([done.status, done.json()]).toEqual([200, entry]);
     expect(calls.find((c) => c[0] === 'recheck')).toEqual(['recheck', 'l1']);
@@ -2220,11 +2223,11 @@ describe('mission log', () => {
     for (const method of ['GET', 'PUT', 'DELETE'] as const) expect((await api(port, method, '/api/log/l1/recheck', method === 'PUT' ? {} : undefined)).status, method).toBe(405);
     // an agent's token does not reach it
     expect((await api(port, 'POST', '/api/log/l1/recheck', undefined, ANA_TOKEN)).status).toBe(401);
-    expect((await api(port, 'GET', '/api/knowledge')).json()).toEqual({ agents: { ana: 2 } });
+    expect((await api(port, 'GET', '/api/knowledge')).json()).toEqual({ enabled: true, repos: [], agents: { ana: 2 } });
     expect((await api(port, 'POST', '/api/knowledge', {})).status).toBe(405);
     expect((await api(port, 'GET', '/api/knowledge', undefined, ANA_TOKEN)).status).toBe(401);
     // with the switch off both answer feature_off before the handler
-    const off = await startWeb({ missionLog, knowledge: async () => ({}), features: { isOn: (id: string) => id !== 'knowledge-anchors', label: (id: string) => id } as unknown as WebOptions['features'] });
+    const off = await startWeb({ missionLog, knowledgeStore: countsOnly, features: { isOn: (id: string) => id !== 'knowledge-anchors', label: (id: string) => id } as unknown as WebOptions['features'] });
     expect((await api(off.port, 'GET', '/api/knowledge')).json()).toMatchObject({ code: 'feature_off' });
   });
 
