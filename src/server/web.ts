@@ -101,6 +101,7 @@ import type { FeatureStore } from './features.js';
 import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
+import type { RulesStore } from './rules.js';
 import type { Rollout } from './rollout.js';
 import type { RitualTemplateStore } from './ritual.js';
 import { normalizeHost } from './hosts.js';
@@ -213,6 +214,8 @@ export interface WebOptions {
   ritualTemplate?: RitualTemplateStore;
   /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
   coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
+  /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */
+  rules?: Pick<RulesStore, 'view' | 'set'>;
   /** Rollout; absent in tests that do not need it (the snapshot then has none). It tells the browsers itself. */
   rollout?: Pick<Rollout, 'view'> & Partial<Pick<Rollout, 'checkNow'>>;
   /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
@@ -1495,6 +1498,18 @@ export function createWebServer(options: WebOptions): WebServer {
           if (req.method === 'GET') return sendJson(res, 200, coauthor.view());
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await coauthor.set(body));
+        },
+      };
+    }
+    if (s[1] === 'rules' && s.length === 2) {
+      const rules = options.rules;
+      if (!rules) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, rules.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await rules.set(body));
         },
       };
     }

@@ -63,7 +63,7 @@ Password and second factor in one step. Flight Rules -> LOGIN -> PASSKEYS -> ADD
 
 ## Confirming again (step-up)
 
-A session whose password was checked over 5 minutes ago must re-confirm (password and code, or a passkey) before: a hire with its own command, a mode that works without asking, no Clean Room, remote control or own keys, any agent edit except name, position, autostart, co-author line, model and effort (fields added later are asked too), room permissions, Features, secrets of Uplink, Relay and Docking, engine keys, writing a file in an agent's folder, a commit, a Docker update, and the account's own changes. The page opens CONFIRM IT IS YOU and repeats the change; sockets stay open. Keys, the local socket and the old token are not asked.
+A session whose password was checked over 5 minutes ago must re-confirm (password and code, or a passkey) before: a hire with its own command, a mode that works without asking, no Clean Room, remote control or own keys, any agent edit except name, position, autostart, co-author line, model and effort (fields added later are asked too), room permissions, Features, the rules of the room, secrets of Uplink, Relay and Docking, engine keys, writing a file in an agent's folder, a commit, a Docker update, and the account's own changes. The page opens CONFIRM IT IS YOU and repeats the change; sockets stay open. Keys, the local socket and the old token are not asked.
 
 **This is a speed bump, not a wall.** Typing into a console, a message to an agent, GO on a permission dialog, hold, resume, and starting or restarting an agent are not behind it, and each can make an agent that is allowed to do anything run anything. What protects a session: the second factor, short lifetimes, REVOKE, alerts.
 

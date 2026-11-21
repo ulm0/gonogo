@@ -53,6 +53,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   // a default server is a program every agent of the room starts, with the keys in its env
   if (/^\/api\/payload-defaults(\/|$)/.test(path)) return 'the Payload defaults of the room';
   if (/^\/api\/features(\/|$)/.test(path)) return 'the feature switches';
+  // the rules of the room reach every agent at the authority of a system prompt
+  if (/^\/api\/rules(\/|$)/.test(path)) return 'the rules of the room';
   if (/^\/api\/(uplinks|relay|docking)(\/|$)/.test(path)) return 'a secret of Uplink, Relay or Docking';
   if (/^\/api\/engines?(\/|$)/.test(path)) return 'the keys of an engine';
   // auto-update runs code of the publisher unattended: turning it on or moving its window asks; turning it off and SKIP THIS VERSION never do (they only make it do less)

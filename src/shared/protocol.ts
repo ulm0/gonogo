@@ -43,6 +43,13 @@ export type HeldKind = (typeof HELD_KINDS)[number];
  * What runs in the pty (Engine Bay, docs/engine-bay-spec.md). 'claude' is Claude Code with hooks and the MCP tools;
  * 'custom' is any command (a terminal with a lamp: no messages, no hooks); the rest are other agent CLIs.
  */
+/** The rules of the room (docs/features/door.md): the text, its size, the limit, and when it was saved (null when there are none). */
+export interface RulesView {
+  text: string;
+  bytes: number;
+  max: number;
+  updatedAt: number | null;
+}
 export const PROVIDERS = ['claude', 'gemini', 'antigravity', 'codex', 'opencode', 'qwen', 'grok', 'kimi', 'crush', 'pi', 'copilot', 'cursor', 'custom'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
@@ -2091,6 +2098,8 @@ export interface LauncherOptions {
   defaultModel?: (provider: Provider, position?: string) => string | undefined;
   /** Feature toggles: the MCP tools of features that are off; they are left out of `--allowedTools`. Default none. */
   toolsOff?: () => string[];
+  /** The rules of the room (docs/features/door.md): appended to the role text of every engine that takes one. Default none. */
+  rules?: () => string;
   /** The room's default effort for a Claude Code console with none of its own. */
   defaultEffort?: () => Effort | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */

@@ -5,7 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHmac, randomBytes } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import type { IncomingHttpHeaders } from 'node:http';
 import net from 'node:net';
@@ -2942,6 +2942,41 @@ describe('end to end with the stand-in agent', () => {
     // the poll route is there again (400: nobody is running after the restart, which is not feature_off)
     expect((await api<ApiError>(again, 'POST', '/api/poll')).body.code).not.toBe('feature_off');
     expect((await api<ApiError>(again, 'GET', '/api/tasks')).status).toBe(404);
+    await again.run.stop();
+  }, 120_000);
+
+  it('Room rules: one text, saved by the API, kept across a restart, in the Black Box by length only, and out of an agent\'s reach', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    expect((await api(h, 'GET', '/api/rules')).body).toEqual({ text: '', bytes: 0, max: 8192, updatedAt: null });
+    const secret = 'Never merge on a Friday. SECRET-RULE-WORDS';
+    const saved = await api<{ text: string; bytes: number }>(h, 'PUT', '/api/rules', { text: secret });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ text: secret, bytes: secret.length });
+    expect((await readFile(join(h.home, 'rules.md'), 'utf8'))).toBe(`${secret}\n`);
+    expect((await stat(join(h.home, 'rules.md'))).mode & 0o777).toBe(0o600);
+    // the caps and the shape
+    expect((await api<ApiError>(h, 'PUT', '/api/rules', { text: 'a'.repeat(8193) })).status).toBe(400);
+    expect((await api<ApiError>(h, 'PUT', '/api/rules', { text: 'a\u202eb' })).status).toBe(400);
+    expect((await api<ApiError>(h, 'PUT', '/api/rules', { text: 'x', more: 1 })).status).toBe(400);
+    expect((await api<ApiError>(h, 'PUT', '/api/rules', { text: 4 })).status).toBe(400);
+    expect((await api<{ text: string }>(h, 'GET', '/api/rules')).body.text).toBe(secret);
+    // the Black Box says who and how long, never what
+    const events = (await api<AuditView>(h, 'GET', '/api/black-box')).body.events.map((e) => e.text).join('\n');
+    expect(events).toContain(`Director changed the room rules (${secret.length} bytes)`);
+    expect(events).not.toContain('SECRET-RULE-WORDS');
+    // an agent's token reaches no route of the page's API: neither a read nor a write of the rules
+    const agentToken = await readToken(h, 'flight');
+    expect((await api(h, 'GET', '/api/rules', undefined, agentToken)).status).toBe(401);
+    expect((await api(h, 'PUT', '/api/rules', { text: 'from an agent' }, agentToken)).status).toBe(401);
+    expect((await api<{ text: string }>(h, 'GET', '/api/rules')).body.text).toBe(secret);
+    // a restart keeps them; an empty text takes them away
+    await h.run.stop();
+    const again = await startServer({ home: h.home });
+    expect((await api<{ text: string }>(again, 'GET', '/api/rules')).body.text).toBe(secret);
+    expect((await api(again, 'PUT', '/api/rules', { text: '  ' })).body).toMatchObject({ text: '', bytes: 0 });
+    expect((await api<AuditView>(again, 'GET', '/api/black-box')).body.events.map((e) => e.text).join('\n')).toContain('Director removed the room rules');
+    await expect(stat(join(again.home, 'rules.md'))).rejects.toMatchObject({ code: 'ENOENT' });
     await again.run.stop();
   }, 120_000);
 

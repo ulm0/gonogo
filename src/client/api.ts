@@ -77,6 +77,7 @@ import type {
   AutoUpdateWindow,
   SubagentSettings,
   CoauthorSettings,
+  RulesView,
   HoldAllResult,
   ResumeAllResult,
   Provider,
@@ -581,6 +582,19 @@ export async function setCoauthorSettings(patch: Partial<CoauthorSettings>): Pro
   const record = asRecord(await call('PUT', '/coauthor', patch));
   if (record === null || typeof record.enabled !== 'boolean' || typeof record.prFooter !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
   return record as unknown as CoauthorSettings;
+}
+
+/** Room rules: the text every agent of the room starts with (docs/features/door.md). A change asks for a step-up. */
+const rulesOf = (value: unknown): RulesView => {
+  const record = asRecord(value);
+  if (record === null || typeof record.text !== 'string' || typeof record.bytes !== 'number' || typeof record.max !== 'number') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as RulesView;
+};
+export async function rulesView(): Promise<RulesView> {
+  return rulesOf(await call('GET', '/rules'));
+}
+export async function setRules(text: string): Promise<RulesView> {
+  return rulesOf(await call('PUT', '/rules', { text }));
 }
 
 /** Subagents: what a Claude Code agent may do with its helpers (allow, limit, none). */
