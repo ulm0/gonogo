@@ -73,3 +73,57 @@
   .lay-phone-term .pane { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
   .lay-phone-term .term-wrap { flex: 1 1 auto; min-height: 240px; }
 }
+
+/* the top bar and the bottom bar of a phone */
+.lay-topbar { gap: 8px; }
+.lay-topbar .btn, .lay-topbar .lamp { flex: none; white-space: nowrap; }
+.lay-jump { gap: 8px; min-width: 200px; justify-content: flex-start; }
+.lay-jump-text { flex: 1; text-align: left; }
+.lay-kbd { font: inherit; font-size: 11px; opacity: 0.7; }
+.lay-version .btn { font-variant-numeric: tabular-nums; }
+.lay-version .lay-pop { width: 320px; }
+.lay-phone-bar { display: flex; gap: 8px; }
+.lay-phone-bar > * { flex: 1; }
+.lay-phone-bar .lay-anchor .btn { width: 100%; }
+.lay-phone-bar .btn { position: relative; padding-inline: 6px; gap: 4px; }
+.lay-phone-bar .btn .chip { position: absolute; top: -8px; right: 6px; }
+@media (max-width: 700px) {
+  .lay-topbar { padding: 12px 16px 0; }
+  .lay-jump { min-width: 0; flex: 1; }
+  .lay-jump .lay-kbd { display: none; }
+  .lay-phone-bar .btn { min-width: 44px; }
+}
+
+/* Flight Rules in groups: an index, one open group, rows (name, what it is now, Edit) that open the block in place */
+.lay-group { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; scroll-margin-top: 72px; }
+.lay-group-title { margin: 0; font-size: 18px; }
+.lay-group-body { display: flex; flex-direction: column; gap: 12px; }
+.lay-group-body > * { min-width: 0; max-width: 100%; }
+.lay-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--body); }
+.lay-row { border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); }
+.lay-row > summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 12px; cursor: pointer; list-style: none; }
+.lay-row > summary::-webkit-details-marker { display: none; }
+.lay-row-name { font-weight: 600; flex: 1 1 200px; }
+.lay-row-now { flex: 1 1 200px; opacity: 0.8; }
+.lay-row-edit { pointer-events: none; white-space: nowrap; flex: none; }
+.lay-row-body { padding: 8px 12px 12px; }
+.lay-row-body .module { border: 0; box-shadow: none; padding: 0; background: none; }
+@media (max-width: 700px) {
+  .lay-group .btn { min-height: 44px; min-width: 44px; }
+  .lay-group-nav { flex-wrap: nowrap; overflow-x: auto; }
+  .lay-group-nav .btn { flex: none; }
+  .lay-row > summary { flex-wrap: wrap; }
+  .lay-row-name, .lay-row-now { flex-basis: 100%; }
+  .lay-row-edit { margin-left: auto; }
+}
+
+/* the Layout popover */
+.lay-layout .lay-pop { width: min(420px, calc(100vw - 32px)); }
+.lay-layout-pop { display: flex; flex-direction: column; gap: 8px; }
+.lay-densities { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.lay-density { display: flex; flex-direction: column; align-items: flex-start; height: auto; padding: 8px 12px; text-align: left; white-space: normal; }
+.lay-panel-modes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lay-panel-modes li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+@media (max-width: 700px) {
+  .lay-layout .lay-pop { width: auto; }
+}

@@ -60,6 +60,9 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (/^\/api\/engines?(\/|$)/.test(path)) return 'the keys of an engine';
   // auto-update runs code of the publisher unattended: turning it on or moving its window asks; turning it off and SKIP THIS VERSION never do (they only make it do less)
   if (method === 'PUT' && path === '/api/autoupdate') return body === null || body.enabled === true || body.windows !== undefined ? 'turning on auto-update, or changing when it runs' : null;
+  // stopping rooms kills the agents in them at once (and stop-all every room), and removing a room takes it off the list: the password again. Starting one room is not asked (the server does it at boot anyway); starting all of them is.
+  if (method === 'POST' && (/^\/api\/rooms\/(?:stop-all|start-all)$/.test(path) || /^\/api\/rooms\/[a-z][a-z0-9-]{0,23}\/stop$/.test(path))) return path.endsWith('start-all') ? 'starting every room' : path.endsWith('stop-all') ? 'stopping every room' : 'stopping a room and its agents';
+  if (method === 'DELETE' && /^\/api\/rooms\/[a-z][a-z0-9-]{0,23}$/.test(path)) return 'removing a room';
   // moving where room main keeps its files (MIGRATE NOW, UNDO) is done at the next start; cancelling that or dismissing the note only does less
   if (method === 'POST' && path === '/api/rooms/main/migrate') return body !== null && (body.action === 'cancel' || body.action === 'dismiss') ? null : 'moving where room main keeps its files';
   // Knowledge: taking the claims of one repository to another is one rename of a folder the Director's decisions live in (keeping two apart changes nothing)

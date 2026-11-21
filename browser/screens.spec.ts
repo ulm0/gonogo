@@ -88,7 +88,7 @@ async function shoot(page: Page, group: string, title: string, fullPage = false)
 }
 
 /** The geometry rules (no overlap, no sideways scroll, no clipped text, keys 24 px or 44 on a phone) on the view the page shows now. */
-async function measure(page: Page, group: string, title: string, scope = 'main, .lay-strip'): Promise<void> {
+async function measure(page: Page, group: string, title: string, scope = 'body'): Promise<void> {
   for (const problem of await geometry(page, group.endsWith('phone'), scope)) geo.push(`${group}: ${title}: ${problem}`);
 }
 
@@ -226,6 +226,20 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 }));
     await measure(page, group, 'the clock open');
     await page.keyboard.press('Escape');
+    for (const [title, name] of [['layout', 'Layout of the room'], ['version key', /^gonogo \d/], ['work menu', 'Work'], ['more menu', 'More']] as const) {
+      await view(page, group, `top bar: ${title}`, () => page.getByRole('button', { name }).last().click({ timeout: 3000 }));
+      await measure(page, group, title);
+      await page.keyboard.press('Escape');
+    }
+    for (const density of ['Full wall', 'Focus', 'Standard'] as const) {
+      await page.getByRole('button', { name: 'Layout of the room' }).click({ timeout: 3000 });
+      await page.getByRole('button', { name: new RegExp('^' + density) }).click({ timeout: 3000 });
+      await page.keyboard.press('Escape');
+      if (density !== 'Standard') {
+        await shoot(page, group, `layout: ${density}`, true);
+        await measure(page, group, `layout: ${density}`);
+      }
+    }
     await toolbarProofs(page, group);
     await page.reload();
     await page.locator('.topbar').waitFor({ timeout: 30_000 });
@@ -262,19 +276,14 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await view(page, group, t('recorder'), () => patch(page, 'recorder'), true);
   if (!full) return;
   await view(page, group, 'flight rules', () => open(page, 'Flight Rules', 'rules'), true);
-  // each block of Flight Rules, one by one: the view scrolls inside itself, so a full-page shot would miss the lower ones
-  const blocks = page.locator('.rules-block');
-  const count = await blocks.count().catch(() => 0);
+  // Flight Rules in groups: each group opened by its key of the index, with its rows (the rows are folded; the blocks inside are the old ones)
+  await measure(page, group, 'flight rules');
+  const links = page.locator('.lay-group-nav a');
+  const count = await links.count().catch(() => 0);
   for (let i = 0; i < count; i += 1) {
-    const heading = ((await blocks.nth(i).locator('h2').first().textContent().catch(() => '')) ?? '').trim() || `block ${i + 1}`;
-    n += 1;
-    const file = `${group}/${String(n).padStart(3, '0')}-rules-${slug(heading)}.png`;
-    try {
-      await blocks.nth(i).screenshot({ path: join(OUT, file) });
-      shots.push({ group, file, title: `flight rules: ${heading}` });
-    } catch (error) {
-      missed.push(`${group}: flight rules ${heading}: ${(error as Error).message.split('\n')[0]}`);
-    }
+    const title = ((await links.nth(i).textContent()) ?? '').trim();
+    await view(page, group, `flight rules: ${title}`, () => links.nth(i).click({ timeout: 3000 }));
+    await measure(page, group, `flight rules: ${title}`);
   }
   await view(page, group, 'livery', () => open(page, 'Livery'), true);
   await view(page, group, 'patch panel', async () => {
@@ -361,6 +370,12 @@ test('screens of the app and the docs', async ({ browser }) => {
   missed.push(`info: agents after the seed: ${states.join(', ')}${states.some((x) => x.endsWith('=stopped')) ? '; server output: ' + output.slice(-600).replace(/\s+/g, ' ') : ''}`);
   await setupContext.close();
 
+  await seed('second room', async () => {
+    const maker = await browser.newContext({ storageState: state });
+    await api(maker, 'POST', '/api/rooms', { id: 'docs', name: 'Docs' });
+    await maker.close();
+  });
+
   // every view, light then dark (the livery is the server's, so it is chosen once per scheme), desktop and phone
   for (const scheme of SCHEMES) {
     const chooser = await browser.newContext({ storageState: state });
@@ -372,6 +387,13 @@ test('screens of the app and the docs', async ({ browser }) => {
       const page = await context.newPage();
       await page.goto(`${base}/`);
       await shoot(page, group, 'rooms list', true);
+      await measure(page, group, 'rooms list');
+      await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs' }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop asks first');
+      await page.getByRole('button', { name: 'Keep Docs running' }).click({ timeout: 3000 }).catch(() => undefined);
+      await view(page, group, 'rooms list: stop all asks first', () => page.getByRole('button', { name: 'Stop every room', exact: true }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: stop all asks first');
+      await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
       await context.close();
     }

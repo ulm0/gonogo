@@ -166,7 +166,11 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     const on = await page.request.put(`${base}/api/features`, { headers: { origin: base }, data: { off: [], expect: [], confirm: true } });
     expect(on.status(), await on.text()).toBe(200);
     await page.goto(`${base}/r/main/`);
-    await page.locator('.topbar').getByRole('button', { name: 'Flight Rules', exact: true }).click();
+    await page.locator('.topbar').getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('button', { name: 'Flight Rules', exact: true }).click();
+    // the groups are folded and each setting is a row that opens on Edit: open all of them, then look for the blocks
+    await page.locator('.lay-group-title button[aria-expanded=false]').evaluateAll((keys) => keys.forEach((key) => (key as HTMLElement).click()));
+    await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
     for (const heading of ['KNOWLEDGE', 'ROOM RULES', 'CLOSING CHECKLIST TEMPLATE', 'SKILLS']) {
       await expect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible();
     }
@@ -182,7 +186,8 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     const made = await page.request.post(`${base}/api/missions`, { headers: { origin: base }, data: { name: 'Smoke mission' } });
     expect(made.status(), await made.text()).toBe(201);
     await page.goto(`${base}/r/main/`);
-    await page.locator('.topbar').getByRole('button', { name: 'Missions', exact: true }).click();
+    await page.locator('.topbar').getByRole('button', { name: 'Work', exact: true }).click();
+    await page.getByRole('button', { name: 'Missions', exact: true }).click();
     // the row opens the mission; its closing checklist is in it
     await page.getByText('Smoke mission').first().click();
     await expect(page.locator('[aria-label^="Closing checklist of"]').first()).toBeVisible();
