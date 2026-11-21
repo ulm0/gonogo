@@ -92,6 +92,49 @@ async function measure(page: Page, group: string, title: string): Promise<void> 
   for (const problem of await geometry(page, group.endsWith('phone'))) geo.push(`${group}: ${title}: ${problem}`);
 }
 
+/** A thing the terminal toolbar must do, checked in the page: a failure goes in geometry.txt like a geometry problem. */
+async function proof(group: string, what: string, check: () => Promise<boolean>): Promise<void> {
+  const ok = await check().catch(() => false);
+  if (!ok) geo.push(`${group}: proof failed: ${what}`);
+}
+
+const clipboard = (page: Page): Promise<string> => page.evaluate(() => navigator.clipboard.readText());
+
+/** Copy, Find and Full screen of the terminal toolbar, driven as a person would and checked (the clipboard, the selection, document.fullscreenElement). */
+async function toolbarProofs(page: Page, group: string): Promise<void> {
+  const phone = group.endsWith('phone');
+  const needle = 'Fake model';
+  await page.waitForTimeout(1500);
+  const copyItem = async (name: string): Promise<void> => {
+    await page.getByRole('button', { name: 'Copy' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name, exact: true }).click({ timeout: 3000 });
+  };
+  await copyItem('The screen');
+  await proof(group, 'Copy > The screen puts the terminal text on the clipboard', async () => (await clipboard(page)).includes(needle));
+  if (phone) {
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Find', exact: true }).click({ timeout: 3000 });
+  } else {
+    await page.getByRole('button', { name: 'Find', exact: true }).click({ timeout: 3000 });
+  }
+  await page.getByLabel('Find in the terminal').fill('fake');
+  await page.getByLabel('Find in the terminal').press('Enter');
+  await page.waitForTimeout(600);
+  await proof(group, 'Find highlights a match (xterm selection layer)', async () => (await page.locator('.xterm-selection div').count()) > 0);
+  await copyItem('Selection');
+  await proof(group, 'Copy > Selection puts the found text on the clipboard', async () => (await clipboard(page)).toLowerCase() === 'fake');
+  if (!phone) {
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Full screen', exact: true }).click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    await proof(group, 'Full screen enters', async () => page.evaluate(() => document.fullscreenElement !== null));
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Leave full screen', exact: true }).click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    await proof(group, 'Full screen leaves', async () => page.evaluate(() => document.fullscreenElement === null));
+  }
+}
+
 /** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
 async function view(page: Page, group: string, title: string, get: () => Promise<void>, fullPage = false): Promise<void> {
   try {
@@ -183,6 +226,26 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await view(page, group, 'status strip: the clock open', () => page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 }));
     await measure(page, group, 'the clock open');
     await page.keyboard.press('Escape');
+    await toolbarProofs(page, group);
+    await page.reload();
+    await page.locator('.topbar').waitFor({ timeout: 30_000 });
+    await view(page, group, 'terminal toolbar: copy menu', () => page.getByRole('button', { name: 'Copy' }).first().click({ timeout: 3000 }));
+    await measure(page, group, 'copy menu');
+    await page.keyboard.press('Escape');
+    await view(page, group, 'terminal toolbar: more keys', () => page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 }));
+    await measure(page, group, 'more keys');
+    await page.keyboard.press('Escape');
+    if (group.endsWith('phone')) {
+      await view(page, group, 'terminal: Select', () => page.getByRole('button', { name: 'Select', exact: true }).click({ timeout: 3000 }));
+      await measure(page, group, 'Select');
+      await page.getByRole('button', { name: 'Close' }).click({ timeout: 3000 }).catch(() => undefined);
+    }
+    await view(page, group, 'terminal: expanded', async () => {
+      await page.getByRole('button', { name: 'Expand', exact: true }).click({ timeout: 3000 });
+      await page.waitForTimeout(1200);
+    });
+    await measure(page, group, 'expanded');
+    await page.getByRole('button', { name: /^Back/ }).click({ timeout: 3000 }).catch(() => undefined);
   }
   await view(page, group, t('comms inbox'), async () => {
     await open(page, 'Comms');
@@ -305,7 +368,7 @@ test('screens of the app and the docs', async ({ browser }) => {
     await chooser.close();
     for (const size of SIZES) {
       const group = `${scheme.name}-${size.name}`;
-      const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+      const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height }, permissions: ['clipboard-read', 'clipboard-write'] });
       const page = await context.newPage();
       await page.goto(`${base}/`);
       await shoot(page, group, 'rooms list', true);

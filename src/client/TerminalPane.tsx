@@ -8,6 +8,7 @@ import { RECONNECT_SERVER_GONE_AFTER, RESIZE_DEBOUNCE_MS } from '../shared/proto
 import * as api from './api.js';
 import { currentEntry, xtermTheme } from './look.js';
 import { store, useStore } from './store.js';
+import { findLine, lastAnswer } from './terminalText.js';
 import type { ClientState } from './store.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 
@@ -23,7 +24,20 @@ export interface PaneTarget {
   connection: ClientState['connection'];
 }
 
-export interface PaneController {
+/** What the toolbar of the console (TerminalBar.tsx) does to the screen: text out of the buffer, the size of the letters, a search, the bottom. */
+export interface PaneTools {
+  /** The text of the selection, the visible screen, the whole scrollback, or what came after the last line the Director typed. */
+  text(mode: 'selection' | 'screen' | 'all' | 'last' | 'tail'): string;
+  fontSize(delta: number): number;
+  /** Selects and scrolls to the next (or previous) line holding the text; false when there is none. */
+  find(query: string, backwards: boolean): boolean;
+  latest(): void;
+  /** True while the view is at the bottom. */
+  atBottom(): boolean;
+  refit(): void;
+}
+
+export interface PaneController extends PaneTools {
   update(target: PaneTarget): void;
   claimSize(): void;
   dispose(): void;
@@ -268,7 +282,47 @@ export function createPaneController(host: HTMLElement, onSizeHint: (show: boole
   };
   document.addEventListener('visibilitychange', onVisibility);
 
+  const lines = (from: number, to: number): string[] => {
+    const out: string[] = [];
+    for (let y = from; y < to; y += 1) out.push(term.buffer.active.getLine(y)?.translateToString(true) ?? '');
+    return out;
+  };
+  let findAt = -1;
   return {
+    text(mode) {
+      const buffer = term.buffer.active;
+      if (mode === 'selection') return term.getSelection();
+      if (mode === 'screen') return lines(buffer.viewportY, buffer.viewportY + term.rows).join('\n').trimEnd();
+      const all = lines(0, buffer.length);
+      if (mode === 'tail') return all.slice(-300).join('\n').trimEnd();
+      if (mode === 'all') return all.join('\n').trimEnd();
+      return lastAnswer(all);
+    },
+    fontSize(delta) {
+      const next = Math.min(24, Math.max(9, (term.options.fontSize ?? 13) + delta));
+      term.options.fontSize = next;
+      refit();
+      return next;
+    },
+    find(query, backwards) {
+      const buffer = term.buffer.active;
+      const hit = findLine(lines(0, buffer.length), query, findAt, backwards);
+      if (hit === null) return false;
+      findAt = hit.line;
+      term.select(hit.column, hit.line, query.length);
+      term.scrollToLine(Math.max(0, hit.line - Math.floor(term.rows / 2)));
+      return true;
+    },
+    latest() {
+      term.scrollToBottom();
+    },
+    atBottom() {
+      const buffer = term.buffer.active;
+      return buffer.viewportY >= buffer.baseY;
+    },
+    refit() {
+      refit();
+    },
     update(next) {
       target = next;
       if (next.connection !== 'open') {
@@ -302,6 +356,9 @@ export function createPaneController(host: HTMLElement, onSizeHint: (show: boole
   };
 }
 
+/** The terminal that is on the page now (there is one), for the toolbar of the prototype layout. */
+export const panes: { current: PaneController | null } = { current: null };
+
 export function TerminalPane({ agent }: { agent: AgentView | null }): ReactElement {
   const connection = useStore((s) => s.connection);
   const failedAttempts = useStore((s) => s.failedAttempts);
@@ -314,9 +371,11 @@ export function TerminalPane({ agent }: { agent: AgentView | null }): ReactEleme
     if (host === null) return undefined;
     const created = createPaneController(host, setSizeHint);
     controller.current = created;
+    panes.current = created;
     return () => {
       created.dispose();
       controller.current = null;
+      if (panes.current === created) panes.current = null;
     };
   }, []);
 

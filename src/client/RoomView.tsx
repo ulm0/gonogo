@@ -46,6 +46,7 @@ import { useRun } from './WallView.js';
 import { DetailChips } from './DetailChips.js';
 import { EditRoomKey } from './EditRoomKey.js';
 import { useRoomPrefs } from './roomPrefs.js';
+import { TerminalBar } from './TerminalBar.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
 import { AgentTelemetry } from './TelemetryPanel.js';
@@ -603,6 +604,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
           }}
         />
       )}
+      <TerminalBar />
       <TerminalPane agent={agent} />
       <Foot agent={agent} run={run} locked={locked} />
       {agent.provider === 'claude' && (
