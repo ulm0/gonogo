@@ -7,7 +7,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { LOG_BODY_MAX_CHARS, LOG_QUERY_MAX_CHARS, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
-import type { LogChart, LogEntry, LogHit, LogSearch } from '../shared/protocol.js';
+import type { LogAnchorState, LogChart, LogEntry, LogHit, LogSearch } from '../shared/protocol.js';
 import * as api from './api.js';
 import { whenText } from './inbox.js';
 import { legendOf } from './loop.js';
@@ -39,6 +39,19 @@ function Tags({ tags }: { tags: readonly string[] }): ReactElement | null {
           {tag}
         </span>
       ))}
+    </span>
+  );
+}
+
+const ANCHOR_CHIPS = { ok: { tone: 'go', text: 'anchors ok' }, stale: { tone: 'amber', text: 'anchors' }, vacuous: { tone: 'amber', text: 'anchors' }, unchecked: { tone: 'quiet', text: 'anchors' } } as const;
+
+/** What the last check of an entry's anchors found (docs/features/knowledge-anchors.md); nothing when there is none. Text from gonogo only, set as text. */
+function AnchorChip({ state }: { state: LogAnchorState | undefined }): ReactElement | null {
+  if (state === undefined) return null;
+  const chip = ANCHOR_CHIPS[state.state];
+  return (
+    <span className="chip" data-tone={chip.tone} title={state.note}>
+      {state.state === 'ok' ? chip.text : `${chip.text}: ${state.note}`}
     </span>
   );
 }
@@ -193,6 +206,7 @@ function Reader({ entry, onEdit, onClose, onRemoved }: { entry: LogEntry; onEdit
         <span>{legendOf(entry.author, agents)}</span>
         <span>{`updated ${whenText(entry.updatedAt, Date.now())}`}</span>
         <Tags tags={entry.tags} />
+        <AnchorChip state={entry.anchorState} />
       </p>
       <pre className="log-body">{entry.body}</pre>
       <div className="log-actions">
@@ -253,6 +267,7 @@ function Row({ hit, open, onOpen }: { hit: LogHit; open: boolean; onOpen(): void
         </span>
         <span className="log-row-title">{hit.title}</span>
         <Tags tags={hit.tags} />
+        <AnchorChip state={hit.anchorState} />
         <span className="log-snippet">{hit.snippet}</span>
       </button>
     </li>

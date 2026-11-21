@@ -500,6 +500,10 @@ export const BLACKBOX_RATE_MAX = 600;
 export const BLACKBOX_RATE_WINDOW_MS = 60_000;
 export const BLACKBOX_RECENT_MAX = 200;
 export const BLACKBOX_TAIL_BYTES = 65_536;
+/** Added to the description of log_write while knowledge anchors are on. */
+export const MCP_LOG_ANCHORS =
+  'An entry may carry up to 5 anchors, each {root, file, text, mode}: root is the absolute path of the top of your own git repository (the one your folder is in), file is a tracked file of it (required for mode present), text is a literal string of at most 200 characters that does not start with "-", mode is present (the file holds the text) or absent (the file, or with no file any tracked file, does not). log_read and log_search then say whether it is still confirmed.';
+
 export const MCP_DESCRIPTIONS = {
   go_nogo:
     'Answer a T-minus poll or a Static fire from the Director: vote "go" when you are ready to proceed, or "no-go" with a one-sentence reason. Call it when a message asks for a go/no-go. The result says whether the vote counted.',

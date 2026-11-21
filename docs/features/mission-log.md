@@ -21,13 +21,13 @@ In each Claude agent's `--allowedTools`; its role text says to search before wor
 |---|---|
 | `log_search` | `query`, `limit` (at most 20); returns id, title, author, tags, snippet |
 | `log_read` | `id`; the whole entry |
-| `log_write` | `title`, `body`, `tags` to create; or `id` of the caller's own entry to change fields |
+| `log_write` | `title`, `body`, `tags`, and with [Knowledge anchors](./knowledge-anchors.md) on, `anchors`, to create; or `id` of the caller's own entry to change fields |
 
 The server stamps the author. Agents cannot edit others' entries or delete; you can. Agents read entries like messages: keep secrets out.
 
 ## Files
 
-`~/.gonogo/mission-log/<id>.md` per entry: front matter (`id`, `title`, `tags`, `author`, `createdAt`, `updatedAt`, each value JSON on one line), `---`, body. The index is built at start: hand edits show after a restart, and a page edit before then overwrites the file. Non-entry files are skipped with a warning.
+`~/.gonogo/mission-log/<id>.md` per entry: front matter (`id`, `title`, `tags`, `author`, `createdAt`, `updatedAt`, and `anchors` when there are some, each value JSON on one line), `---`, body. The index is built at start: hand edits show after a restart, and a page edit before then overwrites the file. Non-entry files are skipped with a warning.
 
 ## API
 

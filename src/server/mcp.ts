@@ -11,6 +11,10 @@ import {
   LOG_BODY_MAX_CHARS,
   LOG_QUERY_MAX_CHARS,
   LOG_SEARCH_MAX,
+  LOG_ANCHOR_FILE_MAX_CHARS,
+  LOG_ANCHOR_ROOT_MAX_CHARS,
+  LOG_ANCHOR_TEXT_MAX_CHARS,
+  LOG_ANCHORS_MAX,
   LOG_TAGS_MAX,
   LOG_TITLE_MAX_CHARS,
   MCP_SERVER_NAME,
@@ -31,7 +35,7 @@ import {
 } from '../shared/protocol.js';
 import type { AgentIdentity, AgentSendRequest, Hub, Logger, Task } from '../shared/protocol.js';
 import { FEATURE_TOOLS } from '../shared/features.js';
-import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
+import { START_AGENT_RATE_MAX, BODY_MAX_CHARS, MAX_MCP_BODY_BYTES, MCP_DESCRIPTIONS, MCP_LOG_ANCHORS, POLL_REASON_MAX_CHARS, READ_MAX_CHARS, SUBJECT_MAX_CHARS } from './constants.js';
 import { bearerToken, hubErrorInfo, readBody, sendJson, sendUnauthorized } from './hooks.js';
 import type { Board } from './board.js';
 import type { Liveries } from './livery.js';
@@ -51,7 +55,7 @@ export interface McpDeps {
   missions?: Pick<Missions, 'list' | 'create' | 'update'>;
   /** Post-Flight Review; absent in tests that do not need it (the two review tools then answer that it is not available). */
   review?: Pick<Review, 'read' | 'addNotes'>;
-  missionLog?: Pick<MissionLog, 'search' | 'get' | 'create' | 'update'>;
+  missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'create' | 'update'>;
   /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
   board?: Pick<Board, 'get' | 'write'>;
   /** Livery; absent in tests that do not need it (the tool then answers that it is not available). */
@@ -335,12 +339,14 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
     server.registerTool(
       'log_write',
       {
-        description: MCP_DESCRIPTIONS.log_write,
+        // the sentence about anchors is there only while the Director has them on (and the tool list is made when the agent's session opens)
+        description: deps.featureOff !== undefined && !deps.featureOff('knowledge-anchors') ? `${MCP_DESCRIPTIONS.log_write} ${MCP_LOG_ANCHORS}` : MCP_DESCRIPTIONS.log_write,
         inputSchema: {
           id: z.string().min(1).max(16).optional(),
           title: z.string().min(1).max(LOG_TITLE_MAX_CHARS).optional(),
           body: z.string().min(1).max(LOG_BODY_MAX_CHARS).optional(),
           tags: z.array(z.string().min(1).max(64)).max(LOG_TAGS_MAX).optional(),
+          anchors: z.array(z.object({ root: z.string().min(1).max(LOG_ANCHOR_ROOT_MAX_CHARS), file: z.string().min(1).max(LOG_ANCHOR_FILE_MAX_CHARS).optional(), text: z.string().min(1).max(LOG_ANCHOR_TEXT_MAX_CHARS), mode: z.enum(['present', 'absent']) }).strict()).max(LOG_ANCHORS_MAX).optional(),
         },
       },
       ({ id, ...fields }) =>
@@ -367,7 +373,11 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
     );
 
     server.registerTool('log_read', { description: MCP_DESCRIPTIONS.log_read, inputSchema: { id: z.string().min(1).max(16) } }, ({ id }) =>
-      guarded('log_read', () => (missionLog ? toolResult({ ok: true, entry: missionLog.get(id) }, false) : noLog())),
+      guarded('log_read', async () => {
+        if (!missionLog) return noLog();
+        await missionLog.verify(id);
+        return toolResult({ ok: true, entry: missionLog.get(id) }, false);
+      }),
     );
 
     const { board } = deps;

@@ -161,7 +161,7 @@ export interface WebOptions {
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
-  missionLog?: Pick<MissionLog, 'search' | 'get' | 'chart' | 'create' | 'update' | 'remove'>;
+  missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'chart' | 'create' | 'update' | 'remove'>;
   /** Mass Budget; absent in tests that do not need it (the routes answer 404). The page asks; no frame. */
   massBudget?: Pick<MassBudget, 'view' | 'reflect'>;
   /** Plot Board; absent in tests that do not need it (the route answers 404 and the board tools say it is not available). The page asks again every few seconds; no frame. */
@@ -1264,6 +1264,7 @@ export function createWebServer(options: WebOptions): WebServer {
         allow: ['GET', 'PUT', 'DELETE'],
         run: async (req, res) => {
           if (req.method === 'GET') {
+            await missionLog.verify(id);
             sendJson(res, 200, missionLog.get(id));
             return;
           }

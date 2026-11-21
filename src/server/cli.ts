@@ -64,6 +64,7 @@ import { createPhone } from './phone.js';
 import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
 import { createMassBudget } from './massbudget.js';
+import { createAnchorChecker } from './anchors.js';
 import { createMissionLog } from './missionlog.js';
 import { createMissions } from './missions.js';
 import { createReview } from './review.js';
@@ -989,6 +990,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       now: io.now,
       emit: (frame) => web?.broadcast(frame),
       log: log.child('mission log'),
+      anchors: createAnchorChecker({ agents: () => hubInstance.views().map((v) => v.name), place: (name) => roots(name).then((r) => r.root).catch(() => null), now: io.now, env, log: log.child('anchors') }),
+      anchorsOn: () => features.isOn('knowledge-anchors'),
     });
     const board = createBoard({ dir: home.dir, now: io.now });
     const massBudget = createMassBudget({

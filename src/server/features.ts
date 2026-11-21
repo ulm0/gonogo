@@ -1,6 +1,6 @@
 /**
  * Feature toggles (docs/features-spec.md): which features the Director switched off. `<home>/features.json` `{ version: 1, off: [...] }`
- * (0600, written whole through a temporary file and a rename) holds only the off ids, so a feature added later is on after an upgrade
+ * (0600, written whole through a temporary file and a rename) holds the off ids and `on`, the ids of the off-by-default features the Director switched on, so a feature added later is on after an upgrade (unless it is off by default)
  * and an id this build does not know is dropped. A file that cannot be read is kept as `.bad` and everything is on.
  *
  * `isOn` is what every gate asks (routes, MCP tools, the hub's and the background work's switches); `plan` and `apply` are the two
@@ -9,7 +9,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { cleanOff, FEATURES, planFeatures } from '../shared/features.js';
+import { cleanOff, DEFAULT_OFF, FEATURES, planFeatures } from '../shared/features.js';
 import type { FeaturePlan, PlanContext } from '../shared/features.js';
 import type { FeaturesView, Logger } from '../shared/protocol.js';
 import { FEATURES_FILE, FILE_MODE, nullLogger } from './constants.js';
@@ -37,7 +37,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 export function createFeatureStore(options: { dir: string; emit?(view: FeaturesView): void; context?(): PlanContext; changed?(): void; log?: Logger }): FeatureStore {
   const log = options.log ?? nullLogger;
   const path = join(options.dir, FEATURES_FILE);
-  let off = new Set<string>();
+  // a feature that is off until switched on is off before the file says anything
+  let off = new Set<string>(cleanOff(DEFAULT_OFF));
   let chain: Promise<unknown> = Promise.resolve();
   const view = (): FeaturesView => ({ off: FEATURES.filter((feature) => off.has(feature.id)).map((feature) => feature.id) });
 
@@ -54,7 +55,9 @@ export function createFeatureStore(options: { dir: string; emit?(view: FeaturesV
         const saved: unknown = JSON.parse(await readFile(path, 'utf8'));
         if (!isRecord(saved) || saved.version !== 1 || !Array.isArray(saved.off)) throw new Error('not a version 1 features file');
         // closed over `requires`, without the core and the not-switchable ids: a hand-edited file cannot make an inconsistent room
-        off = new Set(cleanOff(saved.off.filter((id): id is string => typeof id === 'string')));
+        const ids = (list: unknown): string[] => (Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : []);
+        const on = new Set(ids(saved.on));
+        off = new Set(cleanOff([...ids(saved.off), ...DEFAULT_OFF.filter((id) => !on.has(id))]));
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === 'ENOENT') return;
@@ -84,7 +87,7 @@ export function createFeatureStore(options: { dir: string; emit?(view: FeaturesV
         off = next;
         const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
         try {
-          await writeFile(temp, JSON.stringify({ version: 1, off: view().off }, null, 2), { flag: 'wx', mode: FILE_MODE });
+          await writeFile(temp, JSON.stringify({ version: 1, off: view().off, on: DEFAULT_OFF.filter((id) => !off.has(id)) }, null, 2), { flag: 'wx', mode: FILE_MODE });
           await rename(temp, path);
         } catch (error) {
           off = before;

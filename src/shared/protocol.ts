@@ -255,6 +255,11 @@ export const LOG_TAGS_MAX = 8;
 export const LOG_TAG_PATTERN = '^[a-z0-9][a-z0-9._-]{0,29}$';
 export const LOG_QUERY_MAX_CHARS = 200;
 export const LOG_SEARCH_MAX = 20;
+/** Knowledge anchors on an entry (docs/features/knowledge-anchors.md): a literal text that must be in, or not in, a file of a repository. */
+export const LOG_ANCHORS_MAX = 5;
+export const LOG_ANCHOR_TEXT_MAX_CHARS = 200;
+export const LOG_ANCHOR_FILE_MAX_CHARS = 300;
+export const LOG_ANCHOR_ROOT_MAX_CHARS = 1024;
 /** Plot Board (docs/plot-board-spec.md): the one plan of the room, `board.md`. At most this many characters. */
 export const BOARD_MAX_CHARS = 10_000;
 /** Black Box (docs/black-box-spec.md): what an event records, and how long its line is. `audit` is the Black Box's own note. */
@@ -1100,6 +1105,24 @@ export interface LogHead {
   id: string;
   title: string;
 }
+/** A claim of an entry about a repository (docs/features/knowledge-anchors.md): `present` = the file holds `text`, `absent` = the file (or, with no file, no tracked file) does not. `text` is literal, never a pattern. */
+export interface LogAnchor {
+  /** Absolute path of the git top level of the folder of an agent hired in this room: the writer's own, unless the Director wrote it. */
+  root: string;
+  /** Relative to `root`; required for `present`. Without it, `absent` searches every tracked file of the repository. */
+  file?: string;
+  text: string;
+  mode: 'present' | 'absent';
+  /** The branch the root was on when the anchor was written, set by the server. */
+  branch?: string;
+}
+/** What the last check of an entry's anchors found. `stale` is "not confirmed", never "false"; `vacuous` is "check the path"; `unchecked` is "could not check". */
+export interface LogAnchorState {
+  state: 'ok' | 'stale' | 'vacuous' | 'unchecked';
+  /** One line, written by gonogo: "not confirmed on main@abc1234 (2 files)", or why it could not be checked. Never text of the repository. */
+  note: string;
+  checkedAt: number;
+}
 /** Mission Log: one entry, one file `mission-log/<id>.md`. */
 export interface LogEntry extends LogHead {
   body: string;
@@ -1109,6 +1132,10 @@ export interface LogEntry extends LogHead {
   author: string;
   createdAt: number;
   updatedAt: number;
+  /** At most LOG_ANCHORS_MAX. */
+  anchors?: LogAnchor[];
+  /** Only with the feature "knowledge-anchors" on and anchors present; absent until a check has run. */
+  anchorState?: LogAnchorState;
 }
 /** One result of a search: no body, a piece of it around the best match instead. */
 export interface LogHit {
@@ -1118,6 +1145,7 @@ export interface LogHit {
   tags: string[];
   updatedAt: number;
   snippet: string;
+  anchorState?: LogAnchorState;
 }
 /** GET /api/log?q=: the ranked hits, or the newest entries when q is empty. `total` is every entry the log holds. */
 export interface LogSearch {
@@ -1129,6 +1157,8 @@ export interface LogRequest {
   title?: string;
   body?: string;
   tags?: string[];
+  /** Replaces the list; [] removes the anchors. Refused while "knowledge-anchors" is off. */
+  anchors?: LogAnchor[];
 }
 /** Star Chart (docs/star-chart-spec.md): a node is an entry, a tag or an author. `id` is `entry:l1`, `tag:build` or `author:ana`; `ref` is the part after the colon. */
 export interface ChartNode {
