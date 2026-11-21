@@ -713,10 +713,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   /** One stop or start per room at a time: a second request for the same room is refused while the first is in flight. */
   const inFlight = new Map<string, 'stopping' | 'starting'>();
   const STOP_ANSWER_MS = 5000;
-  type Power = { ok: true; status: 200 | 202 } | { ok: false; status: number; why: string };
+  type Power = { ok: true; status: 200 | 202; note?: string } | { ok: false; status: number; why: string };
 
   /** The reasons a room must not be stopped now (an open poll, a waiting Relief request, a running update, a main move), or null. */
-  async function stopRefusal(child: Child): Promise<string | null> {
+  async function stopRefusal(child: Child): Promise<string | null | 'unanswered'> {
     const id = child.entry.id;
     if (id === MAIN_ROOM) {
       const note = readMigration(options.home);
@@ -733,7 +733,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         if (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off') return 'an update is running in room main: wait for it to finish';
       }
     } catch {
-      return `room "${id}" did not say whether it is busy: try again`;
+      // a room that does not answer cannot be asked, and must still be stoppable (it may be hung); main carries updates and polls, so it is not
+      return id === MAIN_ROOM ? `room "${id}" did not say whether it is busy: try again` : 'unanswered';
     }
     return null;
   }
@@ -745,19 +746,21 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     if (byKey && id === MAIN_ROOM) return { ok: false, status: 403, why: 'an API key may not stop room main (it carries the updates and the Telegram poll): do it in the browser' };
     if (child.state === 'stopped' && !child.wanted) return { ok: false, status: 409, why: `room ${id} is already stopped` };
     inFlight.set(id, 'stopping');
+    let unanswered = false;
     try {
       const refusal = await stopRefusal(child);
-      if (refusal !== null) {
+      if (refusal !== null && refusal !== 'unanswered') {
         inFlight.delete(id);
         return { ok: false, status: 409, why: refusal };
       }
+      unanswered = refusal === 'unanswered';
     } catch (error) {
       inFlight.delete(id);
       throw error;
     }
     const done = halt(child).finally(() => inFlight.delete(id));
     const quick = await Promise.race([done.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), STOP_ANSWER_MS).unref())]);
-    return { ok: true, status: quick ? 200 : 202 };
+    return { ok: true, status: quick ? 200 : 202, ...(unanswered ? { note: 'the room did not answer whether it is busy: stopped anyway' } : {}) };
   }
 
   function startOne(child: Child): Power {
@@ -778,7 +781,17 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     try {
       if (req.method !== 'POST') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'POST' });
       if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
-      const path = rawId === undefined ? `/api/rooms/${action}` : `/api/rooms/${rawId}/${action}`;
+      // the room id is decoded ONCE and checked before anything is judged by it: the step-up rule matches the decoded text, never %6Dain
+      let id: string | undefined;
+      if (rawId !== undefined) {
+        try {
+          id = decodeURIComponent(rawId);
+        } catch {
+          return sendApiError(res, 400, 'bad room id', 'bad_request', 'id');
+        }
+        if (!validRoomId(id)) return sendApiError(res, 400, 'a room id is a lower-case letter, then up to 23 lower-case letters, digits or dashes', 'bad_request', 'id');
+      }
+      const path = id === undefined ? `/api/rooms/${action}` : `/api/rooms/${id}/${action}`;
       const reason = authHttp.stepUpNeeded(grant, 'POST', path, {});
       if (reason !== null) return authHttp.stepUpDenied(req, res, reason, grant.kind === 'tui');
       const byKey = grant.kind === 'key';
@@ -788,7 +801,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         log.warn(`rooms: ${actor}: ${text}`);
         notice(`${actor}: ${text}`);
       };
-      if (rawId === undefined) {
+      if (id === undefined) {
         if (byKey && action === 'stop-all') {
           audit('refused: an API key may not stop every room');
           return sendApiError(res, 403, 'an API key may not stop every room: do it in the browser', 'forbidden');
@@ -804,16 +817,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         audit(`${action}: ${done.length === 0 ? 'nothing done' : `done ${done.join(', ')}`}${skipped.length === 0 ? '' : `; skipped ${skipped.map((s) => `${s.id} (${s.why})`).join(', ')}`}`);
         return sendJson(res, 200, action === 'stop-all' ? { stopped: done, skipped } : { started: done, skipped });
       }
-      let id: string;
-      try {
-        id = decodeURIComponent(rawId);
-      } catch {
-        return sendApiError(res, 400, 'bad room id', 'bad_request', 'id');
-      }
+      if (id === undefined) return sendApiError(res, 400, 'bad room id', 'bad_request', 'id');
       const child = children.get(id);
       if (child === undefined) return sendApiError(res, 404, `there is no room "${id}"`, 'not_found');
       const r = action === 'stop' ? await stopOne(child, byKey) : startOne(child);
-      audit(`${action} room ${id}: ${r.ok ? 'done' : `refused (${r.why})`}`);
+      audit(`${action} room ${id}: ${r.ok ? `done${r.note === undefined ? '' : ` (${r.note})`}` : `refused (${r.why})`}`);
       if (!r.ok) return sendApiError(res, r.status, r.why, r.status === 403 ? 'forbidden' : 'conflict');
       return sendJson(res, r.status, (await roomView(id)) ?? { id });
     } catch (error) {
@@ -823,7 +831,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   }
 
   /** GET lists; POST adds; PATCH renames; DELETE takes a room off the list (its folder stays). The Director token was checked. */
-  async function roomsApi(req: http.IncomingMessage, res: http.ServerResponse, rawId: string | undefined): Promise<void> {
+  async function roomsApi(req: http.IncomingMessage, res: http.ServerResponse, grant: NonNullable<ReturnType<typeof authHttp.grant>>, rawId: string | undefined): Promise<void> {
     try {
       const method = req.method ?? '';
       if (method === 'GET' && rawId === undefined) return sendJson(res, 200, { rooms: await viewsNow(), update: newerNow(), layout: layoutView() }, { 'Cache-Control': 'no-store' });
@@ -840,6 +848,9 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         if (!validRoomId(id)) return sendApiError(res, 400, 'a room id is a lower-case letter, then up to 23 lower-case letters, digits or dashes', 'bad_request', 'id');
       }
       if (method === 'DELETE') {
+        // judged by the decoded id, here, because the room proxy does not cover the supervisor's own routes
+        const reason = authHttp.stepUpNeeded(grant, 'DELETE', `/api/rooms/${String(id)}`, null);
+        if (reason !== null) return authHttp.stepUpDenied(req, res, reason, grant.kind === 'tui');
         removeRoom(options.home, id);
         reconcile();
         return sendJson(res, 200, { ok: true, note: `room ${id} was taken off the list and is stopping; its folder stays` });
@@ -927,7 +938,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
       if (rooms[2] === 'migrate') void (rooms[1] === 'main' ? migrateApi(req, res, grant) : sendApiError(res, 404, 'not found', 'not_found'));
       else if (rooms[2] === 'stop' || rooms[2] === 'start' || rooms[1] === 'stop-all' || rooms[1] === 'start-all') void powerApi(req, res, grant, rooms[2] ?? (rooms[1] as string), rooms[2] === undefined ? undefined : rooms[1]);
-      else void roomsApi(req, res, rooms[1]);
+      else void roomsApi(req, res, grant, rooms[1]);
       return;
     }
     sendText(res, 404, 'not found');

@@ -1040,6 +1040,14 @@ describe('stop and start rooms through the supervisor (t107)', () => {
     expect(notices).toMatch(/refused: an API key may not stop every room/);
   }, 60_000);
 
+  it('a room that does not answer /api/state can still be stopped (the audit says so)', async () => {
+    const s = await boot({ FAKE_ROOM_NOSTATE: '1' });
+    const res = await post(s, '/api/rooms/c/stop');
+    expect(res.status).toBe(200);
+    expect(await state(s, 'c')).toBe('stopped');
+    await until(() => existsSync(join(home, 'notices')) && /stop room c: done \(the room did not answer/.test(readFileSync(join(home, 'notices'), 'utf8')));
+  }, 60_000);
+
   it('one request at a time per room: two stops at once, one answers 409', async () => {
     const s = await boot();
     const both = await Promise.all([post(s, '/api/rooms/c/stop'), post(s, '/api/rooms/c/stop')]);

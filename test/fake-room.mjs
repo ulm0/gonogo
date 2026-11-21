@@ -27,6 +27,7 @@ const server = http.createServer((req, res) => {
   const ok = req.socket.remoteAddress === undefined;
   if (req.url === '/api/update') return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ state: process.env.FAKE_ROOM_UPDATE || 'idle' }));
   if (req.url === '/api/state') {
+    if (process.env.FAKE_ROOM_NOSTATE && home.includes('/rooms/')) return; // a hung room: the request never gets an answer
     if (!ok) return void res.writeHead(401).end('no');
     return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ propellant: { cost: { days: [{ usd: 0.12 }, { usd: 1.5 }] } }, agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], relief: { requests: process.env.FAKE_ROOM_RELIEF && home.includes('/rooms/') ? [{ id: 'r1' }] : [] }, poll: process.env.FAKE_ROOM_POLL_OPEN && home.includes('/rooms/') ? { status: 'open' } : null, tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
   }
