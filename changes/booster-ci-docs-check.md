@@ -1,0 +1,1 @@
+- **CI: the docs site is checked after it is deployed.** `docs.yml` fetches the home page and a feature page of the live site and checks the tags a link preview reads (og:title, og:description, og:url, og:image, twitter:card, the canonical link) and that `/og.png` is a PNG. No change for users.
