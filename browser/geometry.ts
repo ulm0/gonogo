@@ -36,7 +36,17 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       if (el.clientWidth <= 1) continue; // visually hidden on purpose (a screen-reader label)
-      if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).display !== 'inline') problems.push(`text clipped: ${name(el)} (${el.scrollWidth} > ${el.clientWidth})`);
+      const style = getComputedStyle(el);
+      if (el.scrollWidth > el.clientWidth + 1 && style.display !== 'inline' && style.textOverflow !== 'ellipsis') problems.push(`text clipped: ${name(el)} (${el.scrollWidth} > ${el.clientWidth})`);
+    }
+    // text cut at the bottom: a box that hides its overflow and holds more than it shows (a card whose second line is cut in the middle of a glyph)
+    for (const el of document.querySelectorAll<HTMLElement>('body *')) {
+      if (el.closest('.xterm, .term-wrap, .next-select, .next-strip-row') !== null || (el.textContent ?? '').trim() === '') continue;
+      const style = getComputedStyle(el);
+      if (style.overflowY !== 'hidden' && style.overflowY !== 'clip') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (el.scrollHeight > el.clientHeight + 1) problems.push(`text cut at the bottom: ${name(el)} (${el.scrollHeight} > ${el.clientHeight})`);
     }
     return problems;
   }, phone ? 44 : 24);

@@ -15,12 +15,13 @@ const MODES: ReadonlyArray<{ mode: PanelMode; label: string }> = [
   { mode: 'hidden', label: 'Hidden' },
 ];
 
-export function LayoutPop(): ReactElement {
+/** `icon`: a phone, where the key is a symbol (it keeps its name for a screen reader). */
+export function LayoutPop({ icon = false }: { icon?: boolean }): ReactElement {
   const panels = useNext((s) => s.panels);
   const seats = useNext((s) => s.seats);
   const density = densityOf(panels);
   return (
-    <NextPop label="Layout ▾" name="Layout of the room" align="end" className="next-layout">
+    <NextPop label={icon ? '⚙' : 'Layout ▾'} name="Layout of the room" align="end" className="next-layout">
       {(close) => (
         <div className="next-layout-pop">
           <div className="next-pop-head">

@@ -1,5 +1,5 @@
 /** The toolbar over the terminal in the prototype layout (docs/ui-semantic.md, "The console panel and its terminal"): size, Copy (four ways), Find, Latest, Full screen, Expand, and Select for a phone. */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { NextPop } from './NextPop.js';
 import { setNext, useNext } from './nextState.js';
@@ -20,6 +20,16 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
   const [query, setQuery] = useState('');
   const [selectText, setSelectText] = useState<string | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
+  const [full, setFull] = useState(false);
+  // the panel that holds the toolbar and the terminal is what goes full screen, so the way back is on the screen
+  useEffect(() => {
+    const change = (): void => {
+      setFull(document.fullscreenElement !== null && document.fullscreenElement === box.current?.parentElement);
+      setTimeout(() => panes.current?.refit(), 200);
+    };
+    document.addEventListener('fullscreenchange', change);
+    return () => document.removeEventListener('fullscreenchange', change);
+  }, []);
   const tools = (): NonNullable<typeof panes.current> | null => panes.current;
   const copy = (mode: 'selection' | 'last' | 'screen' | 'all'): void => {
     const text = tools()?.text(mode) ?? '';
@@ -118,11 +128,11 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
                 className="btn next-item"
                 data-kind="quiet"
                 onClick={() => {
-                  void (document.fullscreenElement !== null ? document.exitFullscreen() : document.querySelector('.pane')?.requestFullscreen());
+                  void (document.fullscreenElement !== null ? document.exitFullscreen() : box.current?.parentElement?.requestFullscreen());
                   close();
                 }}
               >
-                Full screen
+                {full ? 'Leave full screen' : 'Full screen'}
               </button>
             )}
           </div>

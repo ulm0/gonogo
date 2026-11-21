@@ -111,3 +111,18 @@
   .next-row-name, .next-row-now { flex-basis: 100%; }
   .next-row-edit { margin-left: auto; }
 }
+/* the room on a phone (docs/ui-semantic.md): the strip is one row that scrolls, the header keys are symbols, a card fits its text, the terminal takes what is left */
+@media (max-width: 700px) {
+  .next-strip-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .next-strip-row::-webkit-scrollbar { display: none; }
+  .next-strip-row .next-anchor { flex: none; }
+  .next-ops-head .btn { min-width: 44px; padding-inline: 10px; }
+  .next-room .matrix .room-tile { height: auto; min-height: 64px; }
+  .next-room .matrix .tile-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .next-room[data-phone] { display: flex; flex-direction: column; flex-wrap: nowrap; min-height: calc(100dvh - 76px - 72px); }
+  .next-room[data-phone] .next-phone-term { flex: 1 1 auto; }
+  .next-phone-term .pane { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  .next-phone-term .term-wrap { flex: 1 1 auto; min-height: 240px; }
+}
+.panel:fullscreen, .next-phone-term:fullscreen { background: var(--body); overflow: auto; padding: 16px; }
+.panel:fullscreen .term-wrap, .next-phone-term:fullscreen .term-wrap { min-height: calc(100vh - 220px); }

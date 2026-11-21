@@ -845,12 +845,12 @@ export function NextOperations({ phone }: { phone: boolean }): ReactElement {
     <section className="operations module next-ops" aria-label="Consoles">
       <div className="next-ops-head">
         <h2 className="label">CONSOLES</h2>
-        <span className="hint">{staffed.length} staffed · {open.length} open {open.length === 1 ? 'seat' : 'seats'}</span>
+        <span className="hint">{phone ? `${staffed.length} staffed` : `${staffed.length} staffed · ${open.length} open ${open.length === 1 ? 'seat' : 'seats'}`}</span>
         <span className="topbar-grow" />
-        <button type="button" className="btn" data-kind="primary" onClick={() => openHire()}>
-          + Staff a console
+        <button type="button" className="btn" data-kind="primary" aria-label="Staff a console" onClick={() => openHire()}>
+          {phone ? '+' : '+ Staff a console'}
         </button>
-        <LayoutPop />
+        <LayoutPop icon={phone} />
       </div>
       <div className="matrix next-matrix">
         {tiles.map((cell) => (

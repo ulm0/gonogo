@@ -167,12 +167,57 @@ test.afterAll(async () => {
   await writeFile(join(OUT, 'geometry.txt'), geo.length === 0 ? 'no geometry problems\n' : geo.join('\n') + '\n');
 });
 
+/** A thing the terminal toolbar must do, checked in the page: a failure goes in geometry.txt like a geometry problem. */
+async function proof(group: string, what: string, check: () => Promise<boolean>): Promise<void> {
+  const ok = await check().catch(() => false);
+  if (!ok) geo.push(`${group}: proof failed: ${what}`);
+}
+
+const clipboard = (page: Page): Promise<string> => page.evaluate(() => navigator.clipboard.readText());
+
+/** Copy, Find and Full screen of the terminal toolbar, driven as a person would and checked (the clipboard, the selection, document.fullscreenElement). */
+async function toolbarProofs(page: Page, group: string): Promise<void> {
+  const phone = group.endsWith('phone');
+  const needle = 'Fake model';
+  await page.waitForTimeout(1500);
+  const copyItem = async (name: string): Promise<void> => {
+    await page.getByRole('button', { name: 'Copy' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name, exact: true }).click({ timeout: 3000 });
+  };
+  await copyItem('The screen');
+  await proof(group, 'Copy > The screen puts the terminal text on the clipboard', async () => (await clipboard(page)).includes(needle));
+  if (phone) {
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Find', exact: true }).click({ timeout: 3000 });
+  } else {
+    await page.getByRole('button', { name: 'Find', exact: true }).click({ timeout: 3000 });
+  }
+  await page.getByLabel('Find in the terminal').fill('fake');
+  await page.getByLabel('Find in the terminal').press('Enter');
+  await proof(group, 'Find highlights a match (xterm selection layer)', async () => (await page.locator('.xterm-selection div').count()) > 0);
+  await copyItem('Selection');
+  await proof(group, 'Copy > Selection puts the found text on the clipboard', async () => (await clipboard(page)).toLowerCase() === 'fake');
+  if (!phone) {
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Full screen', exact: true }).click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    await proof(group, 'Full screen enters', async () => page.evaluate(() => document.fullscreenElement !== null));
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Leave full screen', exact: true }).click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    await proof(group, 'Full screen leaves', async () => page.evaluate(() => document.fullscreenElement === null));
+  }
+}
+
 /** The prototype layout (?layout=next, src/client/next.ts): the same room, looked at in the same browser. */
 async function next(page: Page, group: string): Promise<void> {
   await page.goto(`${base}/r/main/?layout=next`);
   await page.locator('.next-topbar').waitFor({ timeout: 30_000 });
   await page.locator('.lamp[data-link="up"]').waitFor({ timeout: 30_000 }).catch(() => undefined);
   await shoot(page, group, 'room', true);
+  await toolbarProofs(page, group);
+  await page.reload();
+  await page.locator('.next-topbar').waitFor({ timeout: 30_000 });
   if (group.endsWith('phone')) {
     await view(page, group, 'terminal select', async () => {
       await page.getByRole('button', { name: 'Select', exact: true }).click({ timeout: 3000 });
@@ -405,7 +450,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       await shoot(page, group, 'rooms list', true);
       await app(page, group, true);
       await context.close();
-      const ahead = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+      const ahead = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height }, permissions: ['clipboard-read', 'clipboard-write'] });
       await next(await ahead.newPage(), `next-${group}`);
       await ahead.close();
     }
