@@ -182,6 +182,19 @@ describe('the bounds', () => {
     expect(results[1]?.legs[0]).toMatchObject({ state: 'unevaluated', note: 'too much to read in one run' });
   });
 
+  it('a file list that would pass the cap is a failure, not a shorter list: no leg reads ok over some of the files', async () => {
+    repo(Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`file-${i}.txt`, i === 59 ? 'FORBIDDEN\n' : 'fine\n'])));
+    const claims = [claim('K-1', '*.txt "FORBIDDEN" absent'), claim('K-2', '*.txt "fine" each'), claim('K-3', '*.txt "fine"')];
+    // under the cap, the forbidden text in the last file is found
+    expect((await make().run(root, claims))[0]?.worst).toBe('stale');
+    // over it (60 names of ~12 bytes: 700 bytes against a cap of 300): nothing is answered from the part that fit
+    const cut = await make({ listCap: 300 }).run(root, claims);
+    expect(cut.map((r) => r.worst)).toEqual(['unevaluated', 'unevaluated', 'unevaluated']);
+    expect(cut[0]?.legs[0]?.note).toBe('git could not list the files of this checkout');
+    // and the fast path, which asks git grep directly, is not given a run that could not list
+    expect(cut.every((r) => r.legs.every((l) => l.state === 'unevaluated'))).toBe(true);
+  });
+
   it('a worker that fails is `the check could not finish`, not a hang; a git that cannot list is said', async () => {
     repo({ 'a.txt': 'x\n' });
     const failing = make({ spawn: async () => ({ messages: [], ended: 'failed' }) });
