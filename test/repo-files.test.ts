@@ -270,6 +270,37 @@ describe('Homebrew installs from the release asset, not from npm\'s CDN', () => 
   });
 });
 
+describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scripts/update-e2e.sh)', () => {
+  const wf = read('.github', 'workflows', 'update-e2e.yml');
+  const script = read('scripts', 'update-e2e.sh');
+  it('runs after a stable Image run on a tag, by hand and for a change of the script; read access only, the job\'s own token, pinned actions, no secret', () => {
+    expect(wf).toMatch(/workflow_run:\n\s+workflows: \[Image\]/);
+    expect(wf).toContain("!contains(github.event.workflow_run.head_branch, '-')");
+    expect(wf).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(wf).toContain('workflow_dispatch:');
+    expect(wf).toMatch(/^permissions: \{\}/m);
+    expect(wf).toMatch(/permissions:\n\s+contents: read\n\s+packages: read\n\s+attestations: read/);
+    expect(wf).not.toMatch(/secrets\./);
+    expect(wf).not.toMatch(/E2E_UNVERIFIED/);
+    expect(wf.match(/GH_TOKEN: \$\{\{ github\.token \}\}/g)).toHaveLength(2);
+    for (const use of wf.match(/uses: [^\n]+/g) ?? []) expect(use, use).toMatch(/@[0-9a-f]{40} # v\d/);
+  });
+  it('the script pulls only this repository\'s image, updates through the API and then UNDOes, with the token passed by name', () => {
+    expect(script).toContain('IMAGE=ghcr.io/ulm0/gonogo');
+    expect(script.match(/docker pull/g)).toHaveLength(2);
+    expect(script).not.toMatch(/docker pull [^\n]*(docker\.io|quay|gcr|registry\.npmjs)/);
+    expect(script).toContain('-e GH_TOKEN \\');
+    expect(script).not.toMatch(/-e GH_TOKEN=/);
+    expect(script).toContain('POST /api/update');
+    expect(script).toContain('/api/update/undo');
+    expect(script).toContain('E2E_UNVERIFIED');
+    // the moving tag is what the update pulls, so the container runs from :latest and TO must be what :latest is
+    expect(script).toContain('docker tag "$IMAGE:$FROM" "$IMAGE:latest"');
+    expect(script).toContain('not $TO (the update takes the moving tag');
+    expect(statSync(join(root, 'scripts', 'update-e2e.sh')).mode & 0o111).not.toBe(0);
+  });
+});
+
 describe('scripts/check-pack.mjs file list', () => {
   const server = ['cli', 'hub'];
   const complete = [
