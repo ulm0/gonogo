@@ -88,7 +88,7 @@ async function shoot(page: Page, group: string, title: string, fullPage = false)
 }
 
 /** The geometry rules (no overlap, no sideways scroll, no clipped text, keys 24 px or 44 on a phone) on the view the page shows now. */
-async function measure(page: Page, group: string, title: string, scope = 'main, .lay-strip'): Promise<void> {
+async function measure(page: Page, group: string, title: string, scope = 'body'): Promise<void> {
   for (const problem of await geometry(page, group.endsWith('phone'), scope)) geo.push(`${group}: ${title}: ${problem}`);
 }
 
