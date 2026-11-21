@@ -29,8 +29,8 @@ All of them are the supervisor's own (reserved, never proxied: `/api/rooms` is a
 
 ## Security (for RSO)
 
-- These routes stop and start processes that run agents with the user's rights, and `stop` kills work in progress. They are as sensitive as `DELETE /api/rooms/<id>`, which has no step-up today; **proposed: a step-up** (the Director's password again, `src/server/stepup.ts`, the same table the migrate route is in) for `stop`, `stop-all` and `start-all`, none for `start`, because starting is what the server does at boot anyway. State this in `stepup.ts` so the page's existing step-up dialog handles the 403 `stepUp` answer.
-- API keys: `stop`, `start`, `stop-all`, `start-all` should be **refused for a key with scope below `admin`** (they are write routes of the supervisor, as `POST /api/rooms`). Say which scope that is in `src/server/clearance.ts`.
+- These routes stop and start processes that run agents with the user's rights, and `stop` kills work in progress. They are as sensitive as `DELETE /api/rooms/<id>`, which is not in the step-up table I read (`stepup.ts`: `bodyMatters` lists migrate, autoupdate, knowledge move, hire and edit; I did not read the rest of the table); **proposed: a step-up** (the Director's password again, `src/server/stepup.ts`, the same table the migrate route is in) for `stop`, `stop-all` and `start-all`, none for `start`, because starting is what the server does at boot anyway. State this in `stepup.ts` so the page's existing step-up dialog handles the 403 `stepUp` answer.
+- API keys: `roomsApi` is called only after "the Director token was checked" (comment in `supervisor.ts`); the new routes should sit behind the same check, so a room key or an agent's token cannot call them. **Not verified by CONTROL**: how keys are scoped there; GUIDO and RSO should read it.
 - Origin: the same `originOk` check; no CORS.
 - No agent can call these: the room's own routes and tools do not reach the supervisor's `/api/rooms`. A test should show that an agent's token gets 403.
 
@@ -39,7 +39,7 @@ All of them are the supervisor's own (reserved, never proxied: `/api/rooms` is a
 - Each route on a supervisor with two fake rooms (the existing fake child in the supervisor tests): state before and after, the 404 and 409 answers, `autostart` unchanged.
 - `stop-all` skips `main` during a pending migration and says why.
 - A session with an old password check gets 403 `stepUp` on `stop`, `stop-all` and `start-all`, and 200 after the check.
-- A key without the scope gets 403; an agent's token gets 403.
+- A room key and an agent's token get 403.
 - The rooms page (`roomspage.ts`, inline script with CSP hashes): the new keys are named by what they do ("Stop Docs", "Start Docs", "Stop all rooms"), are 44 px on a phone, and the page does not offer Start on a `starting` or `running` room.
 
 ## Not in this spec
