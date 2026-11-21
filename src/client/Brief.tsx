@@ -3,7 +3,7 @@ import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { BODY_MAX_CHARS, MISSION_NAME_MAX_CHARS } from '../shared/protocol.js';
 import type { AgentView } from '../shared/protocol.js';
 import * as api from './api.js';
-import { draftFromBrief } from './missions.js';
+import { draftFromBrief } from './missionsModel.js';
 import { openNewMission } from './store.js';
 import { briefSentText } from './wording.js';
 import './loop.css';

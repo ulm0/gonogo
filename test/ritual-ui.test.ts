@@ -3,9 +3,9 @@ import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Missions } from '../src/client/Missions.js';
-import { ritualProgress, ritualTextProblem, sourceText, tickedText } from '../src/client/missions.js';
+import { ritualProgress, ritualTextProblem, sourceText, tickedText } from '../src/client/missionsModel.js';
 import { RitualTemplateBlock, RoomRulesBlock } from '../src/client/RoomRules.js';
-import { asSaved, bytesOf, bytesText, RULES_MAX_BYTES, rulesProblem } from '../src/client/roomrules.js';
+import { asSaved, bytesOf, bytesText, RULES_MAX_BYTES, rulesProblem } from '../src/client/roomRulesModel.js';
 import { emptyState, selectMission, showMissions, store } from '../src/client/store.js';
 import type { Mission, RitualItem } from '../src/shared/protocol.js';
 

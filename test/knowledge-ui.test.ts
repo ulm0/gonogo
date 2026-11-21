@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { applyServerFrame, emptyState } from '../src/client/store.js';
 import { Reader } from '../src/client/MissionLog.js';
 import { RepoCard } from '../src/client/Knowledge.js';
-import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from '../src/client/knowledge.js';
+import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from '../src/client/knowledgeModel.js';
 import type { Claim, ClaimResult, KnowledgeRepo, Leg, LogEntry, Proposal } from '../src/shared/protocol.js';
 
 const leg = (patch: Partial<Leg> = {}): Leg => ({ mode: 'absent', glob: 'src/**/*.ts', excludes: [], pattern: { kind: 'literal', text: 'parseFloat(' }, line: 1, ...patch });

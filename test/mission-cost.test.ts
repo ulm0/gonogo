@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createPropellant, parsePropellantRequest } from '../src/server/propellant.js';
 import type { Propellant } from '../src/server/propellant.js';
-import { budgetShare, spendText } from '../src/client/missions.js';
+import { budgetShare, spendText } from '../src/client/missionsModel.js';
 import type { DownlinkEventKind, Logger } from '../src/shared/protocol.js';
 
 const quiet: Logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, child: () => quiet } as unknown as Logger;

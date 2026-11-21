@@ -9,7 +9,7 @@ import { TASK_DETAIL_MAX_CHARS, TASK_TITLE_MAX_CHARS, TASKS_OPEN_MAX } from '../
 import type { Task, TaskStatus } from '../shared/protocol.js';
 import * as api from './api.js';
 import { HandOff } from './DockingPanel.js';
-import { missionOptions, nameOf } from './missions.js';
+import { missionOptions, nameOf } from './missionsModel.js';
 import { canHandOff } from './docking.js';
 import { assigneeText, assignees, cardId, columnsOf, COLUMNS, emptyValues, FIELDS, labelOf, ledKindOf, requestOf, validate } from './plan.js';
 import type { Field, Problems, Values } from './plan.js';

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultView } from '../src/shared/livery.js';
 import type { ActivityItem, Mission, StateSnapshot, Task } from '../src/shared/protocol.js';
 import { MISSION_NAME_MAX_CHARS } from '../src/shared/protocol.js';
-import { actionsOf, draftFromBrief, emptyMissionValues, missionOptions, nameOf, progressOf, sortMissions, tasksOf, validateMission } from '../src/client/missions.js';
+import { actionsOf, draftFromBrief, emptyMissionValues, missionOptions, nameOf, progressOf, sortMissions, tasksOf, validateMission } from '../src/client/missionsModel.js';
 import { requestOf } from '../src/client/plan.js';
 import { commands } from '../src/client/shell.js';
 import { applyServerFrame, emptyState, openNewMission, selectMission, showMissions, store } from '../src/client/store.js';

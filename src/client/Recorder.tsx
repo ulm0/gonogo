@@ -11,7 +11,7 @@ import * as api from './api.js';
 import { WorkspaceHead, useWorkspaceAgent } from './Hangar.js';
 import { whenText } from './inbox.js';
 import { Review } from './Review.js';
-import { commitGate } from './review.js';
+import { commitGate } from './reviewModel.js';
 import { commitProblem, diffLines, fileLabels, shortHash, stagedCount } from './changes.js';
 import './loop.css';
 import './hangar.css';

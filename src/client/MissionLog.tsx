@@ -7,7 +7,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { LOG_BODY_MAX_CHARS, LOG_QUERY_MAX_CHARS, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
-import { plain } from './knowledge.js';
+import { plain } from './knowledgeModel.js';
 import type { LogAnchorState, LogChart, LogEntry, LogHit, LogSearch } from '../shared/protocol.js';
 import * as api from './api.js';
 import { whenText } from './inbox.js';
