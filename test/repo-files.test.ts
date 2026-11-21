@@ -286,7 +286,8 @@ describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scri
     for (const use of wf.match(/uses: [^\n]+/g) ?? []) expect(use, use).toMatch(/@[0-9a-f]{40} # v\d/);
   });
   it('the script pulls only this repository\'s image, updates through the API and then UNDOes, with the token passed by name', () => {
-    expect(script).toContain('IMAGE=ghcr.io/ulm0/gonogo');
+    expect(script).toContain('IMAGE=${E2E_IMAGE:-ghcr.io/ulm0/gonogo}');
+    expect(wf).not.toMatch(/E2E_IMAGE/);
     expect(script.match(/docker pull/g)).toHaveLength(2);
     expect(script).not.toMatch(/docker pull [^\n]*(docker\.io|quay|gcr|registry\.npmjs)/);
     expect(script).toContain('-e GH_TOKEN \\');

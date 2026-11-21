@@ -7,14 +7,15 @@
 #
 # usage: GH_TOKEN=... scripts/update-e2e.sh <FROM> <TO>      (x.y.z both; FROM is 0.8.0 or later, the first release whose gonogo verifies)
 # env:   E2E_PORT (default 17777), E2E_NAME (default gonogo-e2e), E2E_KEEP=1 leaves the container and the data after the run,
-#        E2E_UNVERIFIED=1 confirms an image that cannot be verified (for a daemon with no GitHub token, such as a local one; the workflow never sets it).
+#        E2E_IMAGE=<repository> (default ghcr.io/ulm0/gonogo), E2E_UNVERIFIED=1 confirms an image that cannot be verified (for a daemon with no GitHub token, such as a local one; the workflow never sets it).
 set -euo pipefail
 
 FROM=${1:?usage: update-e2e.sh <FROM> <TO>}
 TO=${2:?usage: update-e2e.sh <FROM> <TO>}
 for v in "$FROM" "$TO"; do [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$v is not x.y.z"; exit 2; }; done
 [ "$FROM" != "$TO" ] || { echo "::error::FROM and TO are the same version"; exit 2; }
-IMAGE=ghcr.io/ulm0/gonogo
+# E2E_IMAGE only for trying the script against a registry of your own (images that are not ghcr.io/ulm0/gonogo cannot be verified: also set E2E_UNVERIFIED=1)
+IMAGE=${E2E_IMAGE:-ghcr.io/ulm0/gonogo}
 NAME=${E2E_NAME:-gonogo-e2e}
 PORT=${E2E_PORT:-17777}
 DATA=$(mktemp -d "${RUNNER_TEMP:-/tmp}/gonogo-e2e.XXXXXX")
@@ -30,7 +31,7 @@ dump() {
   echo "::group::state at the failure"
   docker ps -a --filter "name=$NAME" --format '{{.Names}} {{.Image}} {{.Status}}' || true
   docker logs --tail 60 "$NAME" 2>&1 || true
-  [ -f "$DATA/state/run/update.json" ] && { echo "update.json:"; cat "$DATA/state/run/update.json"; } || true
+  [ -n "$(result_file)" ] && { echo "update.json:"; cat "$(result_file)"; } || true
   echo "::endgroup::"
 }
 cleanup() {
@@ -42,6 +43,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# where the helper writes its result: <home of room main>/run/update.json (under the supervisor's folder since rooms became the only mode)
+result_file() { find "$DATA/state" -name update.json -path '*/run/*' 2>/dev/null | head -1; }
 version_of() { docker exec "$NAME" node -p 'require("/opt/gonogo/package.json").version' 2>/dev/null; }
 health_of() { docker inspect -f '{{.State.Health.Status}}' "$NAME" 2>/dev/null || echo none; }
 # requests to the room's own server with the Director token, from inside the container: `api_post METHOD PATH BODY` prints "<status> <body>"
@@ -135,7 +138,7 @@ settled=$(wait_settled 240) || fail "the update strip did not settle: $settled"
 echo "strip: $settled"
 case "$settled" in *'"state":"done"'*'"undo":true'*) ;; *) fail "after the update the strip should say done with UNDO: $settled" ;; esac
 [ "$(version_of)" = "$TO" ] || fail "version is not $TO"
-grep -q '"state": *"ok"' "$DATA/state/run/update.json" || fail "update.json does not say ok"
+grep -q '"state": *"ok"' "$(result_file)" || fail "update.json does not say ok"
 endstep
 
 step "UNDO back to $FROM"
@@ -147,7 +150,7 @@ wait_running "$FROM" 300 || fail "gonogo $FROM did not run healthy after UNDO"
 echo "running $(version_of), health $(health_of)"
 settled=$(wait_settled 240) || fail "the strip did not settle after UNDO: $settled"
 echo "strip: $settled"
-grep -q "\"to\": *\"$FROM\"" "$DATA/state/run/update.json" || grep -q "\"from\": *\"$TO\"" "$DATA/state/run/update.json" || fail "update.json does not record the UNDO"
+grep -q "\"to\": *\"$FROM\"" "$(result_file)" || fail "update.json does not record the UNDO"
 endstep
 
 echo "OK: $FROM -> $TO -> $FROM through the real path, each side healthy"
