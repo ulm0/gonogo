@@ -290,6 +290,9 @@ describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scri
     expect(wf).toContain('to=${INPUT_TO:-${RUN_TAG#v}}');
     expect(wf).toContain('sort -Vr');
     expect(wf).toContain("[[ \"$to\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]");
+    // FROM is validated like TO before it reaches GITHUB_OUTPUT
+    expect(wf).toContain("[[ \"$from\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]");
+    expect(wf.indexOf('FROM \'$from\' is not x.y.z')).toBeLessThan(wf.indexOf('echo "from=$from" >> "$GITHUB_OUTPUT"'));
     // the old pick (the second release of the list) is gone
     expect(wf).not.toContain('grep -vx "$to"');
   });

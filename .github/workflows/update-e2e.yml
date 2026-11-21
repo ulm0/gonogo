@@ -66,6 +66,8 @@ jobs:
           # FROM: what was asked; else the newest stable release BELOW TO (the list may or may not have TO yet)
           below() { while read -r v; do [ "$v" != "$to" ] && [ "$(printf '%s\n%s\n' "$v" "$to" | sort -V | head -1)" = "$v" ] && { echo "$v"; return; }; done < <(sort -Vr "$RUNNER_TEMP/releases.txt"); }
           from=${INPUT_FROM:-$(below)}
+          # FROM is checked like TO before it is written anywhere (an input by hand is free text)
+          [[ "$from" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::FROM '$from' is not x.y.z"; exit 1; }
           [ -n "$to" ] && [ -n "$from" ] || { echo "::error::could not pick two releases from: $(tr '\n' ' ' < "$RUNNER_TEMP/releases.txt")"; exit 1; }
           echo "from=$from" >> "$GITHUB_OUTPUT"
           echo "to=$to" >> "$GITHUB_OUTPUT"
