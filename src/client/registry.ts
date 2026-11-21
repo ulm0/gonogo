@@ -2,7 +2,7 @@
  * The registry picker (docs/features/registry.md): the pure parts. The entries are shipped with gonogo and checked by hand (src/shared/registry.ts); the page
  * only ever fills a text box with one, which the person can still edit. Nothing here fetches, installs or runs anything.
  */
-import { REGISTRY } from '../shared/registry.js';
+import { checkedDaysAgo, REGISTRY, REGISTRY_STALE_DAYS } from '../shared/registry.js';
 import type { RegistryEntry, RegistryServer, RegistrySkill } from '../shared/registry.js';
 
 export type { RegistryEntry, RegistryServer, RegistrySkill };
@@ -46,18 +46,14 @@ export function hasServer(text: string, id: string): boolean {
   }
 }
 
-/** The line under a server that needs keys: names only, never a value. */
-export const needsText = (entry: RegistryServer): string => (entry.needs.length === 0 ? '' : `Set these in Clearance (this console) or the room's keys: ${entry.needs.join(', ')}. The box holds only the names.`);
-
 /** The server as the Payload defaults form wants it: its name and its JSON. */
 export const asDefault = (entry: RegistryServer): { name: string; config: string } => ({ name: entry.id, config: JSON.stringify(entry.server, null, 2) });
 
-const OLD_DAYS = 183;
-/** "checked 2026-11-21", and whether that is old enough (about six months) to be shown dimmed with a warning. */
-export function checkedText(checked: string, now: number): { text: string; old: boolean } {
-  const at = Date.parse(`${checked}T00:00:00Z`);
-  const old = Number.isFinite(at) && now - at > OLD_DAYS * 86_400_000;
-  return { text: old ? `checked ${checked}: a while ago, read its repository again` : `checked ${checked}`, old };
+/** "checked 12 days ago" (the day itself too), and whether that is more than REGISTRY_STALE_DAYS: then the card warns the entry may be out of date. */
+export function checkedText(checked: string, now: number): { text: string; old: boolean; days: number } {
+  const days = Number.isFinite(Date.parse(`${checked}T00:00:00Z`)) ? checkedDaysAgo(checked, now) : 0;
+  const old = days > REGISTRY_STALE_DAYS;
+  return { text: `checked ${days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`} (${checked})`, old, days };
 }
 
 /** A link only to the repository over https: the data is shipped with gonogo, but the page never links to anything else. */

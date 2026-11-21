@@ -5,7 +5,8 @@
  */
 import { useId, useState } from 'react';
 import type { ReactElement } from 'react';
-import { checkedText, entriesFor, folderText, needsText, safeSource, serversOf, skillsOf } from './registry.js';
+import { REGISTRY_STALE_DAYS, REGISTRY_WARNINGS } from '../shared/registry.js';
+import { checkedText, entriesFor, folderText, safeSource, serversOf, skillsOf } from './registry.js';
 import type { RegistryEntry, RegistryServer } from './registry.js';
 import { copyText } from './uplink.js';
 
@@ -20,12 +21,14 @@ interface Props {
   only?: 'mcp' | 'skill';
   /** The date the page was drawn (a test sets it). */
   now?: number;
+  /** The entry the list opens on (the first one when none). */
+  first?: string;
 }
 
-export function RegistryPicker({ payload, has, onAdd, only, now = Date.now() }: Props): ReactElement | null {
+export function RegistryPicker({ payload, has, onAdd, only, now = Date.now(), first }: Props): ReactElement | null {
   const id = useId();
   const list = entriesFor(payload).filter((e) => only === undefined || e.kind === only);
-  const [picked, setPicked] = useState<string>(list[0]?.id ?? '');
+  const [picked, setPicked] = useState<string>(first ?? list[0]?.id ?? '');
   const [copied, setCopied] = useState<boolean | null>(null);
   if (list.length === 0) return null;
   const entry: RegistryEntry = list.find((e) => e.id === picked) ?? (list[0] as RegistryEntry);
@@ -69,7 +72,7 @@ export function RegistryPicker({ payload, has, onAdd, only, now = Date.now() }: 
         )}
       </select>
       <p className="hint">
-        {entry.summary} {entry.licence}
+        {entry.summary} By {entry.publisher}. {entry.licence}
         {' · '}
         <span className="registry-checked" data-old={when.old || undefined}>
           {when.text}
@@ -83,17 +86,35 @@ export function RegistryPicker({ payload, has, onAdd, only, now = Date.now() }: 
           </>
         )}
       </p>
+      {when.old && (
+        <p className="hint registry-warn" role="note">
+          Checked more than {REGISTRY_STALE_DAYS} days ago: it may be out of date. Read its repository again before you use it.
+        </p>
+      )}
       {entry.note !== null && <p className="hint">{entry.note}</p>}
       {entry.kind === 'mcp' ? (
         <>
+          <p className="registry-runs">
+            <strong>{entry.runs}</strong>
+          </p>
+          {entry.sendsTo !== null && <p className="hint">Sends to: {entry.sendsTo}</p>}
+          <ul className="registry-warnings">
+            <li>{REGISTRY_WARNINGS.runs}</li>
+            {entry.transport === 'stdio' && <li>{REGISTRY_WARNINGS.pin}</li>}
+            <li>{REGISTRY_WARNINGS.descriptions}</li>
+            {entry.needs.length > 0 && (
+              <li>
+                {REGISTRY_WARNINGS.keys} Keys: {entry.needs.join(', ')}.
+              </li>
+            )}
+          </ul>
           {entry.runtime !== null && <p className="hint">Needs {entry.runtime === 'node' ? 'Node (npx)' : 'uv (uvx)'} on the machine the agent runs on.</p>}
           {entry.edit !== null && <p className="hint">{entry.edit}</p>}
-          {entry.needs.length > 0 && <p className="hint">{needsText(entry)}</p>}
           <button type="button" className="btn" aria-disabled={taken || undefined} onClick={() => !taken && onAdd(entry)}>
             Add {entry.name} to the box
           </button>
           {taken && <p className="hint">{entry.id} is already in the box: edit it there.</p>}
-          <p className="hint">It runs a command with the agent&apos;s own rights, like one you typed yourself. Nothing is installed by this page.</p>
+          <p className="hint">The page itself installs and runs nothing: it only fills the box.</p>
         </>
       ) : (
         <>

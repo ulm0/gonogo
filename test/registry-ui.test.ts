@@ -3,11 +3,11 @@ import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { HireForm } from '../src/client/HireForm.js';
-import { asDefault, checkedText, entriesFor, hasServer, mergeServer, needsText, safeSource, serversOf, skillRows, skillsOf } from '../src/client/registry.js';
+import { asDefault, checkedText, entriesFor, hasServer, mergeServer, safeSource, serversOf, skillRows, skillsOf } from '../src/client/registry.js';
 import { RegistryPicker } from '../src/client/RegistryPicker.js';
 import { SkillsBlock } from '../src/client/SkillsBlock.js';
 import { emptyState, store } from '../src/client/store.js';
-import { REGISTRY } from '../src/shared/registry.js';
+import { REGISTRY, REGISTRY_STALE_DAYS, REGISTRY_WARNINGS } from '../src/shared/registry.js';
 import type { AgentView } from '../src/shared/protocol.js';
 
 const server = serversOf(REGISTRY)[0]!;
@@ -57,22 +57,18 @@ describe('filling the servers box', () => {
   it('the Payload defaults form gets the name and the JSON of the server', () => {
     expect(asDefault(server)).toEqual({ name: server.id, config: JSON.stringify(server.server, null, 2) });
   });
-  it('says which keys a server reads by name only', () => {
-    expect(needsText(withNeeds)).toContain(withNeeds.needs[0]!);
-    expect(needsText(withNeeds)).toContain('only the names');
-    expect(needsText(serversOf(REGISTRY).find((e) => e.needs.length === 0)!)).toBe('');
-  });
 });
 
 describe('how old a check is', () => {
   const day = 86_400_000;
-  it('shows the date, and a warning after about six months', () => {
-    const at = Date.parse('2026-11-21T00:00:00Z');
-    expect(checkedText('2026-11-21', at + 10 * day)).toEqual({ text: 'checked 2026-11-21', old: false });
-    const old = checkedText('2026-11-21', at + 200 * day);
-    expect(old.old).toBe(true);
-    expect(old.text).toContain('read its repository again');
-    expect(checkedText('not a date', at).old).toBe(false);
+  const at = Date.parse('2026-11-21T00:00:00Z');
+  it('says how many days ago, and warns after the limit the registry names', () => {
+    expect(checkedText('2026-11-21', at)).toEqual({ text: 'checked today (2026-11-21)', old: false, days: 0 });
+    expect(checkedText('2026-11-21', at + day).text).toBe('checked 1 day ago (2026-11-21)');
+    expect(checkedText('2026-11-21', at + REGISTRY_STALE_DAYS * day).old).toBe(false);
+    const old = checkedText('2026-11-21', at + (REGISTRY_STALE_DAYS + 1) * day);
+    expect(old).toMatchObject({ old: true, days: REGISTRY_STALE_DAYS + 1 });
+    expect(checkedText('not a date', at)).toMatchObject({ old: false, days: 0 });
   });
 });
 
@@ -84,9 +80,30 @@ describe('the picker', () => {
     expect(html).toContain(`href="${server.source}"`);
     expect(html).toContain('rel="noreferrer noopener"');
     expect(html).toContain(`Add ${server.name} to the box`);
-    expect(html).toContain('Nothing is installed by this page.');
-    expect(html).toContain('checked 2026-');
+    expect(html).toContain('installs and runs nothing');
+    expect(html).toContain('checked ');
+    expect(html).toContain(`By ${server.publisher}.`);
   });
+  it('a server: what it runs in bold, where it sends, and the registry own warnings verbatim (pin only for stdio, keys only when it needs some)', () => {
+    const stdio = serversOf(REGISTRY).find((e) => e.transport === 'stdio' && e.needs.length === 0)!;
+    const draw1 = (entry: (typeof REGISTRY)[number]): string => picker({ payload: 'servers', only: 'mcp', now: Date.parse('2026-11-22T00:00:00Z'), first: entry.id });
+    const escape = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#x27;').replace(/"/g, '&quot;');
+    const a = draw1(stdio);
+    expect(a).toContain(`<strong>${escape(stdio.runs)}</strong>`);
+    expect(a).toContain(escape(REGISTRY_WARNINGS.runs));
+    expect(a).toContain(escape(REGISTRY_WARNINGS.pin));
+    expect(a).toContain(escape(REGISTRY_WARNINGS.descriptions));
+    expect(a).not.toContain(escape(REGISTRY_WARNINGS.keys));
+    const keyed = serversOf(REGISTRY).find((e) => e.needs.length > 0)!;
+    const b = draw1(keyed);
+    expect(b).toContain(escape(REGISTRY_WARNINGS.keys));
+    expect(b).toContain(keyed.needs[0]!);
+    const remote = serversOf(REGISTRY).find((e) => e.transport === 'http');
+    if (remote !== undefined) expect(draw1(remote)).not.toContain(escape(REGISTRY_WARNINGS.pin));
+    const sends = serversOf(REGISTRY).find((e) => e.sendsTo !== null);
+    if (sends !== undefined) expect(draw1(sends)).toContain(`Sends to: ${escape(sends.sendsTo!)}`);
+  });
+
   it('a server already in the box is not added over: the key is disabled and says so', () => {
     const html = picker({ only: 'mcp', has: () => true });
     expect(html).toContain('aria-disabled="true"');
@@ -105,7 +122,10 @@ describe('the picker', () => {
     expect(picker({ payload: 'servers', only: 'skill' })).toBe('');
   });
   it('a check older than six months is marked', () => {
-    expect(picker({ now: Date.parse('2027-12-01T00:00:00Z') })).toContain('read its repository again');
+    const html = picker({ now: Date.parse('2027-12-01T00:00:00Z') });
+    expect(html).toContain('it may be out of date');
+    expect(html).toContain('Checked more than 90 days ago');
+    expect(picker({ now: Date.parse('2026-11-22T00:00:00Z') })).not.toContain('it may be out of date');
   });
 });
 
