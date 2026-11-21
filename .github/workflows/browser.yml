@@ -26,6 +26,8 @@ on:
       - 'playwright.config.ts'
       - '.github/workflows/browser.yml'
   workflow_dispatch:
+  push:
+    branches: [surgeon/smoke-wide] # TEMPORARY, to iterate before the PR exists
   workflow_call:
     inputs:
       ref:
