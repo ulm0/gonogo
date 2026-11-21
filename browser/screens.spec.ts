@@ -235,7 +235,8 @@ async function next(page: Page, group: string): Promise<void> {
   }, true);
   await view(page, group, 'flight rules grouped', async () => {
     await page.getByRole('button', { name: 'Back to the room' }).click({ timeout: 3000 }).catch(() => undefined);
-    await open(page, 'Flight Rules', 'rules');
+    await page.getByRole('button', { name: 'More', exact: true }).first().click({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Flight Rules' }).first().click({ timeout: 5000 });
     await page.locator('.next-group').first().waitFor({ timeout: 3000 });
   }, true);
   await view(page, group, 'update available (stubbed)', async () => {
@@ -247,7 +248,8 @@ async function next(page: Page, group: string): Promise<void> {
   await page.keyboard.press('Escape');
   await page.goto(`${base}/r/main/?layout=next`);
   await page.locator('.next-topbar').waitFor({ timeout: 30_000 });
-  await open(page, 'Flight Rules', 'rules');
+  await page.getByRole('button', { name: 'More', exact: true }).first().click({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Flight Rules' }).first().click({ timeout: 5000 });
   await page.locator('.next-group').first().waitFor({ timeout: 3000 });
   const links = page.locator('.next-group-nav a');
   const count = await links.count().catch(() => 0);
