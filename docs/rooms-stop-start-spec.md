@@ -1,6 +1,6 @@
 # Stop and start a room from the rooms page: the routes
 
-Status: proposal; GUIDO has answered the open decisions (below); RSO still has to review the security section. Order of work once the direction is approved: supervisor routes, step-up and tests (GUIDO), then the page keys (CONTROL). Nothing here is built. Written by CONTROL (task t106) for the rooms page in `docs/ui-semantic.md`, "The rooms page".
+Status: proposal; GUIDO has answered the open decisions (below); RSO gives GO once his six musts (below) are in. Order of work once the direction is approved: supervisor routes, step-up and tests (GUIDO), then the page keys (CONTROL). Nothing here is built. Written by CONTROL (task t106) for the rooms page in `docs/ui-semantic.md`, "The rooms page".
 
 ## What the page needs
 
@@ -33,6 +33,17 @@ All of them are the supervisor's own (reserved, never proxied: `/api/rooms` is a
 - **Step-up.** `DELETE /api/rooms/<id>`, rename and add are **not** in `stepup.ts` today. Proposed (GUIDO's preference): step-up for `stop`, `stop-all`, `start-all` **and** DELETE in the same change, none for `start`; sessions only (keys have no step-up). The supervisor's own routes call `authHttp.stepUpNeeded` themselves (see `migrateApi`): the new routes must do the same; the room proxy's check does not cover them. A `tui` grant is told to do it in the browser.
 - **Origin.** The same `originOk` check; no CORS.
 - **Agents.** On the supervisor port an agent's token is a 401 (it is not a grant), and a room's own token never reaches the supervisor.
+
+## RSO's six musts (RSO, m2551: GO once these are in)
+
+These change what is written above where they overlap: M3 replaces the open question on keys.
+
+- **M1, the audit is written by the supervisor.** Every `stop`, `start`, `stop-all` and `start-all` writes a line to the supervisor's log and queues a Downlink line for room `main`: who (the actor: session name or key name), the room ids, and the result (done, skipped with why, failed). The page does not write the audit; a failed audit write fails the request.
+- **M2, security alerts while `main` is stopped.** Alerts that main would raise (the Telegram poll, login alerts) are held while main is stopped, the confirm of "Stop main" says so, and they are flushed when main is ready again. A test stops main, raises an alert, starts main and sees it delivered once.
+- **M3, keys.** Any API key, `full` included, is refused (403) on `stop-all` and on `stop` of `main`. A `full` key may still stop and start another room, as it may `DELETE` one today.
+- **M4, step-up in the supervisor routes.** Each new route calls `authHttp.stepUpNeeded` itself, as `migrateApi` does (the room proxy's check does not cover the supervisor's routes), for `stop`, `stop-all`, `start-all` (and `DELETE`, if added). Tests: an old password check gets 403 `stepUp`; after the check, 200; a `tui` grant is told to do it in the browser.
+- **M5, the graceful stop path.** Stated in the spec of the build and tested: `stop` sends SIGTERM and waits up to `STOP_WAIT_MS`, then SIGKILL; mail that is queued survives the stop (it is on disk); the pty host stops with the room; **no live agent still holds a token** after the room has stopped (its tokens are revoked or die with the process). A test starts a room with a queued message, stops it, starts it, and finds the message delivered.
+- **M6, one request at a time per room.** The supervisor serializes `stop` and `start` per room; a request that arrives while another one for the same room is in flight gets 409 ("room <id> is stopping" or "is starting"). The "all" forms skip a room in flight and say so in `skipped`. A test sends two at once.
 
 ## Tests the build must have
 
