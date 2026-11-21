@@ -171,6 +171,58 @@ jobs:
           [ "$#" = 1 ] && [ -f "$1" ] || { echo "::error::expected one tarball in the artifact"; exit 1; }
           gh release upload "$TAG" "$1" --repo "$GITHUB_REPOSITORY" --clobber
 
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: npm serves what the tag builds, with provenance
+        run: |
+          name=$(node -p 'require("./package.json").name')
+          version=${TAG#v}
+          mkdir "$RUNNER_TEMP/pack"
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+          built=$(sha1sum "$RUNNER_TEMP"/pack/*.tgz | cut -d' ' -f1)
+          # npm can take a while to serve a version it just accepted
+          served=
+          for i in $(seq 1 20); do
+            served=$(npm view "$name@$version" dist.shasum 2>/dev/null || true)
+            [ -n "$served" ] && break
+            echo "npm does not serve $name@$version yet ($i of 20)"
+            sleep 30
+          done
+          [ -n "$served" ] || { echo "::error::npm did not serve $name@$version within 10 minutes"; exit 1; }
+          echo "built $built, npm $served"
+          [ "$built" = "$served" ] || { echo "::error::npm's sha1 $served is not the sha1 of the package built from $TAG ($built)"; exit 1; }
+          predicate=$(npm view "$name@$version" dist.attestations.provenance.predicateType 2>/dev/null || true)
+          echo "provenance: $predicate"
+          [ -n "$predicate" ] || { echo "::error::$name@$version has no provenance attestation on npm"; exit 1; }
+      # A clean machine: nothing of the repository, only the registry.
+      - name: Install it in a clean node:24 container
+        run: |
+          version=${TAG#v}
+          name=$(node -p 'require("./package.json").name')
+          docker run --rm -e NAME="$name" -e VERSION="$version" node:24 bash -c '
+            for i in $(seq 1 20); do
+              npm install -g "$NAME@$VERSION" && break
+              echo "install failed ($i of 20), retrying"; sleep 30
+            done
+            got=$(gonogo --version | head -n1)
+            echo "$got"
+            [ "$got" = "gonogo $VERSION" ] || { echo "::error::gonogo --version printed $got, expected gonogo $VERSION"; exit 1; }
+          '
+
   homebrew:
     needs: github-release
     if: ${{ vars.HOMEBREW_TAP == 'true' && !contains(inputs.tag || github.ref_name, '-') }}

@@ -1,0 +1,1 @@
+- **CI: a release is checked after it is published.** A `verify` job in `release.yml` rebuilds the package from the tag and compares its sha1 with the one npm serves, checks that npm holds a provenance attestation, and installs the version in a clean `node:24` container (waiting up to 10 minutes for npm) and checks that `gonogo --version` is the tag. No change for users.
