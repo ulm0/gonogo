@@ -270,6 +270,44 @@ describe('Homebrew installs from the release asset, not from npm\'s CDN', () => 
   });
 });
 
+describe('the Homebrew formula is tried on macOS and Linux (brew.yml)', () => {
+  const wf = read('.github', 'workflows', 'brew.yml');
+  it('runs for tags, by hand and for a change of the formula, on both platforms, with nothing but read access', () => {
+    expect(wf).toMatch(/tags: \['v\*'\]/);
+    expect(wf).toContain('workflow_dispatch:');
+    expect(wf).toMatch(/paths:\n\s+- packaging\/homebrew\/\*\*/);
+    expect(wf).toContain('os: [macos-latest, ubuntu-latest]');
+    expect(wf).toMatch(/^permissions: \{\}/m);
+    expect(wf).toMatch(/permissions:\n\s+contents: read/);
+    expect(wf).not.toMatch(/secrets\./);
+    for (const use of wf.match(/uses: [^\n]+/g) ?? []) expect(use, use).toMatch(/@[0-9a-f]{40} # v\d/);
+  });
+  it('installs from a throwaway tap (a formula by path is refused by Homebrew), from the tarball of this checkout, then tests and audits it', () => {
+    expect(wf).toContain('brew tap-new --no-git ulm0/ci');
+    expect(wf).toContain('brew install --build-from-source --verbose ulm0/ci/gonogo');
+    expect(wf).toContain('brew test --verbose ulm0/ci/gonogo');
+    expect(wf).toContain('brew audit --strict --formula ulm0/ci/gonogo');
+    expect(wf).not.toMatch(/brew (install|audit|test)[^\n]*\.\/packaging/);
+    expect(wf).toContain('pnpm pack --pack-destination');
+    expect(wf).toContain('url \\"file://$tarball\\"');
+    // the audit copy carries the release-asset url the real tap has
+    expect(wf).toContain('releases/download/v${version}/');
+  });
+  it('checks that the prebuilt node-pty of the platform has its spawn-helper executable (macOS cannot start a terminal without it)', () => {
+    expect(wf).toContain("-name 'spawn-helper'");
+    expect(wf).toContain('[ -x "$f" ]');
+    expect(wf).toMatch(/RUNNER_OS" = macOS/);
+    expect(wf).toContain("-name 'pty.node'");
+  });
+  it('the template formula still has the one-per-line url and sha256 the job rewrites', () => {
+    const rb = read('packaging', 'homebrew', 'gonogo.rb');
+    expect(rb.match(/^  url "/gm)).toHaveLength(1);
+    expect(rb.match(/^  sha256 "/gm)).toHaveLength(1);
+    // `brew audit --strict` refuses a line longer than 118 characters (its first run on this formula found five)
+    for (const [i, line] of rb.split('\n').entries()) expect(line.length, `gonogo.rb line ${i + 1}`).toBeLessThanOrEqual(118);
+  });
+});
+
 describe('the image label that the Docker self-update reads is the plain release number', () => {
   it('the publish job names the semver version as its tag, whose version becomes the label (the git ref gave "v0.11.0")', () => {
     const image = read('.github', 'workflows', 'image.yml');
