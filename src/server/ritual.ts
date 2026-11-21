@@ -3,6 +3,7 @@
  * closed. Printed, never checked, never a gate. The template is the room's own file `<home>/ritual.md`, which the Director edits in Flight Rules (step-up).
  * Nothing is read from a repo in this phase.
  */
+import { execFile } from 'node:child_process';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { rename, stat, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -85,11 +86,18 @@ export function readInside(root: string, file: string): string | null {
 export const RITUAL_FILE = 'ritual.md';
 
 /** The items of a new mission from the room's template: `from: 'room'`, the first RITUAL_ITEMS_MAX; `omitted` is how many more the file had. */
-export function readTemplate(home: string): { items: RitualItem[]; omitted: number } {
-  const file = readInside(home, join(home, RITUAL_FILE));
-  if (file === null) return { items: [], omitted: 0 };
-  const { lines, total } = parseRitual(file);
-  return { items: lines.map((text) => ({ text, done: false, from: 'room' as const })), omitted: total - lines.length };
+export function readTemplate(home: string, repo: string | null = null): { items: RitualItem[]; omitted: number } {
+  // the room's own lines first (the Director's), then the repo's (written by agents, so DATA: cleaned, labelled "from the repo"): a repo file can ADD lines to the Director's
+  // template and never replace them. Together at most RITUAL_ITEMS_MAX; `omitted` counts the lines that did not fit.
+  const room = readInside(home, join(home, RITUAL_FILE));
+  const fromRoom = room === null ? { lines: [], total: 0 } : parseRitual(room);
+  const found = repo === null ? null : readInside(repo, join(repo, '.gonogo', RITUAL_FILE));
+  const fromRepo = found === null ? { lines: [], total: 0 } : parseRitual(found);
+  const items: RitualItem[] = [
+    ...fromRoom.lines.map((text) => ({ text, done: false, from: 'room' as const })),
+    ...fromRepo.lines.map((text) => ({ text, done: false, from: 'repo' as const })),
+  ].slice(0, RITUAL_ITEMS_MAX);
+  return { items, omitted: fromRoom.total + fromRepo.total - items.length };
 }
 
 const UNSAFE_ONE = new RegExp(UNSAFE.source, 'u');
@@ -139,3 +147,25 @@ export function createRitualTemplate(options: { dir: string; now(): number }): R
 }
 
 
+
+/** What git may see of the environment: none of gonogo's own GIT_* variable, no credential. */
+const KEEP_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'XDG_CONFIG_HOME', 'TMPDIR'];
+
+/**
+ * The git top level of a folder, as a real path, or null (not a repository, git missing, too slow). Hooks and the file system monitor off, as the Recorder runs git:
+ * a repository's own config is written by agents and must not run a program here.
+ */
+export function gitTopLevel(dir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  const clean: Record<string, string> = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' };
+  for (const key of KEEP_ENV) if (env[key] !== undefined) clean[key] = env[key] as string;
+  return new Promise((resolve) => {
+    execFile('git', ['--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel'], { cwd: dir, env: clean, timeout: 5000, killSignal: 'SIGTERM', maxBuffer: 8192, encoding: 'utf8' }, (error, stdout) => {
+      if (error !== null) return resolve(null);
+      try {
+        resolve(realpathSync(stdout.trim()));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
