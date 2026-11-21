@@ -35,6 +35,11 @@ jobs:
         env:
           RUNS: ${{ inputs.runs || '10' }}
         run: |
+          # the input is text from whoever dispatches: a number from 1 to 20, or the job stops (a run is about 3 min, the job limit is 120)
+          if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [ "$RUNS" -lt 1 ] || [ "$RUNS" -gt 20 ]; then
+            echo "::error::runs must be a number from 1 to 20, got: $RUNS"
+            exit 1
+          fi
           mkdir -p flaky
           for i in $(seq 1 "$RUNS"); do
             # a failed run is the point, not an error: the report below says what failed
