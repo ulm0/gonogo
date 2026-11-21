@@ -88,8 +88,8 @@ async function shoot(page: Page, group: string, title: string, fullPage = false)
 }
 
 /** The geometry rules (no overlap, no sideways scroll, no clipped text, keys 24 px or 44 on a phone) on the view the page shows now. */
-async function measure(page: Page, group: string, title: string): Promise<void> {
-  for (const problem of await geometry(page, group.endsWith('phone'))) geo.push(`${group}: ${title}: ${problem}`);
+async function measure(page: Page, group: string, title: string, scope = 'main, .lay-strip'): Promise<void> {
+  for (const problem of await geometry(page, group.endsWith('phone'), scope)) geo.push(`${group}: ${title}: ${problem}`);
 }
 
 /** A thing the terminal toolbar must do, checked in the page: a failure goes in geometry.txt like a geometry problem. */
