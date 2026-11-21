@@ -5,6 +5,9 @@
  * than a stale one). It reads only public pages: GitHub's API (set GITHUB_TOKEN for a higher rate limit; it is sent to api.github.com only), the npm
  * registry and PyPI. It installs and runs nothing.
  *
+ * Also: an npm package's `repository` must be the entry's `source` repository (a name-alike package is how a bad one gets in), it may have no preinstall, install or
+ * postinstall script, and a version must be at least 14 days old (a fresh publish is the shape of a hijack); a PyPI project's repository link must be the source too.
+ *
  * Fails (exit 1) for: a repository that is gone or archived, a package or version that does not exist, a deprecated or yanked one, a skill folder
  * without a SKILL.md. Warns for: a pinned version that is not the latest, a licence that differs from the one the entry states, a repository
  * not pushed to in a year, and a remote server it cannot check.
@@ -16,6 +19,11 @@ const problems = [];
 const warnings = [];
 const get = async (url, github = false) => {
   const res = await fetch(url, { headers: { 'user-agent': 'gonogo-registry-check', ...(github && token ? { authorization: `Bearer ${token}` } : {}) } });
+  // GitHub answers 403 or 429 when the hour's calls without a token are used up: say that, it is not the repository's fault
+  if (github && (res.status === 403 || res.status === 429)) {
+    console.log(`FAIL  GitHub refused (${res.status}): its rate limit is used up; set GITHUB_TOKEN (any token, no scope) or wait`);
+    process.exit(2);
+  }
   return { status: res.status, json: res.ok ? await res.json().catch(() => null) : null };
 };
 
@@ -57,7 +65,15 @@ for (const e of REGISTRY) {
     else {
       const v = pkg.json.versions?.[version];
       if (v === undefined) fail(`${name}@${version} is not on npm`);
-      else if (v.deprecated) fail(`${name}@${version} is deprecated: ${String(v.deprecated).slice(0, 80)}`);
+      else {
+        if (v.deprecated) fail(`${name}@${version} is deprecated: ${String(v.deprecated).slice(0, 80)}`);
+        const repoUrl = String(typeof v.repository === 'string' ? v.repository : (v.repository?.url ?? '')).toLowerCase();
+        if (!repoUrl.includes(`github.com${repoUrl.includes('git@github.com:') ? ':' : '/'}${m[1].toLowerCase()}`)) fail(`${name}@${version} names the repository "${repoUrl}", not ${m[1]}`);
+        const scripts = Object.keys(v.scripts ?? {}).filter((k) => /^(pre|post)?install$/.test(k));
+        if (scripts.length > 0) fail(`${name}@${version} runs a ${scripts.join(', ')} script when installed`);
+        const age = (Date.now() - Date.parse(pkg.json.time?.[version] ?? '')) / 86_400_000;
+        if (!(age >= 14)) fail(`${name}@${version} was published ${Number.isFinite(age) ? Math.floor(age) + ' days ago' : 'at an unknown time'}: wait 14 days`);
+      }
       const latest = pkg.json['dist-tags']?.latest;
       if (latest !== undefined && latest !== version) warn(`${name} is pinned to ${version}, the latest is ${latest}`);
     }
@@ -70,6 +86,9 @@ for (const e of REGISTRY) {
       if (version === undefined) fail(`${name} is not pinned (name==version)`);
       else if (files === undefined) fail(`${name}==${version} is not on PyPI`);
       else if (files.some((f) => f.yanked)) fail(`${name}==${version} was yanked`);
+      else if (!(Date.now() - Date.parse(files[0]?.upload_time_iso_8601 ?? '') >= 14 * 86_400_000)) fail(`${name}==${version} was uploaded less than 14 days ago: wait`);
+      const links = Object.values(pkg.json.info?.project_urls ?? {}).join(' ').toLowerCase();
+      if (!links.includes(`github.com/${m[1].toLowerCase()}`)) fail(`${name} on PyPI does not link ${m[1]}`);
       if (pkg.json.info?.version !== version) warn(`${name} is pinned to ${version}, the latest is ${pkg.json.info?.version}`);
     }
   } else fail(`the command ${command} is not one the check knows`);

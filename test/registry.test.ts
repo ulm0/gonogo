@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PAYLOAD_SERVER_NAME_PATTERN } from '../src/server/constants.js';
 import { parsePayload } from '../src/server/payload.js';
-import { REGISTRY } from '../src/shared/registry.js';
+import { checkedDaysAgo, REGISTRY, REGISTRY_STALE_DAYS, REGISTRY_WARNINGS } from '../src/shared/registry.js';
 import type { RegistryServer, RegistrySkill } from '../src/shared/registry.js';
 
 // The registry (src/shared/registry.ts): the rules every entry keeps, offline. Whether an entry is still true of its repository and package is
@@ -125,5 +125,39 @@ describe('a skill', () => {
 
   it('is open source by its own licence file, said in the entry', () => {
     for (const e of skills) expect(e.licence, e.id).toBe('Apache-2.0');
+  });
+});
+
+describe('what the card says', () => {
+  it('every server names its publisher, how it is reached, what executes and where the data goes, in plain words', () => {
+    for (const e of servers) {
+      expect(e.publisher.trim(), e.id).not.toBe('');
+      expect(e.transport, e.id).toBe(e.server.url === undefined ? 'stdio' : 'http');
+      expect(e.runs, e.id).toMatch(e.transport === 'http' ? /^nothing runs here: the agent connects to https:\/\//u : /^(npx|uvx) downloads \S+(?: \S+)? and its dependencies from (npm|PyPI) and runs them on this machine/u);
+      // the version in the words is the version in the command
+      const spec = (e.server.args ?? []).find((a) => !a.startsWith('-')) ?? '';
+      if (e.transport === 'stdio') expect(e.runs, e.id).toContain(spec.replace('==', ' ').replace(/(@[\d.]+)$/, '$1'));
+      if (e.transport === 'http') expect(e.sendsTo, e.id).not.toBeNull();
+      if (e.sendsTo !== null) expect(e.sendsTo.trim(), e.id).not.toBe('');
+    }
+    for (const e of skills) expect(e.publisher, e.id).toBe('Anthropic');
+  });
+
+  it('has the words that must be on every card, and the staleness rule', () => {
+    expect(REGISTRY_WARNINGS.runs).toContain("your agent's rights when the agent starts");
+    expect(REGISTRY_WARNINGS.pin).toContain('not what it depends on');
+    expect(REGISTRY_WARNINGS.descriptions).toContain('tool descriptions are read by your agent');
+    expect(REGISTRY_STALE_DAYS).toBe(90);
+    const day = Date.UTC(2026, 10, 21);
+    expect(checkedDaysAgo('2026-11-21', day)).toBe(0);
+    expect(checkedDaysAgo('2026-11-20', day + 3600_000)).toBe(1);
+    expect(checkedDaysAgo('2026-08-23', day)).toBe(90);
+    expect(checkedDaysAgo('2027-01-01', day)).toBe(0);
+  });
+
+  it('is said in the docs that a change to a command, package, version or address is reviewed by RSO', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const page = await readFile(new URL('../docs/features/registry.md', import.meta.url), 'utf8');
+    expect(page).toMatch(/RSO reviews every change to an entry's command, package, version or address/);
   });
 });
