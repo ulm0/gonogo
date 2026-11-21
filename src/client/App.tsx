@@ -501,7 +501,7 @@ function RolloutStrip(): ReactElement | null {
       >
         Dismiss
       </button>
-      <CheckNow />
+      {!NEXT && <CheckNow />}
       {rollout.installNote !== undefined && rollout.installNote !== '' && <span className="hint rollout-note">{rollout.installNote}</span>}
       {error !== null && (
         <span className="error" role="alert">
