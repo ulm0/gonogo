@@ -44,8 +44,9 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
       if (el.closest('.xterm, .term-wrap, .next-select, .next-strip-row') !== null || (el.textContent ?? '').trim() === '') continue;
       const style = getComputedStyle(el);
       if (style.overflowY !== 'hidden' && style.overflowY !== 'clip') continue;
+      if (style.webkitLineClamp !== 'none' && style.webkitLineClamp !== '') continue; // cut on purpose, with an ellipsis
       const r = el.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) continue;
+      if (r.width === 0 || r.height === 0 || el.clientHeight <= 1) continue; // 1 px high on purpose: a label for a screen reader
       if (el.scrollHeight > el.clientHeight + 1) problems.push(`text cut at the bottom: ${name(el)} (${el.scrollHeight} > ${el.clientHeight})`);
     }
     return problems;

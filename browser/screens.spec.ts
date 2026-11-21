@@ -194,6 +194,7 @@ async function toolbarProofs(page: Page, group: string): Promise<void> {
   }
   await page.getByLabel('Find in the terminal').fill('fake');
   await page.getByLabel('Find in the terminal').press('Enter');
+  await page.waitForTimeout(600);
   await proof(group, 'Find highlights a match (xterm selection layer)', async () => (await page.locator('.xterm-selection div').count()) > 0);
   await copyItem('Selection');
   await proof(group, 'Copy > Selection puts the found text on the clipboard', async () => (await clipboard(page)).toLowerCase() === 'fake');
