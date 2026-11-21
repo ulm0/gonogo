@@ -1,0 +1,1 @@
+- **CI: the packed package is installed on Linux (amd64 and arm64), macOS and Windows.** A new workflow installs the tarball globally on each and runs `gonogo --version` and `gonogo doctor`. Windows is not a supported platform: it runs for information and does not fail the run. No change for users.
