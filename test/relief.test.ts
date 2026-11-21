@@ -391,6 +391,56 @@ describe('the folder', () => {
   });
 });
 
+describe('a worktree asked for in the request (the Own git worktree box of the form)', () => {
+  const git = async (dir: string): Promise<string | null> => (dir.endsWith('plain') ? `${dir} is not in a git repository` : null);
+
+  it('is true or false, shown in the request, checked like the form (the folder must be in a git repository), and applied at the hire', async () => {
+    const checked: string[] = [];
+    relief = make({ checkWorktree: async (dir) => (checked.push(dir), git(dir)) });
+    await relief.request(BOSS, { name: 'ana', role: 'r', dir: project, worktree: true });
+    await relief.request(BOSS, { name: 'ben', role: 'r', dir: project, worktree: false });
+    await relief.request(BOSS, { name: 'cat', role: 'r', dir: project });
+    expect(relief.view().requests.map((r) => [r.name, r.worktree ?? null])).toEqual([['ana', {}], ['ben', null], ['cat', null]]);
+    expect(checked).toEqual([project]); // only when it is asked for
+    expect(events[0]?.[1]).toBe(`flight asks to hire ana: claude, default, ${project}, in its own git worktree`);
+    expect(events[1]?.[1]).not.toContain('worktree');
+    await relief.decide('h1', 'go', { kind: 'user' });
+    await relief.decide('h2', 'go', { kind: 'user' });
+    expect(hired[0]).toMatchObject({ name: 'ana', worktree: {} });
+    expect(hired[1]).not.toHaveProperty('worktree');
+  });
+
+  it('is refused at the request, with the field named, for a folder outside a git repository, a value that is not true or false, and a Clean Room boss; nothing waits', async () => {
+    const plain = join(root, 'plain');
+    await mkdir(plain);
+    relief = make({ checkWorktree: git });
+    const e1 = await refusal(relief.request(BOSS, { name: 'ana', role: 'r', dir: plain, worktree: true }));
+    expect([e1.code, e1.field]).toEqual(['bad_request', 'worktree']);
+    expect(e1.message).toMatch(/not in a git repository/);
+    for (const bad of ['yes', 1, {}, null, ['x']]) {
+      const e = await refusal(relief.request(BOSS, { name: 'ben', role: 'r', dir: project, worktree: bad }));
+      expect([e.code, e.field], JSON.stringify(bad)).toEqual(['bad_request', 'worktree']);
+    }
+    const box = join(root, 'box2');
+    await mkdir(box);
+    views = [{ ...flight(), dir: box, cleanRoom: { image: 'img:1' } }];
+    const e2 = await refusal(relief.request(BOSS, { name: 'cat', role: 'r', worktree: true }));
+    expect([e2.code, e2.field]).toEqual(['bad_request', 'worktree']);
+    expect(e2.message).toMatch(/Clean Room agent has a worktree already/);
+    expect(relief.view().requests).toEqual([]);
+    // a check that throws is a refusal too, not a request the Director cannot grant
+    relief = make({ checkWorktree: async () => { throw new Error('boom'); } });
+    expect((await refusal(relief.request(BOSS, { name: 'dan', role: 'r', dir: project, worktree: true }))).field).toBe('worktree');
+  });
+
+  it('a hire that fails at GO (the folder is no longer a repository) tells the Director why, as for any hire', async () => {
+    relief = make({ checkWorktree: async () => null });
+    await relief.request(BOSS, { name: 'ana', role: 'r', dir: project, worktree: true });
+    hireError = new HubError('bad_request', 'a worktree needs a git repository', 'worktree');
+    await expect(relief.decide('h1', 'go', { kind: 'user' })).rejects.toThrow(/git repository/);
+  });
+});
+
 describe('a Clean Room boss', () => {
   let box: string;
   beforeEach(async () => {

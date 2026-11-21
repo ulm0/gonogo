@@ -490,6 +490,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           dir: z.string().max(DIR_MAX_CHARS).optional(),
           engine: z.string().max(32).optional(),
           mode: z.string().max(32).optional(),
+          worktree: z.boolean().optional(),
         }),
       },
       (args) =>
