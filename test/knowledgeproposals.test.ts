@@ -75,7 +75,7 @@ describe('a leg of a proposal, serialized', () => {
 describe('proposals', () => {
   it('are pending, stamped, numbered per repository, and never anything else until decided', async () => {
     const s = open();
-    const p = await s.propose(REPO, who, { statement: ' The limit\n is 5‮. ', legs: [leg] });
+    const p = await s.propose(REPO, who, { statement: ' The limit\n is‮ 5. ', legs: [leg] });
     expect(p).toMatchObject({ id: 'p1', agent: 'ana', branch: 'main', commit: 'abc1234', at: now, statement: 'The limit is 5.', status: 'pending', legs: [] });
     expect(p).not.toHaveProperty('legLines');
     expect((await s.propose(REPO, { ...who, agent: 'ben' }, { statement: 'Two', legs: [leg] })).id).toBe('p2');
