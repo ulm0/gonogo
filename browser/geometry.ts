@@ -9,6 +9,10 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
     const problems: string[] = [];
     const name = (el: Element): string => `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 30)}"`;
     if (document.documentElement.scrollWidth > window.innerWidth + 1) problems.push(`page scrolls sideways: ${document.documentElement.scrollWidth} > ${window.innerWidth}`);
+    if (document.documentElement.scrollWidth > window.innerWidth + 1) {
+      const wide = [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getBoundingClientRect().width > 0).slice(0, 4);
+      for (const e of wide) problems.push(`  wider than the screen: ${name(e)} right=${Math.round(e.getBoundingClientRect().right)}`);
+    }
     const keys = [...document.querySelectorAll<HTMLElement>('button, a[href], input, select, summary, [role=button]')].filter((el) => {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') return false;
@@ -31,6 +35,7 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
     for (const el of document.querySelectorAll<HTMLElement>('.btn, .chip, .label, .hint, .lamp-text, h1, h2')) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
+      if (el.clientWidth <= 1) continue; // visually hidden on purpose (a screen-reader label)
       if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).display !== 'inline') problems.push(`text clipped: ${name(el)} (${el.scrollWidth} > ${el.clientWidth})`);
     }
     return problems;

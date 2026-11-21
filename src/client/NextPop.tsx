@@ -44,6 +44,7 @@ export function NextPop({ label, name, kind = 'quiet', up = false, align = 'star
       <button ref={key} type="button" className="btn" data-kind={kind} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} aria-label={name} onClick={() => setOpen(!open)}>
         {label}
       </button>
+      {open && <div className="next-scrim" aria-hidden="true" onClick={() => setOpen(false)} />}
       {open && (
         <div id={id} className="next-pop module" role="dialog" aria-label={name ?? (typeof label === 'string' ? label : undefined)} data-up={up || undefined} data-align={align}>
           {children(() => setOpen(false))}

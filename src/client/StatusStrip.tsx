@@ -27,7 +27,7 @@ function useValues(): Record<PanelId, string> {
   return {
     mission: mission === null ? 'No mission' : `Mission ${clockText(now - mission.at)}`,
     sequence: `Activity: ${governor.working} working`,
-    tminus: `Poll: ${pollWord(poll)}`,
+    tminus: `Poll: ${pollWord(poll).word}`,
     maxq: `Max Q: ${governor.limit === null ? 'off' : `${governor.working}/${governor.limit}`}`,
     propellant: 'Fuel',
   };

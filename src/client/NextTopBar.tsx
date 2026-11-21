@@ -144,10 +144,10 @@ export function NextTopBar({ phone, onPanel }: { phone: boolean; onPanel(): void
       )}
       <button type="button" className="btn next-jump" data-kind="quiet" aria-label="Jump to a console, a view or an action" aria-keyshortcuts="Meta+K Control+K" onClick={onPanel}>
         <span aria-hidden="true">⌕</span>
-        <span className="next-jump-text">Jump to…</span>
+        <span className="next-jump-text">{phone ? 'Jump' : 'Jump to…'}</span>
         <kbd className="next-kbd">⌘K</kbd>
       </button>
-      <MoreMenu />
+      {!phone && <MoreMenu />}
     </header>
   );
 }

@@ -57,3 +57,14 @@
 .next-group-title { margin: 0; font-size: 18px; }
 .next-group-body { display: flex; flex-direction: column; gap: 12px; }
 .next-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--body); }
+.next-scrim { position: fixed; inset: 0; z-index: 25; background: rgb(0 0 0 / 0.18); }
+.next-pop { max-height: calc(100vh - 110px); overflow-y: auto; }
+.btn[data-kind='primary'] .hint { color: inherit; opacity: 0.85; }
+.next-topbar .btn, .next-topbar .lamp { flex: none; white-space: nowrap; }
+.next-group-body > * { min-width: 0; max-width: 100%; }
+@media (max-width: 700px) {
+  .next-group .btn { min-height: 44px; min-width: 44px; }
+  .next-group-nav { flex-wrap: nowrap; overflow-x: auto; }
+  .next-group-nav .btn { flex: none; }
+  .next-phone-bar .btn { min-width: 44px; }
+}
