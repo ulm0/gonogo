@@ -1,0 +1,86 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Room view: before and after</title><link rel="stylesheet" href="mocks.css">
+<body>
+<h1>The room view, before and after</h1>
+<p class="note">Static mocks drawn to the real pixel sizes (scaled down to fit). BEFORE is measured from the 1280-px screenshot of 0.8.2 and the code; AFTER is the proposal of docs/ui-semantic.md. The red dashed line is the fold of a 1280×800 window and of a 390×844 phone.</p>
+
+<h2>1280 × 800</h2>
+<div class="pair">
+ <div>
+  <p class="cap">Before: the wall is 520 px, the consoles start below the fold</p>
+  <div class="frame" style="width:640px;height:780px;position:relative">
+   <div class="screen" style="width:1280px;height:1560px;zoom:.5">
+    <div class="topbar" style="height:116px;flex-wrap:wrap;align-content:flex-start"><span class="logo">gonogo</span><span class="ver">GN-1 · 0.11.0 · /home/runner…</span><span class="grow"></span><span class="chip go">● link up</span><span class="btn">Rooms</span><span class="btn">Comms <span class="chip you">1</span></span><span class="btn">Missions</span><span class="btn">Launch window</span><span class="btn">Flight plan</span><span class="btn">Mission log</span><span class="btn">⠿</span><span class="btn">⚙</span><span class="btn">◐</span><span class="btn p" style="flex-basis:100%;max-width:170px">+ Staff a console</span></div>
+    <div style="position:absolute;left:24px;top:132px;width:1232px;height:520px;display:flex;gap:12px">
+     <div class="module" style="width:296px"><span class="label">A · Mission</span><div class="lcd" style="margin-top:10px;height:90px">Brief FLIGHT to start the clock.<br><span style="font-size:30px">00:00:00</span></div><p class="hint">NO MISSION YET</p><p class="hint" style="margin-top:140px;text-align:center;color:var(--edge-2)">≈ 330 px empty</p></div>
+     <div class="module" style="width:250px"><span class="label">B · Sequence</span><p class="hint" style="margin-top:130px;text-align:center;color:var(--edge-2)">≈ 300 px empty</p><div style="margin-top:90px;border-top:2px solid var(--track)"></div></div>
+     <div class="module" style="width:240px"><span class="label">C · T-minus</span><div style="font:700 28px var(--ui);margin-top:6px">STANDBY</div><p class="hint">No poll. 2 consoles can be asked.</p><p class="hint" style="margin-top:120px;text-align:center;color:var(--edge-2)">≈ 230 px empty</p><div class="btn p" style="width:100%;margin-top:80px">Poll the room</div><div class="btn" style="width:100%;margin-top:8px;justify-content:flex-start;color:var(--muted)">What to test</div><div class="btn dash sm" style="margin-top:8px">Static fire</div></div>
+     <div class="module" style="width:175px"><span class="label">D · Max Q</span><div style="margin:30px auto 0;width:100px;height:100px;border-radius:50%;border:12px solid var(--track);display:grid;place-items:center;font:20px var(--mono)">OFF</div><p class="hint" style="text-align:center">NO LIMIT</p></div>
+     <div class="module" style="width:218px"><span class="label">F · Propellant</span><p class="hint">No plan quota reported. A subscriber's Claude Code agent reports it after its first reply; an API-key or Bedrock room has none (see COST). The meters below are gonogo's own ledger: an estimate, not your plan's number.</p><div class="row"><span class="btn sm q">Tokens</span><span class="btn sm q">Dollars</span></div><div class="lcd" style="margin-top:8px">0 NO LIMIT</div></div>
+    </div>
+    <div class="module" style="position:absolute;left:24px;top:668px;width:776px;height:512px"><span class="label">E · Operations · 3 staffed · 21 open</span><span class="btn" style="position:absolute;right:14px;top:10px">Edit room</span>
+     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:34px"><div class="tile sel"><span class="led"></span> <span class="n">FLIGHT</span><br><span class="s">The boss: takes…</span></div><div class="tile open"><span class="n">FAO</span><br><span class="s">OPEN</span></div><div class="tile open"><span class="n">FIDO</span><br><span class="s">OPEN</span></div><div class="tile open"><span class="n">GUIDO</span><br><span class="s">OPEN</span></div><div class="tile open"><span class="n">CONTROL</span><br><span class="s">OPEN</span></div>
+     <div class="tile open"><span class="n">DPS</span><br><span class="s">OPEN</span></div><div class="tile open"><span class="n">INCO</span><br><span class="s">OPEN</span></div><div class="tile open"><span class="n">EECOM</span><br><span class="s">OPEN</span></div><div class="tile open"><span class="n">BOOSTER</span><br><span class="s">OPEN</span></div><div class="tile open"><span class="n">SURGEON</span><br><span class="s">OPEN</span></div>
+     <div class="tile open"><span class="s">… 11 more open seats …</span></div><div class="tile open"><span class="s">…</span></div><div class="tile"><span class="led"></span> <span class="n">ANA</span></div><div class="tile"><span class="led"></span> <span class="n">BEN</span></div><div class="tile open"><span class="n">SPARE</span></div></div></div>
+    <div class="module" style="position:absolute;left:816px;top:668px;width:440px;height:855px"><span class="led"></span> <b style="font-size:20px">FLIGHT</b> <span class="chip">idle 18 s</span><div class="row" style="margin-top:12px"><span class="btn sm">Hold</span><span class="btn sm">Restart</span><span class="btn sm">Stop</span><span class="btn sm">Edit</span><span class="btn sm">Open files</span><span class="btn sm">Open git</span></div><p class="hint" style="margin-top:14px">MASS BUDGET memory.md 3 lines · 64 B <span class="btn sm" style="float:right">Reflect</span></p>
+     <div class="term" style="margin-top:14px;height:360px;position:relative"><span class="dim">Claude Code</span><br>~/work/gonogo<span style="position:absolute;left:0;right:0;top:130px;text-align:center;color:var(--lcd-dim)">terminal: 410 × 360 px ≈ 50 columns</span></div>
+     <p class="hint">Alt+Shift+T returns to the room</p><p class="label">▸ Propellant</p><p class="label">▸ Telemetry</p><p class="label" style="margin-top:20px">Comm loop · FLIGHT <span class="btn sm" style="float:right">All traffic</span></p></div>
+    <div class="fold" style="top:800px"><span>fold at 800 px: the terminal and the agents are below it</span></div>
+   </div>
+  </div>
+  <ul class="facts"><li>Wall A–F: 520 px = <b>65 %</b> of the window height.</li><li>Terminal: 410 × 360 px, wholly below the fold; 50 columns.</li><li>21 of the 24 tiles are empty seats (<b>87 %</b>).</li></ul>
+ </div>
+ <div>
+  <p class="cap">After: one status strip; consoles and terminal in the first screen</p>
+  <div class="frame" style="width:640px;height:400px;position:relative">
+   <div class="screen" style="width:1280px;height:800px;zoom:.5">
+    <div class="topbar" style="height:56px;padding:8px 20px"><span class="logo">gonogo</span><span class="btn sm q" title="version menu: up to date, CHECK NOW">0.11.0 ✓ ▾</span><span class="grow"></span><span class="chip go">● up</span><span class="btn">Rooms</span><span class="btn">Comms <span class="chip you">1</span></span><span class="btn chev">Work</span><span class="btn q" style="min-width:210px;justify-content:flex-start">⌕ Jump to…  ⌘K</span><span class="btn">⋯</span></div>
+    <div class="module" style="margin:0 24px;height:60px;display:flex;align-items:center;gap:22px;padding:8px 16px">
+     <span><span class="label">Mission</span> <span class="lcd" style="padding:3px 8px">00:00:00</span> <span class="hint">none yet</span></span>
+     <span><span class="label">T-minus</span> <b>STANDBY</b> <span class="btn sm p">Poll the room</span></span>
+     <span><span class="label">Max Q</span> <span class="chip">off</span></span>
+     <span><span class="label">Fuel</span> <span class="chip">no limit · 5 h</span></span>
+     <span><span class="label">Activity</span> <span style="display:inline-block;width:150px;height:20px;border-bottom:2px solid var(--work)"></span></span>
+     <span class="grow"></span><span class="hint">each opens its panel ▾</span></div>
+    <div style="position:absolute;left:24px;top:132px;width:690px;bottom:12px;display:flex;flex-direction:column;gap:10px">
+     <div class="row"><span class="label">Consoles · 3 staffed</span><span class="grow"></span><span class="btn sm p">+ Staff a console</span><span class="btn sm q">Layout</span></div>
+     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"><div class="tile sel" style="height:92px"><span class="led"></span> <span class="n">FLIGHT</span><br><span class="s">The boss: takes…<br>IDLE 18 S</span></div><div class="tile" style="height:92px"><span class="led you"></span> <span class="n">ANA</span><br><span class="s">needs you: Bash<br>12 S</span></div><div class="tile" style="height:92px"><span class="led"></span> <span class="n">BEN</span><br><span class="s">working<br>3 S</span></div></div>
+     <div class="module row" style="gap:6px"><span class="hint">21 open seats:</span><span class="chip">FAO</span><span class="chip">FIDO</span><span class="chip">GUIDO</span><span class="chip">CONTROL</span><span class="chip">DPS</span><span class="chip">+16</span><span class="btn sm dash">Staff…</span></div>
+     <div class="module" style="flex:1"><span class="label">Comm loop · FLIGHT</span><p class="hint">11:01 Director › ANA  Flight Plan t1 assigned…</p></div>
+     <div class="row"><div class="btn" style="flex:1;justify-content:flex-start;color:var(--muted)">Brief FLIGHT: what do you want done?</div><span class="btn p">Send</span></div>
+    </div>
+    <div class="module" style="position:absolute;left:730px;top:132px;width:526px;bottom:12px"><span class="led"></span> <b style="font-size:18px">FLIGHT</b> <span class="chip">idle 18 s</span> <span class="chip">Claude Code · sonnet</span><div class="row" style="margin-top:8px"><span class="btn sm">Hold</span><span class="btn sm">Restart</span><span class="btn sm">Stop</span><span class="btn sm">Edit</span><span class="btn sm q">Files</span><span class="btn sm q">Git</span></div>
+     <div class="row" style="margin-top:8px"><span class="btn sm q">A−</span><span class="btn sm q">A+</span><span class="btn sm q chev">Copy</span><span class="btn sm q">⤢ Expand</span><span class="btn sm q">⛶ Full screen</span><span class="grow"></span><span class="chip go">● following</span></div>
+     <div class="term" style="margin-top:8px;height:450px;position:relative"><span class="dim">Claude Code v2</span><br>~/work/gonogo<span style="position:absolute;left:0;right:0;top:190px;text-align:center;color:var(--lcd-dim)">terminal: 496 × 450 px ≈ 60 columns, in the first screen</span></div></div>
+   </div>
+  </div>
+  <ul class="facts"><li>Strip: 60 px = <b>7 %</b> of the window; saves 460 px.</li><li>Terminal: 496 × 450 px, fully visible; 60 columns (Expand: about 135).</li><li>Staffed agents first; open seats are one line.</li></ul>
+ </div>
+</div>
+
+<h2>390 × 844 (phone)</h2>
+<div class="pair">
+ <div>
+  <p class="cap">Before: wall 353 px of 844; the terminal is two taps away</p>
+  <div class="frame" style="width:234px;height:506px;position:relative"><div class="screen" style="width:390px;height:844px;zoom:.6">
+   <div class="topbar" style="height:52px;padding:6px 10px;gap:4px"><span class="logo" style="font-size:15px">gonogo</span><span class="ver">0.11</span><span class="grow"></span><span class="chip go">●</span><span class="btn sm">⌂</span><span class="btn sm">⠿</span><span class="btn sm">⚙</span><span class="btn sm p">+</span></div>
+   <div class="module" style="margin:6px 12px;height:353px"><span class="label">Mission</span> <span class="btn sm" style="float:right">Missions</span><div class="lcd" style="margin-top:8px;height:50px">00:00:00</div><p class="label" style="margin-top:10px">T-minus <b style="font-size:18px">STANDBY</b></p><div class="btn p" style="width:100%">Poll the room</div><div class="btn" style="width:100%;margin-top:6px;justify-content:flex-start;color:var(--muted)">What to test</div><p class="label" style="margin-top:10px">Max Q ○ OFF · − +</p></div>
+   <div style="margin:0 12px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px"><div class="tile sel" style="height:64px"><span class="n">FLIGHT</span></div><div class="tile open" style="height:64px">FAO</div><div class="tile open" style="height:64px">FIDO</div><div class="tile open" style="height:64px">GUIDO</div><div class="tile open" style="height:64px">CONTROL</div><div class="tile open" style="height:64px">DPS</div><div class="tile open" style="height:64px">INCO</div><div class="tile open" style="height:64px">EECOM</div><div class="tile open" style="height:64px">BOOSTER</div><div class="tile open" style="height:64px">SURGEON</div><div class="tile open" style="height:64px">…</div><div class="tile open" style="height:64px">…</div></div>
+   <div style="position:absolute;left:8px;right:8px;bottom:8px" class="row"><span class="btn sm p">Room</span><span class="btn sm">Comms</span><span class="btn sm">Brief</span><span class="btn sm">Launch</span><span class="btn sm">Plan</span><span class="btn sm">Log</span><span class="btn sm">Patch</span></div>
+  </div></div>
+  <ul class="facts"><li>Wall: <b>42 %</b>; 3 of the first 12 tiles are staffed.</li><li>Bottom bar: 7 keys (68 px).</li></ul>
+ </div>
+ <div>
+  <p class="cap">After: strip of 2 lines; staffed agents on top</p>
+  <div class="frame" style="width:234px;height:506px;position:relative"><div class="screen" style="width:390px;height:844px;zoom:.6">
+   <div class="topbar" style="height:52px;padding:6px 10px;gap:4px"><span class="logo" style="font-size:15px">gonogo</span><span class="btn sm q">0.11 ✓</span><span class="grow"></span><span class="chip go">●</span><span class="btn sm">⌕</span><span class="btn sm">⋯</span></div>
+   <div class="module" style="margin:6px 12px;padding:8px 10px"><div class="row"><span class="lcd" style="padding:2px 6px">00:00:00</span><b>STANDBY</b><span class="btn sm p">Poll</span></div><div class="row" style="margin-top:6px"><span class="chip">Max Q off</span><span class="chip">fuel: no limit</span><span class="chip">activity ▁▂▁</span></div></div>
+   <div style="margin:0 12px"><div class="row"><span class="label">Consoles · 3 staffed</span><span class="grow"></span><span class="btn sm p">+ Staff</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px"><div class="tile sel" style="height:70px"><span class="led"></span> <span class="n">FLIGHT</span><br><span class="s">idle</span></div><div class="tile" style="height:70px"><span class="led you"></span> <span class="n">ANA</span><br><span class="s">needs you</span></div><div class="tile" style="height:70px"><span class="led"></span> <span class="n">BEN</span><br><span class="s">working</span></div></div><div class="module row" style="margin-top:8px;padding:6px 8px;gap:4px"><span class="hint">21 open seats</span><span class="btn sm dash">Staff…</span></div></div>
+   <div class="module" style="margin:10px 12px"><span class="label">Comm loop · FLIGHT</span><p class="hint">11:01 Director › ANA …</p></div>
+   <div style="position:absolute;left:12px;right:12px;bottom:70px" class="row"><div class="btn" style="flex:1;justify-content:flex-start;color:var(--muted)">Brief FLIGHT…</div><span class="btn p">Send</span></div>
+   <div style="position:absolute;left:8px;right:8px;bottom:8px" class="row"><span class="btn p" style="flex:1">Room</span><span class="btn" style="flex:1">Comms</span><span class="btn" style="flex:1">Work ▾</span><span class="btn" style="flex:1">More</span></div>
+  </div></div>
+  <ul class="facts"><li>Strip: <b>14 %</b>; every staffed agent is in the first screen.</li><li>Bottom bar: 4 keys (Room, Comms, Work, More).</li></ul>
+ </div>
+</div>
+<p class="note"><a href="index.html">All mocks</a></p>
+</body></html>

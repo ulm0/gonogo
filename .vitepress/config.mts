@@ -35,6 +35,8 @@ export default defineConfig({
     'design/**',
     'facts/**',
     'superpowers/**',
+    'ui-semantic.md',
+    'ui-mocks/**',
   ],
   // The logo and the favicon are served from docs/brand as they are, not copied.
   vite: { publicDir: 'brand', define: { __GONOGO_VERSION__: JSON.stringify(version) } },

@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Edit room: before and after</title><link rel="stylesheet" href="mocks.css">
+<body>
+<h1>Edit room, before and after</h1>
+<p class="note">Before: a 12-column grid editor in which you drag and resize five blocks (A–F) by cells. After: a Layout popover with three presets, a three-way choice for each block, and the order of the seats. The grid editor stays, one level down, for the few who want to place blocks by hand.</p>
+<div class="pair">
+ <div style="width:520px"><p class="cap">Before: EDIT ROOM</p>
+  <div class="module"><div class="row"><b>Edit room</b><span class="grow"></span><span class="btn sm">Auto-arrange</span><span class="btn sm d">Reset</span><span class="btn sm p">Done</span></div>
+   <p class="hint">Drag a block by its handle, resize it by its corner; or focus a handle and use the arrows. 12 columns.</p>
+   <div style="display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:34px;gap:6px;background:repeating-linear-gradient(90deg,#0000 0 calc(100%/12 - 1px),var(--edge) 0 calc(100%/12));padding:6px;border:1px dashed var(--edge-2);border-radius:8px">
+    <div class="tile" style="grid-column:1/4;grid-row:1/3">⠿ A · Mission 3×2<span style="float:right">◢</span></div><div class="tile" style="grid-column:4/7;grid-row:1/3">⠿ B · Sequence 3×2</div><div class="tile" style="grid-column:7/9;grid-row:1/3">⠿ C · 2×2</div><div class="tile" style="grid-column:9/11;grid-row:1/3">⠿ D · 2×2</div><div class="tile" style="grid-column:11/13;grid-row:1/3">⠿ F · 2×2</div><div class="tile" style="grid-column:1/13;grid-row:3/8">⠿ E · Operations 12×6 (cannot be hidden)</div></div>
+   <p class="hint">Hidden blocks: <span class="chip">none</span></p></div>
+  <ul class="facts"><li>The vocabulary is cells and handles; the question the Director has (“use the space better”) is not one a grid answers.</li><li>It is a whole screen of its own, and it changes the room for everyone.</li><li>A block is either at full size or gone: there is nothing between.</li></ul></div>
+ <div style="width:520px"><p class="cap">After: LAYOUT (a popover on the consoles header)</p>
+  <div class="module"><div class="row"><b>Layout</b><span class="grow"></span><span class="btn sm q">Close</span></div>
+   <p class="label" style="margin-top:10px">Density</p>
+   <div class="row"><div class="tile" style="width:150px"><b>Focus</b><br><span class="s">Consoles and the terminal. The status strip is one line.</span></div><div class="tile sel" style="width:150px"><b>Standard</b><br><span class="s">Strip, consoles, terminal. (the default)</span></div><div class="tile" style="width:150px"><b>Full wall</b><br><span class="s">The five panels as boxes, as before.</span></div></div>
+   <p class="label" style="margin-top:14px">Each panel</p>
+   <table style="border-collapse:collapse;width:100%;font-size:13px">
+    <tr><td>Mission clock</td><td><span class="chip go">Strip</span> <span class="chip">Panel</span> <span class="chip">Hidden</span></td></tr>
+    <tr><td>Sequence (activity)</td><td><span class="chip go">Strip</span> <span class="chip">Panel</span> <span class="chip">Hidden</span></td></tr>
+    <tr><td>T-minus (poll)</td><td><span class="chip go">Strip</span> <span class="chip">Panel</span> <span class="chip">Hidden</span></td></tr>
+    <tr><td>Max Q</td><td><span class="chip go">Strip</span> <span class="chip">Panel</span> <span class="chip">Hidden</span></td></tr>
+    <tr><td>Propellant (fuel)</td><td><span class="chip go">Strip</span> <span class="chip">Panel</span> <span class="chip">Hidden</span></td></tr></table>
+   <p class="label" style="margin-top:14px">Seats</p><div class="row"><span class="chip go">Staffed first</span><span class="chip">By position</span><span class="chip">By state</span><span class="hint">Open seats: <span class="chip go">one line</span> <span class="chip">all tiles</span></span></div>
+   <div class="row" style="margin-top:14px"><span class="btn sm d">Reset</span><span class="btn sm q">Arrange by hand…</span><span class="grow"></span><span class="hint">saved for the room</span></div></div>
+  <ul class="facts"><li>Changes show at once behind the popover; nothing to confirm.</li><li><b>Strip</b> = a chip with its main value; <b>Panel</b> = the box of today; <b>Hidden</b> = gone (still reachable from the strip's menu).</li><li>The existing layout model (blocks with x, y, w, h and a hidden flag) is kept: the presets write it, so nothing stored is migrated.</li></ul></div>
+</div>
+<p class="note"><a href="index.html">All mocks</a></p>
+</body></html>

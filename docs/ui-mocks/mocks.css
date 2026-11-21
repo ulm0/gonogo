@@ -1,0 +1,53 @@
+/* Static mocks for docs/ui-semantic.md. Not the app: the Instrument tokens of src/client/tokens.css and the shapes of primitives.css, copied so a file opens by itself. */
+:root {
+  --body: #e4e2dc; --panel: #f1f0ec; --key: #faf9f6; --well: #e9e7e1; --edge: #c9c6be; --edge-2: #b1aea6;
+  --text: #26272b; --text-2: #44463f; --muted: #61605b; --lcd: #2b2f2a; --lcd-text: #cfe6c9; --lcd-dim: #9fb79b;
+  --work: #4a5bd4; --you: #e0a93a; --you-tint: #f4e3b7; --you-ink: #5c4a1c; --go: #5e9e73; --go-tint: #d7e8da; --go-ink: #2c5a3a;
+  --nogo: #c2414b; --nogo-text: #a8323c; --track: #d6d3cb;
+  --ui: system-ui, 'Geist', sans-serif; --mono: ui-monospace, 'Geist Mono', monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: #cfcdc6; color: var(--text); font: 14px/1.4 var(--ui); }
+h1 { margin: 0 0 4px; font-size: 22px; }
+h2 { margin: 28px 0 8px; font-size: 16px; }
+.note { max-width: 78ch; color: var(--text-2); }
+.pair { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.cap { margin: 0 0 6px; font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
+.facts { margin: 8px 0 0; padding-left: 18px; max-width: 60ch; color: var(--text-2); font-size: 13px; }
+/* a screen: its width is the real width, scaled by --s (the frame is the viewport) */
+.screen { position: relative; background: var(--body); border: 2px solid #8d8a82; border-radius: 6px; overflow: hidden; transform-origin: top left; }
+.frame { overflow: hidden; }
+.fold { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--nogo); color: var(--nogo-text); font: 700 11px var(--mono); padding: 2px 6px; pointer-events: none; z-index: 5; }
+.fold span { background: var(--body); padding: 0 4px; }
+.topbar { display: flex; align-items: center; gap: 8px; padding: 10px 20px; }
+.logo { font: 700 20px var(--mono); letter-spacing: .08em; }
+.ver { font: 11px var(--mono); color: var(--muted); }
+.grow { flex: 1; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 14px; border: 1px solid var(--edge); border-bottom-width: 3px; border-radius: 8px; background: var(--key); color: var(--text); font: 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.btn.p { background: var(--text); border-color: var(--text); color: var(--panel); }
+.btn.q { color: var(--text-2); }
+.btn.d { color: var(--nogo-text); }
+.btn.sm { min-height: 28px; padding: 0 9px; font-size: 10.5px; }
+.btn.dash { border-style: dashed; background: transparent; }
+.chip { display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 0 9px; border-radius: 11px; border: 1px solid var(--edge); background: var(--well); color: var(--text-2); font: 10.5px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+.chip.go { background: var(--go-tint); color: var(--go-ink); border-color: #b8d3be; }
+.chip.you { background: var(--you-tint); color: var(--you-ink); border-color: #d9b45a; }
+.module { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 12px 14px; }
+.label { font: 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.hint { color: var(--text-2); font-size: 12.5px; }
+.lcd { background: var(--lcd); color: var(--lcd-text); border-radius: 8px; font: 12px var(--mono); padding: 8px 10px; }
+.tile { border: 1px solid var(--edge); border-bottom-width: 3px; border-radius: 10px; background: var(--key); padding: 8px 10px; min-width: 0; }
+.tile.open { background: transparent; border-style: dashed; color: var(--muted); }
+.tile.sel { outline: 2px solid var(--text); outline-offset: 1px; }
+.tile .n { font: 600 11.5px var(--mono); letter-spacing: .04em; }
+.tile .s { font: 10px var(--mono); color: var(--text-2); }
+.led { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--go); }
+.led.off { background: var(--track); }
+.led.you { background: var(--you); }
+.term { background: var(--lcd); color: var(--lcd-text); border-radius: 8px; font: 13px/1.4 var(--mono); padding: 12px 14px; overflow: hidden; }
+.term .dim { color: var(--lcd-dim); }
+.mark { background: #fff3c4; outline: 2px solid var(--you); border-radius: 4px; padding: 1px 6px; font: 600 11px var(--mono); }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+a { color: var(--work); }
+.nav a { margin-right: 14px; }
+.chev::after { content: '▾'; font-size: 10px; }

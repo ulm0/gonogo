@@ -1,0 +1,49 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flight Rules: before and after</title><link rel="stylesheet" href="mocks.css">
+<body>
+<h1>Flight Rules, before and after</h1>
+<p class="note">Before: one page of 24 blocks, 7 652 px tall at 1280 px (9.6 screens) and 10 713 px on a phone (12.7 screens). After: seven groups, each short enough to read in one or two screens, a search, and the launch window's set-up parts moved in.</p>
+<div class="pair">
+ <div style="width:420px">
+  <p class="cap">Before: the order on the page today</p>
+  <div class="module" style="font-size:12.5px">
+   <ol style="margin:0;padding-left:22px;line-height:1.7">
+    <li><b>Max Q</b> <span class="hint">(also on the room's wall)</span></li><li><b>Propellant</b> <span class="hint">(also on the wall)</span></li><li>Livery</li><li>Phone approvals</li><li>Live reload</li><li>Launch Window <span class="hint">(a link to another page of 4 things)</span></li><li>Tab name</li><li>Defaults (engine, models, effort, 15 positions)</li><li>Room rules</li><li>Closing checklist template</li><li>Knowledge</li><li>Tool permissions</li><li>Payload defaults</li><li>Room keys</li><li>Start again after a restart</li><li>Version check <span class="hint">(CHECK NOW is here)</span></li><li>Auto-update</li><li>Subagents</li><li>Co-author line &amp; PR footer</li><li>Login</li><li>All stop <span class="hint">(an emergency control, about 5 800 px down)</span></li><li>Features (25 switches)</li><li>Consoles</li><li>This browser</li>
+   </ol>
+  </div>
+  <ul class="facts"><li>No index, no search, no anchors.</li><li>No order a reader can predict: a model default sits between the budget and the rules; the version check is in the middle.</li><li>Settings that belong together are 2 000 px apart (Login and Room keys; All stop and the wall).</li></ul>
+ </div>
+ <div>
+  <p class="cap">After: 1280 × 800, group “Agents”</p>
+  <div class="frame" style="width:700px;height:420px"><div class="screen" style="width:1280px;height:770px;zoom:.54">
+   <div class="topbar" style="height:56px"><span class="logo">gonogo</span><span class="grow"></span><span class="btn">Rooms</span><span class="btn">Comms</span><span class="btn chev">Work</span><span class="btn q" style="min-width:210px;justify-content:flex-start">⌕ Jump to…  ⌘K</span><span class="btn">⋯</span></div>
+   <div style="display:flex;gap:20px;padding:0 24px"><div style="width:230px"><h1 style="font-size:22px">FLIGHT RULES</h1><div class="btn q" style="width:100%;justify-content:flex-start;color:var(--muted)">⌕ Find a setting…</div>
+    <div class="module" style="margin-top:10px;padding:6px"><div class="btn q" style="width:100%;justify-content:flex-start">Room</div><div class="btn p" style="width:100%;justify-content:flex-start;margin-top:4px">Agents <span class="grow"></span><span class="chip" style="background:var(--key);color:var(--text)">9</span></div><div class="btn q" style="width:100%;justify-content:flex-start;margin-top:4px">Budget and limits</div><div class="btn q" style="width:100%;justify-content:flex-start;margin-top:4px">Automation and connections</div><div class="btn q" style="width:100%;justify-content:flex-start;margin-top:4px">Knowledge</div><div class="btn q" style="width:100%;justify-content:flex-start;margin-top:4px">Security</div><div class="btn q" style="width:100%;justify-content:flex-start;margin-top:4px">System and update <span class="grow"></span><span class="chip you">1</span></div></div></div>
+    <div style="flex:1;display:grid;gap:10px;align-content:start"><div><b style="font-size:18px">Agents</b><p class="hint" style="margin:2px 0">What every agent of the room starts with, and what it may do. An agent's own Edit form wins.</p></div>
+     <div class="module row"><span class="label" style="min-width:210px">Engine and model</span><span class="hint grow">Claude Code · sonnet · effort high</span><span class="btn sm">Change ▾</span></div>
+     <div class="module row"><span class="label" style="min-width:210px">Room rules</span><span class="hint grow">412 / 8 192 bytes · for every agent, in its role text</span><span class="btn sm">Edit ▾</span></div>
+     <div class="module row"><span class="label" style="min-width:210px">Tool permissions</span><span class="hint grow">3 allowed · 1 ask · 2 denied</span><span class="btn sm">Edit ▾</span></div>
+     <div class="module row"><span class="label" style="min-width:210px">Servers and skills</span><span class="hint grow">2 MCP servers · 1 skill · <a href="#">add from the list</a></span><span class="btn sm">Edit ▾</span></div>
+     <div class="module row"><span class="label" style="min-width:210px">Keys for every agent</span><span class="hint grow">2 set (values never shown)</span><span class="btn sm">Edit ▾</span></div>
+     <div class="module row"><span class="label" style="min-width:210px">Subagents · Co-author line</span><span class="hint grow">allowed (limit 4) · on</span><span class="btn sm">Edit ▾</span></div>
+     <div class="module row"><span class="label" style="min-width:210px">After a restart</span><span class="hint grow">start FLIGHT only</span><span class="btn sm">Edit ▾</span></div>
+     <div class="module row"><span class="label" style="min-width:210px">Each console</span><span class="hint grow">3 consoles</span><span class="btn sm">Open ▾</span></div></div></div>
+  </div></div>
+  <ul class="facts"><li>A <b>row</b> is the setting's name, what it is now, and a key that opens it in place: nothing needs a screen of its own to be understood.</li><li>Seven groups, from 3 to 9 rows: the longest is about 1.5 screens.</li><li>A badge on a group says something needs you (an update, a stale claim).</li></ul>
+  <p class="cap" style="margin-top:20px">The seven groups</p>
+  <div class="module" style="font-size:12.5px;max-width:640px"><table style="border-collapse:collapse;width:100%"><tbody>
+   <tr><td><b>Room</b></td><td>Tab name · Livery · Features (25 switches) · Commissioning checklist</td></tr>
+   <tr><td><b>Agents</b></td><td>Engine and model · Room rules · Tool permissions · Servers and skills · Keys · Subagents · Co-author line · After a restart · Each console</td></tr>
+   <tr><td><b>Budget and limits</b></td><td>Max Q · Propellant (limits, plan quota, cost, prices)</td></tr>
+   <tr><td><b>Automation and connections</b></td><td>Schedules (the part you run stays a view) · Uplink (in) · Relay (out) · Docking (other stations) · Phone approvals</td></tr>
+   <tr><td><b>Knowledge</b></td><td>Claims and proposals · Closing checklist template</td></tr>
+   <tr><td><b>Security</b></td><td>Login (password, second factor, passkeys, keys, sessions) · All stop · Step-up</td></tr>
+   <tr><td><b>System and update</b></td><td>Version and CHECK NOW · Auto-update windows · Live reload · This browser (notifications, push)</td></tr>
+  </tbody></table></div>
+ </div>
+</div>
+<h2>390 px</h2>
+<div class="pair"><div><p class="cap">After: groups are a list; a row opens in place</p><div class="frame" style="width:234px;height:506px"><div class="screen" style="width:390px;height:844px;zoom:.6">
+ <div class="row" style="padding:8px 10px"><span class="btn sm">‹ Room</span><b>Flight Rules</b></div><div style="padding:0 10px"><div class="btn q" style="width:100%;justify-content:flex-start;color:var(--muted)">⌕ Find a setting…</div>
+ <div class="module" style="margin-top:8px;padding:6px"><div class="btn" style="width:100%;justify-content:space-between;margin-bottom:4px">Room <span>›</span></div><div class="btn" style="width:100%;justify-content:space-between;margin-bottom:4px">Agents <span>9 ›</span></div><div class="btn" style="width:100%;justify-content:space-between;margin-bottom:4px">Budget and limits <span>›</span></div><div class="btn" style="width:100%;justify-content:space-between;margin-bottom:4px">Automation and connections <span>›</span></div><div class="btn" style="width:100%;justify-content:space-between;margin-bottom:4px">Knowledge <span>›</span></div><div class="btn" style="width:100%;justify-content:space-between;margin-bottom:4px">Security <span>›</span></div><div class="btn" style="width:100%;justify-content:space-between">System and update <span class="chip you">1</span></div></div></div></div></div></div></div>
+<p class="note"><a href="index.html">All mocks</a></p>
+</body></html>
