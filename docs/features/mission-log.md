@@ -7,7 +7,7 @@ MISSION LOG (top bar; LOG on a phone) is one memory shared by all agents and you
 ## Entries and search
 
 - Title (at most 200 characters, one line), body (at most 20000), up to 8 tags (lowercase words, at most 30 characters), author, created and changed times. Ids `l1`, `l2`, ... never reused. At most 2000 entries.
-- Search is BM25 over title, tags and body (title and tag words count three times). A word is two or more letters or digits. No stemming (`builds` misses `build`), no phrase search, no semantic search. Results show a snippet; an empty search lists the newest.
+- Search is BM25 over title, tags and body (title and tag words count three times). A word is two or more letters or digits. Light stemming for English and Spanish endings (`builds`, `building` and `build` find each other; `configuraciones` finds `configuración`), and a word of three letters or more also finds the longer words it begins (`anch` finds `anchor`), ranked below the whole word. It knows no irregular word (`built` does not find `build`) and keeps the ending of a word of three letters or fewer (`using` does not find `use`). No phrase search, no semantic search. Results show a snippet; an empty search lists the newest.
 
 ## The page
 

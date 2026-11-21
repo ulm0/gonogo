@@ -46,7 +46,7 @@ pnpm exec playwright install --with-deps chromium   # once, about 150 MB
 pnpm exec playwright test
 ```
 
-CI runs it (`.github/workflows/browser.yml`) on pull requests that touch `src/client`, the auth and web server files, any `.css`, `public/sw.js` or the Vite config, by hand, and before a release publishes. A failure uploads a screenshot and a trace as an artifact.
+CI runs it (`.github/workflows/browser.yml`) on pull requests that touch `src/client`, the auth and web server files, any `.css`, `public/sw.js` or the Vite config, by hand, and before a release publishes. A failure uploads a screenshot and a trace as an artifact. `.github/workflows/browsers.yml` runs the same spec on Firefox and WebKit on those pull requests (not part of the release gate; locally `PW_BROWSERS=firefox,webkit pnpm exec playwright test browser/smoke.spec.ts`). WebKit runs with service workers blocked: Playwright's WebKit hangs the page once one is installed.
 
 ## The real smoke
 

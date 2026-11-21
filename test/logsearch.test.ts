@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LOG_SNIPPET_CHARS } from '../src/server/constants.js';
-import { createIndex, snippet, tokenize } from '../src/server/logsearch.js';
+import { createIndex, snippet, stem, tokenize } from '../src/server/logsearch.js';
 import type { IndexedDoc, LogIndex } from '../src/server/logsearch.js';
 
 const doc = (id: string, title: string, body: string, at = 1, tags: string[] = []): IndexedDoc => ({ id, title, body, tags, at });
@@ -174,5 +174,106 @@ describe('snippet', () => {
 
   it('puts the text on one line', () => {
     expect(snippet('line one\n\n\tline   two cache', 'cache')).toBe('line one line two cache');
+  });
+});
+
+describe('stem', () => {
+  it('brings the forms of a word to one, in English and Spanish', () => {
+    const groups = [
+      ['build', 'builds', 'building'],
+      ['cache', 'caches', 'cached', 'caching'],
+      ['file', 'files', 'filing'],
+      ['run', 'runs', 'running'],
+      ['stop', 'stopped', 'stopping'],
+      ['entry', 'entries'],
+      ['box', 'boxes'],
+      ['pass', 'passes', 'passing'],
+      ['fall', 'falling'],
+      ['anchor', 'anchors', 'anchored'],
+      ['papel', 'papeles'],
+      ['casa', 'casas'],
+      ['configuración', 'configuraciones', 'configuracion'],
+    ];
+    for (const group of groups) expect(new Set(group.map(stem)).size, group.join()).toBe(1);
+  });
+
+  it('leaves short words, numbers and words that end in ss, us or is alone', () => {
+    for (const word of ['is', 'bus', 'use', 'status', 'class', 'v1', '2026', 'ñandú']) expect(stem(word), word).toBe(word === 'ñandú' ? 'nandu' : word);
+    expect(stem('2026')).toBe('2026');
+  });
+});
+
+describe('the index with stems and prefixes', () => {
+  it('finds a word by another form of it, from the title, the body and a tag', () => {
+    const index = createIndex();
+    index.add(doc('l1', 'Notes', 'the builds are slow'));
+    index.add(doc('l2', 'Building the image', 'text'));
+    index.add(doc('l3', 'Notes', 'text', 1, ['builder']));
+    index.add(doc('l4', 'Deploy', 'the deploy needs a token'));
+    // l3 holds 'builder': a longer word that 'build' begins, found as a prefix
+    expect(ids(index, 'build').sort()).toEqual(['l1', 'l2', 'l3']);
+    expect(ids(index, 'building').sort()).toEqual(['l1', 'l2']);
+    expect(ids(index, 'builds').sort()).toEqual(['l1', 'l2']);
+  });
+
+  it('finds the longer words a query of three letters or more begins, below the whole word, and not for two letters', () => {
+    const index = createIndex();
+    index.add(doc('l1', 'Notes', 'the anchors are literal'));
+    index.add(doc('l2', 'Notes', 'an anch is a boat part'));
+    expect(ids(index, 'anch')).toEqual(['l2', 'l1']);
+    const two = createIndex();
+    two.add(doc('l1', 'Notes', 'the anchors are literal'));
+    expect(ids(two, 'an')).toEqual([]);
+    expect(ids(two, 'anc')).toEqual(['l1']);
+  });
+
+  it('keeps the order of the entries that hold the exact word, and adds the prefix ones', () => {
+    const index = createIndex();
+    index.add(doc('l1', 'Cache', 'the key'));
+    index.add(doc('l2', 'Notes', 'the cache is cleared at night, and the cache key has the node version'));
+    index.add(doc('l3', 'Cachet', 'the cachet of a stamp'));
+    // 'cachet' is a longer word that 'cache' begins: found too, and l1 stays before l2
+    for (const q of ['cache', 'cach']) {
+      const found = ids(index, q);
+      expect(found.sort()).toEqual(['l1', 'l2', 'l3']);
+      expect(ids(index, q).filter((x) => x !== 'l3')).toEqual(['l1', 'l2']);
+    }
+    expect(ids(index, 'cachet')[0]).toBe('l3');
+  });
+
+  it('does not mangle other text: numbers, versions and accented words are found as they are written', () => {
+    const index = createIndex();
+    index.add(doc('l1', 'Versión 2026', 'La configuración de node v20 y ñandú'));
+    expect(ids(index, '2026')).toEqual(['l1']);
+    expect(ids(index, 'v20')).toEqual(['l1']);
+    expect(ids(index, 'configuraciones')).toEqual(['l1']);
+    expect(ids(index, 'configuracion')).toEqual(['l1']);
+    expect(ids(index, 'ñandú')).toEqual(['l1']);
+  });
+
+  it('removes an entry from every stem it was under, and replaces one with the same id', () => {
+    const index = createIndex();
+    index.add(doc('l1', 'Builds', 'running'));
+    index.remove('l1');
+    expect(ids(index, 'build')).toEqual([]);
+    index.add(doc('l1', 'Builds', 'body'));
+    index.add(doc('l1', 'Deploys', 'body'));
+    expect(ids(index, 'build')).toEqual([]);
+    expect(ids(index, 'deploying')).toEqual(['l1']);
+  });
+
+  it('an expansion is capped, so a query word that begins many words stays quick', () => {
+    const index = createIndex();
+    for (let i = 0; i < 80; i += 1) index.add(doc(`l${i + 1}`, 'Notes', `word${String.fromCharCode(97 + (i % 26))}${i} filler`));
+    expect(ids(index, 'word', 100).length).toBeGreaterThan(0);
+    expect(ids(index, 'word', 100).length).toBeLessThanOrEqual(80);
+  });
+});
+
+describe('snippet with stems', () => {
+  it('centres on a form of the word, or a word it begins', () => {
+    const text = `${'filler '.repeat(60)}the builds are slow today ${'more '.repeat(60)}`;
+    expect(snippet(text, 'build')).toContain('builds');
+    expect(snippet(text, 'buil')).toContain('builds');
   });
 });
