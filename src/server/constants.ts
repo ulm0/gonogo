@@ -518,7 +518,7 @@ export const MCP_DESCRIPTIONS = {
   mission_update:
     'Boss only. Change a mission by its id: its status (planned, active, paused, done, aborted) and a short note for the history. Becoming active briefs you with the goal and the open tasks. Only the Director edits a name or a goal or removes a mission.',
   log_write:
-    'Write to the Mission Log, the memory shared by every agent: a title, a body in plain markdown and optional tags. Give an id to change an entry you wrote earlier (any of title, body, tags). Keep an entry to one finding.',
+    'Write to the Mission Log, the memory shared by every agent: a title, a body in plain markdown and optional tags. Give an id to change an entry you wrote earlier (any of title, body, tags, anchors). Keep an entry to one finding. When the Director has turned knowledge anchors on, an entry may carry up to 5 anchors: a repo (the top of a repository an agent of this room works in), a file in it, a kind (present or absent) and a literal text of at most 200 characters; log_read and log_search then say whether it is still confirmed.',
   log_search:
     'Search the Mission Log. Returns up to limit entries (at most 20), best first, each with its id, title, author, tags and a snippet around the best match. Read the whole entry with log_read.',
   log_read: 'Read one entry of the Mission Log by its id: the title, tags, author, times and the whole body.',

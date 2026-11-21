@@ -32,9 +32,9 @@ export interface Recorder {
 }
 
 /** Hooks off, and the programs a repository's own config could name for a read (the file system monitor, an external diff) off. */
-const BASE_ARGS = ['--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false'];
+export const BASE_ARGS = ['--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false'];
 /** What git may see of the environment: no GIT_DIR or GIT_WORK_TREE or GIT_EXTERNAL_DIFF from gonogo's own, no credential. */
-const KEEP_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'XDG_CONFIG_HOME', 'TMPDIR'];
+export const KEEP_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'XDG_CONFIG_HOME', 'TMPDIR'];
 
 class GitFailure extends Error {
   constructor(readonly status: number | string | null, message: string) {

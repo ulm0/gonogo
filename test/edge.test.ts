@@ -2144,6 +2144,7 @@ describe('mission log', () => {
           known(id);
           return entry;
         },
+        verify: async () => undefined,
         chart: () => ({ total: 7, shown: 1, nodes: [{ id: 'entry:l1', kind: 'entry', ref: 'l1', label: 'Cache key', weight: 1 }], edges: [] }),
         create: async (author, input) => {
           calls.push(['create', author, input]);
@@ -2619,7 +2620,7 @@ describe('mcp', () => {
     expect([...(update?.inputSchema.required ?? [])]).toEqual(['id']);
     for (const name of ['task_list', 'task_create', 'task_update'] as const) expect(tools.find((t) => t.name === name)?.description).toBe(MCP_DESCRIPTIONS[name]);
     const write = tools.find((t) => t.name === 'log_write');
-    expect(Object.keys(write?.inputSchema.properties ?? {}).sort()).toEqual(['body', 'id', 'tags', 'title']);
+    expect(Object.keys(write?.inputSchema.properties ?? {}).sort()).toEqual(['anchors', 'body', 'id', 'tags', 'title']);
     expect(write?.inputSchema.required ?? []).toEqual([]);
     expect(write?.inputSchema.properties?.body).toMatchObject({ maxLength: 20_000 });
     const search = tools.find((t) => t.name === 'log_search');

@@ -17,7 +17,9 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LOG_BODY_MAX_CHARS, LOG_ENTRIES_MAX, LOG_QUERY_MAX_CHARS, LOG_SEARCH_MAX, LOG_TAG_PATTERN, LOG_TAGS_MAX, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
-import type { LogChart, LogEntry, LogFrame, LogHit, Logger, LogSearch } from '../shared/protocol.js';
+import type { LogAnchor, LogChart, LogEntry, LogFrame, LogHit, Logger, LogSearch } from '../shared/protocol.js';
+import { anchorShape } from './anchors.js';
+import type { AnchorChecker } from './anchors.js';
 import { DIR_MODE, FILE_MODE, LOG_DIR } from './constants.js';
 import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
@@ -28,7 +30,7 @@ import { UNSAFE_IN_NAME } from './schedules.js';
 const ID_RE = /^l[1-9]\d{0,5}$/;
 const FILE_RE = /^(l[1-9]\d{0,5})\.md$/;
 const TAG_RE = new RegExp(LOG_TAG_PATTERN);
-const FIELDS = ['title', 'body', 'tags'];
+const FIELDS = ['title', 'body', 'tags', 'anchors'];
 /** Holds the highest id ever given, so that the id of a removed entry is not given again after a restart. */
 const SEQ_FILE = '.seq';
 
@@ -39,6 +41,9 @@ export interface MissionLogOptions {
   /** Entries were written, changed or removed: ids and titles only. */
   emit(frame: LogFrame): void;
   log: Logger;
+  /** Knowledge anchors (anchors.ts): without it, or while `anchorsOn` says no, an entry takes no anchors and shows no state. */
+  anchors?: AnchorChecker;
+  anchorsOn?(): boolean;
 }
 
 export interface MissionLog {
@@ -47,6 +52,8 @@ export interface MissionLog {
   /** The entries that hold a word of the query, best first; an empty query gives the newest. At most `limit` hits. */
   search(query: string, limit?: number): LogSearch;
   get(id: string): LogEntry;
+  /** Runs the checks of the entry's anchors (when the switch is on) so that `get` shows a fresh state; never throws. */
+  verify(id: string): Promise<void>;
   /** Star Chart: the newest entries with their tags, authors and mentions of each other (logchart.ts). */
   chart(): LogChart;
   /** The input is a JSON value from the wire; a bad one throws a HubError (bad_request, field). The title and the body are required. */
@@ -58,7 +65,7 @@ export interface MissionLog {
 }
 
 const bad = (message: string, field?: string): HubError => new HubError('bad_request', message, field);
-const copy = (entry: LogEntry): LogEntry => ({ ...entry, tags: [...entry.tags] });
+const copy = (entry: LogEntry): LogEntry => ({ ...entry, tags: [...entry.tags], ...(entry.anchors ? { anchors: entry.anchors.map((a) => ({ ...a })) } : {}) });
 
 interface Fields {
   title?: string;
@@ -100,6 +107,7 @@ const render = (e: LogEntry): string =>
     `title: ${JSON.stringify(e.title)}`,
     `tags: ${JSON.stringify(e.tags)}`,
     `author: ${JSON.stringify(e.author)}`,
+    ...(e.anchors ? [`anchors: ${JSON.stringify(e.anchors)}`] : []),
     `createdAt: ${JSON.stringify(new Date(e.createdAt).toISOString())}`,
     `updatedAt: ${JSON.stringify(new Date(e.updatedAt).toISOString())}`,
     '---',
@@ -117,7 +125,7 @@ function parse(text: string, id: string): LogEntry {
     if (at < 0) throw new Error('a front matter line is not "key: value"');
     values.set(line.slice(0, at), JSON.parse(line.slice(at + 2)) as unknown);
   }
-  const { version, title, tags, author, createdAt, updatedAt } = Object.fromEntries(values) as Record<string, unknown>;
+  const { version, title, tags, author, createdAt, updatedAt, anchors } = Object.fromEntries(values) as Record<string, unknown>;
   const at = (value: unknown): number => (typeof value === 'string' ? Date.parse(value) : Number.NaN);
   // an entry from before there was a version has none and reads as version 1
   if (version !== undefined && version !== 1) throw new Error(`format version ${String(version)} was saved by another gonogo; this one reads version 1`);
@@ -127,7 +135,10 @@ function parse(text: string, id: string): LogEntry {
   if (typeof author !== 'string' || author === '') throw new Error('no valid author');
   if (Number.isNaN(at(createdAt)) || Number.isNaN(at(updatedAt))) throw new Error('no valid times');
   const body = (found[2] ?? '').replace(/\n$/, '');
-  return { id, title, body: body.slice(0, LOG_BODY_MAX_CHARS), tags: tags as string[], author, createdAt: at(createdAt), updatedAt: at(updatedAt) };
+  const entry: LogEntry = { id, title, body: body.slice(0, LOG_BODY_MAX_CHARS), tags: tags as string[], author, createdAt: at(createdAt), updatedAt: at(updatedAt) };
+  // the same shape rules as a request; a file that holds a bad list is skipped like any bad file
+  if (anchors !== undefined) entry.anchors = anchorShape(anchors);
+  return entry;
 }
 
 export function createMissionLog(options: MissionLogOptions): MissionLog {
@@ -160,13 +171,34 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
     index.add({ id: entry.id, title: entry.title, tags: entry.tags, body: entry.body, at: entry.updatedAt });
   };
 
+  /** The anchors of a request, checked against the repositories of the room; refused while the switch is off. */
+  const anchorsOf = async (input: unknown): Promise<LogAnchor[] | undefined> => {
+    const given = (input as Record<string, unknown>).anchors;
+    if (given === undefined) return undefined;
+    if (!on() || !options.anchors) throw bad('knowledge anchors are off: the Director turns them on in FLIGHT RULES', 'anchors');
+    return options.anchors.validate(given);
+  };
+
   const find = (id: string): LogEntry => {
     const entry = ID_RE.test(id) ? entries.get(id) : undefined;
     if (!entry) throw new HubError('not_found', 'unknown entry');
     return entry;
   };
 
-  const hit = (e: LogEntry, query: string): LogHit => ({ id: e.id, title: e.title, author: e.author, tags: e.tags, updatedAt: e.updatedAt, snippet: snippet(e.body, query) });
+  const on = (): boolean => options.anchors !== undefined && options.anchorsOn?.() === true;
+  /** The last answer for the entry's anchors; nothing while the switch is off. */
+  const stateOf = (e: LogEntry): LogEntry['anchorState'] => (on() && e.anchors ? options.anchors?.peek(e.anchors) : undefined);
+  const shown = (e: LogEntry): LogEntry => {
+    const out = copy(e);
+    const state = stateOf(e);
+    if (state) out.anchorState = state;
+    return out;
+  };
+
+  const hit = (e: LogEntry, query: string): LogHit => {
+    const state = stateOf(e);
+    return { id: e.id, title: e.title, author: e.author, tags: e.tags, updatedAt: e.updatedAt, snippet: snippet(e.body, query), ...(state ? { anchorState: state } : {}) };
+  };
 
   return {
     async load() {
@@ -190,19 +222,28 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
       const q = query.slice(0, LOG_QUERY_MAX_CHARS);
       const cap = Math.min(Math.max(Math.trunc(limit), 1), LOG_SEARCH_MAX);
       const found = q.trim() === '' ? [...entries.values()].sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt).slice(0, cap) : index.search(q, cap).map((r) => find(r.id));
+      // the answers of a search are the last ones known; the checks of the first few run now, for the next look
+      if (on()) for (const e of found.slice(0, 5)) if (e.anchors) void options.anchors?.check(e.anchors);
       return { total: entries.size, hits: found.map((e) => hit(e, q)) };
     },
 
-    get: (id) => copy(find(id)),
+    get: (id) => shown(find(id)),
+
+    async verify(id) {
+      const entry = entries.get(id);
+      if (on() && entry?.anchors) await options.anchors?.check(entry.anchors);
+    },
 
     chart: () => buildChart([...entries.values()]),
 
     create(author, input) {
       return locked(async () => {
         const fields = validate(input, true);
+        const anchors = await anchorsOf(input);
         if (entries.size >= LOG_ENTRIES_MAX) throw new HubError('conflict', `the Mission Log holds at most ${LOG_ENTRIES_MAX} entries: remove one first`, 'log');
         const at = now();
         const entry: LogEntry = { id: `l${seq + 1}`, title: fields.title ?? '', body: fields.body ?? '', tags: fields.tags ?? [], author, createdAt: at, updatedAt: at };
+        if (anchors?.length) entry.anchors = anchors;
         await writeFileAtomic(`${entry.id}.md`, render(entry));
         seq += 1;
         keep(entry);
@@ -216,8 +257,11 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
         const old = find(id);
         if (by !== null && old.author !== by) throw new HubError('forbidden', `${id} was written by ${old.author}: only its author or the Director may change it`);
         const fields = validate(input, false);
+        const anchors = await anchorsOf(input);
         const next: LogEntry = { ...old, ...fields, updatedAt: now() };
-        if (next.title === old.title && next.body === old.body && next.tags.join() === old.tags.join()) return copy(old);
+        if (anchors?.length) next.anchors = anchors;
+        else if (anchors) delete next.anchors;
+        if (next.title === old.title && next.body === old.body && next.tags.join() === old.tags.join() && JSON.stringify(next.anchors) === JSON.stringify(old.anchors)) return copy(old);
         await writeFileAtomic(`${id}.md`, render(next));
         keep(next);
         options.emit({ t: 'log', changed: [{ id, title: next.title }], removed: [] });

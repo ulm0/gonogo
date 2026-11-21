@@ -25,6 +25,8 @@ export interface Feature {
   core?: string;
   /** The server enforces the switch for this row. A row without it is listed and refused with "not switchable yet". */
   wired: boolean;
+  /** Off until the Director turns it on (the saved file then lists it in `on`). */
+  defaultOff: boolean;
 }
 
 const f = (
@@ -32,9 +34,9 @@ const f = (
   label: string,
   group: FeatureGroup,
   about: string,
-  extra: { requires?: readonly string[]; enhances?: readonly string[]; loses?: string; wired?: boolean } = {},
-): Feature => ({ id, label, group, about, requires: extra.requires ?? [], enhances: extra.enhances ?? [], loses: extra.loses ?? '', wired: extra.wired ?? true });
-const core = (id: string, label: string, group: FeatureGroup, about: string, why: string): Feature => ({ id, label, group, about, requires: [], enhances: [], loses: '', core: why, wired: true });
+  extra: { requires?: readonly string[]; enhances?: readonly string[]; loses?: string; wired?: boolean; defaultOff?: boolean } = {},
+): Feature => ({ id, label, group, about, requires: extra.requires ?? [], enhances: extra.enhances ?? [], loses: extra.loses ?? '', wired: extra.wired ?? true, defaultOff: extra.defaultOff ?? false });
+const core = (id: string, label: string, group: FeatureGroup, about: string, why: string): Feature => ({ id, label, group, about, requires: [], enhances: [], loses: '', core: why, wired: true, defaultOff: false });
 
 export const FEATURES: readonly Feature[] = [
   core('roster', 'Roster and mail', 'Room', 'Hire, edit, start, stop and message agents.', 'nothing works without it'),
@@ -49,6 +51,7 @@ export const FEATURES: readonly Feature[] = [
   f('flight-plan', 'Flight Plan', 'Work', 'The task board.', { loses: 'the task tools are gone' }),
   f('missions', 'Missions', 'Work', 'A named goal with its tasks.', { requires: ['flight-plan'], loses: 'the mission tools are gone' }),
   f('mission-log', 'Mission Log', 'Records', 'The shared memory of the room.', { loses: 'the log tools are gone' }),
+  f('knowledge-anchors', 'Knowledge anchors', 'Records', 'A Mission Log entry may name a file and a literal text that must be, or must not be, in it; the page says when that is not confirmed.', { requires: ['mission-log'], loses: 'the anchors of entries are kept but not checked or shown', defaultOff: true }),
   f('star-chart', 'Star Chart', 'Records', 'The log as a graph.', { requires: ['mission-log'], loses: 'the chart and links' }),
   f('plot-board', 'Plot Board', 'Records', 'The one current plan.', { loses: 'the board tools and view are gone' }),
   f('party-line', 'Party Line', 'Records', 'Messages grouped in threads.', { wired: false }),
@@ -116,6 +119,9 @@ export interface PlanContext {
   /** The agents that are running (their tool list was fixed at their start). */
   running?: readonly string[];
 }
+
+/** The features that are off until the Director turns them on. */
+export const DEFAULT_OFF: readonly string[] = FEATURES.filter((feature) => feature.defaultOff).map((feature) => feature.id);
 
 /** The ids of an off list that can be off: it is closed over `requires` and loses the core and the not-switchable ones. */
 export function cleanOff(ids: readonly string[]): string[] {

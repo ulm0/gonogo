@@ -8,11 +8,11 @@ Flight Rules -> **FEATURES** gives each feature of the room a switch. Off is **t
 
 - Press the switch. The server's plan shows what else goes off ("Turning off T-minus poll also turns off Static fire"), what turns on because it is needed, and what stays on but loses something. Nothing changes until you press TURN OFF or TURN ON.
 - API: `PUT /api/features` with `{ off: [...] }`, then again with `confirm: true`. Apply sends the `expect` list of the plan shown; if the plan changed, 409 and nothing changes.
-- **Needs:** a feature that needs another goes off with it. Static fire needs T-minus; Missions needs Flight Plan; Star Chart needs Mission Log; Recorder needs Hangar; Review needs Recorder; Relay needs Uplink.
+- **Needs:** a feature that needs another goes off with it. Static fire needs T-minus; Missions needs Flight Plan; Star Chart and Knowledge anchors need Mission Log; Recorder needs Hangar; Review needs Recorder; Relay needs Uplink.
 - **Core, locked:** roster and mail, Downlink, Black Box, Redline and Hold (so ALL STOP and ALL RESUME stay), and the controls (Flight Rules, Patch Panel, Clearance, Engine Bay). Redline's detectors have their own switch, `GONOGO_REDLINE=off`.
 - **A poll that is open** blocks turning off T-minus poll and Static fire: abort or clear it first.
 - **Turning on** reaches a running agent at its next start (the plan names the agents to restart). Turning Max Q off releases held mail at once.
-- **Saved** in `~/.gonogo/features.json`: only the ids that are off (new features are on; unknown ids ignored). An unreadable file is kept as `.bad` and everything is on.
+- **Saved** in `~/.gonogo/features.json`: the ids that are off, and `on`, the off-by-default features you switched on (new features are on, except Knowledge anchors, which is off until you turn it on; unknown ids ignored). An unreadable file is kept as `.bad` and everything is on.
 - `start_agent` (the boss's tool for a stopped console) is not a feature: its switch is *FLIGHT may start agents*, in Start again after a restart.
 
 ## What off does
@@ -26,7 +26,7 @@ Flight Rules -> **FEATURES** gives each feature of the room a switch. Off is **t
 
 ## What can be switched
 
-- **Switchable:** Director messages as user turns, Max Q, T-minus poll, Static fire, Relief, Flight Plan, Missions, Mission Log, Star Chart, Plot Board, Telemetry, Post-Flight Review, Mass Budget, Hangar, Recorder, Launch Window, Uplink, Relay, Docking, Livery.
+- **Switchable:** Director messages as user turns, Max Q, T-minus poll, Static fire, Relief, Flight Plan, Missions, Mission Log, Knowledge anchors (off until you turn it on), Star Chart, Plot Board, Telemetry, Post-Flight Review, Mass Budget, Hangar, Recorder, Launch Window, Uplink, Relay, Docking, Livery.
 - **Listed, not switchable** (the server refuses): Party Line, Propellant and Cost, Phone approvals.
 
 ## Limits
