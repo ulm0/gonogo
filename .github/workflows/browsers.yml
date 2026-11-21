@@ -21,8 +21,6 @@ on:
       - 'playwright.config.ts'
       - '.github/workflows/browsers.yml'
   workflow_dispatch:
-  push:
-    branches: [surgeon/smoke-browsers] # TEMPORARY, to iterate before the workflow is on main
 
 permissions: {}
 
