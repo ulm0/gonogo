@@ -59,6 +59,7 @@ import { createWebServer } from './web.js';
 import { createReported } from './reported.js';
 import { createPropellant } from './propellant.js';
 import { createQuota } from './quota.js';
+import { captureFetch, parseCaptureEnv } from './telegramcapture.js';
 import { createTelegramPoll } from './telegrampoll.js';
 import { createPrices } from './prices.js';
 import { createTelemetry } from './telemetry.js';
@@ -954,7 +955,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('launch window'),
     });
-    const telegramFiles = createTelegramFiles({ fetch: options.fetch ?? ((url, init) => fetch(url, init)), token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), agentsRoot: join(home.dir, AGENTS_DIR), now: io.now, log: log.child('telegram files') });
+    // GONOGO_TELEGRAM_CAPTURE=<folder>[:N] (docs/telegram-capture.md): the answers of getUpdates and getFile, redacted, kept for the tests; off when unset
+    const capture = parseCaptureEnv(env.GONOGO_TELEGRAM_CAPTURE);
+    const telegramHttp = capture === null ? (options.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init))) : captureFetch(options.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init)), { ...capture, token: () => relay.telegramTarget()?.token ?? null, log: log.child('telegram capture') });
+    const telegramFiles = createTelegramFiles({ fetch: telegramHttp, token: () => relay.telegramTarget()?.token ?? null, agentDir: (name) => home.agentDir(name), agentsRoot: join(home.dir, AGENTS_DIR), now: io.now, log: log.child('telegram files') });
     void telegramFiles.prune();
     const uplinks = createUplinks({
       dir: home.dir,
@@ -1098,7 +1102,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       target: () => relay.telegramTarget(),
       hasUplink: () => uplinks.secretOf('telegram') !== null,
       deliver: (update, secret) => uplinks.deliverPolled(update, secret),
-      fetch: options.fetch ?? ((url, init) => fetch(url, init)),
+      fetch: (url, init) => telegramHttp(String(url), init),
       sleep: (ms, signal) => new Promise<void>((done) => {
         const timer = setTimeout(done, ms);
         timer.unref();
