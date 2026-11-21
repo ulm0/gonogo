@@ -1867,6 +1867,129 @@ export interface LogFrame {
   changed: LogHead[];
   removed: string[];
 }
+/**
+ * Knowledge (docs/knowledge-spec.md section 0b): the claims of a repository, the Director's decisions about it, and what agents proposed.
+ * Shared by the store and API (K1), the engine (K2), the CLI (K3) and the page (K4). Text in these types came from a repository or an
+ * agent: the page shows it as text only, and none of it reaches a prompt.
+ */
+/** Where a claim is kept: gonogo's own store, a read-only `.gonogo/claims.md` of the repository, or a Mission Log entry's anchors (phase 1). */
+export type ClaimSource = 'store' | 'repo' | 'log';
+/** One anchor line of a claim: `<!-- @anchor ID brain:<glob> [!<glob>] /regex/[i] | "literal" [mode] -->`. `line` is its line in the file (1-based, 0 for a log anchor). */
+export interface Leg {
+  mode: 'present' | 'absent' | 'unique' | 'count' | 'each' | 'each!';
+  /** Only with mode `count`. */
+  count?: number;
+  glob: string;
+  excludes: string[];
+  pattern: { kind: 'regex'; source: string; i: boolean } | { kind: 'literal'; text: string };
+  line: number;
+}
+export interface Claim {
+  /** `K-1`, `K-2`, ...: never used twice in a store. A repo file's own ids are kept as written. */
+  id: string;
+  statement: string;
+  /** Free text; gonogo writes `director`, `agent-accepted`, `imported` and `log-anchor`. */
+  authority: string;
+  state: 'active' | 'proposed' | 'retired';
+  /** YYYY-MM-DD. */
+  date: string;
+  source: ClaimSource;
+  /** The origin: `proposed by ana`, `from l17`, a file name. */
+  from?: string;
+  legs: Leg[];
+  /** What is wrong with the claim or its legs, with the line; a claim with diagnostics is `malformed`, never skipped. */
+  diagnostics: Array<{ line: number; message: string }>;
+}
+export type LegState = 'ok' | 'stale' | 'vacuous' | 'unevaluated' | 'malformed';
+/** The last evaluation of a claim in one checkout. Notes are written by gonogo, never copied from a repository. */
+export interface ClaimResult {
+  id: string;
+  /** The top level of the checkout it ran in. */
+  root: string;
+  branch: string;
+  /** Short commit. */
+  commit: string;
+  worst: LegState | 'unanchored';
+  legs: Array<{ state: LegState; note: string }>;
+  checkedAt: number;
+}
+/** An agent's suggestion. Never an active claim: it has no effect until the Director accepts it. `trial` and every result are for the Director only, never for the agent. */
+export interface Proposal {
+  /** p1, p2, ... per room and repository. */
+  id: string;
+  agent: string;
+  branch: string;
+  commit: string;
+  at: number;
+  statement: string;
+  legs: Leg[];
+  status: 'pending' | 'accepted' | 'rejected';
+  reason?: string;
+  trial?: ClaimResult;
+}
+/** One repository as the Knowledge block shows it. */
+export interface KnowledgeRepo {
+  repoId: string;
+  label: string;
+  /** A shallow clone: its root commit is not known, claims can be read, proposals and binding wait. */
+  provisional: boolean;
+  roots: Array<{ path: string; branch: string; bound: boolean; agents: string[] }>;
+  claims: Claim[];
+  results: ClaimResult[];
+  proposals: Proposal[];
+  /** Other repositories that look like this one (same remote, another root commit, or the reverse): MOVE claims here, or KEEP SEPARATE. */
+  candidates: Array<{ repoId: string; label: string; why: string }>;
+}
+/** Numbers only: what a `knowledge` frame and a tile carry. */
+export interface KnowledgeCounts {
+  stale: number;
+  vacuous: number;
+  unevaluated: number;
+  malformed: number;
+  pending: number;
+}
+/** GET /api/knowledge. `enabled` is false while the feature is off (then `repos` is empty). `agents` is, per agent, how many Mission Log entries anchored to its own repository were last found not confirmed (the tile). */
+export interface KnowledgeView {
+  enabled: boolean;
+  repos: KnowledgeRepo[];
+  agents: Record<string, number>;
+}
+/** The Knowledge counts changed: numbers per repository id, no text. */
+export interface KnowledgeFrame {
+  t: 'knowledge';
+  counts: Record<string, KnowledgeCounts>;
+}
+/** POST /api/knowledge/<repoId>/claims. `anchors` is the legs as typed, one anchor per line in the grammar; a bad one is a 400 with `field: 'anchors'` and `diagnostics`. */
+export interface ClaimRequest {
+  statement: string;
+  anchors: string;
+}
+/** PUT /api/knowledge/<repoId>/claims/<id>: the fields given change. */
+export interface ClaimPatch {
+  statement?: string;
+  anchors?: string;
+  state?: 'active' | 'retired';
+}
+/** POST /api/knowledge/bind: bind a root to the repository it reports itself as, leave it alone (ignore), or take a bound root away (unbind). */
+export interface KnowledgeBindRequest {
+  repoId: string;
+  path: string;
+  action: 'bind' | 'ignore' | 'unbind';
+}
+/** POST /api/knowledge/<repoId>/move: take the claims of the candidate `from` here, or keep the two apart. */
+export interface KnowledgeMoveRequest {
+  from: string;
+  action: 'move' | 'keep';
+}
+/** POST /api/knowledge/<repoId>/proposals/<pid>/reject. */
+export interface KnowledgeRejectRequest {
+  reason?: string;
+}
+/** POST /api/log/<id>/promote: the claim made from a log entry's anchors. */
+export interface KnowledgePromoted {
+  repoId: string;
+  claim: Claim;
+}
 /** A station was docked or undocked, or a pull changed what is known of one; carries the whole view. Also inside StateSnapshot. */
 export interface DockingFrame {
   t: 'docking';
@@ -1913,6 +2036,7 @@ export type ServerFrame =
   | DockingFrame
   | LiveryFrame
   | LogFrame
+  | KnowledgeFrame
   | DownlinkFrame
   | TasksFrame
   | UplinksFrame
@@ -1928,7 +2052,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
+export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
