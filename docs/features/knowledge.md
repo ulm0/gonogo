@@ -6,7 +6,7 @@ A **claim** is a sentence about a repository ("the limit is 5") with anchors tha
 
 ## Which repository
 
-A repository is its identity, not its folder: `sha256(remote + root commit)`, shown as 16 characters. The remote is reduced to `host/path` (`git@github.com:o/r.git`, `https://x-access-token:...@github.com/o/r?x=y` and `ssh://host/o/r` are all `github.com/o/r`; the original text, with any token, is never stored, shown or logged). Two clones, a worktree and a Clean Room worktree of one history are one repository. A fork has another remote, so another id (you can alias it to the original). A shallow clone has no root commit yet: it is **provisional**, claims can be read and proposals and binding wait, until it is unshallowed (or you identify that remote by itself). A rewritten history or a moved remote shows "looks like <name>: MOVE claims here / KEEP SEPARATE", and nothing moves by itself.
+A repository is its identity, not its folder: `sha256(remote + root commit)`, shown as 16 characters. The remote is reduced to `host/path` (`git@github.com:o/r.git`, `https://x-access-token:...@github.com/o/r?x=y` and `ssh://host/o/r` are all `github.com/o/r`; the original text, with any token, is never stored, shown or logged). Two clones, a worktree and a Clean Room worktree of one history are one repository. A fork has another remote, so another id (you can alias it to the original). A shallow clone has no root commit yet: it is **provisional**, claims can be read and proposals and binding wait, until it is unshallowed (or you identify that remote by itself). A rewritten history or a moved remote shows "looks like `name`: MOVE claims here / KEEP SEPARATE", and nothing moves by itself.
 
 ## Binding
 
