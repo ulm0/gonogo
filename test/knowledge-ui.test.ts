@@ -1,7 +1,9 @@
 /** The Knowledge block (docs/knowledge-spec.md section 0b.4): what the page draws from a repo's claims, results and proposals; every text is inert. */
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { applyServerFrame, emptyState } from '../src/client/store.js';
 import { Reader } from '../src/client/MissionLog.js';
 import { RepoCard } from '../src/client/Knowledge.js';
 import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from '../src/client/knowledge.js';
@@ -151,5 +153,20 @@ describe('PROMOTE on a Mission Log entry', () => {
   it('an entry with none does not', () => {
     expect(read(entry())).not.toContain('Promote');
     expect(read(entry({ anchors: [] }))).not.toContain('Promote');
+  });
+});
+
+describe('the live frame', () => {
+  it('each knowledge frame bumps the counter the block watches; the counts in it are not kept, so no text can come this way', () => {
+    const one = applyServerFrame(emptyState(), { t: 'knowledge', counts: { abcdef0123456789: { stale: 2, vacuous: 0, unevaluated: 0, malformed: 0, pending: 1 } } }, 1);
+    expect(one.knowledgeRev).toBe(1);
+    expect(applyServerFrame(one, { t: 'knowledge', counts: {} }, 2).knowledgeRev).toBe(2);
+    expect(JSON.stringify(one)).not.toContain('abcdef0123456789');
+  });
+  it('another frame does not, and the block asks again when the counter changes', () => {
+    expect(applyServerFrame(emptyState(), { t: 'log', changed: [], removed: [] } as never, 1).knowledgeRev).toBe(0);
+    const src = readFileSync(new URL('../src/client/Knowledge.tsx', import.meta.url), 'utf8');
+    expect(src).toMatch(/useStore\(\(s\) => s\.knowledgeRev\)/);
+    expect(src).toMatch(/\}, \[rev\]\);/);
   });
 });

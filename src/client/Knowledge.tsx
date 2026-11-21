@@ -7,6 +7,7 @@ import { useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import type { Claim, ClaimResult, KnowledgeRepo, KnowledgeView, Proposal } from '../shared/protocol.js';
 import * as api from './api.js';
+import { useStore } from './store.js';
 import './knowledge.css';
 import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledge.js';
 
@@ -410,16 +411,18 @@ export function KnowledgeBlock(): ReactElement {
   const id = useId();
   const [view, setView] = useState<KnowledgeView | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // a `knowledge` frame (a check finished, a proposal came, a claim changed in another tab) means the answer is stale: ask again, keep what is open
+  const rev = useStore((s) => s.knowledgeRev);
   useEffect(() => {
     let live = true;
     api.knowledge().then(
-      (found) => live && setView(found),
+      (found) => live && (setProblem(null), setView(found)),
       (e: unknown) => live && setProblem(e instanceof Error ? e.message : String(e)),
     );
     return () => {
       live = false;
     };
-  }, []);
+  }, [rev]);
   const put = (next: KnowledgeRepo): void => setView((v) => (v === null ? v : { ...v, repos: v.repos.map((r) => (r.repoId === next.repoId ? next : r)) }));
   return (
     <section className="module rules-block" aria-labelledby={`${id}-title`}>
