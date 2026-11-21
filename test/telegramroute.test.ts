@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger, SendResult, UserMessageRequest } from '../src/shared/protocol.js';
-import { createRouter, directorMessage, offerOverSocket, replyKey, roomPrefix, ROUTE_KEY_HEADER, ROUTE_PATH, sameKey, SAY_NO_ROOM, SAY_NOT_TAKEN, takeOffer } from '../src/server/telegramroute.js';
+import { createRouter, directorMessage, offerOverSocket, ROUTE_SKIP_MS, replyKey, roomPrefix, ROUTE_KEY_HEADER, ROUTE_PATH, sameKey, SAY_NO_ROOM, SAY_NOT_TAKEN, takeOffer } from '../src/server/telegramroute.js';
 import { createUplinks } from '../src/server/uplinks.js';
 import type { Inbound, Uplinks } from '../src/server/uplinks.js';
 
@@ -106,7 +106,10 @@ describe('the router (room main)', () => {
     expect(own).toEqual([]);
     const second = make({ takes: ['alpha', 'beta'] });
     await second.deliver(buf(update({ text: 'ok', reply_to_message: { message_id: 55 } })), 'k');
-    expect(second.offers.map((o) => o[0])).toEqual(['alpha']);
+    // all at once, and the first to answer yes has it
+    expect(second.offers.map((o) => o[0])).toEqual(['alpha', 'beta']);
+    expect(second.routed).toEqual(['alpha']);
+    expect(second.own).toEqual([]);
   });
 
   it('a reply nobody knows falls to main, as it always did', async () => {
@@ -167,6 +170,75 @@ describe('the router (room main)', () => {
     await full.deliver(buf(update({ text: 'ok', reply_to_message: { message_id: 55 } })), 'k');
     expect(full.offers).toEqual([]);
     expect(full.own).toHaveLength(1);
+  });
+
+  it('a room that hangs holds nothing: the others are asked at once, the answer comes when one takes it, and a hung room is skipped for a minute', async () => {
+    let at = 1_000_000;
+    const offers: string[] = [];
+    const own: Buffer[] = [];
+    const routed: string[] = [];
+    let alphaHangs = true;
+    const deliver = createRouter({
+      self: 'main',
+      peers: () => ['main', 'alpha', 'beta'],
+      offer: (room) => (offers.push(room), room === 'alpha' && alphaHangs ? new Promise<boolean>(() => undefined) : Promise.resolve(room === 'beta' && routed.length === 0)),
+      director: () => true,
+      say: () => undefined,
+      allowed: () => true,
+      routed: (r) => void routed.push(r),
+      owns: () => false,
+      deliverOwn: (u) => void own.push(u),
+      offerMs: 40,
+      now: () => at,
+      log,
+    });
+    const reply = (id: number): Buffer => buf(update({ text: 'ok', reply_to_message: { message_id: 55 } }, id));
+    // beta takes it at once although alpha never answers: no wait for alpha
+    const t0 = Date.now();
+    await deliver(reply(1), 'k');
+    expect(Date.now() - t0).toBeLessThan(35);
+    expect(offers).toEqual(['alpha', 'beta']);
+    expect(routed).toEqual(['beta']);
+    // nobody takes it and alpha hangs: the whole offer ends at its bound, and the update goes to main
+    offers.length = 0;
+    const t1 = Date.now();
+    await deliver(reply(2), 'k');
+    expect(Date.now() - t1).toBeGreaterThanOrEqual(35);
+    expect(Date.now() - t1).toBeLessThan(400);
+    expect(offers).toEqual(['alpha', 'beta']);
+    expect(own).toHaveLength(1);
+    // alpha did not answer in time: for a minute it is not asked, and nothing waits for it
+    offers.length = 0;
+    const t2 = Date.now();
+    await deliver(reply(3), 'k');
+    expect(offers).toEqual(['beta']);
+    expect(Date.now() - t2).toBeLessThan(35);
+    at += ROUTE_SKIP_MS + 1;
+    alphaHangs = false;
+    offers.length = 0;
+    await deliver(reply(4), 'k');
+    expect(offers).toEqual(['alpha', 'beta']);
+  });
+
+  it('a /room to a room that hangs is told "did not take" after the bound, and delivers nothing', async () => {
+    const said: string[] = [];
+    const own: Buffer[] = [];
+    const deliver = createRouter({
+      self: 'main',
+      peers: () => ['main', 'alpha'],
+      offer: () => new Promise<boolean>(() => undefined),
+      director: () => true,
+      say: (t) => void said.push(t),
+      allowed: () => true,
+      routed: () => undefined,
+      owns: () => false,
+      deliverOwn: (u) => void own.push(u),
+      offerMs: 30,
+      log,
+    });
+    await deliver(buf(update({ text: '/room alpha hi' })), 'k');
+    expect(said).toEqual([SAY_NOT_TAKEN]);
+    expect(own).toEqual([]);
   });
 
   it('a button (phone approvals) and a body that is not JSON are never offered; with no other room, nothing is', async () => {

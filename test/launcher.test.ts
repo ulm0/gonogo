@@ -1020,10 +1020,12 @@ describe('tokens', () => {
   });
 
   it('a started agent never gets the key the rooms offer each other Telegram updates with', async () => {
-    const l = launcher({ env: { ...baseEnv(), GONOGO_TELEGRAM_ROUTE_KEY: 'f'.repeat(64) } });
+    const l = launcher({ env: { ...baseEnv(), GONOGO_TELEGRAM_ROUTE_KEY: 'f'.repeat(64), GONOGO_INSTALL_ROOT: '/install/root' } });
     const { spec } = await l.prepareStart(agent(), { generation: 1, flag: null });
     expect(spec.env.GONOGO_TELEGRAM_ROUTE_KEY).toBeUndefined();
+    expect(spec.env.GONOGO_INSTALL_ROOT).toBeUndefined();
     expect(JSON.stringify(spec)).not.toContain('f'.repeat(64));
+    expect(JSON.stringify(spec)).not.toContain('/install/root');
   });
 
   it('answers null for anything that is not a live token', () => {

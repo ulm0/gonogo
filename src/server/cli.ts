@@ -1112,7 +1112,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     });
     // Telegram and several rooms (telegramroute.ts): main's poller is the one consumer of the bot and offers a reply to the room that sent what it replies to
     const routeKey = env.GONOGO_TELEGRAM_ROUTE_KEY ?? '';
-    const installRoot = env.GONOGO_KNOWLEDGE_DIR === undefined ? null : dirname(env.GONOGO_KNOWLEDGE_DIR);
+    const installRoot = env.GONOGO_INSTALL_ROOT === undefined || env.GONOGO_INSTALL_ROOT === '' ? null : env.GONOGO_INSTALL_ROOT;
     const roomIds = (): string[] => {
       try {
         return installRoot === null ? [] : loadRooms(installRoot).map((r) => r.id);

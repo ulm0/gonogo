@@ -484,13 +484,16 @@ describe('PR 2: after review', () => {
 
   it('every room gets the same key for the Telegram route, new at each start of the supervisor, and no file holds it', async () => {
     addRoom(home, 'team');
-    await supervise({ GONOGO_TELEGRAM_ROUTE_KEY: 'from-the-outside' });
+    await supervise({ GONOGO_TELEGRAM_ROUTE_KEY: 'from-the-outside', GONOGO_INSTALL_ROOT: '/somewhere/else' });
     await until(() => existsSync(join(home, 'rooms', 'team', 'dump.json')) && existsSync(join(home, 'dump.json')));
     const env = (dir: string): Record<string, string> => (JSON.parse(readFileSync(join(dir, 'dump.json'), 'utf8')) as { env: Record<string, string> }).env;
     const key = env(home).GONOGO_TELEGRAM_ROUTE_KEY as string;
     expect(key).toMatch(/^[0-9a-f]{64}$/);
     expect(key).not.toBe('from-the-outside');
     expect(env(join(home, 'rooms', 'team')).GONOGO_TELEGRAM_ROUTE_KEY).toBe(key);
+    // where the install's rooms are: the supervisor's own folder, whatever the environment says
+    expect(env(home).GONOGO_INSTALL_ROOT).toBe(home);
+    expect(env(join(home, 'rooms', 'team')).GONOGO_INSTALL_ROOT).toBe(home);
   }, 30_000);
 
   it('a room other than main has no update route: 409, hook or not', async () => {

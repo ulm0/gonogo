@@ -24,9 +24,11 @@ export const ROUTE_PATH = '/api/telegram/route';
 export const ROUTE_KEY_HEADER = 'x-gonogo-route-key';
 export const ROUTE_TIMEOUT_MS = 3000;
 export const ROUTE_BODY_MAX_BYTES = 256 * 1024;
+/** A room that did not answer an offer in time is not offered anything for this long. */
+export const ROUTE_SKIP_MS = 60_000;
 /** What the Director is told when a `/room` goes nowhere: fixed words, nothing from his message. */
 export const SAY_NO_ROOM = 'There is no such room: nothing was sent.';
-export const SAY_NOT_TAKEN = 'That room did not take the message (it may be stopped): nothing was sent.';
+export const SAY_NOT_TAKEN = 'That room did not take the message (it may be stopped or slow): nothing was sent.';
 
 /** The gates of the Director's own words (relaykinds.ts telegramRead): his chat, a private one, written by him and not forwarded. Only then is `/room` a command. */
 export function directorMessage(update: unknown, chat: string | null): boolean {
@@ -68,6 +70,9 @@ export interface RouterOptions {
   director(update: unknown): boolean;
   /** Fixed words to the Director's chat. */
   say(text: string): void;
+  /** How long the whole offer may take (default ROUTE_TIMEOUT_MS), and the clock for skipping a room that did not answer in time. For tests. */
+  offerMs?: number;
+  now?(): number;
   /** Is there room for one more routed update in this minute (main's own limit)? */
   allowed(): boolean;
   /** An update went to this room: counted against main's limit, one line in the history of triggers. */
@@ -82,6 +87,37 @@ export interface RouterOptions {
 /** The `deliver` of the poller. */
 export function createRouter(options: RouterOptions): (update: Buffer, secret: string) => Promise<void> {
   const { self, log } = options;
+  const limit = options.offerMs ?? ROUTE_TIMEOUT_MS;
+  const clock = options.now ?? Date.now;
+  /** Rooms that did not answer in time, until when. */
+  const slow = new Map<string, number>();
+  /**
+   * Offers an update to these rooms AT ONCE and answers with the first that takes it (one message has one sender, so at most one does), or null when none does
+   * or the whole offer is out of time: a room that hangs must not hold the poller, and with it the buttons of every other room.
+   */
+  const firstTaker = (rooms: string[], update: Record<string, unknown>, force: boolean): Promise<string | null> =>
+    new Promise((resolve) => {
+      const asked = rooms.filter((room) => (slow.get(room) ?? 0) <= clock());
+      let waiting = asked.length;
+      if (waiting === 0) return resolve(null);
+      const answered = new Set<string>();
+      const timer = setTimeout(() => {
+        for (const room of asked) if (!answered.has(room)) slow.set(room, clock() + ROUTE_SKIP_MS);
+        resolve(null);
+      }, limit);
+      for (const room of asked) {
+        void options.offer(room, update, force).then((took) => {
+          answered.add(room);
+          if (took) {
+            clearTimeout(timer);
+            resolve(room);
+          } else if (--waiting === 0) {
+            clearTimeout(timer);
+            resolve(null);
+          }
+        });
+      }
+    });
   return async (raw, secret) => {
     let update: unknown;
     try {
@@ -97,14 +133,13 @@ export function createRouter(options: RouterOptions): (update: Buffer, secret: s
       // one room, named by the Director, and no fan-out: no such room, a limit used up, or a room that says no, is told in fixed words and delivers nothing
       if (!others.includes(prefixed.room)) return options.say(SAY_NO_ROOM);
       if (!options.allowed()) return log.warn('telegram: more routed messages than the limit in a minute: the rest are dropped');
-      if (await options.offer(prefixed.room, prefixed.update, true)) return options.routed(prefixed.room);
-      log.warn(`telegram: the room ${prefixed.room} did not take a message`);
+      if ((await firstTaker([prefixed.room], prefixed.update, true)) !== null) return options.routed(prefixed.room);
+      log.warn(`telegram: the room ${prefixed.room} did not take a message in time`);
       return options.say(SAY_NOT_TAKEN);
     }
     if (replyKey(update) !== null && !options.owns(raw) && options.allowed()) {
-      for (const room of others) {
-        if (await options.offer(room, update, false)) return options.routed(room);
-      }
+      const taker = await firstTaker(others, update, false);
+      if (taker !== null) return options.routed(taker);
     }
     return options.deliverOwn(raw, secret);
   };

@@ -347,6 +347,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     env.GONOGO_ROOM = child.entry.id;
     // the Knowledge store lives with the supervisor, not in a room: it survives a deleted room, and the rooms of an install share the claims the Director accepted
     env.GONOGO_KNOWLEDGE_DIR = join(options.home, KNOWLEDGE_DIR);
+    // where the install's rooms are (rooms.json, and each room's socket): main reads it to offer a Telegram update to the room it belongs to
+    env.GONOGO_INSTALL_ROOT = options.home;
     // the rooms of one install offer each other Telegram updates with this key (telegramroute.ts); new at every start of the supervisor, never written to a file
     env.GONOGO_TELEGRAM_ROUTE_KEY = telegramRouteKey;
     // the update hook is main's: the other rooms never get its address or its token
