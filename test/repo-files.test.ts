@@ -270,6 +270,51 @@ describe('Homebrew installs from the release asset, not from npm\'s CDN', () => 
   });
 });
 
+describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scripts/update-e2e.sh)', () => {
+  const wf = read('.github', 'workflows', 'update-e2e.yml');
+  const script = read('scripts', 'update-e2e.sh');
+  it('runs after a stable Image run on a tag, by hand and for a change of the script; read access only, the job\'s own token, pinned actions, no secret', () => {
+    expect(wf).toMatch(/workflow_run:\n\s+workflows: \[Image\]/);
+    expect(wf).toContain("!contains(github.event.workflow_run.head_branch, '-')");
+    expect(wf).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(wf).toContain('workflow_dispatch:');
+    expect(wf).toMatch(/^permissions: \{\}/m);
+    expect(wf).toMatch(/permissions:\n\s+contents: read\n\s+packages: read\n\s+attestations: read/);
+    expect(wf).not.toMatch(/secrets\./);
+    expect(wf).not.toMatch(/E2E_UNVERIFIED/);
+    expect(wf.match(/GH_TOKEN: \$\{\{ github\.token \}\}/g)).toHaveLength(2);
+    for (const use of wf.match(/uses: [^\n]+/g) ?? []) expect(use, use).toMatch(/@[0-9a-f]{40} # v\d/);
+  });
+  it('the script pulls only this repository\'s image, updates through the API and then UNDOes, with the token passed by name', () => {
+    expect(script).toContain('IMAGE=${E2E_IMAGE:-ghcr.io/ulm0/gonogo}');
+    expect(wf).not.toMatch(/E2E_IMAGE/);
+    expect(script.match(/docker pull/g)).toHaveLength(2);
+    expect(script).not.toMatch(/docker pull [^\n]*(docker\.io|quay|gcr|registry\.npmjs)/);
+    expect(script).toContain('-e GH_TOKEN \\');
+    expect(script).not.toMatch(/-e GH_TOKEN=/);
+    // the Director token of the throwaway instance never reaches a public log: masked by value and by shape, and update.json is read as its owner
+    expect(script).toContain('::add-mask::$token');
+    expect(script).toContain('docker logs --tail 60 "$NAME" 2>&1 | mask');
+    expect(script).toContain('result_file() { $SUDO find');
+    expect(script).toContain('<<<"$(result_text)"');
+    expect(script).not.toMatch(/result_text \| grep/);
+    expect(script).not.toMatch(/cat "\$\(result_file\)"/);
+    expect(script).toContain('POST /api/update');
+    expect(script).toContain('/api/update/undo');
+    expect(script).toContain('E2E_UNVERIFIED');
+    // the moving tag is what the update pulls, so the container runs from :latest and TO must be what :latest is
+    expect(script).toContain('docker tag "$IMAGE:$FROM" "$IMAGE:latest"');
+    expect(script).toContain('not $TO (the update takes the moving tag');
+    // the cleanup removes only what the run labelled (and the helpers aimed at those), never by name or by the general helper label
+    expect(script).toContain('docker run -d --name "$NAME" --label "gonogo.e2e=$RUN"');
+    expect(script).toContain('--filter "label=gonogo.e2e=$RUN"');
+    expect(script).toContain('--filter "label=gonogo.helper.target=$id"');
+    expect(script).not.toMatch(/--filter "name=/);
+    expect(script).not.toContain('--filter "label=gonogo.helper"');
+    expect(statSync(join(root, 'scripts', 'update-e2e.sh')).mode & 0o111).not.toBe(0);
+  });
+});
+
 describe('the Homebrew formula is tried on macOS and Linux (brew.yml)', () => {
   const wf = read('.github', 'workflows', 'brew.yml');
   it('runs for tags, by hand and for a change of the formula, on both platforms, with nothing but read access', () => {

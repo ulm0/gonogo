@@ -1,0 +1,71 @@
+name: Update e2e
+
+# The Docker self-update, end to end, on the runner's own Docker (an isolated, throwaway machine): gonogo of the previous release is started from its
+# image, updated to the current release through the real path (pull, `gh attestation verify` with this job's GITHUB_TOKEN, helper, health check),
+# asserted to run, then UNDOne back. scripts/update-e2e.sh does the work; this file only picks the two versions and gives it the token.
+#
+# Only images of this repository on ghcr.io are pulled, and the only credential is the job's own GITHUB_TOKEN (read access to the attestations).
+# The update takes the container's moving tag, so TO must be what `ghcr.io/ulm0/gonogo:latest` is: the job runs after the Image workflow has
+# pushed a release (workflow_run) and picks the newest stable release and the one before it; by hand, both can be given.
+on:
+  workflow_run:
+    workflows: [Image]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      from:
+        description: The version to start from, x.y.z (0.8.0 or later). Default is the stable release before the newest
+        required: false
+        type: string
+      to:
+        description: The version to update to, x.y.z, which must be what ghcr.io/ulm0/gonogo latest is. Default is the newest stable release
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - scripts/update-e2e.sh
+      - .github/workflows/update-e2e.yml
+
+permissions: {}
+
+concurrency:
+  group: update-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # an Image run on a pushed v* tag that succeeded, a run by hand, or a change of the script
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') && !contains(github.event.workflow_run.head_branch, '-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pick the two versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_FROM: ${{ inputs.from }}
+          INPUT_TO: ${{ inputs.to }}
+        run: |
+          set -euo pipefail
+          # the stable releases of this repository, newest first (x.y.z only; a pre-release has a suffix)
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name | ltrimstr("v")' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' > "$RUNNER_TEMP/releases.txt"
+          to=${INPUT_TO:-$(sed -n 1p "$RUNNER_TEMP/releases.txt")}
+          from=${INPUT_FROM:-$(grep -vx "$to" "$RUNNER_TEMP/releases.txt" | sed -n 1p)}
+          [ -n "$to" ] && [ -n "$from" ] || { echo "::error::could not pick two releases from: $(tr '\n' ' ' < "$RUNNER_TEMP/releases.txt")"; exit 1; }
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          echo "to=$to" >> "$GITHUB_OUTPUT"
+          echo "update $from -> $to"
+      - name: Update end to end, then UNDO
+        env:
+          # read by `gh attestation verify` inside the container, by name: never printed
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ steps.versions.outputs.from }}
+          TO: ${{ steps.versions.outputs.to }}
+        run: scripts/update-e2e.sh "$FROM" "$TO"
