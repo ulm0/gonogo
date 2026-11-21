@@ -22,191 +22,16 @@ import { PlotBoard } from './PlotBoard.js';
 import { PatchPanel } from './PatchPanel.js';
 import { FlightRules } from './Rules.js';
 import { isPanelKey, VIEW_FEATURE } from './shell.js';
-import { unreadText } from './inbox.js';
-import { activeOf, activeText } from './plan.js';
 import { PhoneConsoleScreen, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { CheckNow } from './CheckNow.js';
-import { openConsole, openHire, readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useFeature, useStore, writeStored } from './store.js';
+import { readStored, useFeature, useStore, writeStored } from './store.js';
 import { agentCounts, updateDialogText } from './selfupdate.js';
-import { BASE, MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
+import { MAIN_PATH } from './base.js';
 import { copyText } from './uplink.js';
 import { SERVER_GONE_TEXT } from './wording.js';
-import logo from '../../docs/brand/lockup.svg';
+import { inMain, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { PhoneBar, TopBar } from './TopBar.js';
 import './shell.css';
-
-/* ---- top bar ---- */
-
-function LinkLamp(): ReactElement {
-  const connection = useStore((s) => s.connection);
-  const text = connection === 'open' ? 'LINK UP' : connection === 'connecting' ? 'CONNECTING' : 'LINK DOWN';
-  return (
-    <span className="lamp" role="status" data-link={connection === 'open' ? 'up' : connection === 'connecting' ? 'wait' : 'down'}>
-      <span className="led" data-on={connection === 'open'} data-blink={connection === 'connecting'} aria-hidden="true" />
-      <span className="lamp-text">{text}</span>
-    </span>
-  );
-}
-
-/** The small count of the Flight Plan key: the tasks that are being worked on or are stuck. Saffron when one is blocked. */
-function PlanCount(): ReactElement | null {
-  const tasks = useStore((s) => s.tasks);
-  const active = activeOf(tasks);
-  if (active.doing + active.blocked === 0) return null;
-  return (
-    <span className="chip" data-tone={active.blocked > 0 ? 'amber' : 'quiet'} aria-label={activeText(active)}>
-      {active.doing + active.blocked}
-    </span>
-  );
-}
-
-/** The small count of the Downlink key: what the Director has not read. The server keeps it, so the phone and the desk show the same. */
-function UnreadCount(): ReactElement | null {
-  const unread = useStore((s) => s.downlink.unread);
-  if (unread === 0) return null;
-  // the words are in the name of the key, so the number is not read twice
-  return (
-    <span className="chip" data-tone="amber" aria-hidden="true">
-      {unread}
-    </span>
-  );
-}
-
-const commsName = (unread: number): string => (unread === 0 ? 'Comms' : `Comms, ${unreadText(unread)}`);
-
-function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactElement {
-  const list = useAgentList();
-  const dir = list.find((a) => a.boss)?.dir ?? null;
-  const unread = useStore((s) => s.downlink.unread);
-  const view = useStore((s) => s.view);
-  const off = useStore((s) => s.features);
-  return (
-    <header className="topbar">
-      <h1 className="mark" aria-label="gonogo">
-        <img className="mark-name" src={logo} alt="" aria-hidden="true" />
-        <span className="label mark-unit" aria-hidden="true">
-          GN-1<span className="mark-unit-long"> · OPERATIONS UNIT</span>
-        </span>
-      </h1>
-      <VersionMark />
-      {!phone && dir !== null && (
-        <span className="topbar-dir" title={dir}>
-          {dir}
-        </span>
-      )}
-      <span className="topbar-grow" />
-      <LinkLamp />
-      {/* a round key on a phone: the bar has no room for the word beside the logo, the version, the lamp and the two keys that follow */}
-      {phone ? (
-        <a className="btn topbar-plus" data-kind="quiet" href={ROOMS_PATH} aria-label="Rooms" title="Rooms">
-          <span className="rooms-mark" aria-hidden="true" />
-        </a>
-      ) : (
-        <a className="btn" data-kind="quiet" href={ROOMS_PATH}>
-          Rooms
-        </a>
-      )}
-      {!phone && (
-        <button type="button" className="btn" data-kind="quiet" aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
-          Comms
-          <UnreadCount />
-        </button>
-      )}
-      {!phone && !off.includes('missions') && (
-        <button type="button" className="btn" data-kind="quiet" aria-current={view === 'missions' ? 'page' : undefined} onClick={showMissions}>
-          Missions
-        </button>
-      )}
-      {!phone && !off.includes('launch-window') && (
-        <button type="button" className="btn" data-kind="quiet" aria-current={view === 'window' ? 'page' : undefined} onClick={showWindow}>
-          Launch Window
-        </button>
-      )}
-      {!phone && !off.includes('flight-plan') && (
-        <button type="button" className="btn" data-kind="quiet" aria-current={view === 'plan' ? 'page' : undefined} onClick={showPlan}>
-          Flight Plan
-          <PlanCount />
-        </button>
-      )}
-      {!phone && !off.includes('mission-log') && (
-        <button type="button" className="btn" data-kind="quiet" aria-current={view === 'log' ? 'page' : undefined} onClick={showLog}>
-          Mission Log
-        </button>
-      )}
-      {!phone && (
-        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Patch Panel" aria-keyshortcuts="Meta+K Control+K" title="Patch Panel (Cmd+K or Ctrl+K)" onClick={onPanel}>
-          <span className="patch-mark" aria-hidden="true" />
-        </button>
-      )}
-      {!phone && (
-        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Flight Rules" title="Flight Rules" aria-current={view === 'rules' ? 'page' : undefined} onClick={showRules}>
-          <span className="rules-mark" aria-hidden="true" />
-        </button>
-      )}
-      {/* round keys: another word in the bar would not fit on one line at 1280 px */}
-      {!off.includes('livery') && (
-        <button type="button" className="btn topbar-plus" data-kind="quiet" aria-label="Livery" title="Livery" aria-current={view === 'livery' ? 'page' : undefined} onClick={showLivery}>
-          <span className="livery-mark" aria-hidden="true" />
-        </button>
-      )}
-      {phone ? (
-        <button type="button" className="btn topbar-plus" data-kind="primary" aria-label="Staff a console" onClick={() => openHire()}>
-          +
-        </button>
-      ) : (
-        <button type="button" className="btn" data-kind="primary" onClick={() => openHire()}>
-          + Staff a console
-        </button>
-      )}
-    </header>
-  );
-}
-
-/** The wall of a phone is mission, clock, poll and Max Q; the three screens are one bar away. */
-function PhoneBar({ onPanel }: { onPanel(): void }): ReactElement {
-  const view = useStore((s) => s.view);
-  const off = useStore((s) => s.features);
-  const unread = useStore((s) => s.downlink.unread);
-  const planCount = activeText(activeOf(useStore((s) => s.tasks)));
-  const goBrief = (): void => {
-    showLoop();
-    // The brief box is at the foot of the loop (its field has the class `brief-input`); it exists once the loop has rendered.
-    requestAnimationFrame(() => document.querySelector<HTMLElement>('.brief-input')?.focus());
-  };
-  return (
-    <nav className="phone-bar" aria-label="Sections">
-      <button type="button" className="btn" data-kind={view === 'room' ? 'primary' : undefined} aria-current={view === 'room' ? 'page' : undefined} onClick={showRoom}>
-        Room
-      </button>
-      <button type="button" className="btn" data-kind={view === 'comms' ? 'primary' : undefined} aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
-        Comms
-        <UnreadCount />
-      </button>
-      <button type="button" className="btn" onClick={goBrief}>
-        Brief
-      </button>
-      {!off.includes('launch-window') && (
-        <button type="button" className="btn" data-kind={view === 'window' ? 'primary' : undefined} aria-label="Launch Window" aria-current={view === 'window' ? 'page' : undefined} onClick={showWindow}>
-          Launch
-        </button>
-      )}
-      {!off.includes('flight-plan') && (
-        <button type="button" className="btn" data-kind={view === 'plan' ? 'primary' : undefined} aria-label={planCount === '' ? 'Flight Plan' : `Flight Plan, ${planCount}`} aria-current={view === 'plan' ? 'page' : undefined} onClick={showPlan}>
-          Plan
-          <PlanCount />
-        </button>
-      )}
-      {!off.includes('mission-log') && (
-        <button type="button" className="btn" data-kind={view === 'log' ? 'primary' : undefined} aria-label="Mission Log" aria-current={view === 'log' ? 'page' : undefined} onClick={showLog}>
-          Log
-        </button>
-      )}
-      <button type="button" className="btn" aria-label="Patch Panel" onClick={onPanel}>
-        Patch
-      </button>
-    </nav>
-  );
-}
 
 /* ---- system states (System.dc.html) ---- */
 
@@ -295,58 +120,6 @@ function GoneStrip(): ReactElement | null {
 }
 
 const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
-
-/** The version by the logo says a newer one is out and asks the strip to show itself, even one dismissed for that version. */
-const ROLLOUT_SHOW = 'gonogo:rollout-show';
-
-const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
-
-/** The main room is the one that checks for a newer gonogo and updates it (a room under /r/<other>/ links there). */
-const inMain = BASE === '' || BASE === '/r/main';
-
-/** The newer version the check saw, or null. Main has it in its own rollout; any other room runs no check, so the supervisor says what main saw. */
-function useNewer(): string | null {
-  const rollout = useStore((s) => s.rollout);
-  const [other, setOther] = useState<string | null>(null);
-  useEffect(() => {
-    if (inMain) return undefined;
-    let alive = true;
-    const ask = (): void => void api.roomsUpdate().then((v) => alive && setOther(v));
-    ask();
-    const timer = setInterval(ask, 30 * 60_000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-  return inMain ? (rollout?.newer === true ? rollout.latest : null) : other;
-}
-
-/** The running version by the logo, small; it links to the changelog. When a newer one is out it says so, in every room (the strip itself is main's: that is where Update lives). */
-function VersionMark(): ReactElement | null {
-  const info = useStore((s) => s.info);
-  const newer = useNewer();
-  // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
-  setPublicOrigin(info?.publicUrl);
-  if (info === null) return null;
-  return (
-    <span className="topbar-version" data-newer={newer !== null ? 'true' : undefined}>
-      <a className="version-mark" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener" aria-label={`gonogo ${info.version}, open the changelog`}>
-        {info.version}
-      </a>
-      {newer !== null &&
-        (inMain ? (
-          <button type="button" className="version-new" onClick={() => window.dispatchEvent(new Event(ROLLOUT_SHOW))}>
-            {newer} out
-          </button>
-        ) : (
-          <a className="version-new" href={`${MAIN_PATH}?update`} aria-label={`${newer} is out, open the main room to update`}>
-            {newer} out
-          </a>
-        ))}
-    </span>
-  );
-}
 
 /**
  * The same note in a room other than main. Its Update key lives in main (it asks before it stops every agent of main, with their count), so
@@ -497,7 +270,6 @@ function RolloutStrip(): ReactElement | null {
       >
         Dismiss
       </button>
-      <CheckNow />
       {rollout.installNote !== undefined && rollout.installNote !== '' && <span className="hint rollout-note">{rollout.installNote}</span>}
       {error !== null && (
         <span className="error" role="alert">
@@ -609,7 +381,7 @@ function Office(): ReactElement {
       <RolloutStrip />
       <OtherRoomStrip />
       <Screen phone={phone} />
-      {phone && form === null && <PhoneBar onPanel={() => setPanel(true)} />}
+      {phone && form === null && <PhoneBar />}
       <LiveRegion />
       {patch}
     </>
