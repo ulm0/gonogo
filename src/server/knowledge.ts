@@ -159,8 +159,10 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   async function repoView(repoId: string): Promise<KnowledgeRepo> {
     const index = await store.repos();
     const entry = index[repoId];
-    if (!entry) throw new HubError('not_found', 'unknown repository', 'repoId');
     const mine = (await here()).get(repoId);
+    // a shallow clone is shown but never written to the store (it has no index entry until it is deepened): nothing of it to read but its checkout
+    if (!entry && mine?.who.provisional) return { repoId, label: mine.who.label, provisional: true, roots: mine.roots, claims: await repoClaims(mine.who.top), results: [], proposals: [], candidates: [] };
+    if (!entry) throw new HubError('not_found', 'unknown repository', 'repoId');
     const stored = await store.claims(repoId);
     // a claim of the repository's own file wins over the store's of the same id
     const fromRepo = mine === undefined ? [] : await repoClaims(mine.who.top);

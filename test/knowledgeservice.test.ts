@@ -351,3 +351,17 @@ describe('with the real grammar and engine', () => {
     expect((await k.recheck(repoId)).results).toEqual([]);
   });
 });
+
+describe('a shallow clone', () => {
+  it('is in the Director\'s view as provisional, with no claims, and does not make the whole view fail', async () => {
+    const src = await repo('src');
+    const shallow = join(root, 'shallow');
+    git(root, 'clone', '-q', '--depth', '1', `file://${src}`, shallow);
+    git(shallow, 'remote', 'set-url', 'origin', 'https://github.com/o/s.git');
+    places = { ben: await realpath(shallow) };
+    const view = await k.view({});
+    expect(view.enabled).toBe(true);
+    expect(view.repos).toHaveLength(1);
+    expect(view.repos[0]).toMatchObject({ provisional: true, claims: [] });
+  });
+});
