@@ -2,13 +2,15 @@
  * The top bar of the prototype layout (docs/ui-semantic.md, "The top bar"): the logo and the version as a button, the link lamp, Rooms, Comms, a Work menu, a visible
  * "Jump to…" field and a ⋯ menu. One row at 1280 px; on a phone the same things in a bar of its own and a bottom bar of four keys.
  */
+import { useEffect } from 'react';
 import type { ReactElement } from 'react';
+import { FAKE_UPDATE } from './next.js';
 import { DOCS_URL } from '../shared/protocol.js';
 import { CheckNow } from './CheckNow.js';
 import { NextPop } from './NextPop.js';
 import { ROOMS_PATH } from './base.js';
 import { unreadText } from './inbox.js';
-import { showComms, showLivery, showLog, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { store, showComms, showLivery, showLog, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
 import logo from '../../docs/brand/lockup.svg';
 
 const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
@@ -28,6 +30,17 @@ function Lamp(): ReactElement {
 export function VersionButton(): ReactElement | null {
   const info = useStore((s) => s.info);
   const rollout = useStore((s) => s.rollout);
+  // the stub of the screens: keep the rollout view saying a newer version is out, whatever the server frames say
+  useEffect(() => {
+    if (!FAKE_UPDATE) return undefined;
+    const apply = (): void => {
+      const now = store.getState();
+      if (now.info === null || now.rollout?.newer === true) return;
+      store.setState((s) => ({ ...s, rollout: { enabled: true, current: s.info?.version ?? '', latest: '9.9.9', checkedAt: Date.now() - 120_000, newer: true, command: 'npm install -g gonogo@latest', canUpdate: true } }));
+    };
+    apply();
+    return store.subscribe(apply);
+  }, []);
   if (info === null) return null;
   const newer = rollout?.newer === true ? rollout.latest : null;
   return (

@@ -171,6 +171,15 @@ export function FlightRules(): ReactElement {
   const coauthor = useValue(() => api.coauthorSettings().then((c) => (c.enabled ? 'co-author line on' : 'co-author line off') + (c.prFooter ? ', PR footer on' : '')));
   const auto = useValue(() => api.autoUpdate().then((a) => (a.enabled ? 'on' : 'off')));
   const version = useStore((s) => s.info?.version ?? '');
+  const tabName = useStore((s) => s.tabName);
+  const governor = useStore((s) => s.governor);
+  const schedules = useStore((s) => s.schedules.length);
+  const uplinks = useStore((s) => s.uplinks.length);
+  const rules = useValue(() => api.rulesView().then((r) => (r.bytes === 0 ? 'none written' : `${r.bytes} bytes`)));
+  const template = useValue(() => api.ritualTemplate().then((r) => (r.bytes === 0 ? 'none written' : `${r.bytes} bytes`)));
+  const startup = useValue(() => api.startupSettings().then((x) => `after a restart: ${x.policy}`));
+  const know = useValue(() => api.knowledge().then((k) => (k.enabled ? `on, ${k.repos.length} repositories` : 'off')));
+  const keys = useValue(() => api.roomKeys().then((k) => `${k.keys.length} keys`));
   const off = useStore((s) => s.features);
   const current = useMarks();
   const liveryBlock = (
@@ -260,7 +269,13 @@ export function FlightRules(): ReactElement {
             </a>
           ))}
         </nav>
-        <G id="room" title="Room">{liveryBlock}<TabNameBlock /><RoomRulesBlock /><RitualTemplateBlock />{browserBlock}</G>
+        <G id="room" title="Room">
+          <NextRow name="Livery" now={currentEntry(livery).name}>{liveryBlock}</NextRow>
+          <NextRow name="Tab name" now={tabName.name ?? tabName.fallback ?? 'not set'}><TabNameBlock /></NextRow>
+          <NextRow name="Room rules" now={rules}><RoomRulesBlock /></NextRow>
+          <NextRow name="Closing checklist template" now={template}><RitualTemplateBlock /></NextRow>
+          <NextRow name="This browser" now="notifications, push, Commissioning">{browserBlock}</NextRow>
+        </G>
         <G id="agents" title="Agents">
           <NextRow name="Consoles" now={`${list.length} staffed`}>{consolesBlock}</NextRow>
           <NextRow name="Engine, model and effort" now={model}><ModelDefaultsBlock /></NextRow>
@@ -270,10 +285,24 @@ export function FlightRules(): ReactElement {
           <NextRow name="Subagents" now={sub}><SubagentsBlock /></NextRow>
           <NextRow name="Co-author and PR footer" now={coauthor}><CoauthorBlock /></NextRow>
         </G>
-        <G id="budget" title="Budget and limits">{maxqOn && <MaxQ />}<Propellant /></G>
-        <G id="auto" title="Automation and connections">{launchBlock}<StartupBlock /></G>
-        <G id="knowledge" title="Knowledge"><KnowledgeBlock /><SemanticBlock /></G>
-        <G id="security" title="Security"><AccountBlock /><RoomKeysBlock /><PhoneApprovals /><AllStopBlock /></G>
+        <G id="budget" title="Budget and limits">
+          {maxqOn && <NextRow name="Max Q: agents working at once" now={governor.limit === null ? 'no limit' : `at most ${governor.limit}`}><MaxQ /></NextRow>}
+          <NextRow name="Propellant: tokens and dollars" now="limits per window"><Propellant /></NextRow>
+        </G>
+        <G id="auto" title="Automation and connections">
+          <NextRow name="Launch Window: schedules, Uplink, Relay, Docking" now={`${schedules} schedules, ${uplinks} uplinks`}>{launchBlock}</NextRow>
+          <NextRow name="Start again after a restart" now={startup}><StartupBlock /></NextRow>
+        </G>
+        <G id="knowledge" title="Knowledge">
+          <NextRow name="Knowledge" now={know}><KnowledgeBlock /></NextRow>
+          <NextRow name="Semantic search" now="see Edit"><SemanticBlock /></NextRow>
+        </G>
+        <G id="security" title="Security">
+          <NextRow name="Login, sessions, API keys, second factor" now="see Edit"><AccountBlock /></NextRow>
+          <NextRow name="Room keys" now={keys}><RoomKeysBlock /></NextRow>
+          <NextRow name="Phone approvals" now="see Edit"><PhoneApprovals /></NextRow>
+          <NextRow name="All stop" now="holds every agent"><AllStopBlock /></NextRow>
+        </G>
         <G id="system" title="System and update">
           <NextRow name="Version and update check" now={version === '' ? null : `${version}`}><VersionCheckBlock /></NextRow>
           <NextRow name="Update by itself" now={auto}><AutoUpdateBlock /></NextRow>

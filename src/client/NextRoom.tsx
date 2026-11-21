@@ -14,9 +14,10 @@ function PhoneTerminal(): ReactElement | null {
   const agents = useStore((s) => s.agents);
   const order = useStore((s) => s.order);
   const name = selected !== null && Object.hasOwn(agents, selected) ? selected : (order.find((n) => Object.hasOwn(agents, n)) ?? null);
+  const full = useNext((s) => s.expanded);
   if (name === null) return null;
   return (
-    <section className="module next-phone-term" aria-label={`Terminal of ${name}`}>
+    <section className="module next-phone-term" data-full={full || undefined} aria-label={`Terminal of ${name}`}>
       <div className="next-ops-head">
         <h2 className="label">{name.toUpperCase()}</h2>
         <span className="topbar-grow" />

@@ -21,3 +21,6 @@ function read(): boolean {
 
 /** Whether the prototype layout is on for this tab. Read once, at load. */
 export const NEXT: boolean = read();
+
+/** `?layout=next&update=1`: the page behaves as if a newer version were out. A STUB for the screens (the registry cannot be reached from a test); it changes nothing on the server. */
+export const FAKE_UPDATE: boolean = NEXT && typeof location !== 'undefined' && new URLSearchParams(location.search).get('update') === '1';

@@ -32,14 +32,8 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
   const find = (backwards: boolean): void => setSaid(tools()?.find(query, backwards) === true ? '' : 'Not found.');
   return (
     <div className="next-termbar" role="toolbar" aria-label="Terminal" ref={box}>
-      <span className="hint">Terminal</span>
+      <span className="next-termbar-title">Terminal</span>
       <span className="topbar-grow" />
-      <button type="button" className="btn" data-kind="quiet" aria-label="Smaller letters" onClick={() => tools()?.fontSize(-1)}>
-        A−
-      </button>
-      <button type="button" className="btn" data-kind="quiet" aria-label="Larger letters" onClick={() => tools()?.fontSize(1)}>
-        A+
-      </button>
       <NextPop label="Copy ▾" name="Copy" align="end">
         {(close) => (
           <div className="next-menu" role="group" aria-label="Copy">
@@ -60,36 +54,80 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
           </div>
         )}
       </NextPop>
-      <button type="button" className="btn" data-kind="quiet" aria-pressed={finding} onClick={() => setFinding(!finding)}>
-        Find
-      </button>
-      <button type="button" className="btn" data-kind="quiet" aria-label="Scroll to the latest line" onClick={() => tools()?.latest()}>
-        ↓ Latest
-      </button>
-      {phone ? (
+      {!phone && (
+        <button type="button" className="btn" data-kind="quiet" aria-pressed={finding} onClick={() => setFinding(!finding)}>
+          Find
+        </button>
+      )}
+      {phone && (
         <button type="button" className="btn" data-kind="quiet" onClick={() => setSelectText(tools()?.text('tail') ?? '')}>
           Select
         </button>
-      ) : (
-        <>
-          <button type="button" className="btn" data-kind="quiet" onClick={() => void (document.fullscreenElement !== null ? document.exitFullscreen() : document.querySelector('.pane')?.requestFullscreen())}>
-            Full screen
-          </button>
-          <button
-            type="button"
-            className="btn"
-            data-kind="quiet"
-            aria-pressed={expanded}
-            onClick={() => {
-              setNext((s) => ({ ...s, expanded: !s.expanded }));
-              // the terminal changes width: fit it after the layout has moved, not before
-              setTimeout(() => tools()?.refit(), 200);
-            }}
-          >
-            {expanded ? 'Back to the room' : 'Expand'}
-          </button>
-        </>
       )}
+      <button
+        type="button"
+        className="btn"
+        data-kind="quiet"
+        aria-pressed={expanded}
+        onClick={() => {
+          setNext((s) => ({ ...s, expanded: !s.expanded }));
+          // the terminal changes size: fit it after the layout has moved, not before
+          setTimeout(() => tools()?.refit(), 200);
+        }}
+      >
+        {expanded ? (phone ? 'Back' : 'Back to the room') : 'Expand'}
+      </button>
+      <NextPop label="⋯" name="More terminal keys" align="end">
+        {(close) => (
+          <div className="next-menu" role="group" aria-label="More terminal keys">
+            <span className="next-modes">
+              <button type="button" className="btn" data-kind="quiet" aria-label="Smaller letters" onClick={() => tools()?.fontSize(-1)}>
+                A−
+              </button>
+              <button type="button" className="btn" data-kind="quiet" aria-label="Larger letters" onClick={() => tools()?.fontSize(1)}>
+                A+
+              </button>
+            </span>
+            <button
+              type="button"
+              className="btn next-item"
+              data-kind="quiet"
+              onClick={() => {
+                tools()?.latest();
+                close();
+              }}
+            >
+              ↓ Latest
+            </button>
+            {phone && (
+              <button
+                type="button"
+                className="btn next-item"
+                data-kind="quiet"
+                onClick={() => {
+                  setFinding(true);
+                  close();
+                }}
+              >
+                Find
+              </button>
+            )}
+            {!phone && (
+              <button
+                type="button"
+                className="btn next-item"
+                data-kind="quiet"
+                onClick={() => {
+                  void (document.fullscreenElement !== null ? document.exitFullscreen() : document.querySelector('.pane')?.requestFullscreen());
+                  close();
+                }}
+              >
+                Full screen
+              </button>
+            )}
+          </div>
+        )}
+      </NextPop>
       {finding && (
         <form
           className="next-find"

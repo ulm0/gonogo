@@ -178,7 +178,16 @@ async function next(page: Page, group: string): Promise<void> {
       await page.getByRole('button', { name: 'Select', exact: true }).click({ timeout: 3000 });
     });
     await page.getByRole('button', { name: 'Close' }).click({ timeout: 3000 }).catch(() => undefined);
+    await view(page, group, 'terminal expanded on a phone', async () => {
+      await page.getByRole('button', { name: 'Expand', exact: true }).click({ timeout: 3000 });
+      await page.waitForTimeout(1000);
+    });
+    await page.getByRole('button', { name: 'Back', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
   }
+  await view(page, group, 'terminal more keys', async () => {
+    await page.getByRole('button', { name: 'More terminal keys' }).first().click({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
   await view(page, group, 'status strip: mission chip open', async () => {
     await page.getByRole('button', { name: 'Mission clock' }).click({ timeout: 3000 });
   });
@@ -229,6 +238,17 @@ async function next(page: Page, group: string): Promise<void> {
     await open(page, 'Flight Rules', 'rules');
     await page.locator('.next-group').first().waitFor({ timeout: 3000 });
   }, true);
+  await view(page, group, 'update available (stubbed)', async () => {
+    await page.goto(`${base}/r/main/?layout=next&update=1`);
+    await page.locator('.next-version .btn').waitFor({ timeout: 10_000 });
+    await page.waitForTimeout(500);
+    await page.locator('.next-version .btn').click({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await page.goto(`${base}/r/main/?layout=next`);
+  await page.locator('.next-topbar').waitFor({ timeout: 30_000 });
+  await open(page, 'Flight Rules', 'rules');
+  await page.locator('.next-group').first().waitFor({ timeout: 3000 });
   const links = page.locator('.next-group-nav a');
   const count = await links.count().catch(() => 0);
   for (let i = 0; i < count; i += 1) {
