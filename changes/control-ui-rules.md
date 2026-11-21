@@ -1,0 +1,1 @@
+Flight Rules are in seven groups (Room, Agents, Budget and limits, Automation and connections, Knowledge, Security, System and update) with an index to jump to one. Each setting is a row: its name, what it is now, and Edit, which opens the same block as before in place. A long chip in the Features block no longer pushes the page wider than a phone.
