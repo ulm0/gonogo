@@ -364,13 +364,21 @@ export function createMissions(options: MissionsOptions): Missions {
       const lead = request.lead === undefined ? options.boss() : request.lead;
       // the room's template first, then the lines the boss passed (labelled with its name); at most RITUAL_ITEMS_MAX
       // the repo: the one given (checked), else the lead's own; none when the lead works in no repository
+      // an agent (the boss) is limited to its OWN top level, given or by default; only the Director names the repo of another agent or the lead's
       let repo: string | undefined;
-      if (typeof request.repo === 'string') repo = await checkRepo(request.repo);
-      else if (request.repo === undefined && lead !== null) {
-        await learn();
-        const lad = dirsNow().find((a) => a.name === lead)?.dir;
-        const found = lad === undefined ? null : (tops.get(lad) ?? null);
-        if (found !== null) repo = found;
+      await learn();
+      const ownTop = actor.kind === 'agent' ? (tops.get(dirsNow().find((a) => a.name === actor.name)?.dir ?? '') ?? null) : null;
+      if (typeof request.repo === 'string') {
+        repo = await checkRepo(request.repo);
+        if (actor.kind === 'agent' && repo !== ownTop) throw new HubError('forbidden', 'an agent may name only the repository of its own folder; the Director names any other', 'repo');
+      } else if (request.repo === undefined) {
+        if (actor.kind === 'agent') {
+          if (ownTop !== null) repo = ownTop;
+        } else if (lead !== null) {
+          const lad = dirsNow().find((a) => a.name === lead)?.dir;
+          const found = lad === undefined ? null : (tops.get(lad) ?? null);
+          if (found !== null) repo = found;
+        }
       }
       const template = readTemplate(dir, repo ?? null);
       const given: RitualItem[] = (request.ritualNew ?? []).map((text) => (actor.kind === 'agent' ? { text, done: false, from: 'agent' as const, agent: actor.name } : { text, done: false, from: 'director' as const }));

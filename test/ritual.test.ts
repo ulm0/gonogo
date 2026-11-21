@@ -308,15 +308,33 @@ function repo(name: string, ritual?: string): string {
 }
 
 describe('the template from a repo', () => {
-  it('takes the repo\'s file when the mission has a repo and it holds lines, else the room\'s, else nothing; each item says where it came from', () => {
+  it('puts the room\'s lines first and the repo\'s after them (the repo adds, never replaces); each item says where it came from', () => {
     writeFileSync(join(home, 'ritual.md'), '- room one\n- room two\n');
     const withFile = repo('r3', '- repo one\n');
     const without = repo('r4');
-    expect(readTemplate(home, withFile).items).toEqual([{ text: 'repo one', done: false, from: 'repo' }]);
+    expect(readTemplate(home, withFile).items).toEqual([
+      { text: 'room one', done: false, from: 'room' },
+      { text: 'room two', done: false, from: 'room' },
+      { text: 'repo one', done: false, from: 'repo' },
+    ]);
     expect(readTemplate(home, without).items.map((i) => [i.text, i.from])).toEqual([['room one', 'room'], ['room two', 'room']]);
     expect(readTemplate(home, null).items.map((i) => i.from)).toEqual(['room', 'room']);
     rmSync(join(home, 'ritual.md'));
     expect(readTemplate(home, without)).toEqual({ items: [], omitted: 0 });
+    expect(readTemplate(home, withFile).items.map((i) => i.from)).toEqual(['repo']); // no room template: the repo's alone
+  });
+
+  it('a repo file cannot push the Director\'s lines out: they share the 20, the room\'s first, and the count of what did not fit is both files together', () => {
+    writeFileSync(join(home, 'ritual.md'), Array.from({ length: 15 }, (_, i) => `- room ${i}`).join('\n'));
+    const big = repo('r20', Array.from({ length: 12 }, (_, i) => `- repo ${i}`).join('\n'));
+    const out = readTemplate(home, big);
+    expect(out.items).toHaveLength(RITUAL_ITEMS_MAX);
+    expect(out.items.slice(0, 15).every((i) => i.from === 'room')).toBe(true);
+    expect(out.items.slice(15).map((i) => i.text)).toEqual(['repo 0', 'repo 1', 'repo 2', 'repo 3', 'repo 4']);
+    expect(out.omitted).toBe(7);
+    // a repo file of 100 lines against a full room template adds nothing
+    writeFileSync(join(home, 'ritual.md'), Array.from({ length: 20 }, (_, i) => `- room ${i}`).join('\n'));
+    expect(readTemplate(home, repo('r21', Array.from({ length: 100 }, (_, i) => `- repo ${i}`).join('\n'))).items.every((i) => i.from === 'room')).toBe(true);
   });
 
   it('a hostile line of a repo file stays inert (cleaned, labelled), a file that is a link out of the repo or to another file is not read, and a long file is cut', () => {
@@ -341,7 +359,7 @@ describe('the template from a repo', () => {
     const long = repo('r8', Array.from({ length: 30 }, (_, i) => `- line ${i}`).join('\n'));
     const cut = readTemplate(home, long);
     expect(cut.items).toHaveLength(RITUAL_ITEMS_MAX);
-    expect(cut.omitted).toBe(10);
+    expect(cut.omitted).toBe(11);
   });
 
   it('is copied when the mission is made with that repo; a later edit of the file changes nothing', async () => {
@@ -349,7 +367,7 @@ describe('the template from a repo', () => {
     agents = [{ name: 'flight', dir: root }];
     const m = make();
     const mission = await m.create(USER, { name: 'Ship it', repo: root });
-    expect(mission.ritual?.map((i) => [i.text, i.from])).toEqual([['repo a', 'repo'], ['repo b', 'repo']]);
+    expect(mission.ritual?.map((i) => [i.text, i.from])).toEqual([['repo a', 'repo'], ['repo b', 'repo']]); // (no room template here)
     writeFileSync(join(root, '.gonogo', 'ritual.md'), '- changed\n');
     expect(m.list()[0]?.ritual).toHaveLength(2);
     // and the boss's lines come after, labelled with its name, as before
@@ -381,6 +399,24 @@ describe('Mission.repo', () => {
     await fails(m.update(USER, made.id, { repo: link }), 'bad_request', 'repo');
     expect((await m.update(USER, made.id, { repo: mine })).repo).toBe(mine);
     expect((await m.update(USER, made.id, { repo: null })).repo).toBeUndefined();
+  });
+
+  it('an agent that makes a mission (the boss) may name only the repository of its OWN folder, by default or given; the Director names any', async () => {
+    const mine = repo('r30');
+    const theirs = repo('r31');
+    agents = [{ name: 'flight', dir: mine }, { name: 'ana', dir: theirs }];
+    const m = make();
+    expect((await m.create(FLIGHT, { name: 'A' })).repo).toBe(mine); // by default its own, not the lead's
+    expect((await m.create(FLIGHT, { name: 'B', lead: 'ana' })).repo).toBe(mine);
+    expect((await m.create(FLIGHT, { name: 'C', repo: mine })).repo).toBe(mine);
+    await fails(m.create(FLIGHT, { name: 'D', repo: theirs }), 'forbidden', 'repo');
+    expect((await m.create(USER, { name: 'E', repo: theirs })).repo).toBe(theirs);
+    expect((await m.create(USER, { name: 'F', lead: 'ana' })).repo).toBe(theirs); // the Director's default is the lead's
+    // an agent outside any repository gets none
+    const plain = join(work, 'plain2');
+    mkdirSync(plain);
+    agents = [{ name: 'flight', dir: plain }];
+    expect((await make().create(FLIGHT, { name: 'G' })).repo).toBeUndefined();
   });
 
   it('defaults to the lead\'s repo, is dropped on read when that agent is removed or goes elsewhere, and comes back with it', async () => {

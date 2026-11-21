@@ -87,18 +87,17 @@ export const RITUAL_FILE = 'ritual.md';
 
 /** The items of a new mission from the room's template: `from: 'room'`, the first RITUAL_ITEMS_MAX; `omitted` is how many more the file had. */
 export function readTemplate(home: string, repo: string | null = null): { items: RitualItem[]; omitted: number } {
-  // the repo's own file first, when the mission has a repo and the file has lines: written by agents, so DATA (cleaned, labelled "from the repo")
-  if (repo !== null) {
-    const found = readInside(repo, join(repo, '.gonogo', RITUAL_FILE));
-    if (found !== null) {
-      const { lines, total } = parseRitual(found);
-      if (lines.length > 0) return { items: lines.map((text) => ({ text, done: false, from: 'repo' as const })), omitted: total - lines.length };
-    }
-  }
-  const file = readInside(home, join(home, RITUAL_FILE));
-  if (file === null) return { items: [], omitted: 0 };
-  const { lines, total } = parseRitual(file);
-  return { items: lines.map((text) => ({ text, done: false, from: 'room' as const })), omitted: total - lines.length };
+  // the room's own lines first (the Director's), then the repo's (written by agents, so DATA: cleaned, labelled "from the repo"): a repo file can ADD lines to the Director's
+  // template and never replace them. Together at most RITUAL_ITEMS_MAX; `omitted` counts the lines that did not fit.
+  const room = readInside(home, join(home, RITUAL_FILE));
+  const fromRoom = room === null ? { lines: [], total: 0 } : parseRitual(room);
+  const found = repo === null ? null : readInside(repo, join(repo, '.gonogo', RITUAL_FILE));
+  const fromRepo = found === null ? { lines: [], total: 0 } : parseRitual(found);
+  const items: RitualItem[] = [
+    ...fromRoom.lines.map((text) => ({ text, done: false, from: 'room' as const })),
+    ...fromRepo.lines.map((text) => ({ text, done: false, from: 'repo' as const })),
+  ].slice(0, RITUAL_ITEMS_MAX);
+  return { items, omitted: fromRoom.total + fromRepo.total - items.length };
 }
 
 const UNSAFE_ONE = new RegExp(UNSAFE.source, 'u');
