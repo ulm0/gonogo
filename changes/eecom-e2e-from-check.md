@@ -1,0 +1,1 @@
+- **CI: the update e2e checks the version it starts from.** A run by hand takes `from` as free text; it is now checked as x.y.z, like `to`, before it is used. No change for users.
