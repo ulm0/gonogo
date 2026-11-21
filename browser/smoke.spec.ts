@@ -161,6 +161,9 @@ test('setup, login with a second factor, styles, a room with a live link and a c
 
   // 7. Flight Rules: the blocks the audit listed, drawn from the built client
   await test.step('flight rules blocks', async () => {
+    // the switch of Knowledge anchors is off in a new room: turn it on, as the owner would in the Features block
+    const on = await page.request.put(`${base}/api/features`, { headers: { origin: base }, data: { off: [], expect: [], confirm: true } });
+    expect(on.status(), await on.text()).toBe(200);
     await page.goto(`${base}/r/main/`);
     await page.locator('.topbar').getByRole('button', { name: 'Flight Rules', exact: true }).click();
     for (const heading of ['KNOWLEDGE', 'ROOM RULES', 'CLOSING CHECKLIST TEMPLATE', 'SKILLS']) {
