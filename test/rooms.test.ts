@@ -1027,7 +1027,7 @@ describe('stop and start rooms through the supervisor (t107)', () => {
     const s = await boot();
     await account(s);
     const full = s.auth.addKey('ops', 'full', null, false).secret;
-    const write = s.auth.addKey('w', 'write', null, false).secret;
+    const write = s.auth.addKey('w', 'act', null, false).secret;
     const read = s.auth.addKey('r', 'read', null, false).secret;
     for (const key of [write, read]) expect((await post(s, '/api/rooms/c/stop', key)).status).toBe(403);
     expect((await post(s, '/api/rooms/stop-all', full)).status).toBe(403);
@@ -1046,7 +1046,9 @@ describe('stop and start rooms through the supervisor (t107)', () => {
     expect(refused.status).toBe(409);
     expect(JSON.stringify(await refused.json())).toMatch(/did not answer/);
     expect(await state(s, 'c')).toBe('running');
-    const all = (await (await post(s, '/api/rooms/stop-all')).json()) as { stopped: string[]; skipped: Array<{ id: string }> };
+    // force is for one room: stop-all ignores it and still skips a room that does not answer
+    const all = (await (await post(s, '/api/rooms/stop-all', s.directorToken, 'POST', { force: true })).json()) as { stopped: string[]; skipped: Array<{ id: string; why: string }> };
+    expect(all.skipped.every((k) => /did not answer/.test(k.why))).toBe(true);
     expect(all.skipped.map((k) => k.id)).toEqual(['b', 'c']);
     expect(all.stopped).toEqual(['main']); // main answers, so it was stopped: the audit is held until it runs again
     expect((await post(s, '/api/rooms/main/start')).status).toBe(200);

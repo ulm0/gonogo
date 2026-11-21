@@ -822,9 +822,9 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         if (action === 'stop-all') {
           // the other rooms together, then main last: main carries the audit and the updates, and the others should not wait for each other's shutdown
           const others = todo.filter((c) => c.entry.id !== MAIN_ROOM);
-          const results = await Promise.all(others.map((c) => stopOne(c, false, force)));
+          const results = await Promise.all(others.map((c) => stopOne(c, false)));
           others.forEach((c, i) => note(c, results[i] as Power));
-          for (const main of todo.filter((c) => c.entry.id === MAIN_ROOM)) note(main, await stopOne(main, false, force));
+          for (const main of todo.filter((c) => c.entry.id === MAIN_ROOM)) note(main, await stopOne(main, false));
         } else for (const child of todo) note(child, startOne(child));
         audit(`${action}: ${done.length === 0 ? 'nothing done' : `done ${done.join(', ')}`}${skipped.length === 0 ? '' : `; skipped ${skipped.map((s) => `${s.id} (${s.why})`).join(', ')}`}`);
         return sendJson(res, 200, action === 'stop-all' ? { stopped: done, skipped } : { started: done, skipped });
