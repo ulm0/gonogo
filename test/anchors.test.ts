@@ -453,3 +453,67 @@ describe('on a Mission Log entry', () => {
     expect(() => again.get('l1')).toThrow(/unknown entry/);
   });
 });
+
+describe('RECHECK and the counts of Knowledge anchors', () => {
+  let logDir: string;
+  beforeEach(async () => {
+    logDir = await mkdtemp(join(tmpdir(), 'gonogo-anchors-log2-'));
+  });
+  afterEach(async () => {
+    await rm(logDir, { recursive: true, force: true });
+  });
+  const make = (on = () => true) => createMissionLog({ dir: logDir, now: () => now, emit: () => undefined, log: quiet, anchors: checkerFor(), anchorsOn: on });
+
+  it('rootOf is the agent\'s own top level, and null for one that is not hired', async () => {
+    const c = checkerFor();
+    expect(await c.rootOf('ana')).toBe(repo);
+    expect(await c.rootOf('ben')).toBe(other);
+    expect(await c.rootOf('ghost')).toBeNull();
+  });
+
+  it('RECHECK runs the check again once the last answer is 30 s old, and says when it may be asked before that', async () => {
+    const log = make();
+    await log.load();
+    await log.create('ana', { title: 'Limit', body: 'b', anchors: [anchor()] });
+    // never checked: it runs
+    expect((await log.recheck('l1')).anchorState).toMatchObject({ state: 'ok' });
+    now += 10_000;
+    await expect(log.recheck('l1')).rejects.toMatchObject({ code: 'rate_limited', message: 'checked 10 s ago: again in 20 s' });
+    // the file changes; after the time the answer is new
+    await writeFile(join(repo, 'src', 'limit.txt'), 'the limit is 6\n');
+    now += 20_000;
+    expect((await log.recheck('l1')).anchorState).toMatchObject({ state: 'stale' });
+  });
+
+  it('RECHECK is refused with no anchors, and with the switch off', async () => {
+    let on = true;
+    const log = make(() => on);
+    await log.load();
+    await log.create('ana', { title: 'Plain', body: 'b' });
+    await log.create('ana', { title: 'Limit', body: 'b', anchors: [anchor()] });
+    await expect(log.recheck('l1')).rejects.toMatchObject({ code: 'bad_request', field: 'anchors' });
+    on = false;
+    await expect(log.recheck('l2')).rejects.toMatchObject({ code: 'bad_request', field: 'anchors' });
+    await expect(log.recheck('l9')).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('counts the entries anchored to a repository that are not confirmed: after a check, per repository, and none with the switch off', async () => {
+    let on = true;
+    const log = make(() => on);
+    await log.load();
+    await log.create('ana', { title: 'Right', body: 'b', anchors: [anchor()] });
+    await log.create('ana', { title: 'Wrong', body: 'b', anchors: [anchor({ text: 'the limit is 9' })] });
+    await log.create('ben', { title: 'Other', body: 'b', anchors: [anchor({ root: other, file: 'a.txt', text: 'nope' })] });
+    // nothing is counted that was not checked: staleCount runs nothing
+    expect(log.staleCount(repo)).toBe(0);
+    expect(await log.knowledge(repo)).toBe(1);
+    expect(log.staleCount(repo)).toBe(1);
+    expect(log.staleCount(other)).toBe(0);
+    expect(await log.knowledge(other)).toBe(1);
+    expect(await log.anchorRoot('ana')).toBe(repo);
+    on = false;
+    expect(log.staleCount(repo)).toBe(0);
+    expect(await log.knowledge(repo)).toBe(0);
+    expect(await log.anchorRoot('ana')).toBeNull();
+  });
+});

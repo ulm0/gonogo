@@ -2130,6 +2130,8 @@ export interface LauncherOptions {
   toolsOff?: () => string[];
   /** The rules of the room (docs/features/door.md): appended to the role text of every engine that takes one. Default none. */
   rules?: () => string;
+  /** Knowledge anchors: one line for the role text of that agent, naming a count and nothing taken from a repository, or ''. Awaited at each start. Default none. */
+  knowledge?: (name: string) => Promise<string>;
   /** The room's default effort for a Claude Code console with none of its own. */
   defaultEffort?: () => Effort | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
@@ -2277,6 +2279,8 @@ export interface HubIo {
   meter?(name: string, generation: number, transcriptPath: string): void;
   /** Telemetry: a PreToolUse, PostToolUse or PostToolUseFailure hook of that agent's current process. Optional for fakes. */
   toolHook?(name: string, event: HookEvent, payload: Record<string, unknown>): void;
+  /** An agent's Stop hook: its turn ended (Knowledge anchors recheck the repository of that agent). Optional for fakes. */
+  stopped?(name: string): void;
   screen(name: string): ScreenProbe | null;
   title(name: string): TitleInfo | null;
   outputBytes(name: string): number;

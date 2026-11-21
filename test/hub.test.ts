@@ -5519,6 +5519,23 @@ describe('Redline', () => {
     expect(h.view('ana').state).toBe('working');
   });
 
+  it('io.stopped hears the Stop of an agent, not the stop of a subagent, and a failure of it changes nothing', async () => {
+    const h = await withAna();
+    const seen: string[] = [];
+    h.io.stopped = (name) => void seen.push(name);
+    h.work('ana');
+    h.hook('ana', 'SubagentStop', { agent_id: 'x' });
+    expect(seen).toEqual([]);
+    h.hook('ana', 'Stop');
+    expect(seen).toEqual(['ana']);
+    h.io.stopped = () => {
+      throw new Error('boom');
+    };
+    h.work('ana');
+    h.hook('ana', 'Stop');
+    expect(h.view('ana').state).toBe('idle');
+  });
+
   it('a restart ends the trip', async () => {
     const h = await withAna();
     h.work('ana');

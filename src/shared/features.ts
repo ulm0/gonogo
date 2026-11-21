@@ -198,6 +198,8 @@ export function featureOfRoute(segments: readonly string[]): string | null {
       return 'missions';
     case 'log':
       return second === 'chart' ? 'star-chart' : 'mission-log';
+    case 'knowledge':
+      return 'knowledge-anchors';
     case 'board':
       return 'plot-board';
     case 'schedules':

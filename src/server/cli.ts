@@ -65,7 +65,7 @@ import { createPhone } from './phone.js';
 import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
 import { createMassBudget } from './massbudget.js';
-import { createAnchorChecker } from './anchors.js';
+import { createAnchorChecker, knowledgeLine } from './anchors.js';
 import { createMissionLog } from './missionlog.js';
 import { createMissions } from './missions.js';
 import { createReview } from './review.js';
@@ -101,6 +101,10 @@ import type { Supervisor } from './supervisor.js';
 import { dockerUpdateStatus, followResult, readResult, settleResult, viewOfResult, socketCall, SOCKET_PATH, STABLE_VERSION, swap, writeResult } from './dockerupdate.js';
 import type { Updater } from './updater.js';
 import type { WebServer } from './web.js';
+
+/** The longest an agent's start waits for the checks behind its Knowledge line; and the least time between two rechecks at an agent's Stop. */
+const KNOWLEDGE_START_MS = 3000;
+const KNOWLEDGE_STOP_MS = 60_000;
 
 type Env = Record<string, string | undefined>;
 
@@ -673,6 +677,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
       rules: () => rulesStore.text(),
+      // one line at each start, a count and fixed words: nothing from a repository reaches the role text. Waits for the checks at most 3 s.
+      knowledge: async (name) => {
+        const stale = await Promise.race([staleFor(name, true), new Promise<number>((resolve) => setTimeout(() => resolve(0), KNOWLEDGE_START_MS).unref())]).catch(() => 0);
+        return knowledgeLine(stale);
+      },
       defaultEffort: () => modelDefaults.effort(),
       defaultPermissions: () => permissionDefaults.get(),
       payloadDefaults: () => payloadDefaults.get(),
@@ -875,6 +884,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         });
       },
       toolHook: (name, event, payload) => telemetry.hook(name, event, payload),
+      // a turn ended: look again at the entries anchored to this agent's repository, at most once a minute for an agent
+      stopped: (name) => {
+        const at = io.now();
+        if (!features.isOn('knowledge-anchors') || at - (lastKnowledgeStop.get(name) ?? 0) < KNOWLEDGE_STOP_MS) return;
+        lastKnowledgeStop.set(name, at);
+        void staleFor(name, true).then(() => web?.broadcast({ t: 'log', changed: [], removed: [] }), () => undefined);
+      },
       screen: (name) => terminalHost.screen(name),
       title: (name) => terminalHost.title(name),
       outputBytes: (name) => terminalHost.outputBytes(name),
@@ -994,6 +1010,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       anchors: createAnchorChecker({ agents: () => hubInstance.views().map((v) => v.name), place: (name) => roots(name).then((r) => r.root).catch(() => null), now: io.now, env, log: log.child('anchors') }),
       anchorsOn: () => features.isOn('knowledge-anchors'),
     });
+    /** The count of entries anchored to an agent's own repository that were last found not confirmed; checked again first when `fresh`. */
+    const lastKnowledgeStop = new Map<string, number>();
+    const staleFor = async (name: string, fresh: boolean): Promise<number> => {
+      const root = await missionLog.anchorRoot(name);
+      if (root === null) return 0;
+      return fresh ? missionLog.knowledge(root) : missionLog.staleCount(root);
+    };
     const board = createBoard({ dir: home.dir, now: io.now });
     const massBudget = createMassBudget({
       memoryPath: (name) => launcher.memoryPath(name),
@@ -1203,6 +1226,14 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       tabName,
       downlink,
       missionLog,
+      knowledge: async () => {
+        const out: Record<string, number> = {};
+        for (const v of hubInstance.views()) {
+          const n = await staleFor(v.name, false);
+          if (n > 0) out[v.name] = n;
+        }
+        return out;
+      },
       massBudget,
       board: audited(board, audit, BOARD_AUDIT),
       blackBox,

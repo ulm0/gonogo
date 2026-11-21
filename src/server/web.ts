@@ -162,7 +162,9 @@ export interface WebOptions {
   /** Downlink; absent in tests that do not need it (the snapshot then shows an empty inbox and the routes answer 404). It tells the browsers itself. */
   downlink?: Pick<Downlink, 'view' | 'read' | 'archive' | 'readAll'>;
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
-  missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'chart' | 'create' | 'update' | 'remove'>;
+  missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'recheck' | 'chart' | 'create' | 'update' | 'remove'>;
+  /** Knowledge anchors: for each agent with entries anchored to its repository that are not confirmed, how many. Counts only; runs no check. */
+  knowledge?: () => Promise<Record<string, number>>;
   /** Mass Budget; absent in tests that do not need it (the routes answer 404). The page asks; no frame. */
   massBudget?: Pick<MassBudget, 'view' | 'reflect'>;
   /** Plot Board; absent in tests that do not need it (the route answers 404 and the board tools say it is not available). The page asks again every few seconds; no frame. */
@@ -1290,6 +1292,16 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body) sendJson(res, 200, await missions.update(director, id, body));
         },
       };
+    }
+    // GET /api/knowledge: counts for the tiles (the feature switch is checked before the handler)
+    if (s[1] === 'knowledge' && s.length === 2 && options.knowledge) {
+      const knowledge = options.knowledge;
+      return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, { agents: await knowledge() }) };
+    }
+    // POST /api/log/:id/recheck: the Director's RECHECK (an agent's tool has no such call)
+    if (s[1] === 'log' && s.length === 4 && s[3] === 'recheck' && options.missionLog) {
+      const missionLog = options.missionLog;
+      return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await missionLog.recheck(s[2] ?? '')) };
     }
     if (s[1] === 'log' && s.length <= 3) {
       const missionLog = options.missionLog;

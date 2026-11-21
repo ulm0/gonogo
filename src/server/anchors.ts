@@ -43,9 +43,15 @@ export const ANCHOR_QUEUE_MAX = 10;
 /** What `git grep -l` may print before it is stopped: more than this is a hit all the same. */
 const GREP_CAP = 64 * 1024;
 
+/** The line of an agent's role text that says how many entries are not confirmed: fixed words and a number, nothing from a repository. '' for none. */
+export const knowledgeLine = (stale: number): string =>
+  stale > 0 ? `\nKnowledge: ${stale} Mission Log ${stale === 1 ? 'entry' : 'entries'} anchored to your repository ${stale === 1 ? 'is' : 'are'} not confirmed now (a count; log_search shows which).` : '';
+
 export interface AnchorChecker {
   /** The list as the entry will hold it (roots as real paths, the branch stamped), or a HubError (bad_request, field `anchors`). `author` is "user" or the agent that wrote the entry. */
   validate(input: unknown, author: string): Promise<LogAnchor[]>;
+  /** The real top level of the folder of the hired agent `name`, or null: the one root an anchor of that agent may name. */
+  rootOf(name: string): Promise<string | null>;
   /** The last answer for these anchors (any age), or undefined. Never runs anything. */
   peek(anchors: readonly LogAnchor[], author: string): LogAnchorState | undefined;
   /** Checks them, or gives the answer kept for ANCHOR_CACHE_MS. One check per root at a time. Never throws. */
@@ -297,6 +303,7 @@ export function createAnchorChecker(options: AnchorOptions): AnchorChecker {
 
   return {
     validate,
+    rootOf: async (name) => [...(await allowed(name))][0] ?? null,
     peek: (anchors, author) => cache.get(sig(anchors, author))?.state,
     check(anchors, author) {
       const key = sig(anchors, author);

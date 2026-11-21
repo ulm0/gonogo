@@ -91,6 +91,8 @@ export interface ClientState {
   relief: ReliefRequest[];
   /** Feature toggles: the ids of the features that are off (src/shared/features.ts). The server refuses them too. */
   features: string[];
+  /** Knowledge anchors: for each agent, how many Mission Log entries anchored to its repository were last found not confirmed (counts only; agents with none are absent). */
+  knowledge: Record<string, number>;
   /** Rollout: what the daily update check saw, or null from an older server. */
   rollout: RolloutView | null;
 }
@@ -211,6 +213,7 @@ export function emptyState(): ClientState {
     docking: NO_DOCKING,
     relief: [],
     features: [],
+    knowledge: {},
     rollout: null,
   };
 }

@@ -18,7 +18,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promise
 import { join } from 'node:path';
 import { LOG_BODY_MAX_CHARS, LOG_ENTRIES_MAX, LOG_QUERY_MAX_CHARS, LOG_SEARCH_MAX, LOG_TAG_PATTERN, LOG_TAGS_MAX, LOG_TITLE_MAX_CHARS } from '../shared/protocol.js';
 import type { LogAnchor, LogChart, LogEntry, LogFrame, LogHit, Logger, LogSearch } from '../shared/protocol.js';
-import { anchorShape } from './anchors.js';
+import { ANCHOR_CACHE_MS, anchorShape } from './anchors.js';
 import type { AnchorChecker } from './anchors.js';
 import { DIR_MODE, FILE_MODE, LOG_DIR } from './constants.js';
 import { isRecord } from './hooks.js';
@@ -54,6 +54,14 @@ export interface MissionLog {
   get(id: string): LogEntry;
   /** Runs the checks of the entry's anchors (when the switch is on) so that `get` shows a fresh state; never throws. */
   verify(id: string): Promise<void>;
+  /** RECHECK, the Director's key: runs the checks of the entry again. Refused (rate_limited) while the last answer is under ANCHOR_CACHE_MS old; bad_request with no anchors or the switch off. */
+  recheck(id: string): Promise<LogEntry>;
+  /** How many entries anchored to the repository `root` were last found not confirmed. Runs nothing. */
+  staleCount(root: string): number;
+  /** The one repository an anchor of the agent `name` may name (anchors.ts), or null. */
+  anchorRoot(name: string): Promise<string | null>;
+  /** Checks the entries anchored to `root` (the newest 20, each at most once per 30 s) and then counts the stale ones. 0 with the switch off. */
+  knowledge(root: string): Promise<number>;
   /** Star Chart: the newest entries with their tags, authors and mentions of each other (logchart.ts). */
   chart(): LogChart;
   /** The input is a JSON value from the wire; a bad one throws a HubError (bad_request, field). The title and the body are required. */
@@ -195,6 +203,13 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
     return out;
   };
 
+  /** The newest entries (at most 20) with an anchor on this repository. */
+  const anchoredTo = (root: string): LogEntry[] =>
+    [...entries.values()]
+      .filter((e) => e.anchors?.some((a) => a.root === root))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 20);
+
   const hit = (e: LogEntry, query: string): LogHit => {
     const state = stateOf(e);
     return { id: e.id, title: e.title, author: e.author, tags: e.tags, updatedAt: e.updatedAt, snippet: snippet(e.body, query), ...(state ? { anchorState: state } : {}) };
@@ -228,6 +243,28 @@ export function createMissionLog(options: MissionLogOptions): MissionLog {
     },
 
     get: (id) => shown(find(id)),
+
+    async recheck(id) {
+      const entry = find(id);
+      if (!on() || !options.anchors) throw bad('knowledge anchors are off: the Director turns them on in FLIGHT RULES', 'anchors');
+      if (!entry.anchors) throw bad('this entry has no anchors', 'anchors');
+      const kept = options.anchors.peek(entry.anchors, entry.author);
+      const age = kept === undefined ? Infinity : options.now() - kept.checkedAt;
+      if (age < ANCHOR_CACHE_MS) throw new HubError('rate_limited', `checked ${Math.floor(age / 1000)} s ago: again in ${Math.ceil((ANCHOR_CACHE_MS - age) / 1000)} s`);
+      await options.anchors.check(entry.anchors, entry.author);
+      return shown(find(id));
+    },
+
+    anchorRoot: async (name) => (on() ? (await options.anchors?.rootOf(name)) ?? null : null),
+
+    staleCount: (root) => (on() ? anchoredTo(root).filter((e) => stateOf(e)?.state === 'stale').length : 0),
+
+    async knowledge(root) {
+      const checker = options.anchors;
+      if (!on() || !checker) return 0;
+      await Promise.all(anchoredTo(root).map((e) => checker.check(e.anchors ?? [], e.author)));
+      return anchoredTo(root).filter((e) => stateOf(e)?.state === 'stale').length;
+    },
 
     async verify(id) {
       const entry = entries.get(id);

@@ -14,7 +14,7 @@ import { legendOf } from './loop.js';
 import { countText, emptyValues, FIELDS, newsText, requestOf, rowId, validate, valuesOf } from './log.js';
 import type { Field, Problems, Values } from './log.js';
 import { Chart, Links } from './StarChart.js';
-import { showRoom, useStore } from './store.js';
+import { showRoom, useFeature, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './loop.css';
 import './log.css';
@@ -179,10 +179,11 @@ function EntryForm({ entry, onDone }: { entry: LogEntry | null; onDone(saved: Lo
   );
 }
 
-function Reader({ entry, onEdit, onClose, onRemoved }: { entry: LogEntry; onEdit(): void; onClose(): void; onRemoved(): void }): ReactElement {
+function Reader({ entry, onEdit, onClose, onRemoved, onChanged }: { entry: LogEntry; onEdit(): void; onClose(): void; onRemoved(): void; onChanged(entry: LogEntry): void }): ReactElement {
   const titleId = useId();
   const agents = useStore((s) => s.agents);
   const { busy, error, run } = useRun();
+  const anchorsOn = useFeature('knowledge-anchors');
   const [confirming, setConfirming] = useState(false);
   const heading = useRef<HTMLHeadingElement | null>(null);
   const keep = useRef<HTMLButtonElement | null>(null);
@@ -213,6 +214,11 @@ function Reader({ entry, onEdit, onClose, onRemoved }: { entry: LogEntry; onEdit
         <button type="button" className="btn" onClick={onEdit}>
           Edit
         </button>
+        {anchorsOn && entry.anchors !== undefined && (
+          <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => void run(async () => onChanged(await api.recheckLogEntry(entry.id)))}>
+            Recheck
+          </button>
+        )}
         {confirming ? (
           <div className="log-confirm flood" data-tone="nogo" role="group" aria-label={`Delete ${entry.id}?`}>
             <p>
@@ -458,7 +464,7 @@ export function MissionLog(): ReactElement {
         <div className="log-side">
           {mode === 'new' && <EntryForm entry={null} onDone={saved} />}
           {mode === 'edit' && entry !== null && <EntryForm key={entry.id} entry={entry} onDone={saved} />}
-          {mode === 'read' && entry !== null && openId === entry.id && <Reader entry={entry} onEdit={() => setMode('edit')} onClose={close} onRemoved={removed} />}
+          {mode === 'read' && entry !== null && openId === entry.id && <Reader entry={entry} onEdit={() => setMode('edit')} onClose={close} onRemoved={removed} onChanged={setEntry} />}
           {!showing && <p className="hint log-pick">Pick an entry to read it.</p>}
         </div>
       </div>
