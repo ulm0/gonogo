@@ -337,6 +337,26 @@ describe('the check', () => {
     expect((await readFile(log, 'utf8')).trim().split('\n')).toHaveLength(6);
   });
 
+  it('past 10 checks of a root in the queue, the next answers busy and queues nothing', async () => {
+    const log = join(root, 'busy.log');
+    const bin = await script('busy-git', `case "$*" in *" grep "*) echo grep >> ${log}; sleep 0.4;; esac\nexec git "$@"`);
+    const c = checkerFor({ gitBin: bin, runMs: 20_000 });
+    const list = (i: number): LogAnchor[] => [stamped({ file: undefined, mode: 'absent', text: `t${i}` })];
+    const first = Array.from({ length: 10 }, (_, i) => c.check(list(i), 'ana'));
+    // let the ten reach the queue
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await c.check(list(10), 'ana')).toMatchObject({ state: 'unchecked', note: 'unchecked: busy' });
+    // a root with nothing waiting is not held up by that one
+    expect((await c.check([anchor({ root: other, file: 'a.txt', text: 'x' })], 'user')).state).not.toBe('unchecked');
+    const done = await Promise.all(first);
+    expect(done.every((s) => s.state === 'ok')).toBe(true);
+    // the busy one queued nothing: ten greps ran, not eleven
+    expect((await readFile(log, 'utf8')).trim().split('\n')).toHaveLength(10);
+    // and the answer is kept like any: asked again later, it runs
+    now += ANCHOR_CACHE_MS;
+    expect((await c.check(list(10), 'ana')).state).toBe('ok');
+  }, 20_000);
+
   it('peek gives the last answer and runs nothing', async () => {
     const c = checkerFor();
     expect(c.peek([stamped()], 'ana')).toBeUndefined();

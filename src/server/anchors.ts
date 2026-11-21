@@ -38,6 +38,8 @@ export const ANCHOR_RUN_MS = 5000;
 export const ANCHOR_READ_BYTES = 1024 * 1024;
 /** The answer of a check is kept this long: a page that is opened again and again does not run git again. */
 export const ANCHOR_CACHE_MS = 30_000;
+/** Checks of one root that may wait (one running, the rest queued): past this, a check answers "unchecked: busy" and queues nothing. */
+export const ANCHOR_QUEUE_MAX = 10;
 /** What `git grep -l` may print before it is stopped: more than this is a hit all the same. */
 const GREP_CAP = 64 * 1024;
 
@@ -129,6 +131,7 @@ export function createAnchorChecker(options: AnchorOptions): AnchorChecker {
   const running = new Map<string, Promise<LogAnchorState>>();
   // one check per root at a time: the tail of each root's queue
   const queues = new Map<string, Promise<unknown>>();
+  const waiting = new Map<string, number>();
   const sig = (anchors: readonly LogAnchor[], author: string): string => JSON.stringify([author, anchors]);
 
   /** git with the Recorder's safe arguments and a clean environment; SIGTERM when over time, so git removes its own lock. */
@@ -229,7 +232,12 @@ export function createAnchorChecker(options: AnchorOptions): AnchorChecker {
 
   /** `fn` after the checks already queued for this root. */
   function turn<T>(root: string, fn: () => Promise<T>): Promise<T> {
-    const next = (queues.get(root) ?? Promise.resolve()).then(fn);
+    waiting.set(root, (waiting.get(root) ?? 0) + 1);
+    const next = (queues.get(root) ?? Promise.resolve()).then(fn).finally(() => {
+      const left = (waiting.get(root) ?? 1) - 1;
+      if (left > 0) waiting.set(root, left);
+      else waiting.delete(root);
+    });
     const tail = next.catch(() => undefined);
     queues.set(root, tail);
     void tail.then(() => {
@@ -250,6 +258,11 @@ export function createAnchorChecker(options: AnchorOptions): AnchorChecker {
       // the root may no longer be one of an agent of this room (the agent was removed, the folder moved), or never was the author's own
       if (!ok.has(root)) {
         if (RANK.unchecked > RANK[worst.state]) worst = { state: 'unchecked', reason: author === 'user' ? 'no hired agent works there' : 'not the repository of the agent that wrote the entry' };
+        continue;
+      }
+      // an agent that writes entries without end cannot make the queue of a root grow without bound
+      if ((waiting.get(root) ?? 0) >= ANCHOR_QUEUE_MAX) {
+        if (RANK.unchecked > RANK[worst.state]) worst = { state: 'unchecked', reason: 'busy' };
         continue;
       }
       await turn(root, async () => {
