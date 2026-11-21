@@ -105,4 +105,10 @@ jobs:
           set -eu
           # an audit of a formula by path is refused too: it goes in the tap first, with the release-asset url
           cp "$RUNNER_TEMP/audit/gonogo.rb" "$(brew --repository ulm0/ci)/Formula/gonogo.rb"
-          brew audit --strict --formula ulm0/ci/gonogo
+          # each problem is also an annotation of the run (the log of a run is not readable without a login)
+          if ! out=$(brew audit --strict --formula ulm0/ci/gonogo 2>&1); then
+            echo "$out"
+            printf '%s\n' "$out" | while IFS= read -r line; do [ -n "$line" ] && echo "::error::audit: $line"; done
+            exit 1
+          fi
+          echo "$out"
