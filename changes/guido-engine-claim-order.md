@@ -1,1 +1,0 @@
-- **A long claim list keeps its cheap claims when a check is cut at 5 seconds.** The anchor engine now runs the claims that read the fewest files first; the answers still come back in the order the claims have. Nothing else changes.

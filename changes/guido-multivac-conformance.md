@@ -1,1 +1,0 @@
-- **A weekly check of the Knowledge export against multivac.** A job installs multivac at an exact version and checks that what `gonogo knowledge export --multivac` writes parses and verifies there. Nothing changes for users.

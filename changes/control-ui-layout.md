@@ -1,1 +1,0 @@
-The room has a Layout key: three densities (Focus, Standard, Full wall, which is the old wall of boxes), Strip, Panel or Hidden for each of the five panels, and the open seats as one row or a tile each. Edit room (the grid) is one key in it. The choices are kept in this browser.
