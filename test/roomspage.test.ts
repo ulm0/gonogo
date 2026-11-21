@@ -59,6 +59,10 @@ class Node {
   querySelectorAll(selector: string): Node[] {
     const f = /^\[data-f="(.*)"\]$/.exec(selector);
     if (f !== null) return this.all().filter((n) => n.dataset.f === f[1]);
+    const byClass = /^\.([\w-]+)$/.exec(selector);
+    if (byClass !== null) return this.all().filter((n) => n.className.split(' ').includes(byClass[1] as string));
+    const byName = /^\[name=(\w+)\]$/.exec(selector);
+    if (byName !== null) return this.all().filter((n) => (n as Node & { name?: string }).name === byName[1]);
     if (selector === '[data-at]') return this.all().filter((n) => n.dataset.at !== undefined);
     return this.all().filter((n) => n.tag === selector);
   }
@@ -74,9 +78,16 @@ class Node {
 let doc: { activeElement: Node | null; title: string; documentElement: Node & { style: { setProperty(n: string, v: string): void; props: Record<string, string> } } };
 const make = (tag: string): Node => new Node(tag);
 
-function run(options: { token?: string; rooms: unknown[]; layout?: unknown; livery?: string; hash?: string; status?: number }): { byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
+interface Call {
+  method: string;
+  url: string;
+  body?: Record<string, unknown>;
+}
+
+function run(options: { token?: string; rooms: unknown[]; layout?: unknown; livery?: string; hash?: string; status?: number; respond?: (call: Call) => { status: number; body: unknown } | undefined }): { calls: Call[]; byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
   const replaced: string[] = [];
   const sent: Array<Record<string, string>> = [];
+  const calls: Call[] = [];
   const html = roomsPage(null, '1.2.3');
   const scripts = [...html.matchAll(/<script>([^]*?)<\/script>/g)].map((m) => m[1] ?? '');
   const byId: Record<string, Node> = {};
@@ -94,8 +105,12 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
     location: { hash: options.hash ?? '', pathname: '/', replace: (to: string) => void replaced.push(to), assign: (to: string) => void replaced.push(`assign:${to}`) },
     history: { replaceState() {} },
     URLSearchParams,
-    fetch: async (_url: string, init: { headers?: Record<string, string> } = {}) => {
+    fetch: async (url: string, init: { headers?: Record<string, string>; method?: string; body?: string } = {}) => {
       sent.push(init.headers ?? {});
+      const call: Call = { method: init.method ?? 'GET', url, ...(init.body === undefined ? {} : { body: JSON.parse(init.body) as Record<string, unknown> }) };
+      calls.push(call);
+      const custom = call.method === 'GET' ? undefined : options.respond?.(call);
+      if (custom !== undefined) return { status: custom.status, ok: custom.status < 300, json: async () => custom.body };
       const status = options.status ?? 200;
       return { status, ok: status < 300, json: async () => ({ rooms: options.rooms, ...(options.layout === undefined ? {} : { layout: options.layout }) }) };
     },
@@ -111,7 +126,7 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
   };
   vm.createContext(context);
   for (const script of scripts) vm.runInContext(script, context);
-  return { byId, saved, replaced, sent, root };
+  return { calls, byId, saved, replaced, sent, root };
 }
 
 const room = (patch: Record<string, unknown> = {}): Record<string, unknown> => ({ id: 'main', name: 'Main', state: 'running', agents: 15, running: 15, needsYou: 0, working: 0, lastActivity: null, tabName: null, note: null, ...patch });
@@ -320,5 +335,124 @@ describe('where room main keeps its files', () => {
     expect(text(done.byId.move as Node)).toContain('Leftover worktrees removed first');
     expect(text(done.byId.move as Node)).toContain('/h/cleanroom/rso');
     expect((done.byId.move as Node).querySelector('[data-f="migrate:undo"]')).not.toBeNull();
+  });
+});
+
+describe('stopping and starting rooms', () => {
+  const rooms = [room(), room({ id: 'docs', name: 'Docs', autostart: true }), room({ id: 'old', name: 'Old', state: 'stopped', autostart: true, agents: null }), room({ id: 'idle', name: 'Idle', state: 'stopped', autostart: false, agents: null })];
+  const cardOf = (byId: Record<string, Node>, id: string): Node => (byId.rooms?.children ?? []).find((c) => c.querySelector(`[data-f="open:${id}"]`) !== null) as Node;
+
+  it('a running room has STOP, a stopped one START, and a stopped one that starts at boot says it stays down only until then', async () => {
+    const { byId } = run({ token: 'a'.repeat(64), rooms });
+    await settle();
+    expect(cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')).not.toBeNull();
+    expect(cardOf(byId, 'docs').querySelector('[data-f="start:docs"]')).toBeNull();
+    expect(cardOf(byId, 'old').querySelector('[data-f="start:old"]')).not.toBeNull();
+    expect(cardOf(byId, 'old').querySelector('[data-f="stop:old"]')).toBeNull();
+    expect(text(cardOf(byId, 'old'))).toContain('stopped until gonogo starts again');
+    expect(text(cardOf(byId, 'idle'))).not.toContain('until gonogo starts again');
+  });
+
+  it('STOP asks first and says what stops; KEEP RUNNING puts it away and sends nothing', async () => {
+    const { byId, calls } = run({ token: 'a'.repeat(64), rooms });
+    await settle();
+    cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')?.fire('click');
+    const box = cardOf(byId, 'docs').querySelector('[data-f="keep-running:docs"]');
+    expect(text(cardOf(byId, 'docs'))).toContain('Its agents stop with it, and mail waiting for them is kept. It starts again when gonogo starts.');
+    box?.fire('click');
+    expect(cardOf(byId, 'docs').querySelector('[data-f="stop-go:docs"]')).toBeNull();
+    expect(calls.filter((c) => c.method === 'POST')).toEqual([]);
+  });
+
+  it('stopping main says what else goes off with it', async () => {
+    const { byId } = run({ token: 'a'.repeat(64), rooms });
+    await settle();
+    cardOf(byId, 'main').querySelector('[data-f="stop:main"]')?.fire('click');
+    expect(text(cardOf(byId, 'main'))).toContain('Telegram poll, phone approvals and webhooks');
+  });
+
+  it('the confirmed STOP posts to the room\'s stop route, START to its start route', async () => {
+    const { byId, calls } = run({ token: 'a'.repeat(64), rooms, respond: () => ({ status: 200, body: {} }) });
+    await settle();
+    cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')?.fire('click');
+    cardOf(byId, 'docs').querySelector('[data-f="stop-go:docs"]')?.fire('click');
+    await settle();
+    cardOf(byId, 'old').querySelector('[data-f="start:old"]')?.fire('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual(['/api/rooms/docs/stop', '/api/rooms/old/start']);
+  });
+
+  it('a room that does not answer: the 409 offers STOP ANYWAY, which sends force', async () => {
+    const { byId, calls } = run({
+      token: 'a'.repeat(64),
+      rooms,
+      respond: (call) => (call.url === '/api/rooms/docs/stop' && call.body?.force !== true ? { status: 409, body: { error: 'room "docs" did not answer whether it is busy: it may be hung; send {"force":true} to stop it anyway' } } : { status: 200, body: {} }),
+    });
+    await settle();
+    cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')?.fire('click');
+    cardOf(byId, 'docs').querySelector('[data-f="stop-go:docs"]')?.fire('click');
+    await settle();
+    expect(text(cardOf(byId, 'docs'))).toContain('The room didn\u2019t answer whether it\u2019s busy. Stop it anyway?');
+    cardOf(byId, 'docs').querySelector('[data-f="force:docs"]')?.fire('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{}, { force: true }]);
+  });
+
+  it('a refusal that is not "did not answer" is shown, not forced', async () => {
+    const { byId } = run({ token: 'a'.repeat(64), rooms, respond: () => ({ status: 409, body: { error: 'room "docs" has an open poll' } }) });
+    await settle();
+    cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')?.fire('click');
+    cardOf(byId, 'docs').querySelector('[data-f="stop-go:docs"]')?.fire('click');
+    await settle();
+    expect(text(byId.note)).toContain('has an open poll');
+    expect(cardOf(byId, 'docs').querySelector('[data-f="force:docs"]')).toBeNull();
+  });
+
+  it('a stop that needs the password asks for it and repeats the stop after it', async () => {
+    let asked = 0;
+    const { byId, calls } = run({
+      token: 'a'.repeat(64),
+      rooms,
+      respond: (call) => {
+        if (call.url === '/api/auth/stepup') return { status: 200, body: {} };
+        if (call.url === '/api/rooms/docs/stop') return ++asked === 1 ? { status: 403, body: { error: 'confirm with your password', stepUp: true } } : { status: 200, body: {} };
+        return undefined;
+      },
+    });
+    await settle();
+    cardOf(byId, 'docs').querySelector('[data-f="stop:docs"]')?.fire('click');
+    cardOf(byId, 'docs').querySelector('[data-f="stop-go:docs"]')?.fire('click');
+    await settle();
+    const step = byId.move?.querySelector('[data-f="step:password"]');
+    expect(step).not.toBeNull();
+    (step as Node).value = 'pw';
+    byId.move?.querySelector('[data-f="step:go"]')?.fire('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual(['/api/rooms/docs/stop', '/api/auth/stepup', '/api/rooms/docs/stop']);
+  });
+
+  it('STOP ALL says how many rooms stop, and what comes back as skipped is shown', async () => {
+    const { byId, calls } = run({ token: 'a'.repeat(64), rooms, respond: (call) => (call.url === '/api/rooms/stop-all' ? { status: 200, body: { stopped: ['main'], skipped: [{ id: 'docs', why: 'room "docs" did not answer whether it is busy' }] } } : undefined) });
+    await settle();
+    byId.sum?.querySelector('[data-f="stop-all"]')?.fire('click');
+    expect(text(byId.move)).toContain('Stop every room? 2 rooms and their agents stop, main last.');
+    expect(text(byId.move)).toContain('skipped, not forced');
+    byId.move?.querySelector('[data-f="stop-all-go"]')?.fire('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual(['/api/rooms/stop-all']);
+    expect(text(byId.note)).toContain('Not done: docs (room "docs" did not answer whether it is busy)');
+  });
+
+  it('START ALL is there only when a room is stopped, and the boot key flips autostart', async () => {
+    const { byId, calls } = run({ token: 'a'.repeat(64), rooms, respond: () => ({ status: 200, body: {} }) });
+    await settle();
+    expect(byId.sum?.querySelector('[data-f="start-all"]')).not.toBeNull();
+    cardOf(byId, 'idle').querySelector('[data-f="boot:idle"]')?.fire('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'PATCH')).toEqual([{ method: 'PATCH', url: '/api/rooms/idle', body: { autostart: true } }]);
+    expect(cardOf(byId, 'main').querySelector('[data-f="boot:main"]')).toBeNull();
+    const none = run({ token: 'a'.repeat(64), rooms: [room()] });
+    await settle();
+    expect(none.byId.sum?.querySelector('[data-f="start-all"]')).toBeNull();
   });
 });
