@@ -1679,6 +1679,10 @@ export interface ApiError {
   code: ApiErrorCode;
   /** Name of the offending request field, when there is one. */
   field?: string;
+  /** rate_limited from Knowledge: seconds until it may be asked again. */
+  retryAfter?: number;
+  /** A 400 for text that is parsed (Knowledge anchors): what is wrong, with the line. */
+  diagnostics?: Array<{ line: number; message: string }>;
 }
 
 /* ---- WebSocket: browser to server (JSON text frames) ---- */

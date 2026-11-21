@@ -729,7 +729,10 @@ export function createWebServer(options: WebOptions): WebServer {
   const sendHubError = (res: ServerResponse, e: unknown): void => {
     const info = hubErrorInfo(e);
     if (info) {
-      sendApiError(res, ERROR_STATUS[info.code], info.message, info.code, info.field, info.code === 'rate_limited' ? { 'Retry-After': '60' } : {});
+      sendApiError(res, ERROR_STATUS[info.code], info.message, info.code, info.field, info.code === 'rate_limited' ? { 'Retry-After': String(info.retryAfter ?? 60) } : {}, {
+        ...(info.retryAfter === undefined ? {} : { retryAfter: info.retryAfter }),
+        ...(info.diagnostics === undefined ? {} : { diagnostics: info.diagnostics }),
+      });
       return;
     }
     log.error('request failed', e);

@@ -66,8 +66,9 @@ interface Index {
 
 /** A refusal that carries what is wrong with the legs of a claim. */
 export class ClaimsError extends HubError {
-  constructor(message: string, readonly diagnostics: Array<{ line: number; message: string }>) {
+  constructor(message: string, diagnostics: Array<{ line: number; message: string }>) {
     super('bad_request', message, 'anchors');
+    this.diagnostics = diagnostics;
   }
 }
 
