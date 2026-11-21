@@ -113,3 +113,14 @@ describe('moving room main (MIGRATE NOW, UNDO)', () => {
     expect(stepUpReason('GET', '/api/rooms/main/migrate', null)).toBeNull();
   });
 });
+
+describe('Knowledge', () => {
+  it('asks again to move the claims of a repository, not to keep two apart, add a claim, bind or accept', () => {
+    expect(bodyMatters('POST', '/api/knowledge/abcdef0123456789/move')).toBe(true);
+    expect(stepUpReason('POST', '/api/knowledge/abcdef0123456789/move', { from: 'x', action: 'move' })).toMatch(/moving the claims of a repository/);
+    expect(stepUpReason('POST', '/api/knowledge/abcdef0123456789/move', null)).toMatch(/moving the claims/);
+    expect(stepUpReason('POST', '/api/knowledge/abcdef0123456789/move', { from: 'x', action: 'keep' })).toBeNull();
+    for (const path of ['/api/knowledge/abcdef0123456789/claims', '/api/knowledge/bind', '/api/knowledge/abcdef0123456789/proposals/p1/accept', '/api/knowledge/abcdef0123456789/recheck']) expect(stepUpReason('POST', path, {}), path).toBeNull();
+    expect(stepUpReason('GET', '/api/knowledge', null)).toBeNull();
+  });
+});

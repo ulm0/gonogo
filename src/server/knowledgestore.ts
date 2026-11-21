@@ -27,8 +27,8 @@ import type { ParseLegs, Row } from './claimsfile.js';
 import { HubError } from './hub.js';
 import type { RepoIdentity } from './repoid.js';
 
-const INDEX_FILE = 'index.json';
-const LOCK_FILE = '.lock';
+const INDEX_NAME = 'index.json';
+const LOCK_NAME = '.lock';
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 5000;
 const REPO_ID = /^[0-9a-f]{16}$/;
@@ -64,12 +64,11 @@ interface Index {
   remoteOnly: string[];
 }
 
-/** A refusal that carries what is wrong with the legs of a claim. */
-export class ClaimsError extends HubError {
-  constructor(message: string, diagnostics: Array<{ line: number; message: string }>) {
-    super('bad_request', message, 'anchors');
-    this.diagnostics = diagnostics;
-  }
+/** A refusal that carries what is wrong with the legs of a claim (a function, not a subclass: this module is loaded where hub.js is replaced by a test double). */
+export function claimsError(message: string, diagnostics: Array<{ line: number; message: string }>): HubError {
+  const e = new HubError('bad_request', message, 'anchors');
+  e.diagnostics = diagnostics;
+  return e;
 }
 
 export interface StoreOptions {
@@ -132,7 +131,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export function createKnowledgeStore(options: StoreOptions): KnowledgeStore {
   const { dir, log } = options;
   const parseLegs = options.parseLegs ?? noLegs;
-  const indexPath = join(dir, INDEX_FILE);
+  const indexPath = join(dir, INDEX_NAME);
   const repoDir = (repoId: string): string => {
     if (!REPO_ID.test(repoId)) throw bad('not a repository id', 'repoId');
     return join(dir, repoId);
@@ -162,7 +161,7 @@ export function createKnowledgeStore(options: StoreOptions): KnowledgeStore {
   /** One writer at a time across processes: a `wx` lock file; one older than 30 s, or of a process that is gone, is taken over. */
   async function locked<T>(fn: () => Promise<T>): Promise<T> {
     await mkdir(dir, { recursive: true, mode: DIR_MODE });
-    const lock = join(dir, LOCK_FILE);
+    const lock = join(dir, LOCK_NAME);
     const until = Date.now() + LOCK_WAIT_MS;
     for (;;) {
       try {
@@ -202,7 +201,7 @@ export function createKnowledgeStore(options: StoreOptions): KnowledgeStore {
       if (code === 'ENOENT') return { version: 1, repos: {}, remoteOnly: [] };
       if (code === undefined) {
         // moved aside only when its content is wrong; claims.md files are untouched, but nothing is bound until the Director binds again
-        log.error(`${INDEX_FILE} could not be read; it is kept as ${INDEX_FILE}.bad and the store starts a new one`, error instanceof SyntaxError ? 'not valid JSON' : error);
+        log.error(`${INDEX_NAME} could not be read; it is kept as ${INDEX_NAME}.bad and the store starts a new one`, error instanceof SyntaxError ? 'not valid JSON' : error);
         await rename(indexPath, `${indexPath}.bad`).catch(() => undefined);
         return { version: 1, repos: {}, remoteOnly: [] };
       }
@@ -252,7 +251,7 @@ export function createKnowledgeStore(options: StoreOptions): KnowledgeStore {
   const legLine = (id: string, leg: string): string => {
     const text = leg.trim();
     // eslint-disable-next-line no-control-regex
-    if (text === '' || text.length > LEG_MAX_CHARS || /[\u0000-\u001f\u007f]/.test(text) || text.includes('-->') || text.includes('<!--')) throw new ClaimsError('an anchor must be one line of the grammar', [{ line: 0, message: 'an anchor is one line, at most 600 characters, with no comment marks' }]);
+    if (text === '' || text.length > LEG_MAX_CHARS || /[\u0000-\u001f\u007f]/.test(text) || text.includes('-->') || text.includes('<!--')) throw claimsError('an anchor must be one line of the grammar', [{ line: 0, message: 'an anchor is one line, at most 600 characters, with no comment marks' }]);
     return `<!-- @anchor ${id} ${text} -->`;
   };
 
@@ -260,7 +259,7 @@ export function createKnowledgeStore(options: StoreOptions): KnowledgeStore {
   function anchorsFor(id: string, legs: readonly string[]): string[] {
     const lines = legs.map((leg) => legLine(id, leg));
     const checked = parseLegs(lines.map((text, i) => ({ line: i + 1, text })), id);
-    if (checked.diagnostics.length > 0) throw new ClaimsError('the anchors do not parse', checked.diagnostics);
+    if (checked.diagnostics.length > 0) throw claimsError('the anchors do not parse', checked.diagnostics);
     return lines;
   }
 

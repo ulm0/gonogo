@@ -335,6 +335,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     for (const name of ['GONOGO_PORT', 'GONOGO_HOST', 'GONOGO_TOKEN', 'GONOGO_BROWSER_TOKEN']) delete env[name];
     env.GONOGO_HOME = home;
     env.GONOGO_ROOM = child.entry.id;
+    // the Knowledge store lives with the supervisor, not in a room: it survives a deleted room, and the rooms of an install share the claims the Director accepted
+    env.GONOGO_KNOWLEDGE_DIR = join(options.home, 'knowledge');
     // the update hook is main's: the other rooms never get its address or its token
     if (child.entry.id !== MAIN_ROOM) for (const name of ['GONOGO_UPDATE_HOOK', 'GONOGO_UPDATE_HOOK_TOKEN']) delete env[name];
     // a room that is told to reload signals this process, and only this one

@@ -43,6 +43,7 @@ import type { Board } from './board.js';
 import type { Liveries } from './livery.js';
 import type { MissionLog } from './missionlog.js';
 import type { Relief } from './relief.js';
+import type { Knowledge } from './knowledge.js';
 import type { Tasks } from './tasks.js';
 import type { Missions } from './missions.js';
 import type { Review } from './review.js';
@@ -57,6 +58,8 @@ export interface McpDeps {
   missions?: Pick<Missions, 'list' | 'create' | 'update'>;
   /** Post-Flight Review; absent in tests that do not need it (the two review tools then answer that it is not available). */
   review?: Pick<Review, 'read' | 'addNotes'>;
+  /** Knowledge: the claims of the repository of the caller's folder; absent in tests that do not need it. */
+  knowledge?: Pick<Knowledge, 'propose' | 'list'>;
   missionLog?: Pick<MissionLog, 'search' | 'get' | 'verify' | 'create' | 'update'>;
   /** The Plot Board; absent in tests that do not need it (the two board tools then answer that it is not available). */
   board?: Pick<Board, 'get' | 'write'>;
@@ -380,6 +383,44 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
         await missionLog.verify(id);
         return toolResult({ ok: true, entry: missionLog.get(id) }, false);
       }),
+    );
+
+    const { knowledge } = deps;
+    const noKnowledge = (): CallToolResult => toolResult({ ok: false, error: 'Knowledge is not available' }, true);
+    server.registerTool(
+      'knowledge_propose',
+      {
+        description: MCP_DESCRIPTIONS.knowledge_propose,
+        inputSchema: {
+          statement: z.string().min(1).max(300),
+          legs: z
+            .array(
+              z
+                .object({
+                  mode: z.enum(['present', 'absent', 'unique', 'count', 'each', 'each!']),
+                  glob: z.string().min(1).max(200),
+                  exclude: z.array(z.string().min(1).max(200)).max(5).optional(),
+                  regex: z.string().min(1).max(200).optional(),
+                  flags: z.literal('i').optional(),
+                  literal: z.string().min(1).max(200).optional(),
+                  count: z.number().int().min(0).max(100_000).optional(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(5),
+        },
+      },
+      ({ statement, legs }) =>
+        guarded('knowledge_propose', async () => {
+          if (!knowledge) return noKnowledge();
+          // the agent is the caller's own, never a field of the call; the answer is the id and nothing of the engine
+          const made = await knowledge.propose(agent, { statement, legs });
+          return toolResult({ ok: true, id: made.id }, false);
+        }),
+    );
+    server.registerTool('knowledge_list', { description: MCP_DESCRIPTIONS.knowledge_list, inputSchema: {} }, () =>
+      guarded('knowledge_list', async () => (knowledge ? toolResult({ ok: true, text: await knowledge.list(agent) }, false) : noKnowledge())),
     );
 
     const { board } = deps;

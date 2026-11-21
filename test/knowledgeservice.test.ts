@@ -49,7 +49,7 @@ function build(withEngine = true): void {
   k = createKnowledge({
     store,
     proposals: createProposalStore({ dir: join(root, 'room', 'knowledge-proposals'), now: () => now, parseLegs: noLegs }),
-    git: createSafeGit(),
+    git: createSafeGit({ ms: 30_000 }),
     ...(withEngine ? { engine } : {}),
     now: () => now,
     on: () => on,

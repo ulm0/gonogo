@@ -10,7 +10,7 @@ const TOKEN = 'ghp_SECRETTOKEN0123456789';
 let root: string;
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-const safe = createSafeGit();
+const safe = createSafeGit({ ms: 30_000 });
 
 async function repo(path: string, commits = 1): Promise<string> {
   await mkdir(path, { recursive: true });
