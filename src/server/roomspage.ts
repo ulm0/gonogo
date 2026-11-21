@@ -162,7 +162,7 @@ function card(r){
   const path='/api/rooms/'+encodeURIComponent(r.id);
   if(r.state==='stopped'||r.state==='crashed')keys.append(key('START','',()=>power(path+'/start'),'start:'+r.id,'Start '+name));
   if(r.state!=='stopped')keys.append(key('STOP','',()=>{stopping=r.id;forcing=null;removing=null;renaming=null;draw();focus('keep-running:'+r.id)},'stop:'+r.id,'Stop '+name));
-  if(r.id!=='main')keys.append(key('AT BOOT: '+(r.autostart?'YES':'NO'),'',()=>boot(r),'boot:'+r.id,'At boot: '+(r.autostart?'yes':'no')+'. Press to '+(r.autostart?'stop ':'start ')+name+' starting when gonogo starts'));
+  if(r.id!=='main')keys.append(key('AT BOOT: '+(r.autostart?'YES':'NO'),'',()=>boot(r),'boot:'+r.id,'At boot: '+(r.autostart?'yes':'no')+'. Press to change whether '+name+' starts when gonogo starts'));
   if(r.id!=='main'){keys.append(key('RENAME','',()=>{renaming=r.id;removing=null;draw();focus('name:'+r.id)},'rename:'+r.id,'Rename '+name),key('REMOVE','danger',()=>{removing=r.id;renaming=null;draw();focus('keep:'+r.id)},'remove:'+r.id,'Remove '+name))}
   li.append(keys);
   if(removing===r.id){

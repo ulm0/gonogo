@@ -388,7 +388,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       await page.goto(`${base}/`);
       await shoot(page, group, 'rooms list', true);
       await measure(page, group, 'rooms list');
-      await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs' }).click({ timeout: 5000 }), true);
+      await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs', exact: true }).click({ timeout: 5000 }), true);
       await measure(page, group, 'rooms list: stop asks first');
       await page.getByRole('button', { name: 'Keep Docs running' }).click({ timeout: 3000 }).catch(() => undefined);
       await view(page, group, 'rooms list: stop all asks first', () => page.getByRole('button', { name: 'Stop every room', exact: true }).click({ timeout: 5000 }), true);
