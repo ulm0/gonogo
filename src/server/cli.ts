@@ -1085,6 +1085,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       hub: hubInstance,
       defaultEngine: () => modelDefaults.engine(),
       checkDirectory: io.checkDirectory,
+      checkWorktree: (dir) => checkWorktree(dir, env),
       now: io.now,
       setTimer: io.setTimer,
       clearTimer: io.clearTimer,

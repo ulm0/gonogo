@@ -14,8 +14,9 @@ FLIGHT calls `hire_agent`, which only makes a request: a saffron block in your c
 | `dir` | Existing absolute folder (hire form's check). Required, except for a Clean Room boss |
 | `engine` | `claude` (default) or any engine except `custom` |
 | `mode` | `default` (default) or `acceptEdits`; `auto` and `bypassPermissions` refused |
+| `worktree` | `true`: the new agent starts in its own git worktree and branch of the repository of `dir`, like the *Own git worktree* box of the hire form ([worktrees](./worktrees.md)). `false` or left out: its own folder. Only a real boolean. The folder must be in a git repository (checked when the request is made, so that you are not asked for a hire that cannot be made, and again at GO), and a Clean Room boss cannot ask for it: its agents have a worktree already. The block shows a *Worktree* row |
 
-Any other field (`confirmBypass`, `command`, `payload`, `cleanRoom`) is refused. An engine without gonogo permission modes (opencode, Kimi, pi, others) is hired in `default` and runs on its own rules; the block says it has none.
+Any other field (`confirmBypass`, `command`, `payload`, `cleanRoom`) is refused. `worktree` does not widen what the agent may do: it only chooses where it works. An engine without gonogo permission modes (opencode, Kimi, pi, others) is hired in `default` and runs on its own rules; the block says it has none.
 
 ## What you see
 

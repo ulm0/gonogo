@@ -23,7 +23,7 @@ import { HubError } from './hub.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const ID_RE = /^h[1-9]\d{0,9}$/;
-const FIELDS = new Set(['name', 'position', 'role', 'dir', 'engine', 'mode']);
+const FIELDS = new Set(['name', 'position', 'role', 'dir', 'engine', 'mode', 'worktree']);
 /**
  * What a person cannot see in the block but the new agent reads: control codes (a newline, a return and a tab are fine), format
  * characters (zero width, direction overrides, the Unicode tag block that hides a whole sentence), line and paragraph
@@ -41,6 +41,8 @@ export interface ReliefOptions {
   hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'>;
   /** `HubIo.checkDirectory`: the check of the hire form (absolute, exists, a directory). */
   checkDirectory(path: string): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /** `HubIo.checkWorktree`: null when `dir` is in a git repository a worktree can be made of, else why not. Without it the hire's own check is the only one. */
+  checkWorktree?(dir: string): Promise<string | null>;
   /** The room's default engine, for a request that names none. Default claude. */
   defaultEngine?(): Provider;
   now(): number;
@@ -86,7 +88,7 @@ export function createRelief(options: ReliefOptions): Relief {
   let made: number[] = [];
   let seq = 0;
 
-  const view = (): ReliefView => ({ requests: [...pending.values()].map(({ request }) => ({ ...request, cleanRoom: request.cleanRoom === null ? null : { ...request.cleanRoom } })) });
+  const view = (): ReliefView => ({ requests: [...pending.values()].map(({ request }) => ({ ...request, cleanRoom: request.cleanRoom === null ? null : { ...request.cleanRoom }, ...(request.worktree === undefined || request.worktree === null ? {} : { worktree: { ...request.worktree } }) })) });
   const changed = (): void => options.emit({ t: 'relief', relief: view() });
   const notify = (text: string, ref?: DownlinkRef): void => options.notify?.('relief', text, ref);
 
@@ -140,6 +142,7 @@ export function createRelief(options: ReliefOptions): Relief {
     const hire: HireRequest = { name: r.name, role: r.role, dir: r.dir, mode: r.mode, provider: r.provider };
     if (r.position !== null) hire.position = r.position;
     if (r.cleanRoom !== null) hire.cleanRoom = r.cleanRoom;
+    if (r.worktree !== undefined && r.worktree !== null) hire.worktree = { ...r.worktree };
     return hire;
   };
 
@@ -189,10 +192,26 @@ export function createRelief(options: ReliefOptions): Relief {
       const asDir = input.dir === undefined ? (cleanRoom === null ? undefined : requester.dir) : input.dir;
       if (typeof asDir !== 'string' || asDir.length === 0 || asDir.length > DIR_MAX_CHARS) throw bad(`dir must be an absolute path of 1 to ${DIR_MAX_CHARS} characters`, 'dir');
 
+      // the form's "Own git worktree": only true or false; a Clean Room already has its own worktree, so the two do not go together
+      if (input.worktree !== undefined && typeof input.worktree !== 'boolean') throw bad('worktree is true or false', 'worktree');
+      const wantsWorktree = input.worktree === true;
+      if (wantsWorktree && cleanRoom !== null) throw bad('a Clean Room agent has a worktree already: do not ask for another', 'worktree');
+
       limits(name);
       const checked = await options.checkDirectory(asDir);
       if (!checked.ok) throw bad(checked.error, 'dir');
       await confine(requester, checked.path);
+      if (wantsWorktree) {
+        // the same check as the form: the folder must be in a git repository (the Director should not be asked for a hire that cannot be made)
+        let problem: string | null = null;
+        try {
+          problem = (await options.checkWorktree?.(checked.path)) ?? null;
+        } catch (error) {
+          log.error('worktree check failed', error);
+          problem = 'the worktree could not be checked';
+        }
+        if (problem !== null) throw bad(problem, 'worktree');
+      }
       // the checks above waited on the disk: another request may have taken the name or the last place meanwhile
       limits(name);
 
@@ -200,10 +219,10 @@ export function createRelief(options: ReliefOptions): Relief {
       const at = now();
       made.push(at);
       const id = `h${seq}`;
-      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, cleanRoom };
+      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, cleanRoom, ...(wantsWorktree ? { worktree: {} } : {}) };
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
-      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}, ${checked.path}`, { kind: 'relief', id });
+      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}`, { kind: 'relief', id });
       return { id, status: 'pending', note: `waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
     },
 

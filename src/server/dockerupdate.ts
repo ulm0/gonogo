@@ -23,6 +23,16 @@ export const VERSION_LABEL = 'org.opencontainers.image.version';
 export const REF_LABEL = 'gonogo.self-update.ref';
 export const RESULT_FILE = 'update.json';
 export const STABLE_VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
+
+/**
+ * The version an image's label says, as x.y.z. Every image published up to 0.11.0 says `v0.11.0` (docker/metadata-action took the git tag, with its v);
+ * one `v` before a release number is read as that number, anything else is returned as it is (and so never equals a version).
+ */
+export function labelVersion(label: string): string {
+  const m = /^v(\d{1,6}\.\d{1,6}\.\d{1,6})$/.exec(label);
+  return m === null ? label : (m[1] as string);
+}
+const labelOf = (image: Json): string => labelVersion(asText(asRecord(asRecord(image.Config).Labels)[VERSION_LABEL]));
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
 const HEALTH_MS = 3 * 60_000;
 const HEALTH_POLL_MS = 2_000;
@@ -247,11 +257,11 @@ export async function pullAndCheck(call: DockerCall, hostname: string, expect: s
     }
   }
   const pulled = await json(call, 'GET', `/images/${encodeURIComponent(ref)}/json`);
-  const label = asText(asRecord(asRecord(pulled.Config).Labels)[VERSION_LABEL]);
+  const label = labelOf(pulled);
   if (label !== expect) throw new DockerUpdateError(`the image ${ref} is version ${label === '' ? 'unknown (no version label)' : label}, not ${expect}: nothing was changed. The registry may not have it yet; try again later.`);
   const previousImage = asText(inspect.Image);
   const running = await json(call, 'GET', `/images/${encodeURIComponent(previousImage)}/json`);
-  const from = asText(asRecord(asRecord(running.Config).Labels)[VERSION_LABEL]);
+  const from = labelOf(running);
   const repoDigests = (Array.isArray(pulled.RepoDigests) ? pulled.RepoDigests : []).filter((d): d is string => typeof d === 'string' && d.startsWith(`${repo}@`)).map((d) => d.slice(repo.length + 1));
   return { image: asText(pulled.Id), previousImage, from, inspect, repo, repoDigests };
 }
@@ -272,7 +282,7 @@ export async function checkPrevious(call: DockerCall, hostname: string, last: { 
   } catch {
     // answered below: no label, no names
   }
-  if (asText(asRecord(asRecord(image.Config).Labels)[VERSION_LABEL]) !== last.from) throw new DockerUpdateError(`the previous image is not version ${last.from}: nothing was changed`);
+  if (labelOf(image) !== last.from) throw new DockerUpdateError(`the previous image is not version ${last.from}: nothing was changed`);
   const names = [...(Array.isArray(image.RepoTags) ? image.RepoTags : []), ...(Array.isArray(image.RepoDigests) ? image.RepoDigests : [])].filter((n): n is string => typeof n === 'string');
   if (!names.some((n) => parseImage(n).repo === repo)) throw new DockerUpdateError(`the previous image is not one of ${repo}: nothing was changed`);
 }
@@ -394,7 +404,7 @@ export async function swap(call: DockerCall, options: SwapOptions): Promise<Upda
     name = asText(inspect.Name).replace(/^\//, '');
     previousImage = asText(inspect.Image);
     const old = await json(call, 'GET', `/images/${encodeURIComponent(previousImage)}/json`);
-    from = asText(asRecord(asRecord(old.Config).Labels)[VERSION_LABEL]);
+    from = labelOf(old);
     const made = await json(call, 'POST', `/containers/create?name=${encodeURIComponent(`${name}-next-${suffix}`)}`, copyBody(inspect, old, options.image));
     fresh = asText(made.Id);
     if (fresh === '') throw new DockerUpdateError('the new container was not created');

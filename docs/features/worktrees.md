@@ -19,4 +19,4 @@ The `Own git worktree` box of the hire and edit form starts an agent in its own 
 - **Not a security boundary**: worktrees share `.git`, so a hook the agent plants in `.git/hooks` runs on your machine at your next git command. Clean Room is the boundary.
 - Submodules and `git lfs` are not set up in a new worktree.
 - Switching between Clean Room and a plain worktree: both use branch `gonogo/<name>` and git refuses one branch in two worktrees; remove the old worktree first.
-- Not built: a boss's `hire_agent` request does not carry the setting.
+- A boss's `hire_agent` can ask for it with `worktree: true` ([Relief](./relief.md)): the request shows a *Worktree* row, the folder must be in a git repository, and a Clean Room boss cannot ask for it.

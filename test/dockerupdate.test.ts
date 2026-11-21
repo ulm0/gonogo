@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { agentCounts, updateDialogText } from '../src/client/selfupdate.js';
 import { parseArgs } from '../src/server/cli.js';
-import { followResult, settleResult, viewOfResult, checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
+import { labelVersion, followResult, settleResult, viewOfResult, checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
 import type { DockerCall } from '../src/server/dockerupdate.js';
 import type { Attestation } from '../src/server/attest.js';
 import { createUpdater, UpdateError } from '../src/server/updater.js';
@@ -202,6 +202,27 @@ describe('after one good update the container runs from an image id', () => {
 
   it('a container run from a bare id with no label is still refused', () => {
     expect(pinnedReason(selfRef({ Config: { Image: NEW_IMG } }))).toMatch(/image id/);
+  });
+});
+
+describe('the version label of an image (every published image through 0.11.0 says "v0.11.0")', () => {
+  it('reads one leading v before a release number as that number, and nothing else', () => {
+    expect(labelVersion('v0.11.0')).toBe('0.11.0');
+    expect(labelVersion('0.11.0')).toBe('0.11.0');
+    for (const odd of ['', 'vv0.11.0', 'v0.11', 'v0.11.0-rc.1', 'V0.11.0', ' v0.11.0', 'latest']) expect(labelVersion(odd), odd).toBe(odd);
+  });
+
+  it('the update accepts an image whose label has the v (the ones already published), UNDO accepts the previous image with it, and the helper records the plain version', async () => {
+    const f = fake();
+    f.script.pullLabel = 'v0.4.0';
+    const got = await pullAndCheck(f.call, ME.slice(0, 12), '0.4.0');
+    expect(got.image).toBe(NEW_IMG);
+    // a label that is a different version is still refused, v or not
+    f.script.pullLabel = 'v0.3.9';
+    await expect(pullAndCheck(f.call, ME.slice(0, 12), '0.4.0')).rejects.toThrow(/is version 0\.3\.9, not 0\.4\.0/);
+    const withV = async (m: string, p: string, b?: unknown): Promise<{ status: number; text: string }> => (p === `/images/${encodeURIComponent(OLD_IMG)}/json` ? { status: 200, text: JSON.stringify({ Id: OLD_IMG, Config: { Labels: { [VERSION_LABEL]: 'v0.3.0' } }, RepoTags: [], RepoDigests: ['ghcr.io/ulm0/gonogo@sha256:' + '3'.repeat(64)] }) } : f.call(m, p, b));
+    await expect(checkPrevious(withV, ME, { previousImage: OLD_IMG, from: '0.3.0' })).resolves.toBeUndefined();
+    await expect(checkPrevious(withV, ME, { previousImage: OLD_IMG, from: '0.3.1' })).rejects.toThrow(/not version 0\.3\.1/);
   });
 });
 
