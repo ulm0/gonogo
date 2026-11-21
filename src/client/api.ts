@@ -1174,6 +1174,7 @@ function parseFrame(text: string): ServerFrame | null {
   else if (frame.t === 'relief') valid = isReliefView(frame.relief);
   else if (frame.t === 'docking') valid = typeof asRecord(frame.docking)?.station === 'string' && Array.isArray(asRecord(frame.docking)?.docks);
   else if (frame.t === 'rollout') valid = typeof asRecord(frame.rollout)?.current === 'string';
+  else if (frame.t === 'knowledge') valid = asRecord(frame.counts) !== null;
   else if (frame.t === 'log') valid = Array.isArray(frame.changed) && Array.isArray(frame.removed);
   else if (frame.t === 'downlink') valid = Array.isArray(asRecord(frame.downlink)?.items) && typeof asRecord(frame.downlink)?.unread === 'number';
   else if (frame.t === 'activity') {
