@@ -68,3 +68,4 @@
   .next-group-nav .btn { flex: none; }
   .next-phone-bar .btn { min-width: 44px; }
 }
+.next-phone-bar .btn { padding-inline: 6px; gap: 4px; }

@@ -10,7 +10,7 @@ export async function geometry(page: Page, phone: boolean): Promise<string[]> {
     const name = (el: Element): string => `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 30)}"`;
     if (document.documentElement.scrollWidth > window.innerWidth + 1) problems.push(`page scrolls sideways: ${document.documentElement.scrollWidth} > ${window.innerWidth}`);
     if (document.documentElement.scrollWidth > window.innerWidth + 1) {
-      const wide = [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getBoundingClientRect().width > 0).slice(0, 4);
+      const wide = [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getBoundingClientRect().width > 0 && e.closest('.next-group-nav') === null).slice(0, 6);
       for (const e of wide) problems.push(`  wider than the screen: ${name(e)} right=${Math.round(e.getBoundingClientRect().right)}`);
     }
     const keys = [...document.querySelectorAll<HTMLElement>('button, a[href], input, select, summary, [role=button]')].filter((el) => {

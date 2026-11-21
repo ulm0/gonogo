@@ -416,3 +416,16 @@
 .rules-block [data-over] {
   color: var(--nogo-text);
 }
+
+/* a long feature name or note wraps inside its row; before, one of them pushed the page 25 px wider than a 390 px phone */
+.rules-features,
+.feat-list,
+.feat-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.feat-row > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
