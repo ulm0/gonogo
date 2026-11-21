@@ -18,6 +18,7 @@ for v in "$FROM" "$TO"; do [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::e
 IMAGE=${E2E_IMAGE:-ghcr.io/ulm0/gonogo}
 NAME=${E2E_NAME:-gonogo-e2e}
 PORT=${E2E_PORT:-17777}
+RUN=$(date +%s)-$$
 DATA=$(mktemp -d "${RUNNER_TEMP:-/tmp}/gonogo-e2e.XXXXXX")
 SOCK=/var/run/docker.sock
 # a runner has passwordless sudo; a daemon of our own (docker-in-docker, as root) has none and needs none
@@ -29,16 +30,19 @@ fail() { echo "::error::$*"; dump; exit 1; }
 
 dump() {
   echo "::group::state at the failure"
-  docker ps -a --filter "name=$NAME" --format '{{.Names}} {{.Image}} {{.Status}}' || true
+  docker ps -a --filter "label=gonogo.e2e=$RUN" --format '{{.Names}} {{.Image}} {{.Status}}' || true
   docker logs --tail 60 "$NAME" 2>&1 || true
   [ -n "$(result_file)" ] && { echo "update.json:"; cat "$(result_file)"; } || true
   echo "::endgroup::"
 }
 cleanup() {
   if [ "${E2E_KEEP:-}" = 1 ]; then echo "kept: container $NAME, data $DATA"; return; fi
-  # the helper, the copies and the old container of every try carry the name of the target
-  docker ps -aq --filter "name=$NAME" | xargs -r docker rm -f >/dev/null 2>&1 || true
-  docker ps -aq --filter "label=gonogo.helper" | xargs -r docker rm -f >/dev/null 2>&1 || true
+  # only what this run made: its containers carry the label gonogo.e2e=$RUN (the update's copies keep the labels of the container they replace),
+  # and its helpers the label gonogo.helper.target=<the full id of one of them>; nothing else on the daemon is touched
+  for id in $(docker ps -aq --no-trunc --filter "label=gonogo.e2e=$RUN"); do
+    docker ps -aq --filter "label=gonogo.helper.target=$id" | xargs -r docker rm -f >/dev/null 2>&1 || true
+  done
+  docker ps -aq --filter "label=gonogo.e2e=$RUN" | xargs -r docker rm -f >/dev/null 2>&1 || true
   $SUDO rm -rf "$DATA" 2>/dev/null || rm -rf "$DATA" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -109,8 +113,7 @@ now=$(date +%s)000
 printf '{"version":1,"checkedAt":%s,"latest":"%s","latestSeenAt":%s}\n' "$now" "$TO" "$now" | $SUDO tee "$DATA/state/rollout.json" >/dev/null
 $SUDO chown 1000:1000 "$DATA/state/rollout.json"
 gid=$(stat -c %g "$SOCK" 2>/dev/null || stat -f %g "$SOCK")
-docker rm -f "$NAME" >/dev/null 2>&1 || true
-docker run -d --name "$NAME" --init --restart unless-stopped -p "127.0.0.1:$PORT:7777" \
+docker run -d --name "$NAME" --label "gonogo.e2e=$RUN" --init --restart unless-stopped -p "127.0.0.1:$PORT:7777" \
   --group-add "$gid" -v "$SOCK:$SOCK" -v "$DATA:$DATA" -v "$DATA/home:/home/node" -w "$DATA/projects" \
   -e GONOGO_HOME="$DATA/state" -e CLAUDE_CONFIG_DIR="$DATA/claude" -e GH_TOKEN \
   "$IMAGE:latest" >/dev/null

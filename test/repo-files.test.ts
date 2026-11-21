@@ -298,6 +298,12 @@ describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scri
     // the moving tag is what the update pulls, so the container runs from :latest and TO must be what :latest is
     expect(script).toContain('docker tag "$IMAGE:$FROM" "$IMAGE:latest"');
     expect(script).toContain('not $TO (the update takes the moving tag');
+    // the cleanup removes only what the run labelled (and the helpers aimed at those), never by name or by the general helper label
+    expect(script).toContain('docker run -d --name "$NAME" --label "gonogo.e2e=$RUN"');
+    expect(script).toContain('--filter "label=gonogo.e2e=$RUN"');
+    expect(script).toContain('--filter "label=gonogo.helper.target=$id"');
+    expect(script).not.toMatch(/--filter "name=/);
+    expect(script).not.toContain('--filter "label=gonogo.helper"');
     expect(statSync(join(root, 'scripts', 'update-e2e.sh')).mode & 0o111).not.toBe(0);
   });
 });
