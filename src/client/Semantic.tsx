@@ -7,7 +7,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { SemanticView } from '../shared/protocol.js';
 import * as api from './api.js';
-import { semanticStatusText } from './semantic.js';
+import { semanticStatusText } from './semanticview.js';
 import { useFeature, useStore } from './store.js';
 import { useRun } from './WallView.js';
 

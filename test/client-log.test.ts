@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LOG_BODY_MAX_CHARS, LOG_TAGS_MAX, LOG_TITLE_MAX_CHARS } from '../src/shared/protocol.js';
 import type { LogEntry, LogSearch } from '../src/shared/protocol.js';
-import { semanticStatusText } from '../src/client/semantic.js';
+import { semanticStatusText } from '../src/client/semanticview.js';
 import { countText, emptyValues, FIELDS, newsText, NO_LOG_NEWS, parseTags, requestOf, rowId, validate, valuesOf } from '../src/client/log.js';
 
 const entry: LogEntry = { id: 'l1', title: 'Cache key', body: 'The cache key has the node version.', tags: ['build', 'cache'], author: 'ana', createdAt: 1, updatedAt: 2 };
