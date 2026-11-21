@@ -63,3 +63,7 @@ The anchors of a Mission Log entry (above) are two modes over one file and a fix
 
 Not ported from multivac: the rewriting of moved anchors, the SQL statement normalization (a `*.sql` file is matched per line), git helpers, anything that writes a repository. **Not verified:** the phase 1 log anchors still run on their own checker (`src/server/anchors.ts`); moving them onto this engine is a separate change.
 
+
+## Checked against multivac
+
+- **Multivac conformance.** `node scripts/multivac-conformance.mjs` (the workflow *Multivac conformance*: on the pull requests that touch the grammar or the export, weekly, and by hand) installs multivac at an **exact version** (0.9.0, `--ignore-scripts`) in a scratch folder, exports a fixture store with the built gonogo (`gonogo knowledge export --multivac`), writes it as `.multivac/invariants.md` in a temp repository and runs `multivac verify --check` (read-only, offline). It asserts that multivac parses **every** converted anchor, that every claim is `ok` (an escaped literal such as `a.b`, `x*y`, `(paren)` or a backslash matches what it says and nothing else) and that the exit code is 0, and that a line multivac must refuse (`\d`) really does produce a parse error. Multivac runs headless: it is a CLI that needs no terminal, network or login. Moving the pinned version is a deliberate change in that script.
