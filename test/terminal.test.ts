@@ -215,6 +215,16 @@ async function recordedScreens(file: string): Promise<Array<{ rows: string[]; co
 describe('analyzeScreen', () => {
   const box = (text: string, width = 60): string[] => [rule(width), `${PROMPT_GLYPH}${NBSP}${text}`, rule(width)];
 
+  it('a modal with no numbered cursor sets modal (not dialog), only where there is no prompt box, in any case; a live box with such words in the transcript does not', () => {
+    for (const line of ['  Esc to cancel', 'Press Enter to continue', '  Enter to confirm · Esc to go back', '  ↵ to select']) {
+      expect(analyzeScreen(['', '  Rename session', '  > new name_', line], 60), line).toMatchObject({ dialog: null, modal: true });
+      expect(analyzeScreen(['', '  Rename session', '  > new name_', line.toLowerCase()], 60).modal, line).toBe(true);
+      expect(analyzeScreen(['  assistant: ' + line.trim(), ...box('')], 60), line).toMatchObject({ dialog: null, modal: false });
+    }
+    // the footer hints of a ready screen, as on FLIGHT's real one
+    expect(analyzeScreen([...box(''), '  plan 73% wk', '  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ? for shortcuts'], 42).dialog).toBeNull();
+  });
+
   it('finds the box on the real screen of FLIGHT (t110): 42 columns and a plugin banner set into the rule above the box', () => {
     const rows = [
       '✻ Churned for 13s · done 1:37 AM',
@@ -235,7 +245,7 @@ describe('analyzeScreen', () => {
 
   it('finds the idle box, an empty one included (the NBSP must survive)', () => {
     const rows = ['', '  some output', ...box(''), '  ? for shortcuts'];
-    expect(analyzeScreen(rows, 80)).toEqual({ cols: 80, rows: rows.length, promptBox: true, dialog: null, promptText: '' });
+    expect(analyzeScreen(rows, 80)).toEqual({ cols: 80, rows: rows.length, promptBox: true, dialog: null, promptText: '', modal: false });
   });
 
   it('reports a placeholder or typed text as information, trimmed', () => {
@@ -257,7 +267,7 @@ describe('analyzeScreen', () => {
     expect(analyzeScreen([RULE_CHAR.repeat(19), `${PROMPT_GLYPH}${NBSP}`, RULE_CHAR.repeat(19)], 40).promptBox).toBe(false);
     expect(analyzeScreen([rule(), `${PROMPT_GLYPH}${NBSP}hello`], 40).promptBox).toBe(false);
     expect(analyzeScreen([`${PROMPT_GLYPH}${NBSP}hello`, rule()], 40).promptBox).toBe(false);
-    expect(analyzeScreen([], 40)).toEqual({ cols: 40, rows: 0, promptBox: false, dialog: null, promptText: null });
+    expect(analyzeScreen([], 40)).toEqual({ cols: 40, rows: 0, promptBox: false, dialog: null, promptText: null, modal: false });
   });
 
   it('takes the lowest box when an older echo also sits between rules', () => {
@@ -1195,7 +1205,7 @@ describe('terminal host with a real pty', () => {
       await until(() => host.screen('a')?.promptBox === true, 'the parsed box');
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.every((probe) => probe === null)).toBe(true); // the listener runs right after mirror.write, before it is parsed
-      expect(host.screen('a')).toEqual({ cols: 120, rows: 40, promptBox: true, dialog: null, promptText: '' });
+      expect(host.screen('a')).toEqual({ cols: 120, rows: 40, promptBox: true, dialog: null, promptText: '', modal: false });
     });
 
     it('survives a handler that throws: the others still run, the host keeps working, an unsubscribed handler is silent', async () => {

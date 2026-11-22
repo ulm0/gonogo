@@ -292,6 +292,11 @@ export const DIALOG_PATTERNS: ReadonlyArray<{ kind: DialogKind; source: string }
   { kind: 'permission', source: '^\\s*Do you want to ' },
   { kind: 'menu', source: '^\\s*❯\\s+(\\d+\\.\\s|No, |Yes, )' },
 ];
+/**
+ * A modal with no numbered cursor (a text field, "Press Enter to continue", "Esc to cancel"). Looked for ONLY on a screen with no prompt box, so a line of
+ * prose in the transcript above a live box can never make an agent look blocked (t110 follow-up).
+ */
+export const GENERIC_DIALOG_PATTERN = '(?:Enter|↵) to (?:confirm|select|continue|submit)|Esc to (?:cancel|go back|exit)|Press Enter';
 /** The one reason text for startup dialogs (design). */
 export const STARTUP_DIALOG_REASON = 'startup dialog: answer it in the terminal';
 /** needs_you reason when a dialog is on screen but no PermissionRequest hook announced it. */

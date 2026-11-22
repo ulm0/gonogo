@@ -2146,6 +2146,8 @@ export interface ScreenProbe {
   dialog: DialogKind | null;
   /** Text after the prompt glyph in the box row (trimmed), null when there is no box. May be a grey placeholder. */
   promptText: string | null;
+  /** A modal with no numbered cursor (a text field, "Press Enter", "Esc to cancel") is on a screen with no prompt box. Read only by the 60 s safety net; absent from an older pty host. */
+  modal?: boolean;
 }
 export interface TitleInfo {
   glyph: TitleGlyph;

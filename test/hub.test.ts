@@ -1443,6 +1443,14 @@ describe('delivery to each recipient state (5.9)', () => {
       await h.advance(RECONCILE_TICK_MS);
       expect(h.typed).toHaveLength(1);
     });
+    it('a generic modal ("Esc to cancel") is never forced, for any sender', async () => {
+      const h = await withAna();
+      await h.hireRaw('bob');
+      h.setScreen('ana', { promptBox: false, modal: true });
+      h.send('bob', 'ana');
+      await h.advance(DIRECTOR_STUCK_FORCE_MS * 3);
+      expect(h.typed).toHaveLength(0);
+    });
     it('a message from an agent is typed after the same wait, but nobody is alerted', async () => {
       const h = await withAna();
       await h.hireRaw('bob');
