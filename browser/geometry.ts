@@ -15,7 +15,7 @@ export async function geometry(page: Page, phone: boolean, scope = 'body'): Prom
       for (const e of wide) problems.push(`  wider than the screen: ${name(e)} right=${Math.round(e.getBoundingClientRect().right)}`);
     }
     const fixed = (el: Element): boolean => {
-      for (let e: Element | null = el; e !== null; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return true;
+      for (let e: Element | null = el; e !== null; e = e.parentElement) if (['fixed', 'sticky'].includes(getComputedStyle(e).position)) return true;
       return false;
     };
     const keys = [...document.querySelectorAll<HTMLElement>('button, a[href], input, select, summary, [role=button]')].filter((el) => {
@@ -30,7 +30,7 @@ export async function geometry(page: Page, phone: boolean, scope = 'body'): Prom
       const a = keys[i].getBoundingClientRect();
       for (let j = i + 1; j < keys.length; j += 1) {
         if (keys[i].contains(keys[j]) || keys[j].contains(keys[i])) continue;
-        // a bar fixed to the screen is over whatever scrolls under it, by design
+        // a bar fixed or sticky to the screen (the bottom bar of a phone) is over whatever scrolls under it, by design
         if (fixed(keys[i]) !== fixed(keys[j])) continue;
         const b = keys[j].getBoundingClientRect();
         const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
@@ -82,7 +82,8 @@ export async function duplicates(page: Page, scope: string): Promise<string[]> {
       if (text === '') return;
       const key = text;
       const before = seen.get(key);
-      if (before !== undefined && before !== kind + ' ' + where) problems.push(`"${text}" is both ${before} and ${kind} ${where}`.replace('  ', ' '));
+      // a key and a heading with one word are two roles (a group's key "Room" and the Features block's heading "ROOM"): heard apart
+      if (before !== undefined && before !== kind + ' ' + where && ![before, kind].every((k) => /a key|a heading/.test(k))) problems.push(`"${text}" is both ${before} and ${kind} ${where}`.replace('  ', ' '));
       else if (before === kind + ' ' + where) problems.push(`"${text}" appears twice as ${kind} ${where}`);
       else seen.set(key, kind + ' ' + where);
     };
