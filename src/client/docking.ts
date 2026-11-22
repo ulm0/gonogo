@@ -19,7 +19,20 @@ export function addressProblem(text: string): string | undefined {
   return plain ? undefined : fail;
 }
 
-export const codeProblem = (text: string): string | undefined => (text.trim().startsWith(CODE_PREFIX) ? undefined : `Paste the whole code from the other station. It starts with ${CODE_PREFIX}`);
+/** Only an empty box is told here: the server reads a code with or without its first words, with spaces or line breaks, and says what is wrong with one that is cut short. */
+export const codeProblem = (text: string): string | undefined => (text.trim() === '' ? 'Paste the whole code from the other station.' : undefined);
+
+/** The address to start the Address box with: the page's own, unless that works only on this computer and the server knows a network address of it. */
+export function suggestedAddress(origin: string, addresses: readonly string[]): string {
+  try {
+    const url = new URL(origin);
+    const here = url.hostname === 'localhost' || url.hostname === '[::1]' || url.hostname.startsWith('127.') || url.hostname === '0.0.0.0';
+    const first = addresses[0];
+    return here && first !== undefined ? `${url.protocol}//${first}${url.port === '' ? '' : `:${url.port}`}` : origin;
+  } catch {
+    return origin;
+  }
+}
 
 /** The page's own address is the default answer, but the other station cannot reach a name that works only on this computer. */
 export function localNote(address: string): string | null {
@@ -30,7 +43,7 @@ export function localNote(address: string): string | null {
     return null;
   }
   const here = host === 'localhost' || host === '[::1]' || host.startsWith('127.') || host === '0.0.0.0';
-  return here ? 'This address works only on this computer. The other station needs one it can reach, such as a public name or a VPN address.' : null;
+  return here ? 'This address works only on this computer. The other station needs one it can reach: this computer\'s address on your network, a public name or a VPN address.' : null;
 }
 
 export const toneOf = (dock: DockView): 'go' | 'nogo' | 'quiet' => (dock.status === 'ok' ? 'go' : dock.status === 'down' ? 'nogo' : 'quiet');

@@ -201,6 +201,114 @@ describe('docking code', () => {
   });
 });
 
+describe('a code as people carry it', () => {
+  const T = 'ab'.repeat(32);
+  const hand = (u: string, token = T): string => 'gonogo-dock:' + Buffer.from(JSON.stringify({ u, t: token })).toString('base64url');
+
+  it('a whole code pairs with or without its first words, with spaces, line breaks, quotes, a trailing dot, zero-width marks and the other base64 alphabet', async () => {
+    const w = world();
+    const forms: Array<(code: string) => string> = [
+      (c) => c,
+      (c) => c.slice('gonogo-dock:'.length),
+      (c) => c.toUpperCase().slice(0, 12) + c.slice(12),
+      (c) => `  ${c.slice(0, 40)}\n${c.slice(40, 80)}\r\n ${c.slice(80)}  `,
+      (c) => `"${c}".`,
+      (c) => `<${c}>`,
+      (c) => c.slice(0, 20) + '\u200b' + c.slice(20) + '\u00a0',
+      (c) => c.replace('gonogo-dock:', 'gonogo-dock%3A'),
+      (c) => c.replace('gonogo-dock:', 'gonogo-dock-'),
+      (c) => c.slice('gonogo-dock:'.length).replace(/-/g, '+').replace(/_/g, '/'),
+    ];
+    for (const [i, form] of forms.entries()) {
+      const a = await w.make(`alpha${i}`, `http://a${i}.test`);
+      const b = await w.make(`beta${i}`, `http://b${i}.test`);
+      const { code } = a.docking.createCode({ url: a.origin });
+      await expect(b.docking.pair({ code: form(code), url: b.origin }), `form ${i}`).resolves.toMatchObject({ name: `alpha${i}` });
+    }
+  });
+
+  it('says what is wrong with a code that is cut short, empty, not a code or with a wrong token', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const { code } = a.docking.createCode({ url: a.origin });
+    const refused = async (text: unknown): Promise<string> => {
+      try {
+        await a.docking.pair({ code: text, url: 'http://a2.test' });
+      } catch (error) {
+        const info = hubErrorInfo(error);
+        expect(info?.code).toBe('bad_request');
+        expect(info?.field).toBe('code');
+        return info?.message ?? '';
+      }
+      throw new Error('expected a refusal');
+    };
+    // the token cut in the middle: the very case of the Director's code
+    const whole = hand('http://192.168.0.5:7777');
+    expect(await refused(whole.slice(0, whole.length - 20))).toMatch(/cut short \(\d+ characters arrived, and it stops in the middle: its token has \d+ of 64 characters\)/);
+    expect(await refused(code.slice(0, 40))).toMatch(/cut short \(\d+ characters arrived, and it stops in the middle\)/);
+    expect(await refused(hand('http://192.168.0.5:7777', 'ab'.repeat(20)).replace(/.$/, '')) ).toMatch(/cut short/);
+    expect(await refused(hand('http://192.168.0.5:7777', 'ab'.repeat(20)))).toMatch(/cut short \(its token has 40 of 64 characters\)/);
+    expect(await refused('')).toMatch(/paste the code/);
+    expect(await refused(undefined)).toMatch(/paste the code/);
+    expect(await refused('gonogo-dock:')).toMatch(/empty after its first words/);
+    expect(await refused('hello world, this is not it')).toMatch(/not a docking code/);
+    expect(await refused('gonogo-dock:' + Buffer.from('{"u":"x"}').toString('base64url'))).toMatch(/not a docking code/);
+    expect(await refused(hand('http://192.168.0.5:7777', 'zz'.repeat(32)))).toMatch(/token is wrong/);
+    expect(await refused(hand('ftp://x/'))).toMatch(/web address with no path/);
+    for (const message of [await refused(whole.slice(0, 60))]) expect(message).toMatch(/Copy the whole code again/);
+  });
+
+  it('a code with an address that works only on one computer: a warning when it is made, the address named when the other side cannot be reached, and a refusal to give another computer a loopback address of its own', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://127.0.0.1:7777');
+    const made = a.docking.createCode({ url: a.origin });
+    expect(made.warning).toMatch(/works only on this computer/);
+    expect(a.docking.createCode({ url: 'http://192.168.0.5:7777' }).warning).toBeUndefined();
+    const b = await w.make('beta', 'http://192.168.0.9:7777');
+    // the other side is nowhere to be found (it was on another computer): the loopback address is named as the reason
+    await expect(b.docking.pair({ code: made.code, url: b.origin })).resolves.toBeDefined(); // the fake network knows 127.0.0.1:7777, like two stations on one computer
+    const lonely = await w.make('gamma', 'http://192.168.0.11:7777');
+    await expect(lonely.docking.pair({ code: hand('http://127.0.0.1:9999'), url: lonely.origin })).rejects.toMatchObject({ message: expect.stringMatching(/could not reach.*The code carries http:\/\/127\.0\.0\.1:9999, an address that works only on the station that made it/) as string });
+    const local = await w.make('delta', 'http://localhost:7778');
+    await expect(local.docking.pair({ code: hand('http://192.168.0.5:7777'), url: local.origin })).rejects.toMatchObject({ code: 'bad_request', field: 'url', message: expect.stringMatching(/works only on this computer, so 192\.168\.0\.5:7777 could never reach it/) as string });
+  });
+
+  it('a station that does not accept the address it was reached by says what to start it with', async () => {
+    const docking = createDocking({
+      dir: mkdtempSync(join(tmpdir(), 'gonogo-dock-')),
+      name: 'alpha',
+      now: () => 1,
+      fetch: async () => new Response('forbidden host', { status: 403 }),
+      deliver: () => ({ ok: true, id: 'm1', to: 'x', status: 'queued', note: null }),
+      roster: () => [],
+      tasks: { list: () => [], create: async () => ({}) as Task, handOff: async () => ({}) as Task },
+      emit: () => undefined,
+      log: nullLogger,
+    });
+    cleanups.push(() => undefined);
+    await docking.load();
+    await expect(docking.pair({ code: hand('http://192.168.86.173:7777'), url: 'http://192.168.86.2:7777' })).rejects.toMatchObject({
+      message: expect.stringMatching(/does not accept the address 192\.168\.86\.173: on that station start gonogo with --allow-host 192\.168\.86\.173 \(or set GONOGO_ALLOWED_HOSTS=192\.168\.86\.173\)/) as string,
+    });
+  });
+
+  it('the view carries the network addresses of this computer for the Address box', async () => {
+    const docking = createDocking({
+      dir: mkdtempSync(join(tmpdir(), 'gonogo-dock-')),
+      name: 'alpha',
+      now: () => 1,
+      fetch: async () => new Response('{}'),
+      deliver: () => ({ ok: true, id: 'm1', to: 'x', status: 'queued', note: null }),
+      roster: () => [],
+      addresses: () => ['192.168.0.5'],
+      tasks: { list: () => [], create: async () => ({}) as Task, handOff: async () => ({}) as Task },
+      emit: () => undefined,
+      log: nullLogger,
+    });
+    expect(docking.view().addresses).toEqual(['192.168.0.5']);
+  });
+});
+
 describe('pairing', () => {
   it('stores the same 32-byte secret on both sides, in a file only the owner reads, and shows each the other', async () => {
     const w = world();

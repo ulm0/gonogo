@@ -10,7 +10,7 @@ import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { DOCKS_MAX } from '../shared/protocol.js';
 import type { DockCode, DockView, Task, TaskStatus } from '../shared/protocol.js';
 import * as api from './api.js';
-import { addressProblem, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, toneOf, undockedText, wordOf } from './docking.js';
+import { addressProblem, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, suggestedAddress, toneOf, undockedText, wordOf } from './docking.js';
 import { useNow, useStore } from './store.js';
 import { copyText } from './uplink.js';
 import { useRun } from './WallView.js';
@@ -28,9 +28,9 @@ interface Problems {
 }
 
 /** The address of this station, and for Pair the code. Make a code answers with the code, Pair with a new row. */
-function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; onMade(made: DockCode): void; onNotice(text: string): void }): ReactElement {
+function Form({ mode, addresses, onDone, onMade, onNotice }: { mode: Mode; addresses: readonly string[]; onDone(): void; onMade(made: DockCode): void; onNotice(text: string): void }): ReactElement {
   const id = useId();
-  const [address, setAddress] = useState(roomOrigin());
+  const [address, setAddress] = useState(suggestedAddress(roomOrigin(), addresses));
   const [code, setCode] = useState('');
   const [problems, setProblems] = useState<Problems>({});
   const [topError, setTopError] = useState<string | null>(null);
@@ -155,6 +155,7 @@ function CodePanel({ made, now, onDone, onNotice }: { made: DockCode; now: numbe
       <p>
         <strong>Docking code.</strong> {expiresText(made.expiresAt, now)} Give it to the Director of the other station: they paste it under Pair, with the address of their own station. gonogo will not show it again.
       </p>
+      {made.warning !== undefined && <p className="error">{made.warning}</p>}
       <input ref={field} readOnly className="input up-value" aria-label="Docking code" value={made.code} spellCheck={false} onFocus={selectAll} />
       <div className="up-keys">
         <button type="button" className="btn" onClick={() => void copyText(made.code).then((ok) => onNotice(ok ? 'Code copied.' : 'Could not copy. Select the code and copy it.'))}>
@@ -282,7 +283,7 @@ export function DockingPanel(): ReactElement {
           This station is <strong>{docking.station}</strong>. Its agents are written to as name@{docking.station}. Dock only with people you trust: their agents can reach yours.
         </p>
       )}
-      {mode !== null && <Form key={mode} mode={mode} onDone={() => closeTo(() => setMode(null))} onMade={setMade} onNotice={setNotice} />}
+      {mode !== null && <Form key={mode} mode={mode} addresses={docking.addresses ?? []} onDone={() => closeTo(() => setMode(null))} onMade={setMade} onNotice={setNotice} />}
       {made !== null && <CodePanel made={made} now={now} onDone={() => closeTo(() => setMade(null))} onNotice={setNotice} />}
       <div className="win-list module">
         {docking.docks.length === 0 ? (

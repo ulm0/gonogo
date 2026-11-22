@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { stat } from 'node:fs/promises';
-import { homedir, hostname } from 'node:os';
+import { homedir, hostname, networkInterfaces } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
@@ -1056,6 +1056,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       deliver: (station, message) => hubInstance.sendFromStation(station, message),
       roster: () => hubInstance.views().map((v) => ({ name: v.name, role: v.role.slice(0, ROSTER_ROLE_CHARS), state: v.state, boss: v.boss })),
+      addresses: () =>
+        Object.values(networkInterfaces())
+          .flatMap((list) => list ?? [])
+          .filter((a) => a.family === 'IPv4' && !a.internal)
+          .map((a) => a.address)
+          .slice(0, 4),
       tasks,
       emit: (view) => web?.broadcast({ t: 'docking', docking: view }),
       log: log.child('docking'),

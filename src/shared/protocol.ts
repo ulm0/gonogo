@@ -989,6 +989,8 @@ export interface DockingView {
   /** This station's own name. */
   station: string;
   docks: DockView[];
+  /** The network addresses (IPv4) of this computer, for the Address box when the page was opened as localhost. Empty when none is known. */
+  addresses?: string[];
 }
 /** POST /api/docking/code: the public address of this station, as the other side will reach it. */
 export interface DockCodeRequest {
@@ -998,6 +1000,8 @@ export interface DockCodeRequest {
 export interface DockCode {
   code: string;
   expiresAt: number;
+  /** Said when the address in the code works only on this computer. */
+  warning?: string;
 }
 /** POST /api/docking/pair: the code from the other side, and the public address of this station. */
 export interface DockPairRequest {

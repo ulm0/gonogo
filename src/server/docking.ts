@@ -136,6 +136,8 @@ export interface DockingOptions {
   deliver(station: string, message: StationMessage): SendResult;
   /** The agents of this station, for the pull of the other side. */
   roster(): DockedAgent[];
+  /** The network addresses of this computer (not loopback), for the page's Address box. */
+  addresses?(): string[];
   tasks: Pick<Tasks, 'list' | 'create' | 'handOff'>;
   /** The history of triggers (docs/features/triggers.md): a hand-off to a station and every call that came in from one. */
   trigger?(entry: TriggerInput): void;
@@ -176,6 +178,44 @@ function publicUrl(value: unknown, field: string): string {
   }
   if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || url.pathname !== '/') throw fail;
   return url.origin;
+}
+
+/** Whether a host name is this computer only: loopback, `localhost`, the wildcard. */
+export const isLoopbackHost = (host: string): boolean => {
+  const bare = host.toLowerCase().replace(/^\[|\]$/g, '');
+  return bare === 'localhost' || bare === '::1' || bare === '::' || bare === '0.0.0.0' || /^127\./.test(bare);
+};
+
+/**
+ * A docking code as people actually carry it: with or without the `gonogo-dock:` words, with spaces, line breaks, quotes or a trailing dot from a chat, a ticket or
+ * a terminal. Throws a bad_request on field `code` that says what is wrong with it: cut short, not a code, no address worth trying.
+ */
+export function readCode(raw: unknown): { u: string; t: string } {
+  const fail = (why: string): HubError => bad(`${why}. Copy the whole code again from the other station.`, 'code');
+  if (typeof raw !== 'string' || raw.trim() === '') throw bad('paste the code from the other station', 'code');
+  // everything that is not part of a code and is added by a chat, a mail or a terminal: white space, zero-width marks, quotes, brackets, a final dot or comma
+  const cleaned = raw.replace(/[\s\u200b-\u200f\u2060\ufeff"'`<>()\[\]]/g, '').replace(/[.,;]+$/, '');
+  const body = cleaned.replace(/^gonogo-dock(?::|%3a|[-_.])?/i, '');
+  if (body === '') throw fail('the code is empty after its first words');
+  if (!/^[A-Za-z0-9_+/=-]+$/.test(body)) throw fail('this is not a docking code (it has characters a code never has)');
+  let text: string;
+  try {
+    text = Buffer.from(body.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), 'base64url').toString('utf8');
+  } catch {
+    throw fail('this is not a docking code');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // it starts like one and stops in the middle: the copy lost its end
+    const partToken = /"t":"([0-9a-f]*)$/.exec(text)?.[1];
+    throw fail(text.startsWith('{"u":') ? `the code is cut short (${body.length} characters arrived, and it stops in the middle${partToken === undefined ? '' : `: its token has ${partToken.length} of 64 characters`})` : 'this is not a docking code');
+  }
+  if (!isRecord(parsed) || typeof parsed.t !== 'string' || typeof parsed.u !== 'string') throw fail('this is not a docking code');
+  if (!HEX64_RE.test(parsed.t)) throw fail(/^[0-9a-f]*$/.test(parsed.t) && parsed.t.length < 64 ? `the code is cut short (its token has ${parsed.t.length} of 64 characters)` : 'this is not a docking code (its token is wrong)');
+  const url = publicUrl(parsed.u, 'code');
+  return { u: url, t: parsed.t };
 }
 
 function readObject(body: Buffer): Record<string, unknown> {
@@ -262,7 +302,7 @@ export function createDocking(options: DockingOptions): Docking {
     const state = liveOf(dock);
     return { id: dock.id, name: dock.name, url: dock.url, since: dock.since, status: state.status, seenAt: state.seenAt, error: state.error, agents: state.agents.map((a) => ({ ...a })) };
   };
-  const view = (): DockingView => ({ station: options.name, docks: docks.map(dockView) });
+  const view = (): DockingView => ({ station: options.name, docks: docks.map(dockView), addresses: options.addresses?.() ?? [] });
   /** Tells the browsers, unless nothing they show has changed since the last time. */
   const publish = (): void => {
     const next = view();
@@ -310,6 +350,11 @@ export function createDocking(options: DockingOptions): Docking {
       data = JSON.parse(text);
     } catch {
       // not JSON: an error below
+    }
+    // a station answers a Host name it was not started for with these two words, and nothing else: say what to do about it
+    if (status === 403 && text.trim() === 'forbidden host') {
+      const host = new URL(url).hostname;
+      throw new HubError('unavailable', `${label} does not accept the address ${host}: on that station start gonogo with --allow-host ${host} (or set GONOGO_ALLOWED_HOSTS=${host}); --allow-host ${host}:hooks opens only docking and webhooks to that name`);
     }
     if (status < 200 || status > 299) throw remoteError(label, status, data);
     if (!isRecord(data)) throw new HubError('unavailable', `${label} sent an answer that is not JSON`);
@@ -530,23 +575,20 @@ export function createDocking(options: DockingOptions): Docking {
       const token = random(32);
       const expiresAt = now() + DOCK_CODE_TTL_MS;
       pending.set(token, expiresAt);
-      return { code: CODE_PREFIX + Buffer.from(JSON.stringify({ u: url, t: token })).toString('base64url'), expiresAt };
+      const loopback = isLoopbackHost(new URL(url).hostname);
+      return { code: CODE_PREFIX + Buffer.from(JSON.stringify({ u: url, t: token })).toString('base64url'), expiresAt, ...(loopback ? { warning: `${url} works only on this computer: a station on another computer cannot dock with this code. Type this station's network address and make the code again.` } : {}) };
     },
 
     async pair(input) {
       if (!isRecord(input)) throw bad('request body must be a JSON object');
       const own = publicUrl(input.url, 'url');
-      let theirs: { u: string; t: string };
-      try {
-        const text = typeof input.code === 'string' ? input.code.trim() : '';
-        if (!text.startsWith(CODE_PREFIX)) throw new Error('no prefix');
-        const parsed: unknown = JSON.parse(Buffer.from(text.slice(CODE_PREFIX.length), 'base64url').toString('utf8'));
-        if (!isRecord(parsed) || typeof parsed.t !== 'string' || !HEX64_RE.test(parsed.t)) throw new Error('no token');
-        theirs = { u: publicUrl(parsed.u, 'code'), t: parsed.t };
-      } catch {
-        throw bad('code is not a docking code: copy the whole of it from the other station', 'code');
-      }
+      const theirs = readCode(input.code);
+      // a code made on the page of a station that was opened as localhost carries that address, which only that computer can reach
+      const loopbackNote = isLoopbackHost(new URL(theirs.u).hostname) ? ` The code carries ${theirs.u}, an address that works only on the station that made it: on that station make a new code with its network address (the Address box).` : '';
       if (docks.length >= DOCKS_MAX) throw new HubError('conflict', `at most ${DOCKS_MAX} stations can be docked`);
+      if (isLoopbackHost(new URL(own).hostname) && !isLoopbackHost(new URL(theirs.u).hostname)) {
+        throw bad(`the address of this station is ${own}, which works only on this computer, so ${new URL(theirs.u).host} could never reach it: type this station's network address`, 'url');
+      }
       const nonce = random(16);
       const answer = await transport(
         new URL(theirs.u).host,
@@ -555,7 +597,10 @@ export function createDocking(options: DockingOptions): Docking {
         { 'content-type': 'application/json' },
         JSON.stringify({ id, name: options.name, url: own, nonce, proof: mac(theirs.t, 'pair', nonce, id, options.name, own) }),
         DOCK_TIMEOUT_MS,
-      );
+      ).catch((error: unknown) => {
+        if (error instanceof HubError && error.code === 'unavailable' && loopbackNote !== '') throw new HubError('unavailable', `${error.message}.${loopbackNote}`);
+        throw error;
+      });
       const { id: theirId, name, nonce: mine, ack } = answer;
       if (typeof theirId !== 'string' || !HEX32_RE.test(theirId) || typeof name !== 'string' || !STATION_RE.test(name) || typeof mine !== 'string' || !NONCE_RE.test(mine) || typeof ack !== 'string') {
         throw bad('the station at that address did not answer as a gonogo station', 'code');
