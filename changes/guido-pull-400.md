@@ -1,1 +1,0 @@
-- **A refused Docker self-update pull says why.** The daemon's own message is shown ("invalid reference format", for example) and only a 401, 403 or 404 is called a private image. On a 400 the pull is asked again once with the reference in one piece, then with the daemon's platform.

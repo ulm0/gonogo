@@ -4,6 +4,13 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.12.3 (2026-11-22)
+
+The forced pointer never types into a modal, and a refused Docker update pull now shows the daemon's own reason and retries the common 400 cases.
+
+- **A modal without a numbered cursor (a text field, "Press Enter to continue", "Esc to cancel") sets `modal` on the screen probe (not a dialog).** It is looked for only where the prompt box is missing, and the safety net that types waiting mail after a minute never fires on it.
+- **A refused Docker self-update pull says why.** The daemon's own message is shown ("invalid reference format", for example) and only a 401, 403 or 404 is called a private image. On a 400 the pull is asked again once with the reference in one piece, then with the daemon's platform.
+
 ## 0.12.2 (2026-11-22)
 
 Mail now reaches an agent whose console shows a title in the prompt's rule, and a 60 s safety net types the pointer for any mail stuck on an idle agent.
