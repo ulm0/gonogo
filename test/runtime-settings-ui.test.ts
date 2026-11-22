@@ -16,6 +16,10 @@ describe('what a setting says', () => {
     expect(SETTING_TEXT.scrubEnv.warning).toMatch(/left out of the scrub reaches every agent/);
   });
 
+  it('says once the Max Q control is moved the room keeps its own value', () => {
+    expect(SETTING_TEXT.maxWorking.help).toMatch(/once it is moved, this room keeps its own value and no longer follows the one for all rooms/);
+  });
+
   it('says where a value comes from and when a change applies', () => {
     expect(SOURCE_TEXT).toEqual({ room: 'this room', global: 'all rooms', env: 'environment', default: 'built-in default' });
     expect(APPLIES_TEXT.live).toBe('applies at once');
@@ -51,6 +55,9 @@ describe('the editor', () => {
   it('says a refusal in words: the parser\'s reason as it is, the owner-only 403, the 409 of a room started by hand', () => {
     expect(refusalText({ message: 'max hops: use a whole number from 1 to 100', status: 400 }, 'room')).toBe('max hops: use a whole number from 1 to 100');
     expect(refusalText({ message: 'agentCmd is changed from the Director\'s own login', status: 403 }, 'room')).toBe('Only the owner’s own signed-in session can change this.');
+    // any other 403 keeps the server's words: a cancelled password prompt, a terminal told to use the browser
+    expect(refusalText({ message: 'confirm with your password', status: 403, stepUp: true }, 'room')).toBe('confirm with your password');
+    expect(refusalText({ message: 'do this in the browser', status: 403 }, 'room')).toBe('do this in the browser');
     expect(refusalText({ message: 'this server has no supervisor', status: 409 }, 'global')).toMatch(/started by hand/);
     expect(refusalText({ message: 'conflict', status: 409 }, 'room')).toBe('conflict');
   });
