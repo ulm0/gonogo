@@ -1424,6 +1424,7 @@ describe('delivery to each recipient state (5.9)', () => {
       await h.advance(10_000 + RECONCILE_TICK_MS);
       expect(h.typed).toHaveLength(1);
       expect(h.notices.filter(([kind]) => kind === 'redline')).toEqual([]);
+      expect(h.warnings.filter((w) => /has waited \d+ s on a screen that is not ready: promptBox=false dialog=null/.test(w))).toHaveLength(1);
     });
     it('a dialog or a working title is never forced; the Director is told once, with the reason, and it types when the screen is ready', async () => {
       const h = await withAna();

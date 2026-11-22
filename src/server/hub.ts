@@ -485,6 +485,8 @@ interface Rt {
   redline: string | null;
   /** The id of the Director's message the Director was told is waiting (once per message). */
   stuckAlerted: string | null;
+  /** The id of the oldest message whose wait on a not-ready screen was written to the log (once per episode). */
+  stuckLogged: string | null;
   /** The last tool call (name and input) and how many times in a row it came, for the agent itself ('main') and for each subagent by its agent_id (docs/subagents-spec.md). */
   repeat: Map<string, { sig: string; count: number }>;
   /** Times of failed tool calls (the same keys) and of API errors in their windows, oldest first. */
@@ -674,6 +676,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       removed: false,
       redline: null,
       stuckAlerted: null,
+      stuckLogged: null,
       repeat: new Map(),
       toolFailAt: new Map(),
       subagents: new Map(),
@@ -1372,6 +1375,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         }
         // Only a screen that shows nothing wrong is forced: no dialog, no working glyph, and the hooks say idle.
         const oldest = queued(rt)[0];
+        if (oldest !== undefined && io.now() - oldest.at >= DIRECTOR_STUCK_FORCE_MS && rt.stuckLogged !== oldest.id) {
+          rt.stuckLogged = oldest.id;
+          // which of the three checks failed, once per wait (the screen's own lines are not here: the probe is a summary, the pty host keeps the rest)
+          log.warn(`mail for ${name} has waited ${Math.round((io.now() - oldest.at) / 1000)} s on a screen that is not ready: promptBox=${String(probe.promptBox)} dialog=${String(probe.dialog)} titleGlyph=${String(glyph)} state=${rt.state} screen=${String(probe.cols)}x${String(probe.rows)} promptText=${JSON.stringify((probe.promptText ?? '').slice(0, 80))}`);
+        }
         const force = oldest !== undefined && io.now() - oldest.at >= DIRECTOR_STUCK_FORCE_MS && probe.dialog === null && glyph !== 'working' && rt.state === 'idle';
         if (!force) {
           setWaitNotes(rt, notReady);
