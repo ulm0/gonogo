@@ -4,6 +4,14 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.12.4 (2026-11-22)
+
+Flight Rules shows each control and label once, and no Tool permissions select or password field is cut.
+
+Flight Rules no longer shows anything twice: the index of the groups is gone (the group headings are the keys), the key back to the room says "← Room" so it is not named like the Room group, and a setting that is open in its row no longer repeats its name as a title and its value line (the screen reader still has them).
+Keys that repeat from block to block have names of their own for a screen reader (Save, Discard changes and Clear of the rules and of the template, Set of each engine's model, Off of Max Q, Read it first of each registry entry), and two rows no longer carry the name of a group or of a key inside them.
+The WebFetch and WebSearch selects of Tool permissions are no longer cut on a desktop, and the password fields of Security stack on a phone with a short placeholder (the 12 characters are in the hint).
+
 ## 0.12.3 (2026-11-22)
 
 The forced pointer never types into a modal, and a refused Docker update pull now shows the daemon's own reason and retries the common 400 cases.
