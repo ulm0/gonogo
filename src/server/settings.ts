@@ -3,6 +3,7 @@
  * First value wins: room file, global file, environment, built-in default. A file is read as data: capped, only the keys listed here,
  * only strings, each value checked by the parser the environment value goes through; whatever fails is dropped with a warning.
  */
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { MAX_AGENTS } from '../shared/protocol.js';
@@ -191,8 +192,8 @@ function readValues(path: string | null, allowed: (key: SettingKey) => boolean, 
 function writeValues(path: string, values: Values): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   // a temporary file and a rename: a symlink planted under the final name is replaced, never written through
-  const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify({ version: 1, values })}\n`, { mode: 0o600 });
+  const temp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+  writeFileSync(temp, `${JSON.stringify({ version: 1, values })}\n`, { mode: 0o600, flag: 'wx' });
   renameSync(temp, path);
 }
 
@@ -221,6 +222,11 @@ export function createSettings(options: { roomHome: string; globalPath: string |
     }
   };
   const effective = (key: SettingKey): { value: string | null; source: SettingSource } => {
+    if (key === 'scrubEnv') {
+      // the scrub list only grows: what the operator put in the environment stays scrubbed whatever the files say; the files add to it
+      const names = [...new Set([envOf(key), global[key], room[key]].flatMap((text) => (text ?? '').split(',')).filter((n) => n !== ''))];
+      return { value: names.length === 0 ? null : names.join(','), source: room[key] !== undefined ? 'room' : global[key] !== undefined ? 'global' : envOf(key) !== null ? 'env' : 'default' };
+    }
     const own = SETTING_KEYS[key].scope === 'both' ? room[key] : undefined;
     if (own !== undefined) return { value: own, source: 'room' };
     const shared = global[key];
