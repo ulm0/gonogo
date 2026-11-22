@@ -23,10 +23,11 @@ describe('what a setting says', () => {
     expect(APPLIES_TEXT.restart).toMatch(/restart/);
   });
 
-  it('says an empty Max Q is no limit, and nothing set anywhere is the built-in default', () => {
+  it('says an empty Max Q is no limit, and nothing set anywhere is "not set" (the chip says built-in default: the two never say the same words)', () => {
     expect(valueText(row({ key: 'maxWorking', value: '' }))).toBe('no limit');
     expect(valueText(row({ key: 'scrubEnv', value: '' }))).toBe('empty');
-    expect(valueText(row({ value: null }))).toBe('built-in default');
+    expect(valueText(row({ value: null }))).toBe('not set');
+    expect(valueText(row({ value: null }))).not.toBe(SOURCE_TEXT.default);
     expect(valueText(row({ value: '12' }))).toBe('12');
   });
 });

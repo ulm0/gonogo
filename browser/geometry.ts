@@ -96,6 +96,12 @@ export async function duplicates(page: Page, scope: string): Promise<string[]> {
       if (el.matches('.lay-group-title')) continue;
       note(kind, text, '');
     }
+    // a line that says its value and, in a chip beside it, the same words ("built-in default" twice)
+    for (const line of document.querySelectorAll<HTMLElement>('.rt-now')) {
+      if (!inside(line) || !drawn(line)) continue;
+      const parts = [...line.children].filter((c) => drawn(c)).map((c) => norm(c.textContent ?? ''));
+      if (new Set(parts).size !== parts.length) problems.push(`a setting says the same words twice in one line: "${parts.join('" and "')}"`);
+    }
     // a value that the summary of a row shows and the opened row shows again
     for (const row of document.querySelectorAll<HTMLElement>('details.lay-row')) {
       if (!inside(row) || !drawn(row)) continue;

@@ -39,9 +39,9 @@ export const APPLIES_TEXT: Readonly<Record<RuntimeSettingRow['applies'], string>
   restart: 'needs a restart of gonogo',
 };
 
-/** What the value is, in words: an empty Max Q is "no limit", nothing set anywhere is the built-in default. */
+/** What the value is, in words: an empty Max Q is "no limit"; nothing set anywhere is "not set" (the chip beside it says it is the built-in default). */
 export function valueText(row: Pick<RuntimeSettingRow, 'key' | 'value'>): string {
-  if (row.value === null) return 'built-in default';
+  if (row.value === null) return 'not set';
   if (row.value === '') return row.key === 'maxWorking' ? 'no limit' : 'empty';
   return row.value;
 }
