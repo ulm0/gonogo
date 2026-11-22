@@ -4,6 +4,13 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.13.0 (2026-11-22)
+
+The GONOGO_* settings can be set from Flight Rules, for one room or for all rooms. Before a downgrade, move any variable names added to Scrubbed variables in the UI into GONOGO_SCRUB_ENV: an older build ignores the UI's values, so those variables would reach agents again. A command set in the UI also goes back to GONOGO_AGENT_CMD or claude.
+
+Flight Rules → System and update has a Runtime settings row: the eight GONOGO values (message hops, Max Q, agent command, Clean Room image, scrubbed variables, log level, station name, update check) with their value, where it comes from (this room, all rooms, environment, built-in default) and when a change applies, a This room / All rooms switch, Reset, the refusal in words, and a plain warning on the agent command and the scrubbed variables. A write asks for the password again.
+- **Runtime settings from the UI's server side.** `GET /api/settings` and `PUT /api/settings/<key>` set the hop cap, Max Q, the agent command, the Clean Room image, the scrub list, the log level, the station name and the update check, per room or for every room (the room's value wins, then the shared one, then the environment). Every write asks for the password again; the agent command and the scrub list only from the Director's own login. Each change is in the Black Box (the agent command as its program name only). The page row comes next.
+
 ## 0.12.4 (2026-11-22)
 
 Flight Rules shows each control and label once, and no Tool permissions select or password field is cut.
