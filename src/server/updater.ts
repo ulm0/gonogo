@@ -169,7 +169,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
         if (verdict.kind === 'failed' || (confirmable && how.unverified !== true)) {
           // three different things, and the words keep them apart: it failed; it has no attestation; gonogo could not look
           const what = verdict.kind === 'failed' ? `its image failed verification (${verdict.why})` : verdict.kind === 'unchecked' ? `gonogo could not check its image (${verdict.why})` : `its image has no attestation (${verdict.why})`;
-          const note = `${version} was not run: ${what}. Nothing was changed.${verdict.kind === 'unattested' ? ' Update anyway only if you built or trust this image.' : verdict.kind === 'unchecked' ? ' Log in as said, or update anyway if you trust this image.' : ''}`;
+          const note = `${version} was not run: ${what}. Nothing was changed.${verdict.kind === 'unattested' ? ' Update anyway only if you built or trust this image.' : verdict.kind === 'unchecked' ? ' Log in (gh auth login) or set GH_TOKEN, or update anyway if you trust this image.' : ''}`;
           log.warn(`the Docker update to ${version} was refused: ${note}`);
           if (how.auto !== true) options.notify?.(`Update to ${version} refused: ${note}`);
           set({ state: 'failed', version, note, tail: [], rollback: null, ...(confirmable ? { verify: verdict.kind } : {}) });

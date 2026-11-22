@@ -1,4 +1,7 @@
 // Image provenance (attest.ts): what is asked of gh, what is answered for each of its outcomes, and what gh is never given. gh is a stand-in.
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FIRST_ATTESTED, ghEnv, OFFICIAL_IMAGE, SIGNER_WORKFLOW, SOURCE_REPO, verifyImage } from '../src/server/attest.js';
 import type { Run } from '../src/server/attest.js';
@@ -117,5 +120,117 @@ describe('verifyImage', () => {
     expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: none })).toMatchObject({ kind: 'unchecked', why: expect.stringMatching(/gh auth login.*GH_TOKEN/) as string });
     const rejected: Run = async () => ({ code: 1, out: 'Error: HTTP 401: Bad credentials' });
     expect((await verifyImage(OFFICIAL_IMAGE, [D1], { run: rejected })).kind).toBe('failed');
+  });
+});
+
+describe('verifyImage with no GitHub login: the bundles come from the public API and gh checks them offline', () => {
+  const json = (status: number, body: unknown): Response => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
+  const bundle = { mediaType: 'application/vnd.dev.sigstore.bundle.v0.3+json', verificationMaterial: {}, dsseEnvelope: { payload: 'x' } };
+  const good = (seen: Array<{ url: string; auth: string | null }> = []): typeof fetch => async (url, init) => {
+    seen.push({ url: String(url), auth: new Headers(init?.headers).get('authorization') });
+    return json(200, { attestations: [{ repository_id: 1, bundle_url: 'u', bundle }, { bundle }, { nothing: true }] });
+  };
+
+  it('fetches the bundles for the digest, hands gh a 0600 file with only the bundles, keeps every demand, and removes the file after', async () => {
+    const seen: Array<{ url: string; auth: string | null }> = [];
+    let file = '';
+    let content = '';
+    let mode = 0;
+    const run: Run = async (_f, args) => {
+      const at = args.indexOf('--bundle');
+      file = args[at + 1] ?? '';
+      content = readFileSync(file, 'utf8');
+      mode = statSync(file).mode & 0o777;
+      expect(args).toEqual(['attestation', 'verify', `oci://ghcr.io/ulm0/gonogo@${D1}`, '--bundle', file, '--repo', SOURCE_REPO, '--signer-workflow', SIGNER_WORKFLOW, '--source-ref', 'refs/tags/v0.13.0']);
+      return { code: 0, out: '' };
+    };
+    expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run, fetch: good(seen), version: '0.13.0', env: { PATH: '/usr/bin' } })).toEqual({ kind: 'verified', digest: D1 });
+    expect(seen).toEqual([{ url: `https://api.github.com/repos/ulm0/gonogo/attestations/${D1}`, auth: null }]);
+    expect(content).toBe(`${JSON.stringify(bundle)}\n${JSON.stringify(bundle)}\n`);
+    expect(mode).toBe(0o600);
+    expect(existsSync(file)).toBe(false);
+    expect(existsSync(dirname(file))).toBe(false);
+    // a token of the environment is the higher-rate path: the same request, signed in
+    const withToken: Array<{ url: string; auth: string | null }> = [];
+    await verifyImage(OFFICIAL_IMAGE, [D1], { run: async () => ({ code: 0, out: '' }), fetch: good(withToken), env: { GH_TOKEN: 'tok' } });
+    expect(withToken[0]?.auth).toBe('Bearer tok');
+  });
+
+  it('a verification failure of gh is still a failure, and the file is removed then too', async () => {
+    let file = '';
+    const run: Run = async (_f, args) => ((file = args[args.indexOf('--bundle') + 1] ?? ''), { code: 1, out: 'Error: verifying with issuer "sigstore.dev"' });
+    expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run, fetch: good() })).toMatchObject({ kind: 'failed', why: expect.stringContaining('verifying with issuer') as string });
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it('no attestation at GitHub (404 or an empty list): failed from the release that owes one, unattested before; gh is not asked', async () => {
+    const never: Run = async () => {
+      throw new Error('must not run');
+    };
+    for (const answer of [json(404, {}), json(200, { attestations: [] })]) {
+      const f: typeof fetch = async () => answer.clone();
+      expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: never, fetch: f, version: '0.13.0' })).toMatchObject({ kind: 'failed', why: expect.stringMatching(/has no attestation/) as string });
+      expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: never, fetch: f, version: '0.7.0' })).toMatchObject({ kind: 'unattested' });
+    }
+  });
+
+  it('rate limited, offline, oversize or junk answers: gh is asked the way it always was, with its login; without one the answer is unchecked', async () => {
+    const noLogin: Run = async (_f, args) => (args.includes('--bundle') ? { code: 1, out: 'must not get a bundle' } : { code: 1, out: 'To get started with GitHub CLI, please run: gh auth login' });
+    const bad: Array<typeof fetch> = [
+      async () => json(403, { message: 'rate limit' }),
+      async () => json(429, {}),
+      async () => {
+        throw new Error('getaddrinfo ENOTFOUND api.github.com');
+      },
+      async () => json(200, 'x'.repeat(5 * 1024 * 1024 + 1)),
+      async () => json(200, 'not json'),
+      async () => json(200, { attestations: 'no' }),
+    ];
+    for (const f of bad) expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: noLogin, fetch: f })).toMatchObject({ kind: 'unchecked' });
+    const loggedIn: Run = async (_f, args) => (args.includes('--bundle') ? { code: 1, out: 'no' } : { code: 0, out: '' });
+    expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: loggedIn, fetch: bad[0] as typeof fetch })).toEqual({ kind: 'verified', digest: D1 });
+  });
+
+  it('no room for the bundle file: nothing is left behind and gh is asked without --bundle, as before', async () => {
+    const before = process.env.TMPDIR;
+    process.env.TMPDIR = join(tmpdir(), 'gonogo-no-such-folder', 'x');
+    try {
+      const seen: string[][] = [];
+      const run: Run = async (_f, args) => (seen.push(args), { code: 0, out: '' });
+      expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run, fetch: good() })).toEqual({ kind: 'verified', digest: D1 });
+      expect(seen[0]).not.toContain('--bundle');
+    } finally {
+      if (before === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = before;
+    }
+  });
+
+  it('never follows a redirect, and stops reading a body at 5 MiB instead of after it', async () => {
+    const inits: Array<RequestInit | undefined> = [];
+    await verifyImage(OFFICIAL_IMAGE, [D1], { run: async () => ({ code: 0, out: '' }), fetch: async (_u, init) => (inits.push(init), json(200, { attestations: [{ bundle }] })) });
+    expect(inits[0]?.redirect).toBe('error');
+    let pulled = 0;
+    let cancelled = false;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const noLogin: Run = async () => ({ code: 1, out: 'gh auth login' });
+    expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: noLogin, fetch: async () => new Response(endless, { status: 200 }) })).toMatchObject({ kind: 'unchecked' });
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(12);
+  });
+
+  it('is only for the official image and only for a sha256 digest: nothing is fetched otherwise', async () => {
+    let fetched = 0;
+    const f: typeof fetch = async () => ((fetched += 1), json(200, {}));
+    await verifyImage('localhost:5000/gonogo', [D1], { fetch: f });
+    await verifyImage(OFFICIAL_IMAGE, ['../../x', 'sha256:short'], { fetch: f });
+    expect(fetched).toBe(0);
   });
 });
