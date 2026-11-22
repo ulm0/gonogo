@@ -215,6 +215,15 @@ async function recordedScreens(file: string): Promise<Array<{ rows: string[]; co
 describe('analyzeScreen', () => {
   const box = (text: string, width = 60): string[] => [rule(width), `${PROMPT_GLYPH}${NBSP}${text}`, rule(width)];
 
+  it('a modal with no numbered cursor is a dialog of kind other, only where there is no prompt box; a live box with such words in the transcript is not', () => {
+    for (const line of ['  Esc to cancel', 'Press Enter to continue', '  Enter to confirm · Esc to go back', '  ↵ to select']) {
+      expect(analyzeScreen(['', '  Rename session', '  > new name_', line], 60).dialog, line).toBe('other');
+      expect(analyzeScreen(['  assistant: ' + line.trim(), ...box('')], 60).dialog, line).toBeNull();
+    }
+    // the footer hints of a ready screen, as on FLIGHT's real one
+    expect(analyzeScreen([...box(''), '  plan 73% wk', '  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ? for shortcuts'], 42).dialog).toBeNull();
+  });
+
   it('finds the box on the real screen of FLIGHT (t110): 42 columns and a plugin banner set into the rule above the box', () => {
     const rows = [
       '✻ Churned for 13s · done 1:37 AM',
@@ -283,7 +292,7 @@ describe('analyzeScreen', () => {
     expect(analyzeScreen([`  ${PROMPT_GLYPH} No, exit`], 80).dialog).toBe('menu');
     expect(analyzeScreen([`${PROMPT_GLYPH} Yes, proceed`], 80).dialog).toBe('menu');
     expect(analyzeScreen([' Do you want to create x.txt?', `${PROMPT_GLYPH} 1. Yes`, '  2. No'], 80).dialog).toBe('permission');
-    expect(analyzeScreen(['Do you want to see the diff?', '  Esc to cancel'], 80).dialog).toBeNull();
+    expect(analyzeScreen(['Do you want to see the diff?', '  Esc to cancel'], 80).dialog).toBe('other'); // not a permission dialog (no menu), but an Esc hint with no prompt box is a modal as far as the safety net goes
     expect(analyzeScreen(['  Do you want to continue?', '  1. not a menu row', '  2. the glyph is missing'], 80).dialog).toBeNull();
     expect(analyzeScreen(['⏺ Do you want to continue with the refactor?', ...box('')], 80)).toMatchObject({ dialog: null, promptBox: true });
     expect(analyzeScreen(['⏵⏵ bypass permissions on (shift+tab to cycle)', 'permission', ...box('')], 80).dialog).toBeNull();

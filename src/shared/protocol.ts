@@ -175,7 +175,7 @@ export const TITLE_GLYPHS = ['idle', 'working', 'unknown'] as const;
 export type TitleGlyph = (typeof TITLE_GLYPHS)[number];
 
 /** Dialog kinds the terminal host can recognise on screen. */
-export const DIALOG_KINDS = ['theme', 'login', 'trust', 'bypass', 'api_key', 'resume', 'permission', 'menu'] as const;
+export const DIALOG_KINDS = ['theme', 'login', 'trust', 'bypass', 'api_key', 'resume', 'permission', 'menu', 'other'] as const;
 export type DialogKind = (typeof DIALOG_KINDS)[number];
 
 /** Which flag carries the session id on a start. */

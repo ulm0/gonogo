@@ -1,0 +1,1 @@
+- **A modal without a numbered cursor (a text field, "Press Enter to continue", "Esc to cancel") is now a dialog of kind `other`.** It is looked for only where the prompt box is missing, and the safety net that types waiting mail after a minute never fires on it.
