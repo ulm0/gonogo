@@ -1711,6 +1711,29 @@ export interface ApiError {
   needsForce?: boolean;
 }
 
+/* ---- runtime settings (docs/runtime-settings-spec.md): GET /api/settings, PUT /api/settings/<key> ---- */
+
+export type RuntimeSettingKey = 'maxHops' | 'maxWorking' | 'agentCmd' | 'cleanRoomImage' | 'scrubEnv' | 'logLevel' | 'station' | 'updateCheck';
+export type RuntimeSettingScope = 'room' | 'global';
+/** One setting as the room tells it: the effective text and where it comes from, what each layer holds, and when a change applies. */
+export interface RuntimeSettingRow {
+  key: RuntimeSettingKey;
+  /** The environment variable the setting stands for. */
+  env: string;
+  /** `both`: this room's own value or the one for all rooms; `global`: only the one for all rooms. */
+  scope: 'both' | 'global';
+  applies: 'live' | 'next-start' | 'restart';
+  /** Only the owner's own signed-in session may change it. */
+  sensitive: boolean;
+  /** The effective text; null: nothing is set anywhere, the built-in default. */
+  value: string | null;
+  source: 'room' | 'global' | 'env' | 'default';
+  /** The environment's value, what Reset goes back to. */
+  envValue: string | null;
+  room: string | null;
+  global: string | null;
+}
+
 /* ---- WebSocket: browser to server (JSON text frames) ---- */
 export interface AttachFrame {
   t: 'attach';

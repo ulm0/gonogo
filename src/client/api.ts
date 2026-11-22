@@ -73,6 +73,9 @@ import type {
   KnowledgeView,
   PayloadDefaults,
   RoomKeysView,
+  RuntimeSettingKey,
+  RuntimeSettingRow,
+  RuntimeSettingScope,
   PermissionDefaults,
   PermissionRules,
   StartupSettings,
@@ -464,6 +467,20 @@ export async function setRoomKey(name: string, body: { value?: string; cleanRoom
 }
 export async function removeRoomKey(name: string): Promise<RoomKeysView> {
   return toRoomKeys(await call('DELETE', `/room-keys/${encodeURIComponent(name)}`));
+}
+
+/** Runtime settings: the GONOGO_* values the Director can change here. A write asks for the password again, as Room keys do. */
+export async function runtimeSettings(): Promise<RuntimeSettingRow[]> {
+  const record = asRecord(await call('GET', '/settings'));
+  if (record === null || !Array.isArray(record.keys)) throw failure('The server sent an answer gonogo does not understand.');
+  return record.keys as RuntimeSettingRow[];
+}
+/** Sets (or with null resets) the value of one layer of one setting; answers the new row. */
+export async function setRuntimeSetting(key: RuntimeSettingKey, scope: RuntimeSettingScope, value: string | null): Promise<RuntimeSettingRow> {
+  const record = asRecord(await call('PUT', `/settings/${encodeURIComponent(key)}`, { scope, value }));
+  const row = record === null ? null : asRecord(record.row);
+  if (row === null) throw failure('The server sent an answer gonogo does not understand.');
+  return row as unknown as RuntimeSettingRow;
 }
 
 /** The template of the closing checklist a new mission copies (one line each; comments, headings and blank lines are dropped). Same shape and step-up as the rules. */

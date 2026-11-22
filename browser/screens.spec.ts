@@ -140,6 +140,15 @@ async function measureDuplicates(page: Page, group: string, title: string, scope
   for (const problem of await duplicates(page, scope)) geo.push(`${group}: ${title}: duplicate: ${problem}`);
 }
 
+/** A write asks for the password again when the last check is old: answer it if the dialog comes. */
+async function stepUpIfAsked(page: Page): Promise<void> {
+  const dialog = page.locator('dialog.stepup[open]');
+  if (await dialog.waitFor({ timeout: 2500 }).then(() => true, () => false)) {
+    await dialog.getByLabel('Password').fill(PASSWORD);
+    await dialog.locator('button[type=submit]').click();
+  }
+}
+
 /** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
 async function view(page: Page, group: string, title: string, get: () => Promise<void>, fullPage = false): Promise<void> {
   try {
@@ -300,6 +309,25 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await measure(page, group, label, '.lay-rules');
     await measureDuplicates(page, group, label, '.lay-rules');
   }
+  // Runtime settings (the System and update group is the one open now, with every row open): an editor, a refused value, the warning of a sensitive setting, a setting for all rooms only
+  await view(page, group, 'runtime settings: change a setting', () => page.getByRole('button', { name: 'Change Message hops' }).click({ timeout: 3000 }), true);
+  await measure(page, group, 'runtime settings: change a setting', '.lay-rules');
+  await measureDuplicates(page, group, 'runtime settings: change a setting', '.lay-rules');
+  await view(page, group, 'runtime settings: a refused value', async () => {
+    await page.getByLabel('Message hops value').fill('abc');
+    await page.getByRole('button', { name: 'Set', exact: true }).click({ timeout: 3000 });
+    await stepUpIfAsked(page);
+    await page.locator('.rt-editor [role=alert]').waitFor({ timeout: 5000 });
+  }, true);
+  await measure(page, group, 'runtime settings: a refused value', '.lay-rules');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
+  await view(page, group, 'runtime settings: the agent command warns', () => page.getByRole('button', { name: 'Change Agent command' }).click({ timeout: 3000 }), true);
+  await measure(page, group, 'runtime settings: the agent command warns', '.lay-rules');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
+  await view(page, group, 'runtime settings: a setting for all rooms only', () => page.getByRole('button', { name: 'Change Log level' }).click({ timeout: 3000 }), true);
+  await measure(page, group, 'runtime settings: a setting for all rooms only', '.lay-rules');
+  await measureDuplicates(page, group, 'runtime settings: a setting for all rooms only', '.lay-rules');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
   await view(page, group, 'livery', () => open(page, 'Livery'), true);
   await view(page, group, 'patch panel', async () => {
     await page.keyboard.press('Escape');

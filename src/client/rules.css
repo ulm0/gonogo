@@ -441,3 +441,18 @@
     flex-basis: 100%;
   }
 }
+
+/* RUNTIME SETTINGS: one item for each GONOGO_* value */
+.rt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.rt-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-top: 10px; border-top: 1px solid var(--edge); min-width: 0; }
+.rt-item:first-child { border-top: 0; padding-top: 0; }
+.rt-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.rt-name { font-weight: 600; }
+.rt-env { font-family: var(--font-mono); font-size: 11.5px; opacity: 0.75; }
+.rt-now { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; max-width: 100%; }
+.rt-value { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.rt-item .hint { margin: 0; }
+.rt-editor { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; max-width: 560px; }
+.rt-editor .input:not([data-fit]) { width: 100%; box-sizing: border-box; }
+.rt-scope { display: flex; flex-wrap: wrap; gap: 6px; }
+.rt-warning { margin: 0; padding: 8px 10px; }
