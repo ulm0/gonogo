@@ -40,3 +40,16 @@ describe('Flight Rules says nothing twice', () => {
     expect(css).toMatch(/\.lay-row-body \.rules-value \{ display: none; \}/);
   });
 });
+
+describe('long placeholders and selects are not cut', () => {
+  it('the password fields stack on a phone and say the 12 characters in the hint, not in a placeholder that is cut', () => {
+    const account = readFileSync('src/client/AccountBlock.tsx', 'utf8');
+    expect(account).toContain('rules-row rules-row-stack');
+    expect(account).not.toContain('placeholder="New password (12 or more)"');
+    expect(readFileSync('src/client/rules.css', 'utf8')).toMatch(/\.rules-row-stack \.input \{\s*flex-basis: 100%;/);
+  });
+
+  it('a tool of the permissions grid has room for its name and its select', () => {
+    expect(readFileSync('src/client/forms.css', 'utf8')).toMatch(/\.perm-tools \{[^}]*minmax\(190px, 1fr\)/);
+  });
+});

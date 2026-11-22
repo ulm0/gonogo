@@ -313,14 +313,14 @@ export function AccountBlock(): ReactElement {
             <p className="hint">A passkey is made on a public name opened over https, in a browser that has them: this page is neither, or not both. A passkey works only at the name it was made for, and is the password and the second factor in one step.</p>
           )}
           <h3 className="label">PASSWORD</h3>
-          <form className="rules-row" onSubmit={submitPassword}>
+          <form className="rules-row rules-row-stack" onSubmit={submitPassword}>
             <input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="Current password" aria-label="Current password" required />
-            <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password (12 or more)" aria-label="New password" minLength={12} required />
+            <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password" aria-label="New password, 12 characters or more" minLength={12} required />
             <button type="submit" className="btn">
               CHANGE PASSWORD
             </button>
           </form>
-          <p className="hint">Changing it ends every other session.</p>
+          <p className="hint">At least 12 characters. Changing it ends every other session.</p>
         </>
       )}
       {problem !== null && (
