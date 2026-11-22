@@ -1,0 +1,1 @@
+- **A Telegram or browser message from the Director no longer waits for ever when gonogo cannot see an agent's input box.** After a minute with no dialog on the screen and the agent idle by its hooks, the pointer is typed anyway; after three minutes still unread, the Director gets an alert (Relay and phone) with the reason. Agents' messages wait as before.
