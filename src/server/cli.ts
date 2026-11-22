@@ -678,11 +678,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the launcher reads these two at each agent start; the copy is the one place a setting reaches them
     const liveEnv: Record<string, string | undefined> = { ...env };
     const syncEnv = (): void => {
-      for (const [key, name] of [['scrubEnv', 'GONOGO_SCRUB_ENV'], ['cleanRoomImage', 'GONOGO_CLEANROOM_IMAGE']] as const) {
-        const text = fromFiles(key);
-        if (text === null) liveEnv[name] = env[name];
-        else liveEnv[name] = text;
-      }
+      const image = fromFiles('cleanRoomImage');
+      liveEnv.GONOGO_CLEANROOM_IMAGE = image === null ? env.GONOGO_CLEANROOM_IMAGE : image;
+      // the environment's names plus the files' (the store makes the union): a setting can only scrub more
+      liveEnv.GONOGO_SCRUB_ENV = runtime.get('scrubEnv') ?? env.GONOGO_SCRUB_ENV;
     };
     syncEnv();
     const agentCmdNow = (): string[] | null => {

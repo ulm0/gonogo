@@ -54,11 +54,36 @@ describe('the store', () => {
     expect(s.set('maxWorking', 'room', '').row.value).toBe('');
   });
 
+  it('the scrub list only grows: the environment\'s names stay, the files add to them, Reset removes only the added ones', () => {
+    const s = make({ GONOGO_SCRUB_ENV: 'SECRET_A, TOKEN_' });
+    expect(s.row('scrubEnv')).toMatchObject({ value: 'SECRET_A,TOKEN_', source: 'env', envValue: 'SECRET_A,TOKEN_' });
+    s.set('scrubEnv', 'global', 'SECRET_B');
+    expect(s.row('scrubEnv')).toMatchObject({ value: 'SECRET_A,TOKEN_,SECRET_B', source: 'global', global: 'SECRET_B' });
+    s.set('scrubEnv', 'room', 'SECRET_A,SECRET_C');
+    expect(s.get('scrubEnv')).toBe('SECRET_A,TOKEN_,SECRET_B,SECRET_C');
+    s.set('scrubEnv', 'room', null);
+    s.set('scrubEnv', 'global', null);
+    expect(s.get('scrubEnv')).toBe('SECRET_A,TOKEN_');
+    expect(make().get('scrubEnv')).toBeNull();
+    // one name the strict check would refuse does not drop the rest of the operator's list
+    const odd = make({ GONOGO_SCRUB_ENV: 'API_KEY, my-secret ,,OTHER_' });
+    expect(odd.row('scrubEnv')).toMatchObject({ value: 'API_KEY,my-secret,OTHER_', envValue: 'API_KEY,my-secret,OTHER_', source: 'env' });
+    odd.set('scrubEnv', 'global', 'ADDED');
+    expect(odd.get('scrubEnv')).toBe('API_KEY,my-secret,OTHER_,ADDED');
+  });
+
   it('a global-only key refuses the room scope; no supervisor means no global scope', () => {
     const s = make();
     for (const key of ['logLevel', 'station', 'updateCheck'] as const) expect(() => s.set(key, 'room', key === 'station' ? 'x' : key === 'logLevel' ? 'info' : 'off')).toThrow(/every room/);
     expect(() => make({}, null).set('maxHops', 'global', '3')).toThrow(/no supervisor/);
     expect(make({}, null).set('maxHops', 'room', '3').row.value).toBe('3');
+  });
+
+  it('leaves no temporary file behind and does not write through a planted name', () => {
+    const s = make();
+    s.set('maxHops', 'room', '4');
+    s.set('maxHops', 'room', '5');
+    expect(readdirSync(roomHome)).toEqual([SETTINGS_FILE]);
   });
 
   it('keeps the files 0600 and, read again, a hand-edited file cannot inject: unknown keys, non-strings, bad values, a room file with a global key, over 16 KiB', () => {

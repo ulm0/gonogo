@@ -50,6 +50,11 @@ The environment value is always shown as the default; **Reset** removes the stor
 - **Black Box**: one line per write: who (session or key name), key, scope, old → new. `agentCmd` is shown as its binary name only (`/usr/bin/foo --token x` → `foo`); `scrubEnv`, `maxHops`, `maxWorking`, `logLevel`, `station`, `updateCheck`, `cleanRoomImage` are shown as they are.
 - No secret is stored here by design: a value that looks like a token in `agentCmd` is the Director's own risk and is redacted in the log; the file is 0600.
 
+## Known limits
+
+- An agent that does not run in a Clean Room can reach the room's own socket (`run/room.sock`) and so the settings API without the proxy: the socket is the credential, as for every other route of the room (room keys, permissions, hire), and it can write `x-gonogo-actor: session` itself, so the "owner session only" rule and the step-up are walls against keys, terminals and browsers, not against an agent on the same host without a Clean Room. A Clean Room does not mount `run/`.
+- The scrub list is the union of the environment's names and the files': a setting can only scrub more, never less. Reset removes the names the files added; the environment's stay.
+
 ## Applying
 
 - `maxHops`: the hub reads it through a getter (today it is fixed at `createHub`), so a change is seen by the next message.
