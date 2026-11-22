@@ -56,3 +56,46 @@ export async function geometry(page: Page, phone: boolean, scope = 'body'): Prom
     return problems;
   }, { min: phone ? 44 : 24, scope });
 }
+
+/**
+ * No control or label appears twice for the same thing on a view (the Director's "botones duplicados" on Flight Rules): among what is visible inside `scope`, two keys with the
+ * same name, a heading with the name of a row, two headings with one name, and a value line that a row already shows. A 1 px label for a screen reader is not drawn, so it does not count.
+ */
+export async function duplicates(page: Page, scope: string): Promise<string[]> {
+  return page.evaluate((scope) => {
+    const norm = (s: string): string => s.toLowerCase().replace(/[▾▸←→↓↑⌕⋯≡✓]/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const drawn = (el: Element): boolean => {
+      const r = el.getBoundingClientRect();
+      return r.width > 3 && r.height > 3 && getComputedStyle(el).visibility !== 'hidden' && el.closest('[hidden]') === null;
+    };
+    const root = [...document.querySelectorAll(scope)];
+    const inside = (el: Element): boolean => root.some((r) => r.contains(el));
+    const problems: string[] = [];
+    const seen = new Map<string, string>();
+    const note = (kind: string, text: string, where: string): void => {
+      if (text === '') return;
+      const key = text;
+      const before = seen.get(key);
+      if (before !== undefined && before !== kind + ' ' + where) problems.push(`"${text}" is both ${before} and ${kind} ${where}`.replace('  ', ' '));
+      else if (before === kind + ' ' + where) problems.push(`"${text}" appears twice as ${kind} ${where}`);
+      else seen.set(key, kind + ' ' + where);
+    };
+    for (const el of document.querySelectorAll<HTMLElement>('button, a[href], .lay-row-name, h1, h2, h3, .lay-group-title')) {
+      if (!inside(el) || !drawn(el)) continue;
+      if (el.closest('.lay-row > summary') !== null && !el.classList.contains('lay-row-name')) continue; // the Edit mark of a row is not a key of its own
+      const kind = el.matches('button, a[href]') ? 'a key' : el.classList.contains('lay-row-name') ? 'a row' : 'a heading';
+      const text = norm(el.getAttribute('aria-label') ?? el.textContent ?? '');
+      // the key of a group is the heading of the group: it is one thing
+      if (el.matches('.lay-group-title')) continue;
+      note(kind, text, '');
+    }
+    // a value that the summary of a row shows and the opened row shows again
+    for (const row of document.querySelectorAll<HTMLElement>('details.lay-row')) {
+      if (!inside(row) || !drawn(row)) continue;
+      const now = norm(row.querySelector('.lay-row-now')?.textContent ?? '');
+      if (now === '' || now === 'see edit') continue;
+      for (const v of row.querySelectorAll<HTMLElement>('.rules-value')) if (drawn(v) && norm(v.textContent ?? '') === now) problems.push(`"${now}" is shown by the row and again in its block`);
+    }
+    return problems;
+  }, scope);
+}
