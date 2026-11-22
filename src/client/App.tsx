@@ -29,7 +29,7 @@ import { agentCounts, stripDismissed, UPDATE_TRUST_TEXT, updateDialogText, verif
 import { MAIN_PATH } from './base.js';
 import { copyText } from './uplink.js';
 import { SERVER_GONE_TEXT } from './wording.js';
-import { inMain, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
 import { PhoneBar, TopBar } from './TopBar.js';
 import './shell.css';
 
@@ -119,7 +119,6 @@ function GoneStrip(): ReactElement | null {
   );
 }
 
-const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
 
 /**
  * The same note in a room other than main. Its Update key lives in main (it asks before it stops every agent of main, with their count), so

@@ -10,9 +10,10 @@ import { CheckNow } from './CheckNow.js';
 import { Pop } from './Pop.js';
 import { MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
 import { unreadText } from './inbox.js';
-import { CHANGELOG_URL, inMain, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { CHANGELOG_URL, inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
 import { activeOf, activeText } from './plan.js';
-import { showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { stripDismissed } from './selfupdate.js';
 import { versionLabel } from './topbarModel.js';
 import logo from '../../docs/brand/lockup.svg';
 
@@ -59,6 +60,7 @@ function VersionButton(): ReactElement | null {
   const newer = useNewer();
   const canUpdate = useStore((s) => s.rollout?.canUpdate === true);
   const canUndo = useStore((s) => s.rollout?.update?.undo === true);
+  const installing = useStore((s) => ['running', 'reloading', 'handed-off'].includes(s.rollout?.update?.state ?? ''));
   const [undoError, setUndoError] = useState<string | null>(null);
   // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
   setPublicOrigin(info?.publicUrl);
@@ -66,12 +68,15 @@ function VersionButton(): ReactElement | null {
   const label = versionLabel(info.version, newer);
   return (
     <Pop className="lay-version" name={label.name} label={label.text}>
-      {(close) => (
+      {(close) => {
+        // the strip under the top bar already has the Update key while it is shown (it is dismissed in this browser, or it is not): the version key then points to it, so no key is there twice
+        const stripHidden = newer !== null && !installing && stripDismissed(readStored(ROLLOUT_DISMISSED_KEY), newer, false);
+        return (
         <div className="lay-version-pop">
           <p className="lay-pop-title">
             gonogo {info.version} <span className="chip" data-tone={newer === null ? 'go' : 'amber'}>{newer === null ? 'up to date' : 'update available'}</span>
           </p>
-          {newer !== null && <p className="hint">{newer} is out. Updating stops every agent while it installs, and it can be undone.</p>}
+          {newer !== null && <p className="hint">{newer} is out.{stripHidden ? ' Updating stops every agent while it installs, and it can be undone.' : ' The Update key is in the strip under the top bar.'}</p>}
           {inMain && <CheckNow />}
           {undoError !== null && (
             <p className="error" role="alert">
@@ -79,8 +84,8 @@ function VersionButton(): ReactElement | null {
             </p>
           )}
           <div className="lay-pop-keys">
-            {newer !== null &&
-              (inMain ? (
+            {newer !== null && stripHidden && (
+              inMain ? (
                 <button
                   type="button"
                   className="btn"
@@ -96,7 +101,8 @@ function VersionButton(): ReactElement | null {
                 <a className="btn" data-kind="primary" href={`${MAIN_PATH}?update`}>
                   Open main to update
                 </a>
-              ))}
+              )
+            )}
             {canUndo && inMain && (
               <button
                 type="button"
@@ -115,7 +121,8 @@ function VersionButton(): ReactElement | null {
             </a>
           </div>
         </div>
-      )}
+        );
+      }}
     </Pop>
   );
 }

@@ -2035,3 +2035,18 @@
 .rollout-confirm .rollout-fix {
   flex-basis: auto;
 }
+
+.rollout-fold > summary,
+.rollout-fix > summary {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  width: fit-content;
+}
+
+@media (max-width: 700px) {
+  .rollout-fold > summary,
+  .rollout-fix > summary {
+    min-height: 44px;
+  }
+}

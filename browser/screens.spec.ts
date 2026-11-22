@@ -213,14 +213,19 @@ async function updateFlow(page: Page, group: string): Promise<void> {
   const step = async (title: string): Promise<void> => {
     await page.waitForTimeout(400);
     await shoot(page, group, `update: ${title}`, true);
-    for (const problem of await duplicates(page, where)) geo.push(`${group}: update: ${title}: duplicate: ${problem}`);
+    for (const problem of await duplicates(page, where, true)) geo.push(`${group}: update: ${title}: duplicate: ${problem}`);
     for (const problem of await geometry(page, group.endsWith('phone'), where)) geo.push(`${group}: update: ${title}: ${problem}`);
   };
   await step('the strip when a newer gonogo is out');
   await page.getByRole('button', { name: /^\d+\.\d+\.\d+/ }).first().click({ timeout: 5000 });
   await step('the version key');
-  await click(/^Update to 9\.9\.9/, '.lay-pop');
-  await step('after one click on Update in the version key');
+  // the version key offers Update only when the strip is not showing it (the old flow had it twice)
+  if ((await page.locator('.lay-pop').getByRole('button', { name: /^Update to 9\.9\.9/ }).count()) > 0) {
+    await click(/^Update to 9\.9\.9/, '.lay-pop');
+    await step('after one click on Update in the version key');
+  } else {
+    await page.keyboard.press('Escape');
+  }
   if (!(await page.getByRole('alertdialog').isVisible().catch(() => false))) await click(/^Update to 9\.9\.9/, '.rollout-strip');
   await step('the confirmation');
   await click(/^Update now$/);
