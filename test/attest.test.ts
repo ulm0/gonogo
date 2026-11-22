@@ -1,6 +1,7 @@
 // Image provenance (attest.ts): what is asked of gh, what is answered for each of its outcomes, and what gh is never given. gh is a stand-in.
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FIRST_ATTESTED, ghEnv, OFFICIAL_IMAGE, SIGNER_WORKFLOW, SOURCE_REPO, verifyImage } from '../src/server/attest.js';
 import type { Run } from '../src/server/attest.js';
@@ -188,6 +189,20 @@ describe('verifyImage with no GitHub login: the bundles come from the public API
     for (const f of bad) expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: noLogin, fetch: f })).toMatchObject({ kind: 'unchecked' });
     const loggedIn: Run = async (_f, args) => (args.includes('--bundle') ? { code: 1, out: 'no' } : { code: 0, out: '' });
     expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: loggedIn, fetch: bad[0] as typeof fetch })).toEqual({ kind: 'verified', digest: D1 });
+  });
+
+  it('no room for the bundle file: nothing is left behind and gh is asked without --bundle, as before', async () => {
+    const before = process.env.TMPDIR;
+    process.env.TMPDIR = join(tmpdir(), 'gonogo-no-such-folder', 'x');
+    try {
+      const seen: string[][] = [];
+      const run: Run = async (_f, args) => (seen.push(args), { code: 0, out: '' });
+      expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run, fetch: good() })).toEqual({ kind: 'verified', digest: D1 });
+      expect(seen[0]).not.toContain('--bundle');
+    } finally {
+      if (before === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = before;
+    }
   });
 
   it('never follows a redirect, and stops reading a body at 5 MiB instead of after it', async () => {

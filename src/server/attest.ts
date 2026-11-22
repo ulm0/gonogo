@@ -135,10 +135,16 @@ export async function verifyImage(repo: string, digests: readonly string[], opti
     if (options.fetch !== undefined) {
       const got = await fetchBundles(digest, options.fetch, token);
       if ('bundles' in got) {
-        dir = await mkdtemp(join(tmpdir(), 'gonogo-attest-'));
-        const file = join(dir, 'bundles.jsonl');
-        await writeFile(file, `${got.bundles.join('\n')}\n`, { mode: 0o600 });
-        bundleArgs = ['--bundle', file];
+        // no room for the file (a full disk, no temp folder): gh fetches the bundles itself, as before, and nothing is left behind
+        try {
+          dir = await mkdtemp(join(tmpdir(), 'gonogo-attest-'));
+          const file = join(dir, 'bundles.jsonl');
+          await writeFile(file, `${got.bundles.join('\n')}\n`, { mode: 0o600 });
+          bundleArgs = ['--bundle', file];
+        } catch {
+          if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+          dir = null;
+        }
       } else if (got.none === 'missing') {
         if (owed) failed = `${digest.slice(0, 19)} has no attestation, and every image since ${FIRST_ATTESTED} has one`;
         else unattested = `${digest.slice(0, 19)} has no attestation: it was published before they were made`;
