@@ -264,7 +264,7 @@ export function FlightRules(): ReactElement {
           FLIGHT RULES
         </h1>
         <button type="button" className="btn loop-room" data-kind="quiet" onClick={showRoom}>
-          ← Room
+          ← Back to the room
         </button>
       </header>
       <Group id="room" title="Room">

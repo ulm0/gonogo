@@ -14,6 +14,10 @@ export async function geometry(page: Page, phone: boolean, scope = 'body'): Prom
       const wide = [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getBoundingClientRect().width > 0 && e.closest('.next-group-nav') === null).slice(0, 6);
       for (const e of wide) problems.push(`  wider than the screen: ${name(e)} right=${Math.round(e.getBoundingClientRect().right)}`);
     }
+    const fixed = (el: Element): boolean => {
+      for (let e: Element | null = el; e !== null; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return true;
+      return false;
+    };
     const keys = [...document.querySelectorAll<HTMLElement>('button, a[href], input, select, summary, [role=button]')].filter((el) => {
       if (!inScope(el)) return false;
       const r = el.getBoundingClientRect();
@@ -26,6 +30,8 @@ export async function geometry(page: Page, phone: boolean, scope = 'body'): Prom
       const a = keys[i].getBoundingClientRect();
       for (let j = i + 1; j < keys.length; j += 1) {
         if (keys[i].contains(keys[j]) || keys[j].contains(keys[i])) continue;
+        // a bar fixed to the screen is over whatever scrolls under it, by design
+        if (fixed(keys[i]) !== fixed(keys[j])) continue;
         const b = keys[j].getBoundingClientRect();
         const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
         const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);

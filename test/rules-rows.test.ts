@@ -32,7 +32,7 @@ describe('Flight Rules says nothing twice', () => {
 
   it('has no index of the groups beside their headings, and the key back to the room is not named like a group', () => {
     expect(source).not.toContain('lay-group-nav');
-    expect(source).toMatch(/className="btn loop-room"[^>]*>\s*← Room/);
+    expect(source).toMatch(/className="btn loop-room"[^>]*>\s*← Back to the room/);
   });
 
   it('draws a block\'s own title and value line only for a screen reader when the block is in a row', () => {
