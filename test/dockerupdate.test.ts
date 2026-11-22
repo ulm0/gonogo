@@ -276,6 +276,8 @@ describe('the pull and the checks', () => {
       await expect(pullAndCheck(wrap(f, () => ({ status: 400, text: '{"message":"invalid reference format"}' })), ME, '0.4.0')).rejects.toThrow(/was refused \(400\): invalid reference format\. Nothing was changed\.$/);
       await expect(pullAndCheck(wrap(f, () => ({ status: 400, text: '{"message":"x"}' })), ME, '0.4.0')).rejects.not.toThrow(/private image/);
       for (const status of [401, 403, 404]) await expect(pullAndCheck(wrap(f, () => ({ status, text: '{"message":"denied"}' })), ME, '0.4.0')).rejects.toThrow(/\(\d+\): denied; a private image needs/);
+      await expect(pullAndCheck(wrap(f, () => ({ status: 401, text: '{"message":"Get https://bot:s3cret-token@ghcr.io/v2/: unauthorized"}' })), ME, '0.4.0')).rejects.toThrow(/Get https:\/\/ghcr\.io\/v2\/: unauthorized/);
+      await expect(pullAndCheck(wrap(f, () => ({ status: 401, text: '{"message":"https://bot:s3cret-token@ghcr.io/"}' })), ME, '0.4.0')).rejects.not.toThrow(/s3cret/);
       await expect(pullAndCheck(wrap(f, () => ({ status: 500, text: 'x'.repeat(500) })), ME, '0.4.0')).rejects.toThrow(/refused \(500\): x{200}\. Nothing/);
     });
     it('asks again with the reference in one piece, then with the daemon\'s platform, on a 400; the first answer that is not 400 stands', async () => {

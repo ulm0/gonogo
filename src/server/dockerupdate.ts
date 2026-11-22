@@ -252,7 +252,8 @@ export function daemonMessage(text: string): string {
   } catch {
     // not JSON: the plain text of a proxy or an old daemon
   }
-  return message.replace(/\s+/g, ' ').trim().slice(0, 200);
+  // a registry URL in the message may carry a user name or token: userinfo goes before the cut
+  return message.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 /**
