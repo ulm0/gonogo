@@ -131,3 +131,11 @@
 .lay-row-body .rules-value {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
+
+/* the index of the groups of Flight Rules: one key for each, at the top, always in reach */
+.lay-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--body); }
+@media (max-width: 700px) {
+  .lay-group-nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .lay-group-nav::-webkit-scrollbar { display: none; }
+  .lay-group-nav .btn { flex: none; min-height: 44px; }
+}

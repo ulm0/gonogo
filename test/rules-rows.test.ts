@@ -30,8 +30,7 @@ describe('Flight Rules groups', () => {
 describe('Flight Rules says nothing twice', () => {
   const css = readFileSync('src/client/layout.css', 'utf8');
 
-  it('has no index of the groups beside their headings, and the key back to the room is not named like a group', () => {
-    expect(source).not.toContain('lay-group-nav');
+  it('the key back to the room is not named like a group (the index and the group headings are one pair, see rules-nav.test.ts)', () => {
     expect(source).toMatch(/className="btn loop-room"[^>]*>\s*← Back to the room/);
   });
 

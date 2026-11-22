@@ -1,0 +1,1 @@
+Flight Rules has its index back at the top: a key for each of the seven groups (Room, Agents, Budget and limits, Automation and connections, Knowledge, Security, System and update), each opening its group and scrolling to it. The index stays in reach when the page scrolls, and on a phone it is one row that scrolls sideways.

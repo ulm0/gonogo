@@ -157,6 +157,9 @@ function ReloadBlock(): ReactElement {
   );
 }
 
+/** The groups of Flight Rules, in order: the index at the top has a key for each, and each group below has its heading. */
+const GROUPS: ReadonlyArray<readonly [string, string]> = [['room', 'Room'], ['agents', 'Agents'], ['budget', 'Budget and limits'], ['auto', 'Automation and connections'], ['knowledge', 'Knowledge'], ['security', 'Security'], ['system', 'System and update']];
+
 /** The open group and how to change it: a context, so that Group is one component for good (one defined inside FlightRules is a new type at every render, and React would rebuild every block in it each time a value arrives). */
 const GroupContext = createContext<{ open: string; setOpen(id: string): void; base: string }>({ open: '', setOpen: () => undefined, base: '' });
 
@@ -270,6 +273,24 @@ export function FlightRules(): ReactElement {
           ← Back to the room
         </button>
       </header>
+      <nav className="lay-group-nav" aria-label="Groups of settings">
+        {GROUPS.map(([id, title]) => (
+          <a
+            key={id}
+            className="btn"
+            data-kind={openGroup === id ? 'primary' : 'quiet'}
+            aria-current={openGroup === id ? 'true' : undefined}
+            href={`#${titleId}-g-${id}`}
+            onClick={(e) => {
+              e.preventDefault();
+              setOpenGroup(id);
+              requestAnimationFrame(() => document.getElementById(`${titleId}-g-${id}`)?.scrollIntoView({ block: 'start' }));
+            }}
+          >
+            {title}
+          </a>
+        ))}
+      </nav>
       <Group id="room" title="Room">
         <Row name="Livery" now={currentEntry(livery).name}>{liveryBlock}</Row>
         <Row name="Tab name" now={tabName.name ?? tabName.fallback ?? 'not set'}><TabNameBlock /></Row>
