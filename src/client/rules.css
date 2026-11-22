@@ -434,3 +434,10 @@
   white-space: normal;
   max-width: 100%;
 }
+
+/* a form whose fields have long placeholders: on a phone each field has the line to itself */
+@media (max-width: 700px) {
+  .rules-row-stack .input {
+    flex-basis: 100%;
+  }
+}

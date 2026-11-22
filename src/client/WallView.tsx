@@ -305,7 +305,7 @@ export function MaxQ(): ReactElement {
         >
           +
         </button>
-        <button type="button" className="btn stepper-off" data-kind="quiet" disabled={governor.limit === null} aria-disabled={busy || undefined} onClick={() => set(null)}>
+        <button type="button" className="btn stepper-off" data-kind="quiet" disabled={governor.limit === null} aria-disabled={busy || undefined} aria-label="Off: no limit on agents working" onClick={() => set(null)}>
           Off
         </button>
       </div>

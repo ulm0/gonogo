@@ -11,7 +11,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { geometry } from './geometry.js';
+import { duplicates, geometry } from './geometry.js';
 import { type BrowserContext, type Page, expect, test } from '@playwright/test';
 
 test.skip(process.env.SCREENS !== '1', 'screenshots are taken by the screens workflow (SCREENS=1)');
@@ -133,6 +133,11 @@ async function toolbarProofs(page: Page, group: string): Promise<void> {
     await page.waitForTimeout(500);
     await proof(group, 'Full screen leaves', async () => page.evaluate(() => document.fullscreenElement === null));
   }
+}
+
+/** No control or label twice for the same thing (browser/geometry.ts) on the view the page shows now. */
+async function measureDuplicates(page: Page, group: string, title: string, scope: string): Promise<void> {
+  for (const problem of await duplicates(page, scope)) geo.push(`${group}: ${title}: duplicate: ${problem}`);
 }
 
 /** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
@@ -279,14 +284,21 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await view(page, group, t('recorder'), () => patch(page, 'recorder'), true);
   if (!full) return;
   await view(page, group, 'flight rules', () => open(page, 'Flight Rules', 'rules'), true);
-  // Flight Rules in groups: each group opened by its key of the index, with its rows (the rows are folded; the blocks inside are the old ones)
   await measure(page, group, 'flight rules');
-  const links = page.locator('.lay-group-nav a');
-  const count = await links.count().catch(() => 0);
+  await measureDuplicates(page, group, 'flight rules', '.lay-rules');
+  // every group opened with every one of its rows open: the controls and the labels of each must be there once
+  const titles = page.locator('.lay-group-title button');
+  const count = await titles.count().catch(() => 0);
   for (let i = 0; i < count; i += 1) {
-    const title = ((await links.nth(i).textContent()) ?? '').trim();
-    await view(page, group, `flight rules: ${title}`, () => links.nth(i).click({ timeout: 3000 }));
-    await measure(page, group, `flight rules: ${title}`);
+    const title = ((await titles.nth(i).textContent()) ?? '').replace(/[▾▸]/g, '').trim();
+    const label = `flight rules: ${title}, every row open`;
+    await view(page, group, label, async () => {
+      if ((await titles.nth(i).getAttribute('aria-expanded')) !== 'true') await titles.nth(i).click({ timeout: 3000 });
+      await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
+      await page.waitForTimeout(300);
+    }, true);
+    await measure(page, group, label, '.lay-rules');
+    await measureDuplicates(page, group, label, '.lay-rules');
   }
   await view(page, group, 'livery', () => open(page, 'Livery'), true);
   await view(page, group, 'patch panel', async () => {

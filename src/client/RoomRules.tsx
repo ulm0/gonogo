@@ -91,13 +91,13 @@ function TextBlock({ title, hint, placeholder, label, trims, load, save: send }:
             </p>
           )}
           <div className="rules-keys">
-            <button type="button" className="btn" data-kind="primary" aria-disabled={!changed || invalid !== null || busy || undefined} onClick={() => changed && invalid === null && !busy && apply(text)}>
+            <button type="button" className="btn" data-kind="primary" aria-label={`Save ${title.toLowerCase()}`} aria-disabled={!changed || invalid !== null || busy || undefined} onClick={() => changed && invalid === null && !busy && apply(text)}>
               Save
             </button>
-            <button type="button" className="btn" data-kind="quiet" aria-disabled={!changed || busy || undefined} onClick={() => changed && !busy && setText(view.text)}>
+            <button type="button" className="btn" data-kind="quiet" aria-label={`Discard changes to ${title.toLowerCase()}`} aria-disabled={!changed || busy || undefined} onClick={() => changed && !busy && setText(view.text)}>
               Discard changes
             </button>
-            <button type="button" className="btn" data-kind="danger" aria-disabled={view.text === '' || busy || undefined} onClick={() => view.text !== '' && !busy && apply('')}>
+            <button type="button" className="btn" data-kind="danger" aria-label={`Clear ${title.toLowerCase()}`} aria-disabled={view.text === '' || busy || undefined} onClick={() => view.text !== '' && !busy && apply('')}>
               Clear
             </button>
           </div>

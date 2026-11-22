@@ -50,7 +50,7 @@ function Row({ label, names, saved, set, onSaved }: { label: string; names: read
           <option key={name} value={name} />
         ))}
       </datalist>
-      <button type="button" className="btn" aria-disabled={!changed || bad || busy || undefined} onClick={() => changed && !bad && !busy && save(value === '' ? null : value)}>
+      <button type="button" className="btn" aria-label={`${value === '' && saved !== '' ? 'Clear' : 'Set'} the model of ${label}`} aria-disabled={!changed || bad || busy || undefined} onClick={() => changed && !bad && !busy && save(value === '' ? null : value)}>
         {value === '' && saved !== '' ? 'Clear' : 'Set'}
       </button>
       {bad && (
