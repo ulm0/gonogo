@@ -1361,7 +1361,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const notReady = `waiting: ${name} is not ready for input`;
       const glyph = titleOf(rt)?.glyph;
       if (!probe.promptBox || probe.dialog !== null || glyph === 'working') {
-        // The Director's words never wait unseen: a screen gonogo cannot read (no prompt box where claude's input is) would hold them for ever.
+        // Nobody's mail waits unseen on a screen that shows nothing wrong, and the Director is told when his own words do: a screen gonogo cannot read (no prompt box where claude's input is) would hold them for ever.
         const first = queued(rt).find((record) => record.from === 'user');
         const waited = first === undefined ? 0 : io.now() - first.at;
         if (first !== undefined && waited >= DIRECTOR_STUCK_ALERT_MS && rt.stuckAlerted !== first.id) {
@@ -1371,7 +1371,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           io.notify?.('redline', `Your message to ${name} has waited ${Math.round(waited / 60_000)} min: ${why}. Open its terminal.`);
         }
         // Only a screen that shows nothing wrong is forced: no dialog, no working glyph, and the hooks say idle.
-        const force = first !== undefined && waited >= DIRECTOR_STUCK_FORCE_MS && probe.dialog === null && glyph !== 'working' && rt.state === 'idle';
+        const oldest = queued(rt)[0];
+        const force = oldest !== undefined && io.now() - oldest.at >= DIRECTOR_STUCK_FORCE_MS && probe.dialog === null && glyph !== 'working' && rt.state === 'idle';
         if (!force) {
           setWaitNotes(rt, notReady);
           return;

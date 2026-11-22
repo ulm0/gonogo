@@ -266,6 +266,7 @@ export const ENTER = '\r'; // the only submit key; a bare LF only inserts a newl
 export const PROMPT_GLYPH = '❯'; // "❯"
 export const NBSP = ' '; // the prompt row is "❯" + NBSP, never a normal space
 export const RULE_CHAR = '─'; // "─"
+export const RULE_EDGE_MIN_RUN = 8; // a rule row that a plugin's banner text cuts short still STARTS with a run of at least this many RULE_CHARs (t110: 17 of 42 columns)
 export const RULE_MIN_RUN = 20; // a rule row holds a run of at least this many RULE_CHARs
 /** Rows below the prompt row searched for the closing rule (a draft may wrap to a few rows). */
 export const BOX_MAX_ROWS = 10;

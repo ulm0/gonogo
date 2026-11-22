@@ -215,6 +215,24 @@ async function recordedScreens(file: string): Promise<Array<{ rows: string[]; co
 describe('analyzeScreen', () => {
   const box = (text: string, width = 60): string[] => [rule(width), `${PROMPT_GLYPH}${NBSP}${text}`, rule(width)];
 
+  it('finds the box on the real screen of FLIGHT (t110): 42 columns and a plugin banner set into the rule above the box', () => {
+    const rows = [
+      '✻ Churned for 13s · done 1:37 AM',
+      '● full  $1la4h 8Review  Audit  Board  [-]a',
+      '                   1% until auto-compact',
+      '───────────────── Gonogo message reading ─',
+      `${PROMPT_GLYPH}${NBSP}`,
+      '─'.repeat(42),
+      '  plan 73% wk',
+      '  ⏵⏵ auto mode on (shift+tab to cycle) ·',
+    ];
+    expect(analyzeScreen(rows, 42)).toMatchObject({ promptBox: true, dialog: null, promptText: '' });
+  });
+
+  it('a short run of rule characters in the middle of a line is still not a rule', () => {
+    expect(analyzeScreen(['text ──────── more', `${PROMPT_GLYPH}${NBSP}`, rule(60)], 80).promptBox).toBe(false);
+  });
+
   it('finds the idle box, an empty one included (the NBSP must survive)', () => {
     const rows = ['', '  some output', ...box(''), '  ? for shortcuts'];
     expect(analyzeScreen(rows, 80)).toEqual({ cols: 80, rows: rows.length, promptBox: true, dialog: null, promptText: '' });

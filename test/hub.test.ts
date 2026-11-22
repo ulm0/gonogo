@@ -1442,13 +1442,13 @@ describe('delivery to each recipient state (5.9)', () => {
       await h.advance(RECONCILE_TICK_MS);
       expect(h.typed).toHaveLength(1);
     });
-    it('a message from an agent waits for the box as before: no forcing, no alert', async () => {
+    it('a message from an agent is typed after the same wait, but nobody is alerted', async () => {
       const h = await withAna();
       await h.hireRaw('bob');
       h.setScreen('ana', { promptBox: false });
       h.send('bob', 'ana');
-      await h.advance(DIRECTOR_STUCK_ALERT_MS * 2);
-      expect(h.typed).toHaveLength(0);
+      await h.advance(DIRECTOR_STUCK_FORCE_MS + RECONCILE_TICK_MS * 2);
+      expect(h.typed).toHaveLength(1);
       expect(h.notices).toEqual([]);
     });
   });
