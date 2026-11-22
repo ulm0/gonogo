@@ -2,8 +2,10 @@
  * The top bar (docs/ui-semantic.md, "The top bar"): the logo and the version as a key, the link lamp, Rooms, Comms, a Work menu, a visible "Jump to…" field and a ⋯ menu.
  * One row at 1280 px. On a phone the same things: the bar has logo, version, lamp, Rooms and Jump; a bar at the bottom has Room, Comms, Work and More.
  */
+import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { DOCS_URL } from '../shared/protocol.js';
+import * as api from './api.js';
 import { CheckNow } from './CheckNow.js';
 import { Pop } from './Pop.js';
 import { MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
@@ -55,6 +57,9 @@ const commsName = (unread: number): string => (unread === 0 ? 'Comms' : `Comms, 
 function VersionButton(): ReactElement | null {
   const info = useStore((s) => s.info);
   const newer = useNewer();
+  const canUpdate = useStore((s) => s.rollout?.canUpdate === true);
+  const canUndo = useStore((s) => s.rollout?.update?.undo === true);
+  const [undoError, setUndoError] = useState<string | null>(null);
   // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
   setPublicOrigin(info?.publicUrl);
   if (info === null) return null;
@@ -68,6 +73,11 @@ function VersionButton(): ReactElement | null {
           </p>
           {newer !== null && <p className="hint">{newer} is out. Updating stops every agent while it installs, and it can be undone.</p>}
           {inMain && <CheckNow />}
+          {undoError !== null && (
+            <p className="error" role="alert">
+              {undoError}
+            </p>
+          )}
           <div className="lay-pop-keys">
             {newer !== null &&
               (inMain ? (
@@ -76,17 +86,30 @@ function VersionButton(): ReactElement | null {
                   className="btn"
                   data-kind="primary"
                   onClick={() => {
-                    window.dispatchEvent(new Event(ROLLOUT_SHOW));
+                    window.dispatchEvent(new CustomEvent(ROLLOUT_SHOW, { detail: { start: canUpdate } }));
                     close();
                   }}
                 >
-                  Update to {newer}
+                  {canUpdate ? `Update to ${newer}` : 'How to update'}
                 </button>
               ) : (
                 <a className="btn" data-kind="primary" href={`${MAIN_PATH}?update`}>
                   Open main to update
                 </a>
               ))}
+            {canUndo && inMain && (
+              <button
+                type="button"
+                className="btn"
+                data-kind="quiet"
+                onClick={() => {
+                  setUndoError(null);
+                  api.undoUpdate().then(close, (e: unknown) => setUndoError(e instanceof Error ? e.message : String(e)));
+                }}
+              >
+                UNDO the last update
+              </button>
+            )}
             <a className="btn" data-kind="quiet" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener">
               What&apos;s new
             </a>

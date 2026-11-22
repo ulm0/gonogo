@@ -2013,3 +2013,25 @@
 .system-actions {
   margin: 0;
 }
+
+/* the update strip: a fold (what this runs, how to fix, about this install) is a line, not a paragraph in the way */
+.rollout-fold,
+.rollout-fix {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.rollout-fold > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.rollout-fold > p,
+.rollout-fix > p {
+  margin: 4px 0 0;
+  max-width: 70ch;
+}
+
+.rollout-confirm .rollout-fix {
+  flex-basis: auto;
+}

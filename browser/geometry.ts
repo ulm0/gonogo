@@ -96,6 +96,15 @@ export async function duplicates(page: Page, scope: string): Promise<string[]> {
       if (el.matches('.lay-group-title')) continue;
       note(kind, text, '');
     }
+    // the same sentence twice on a view (the update note printed in two places): any two drawn blocks of text of 40 characters or more that say the same
+    const said = new Map<string, number>();
+    for (const el of document.querySelectorAll<HTMLElement>('p, span, div')) {
+      if (!inside(el) || !drawn(el) || el.querySelector('p, div') !== null) continue;
+      const words = norm(el.textContent ?? '');
+      if (words.length < 40) continue;
+      said.set(words, (said.get(words) ?? 0) + 1);
+    }
+    for (const [words, n] of said) if (n > 1) problems.push(`the same sentence is drawn ${n} times: "${words.slice(0, 60)}…"`);
     // a line that says its value and, in a chip beside it, the same words ("built-in default" twice)
     for (const line of document.querySelectorAll<HTMLElement>('.rt-now')) {
       if (!inside(line) || !drawn(line)) continue;
