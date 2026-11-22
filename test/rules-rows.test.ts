@@ -52,3 +52,16 @@ describe('long placeholders and selects are not cut', () => {
     expect(readFileSync('src/client/forms.css', 'utf8')).toMatch(/\.perm-tools \{[^}]*minmax\(190px, 1fr\)/);
   });
 });
+
+describe('Automation and connections holds the real controls', () => {
+  it('has the schedules, the webhooks, Relay and Docking in rows, each the component of its own, and no key that only opens another view', () => {
+    for (const row of ['Schedules', 'Uplink webhooks', 'Relay: Slack, Telegram, GitHub, Linear', 'Docking: other stations']) expect(source, row).toContain(`<Row name="${row}"`);
+    for (const block of ['<SchedulesBlock />', '<UplinkPanel />', '<RelayPanel />', '<DockingPanel />']) expect(source, block).toContain(block);
+    expect(source).not.toContain('Open Launch Window');
+    expect(source).not.toMatch(/onClick=\{showWindow\}/);
+  });
+
+  it('a row of a feature that is switched off is not drawn', () => {
+    for (const feature of ['launch-window', 'uplink', 'relay', 'docking']) expect(source).toContain(`!off.includes('${feature}')`);
+  });
+});

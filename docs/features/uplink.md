@@ -2,7 +2,7 @@
 
 <UplinkMock class="doc-mock" />
 
-UPLINK (under the schedules in Launch Window) lists webhooks: addresses a service or script posts JSON to; each post reaches an agent as a message from the Director (Max Q, Redline and held mail apply). Design and limits: [`docs/uplink-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/uplink-spec.md).
+UPLINK (Flight Rules, Automation and connections, the row Uplink webhooks) lists webhooks: addresses a service or script posts JSON to; each post reaches an agent as a message from the Director (Max Q, Redline and held mail apply). Design and limits: [`docs/uplink-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/uplink-spec.md).
 
 - **An uplink**: name (at most 60 characters), recipient (FLIGHT, following the current boss, or a console that can read mail), and a secret gonogo makes (64 hex characters). Message subject `Uplink: <name>`, body the JSON pretty-printed, cut at 20000 characters with a note. At most 20 uplinks. Kind, fixed at creation: `generic` or `github`, `linear`, `slack`, `telegram` ([Relay](./relay.md)).
 - **The secret is shown once**, at creation and rotation (stored in `uplinks.json`). Lost: ROTATE SECRET; the old one stops at once.

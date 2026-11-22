@@ -128,6 +128,7 @@
 /* a row names its block already (the summary has the name and what it is now): the block's own title and value line stay for a screen reader and are not drawn twice */
 .lay-row-body :is(.rules-block, .wall-block) > h2.label:first-child,
 .lay-row-body .wall-head > h2.label,
+.lay-row-body :is(.win-block, .up, .rl, .dk) > .loop-head > h2,
 .lay-row-body .rules-value {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
@@ -139,3 +140,4 @@
   .lay-group-nav::-webkit-scrollbar { display: none; }
   .lay-group-nav .btn { flex: none; min-height: 44px; }
 }
+.lay-row-body :is(.win-block, .up, .rl, .dk) > .loop-head { justify-content: flex-start; }

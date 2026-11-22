@@ -12,9 +12,6 @@ import type { Field, Problems, Values } from './launch.js';
 import { useAgentList } from './RoomView.js';
 import { setLaunchTab, showHistory, showRoom, useNow, useStore } from './store.js';
 import { TriggerHistory } from './TriggerHistory.js';
-import { DockingPanel } from './DockingPanel.js';
-import { RelayPanel } from './RelayPanel.js';
-import { UplinkPanel } from './UplinkPanel.js';
 import { useRun } from './WallView.js';
 import './loop.css';
 import './launch.css';
@@ -305,50 +302,38 @@ function Row({ schedule, now, onEdit, onNotice }: { schedule: ScheduleView; now:
 }
 
 /** The view of the top bar's LAUNCH WINDOW key. */
-export function LaunchWindow(): ReactElement {
+/**
+ * The schedules: the zone they run in, New schedule, the editor, the list. In the Launch Window view and in Flight Rules (Automation and connections), the same component.
+ */
+export function SchedulesBlock(): ReactElement {
   const titleId = useId();
   const schedules = useStore((s) => s.schedules);
-  const tab = useStore((s) => s.launchTab);
   const zone = useStore((s) => s.info?.timeZone ?? '');
   const now = useNow();
   const note = zoneNote(zone, browserZoneOf(zone));
   /** 'new', the id of the schedule being edited, or nothing. */
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
-  const heading = useRef<HTMLHeadingElement | null>(null);
-  // The page replaces the room: the keyboard starts at its title, not on a button that is gone.
-  useEffect(() => heading.current?.focus(), []);
+  const add = useRef<HTMLButtonElement | null>(null);
   const target = editing === null || editing === 'new' ? null : (schedules.find((s) => s.id === editing) ?? null);
   const open = editing === 'new' || target !== null;
   const done = (): void => {
     setEditing(null);
-    heading.current?.focus();
+    add.current?.focus();
   };
   return (
-    <section className="win" aria-labelledby={titleId}>
+    <section className="win-block" aria-labelledby={titleId}>
       <header className="loop-head">
-        <h1 id={titleId} ref={heading} tabIndex={-1} className="disp loop-title win-title">
-          LAUNCH WINDOW
-        </h1>
-        <button type="button" className="btn" data-kind="primary" aria-disabled={schedules.length >= SCHEDULES_MAX || undefined} onClick={() => schedules.length < SCHEDULES_MAX && setEditing('new')}>
+        <h2 id={titleId} className="disp loop-title win-title">
+          SCHEDULES
+        </h2>
+        <button type="button" ref={add} className="btn" data-kind="primary" aria-disabled={schedules.length >= SCHEDULES_MAX || undefined} onClick={() => schedules.length < SCHEDULES_MAX && setEditing('new')}>
           New schedule
         </button>
-        <button type="button" className="btn loop-room" data-kind="quiet" onClick={showRoom}>
-          Room
-        </button>
       </header>
-      <div className="trg-tabs" role="group" aria-label="Launch Window views">
-        <button type="button" className="btn" data-kind={tab === 'triggers' ? 'primary' : 'quiet'} aria-pressed={tab === 'triggers'} onClick={() => setLaunchTab('triggers')}>
-          Triggers
-        </button>
-        <button type="button" className="btn" data-kind={tab === 'history' ? 'primary' : 'quiet'} aria-pressed={tab === 'history'} onClick={() => setLaunchTab('history')}>
-          History
-        </button>
-      </div>
-      {tab === 'history' && <TriggerHistory />}
-      {tab === 'triggers' && zone !== '' && <p className="hint win-zone">{note ?? `Rules run in the server’s time zone: ${zone}.`}</p>}
-      {tab === 'triggers' && open && <Editor key={editing} schedule={target} onDone={done} />}
-      {tab === 'triggers' && <div className="win-list module">
+      {zone !== '' && <p className="hint win-zone">{note ?? `Rules run in the server’s time zone: ${zone}.`}</p>}
+      {open && <Editor key={editing} schedule={target} onDone={done} />}
+      <div className="win-list module">
         {schedules.length === 0 ? (
           <p className="loop-empty">No schedules yet. A schedule sends a message by itself on a rule, for example every weekday at 09:00.</p>
         ) : (
@@ -359,17 +344,40 @@ export function LaunchWindow(): ReactElement {
           </ul>
         )}
       </div>
-      }
-      {tab === 'triggers' && (
-        <>
-          <UplinkPanel />
-          <RelayPanel />
-          <DockingPanel />
-        </>
-      )}
       <p className="sr-only" role="status">
         {notice}
       </p>
+    </section>
+  );
+}
+
+/** The Launch Window view: the schedules and the history of what fired. Uplink, Relay and Docking are in Flight Rules, Automation and connections. */
+export function LaunchWindow(): ReactElement {
+  const titleId = useId();
+  const tab = useStore((s) => s.launchTab);
+  const heading = useRef<HTMLHeadingElement | null>(null);
+  // The page replaces the room: the keyboard starts at its title, not on a button that is gone.
+  useEffect(() => heading.current?.focus(), []);
+  return (
+    <section className="win" aria-labelledby={titleId}>
+      <header className="loop-head">
+        <h1 id={titleId} ref={heading} tabIndex={-1} className="disp loop-title win-title">
+          LAUNCH WINDOW
+        </h1>
+        <button type="button" className="btn loop-room" data-kind="quiet" onClick={showRoom}>
+          Room
+        </button>
+      </header>
+      <div className="trg-tabs" role="group" aria-label="Launch Window views">
+        <button type="button" className="btn" data-kind={tab === 'triggers' ? 'primary' : 'quiet'} aria-pressed={tab === 'triggers'} onClick={() => setLaunchTab('triggers')}>
+          Schedules
+        </button>
+        <button type="button" className="btn" data-kind={tab === 'history' ? 'primary' : 'quiet'} aria-pressed={tab === 'history'} onClick={() => setLaunchTab('history')}>
+          History
+        </button>
+      </div>
+      {tab === 'history' && <TriggerHistory />}
+      {tab === 'triggers' && <SchedulesBlock />}
     </section>
   );
 }
