@@ -4,6 +4,12 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.12.2 (2026-11-22)
+
+Mail now reaches an agent whose console shows a title in the prompt's rule, and a 60 s safety net types the pointer for any mail stuck on an idle agent.
+
+- **gonogo could not see the input box of an agent whose rule row carried banner text, so its mail waited for hours.** A rule row that starts with 8 or more rule characters and a space (a status line or plugin sets a title into it) now counts, as does a narrow screen. As a safety net, mail for an agent that is idle by its hooks, with no dialog, is typed after a minute even when the box is not found; the Director's own messages that still wait after three minutes raise an alert with the reason.
+
 ## 0.12.1 (2026-11-21)
 
 The Docker self-update finds its own container from /proc, so it works when the hostname no longer matches the container (a recreate by a host app manager); CI's update test takes its versions from the release tag.
