@@ -16,6 +16,8 @@ import {
   COMMAND_MAX_CHARS,
   CUSTOM_ACTIVE_MS,
   CUSTOM_START_MS,
+  DIRECTOR_STUCK_ALERT_MS,
+  DIRECTOR_STUCK_FORCE_MS,
   DELIVERY_COALESCE_MS,
   DELIVERY_SETTLE_MS,
   DRAFT_EXPIRY_MS,
@@ -1410,6 +1412,46 @@ describe('delivery to each recipient state (5.9)', () => {
     await h.advance(RECONCILE_TICK_MS);
     expect(h.typed).toHaveLength(1);
     expect(h.msg('m1').note).toBe(CONFIRMING);
+  });
+
+  describe("the Director's message and a screen that is not ready (t110)", () => {
+    it('no input box on a screen that shows nothing else wrong: the pointer is typed after DIRECTOR_STUCK_FORCE_MS, the Director is told after DIRECTOR_STUCK_ALERT_MS only if it still waits', async () => {
+      const h = await withAna();
+      h.setScreen('ana', { promptBox: false });
+      h.send('user', 'ana');
+      await h.advance(DIRECTOR_STUCK_FORCE_MS - 5_000);
+      expect(h.typed).toHaveLength(0);
+      await h.advance(10_000 + RECONCILE_TICK_MS);
+      expect(h.typed).toHaveLength(1);
+      expect(h.notices.filter(([kind]) => kind === 'redline')).toEqual([]);
+      expect(h.warnings.filter((w) => /has waited \d+ s on a screen that is not ready: promptBox=false dialog=null/.test(w))).toHaveLength(1);
+    });
+    it('a dialog or a working title is never forced; the Director is told once, with the reason, and it types when the screen is ready', async () => {
+      const h = await withAna();
+      h.setScreen('ana', { dialog: 'menu' });
+      h.send('user', 'ana');
+      await h.advance(DIRECTOR_STUCK_FORCE_MS + RECONCILE_TICK_MS * 2);
+      expect(h.typed).toHaveLength(0);
+      expect(h.notices).toEqual([]);
+      await h.advance(DIRECTOR_STUCK_ALERT_MS);
+      await h.advance(DIRECTOR_STUCK_ALERT_MS);
+      expect(h.typed).toHaveLength(0);
+      const told = h.notices.filter(([kind]) => kind === 'redline');
+      expect(told).toHaveLength(1);
+      expect(told[0]?.[1]).toMatch(/Your message to ana has waited \d+ min: a menu dialog is on its screen/);
+      h.setScreen('ana', { dialog: null });
+      await h.advance(RECONCILE_TICK_MS);
+      expect(h.typed).toHaveLength(1);
+    });
+    it('a message from an agent is typed after the same wait, but nobody is alerted', async () => {
+      const h = await withAna();
+      await h.hireRaw('bob');
+      h.setScreen('ana', { promptBox: false });
+      h.send('bob', 'ana');
+      await h.advance(DIRECTOR_STUCK_FORCE_MS + RECONCILE_TICK_MS * 2);
+      expect(h.typed).toHaveLength(1);
+      expect(h.notices).toEqual([]);
+    });
   });
 
   it('an unparsed screen: nothing is typed, nothing changes, the next sweep tries again', async () => {

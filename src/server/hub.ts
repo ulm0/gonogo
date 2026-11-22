@@ -116,6 +116,8 @@ import {
   PERMISSION_SUMMARY_CHARS,
   DIRECTOR_REPLY_TAIL,
   DIRECTOR_TURN_CHARS,
+  DIRECTOR_STUCK_ALERT_MS,
+  DIRECTOR_STUCK_FORCE_MS,
   LEGACY_POINTER_MAX_CHARS,
   DIRECTOR_TURNS_TOTAL_CHARS,
   POINTER_MAX_ATTEMPTS,
@@ -481,6 +483,10 @@ interface Rt {
   removed: boolean;
   /** Redline: why the circuit breaker tripped, null when it did not. Held mail and needs_you until the Director resumes. */
   redline: string | null;
+  /** The id of the Director's message the Director was told is waiting (once per message). */
+  stuckAlerted: string | null;
+  /** The id of the oldest message whose wait on a not-ready screen was written to the log (once per episode). */
+  stuckLogged: string | null;
   /** The last tool call (name and input) and how many times in a row it came, for the agent itself ('main') and for each subagent by its agent_id (docs/subagents-spec.md). */
   repeat: Map<string, { sig: string; count: number }>;
   /** Times of failed tool calls (the same keys) and of API errors in their windows, oldest first. */
@@ -669,6 +675,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       lastSig: null,
       removed: false,
       redline: null,
+      stuckAlerted: null,
+      stuckLogged: null,
       repeat: new Map(),
       toolFailAt: new Map(),
       subagents: new Map(),
@@ -1354,13 +1362,30 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const probe = screenOf(rt);
       if (probe === null) return;
       const notReady = `waiting: ${name} is not ready for input`;
-      if (!probe.promptBox || probe.dialog !== null) {
-        setWaitNotes(rt, notReady);
-        return;
-      }
-      if (titleOf(rt)?.glyph === 'working') {
-        setWaitNotes(rt, notReady);
-        return;
+      const glyph = titleOf(rt)?.glyph;
+      if (!probe.promptBox || probe.dialog !== null || glyph === 'working') {
+        // Nobody's mail waits unseen on a screen that shows nothing wrong, and the Director is told when his own words do: a screen gonogo cannot read (no prompt box where claude's input is) would hold them for ever.
+        const first = queued(rt).find((record) => record.from === 'user');
+        const waited = first === undefined ? 0 : io.now() - first.at;
+        if (first !== undefined && waited >= DIRECTOR_STUCK_ALERT_MS && rt.stuckAlerted !== first.id) {
+          rt.stuckAlerted = first.id;
+          const why = probe.dialog !== null ? `a ${probe.dialog} dialog is on its screen` : !probe.promptBox ? 'gonogo cannot see its input box' : 'its window title says it is working';
+          log.warn(`the Director's message ${first.id} has waited ${Math.round(waited / 1000)} s for ${name}: ${why}`);
+          io.notify?.('redline', `Your message to ${name} has waited ${Math.round(waited / 60_000)} min: ${why}. Open its terminal.`);
+        }
+        // Only a screen that shows nothing wrong is forced: no dialog, no working glyph, and the hooks say idle.
+        const oldest = queued(rt)[0];
+        if (oldest !== undefined && io.now() - oldest.at >= DIRECTOR_STUCK_FORCE_MS && rt.stuckLogged !== oldest.id) {
+          rt.stuckLogged = oldest.id;
+          // which of the three checks failed, once per wait (the screen's own lines are not here: the probe is a summary, the pty host keeps the rest)
+          log.warn(`mail for ${name} has waited ${Math.round((io.now() - oldest.at) / 1000)} s on a screen that is not ready: promptBox=${String(probe.promptBox)} dialog=${String(probe.dialog)} titleGlyph=${String(glyph)} state=${rt.state} screen=${String(probe.cols)}x${String(probe.rows)} promptText=${JSON.stringify((probe.promptText ?? '').slice(0, 80))}`);
+        }
+        const force = oldest !== undefined && io.now() - oldest.at >= DIRECTOR_STUCK_FORCE_MS && probe.dialog === null && glyph !== 'working' && rt.state === 'idle';
+        if (!force) {
+          setWaitNotes(rt, notReady);
+          return;
+        }
+        log.warn(`typing the pointer for the Director's message into ${name} although no input box is on its screen (idle by its hooks for ${Math.round(waited / 1000)} s)`);
       }
     }
     const records = queued(rt);

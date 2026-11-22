@@ -266,9 +266,14 @@ export const ENTER = '\r'; // the only submit key; a bare LF only inserts a newl
 export const PROMPT_GLYPH = '❯'; // "❯"
 export const NBSP = ' '; // the prompt row is "❯" + NBSP, never a normal space
 export const RULE_CHAR = '─'; // "─"
+export const RULE_EDGE_MIN_RUN = 8; // a rule row that a plugin's banner text cuts short still STARTS with a run of at least this many RULE_CHARs (t110: 17 of 42 columns)
 export const RULE_MIN_RUN = 20; // a rule row holds a run of at least this many RULE_CHARs
 /** Rows below the prompt row searched for the closing rule (a draft may wrap to a few rows). */
 export const BOX_MAX_ROWS = 10;
+/** The Director's message waits this long for a screen that shows no prompt box (and no dialog, and no hook says the agent works): then the pointer is typed anyway. */
+export const DIRECTOR_STUCK_FORCE_MS = 60_000;
+/** ...and after this long without a pointer the Director is told, on his phone too: his words are not silently waiting. */
+export const DIRECTOR_STUCK_ALERT_MS = 180_000;
 export const TITLE_IDLE_GLYPH = '✳'; // "✳": not running a turn (also while a permission dialog is open!)
 /** "◐" "◑": a model turn or a shell-mode command is running. Add frames here if a real run shows more. */
 export const TITLE_WORKING_GLYPHS = ['◐', '◑'] as const;

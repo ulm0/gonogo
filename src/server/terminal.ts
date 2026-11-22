@@ -45,6 +45,7 @@ import {
   POINTER_PREFIX,
   PROMPT_GLYPH,
   RULE_CHAR,
+  RULE_EDGE_MIN_RUN,
   RULE_MIN_RUN,
   SNAPSHOT_SCROLLBACK_LINES,
   STOP_GIVEUP_AFTER_KILL_MS,
@@ -66,15 +67,18 @@ const FALLBACK_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 /* ---- screen analysis (6.4) ---- */
 
 const RULE_RUN = new RegExp(`${RULE_CHAR}{${RULE_MIN_RUN},}`);
+/** A rule row with a title or banner set into it ("────── Gonogo message reading ─"), or a narrow screen, never has the long run. */
+const RULE_EDGE = new RegExp(`^${RULE_CHAR}{${RULE_EDGE_MIN_RUN},} \\S`);
+const isRule = (row: string): boolean => RULE_RUN.test(row) || RULE_EDGE.test(row);
 const BOX_PREFIX = PROMPT_GLYPH + NBSP;
 const DIALOGS = DIALOG_PATTERNS.map(({ kind, source }) => ({ kind, regex: new RegExp(source) }));
 
 /** The lowest row that is a prompt row between two rules, or -1. The lowest is the live box, not an echo in the transcript. */
 function findPromptBox(rows: readonly string[]): number {
   for (let y = rows.length - 1; y >= 1; y--) {
-    if (!rows[y].startsWith(BOX_PREFIX) || !RULE_RUN.test(rows[y - 1])) continue;
+    if (!rows[y].startsWith(BOX_PREFIX) || !isRule(rows[y - 1])) continue;
     for (let k = 1; k <= BOX_MAX_ROWS && y + k < rows.length; k++) {
-      if (RULE_RUN.test(rows[y + k])) return y;
+      if (isRule(rows[y + k])) return y;
     }
   }
   return -1;
