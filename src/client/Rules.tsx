@@ -163,16 +163,14 @@ const GROUPS: ReadonlyArray<readonly [string, string]> = [['room', 'Room'], ['ag
 /** The open group and how to change it: a context, so that Group is one component for good (one defined inside FlightRules is a new type at every render, and React would rebuild every block in it each time a value arrives). */
 const GroupContext = createContext<{ open: string; setOpen(id: string): void; base: string }>({ open: '', setOpen: () => undefined, base: '' });
 
-function Group({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement {
-  const { open, setOpen, base } = useContext(GroupContext);
+function Group({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement | null {
+  const { open, base } = useContext(GroupContext);
+  // option B: the index at the top chooses the group, and only that group is below it
+  if (open !== id) return null;
   return (
-    <section className="lay-group" id={`${base}-g-${id}`} aria-label={title} data-open={open === id || undefined}>
-      <h2 className="lay-group-title">
-        <button type="button" className="btn" data-kind="quiet" aria-expanded={open === id} onClick={() => setOpen(open === id ? '' : id)}>
-          {title} {open === id ? '▾' : '▸'}
-        </button>
-      </h2>
-      {open === id && <div className="lay-group-body">{children}</div>}
+    <section className="lay-group" id={`${base}-g-${id}`} aria-label={title} data-open>
+      <h2 className="lay-group-title">{title}</h2>
+      <div className="lay-group-body">{children}</div>
     </section>
   );
 }
