@@ -594,13 +594,18 @@ function render(value: unknown): string {
   }
 }
 
+/** Runtime settings (docs/runtime-settings-spec.md): a level set after start wins over the one a logger was made with, in every logger of this process. */
+let levelNow: LogLevel | null = null;
+export function setLogLevel(level: LogLevel | null): void {
+  levelNow = level;
+}
+
 /** Never log tokens, API keys, message bodies or hook payloads (event names and ids only). */
 export function createLogger(options: LoggerOptions = {}): Logger {
-  const min = LEVELS[options.level ?? 'info'];
   const sink = options.sink ?? ((line: string) => void process.stderr.write(line + '\n'));
   const prefix = options.prefix ? `[${options.prefix}] ` : '';
   const emit = (level: LogLevel, message: string, extra: unknown[]): void => {
-    if (LEVELS[level] < min) return;
+    if (LEVELS[level] < LEVELS[levelNow ?? options.level ?? 'info']) return;
     const tail = extra.length ? ' ' + extra.map(render).join(' ') : '';
     sink(`${new Date().toISOString()} ${level.padEnd(5)} ${prefix}${message}${tail}`);
   };

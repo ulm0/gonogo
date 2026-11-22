@@ -21,6 +21,7 @@ import type { AuthStore, HashCosts } from './auth.js';
 import { createAuthHttp } from './authhttp.js';
 import { createDevices } from './devicelogin.js';
 import { createPasskeys } from './passkeys.js';
+import { GLOBAL_SETTINGS_FILE, globalSetting } from './settings.js';
 import { KNOWLEDGE_DIR, nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
@@ -347,6 +348,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     env.GONOGO_ROOM = child.entry.id;
     // the Knowledge store lives with the supervisor, not in a room: it survives a deleted room, and the rooms of an install share the claims the Director accepted
     env.GONOGO_KNOWLEDGE_DIR = join(options.home, KNOWLEDGE_DIR);
+    // the settings every room shares (docs/runtime-settings-spec.md): a room reads the file itself, over its own
+    env.GONOGO_GLOBAL_SETTINGS = join(options.home, GLOBAL_SETTINGS_FILE);
     // where the install's rooms are (rooms.json, and each room's socket): main reads it to offer a Telegram update to the room it belongs to
     env.GONOGO_INSTALL_ROOT = options.home;
     // the rooms of one install offer each other Telegram updates with this key (telegramroute.ts); new at every start of the supervisor, never written to a file
@@ -372,6 +375,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         // the one question a room may ask: no route, no port, only this pipe; any other line is just output
         if ((line === 'gonogo-ask busy' || line === 'gonogo-ask idle') && child.proc === proc) {
           void answerBusy(child, proc, line === 'gonogo-ask idle');
+          continue;
+        }
+        // a room wrote the file of settings for every room: only the fact is taken from it, every running room is told to read the file again and checks it itself
+        if (line === 'gonogo-settings-changed' && child.proc === proc) {
+          for (const other of children.values()) if (other.proc !== null && other.state === 'running') other.proc.stdin?.write('gonogo-settings\n');
           continue;
         }
         // what waits for the Director in this room, to be pushed to the phones (push.ts): checked and cut here, whatever the room sent
@@ -644,7 +652,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   /** What main's daily check saw, when it is newer than this version: the other rooms run no check of their own, and their pages ask here. Nothing when the check is off. */
   const newerNow = (): { latest: string } | null => {
-    const latest = updateCheckOff(options.env.GONOGO_UPDATE_CHECK) || options.roomArgs?.includes('--no-update-check') === true ? null : cachedLatest(homeOfRoom(MAIN_ROOM));
+    const latest = updateCheckOff(globalSetting(join(options.home, GLOBAL_SETTINGS_FILE), 'updateCheck', options.env) ?? undefined) || options.roomArgs?.includes('--no-update-check') === true ? null : cachedLatest(homeOfRoom(MAIN_ROOM));
     return latest !== null && options.version !== undefined && isNewer(latest, options.version) ? { latest } : null;
   };
 

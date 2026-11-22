@@ -10,6 +10,7 @@ const args = process.argv.slice(2);
 const home = args[args.indexOf('--home') + 1];
 mkdirSync(home, { recursive: true });
 mkdirSync(join(home, 'run'), { recursive: true, mode: 0o700 });
+fs.writeFileSync(join(home, 'global-settings-env'), process.env.GONOGO_GLOBAL_SETTINGS ?? '');
 const sockPath = join(home, 'run', 'room.sock');
 fs.rmSync(sockPath, { force: true });
 writeFileSync(join(home, 'started-with'), JSON.stringify({ args, home: process.env.GONOGO_HOME, port: process.env.GONOGO_PORT ?? null, supervisor: process.env.GONOGO_SUPERVISOR_PID ?? null, reloaded: process.env.GONOGO_RELOADED ?? null, env: Object.keys(process.env).filter((k) => /token/i.test(k)) }));
@@ -32,8 +33,8 @@ const server = http.createServer((req, res) => {
     return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ propellant: { cost: { days: [{ usd: 0.12 }, { usd: 1.5 }] } }, agents: [{ name: 'ana', state: 'working', stateSince: 1_700_000_000_000 }, { name: 'ben', state: 'needs_you', stateSince: 1_700_000_500_000 }], activity: [{ at: 1_700_000_900_000 }], relief: { requests: process.env.FAKE_ROOM_RELIEF && home.includes('/rooms/') ? [{ id: 'r1' }] : [] }, poll: process.env.FAKE_ROOM_POLL_OPEN && home.includes('/rooms/') ? { status: 'open' } : null, tabName: { name: process.env.FAKE_TAB || 'Fake tab', fallback: null } }));
   }
   // what the proxy puts on a message of the Director (test/login.test.ts: the user turns); every request is written, the last one is read
-  if (ok && req.method === 'POST' && req.url?.toLowerCase().startsWith('/api/')) {
-    fs.appendFileSync(join(home, 'posts.jsonl'), `${JSON.stringify({ url: req.url, director: req.headers['x-gonogo-director'] ?? null, other: Object.keys(req.headers).filter((h) => h.startsWith('x-gonogo-')) })}\n`);
+  if (ok && (req.method === 'POST' || (req.method === 'PUT' && req.url?.startsWith('/api/settings'))) && req.url?.toLowerCase().startsWith('/api/')) {
+    fs.appendFileSync(join(home, 'posts.jsonl'), `${JSON.stringify({ url: req.url, director: req.headers['x-gonogo-director'] ?? null, actor: req.headers['x-gonogo-actor'] ?? null, other: Object.keys(req.headers).filter((h) => h.startsWith('x-gonogo-')) })}\n`);
   }
   res.writeHead(200, { 'content-type': 'text/html' }).end(`<p>room at ${home}</p>`);
 });
@@ -75,7 +76,7 @@ process.on('SIGUSR2', () => {
 // --exit-with-stdin: the supervisor's end of the pipe closing is a graceful stop, as for a real room
 if (args.includes('--exit-with-stdin')) {
   // the supervisor's alerts come as `gonogo-alert "text"` lines: kept for the tests to read
-  process.stdin.on('data', (d) => { for (const line of String(d).split('\n')) { if (line.startsWith('gonogo-alert ')) fs.appendFileSync(join(home, 'alerts'), line.slice(13) + '\n'); if (line.startsWith('gonogo-notice ')) fs.appendFileSync(join(home, 'notices'), line.slice(14) + '\n'); } });
+  process.stdin.on('data', (d) => { for (const line of String(d).split('\n')) { if (line.startsWith('gonogo-alert ')) fs.appendFileSync(join(home, 'alerts'), line.slice(13) + '\n'); if (line === 'gonogo-settings') fs.appendFileSync(join(home, 'settings-lines'), line + '\n'); if (line.startsWith('gonogo-notice ')) fs.appendFileSync(join(home, 'notices'), line.slice(14) + '\n'); } });
   process.stdin.on('end', () => process.kill(process.pid, 'SIGTERM'));
   process.stdin.resume();
 }

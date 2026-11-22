@@ -24,12 +24,15 @@ import {
   TRANSIENT_ERROR_CODES,
   TRANSIENT_ERROR_PREFIXES,
   createLogger,
+  setLogLevel,
   nullLogger,
   AGENTS_DIR,
   KNOWLEDGE_DIR,
   KNOWLEDGE_PROPOSALS_DIR,
 } from './constants.js';
 import type { LogLevel } from './constants.js';
+import { createSettings, globalSetting } from './settings.js';
+import type { SettingKey } from './settings.js';
 import { createRitualTemplate } from './ritual.js';
 import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
@@ -661,6 +664,31 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
 
     const roomKeys = createRoomKeys({ dir: home.dir, log: log.child('room-keys') });
     await roomKeys.load();
+    // runtime settings (docs/runtime-settings-spec.md): the room's file over the file of every room over the environment
+    const runtime = createSettings({ roomHome: home.dir, globalPath: options.roomChild === true ? (env.GONOGO_GLOBAL_SETTINGS?.trim() || null) : null, env, log: log.child('settings') });
+    /** What the files say (not the environment: that is the default the options and resolveSettings already hold), or null. */
+    const fromFiles = (key: SettingKey): string | null => {
+      const row = runtime.row(key);
+      return row.source === 'room' || row.source === 'global' ? row.value : null;
+    };
+    const filesWorking = (): number | null | undefined => {
+      const text = fromFiles('maxWorking');
+      return text === null ? undefined : text === '' ? null : Number(text);
+    };
+    // the launcher reads these two at each agent start; the copy is the one place a setting reaches them
+    const liveEnv: Record<string, string | undefined> = { ...env };
+    const syncEnv = (): void => {
+      for (const [key, name] of [['scrubEnv', 'GONOGO_SCRUB_ENV'], ['cleanRoomImage', 'GONOGO_CLEANROOM_IMAGE']] as const) {
+        const text = fromFiles(key);
+        if (text === null) liveEnv[name] = env[name];
+        else liveEnv[name] = text;
+      }
+    };
+    syncEnv();
+    const agentCmdNow = (): string[] | null => {
+      const text = fromFiles('agentCmd');
+      return text === null ? agentCmd : parseAgentCmd(text);
+    };
     const clearance = createClearance({ dir: home.dir, log: log.child('clearance') });
     await clearance.load();
     const modelDefaults = createModelDefaults({ dir: home.dir, log: log.child('models') });
@@ -684,8 +712,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       tokensFile: remote ? join(runDir(home.dir), TOKENS_FILE) : null,
       hubUrl: () => baseUrl,
       seed,
-      env,
-      agentCmd,
+      env: liveEnv,
+      agentCmd: agentCmdNow,
       keys: (name) => clearance.values(name),
       roomKeys: (cleanRoom) => roomKeys.values(cleanRoom),
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
@@ -918,8 +946,22 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('hub'),
     };
-    const hubInstance = createHub(io, { maxHops, bossDir: cwd, maxWorking, redline, defaultEngine: () => modelDefaults.engine() });
+    const hubInstance = createHub(io, { maxHops: Number(fromFiles('maxHops') ?? maxHops), bossDir: cwd, maxWorking: filesWorking() === undefined ? maxWorking : (filesWorking() as number | null), redline, defaultEngine: () => modelDefaults.engine() });
     hub = hubInstance;
+    /** A setting changed (here, or in another room): what can be applied now is. The rest says so in the view (`applies`). */
+    const applyRuntime = (): void => {
+      syncEnv();
+      hubInstance.setMaxHops(Number(fromFiles('maxHops') ?? maxHops));
+      const limit = filesWorking();
+      if (limit !== undefined) hubInstance.setGovernor({ limit });
+      const level = fromFiles('logLevel');
+      setLogLevel(level === null ? null : (level as LogLevel));
+    };
+    applyRuntime();
+    onSupervisorSettings = () => {
+      runtime.reload();
+      applyRuntime();
+    };
 
     // subscribed before the first spawn; the revoke comes first so a hook that is still in flight after the exit gets a 401
     terminalHost.onEvent((event) => {
@@ -1010,7 +1052,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const docking = createDocking({
       dir: home.dir,
       trigger: (entry) => triggers.record(entry),
-      name: stationName(env[STATION_ENV], hostname()),
+      name: stationName(runtime.get('station') ?? env[STATION_ENV], hostname()),
       now: io.now,
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       deliver: (station, message) => hubInstance.sendFromStation(station, message),
@@ -1097,7 +1139,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       log: log.child('review'),
     }), blackBox.record, REVIEW_AUDIT);
     const room = audited(createRoomLayout({ dir: home.dir, emit: (view) => web?.broadcast({ t: 'room', room: view }), log: log.child('room') }), blackBox.record, ROOM_AUDIT);
-    const tabName = audited(createTabName({ dir: home.dir, fallback: (env[STATION_ENV] ?? '').trim() === '' ? null : stationName(env[STATION_ENV], hostname()), emit: (view) => web?.broadcast({ t: 'tabname', tabName: view }), log: log.child('tabname') }), blackBox.record, TABNAME_AUDIT);
+    const tabName = audited(createTabName({ dir: home.dir, fallback: (runtime.get('station') ?? env[STATION_ENV] ?? '').trim() === '' ? null : stationName(runtime.get('station') ?? env[STATION_ENV], hostname()), emit: (view) => web?.broadcast({ t: 'tabname', tabName: view }), log: log.child('tabname') }), blackBox.record, TABNAME_AUDIT);
     const relief = createRelief({
       hub: hubInstance,
       defaultEngine: () => modelDefaults.engine(),
@@ -1312,6 +1354,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       models: modelDefaults,
       features: audited(features, audit, FEATURES_AUDIT),
       roomKeys: audited(roomKeys, blackBox.record, ROOM_KEYS_AUDIT),
+      settings: {
+        store: runtime,
+        apply: applyRuntime,
+        audit: blackBox.record,
+        // a change for every room is said to the supervisor, which has every room read the file again (it takes nothing from this line but the fact)
+        announce: () => void (options.roomChild === true && options.exitWithStdin === true && process.stdout.write('gonogo-settings-changed\n')),
+      },
       payloadDefaults: audited(payloadDefaults, blackBox.record, PAYLOAD_DEFAULTS_AUDIT),
       permissions: audited(permissionDefaults, blackBox.record, PERMISSIONS_AUDIT),
       ritualTemplate: audited(createRitualTemplate({ dir: home.dir, now: io.now }), blackBox.record, RITUAL_TEMPLATE_AUDIT),
@@ -1875,7 +1924,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
  * `gonogo-ask busy` on stdout, the supervisor answers one line `gonogo-answer busy {"busy":<text|null>,"room":<id|null>}` on stdin. One answer per
  * question; a second question while one is out waits for it. No answer in 5 s is "busy", so an update never goes ahead on a guess.
  */
-export function createPipeAnswers(write: (line: string) => void, timeoutMs = 5000, onAlert: (text: string) => void = () => undefined, onNotice: (text: string) => void = () => undefined) {
+export function createPipeAnswers(write: (line: string) => void, timeoutMs = 5000, onAlert: (text: string) => void = () => undefined, onNotice: (text: string) => void = () => undefined, onSettings: () => void = () => undefined) {
   let waiting: Array<(answer: { busy: string | null; room: string | null }) => void> = [];
   let buffer = '';
   const none = { busy: 'the supervisor did not answer whether another room is busy: try again', room: null };
@@ -1886,6 +1935,10 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
       while ((at = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, at).trim();
         buffer = buffer.slice(at + 1);
+        if (line === 'gonogo-settings') {
+          onSettings();
+          continue;
+        }
         const notice = /^gonogo-notice (".*")$/.exec(line);
         if (notice !== null) {
           try {
@@ -1938,7 +1991,8 @@ export function createPipeAnswers(write: (line: string) => void, timeoutMs = 500
 }
 let onSupervisorAlert: (text: string) => void = () => undefined;
 let onSupervisorNotice: (text: string) => void = () => undefined;
-const pipeAnswers = createPipeAnswers((line) => process.stdout.write(line), 5000, (text) => onSupervisorAlert(text), (text) => onSupervisorNotice(text));
+let onSupervisorSettings: () => void = () => undefined;
+const pipeAnswers = createPipeAnswers((line) => process.stdout.write(line), 5000, (text) => onSupervisorAlert(text), (text) => onSupervisorNotice(text), () => onSupervisorSettings());
 
 /** One room: what `gonogo` was before it became the supervisor. `gonogo __room` runs it; the tests run it directly with fakes. */
 export async function runRoom(options: StartOptions, env: Env): Promise<void> {
@@ -1952,7 +2006,7 @@ export async function runRoom(options: StartOptions, env: Env): Promise<void> {
   const askBusy = options.roomChild === true && options.exitWithStdin === true ? (idle?: boolean) => pipeAnswers.ask(idle === true) : undefined;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      running = await startGonogo({ ...options, ...(askBusy === undefined ? {} : { askBusy }), telegramPoll: true, updateCheck: options.updateCheck ?? !updateCheckOff(env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
+      running = await startGonogo({ ...options, ...(askBusy === undefined ? {} : { askBusy }), telegramPoll: true, updateCheck: options.updateCheck ?? !updateCheckOff(options.roomChild === true ? globalSetting(env.GONOGO_GLOBAL_SETTINGS?.trim() || null, 'updateCheck', env) ?? undefined : env.GONOGO_UPDATE_CHECK), env: reloaded ? { ...env, GONOGO_RELOADED: undefined } : env, log });
       break;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

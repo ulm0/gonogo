@@ -1080,3 +1080,33 @@ describe('stop and start rooms through the supervisor (t107)', () => {
     expect(lines.filter((l) => /stop room main: done/.test(l)).length).toBe(1);
   }, 60_000);
 });
+
+describe('runtime settings through the supervisor (t112)', () => {
+  const boot = async (extra: Record<string, string> = {}): Promise<Supervisor> => {
+    addRoom(home, 'c');
+    const s = await startSupervisor({ home, host: '127.0.0.1', port: 0, allowedHosts: [], command: [process.execPath, FAKE], env: { PATH: process.env.PATH ?? '', GONOGO_PORT: '1', GONOGO_ALLOWED_HOSTS: 'x', ...extra } });
+    sup = s;
+    await until(() => s.rooms().every((r) => r.state === 'running') && s.rooms().length === 2, 20_000, 'both rooms');
+    return s;
+  };
+  const roomFile = (id: string, name: string): string => join(id === 'main' ? home : join(home, 'rooms', id), name);
+
+  it('gives every room the path of the file of every room, in the supervisor\'s home', async () => {
+    await boot();
+    expect(readFileSync(roomFile('main', 'global-settings-env'), 'utf8')).toBe(join(home, 'runtime-settings-global.json'));
+    expect(readFileSync(roomFile('c', 'global-settings-env'), 'utf8')).toBe(join(home, 'runtime-settings-global.json'));
+  }, 40_000);
+
+  it('a room that says its global settings changed makes every running room read them again; the line is taken for the fact only', async () => {
+    await boot({ FAKE_ROOM_ASK: 'gonogo-settings-changed', FAKE_ROOM_ASK_ONLY: 'main' });
+    await until(() => existsSync(roomFile('c', 'settings-lines')) && existsSync(roomFile('main', 'settings-lines')), 15_000, 'the settings line in both rooms');
+    expect(readFileSync(roomFile('c', 'settings-lines'), 'utf8')).toBe('gonogo-settings\n');
+  }, 40_000);
+
+  it('a line with anything after the words does not', async () => {
+    await boot({ FAKE_ROOM_ASK: 'gonogo-settings-changed {"logLevel":"debug"}', FAKE_ROOM_ASK_ONLY: 'main' });
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(existsSync(roomFile('c', 'settings-lines'))).toBe(false);
+    expect(existsSync(roomFile('main', 'settings-lines'))).toBe(false);
+  }, 40_000);
+});

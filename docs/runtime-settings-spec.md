@@ -1,6 +1,6 @@
 # Runtime settings: the GONOGO_* env from the UI, per room or global
 
-Status: proposal (t112), nothing built. Server side by GUIDO; the Flight Rules → System and update row is CONTROL's.
+Status: built (t112), server side; the page row is CONTROL's. Server side by GUIDO; the Flight Rules → System and update row is CONTROL's.
 
 ## What it is
 
@@ -27,8 +27,8 @@ The environment value is always shown as the default; **Reset** removes the stor
 
 ## Files
 
-- Global: `<root>/settings.json`, 0600, written by temp file and rename. Shape: `{ "version": 1, "values": { "<key>": "<text>" } }`. Values are the text the env would carry; unknown keys and bad values are dropped on read with a warning, never fatal.
-- Room: `<room home>/settings.json`, same shape, only the room-or-global keys.
+- Global: `<root>/runtime-settings-global.json`, 0600, written by temp file and rename. Shape: `{ "version": 1, "values": { "<key>": "<text>" } }`. Values are the text the env would carry; unknown keys and bad values are dropped on read with a warning, never fatal.
+- Room: `<room home>/runtime-settings.json`, same shape, only the room-or-global keys.
 - The supervisor passes the global file's path in `GONOGO_GLOBAL_SETTINGS` to every room (like `GONOGO_KNOWLEDGE_DIR`). A room resolves each key itself: its file, else the global file, else its env. So a room started by hand (no supervisor) still works.
 
 ## Routes (on the room, behind its login)
@@ -36,6 +36,9 @@ The environment value is always shown as the default; **Reset** removes the stor
 - `GET /api/settings` → `{ keys: [{ key, scope: 'room'|'global'|'both', value, source: 'room'|'global'|'env'|'default', env, room, global, applies, sensitive }] }`. `value` is the effective one; `env` is the environment value (the default); `room` / `global` are what the two files hold (null = none). `agentCmd` is shown to a session in full.
 - `PUT /api/settings/<key>` `{ scope: 'room'|'global', value: string | null }`; `null` is Reset of that scope. Answers the new row. 400 with the parser's reason for a bad value; 400 for a global-only key with scope `room`.
 - A global write by a room is written to the root file by that room; it then tells the supervisor (one stdout line, like `gonogo-ask`), which writes `gonogo-settings` to every running room's stdin; each room re-reads and applies. Nothing is proxied.
+
+- Who asked reaches the room as the header `x-gonogo-actor` (`session`, `key:<id>`, `token`, `socket`, `tui`), put by the supervisor's proxy on `/api/settings` requests only; a sender's own copy is dropped with every `x-gonogo-` header, and the room believes it only over its local socket.
+- The supervisor takes only the fact from the room's line `gonogo-settings-changed` (it must be exactly that line); it never reads a value from it. Every running room is told `gonogo-settings` and reads the file itself, checking each value.
 
 ## Security (for RSO)
 

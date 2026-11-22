@@ -2273,7 +2273,8 @@ export interface LauncherOptions {
   /** Environment to derive the child's from; default process.env. */
   env?: Record<string, string | undefined>;
   /** Replaces the claude executable and its leading args (contract 7.7). */
-  agentCmd?: string[] | null;
+  /** A function: runtime settings change it between two agent starts. */
+  agentCmd?: string[] | null | (() => string[] | null);
   /** Default CLAUDE_BIN. */
   claudeBin?: string;
   /** Live reload: where the hashes of the live tokens are saved (0600) and read at creation. Default none: tokens live in memory only. */
@@ -2634,6 +2635,8 @@ export interface Hub {
   vote(agent: string, generation: number, vote: PollVote, reason: string): VoteResult;
   /** Max Q. limit null = off, else 1..MAX_AGENTS (bad_request otherwise). Emits a GovernorFrame. */
   setGovernor(req: GovernorRequest): GovernorView;
+  /** Runtime settings: the hop cap, from the next message on. */
+  setMaxHops(value: number): void;
   /**
    * Answers the permission prompt of an agent in state needs_you with needsKind 'permission': go presses Enter (the first
    * option, Yes, is the highlighted one), no-go presses Escape. conflict when the agent is not asking for a permission.

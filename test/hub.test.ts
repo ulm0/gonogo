@@ -2148,6 +2148,20 @@ describe('hops and the trigger (5.7)', () => {
     expect(h.send('ben', 'ana')).toMatchObject({ ok: false, note: 'hop limit 1 reached; the message went to the user' });
   });
 
+  it('setMaxHops changes the cap from the next message on (runtime settings)', async () => {
+    const h = await withAna({ maxHops: 1 });
+    await h.hire('ben');
+    h.send('user', 'ana');
+    h.read('ana');
+    expect(h.send('ana', 'ben').ok).toBe(true);
+    h.read('ben');
+    h.hub.setMaxHops(5);
+    expect(h.send('ben', 'ana').ok).toBe(true);
+    h.hub.setMaxHops(0); // a value that is not a cap is ignored
+    h.read('ana');
+    expect(h.send('ana', 'ben').ok).toBe(true);
+  });
+
   const clearers: Array<[string, (h: Harness) => Promise<void>]> = [
     ['Stop', async (h) => void h.hook('ana', 'Stop')],
     ['StopFailure', async (h) => void h.hook('ana', 'StopFailure')],

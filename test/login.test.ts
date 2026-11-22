@@ -737,6 +737,20 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     expect((await call('POST', '/api/rooms/start-all', fresh, '{}')).status).toBe(200);
     expect((await call('DELETE', '/api/rooms/%63', fresh, '{}')).status).toBe(200);
   }, 40_000);
+  it('step-up: a runtime setting is refused with stepUp:true when the check is old, plain and with an encoded key name; reading is not', async () => {
+    const { cookies } = await withTotp();
+    const [h] = json(cookieHeader(cookies), {});
+    const put = (path: string): Promise<Answer> => call('PUT', path, h, JSON.stringify({ scope: 'room', value: '3' }));
+    expect((await put('/api/settings/maxHops')).status).toBe(200); // fresh
+    clock += 6 * 60_000;
+    for (const path of ['/api/settings/maxHops', '/api/settings/%6DaxHops', '/api/settings/agentCmd']) {
+      const refused = await put(path);
+      expect(refused.status, path).toBe(403);
+      expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true });
+    }
+    expect((await call('GET', '/api/settings', cookieHeader(cookies))).status).toBe(200);
+  });
+
   it('step-up: moving where room main keeps its files (MIGRATE NOW, UNDO) is refused with stepUp:true when the check is old; cancelling it, dismissing the note and the dry run are not', async () => {
     const { cookies } = await withTotp();
     const [h] = json(cookieHeader(cookies), {});
@@ -1128,6 +1142,31 @@ describe('the device login of a terminal through the supervisor', () => {
     expect(JSON.parse((await poll(flow.device_code)).text)).toEqual({ error: 'access_denied' });
     // the code is spent
     expect((await typeCode(cookies, flow.user_code)).status).toBe(404);
+  });
+
+  it('who changed a runtime setting reaches the room as x-gonogo-actor only on /api/settings, from the grant and never from the sender; a stale session is asked for the password', async () => {
+    const cookies = await bootDevice();
+    const key = String((await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'k', scope: 'full' })).body.key);
+    const approved = await startFlow();
+    await decide(cookies, approved.user_code, 'approve');
+    dclock += 6000;
+    const tui = (JSON.parse((await poll(approved.device_code)).text) as { token: string }).token;
+    const last = (): { url: string; actor: string | null } => {
+      const lines = readFileSync(join(home, 'posts.jsonl'), 'utf8').trim().split('\n');
+      return JSON.parse(lines[lines.length - 1] as string) as { url: string; actor: string | null };
+    };
+    const put = (headers: Record<string, string>) => call('PUT', '/r/main/api/settings/maxHops', { ...JSONH, ...headers }, JSON.stringify({ scope: 'room', value: '3' }));
+    const session = { ...cookieHeader(cookies), ...origin() };
+    expect((await put(session)).status).toBe(200);
+    expect(last()).toMatchObject({ url: '/api/settings/maxHops', actor: 'session' });
+    expect((await put({ authorization: `Bearer ${key}`, 'x-gonogo-actor': 'session' })).status).toBe(200);
+    expect(last().actor).toMatch(/^key:[0-9a-f]{1,12}$/);
+    expect((await put({ authorization: `Bearer ${tui}`, 'x-gonogo-actor': 'session' })).status).toBe(403); // a terminal login is asked for the password in the browser
+    expect((await put({ ...session, 'x-gonogo-actor': 'key:ffffffffffff' })).status).toBe(200);
+    expect(last().actor).toBe('session');
+    // another route carries no actor
+    await call('POST', '/r/main/api/messages', { ...JSONH, ...session }, JSON.stringify({ to: 'ana', body: 'go' }));
+    expect(last()).toMatchObject({ url: '/api/messages', actor: null });
   });
 
   it("the Director's words are marked for the room only when a signed-in browser session posts a message: not a key, a terminal, the local socket, another route, and never a header a sender wrote", async () => {

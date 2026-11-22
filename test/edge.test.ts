@@ -363,6 +363,7 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       rec('vote', agent, generation, vote, reason);
       return { ok: true, note: 'vote recorded' };
     },
+    setMaxHops: () => undefined,
     setGovernor: (req) => {
       rec('setGovernor', req);
       if (req.limit !== null && (req.limit < 1 || req.limit > 24)) throw new FakeHubError('bad_request', 'limit must be 1 to 24 or null', 'limit');
@@ -6507,7 +6508,8 @@ describe('cli: startGonogo', () => {
       const { running, cwd } = await startCli({ env, maxHops: 5, agentCmd: ['node', 'fake.mjs'] });
       expect(fakes.captured.hubOptions).toMatchObject({ maxHops: 5, bossDir: cwd, maxWorking: null, redline: true });
       const launcherOptions = fakes.captured.launcherOptions;
-      expect(launcherOptions).toMatchObject({ homeDir: running.home, seed: true, env, agentCmd: ['node', 'fake.mjs'] });
+      expect(launcherOptions).toMatchObject({ homeDir: running.home, seed: true, env, agentCmd: expect.any(Function) as unknown });
+      expect((launcherOptions?.agentCmd as () => string[] | null)()).toEqual(['node', 'fake.mjs']);
       expect(launcherOptions?.log).toBeDefined();
       expect(fakes.captured.terminalOptions).toMatchObject({ log: expect.anything() });
       expect(fakes.hubUrl()).toBe(`http://127.0.0.1:${running.port}`);
@@ -6517,7 +6519,8 @@ describe('cli: startGonogo', () => {
       const fakes = installFakes();
       const home = join(tmpDir(), 'home');
       await startCli({ home: undefined, agentCmd: undefined, maxHops: undefined, seed: undefined, env: { PATH: '', GONOGO_HOME: home, GONOGO_AGENT_CMD: 'node a b', GONOGO_MAX_HOPS: '4', GONOGO_MAX_WORKING: '3', GONOGO_SEED_CLAUDE: '1' } });
-      expect(fakes.captured.launcherOptions).toMatchObject({ homeDir: home, seed: true, agentCmd: ['node', 'a', 'b'] });
+      expect(fakes.captured.launcherOptions).toMatchObject({ homeDir: home, seed: true });
+      expect((fakes.captured.launcherOptions?.agentCmd as () => string[] | null)()).toEqual(['node', 'a', 'b']);
       expect(fakes.captured.hubOptions?.maxHops).toBe(4);
       expect(fakes.captured.hubOptions?.maxWorking).toBe(3);
     });
