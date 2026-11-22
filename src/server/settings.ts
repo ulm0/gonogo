@@ -224,8 +224,10 @@ export function createSettings(options: { roomHome: string; globalPath: string |
   const effective = (key: SettingKey): { value: string | null; source: SettingSource } => {
     if (key === 'scrubEnv') {
       // the scrub list only grows: what the operator put in the environment stays scrubbed whatever the files say; the files add to it
-      const names = [...new Set([envOf(key), global[key], room[key]].flatMap((text) => (text ?? '').split(',')).filter((n) => n !== ''))];
-      return { value: names.length === 0 ? null : names.join(','), source: room[key] !== undefined ? 'room' : global[key] !== undefined ? 'global' : envOf(key) !== null ? 'env' : 'default' };
+      // the environment's list is read as the launcher reads it (split, trimmed, no check of the names): one odd name must not drop the rest
+      const raw = (options.env[SETTING_KEYS[key].env] ?? '').split(',').map((n) => n.trim());
+      const names = [...new Set([...raw, ...(global[key] ?? '').split(','), ...(room[key] ?? '').split(',')].filter((n) => n !== ''))];
+      return { value: names.length === 0 ? null : names.join(','), source: room[key] !== undefined ? 'room' : global[key] !== undefined ? 'global' : raw.some((n) => n !== '') ? 'env' : 'default' };
     }
     const own = SETTING_KEYS[key].scope === 'both' ? room[key] : undefined;
     if (own !== undefined) return { value: own, source: 'room' };
@@ -236,7 +238,9 @@ export function createSettings(options: { roomHome: string; globalPath: string |
   };
   const row = (key: SettingKey): SettingRow => {
     const info = SETTING_KEYS[key];
-    return { key, env: info.env, scope: info.scope, applies: info.applies, sensitive: info.sensitive, ...effective(key), envValue: envOf(key), room: room[key] ?? null, global: global[key] ?? null };
+    // the scrub list's fixed part is the environment's names as they are
+    const envValue = key === 'scrubEnv' ? (options.env[info.env] ?? '').split(',').map((n) => n.trim()).filter((n) => n !== '').join(',') || null : envOf(key);
+    return { key, env: info.env, scope: info.scope, applies: info.applies, sensitive: info.sensitive, ...effective(key), envValue, room: room[key] ?? null, global: global[key] ?? null };
   };
 
   return {

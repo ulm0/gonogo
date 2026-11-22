@@ -65,6 +65,11 @@ describe('the store', () => {
     s.set('scrubEnv', 'global', null);
     expect(s.get('scrubEnv')).toBe('SECRET_A,TOKEN_');
     expect(make().get('scrubEnv')).toBeNull();
+    // one name the strict check would refuse does not drop the rest of the operator's list
+    const odd = make({ GONOGO_SCRUB_ENV: 'API_KEY, my-secret ,,OTHER_' });
+    expect(odd.row('scrubEnv')).toMatchObject({ value: 'API_KEY,my-secret,OTHER_', envValue: 'API_KEY,my-secret,OTHER_', source: 'env' });
+    odd.set('scrubEnv', 'global', 'ADDED');
+    expect(odd.get('scrubEnv')).toBe('API_KEY,my-secret,OTHER_,ADDED');
   });
 
   it('a global-only key refuses the room scope; no supervisor means no global scope', () => {
