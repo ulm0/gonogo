@@ -53,11 +53,11 @@ export const ROOM_STATE_FILES: readonly string[] = [
   'agents.json', 'agents', 'autoupdate.json', 'black-box', 'board.md', 'cleanroom', 'cleanroom-home', 'coauthor.json', 'docking.json', 'downlink.json', 'features.json', 'fuel.jsonl',
   'gh', 'hub-state.json', 'keys.json', 'keys.refused.json', 'knowledge-proposals', 'semantic', 'liveries', 'livery.json', 'messages.jsonl', 'messages.jsonl.1', 'mission-log', 'missions.json', 'models.json', 'ritual.md',
   'payload-defaults.json', 'payload-plugin', 'permissions.json', 'prices.json', 'propellant.json', 'quota.json', 'relay.json', 'reported.jsonl', 'reviews.json', 'rollout.json',
-  'room-keys.json', 'room-keys.refused.json', 'room.json', 'rules.md', 'run-state.json', 'schedules.json', 'server.lock', 'startup.json', 'station.json', 'subagents.json', 'tabname.json',
+  'room-keys.json', 'room-keys.refused.json', 'room.json', 'rules.md', 'run-state.json', 'runtime-settings.json', 'schedules.json', 'server.lock', 'startup.json', 'station.json', 'subagents.json', 'tabname.json',
   'tasks.json', 'telegram-poll.json', 'telemetry.jsonl', 'triggers.1.jsonl', 'triggers.jsonl', 'uplinks.json', 'worktrees',
 ];
 /** The supervisor's own files and folders: they stay at the root whatever the layout, and never say where main is. */
-export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run', 'main-migration.json', 'knowledge'];
+export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'runtime-settings-global.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run', 'main-migration.json', 'knowledge'];
 /** Names that only exist inside another folder (an agent's, or `run/`): never at a home's root, so they say nothing about the layout. */
 export const NESTED_FILES: readonly string[] = ['.seq', 'agy-hooks.json', 'gemini-settings.json', 'inbox-files', 'mcp.json', 'memory.md', 'ptyhost.key', 'ptyhost.log', 'ptyhost.sock', 'settings.json', 'tokens.json', 'update.json'];
 /** Where a room that is running has put something besides those: its socket and token. */

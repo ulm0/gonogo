@@ -11,6 +11,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
 import { PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
+  AuditRecord,
   UpdateView,
   AutoUpdateView,
   PropellantView,
@@ -95,6 +96,8 @@ import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { ModelDefaultsStore } from './models.js';
 import type { PayloadDefaultsStore } from './payloaddefaults.js';
+import { commandProgram, isSettingKey, SETTING_KEYS, SettingsError } from './settings.js';
+import type { Settings } from './settings.js';
 import type { RoomKeys } from './roomkeys.js';
 import type { PermissionDefaultsStore } from './permissions.js';
 import type { Relief } from './relief.js';
@@ -196,6 +199,8 @@ export interface WebOptions {
   /** Payload defaults (docs/payload-spec.md): absent in tests that do not need it (the routes answer 404). The page asks again after each change; no frame, and no value is ever sent. */
   /** Room keys (docs/features/room-keys.md): absent in tests that do not need it (the routes answer 404). Names only ever leave the server. */
   roomKeys?: Pick<RoomKeys, 'view' | 'set' | 'remove'>;
+  /** Runtime settings (docs/runtime-settings-spec.md): absent in tests that do not need it (the routes answer 404). */
+  settings?: { store: Settings; apply(): void; audit: AuditRecord; announce(): void };
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
@@ -960,7 +965,16 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!body) return;
           const parsed = parseGovernor(body);
           if (!parsed.ok) sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);
-          else sendJson(res, 200, hub.setGovernor(parsed.value));
+          else {
+            const view = hub.setGovernor(parsed.value);
+            // the Max Q control and the runtime settings are one value: a restart keeps what was set here
+            try {
+              options.settings?.store.set('maxWorking', 'room', parsed.value.limit === null ? '' : String(parsed.value.limit));
+            } catch (error) {
+              log.warn('could not keep Max Q in the room settings', error);
+            }
+            sendJson(res, 200, view);
+          }
         },
       };
     }
@@ -1548,6 +1562,40 @@ export function createWebServer(options: WebOptions): WebServer {
           if (req.method === 'DELETE') return sendJson(res, 200, await roomKeys.remove(name));
           const body = await jsonObject(req, res);
           if (body) sendJson(res, 200, await roomKeys.set(name, body));
+        },
+      };
+    }
+    // GET /api/settings; PUT /api/settings/<key> ({ scope: 'room' | 'global', value: string | null }): who asked comes from the supervisor, over the local socket only
+    if (s[1] === 'settings' && s.length <= 3) {
+      const cfg = options.settings;
+      if (!cfg) return null;
+      if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, { keys: cfg.store.view() }) };
+      const key = s[2] ?? '';
+      if (!isSettingKey(key)) return null;
+      return {
+        allow: ['PUT'],
+        run: async (req, res) => {
+          const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+          const actor = typeof actorHeader === 'string' && /^(session|token|socket|tui|key:[0-9a-f]{1,12})$/.test(actorHeader) ? actorHeader : 'unknown';
+          if (SETTING_KEYS[key].sensitive && actor !== 'session') return sendApiError(res, 403, `${key} is changed from the Director's own login, not by a key or a terminal`, 'forbidden');
+          const body = await jsonObject(req, res);
+          if (!body) return;
+          const scope = body.scope;
+          const value = body.value;
+          if (scope !== 'room' && scope !== 'global') return sendApiError(res, 400, 'scope is room or global', 'bad_request', 'scope');
+          if (value !== null && typeof value !== 'string') return sendApiError(res, 400, 'value is text, or null to reset', 'bad_request', 'value');
+          try {
+            const done = cfg.store.set(key, scope, value);
+            // the log keeps who, what and the old and new value; a command is cut to its program and nothing after it
+            const shown = (text: string | null): string => (text === null ? 'default' : key === 'agentCmd' ? commandProgram(text) : JSON.stringify(text));
+            cfg.audit('config', `setting ${key} (${scope}) by ${actor}: ${shown(done.before)} -> ${shown(done.after)}`);
+            cfg.apply();
+            if (scope === 'global') cfg.announce();
+            sendJson(res, 200, { row: done.row });
+          } catch (error) {
+            if (error instanceof SettingsError) return sendApiError(res, error.kind === 'conflict' ? 409 : 400, error.message, error.kind, 'value');
+            throw error;
+          }
         },
       };
     }

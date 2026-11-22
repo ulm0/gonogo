@@ -524,6 +524,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   let pollSig = 'null';
   let pollResult = '';
   let limit: number | null = options.maxWorking ?? null;
+  let maxHops = options.maxHops;
   let governorSig = JSON.stringify(governorView());
 
   /* ---- small utilities ---- */
@@ -2728,9 +2729,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   function routeDocked(record: MessageRecord): void {
     const at = record.to.indexOf('@');
     const station = record.to.slice(at + 1);
-    if (record.hops > options.maxHops) {
+    if (record.hops > maxHops) {
       record.status = 'undelivered';
-      record.note = `hop limit ${options.maxHops} reached; the message went to the user`;
+      record.note = `hop limit ${maxHops} reached; the message went to the user`;
       return;
     }
     record.status = 'queued';
@@ -2766,9 +2767,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         : `${name} runs ${providerInfo(recipient.record.provider).label} without the gonogo tools and cannot receive messages`;
       return;
     }
-    if (record.hops > options.maxHops) {
+    if (record.hops > maxHops) {
       record.status = 'undelivered';
-      record.note = `hop limit ${options.maxHops} reached; the message went to the user`;
+      record.note = `hop limit ${maxHops} reached; the message went to the user`;
       return;
     }
     // A restarting agent is treated like a running one even though its old process may be gone already: the new
@@ -3433,6 +3434,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     clearPoll,
     vote,
     setGovernor,
+    setMaxHops(value) {
+      if (Number.isInteger(value) && value >= 1) maxHops = value;
+    },
     answer,
     governor: governorView,
     poll: pollView,

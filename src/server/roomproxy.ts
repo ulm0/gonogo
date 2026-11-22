@@ -83,6 +83,8 @@ const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-au
 const DROPPED = new Set(['authorization', 'cookie', 'host', 'origin', 'forwarded', 'x-real-ip']);
 /** The one header the proxy adds for a room (docs/features/relay.md): "this POST /api/messages was made by a browser session that is signed in". Whatever a sender puts under any `x-gonogo-` name is dropped first, so only this code can say it. */
 export const DIRECTOR_HEADER = 'x-gonogo-director';
+/** Who asked, for a change of the room's settings: `session`, `key:<id>`, `token`, `socket` or `tui`. The room believes it only from this socket; a sender's own copy is dropped like every x-gonogo- header. */
+export const ACTOR_HEADER = 'x-gonogo-actor';
 const digest = (text: string): Buffer => createHash('sha256').update(text, 'utf8').digest();
 export const sameToken = (candidate: string | null, expected: string): boolean => candidate !== null && timingSafeEqual(digest(candidate), digest(expected));
 
@@ -222,7 +224,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   }
 
   /** The headers for the room: no secret of the browser; the socket is the credential. */
-  function forwardHeaders(req: IncomingMessage, target: Target, upgrade: boolean, director = false): http.OutgoingHttpHeaders {
+  function forwardHeaders(req: IncomingMessage, target: Target, upgrade: boolean, director = false, actor: string | null = null): http.OutgoingHttpHeaders {
     const out: http.OutgoingHttpHeaders = {};
     for (const [name, value] of Object.entries(req.headers)) {
       const lower = name.toLowerCase();
@@ -232,6 +234,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     }
     out.host = `127.0.0.1:${target.room.port}`;
     if (director) out[DIRECTOR_HEADER] = 'web';
+    if (actor !== null) out[ACTOR_HEADER] = actor;
     // a browser's Origin was checked above and now names the room; another sender's is kept, so the room refuses it as it would
     if (req.headers.origin !== undefined) out.origin = target.kind === 'browser' ? `http://127.0.0.1:${target.room.port}` : req.headers.origin;
     if (upgrade) {
@@ -295,6 +298,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       let stepUp: { grant: Grant; method: string; path: string } | null = null;
       // a message of the Director: the browser route of messages, with a login session (or the browser token of an install with no account yet). Not a key, not the local socket, not a terminal.
       let director = false;
+      let actor: string | null = null;
       if (target.kind === 'browser' && !((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
         const grant = options.auth.grant(req, 'api');
         if (grant === null) {
@@ -312,10 +316,11 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         }
         if (grant.kind === 'session' || grant.kind === 'tui') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
         director = (grant.kind === 'session' || grant.kind === 'token') && req.method === 'POST' && target.decoded === '/api/messages';
+        if (target.decoded.startsWith('/api/settings')) actor = grant.kind === 'key' ? `key:${(grant.keyId ?? '').slice(0, 12)}` : grant.kind;
       }
       const forward = (buffered: Buffer | null): void => {
         const upstream = http.request(
-        { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false, director) },
+        { socketPath: target.room.socket, method: req.method, path: target.path, headers: forwardHeaders(req, target, false, director, actor) },
         (answer) => {
           const headers: http.OutgoingHttpHeaders = {};
           // no Set-Cookie: a room must not set a cookie on the address all the rooms share (S2); no Service-Worker-Allowed: a room's script cannot widen its scope

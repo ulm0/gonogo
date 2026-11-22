@@ -35,6 +35,8 @@ import { openConsole, openEdit, showLivery, showRoom, showRules, showWindow, use
 import { legendOf } from './wall.js';
 import { MaxQ, Propellant } from './WallView.js';
 import { Row, useValue } from './Row.js';
+import { RuntimeSettingsBlock } from './RuntimeSettings.js';
+import { summary as runtimeSummary } from './runtimeSettingsModel.js';
 import './loop.css';
 import './rules.css';
 
@@ -195,6 +197,7 @@ export function FlightRules(): ReactElement {
   const template = useValue(() => api.ritualTemplate().then((r) => (r.bytes === 0 ? 'none written' : `${r.bytes} bytes`)));
   const startup = useValue(() => api.startupSettings().then((x) => `after a restart: ${x.policy}`));
   const know = useValue(() => api.knowledge().then((k) => (k.enabled ? `on, ${k.repos.length} repositories` : 'off')));
+  const runtime = useValue(() => api.runtimeSettings().then(runtimeSummary));
   const keys = useValue(() => api.roomKeys().then((k) => `${k.keys.length} keys`));
   const off = useStore((s) => s.features);
   const current = useMarks();
@@ -305,6 +308,7 @@ export function FlightRules(): ReactElement {
         <Row name="Version and update check" now={version === '' ? null : `${version}`}><VersionCheckBlock /></Row>
         <Row name="Update by itself" now={auto}><AutoUpdateBlock /></Row>
         <Row name="Reload after an update" now="on request"><ReloadBlock /></Row>
+        <Row name="Runtime settings" now={runtime}><RuntimeSettingsBlock /></Row>
         <Row name="Features" now={off.length === 0 ? 'all on' : `${off.length} switched off`}><FeaturesBlock /></Row>
       </Group>
     </section>

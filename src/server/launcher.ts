@@ -453,6 +453,7 @@ async function transcriptExists(projectsRoot: string, dirs: readonly string[], s
 export function createLauncher(options: LauncherOptions): Launcher {
   const log = options.log ?? nullLogger;
   const homeDir = resolve(options.homeDir);
+  const agentCmdNow = (): string[] | null => (typeof options.agentCmd === 'function' ? options.agentCmd() : (options.agentCmd ?? null));
   /** This room's own `gh` login (docs/features/github-login.md): made when an agent starts, private to the user. */
   const ghDir = join(homeDir, 'gh');
   const ensureGh = async (): Promise<string> => {
@@ -705,10 +706,10 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
       const roleText = buildRoleText(name, agent.role, memoryPath) + doorText('claude', options.rules?.() ?? '', await projectFile(clean?.cwd ?? startDir)) + ((await options.knowledge?.(name)) ?? '') + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
-      const [file, ...leading] = options.agentCmd?.length ? options.agentCmd : [options.claudeBin ?? CLAUDE_BIN];
+      const [file, ...leading] = agentCmdNow()?.length ? (agentCmdNow() as string[]) : [options.claudeBin ?? CLAUDE_BIN];
       // Effort: the console's own, else the room's. An old claude exits on an option it does not know: its own effort refuses the start (it asked for it), the room's is dropped with a warning (one setting must not stop every console). A Clean Room runs the image's claude, not the host's, so it is not asked.
       let effort = agent.effort ?? options.defaultEffort?.();
-      if (effort && clean === null && !options.agentCmd?.length && (await knowsEffort(file as string, options.env ?? process.env)) === false) {
+      if (effort && clean === null && !agentCmdNow()?.length && (await knowsEffort(file as string, options.env ?? process.env)) === false) {
         if (agent.effort) throw new Error(`${file} does not list --effort, so the effort of ${name} cannot be set: update claude, or clear the effort`);
         log.warn(`${file} does not list --effort: the room's default effort is not passed to ${name}; update claude`);
         effort = undefined;
