@@ -256,7 +256,6 @@ export function FlightRules(): ReactElement {
   );
   // The page replaces the room: the keyboard starts at its title.
   useEffect(() => heading.current?.focus(), []);
-  const groups: ReadonlyArray<[string, string]> = [['room', 'Room'], ['agents', 'Agents'], ['budget', 'Budget and limits'], ['auto', 'Automation and connections'], ['knowledge', 'Knowledge'], ['security', 'Security'], ['system', 'System and update']];
   return (
     <GroupContext.Provider value={{ open: openGroup, setOpen: setOpenGroup, base: titleId }}>
     <section className="rules lay-rules" aria-labelledby={titleId}>
@@ -265,16 +264,9 @@ export function FlightRules(): ReactElement {
           FLIGHT RULES
         </h1>
         <button type="button" className="btn loop-room" data-kind="quiet" onClick={showRoom}>
-          Room
+          ← Room
         </button>
       </header>
-      <nav className="lay-group-nav" aria-label="Groups of settings">
-        {groups.map(([id, title]) => (
-          <a key={id} className="btn" data-kind="quiet" href={`#${titleId}-g-${id}`} onClick={(e) => { e.preventDefault(); setOpenGroup(id); requestAnimationFrame(() => document.getElementById(`${titleId}-g-${id}`)?.scrollIntoView({ block: 'start' })); }}>
-            {title}
-          </a>
-        ))}
-      </nav>
       <Group id="room" title="Room">
         <Row name="Livery" now={currentEntry(livery).name}>{liveryBlock}</Row>
         <Row name="Tab name" now={tabName.name ?? tabName.fallback ?? 'not set'}><TabNameBlock /></Row>
@@ -300,14 +292,14 @@ export function FlightRules(): ReactElement {
         <Row name="Start again after a restart" now={startup}><StartupBlock /></Row>
       </Group>
       <Group id="knowledge" title="Knowledge">
-        <Row name="Knowledge" now={know}><KnowledgeBlock /></Row>
+        <Row name="Switch and repositories" now={know}><KnowledgeBlock /></Row>
         <Row name="Semantic search" now="see Edit"><SemanticBlock /></Row>
       </Group>
       <Group id="security" title="Security">
         <Row name="Login, sessions, API keys, second factor" now="see Edit"><AccountBlock /></Row>
         <Row name="Room keys" now={keys}><RoomKeysBlock /></Row>
         <Row name="Phone approvals" now="see Edit"><PhoneApprovals /></Row>
-        <Row name="All stop" now="holds every agent"><AllStopBlock /></Row>
+        <Row name="Hold all agents" now="one key"><AllStopBlock /></Row>
       </Group>
       <Group id="system" title="System and update">
         <Row name="Version and update check" now={version === '' ? null : `${version}`}><VersionCheckBlock /></Row>

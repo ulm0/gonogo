@@ -26,3 +26,17 @@ describe('Flight Rules groups', () => {
     }
   });
 });
+
+describe('Flight Rules says nothing twice', () => {
+  const css = readFileSync('src/client/layout.css', 'utf8');
+
+  it('has no index of the groups beside their headings, and the key back to the room is not named like a group', () => {
+    expect(source).not.toContain('lay-group-nav');
+    expect(source).toMatch(/className="btn loop-room"[^>]*>\s*← Room/);
+  });
+
+  it('draws a block\'s own title and value line only for a screen reader when the block is in a row', () => {
+    expect(css).toMatch(/\.lay-row-body :is\(\.rules-block, \.wall-block\) > h2\.label:first-child[^{]*\{[^}]*clip: rect\(0 0 0 0\)/);
+    expect(css).toMatch(/\.lay-row-body \.rules-value \{ display: none; \}/);
+  });
+});

@@ -99,7 +99,6 @@
 .lay-group-title { margin: 0; font-size: 18px; }
 .lay-group-body { display: flex; flex-direction: column; gap: 12px; }
 .lay-group-body > * { min-width: 0; max-width: 100%; }
-.lay-group-nav { display: flex; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--body); }
 .lay-row { border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); }
 .lay-row > summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 12px; cursor: pointer; list-style: none; }
 .lay-row > summary::-webkit-details-marker { display: none; }
@@ -110,8 +109,6 @@
 .lay-row-body .module { border: 0; box-shadow: none; padding: 0; background: none; }
 @media (max-width: 700px) {
   .lay-group .btn { min-height: 44px; min-width: 44px; }
-  .lay-group-nav { flex-wrap: nowrap; overflow-x: auto; }
-  .lay-group-nav .btn { flex: none; }
   .lay-row > summary { flex-wrap: wrap; }
   .lay-row-name, .lay-row-now { flex-basis: 100%; }
   .lay-row-edit { margin-left: auto; }
@@ -127,3 +124,10 @@
 @media (max-width: 700px) {
   .lay-layout .lay-pop { width: auto; }
 }
+
+/* a row names its block already (the summary has the name and what it is now): the block's own title and value line stay for a screen reader and are not drawn twice */
+.lay-row-body :is(.rules-block, .wall-block) > h2.label:first-child,
+.lay-row-body .wall-head > h2.label {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.lay-row-body .rules-value { display: none; }

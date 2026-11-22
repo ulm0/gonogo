@@ -80,7 +80,7 @@ export function RegistryPicker({ payload, has, onAdd, only, now = Date.now(), fi
         {link !== null && (
           <>
             {' · '}
-            <a href={link} target="_blank" rel="noreferrer noopener">
+            <a href={link} target="_blank" rel="noreferrer noopener" aria-label={`Read it first: ${entry.name}`}>
               Read it first
             </a>
           </>
