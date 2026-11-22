@@ -1446,7 +1446,7 @@ describe('delivery to each recipient state (5.9)', () => {
     it('a generic modal ("Esc to cancel") is never forced, for any sender', async () => {
       const h = await withAna();
       await h.hireRaw('bob');
-      h.setScreen('ana', { promptBox: false, dialog: 'other' });
+      h.setScreen('ana', { promptBox: false, modal: true });
       h.send('bob', 'ana');
       await h.advance(DIRECTOR_STUCK_FORCE_MS * 3);
       expect(h.typed).toHaveLength(0);

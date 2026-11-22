@@ -175,7 +175,7 @@ export const TITLE_GLYPHS = ['idle', 'working', 'unknown'] as const;
 export type TitleGlyph = (typeof TITLE_GLYPHS)[number];
 
 /** Dialog kinds the terminal host can recognise on screen. */
-export const DIALOG_KINDS = ['theme', 'login', 'trust', 'bypass', 'api_key', 'resume', 'permission', 'menu', 'other'] as const;
+export const DIALOG_KINDS = ['theme', 'login', 'trust', 'bypass', 'api_key', 'resume', 'permission', 'menu'] as const;
 export type DialogKind = (typeof DIALOG_KINDS)[number];
 
 /** Which flag carries the session id on a start. */
@@ -2146,6 +2146,8 @@ export interface ScreenProbe {
   dialog: DialogKind | null;
   /** Text after the prompt glyph in the box row (trimmed), null when there is no box. May be a grey placeholder. */
   promptText: string | null;
+  /** A modal with no numbered cursor (a text field, "Press Enter", "Esc to cancel") is on a screen with no prompt box. Read only by the 60 s safety net; absent from an older pty host. */
+  modal?: boolean;
 }
 export interface TitleInfo {
   glyph: TitleGlyph;

@@ -1380,7 +1380,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
           // which of the three checks failed, once per wait (the screen's own lines are not here: the probe is a summary, the pty host keeps the rest)
           log.warn(`mail for ${name} has waited ${Math.round((io.now() - oldest.at) / 1000)} s on a screen that is not ready: promptBox=${String(probe.promptBox)} dialog=${String(probe.dialog)} titleGlyph=${String(glyph)} state=${rt.state} screen=${String(probe.cols)}x${String(probe.rows)} promptText=${JSON.stringify((probe.promptText ?? '').slice(0, 80))}`);
         }
-        const force = oldest !== undefined && io.now() - oldest.at >= DIRECTOR_STUCK_FORCE_MS && probe.dialog === null && glyph !== 'working' && rt.state === 'idle';
+        const force = oldest !== undefined && io.now() - oldest.at >= DIRECTOR_STUCK_FORCE_MS && probe.dialog === null && probe.modal !== true && glyph !== 'working' && rt.state === 'idle';
         if (!force) {
           setWaitNotes(rt, notReady);
           return;
