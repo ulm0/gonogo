@@ -2,14 +2,16 @@
 
 <FlightRulesMock class="doc-mock" />
 
-FLIGHT RULES (round three-slider key in the top bar, or in the [Patch Panel](./patch-panel.md)) holds the room's settings on one screen; COMMISSIONING is the checklist of an empty room. Design: [`docs/shell-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/shell-spec.md). Each setting is the same call as in its own place, kept on the server, so every device shows the same.
+FLIGHT RULES (the ⋯ menu of the top bar, or the [Patch Panel](./patch-panel.md)) holds the room's settings in seven groups, one open at a time: **Room**, **Agents**, **Budget and limits**, **Automation and connections**, **Knowledge**, **Security** and **System and update**. Each setting is a row with its name, what it is now, and EDIT, which opens the setting in place (the table below names the block each row holds). COMMISSIONING is the checklist of an empty room. Design: [`docs/shell-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/shell-spec.md). Each setting is the same call as in its own place, kept on the server, so every device shows the same.
 
-| Block | What |
+| Block (its row) | What |
 |---|---|
 | MAX Q, PROPELLANT | the wall's own modules, so a limit here is the wall's ([load governor](../guide/the-room.md#positions-t-minus-max-q-and-custom-agents), [Propellant](./propellant.md)). A phone has no Propellant module: set it here |
 | DEFAULT MODELS | model per engine and per position when a console has none ([Engine Bay](./engine-bay.md#model)) |
 | TAB NAME | name in the browser tab title (`<name> · gonogo`, `(3) <name> · gonogo` with unread items). Server-side, up to 40 characters, control characters removed; empty restores the default (`GONOGO_STATION`, else `gonogo`). `GET` and `PUT /api/tab-name` `{ "name": "..." \| null }`, file `<home>/tabname.json` |
 | LIVERY | name in use, key to [Livery](./livery.md) |
+| KNOWLEDGE (row "Switch and repositories"), SEMANTIC SEARCH | the Knowledge switch and its repositories ([Knowledge](./knowledge.md)); [semantic search](./semantic-search.md) of the Mission Log |
+| ALL STOP (row "Hold all agents") | the key that holds every console that can be held ([Autostart](./autostart.md)) |
 | LAUNCH WINDOW | key to schedules, [Uplink](./uplink.md), [Relay](./relay.md), [Docking](./docking.md) |
 | CONSOLES | every console with EDIT (directory, role, engine, permission mode, payload). A console's own Propellant limit stays in its panel |
 | THIS BROWSER | [notifications](./notifications.md) switch, PUSH TO THIS DEVICE ([phone app](./mobile.md)), SHOW COMMISSIONING AGAIN |
