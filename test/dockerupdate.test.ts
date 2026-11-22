@@ -627,7 +627,7 @@ describe('the image is verified before it runs (attest.ts)', () => {
     await updater.start('0.4.0');
     await until(seen, 'failed');
     expect(seen.at(-1)?.verify).toBe('unchecked');
-    expect(seen.at(-1)?.note).toMatch(/gonogo could not check its image \(gh has no GitHub login in this container\)\. Nothing was changed\. Log in as said/);
+    expect(seen.at(-1)?.note).toMatch(/gonogo could not check its image \(gh has no GitHub login in this container\)\. Nothing was changed\. Log in \(gh auth login\) or set GH_TOKEN, or update anyway/);
     expect(seen.at(-1)?.note).not.toMatch(/no attestation/);
     expect(notes[0]).toMatch(/refused: .*could not check/);
     await updater.start('0.4.0', { unverified: true });
