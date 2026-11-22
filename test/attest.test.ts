@@ -190,6 +190,27 @@ describe('verifyImage with no GitHub login: the bundles come from the public API
     expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: loggedIn, fetch: bad[0] as typeof fetch })).toEqual({ kind: 'verified', digest: D1 });
   });
 
+  it('never follows a redirect, and stops reading a body at 5 MiB instead of after it', async () => {
+    const inits: Array<RequestInit | undefined> = [];
+    await verifyImage(OFFICIAL_IMAGE, [D1], { run: async () => ({ code: 0, out: '' }), fetch: async (_u, init) => (inits.push(init), json(200, { attestations: [{ bundle }] })) });
+    expect(inits[0]?.redirect).toBe('error');
+    let pulled = 0;
+    let cancelled = false;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const noLogin: Run = async () => ({ code: 1, out: 'gh auth login' });
+    expect(await verifyImage(OFFICIAL_IMAGE, [D1], { run: noLogin, fetch: async () => new Response(endless, { status: 200 }) })).toMatchObject({ kind: 'unchecked' });
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(12);
+  });
+
   it('is only for the official image and only for a sha256 digest: nothing is fetched otherwise', async () => {
     let fetched = 0;
     const f: typeof fetch = async () => ((fetched += 1), json(200, {}));

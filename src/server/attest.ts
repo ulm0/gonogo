@@ -17,6 +17,7 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readCapped } from './rollout.js';
 
 export const OFFICIAL_IMAGE = 'ghcr.io/ulm0/gonogo';
 export const SOURCE_REPO = 'ulm0/gonogo';
@@ -94,11 +95,14 @@ async function fetchBundles(digest: string, doFetch: typeof fetch, token: string
     const res = await doFetch(`https://api.github.com/repos/${SOURCE_REPO}/attestations/${digest}`, {
       headers: { accept: 'application/vnd.github+json', 'user-agent': 'gonogo-attest', 'x-github-api-version': '2022-11-28', ...(token === null ? {} : { authorization: `Bearer ${token}` }) },
       signal: AbortSignal.timeout(BUNDLES_MS),
+      // a redirect is somebody else's answer: it is not followed
+      redirect: 'error',
     });
     if (res.status === 404) return { none: 'missing', why: 'HTTP 404' };
     if (res.status !== 200) return { none: 'unavailable', why: `GitHub answered ${res.status}${res.status === 403 || res.status === 429 ? ' (rate limit: set GH_TOKEN or log in for a higher one)' : ''}` };
-    const text = await res.text();
-    if (text.length > BUNDLES_MAX_BYTES) return { none: 'unavailable', why: 'GitHub answered with more than 5 MiB' };
+    // read with the cap, not after it: a body that never ends is cut at 5 MiB
+    const text = await readCapped(res, BUNDLES_MAX_BYTES);
+    if (text === null) return { none: 'unavailable', why: 'GitHub answered with more than 5 MiB' };
     const list = (JSON.parse(text) as { attestations?: unknown }).attestations;
     if (!Array.isArray(list)) return { none: 'unavailable', why: 'GitHub answered with no list of attestations' };
     const bundles = list.slice(0, BUNDLES_MAX).map((item) => (typeof item === 'object' && item !== null ? (item as { bundle?: unknown }).bundle : undefined)).filter((b): b is object => typeof b === 'object' && b !== null).map((b) => JSON.stringify(b));
