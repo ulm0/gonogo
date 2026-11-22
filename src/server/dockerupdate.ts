@@ -243,6 +243,38 @@ export async function dockerUpdateStatus(call: DockerCall, hostname: string, pro
   }
 }
 
+/** The `message` of a Docker error body (`{"message":"..."}`), cut to 200 characters; the text itself when it is not JSON. */
+export function daemonMessage(text: string): string {
+  let message = text;
+  try {
+    const found = asText(asRecord(JSON.parse(text)).message);
+    if (found !== '') message = found;
+  } catch {
+    // not JSON: the plain text of a proxy or an old daemon
+  }
+  return message.replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+/**
+ * `POST /images/create`. A daemon that answers 400 to the two-parameter form (some answer "invalid reference format", or want a platform on a
+ * containerd image store) is asked again once with the reference in one piece, then with the platform of the daemon. The last answer is the one returned.
+ */
+async function pullImage(call: DockerCall, repo: string, tag: string): Promise<{ status: number; text: string }> {
+  let pull = await call('POST', `/images/create?fromImage=${encodeURIComponent(repo)}&tag=${encodeURIComponent(tag)}`, undefined, PULL_MS);
+  if (pull.status !== 400) return pull;
+  pull = await call('POST', `/images/create?fromImage=${encodeURIComponent(`${repo}:${tag}`)}`, undefined, PULL_MS);
+  if (pull.status !== 400) return pull;
+  try {
+    const info = asRecord(JSON.parse((await call('GET', '/info')).text || '{}'));
+    const arch = ({ x86_64: 'amd64', aarch64: 'arm64' } as Record<string, string>)[asText(info.Architecture)] ?? asText(info.Architecture);
+    const os = asText(info.OSType);
+    if (arch !== '' && os !== '') return await call('POST', `/images/create?fromImage=${encodeURIComponent(`${repo}:${tag}`)}&platform=${encodeURIComponent(`${os}/${arch}`)}`, undefined, PULL_MS);
+  } catch {
+    // no /info: the answer above stands
+  }
+  return pull;
+}
+
 /** Pulls the container's own moving tag and refuses unless the image's version label is the version that was clicked. */
 export async function pullAndCheck(call: DockerCall, hostname: string, expect: string): Promise<Prepared> {
   if (!STABLE_VERSION.test(expect)) throw new DockerUpdateError('version must be a release number like 1.2.3');
@@ -251,8 +283,13 @@ export async function pullAndCheck(call: DockerCall, hostname: string, expect: s
   const pinned = pinnedReason(ref);
   if (pinned !== null) throw new DockerUpdateError(pinned);
   const { repo, tag } = parseImage(ref);
-  const pull = await call('POST', `/images/create?fromImage=${encodeURIComponent(repo)}&tag=${encodeURIComponent(tag ?? 'latest')}`, undefined, PULL_MS);
-  if (pull.status !== 200) throw new DockerUpdateError(`the pull of ${ref} was refused (${pull.status}); a private image needs \`docker compose pull\` on the host`);
+  const pull = await pullImage(call, repo, tag ?? 'latest');
+  if (pull.status !== 200) {
+    const why = daemonMessage(pull.text);
+    // only a refusal of the credentials or of the name says private image; any other answer is the daemon's own and is quoted
+    const hint = [401, 403, 404].includes(pull.status) ? '; a private image needs `docker compose pull` on the host' : '';
+    throw new DockerUpdateError(`the pull of ${ref} was refused (${pull.status})${why === '' ? '' : `: ${why}`}${hint}. Nothing was changed.`);
+  }
   for (const line of pull.text.split('\n')) {
     try {
       const failed = asText(asRecord(JSON.parse(line)).error);

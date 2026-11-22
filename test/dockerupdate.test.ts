@@ -265,6 +265,37 @@ describe('the pull and the checks', () => {
     await expect(pullAndCheck(f.call, ME, '0.4.0')).rejects.toThrow(/pull .* was refused/);
   });
 
+  describe('a refused pull says why (a 400 from the Director\'s host)', () => {
+    const wrap = (f: Fake, create: (path: string) => { status: number; text: string } | null, info?: string): DockerCall => async (m, p, b) => {
+      if (p.startsWith('/images/create')) return create(p) ?? f.call(m, p, b);
+      if (p === '/info' && info !== undefined) return { status: 200, text: info };
+      return f.call(m, p, b);
+    };
+    it('quotes the daemon\'s message, and says private image only for 401, 403 and 404', async () => {
+      const f = fake();
+      await expect(pullAndCheck(wrap(f, () => ({ status: 400, text: '{"message":"invalid reference format"}' })), ME, '0.4.0')).rejects.toThrow(/was refused \(400\): invalid reference format\. Nothing was changed\.$/);
+      await expect(pullAndCheck(wrap(f, () => ({ status: 400, text: '{"message":"x"}' })), ME, '0.4.0')).rejects.not.toThrow(/private image/);
+      for (const status of [401, 403, 404]) await expect(pullAndCheck(wrap(f, () => ({ status, text: '{"message":"denied"}' })), ME, '0.4.0')).rejects.toThrow(/\(\d+\): denied; a private image needs/);
+      await expect(pullAndCheck(wrap(f, () => ({ status: 500, text: 'x'.repeat(500) })), ME, '0.4.0')).rejects.toThrow(/refused \(500\): x{200}\. Nothing/);
+    });
+    it('asks again with the reference in one piece, then with the daemon\'s platform, on a 400; the first answer that is not 400 stands', async () => {
+      const f = fake();
+      const seen: string[] = [];
+      const second = wrap(f, (p) => {
+        seen.push(p);
+        return p.includes('tag=') ? { status: 400, text: '{"message":"invalid reference format"}' } : null;
+      });
+      await expect(pullAndCheck(second, ME, '0.4.0')).resolves.toMatchObject({ image: NEW_IMG });
+      expect(seen).toEqual(['/images/create?fromImage=ghcr.io%2Fulm0%2Fgonogo&tag=latest', '/images/create?fromImage=ghcr.io%2Fulm0%2Fgonogo%3Alatest']);
+      const third = wrap(f, (p) => (p.includes('platform=') ? null : { status: 400, text: '{"message":"no matching manifest"}' }), JSON.stringify({ Architecture: 'x86_64', OSType: 'linux' }));
+      const got = await pullAndCheck(third, ME, '0.4.0');
+      expect(got.image).toBe(NEW_IMG);
+      const calls: string[] = [];
+      await pullAndCheck(wrap(f, (p) => (calls.push(p), p.includes('platform=') ? null : { status: 400, text: '{}' }), JSON.stringify({ Architecture: 'aarch64', OSType: 'linux' })), ME, '0.4.0');
+      expect(calls.at(-1)).toContain('platform=linux%2Farm64');
+    });
+  });
+
   it('says what is missing for Pad Check: no socket, an old Docker, a pinned tag, ready', async () => {
     const f = fake();
     expect(await dockerUpdateStatus(f.call, ME)).toEqual({ ready: true, text: 'ready' });
