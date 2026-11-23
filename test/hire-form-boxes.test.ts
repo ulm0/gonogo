@@ -58,3 +58,14 @@ describe('MORE SETTINGS of the staffing forms', () => {
     expect(more(renderToString(createElement(HireForm)))).toContain('open');
   });
 });
+
+describe('differsFromDefault and the role', () => {
+  it('a seated agent with the text of its position does not differ; one with a rewritten role does', async () => {
+    const { differsFromDefault, initialValues } = await import('../src/client/form.js');
+    const base = initialValues({ mode: 'hire', position: 'fao' }, null, {}, '/w');
+    expect(differsFromDefault(base, 0)).toBe(false);
+    expect(differsFromDefault({ ...base, role: `${base.role} Also review.` }, 0)).toBe(true);
+    // no position: the role is up front, not in the fold
+    expect(differsFromDefault({ ...base, position: '', role: 'mine' }, 0)).toBe(false);
+  });
+});
