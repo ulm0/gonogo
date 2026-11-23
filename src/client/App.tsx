@@ -24,12 +24,12 @@ import { FlightRules } from './Rules.js';
 import { isPanelKey, VIEW_FEATURE } from './shell.js';
 import { PhoneConsoleScreen, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { readStored, useFeature, useStore, writeStored } from './store.js';
-import { agentCounts, stripDismissed, UPDATE_TRUST_TEXT, updateDialogText, verifyPanel } from './selfupdate.js';
+import { useFeature, useStore } from './store.js';
+import { agentCounts, stripHidden, UPDATE_TRUST_TEXT, updateDialogText, verifyPanel } from './selfupdate.js';
 import { MAIN_PATH } from './base.js';
 import { copyText } from './uplink.js';
 import { SERVER_GONE_TEXT } from './wording.js';
-import { inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { inMain, ROLLOUT_SHOW, setRolloutDismissed, useNewer, useRolloutDismissed } from './newer.js';
 import { SetupStrip } from './SetupStrip.js';
 import { PhoneBar, TopBar } from './TopBar.js';
 import './shell.css';
@@ -132,7 +132,7 @@ function GoneStrip(): ReactElement | null {
 function OtherRoomStrip(): ReactElement | null {
   const info = useStore((s) => s.info);
   const latest = useNewer();
-  const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
+  const dismissed = useRolloutDismissed();
   if (inMain || latest === null || info === null || dismissed === latest) return null;
   return (
     <aside className="rollout-strip" aria-label="Update">
@@ -147,8 +147,7 @@ function OtherRoomStrip(): ReactElement | null {
         className="btn"
         data-kind="quiet"
         onClick={() => {
-          writeStored(ROLLOUT_DISMISSED_KEY, latest);
-          setDismissed(latest);
+          setRolloutDismissed(latest);
         }}
       >
         Dismiss
@@ -163,7 +162,7 @@ function OtherRoomStrip(): ReactElement | null {
  */
 function RolloutStrip(): ReactElement | null {
   const rollout = useStore((s) => s.rollout);
-  const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
+  const dismissed = useRolloutDismissed();
   const [copied, setCopied] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const code = useRef<HTMLElement | null>(null);
@@ -178,8 +177,7 @@ function RolloutStrip(): ReactElement | null {
   const [wantStart, setWantStart] = useState(false);
   useEffect(() => {
     const show = (event?: Event): void => {
-      writeStored(ROLLOUT_DISMISSED_KEY, '');
-      setDismissed('');
+      setRolloutDismissed('');
       if ((event as CustomEvent<{ start?: boolean }> | undefined)?.detail?.start === true) setWantStart(true);
       requestAnimationFrame(() => strip.current?.focus());
     };
@@ -198,10 +196,9 @@ function RolloutStrip(): ReactElement | null {
   const busy = update !== undefined && (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off');
   // what the last Docker self-update left (done, rolled back) is shown after the restart, when the new version is no longer "newer"
   const result = update !== undefined && (update.state === 'done' || (update.state === 'failed' && !(rollout?.newer ?? false)));
-  if (rollout === null || (!rollout.newer && !result) || (rollout.latest === null && !result)) return null;
+  if (rollout === null || stripHidden(rollout, dismissed)) return null;
   const { command } = rollout;
   const latest = rollout.latest ?? update?.version ?? '';
-  if (stripDismissed(dismissed, latest, busy)) return null;
   const inContainer = rollout.selfUpdate === true;
   // an image gonogo could not vouch for (the check was refused, or the image has no signature): said once, short, with the way on
   const failedVerify = update?.state === 'failed' && (update.verify === 'unattested' || update.verify === 'unchecked') && rollout.newer && !busy ? update.verify : null;
@@ -298,8 +295,7 @@ function RolloutStrip(): ReactElement | null {
         className="btn"
         data-kind="quiet"
         onClick={() => {
-          writeStored(ROLLOUT_DISMISSED_KEY, latest);
-          setDismissed(latest);
+          setRolloutDismissed(latest);
         }}
       >
         Dismiss

@@ -922,7 +922,7 @@ describe('Dismiss on the update strip', () => {
 
   it('is used by the strip, and the version key can still UNDO a dismissed update', () => {
     const app = readFileSync('src/client/App.tsx', 'utf8');
-    expect(app).toContain('stripDismissed(dismissed, latest, busy)');
+    expect(app).toContain('stripHidden(rollout, dismissed)');
     expect(app).not.toMatch(/dismissed === rollout\.latest && update === undefined/);
     expect(readFileSync('src/client/TopBar.tsx', 'utf8')).toContain('UNDO the last update');
   });
