@@ -1076,7 +1076,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       now: io.now,
       hasMission: (id) => missionsRef?.has(id) ?? false,
       afterChange: (list) => missionsRef?.observe(list),
-      afterUpdate: (before, after, actor, note) => dockingRef?.taskChanged(before, after, actor, note),
+      afterUpdate: (before, after, actor, note, attachments) => dockingRef?.taskChanged(before, after, actor, note, attachments),
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
       send: (actor, request) =>
         actor.kind === 'user'
@@ -1116,6 +1116,17 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       tasks,
       emit: (view) => web?.broadcast({ t: 'docking', docking: view }),
       emitLinks: (links) => web?.broadcast({ t: 'links', links }),
+      notify: (text) => tell('flight-plan', text),
+      tellBoss: (station, subject, body) => {
+        const boss = hubInstance.views().find((v) => v.boss);
+        if (boss === undefined) return;
+        try {
+          // from `station` at the docked station: a name that is no agent of ours and no Director, so it cannot be mistaken for either
+          hubInstance.sendFromStation(station, { from: 'station', to: boss.name, subject, body, hops: 0 });
+        } catch (error) {
+          log.warn('the boss could not be told of a task from a docked station', error);
+        }
+      },
       log: log.child('docking'),
     });
     dockingRef = docking;

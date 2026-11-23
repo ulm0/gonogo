@@ -209,6 +209,7 @@ export const ALLOWED_TOOLS = [
   'mcp__gonogo__task_list',
   'mcp__gonogo__task_create',
   'mcp__gonogo__task_update',
+  'mcp__gonogo__task_handoff',
   'mcp__gonogo__log_write',
   'mcp__gonogo__log_search',
   'mcp__gonogo__log_read',
@@ -564,6 +565,8 @@ export const MCP_DESCRIPTIONS = {
     'List the tasks of the Flight Plan, the team task board, most recently changed first. Optional filters: mine (only the tasks assigned to you) and status (todo, doing, review, done or blocked).',
   task_create:
     'Add a task to the Flight Plan. It starts as todo. Give a short title, a detail with what done means, and optionally the name of the agent it is assigned to; that agent gets a message. Optionally missionId, the id of the mission it serves (see mission_list).',
+  task_handoff:
+    'Boss only. Send a task of the Flight Plan to a docked station: give the task id, the station name and optionally an agent of that station (only a hint: if there is none by that name, its boss gets the task), a due date (YYYY-MM-DD), a priority (low, normal, high), onward (true lets that station hand it on) and a budget in dollars. The task stays open here and the other station reports its status back on the link. If the Director has set that station to ask first, nothing leaves until he has read the text and said go: the answer then says it is waiting. What you write in the task leaves this station.',
   task_update:
     'Change a task of the Flight Plan by its id: its status (todo, doing, review, done, blocked), its assignee (an agent name, or null to unassign) and a short note for the history. Assigning it to another agent sends that agent a message. missionId links it to a mission (null unlinks it).',
   mission_list:

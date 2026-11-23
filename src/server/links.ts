@@ -9,8 +9,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AGENT_NAME_PATTERN, LINK_PRIORITIES, TASK_STATUSES } from '../shared/protocol.js';
-import type { LinkEventView, LinkPriority, LinkState, LinkView, Logger, OutboundEntry, Task, TaskStatus } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, DELIVERABLE_KINDS, LINK_PRIORITIES, TASK_STATUSES } from '../shared/protocol.js';
+import type { Deliverable, LinkEventView, LinkPriority, LinkState, LinkView, Logger, OutboundEntry, Task, TaskStatus } from '../shared/protocol.js';
 import {
   DOCK_OUTBOX_FILE,
   LINK_BATCH_MAX,
@@ -32,7 +32,8 @@ export const LINK_ID_RE = /^dl_[0-9a-f]{16}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** What each side may author on a link, by its role. The sender owns intent; the receiver owns execution. */
-export const SENDER_KINDS = ['offer', 'recall', 'note', 'ask', 'reply', 'lost'] as const;
+/** `accept` is the receiver's at the offer ("this task is held here") and the sender's after a delivery ("accepted"). */
+export const SENDER_KINDS = ['offer', 'recall', 'accept', 'note', 'ask', 'reply', 'lost'] as const;
 export const RECEIVER_KINDS = ['accept', 'status', 'note', 'ask', 'reply', 'return', 'refuse', 'lost'] as const;
 
 export interface LinkEvent {
@@ -46,6 +47,8 @@ export interface LinkEvent {
   by: string;
   text: string;
   status?: TaskStatus;
+  /** Deliverables of a status: links to the work, never its body. */
+  attachments?: Deliverable[];
 }
 
 export interface Link {
@@ -68,6 +71,8 @@ export interface Link {
   outSeq: number;
   inSeq: number;
   updatedAt: number;
+  /** When this station's boss was last told that the link is quiet. */
+  staleAt?: number;
   /** Events of theirs that came ahead of a gap, by `seq`. */
   held: LinkEvent[];
   /** A short hash of each of their events in the trail window, so that a `seq` sent again is told from a `seq` rewritten. */
@@ -94,6 +99,8 @@ export interface LinksOptions {
   trace(dockId: string, what: string, outcome?: string): void;
   /** The view of links changed. */
   changed(): void;
+  /** An event was applied (`ours` false: the peer's, here, after the checks). Its side effects on the tasks are the caller's. */
+  applied?(link: Link, event: LinkEvent, ours: boolean): void;
   log: Logger;
 }
 
@@ -113,7 +120,7 @@ export interface Links {
   of(dockId: string, id: string): Link | undefined;
   byTask(taskId: string): Link[];
   /** An event of ours. Stored, queued for the dock and sent at once without waiting for the answer. */
-  record(link: Link, kind: string, by: string, text: string, status?: TaskStatus, queue?: boolean): LinkEvent;
+  record(link: Link, kind: string, by: string, text: string, status?: TaskStatus, extra?: { queue?: boolean; attachments?: Deliverable[] }): LinkEvent;
   /** The events a dock sent. Returns what it applied, per link, for the ack. Never throws for one bad event: it is refused and logged. */
   apply(dock: { id: string; name: string }, raw: unknown): Record<string, number>;
   /** An event of theirs that came in the answer of an offer (accept, refuse). */
@@ -162,7 +169,41 @@ export function readOffer(body: Record<string, unknown>): OfferFields {
   return { due, priority, onward: body.onward === true, budget };
 }
 
-const hashOf = (e: Pick<LinkEvent, 'kind' | 'by' | 'text' | 'status'>): string => createHash('sha256').update(JSON.stringify([e.kind, e.by, e.text, e.status ?? null])).digest('hex').slice(0, 16);
+const hashOf = (e: Pick<LinkEvent, 'kind' | 'by' | 'text' | 'status' | 'attachments'>): string => createHash('sha256').update(JSON.stringify([e.kind, e.by, e.text, e.status ?? null, e.attachments ?? null])).digest('hex').slice(0, 16);
+
+const HEX_RE = /^[0-9a-f]{7,64}$/;
+/** A git ref name, plain: letters, digits and the usual punctuation, no `..`, no leading dash or slash. */
+const REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
+
+/** A deliverable that is well formed for its kind, or null: a URL is https with no userinfo, a file is a relative path shown as text. Nothing is fetched or opened. */
+export function readDeliverable(raw: unknown): Deliverable | null {
+  if (!isRecord(raw) || typeof raw.kind !== 'string' || !(DELIVERABLE_KINDS as readonly string[]).includes(raw.kind) || typeof raw.ref !== 'string') return null;
+  const ref = raw.ref.trim();
+  if (ref === '' || ref.length > 300 || UNSAFE.test(ref)) return null;
+  UNSAFE.lastIndex = 0;
+  const kind = raw.kind as Deliverable['kind'];
+  if (kind === 'pr' || kind === 'url') {
+    let url: URL;
+    try {
+      url = new URL(ref);
+    } catch {
+      return null;
+    }
+    if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
+  } else if (kind === 'commit') {
+    if (!HEX_RE.test(ref)) return null;
+  } else if (kind === 'branch') {
+    if (!REF_RE.test(ref) || ref.includes('..') || ref.endsWith('/') || ref.endsWith('.lock')) return null;
+  } else if (ref.startsWith('/') || ref.includes('..') || /^[A-Za-z]:/.test(ref) || ref.includes('\\')) {
+    return null;
+  }
+  return { kind, ref, label: cleanLine(raw.label, 80) };
+}
+
+/** At most 5, each checked; the ones that are not well formed are dropped. */
+export function readDeliverables(raw: unknown): Deliverable[] {
+  return (Array.isArray(raw) ? raw : []).map(readDeliverable).filter((d): d is Deliverable => d !== null).slice(0, 5);
+}
 const newId = (): string => `dl_${randomBytes(8).toString('hex')}`;
 const HOUR = 3600_000;
 
@@ -212,12 +253,18 @@ export function createLinks(options: LinksOptions): Links {
     return ((mine === 'sender' ? SENDER_KINDS : RECEIVER_KINDS) as readonly string[]).includes(kind);
   };
 
-  const stateAfter = (link: Link, event: LinkEvent): void => {
-    if (event.kind === 'accept') link.state = 'accepted';
+  /** What an event does to the state of the link: the same on both sides, by who sent it (the sender's `accept` is the acceptance of a delivery; the receiver's is the take). */
+  const stateAfter = (link: Link, event: LinkEvent, ours: boolean): void => {
+    const bySender = (link.role === 'sender') === ours;
+    if (event.kind === 'accept') link.state = bySender ? 'done' : 'accepted';
     else if (event.kind === 'refuse') link.state = 'refused';
     else if (event.kind === 'return') link.state = 'returned';
     else if (event.kind === 'recall') link.state = 'recalled';
-    if (event.kind === 'status' && event.status !== undefined) link.peerStatus = event.status;
+    if (event.kind === 'status' && event.status !== undefined) {
+      link.peerStatus = event.status;
+      // the receiver says done: a delivery, waiting for the sender's acceptance
+      if (event.status === 'done' && (link.state === 'accepted' || link.state === 'delivered')) link.state = 'delivered';
+    }
   };
 
   const api: Links = {
@@ -307,15 +354,17 @@ export function createLinks(options: LinksOptions): Links {
     },
     byTask: (taskId) => [...links.values()].filter((l) => l.mine === taskId),
 
-    record(link, kind, by, text, status, queue = true) {
+    record(link, kind, by, text, status, extra = {}) {
+      const queue = extra.queue !== false;
       const clean = cleanLine(text);
-      const event: LinkEvent = { link: link.id, author: stationId(), seq: link.outSeq + 1, at: now(), kind, by: cleanLine(by, 80), text: clean, ...(status === undefined ? {} : { status }) };
+      const attachments = extra.attachments === undefined ? [] : readDeliverables(extra.attachments);
+      const event: LinkEvent = { link: link.id, author: stationId(), seq: link.outSeq + 1, at: now(), kind, by: cleanLine(by, 80), text: clean, ...(status === undefined ? {} : { status }), ...(attachments.length === 0 ? {} : { attachments }) };
       link.outSeq = event.seq;
       link.trail.push(event);
       clipTrail(link);
       touch(link);
       // the offer travels on the `task` route and the answer acks it; everything else waits in the outbox
-      stateAfter(link, event);
+      stateAfter(link, event, true);
       if (kind !== 'offer' && queue) {
         const b = box(link.peer);
         b.events.push({ ...event, queuedAt: now() });
@@ -325,6 +374,7 @@ export function createLinks(options: LinksOptions): Links {
       options.trace(link.peer, `link event ${kind} on ${link.id}`);
       save();
       options.changed();
+      options.applied?.(link, event, true);
       if (kind !== 'offer' && queue) sendNow(link.peer);
       return event;
     },
@@ -441,7 +491,7 @@ export function createLinks(options: LinksOptions): Links {
     trail(id) {
       const link = links.get(id);
       if (!link) return null;
-      return link.trail.map((e) => ({ link: e.link, from: e.author === stationId() ? 'us' : 'them', seq: e.seq, at: e.at, kind: e.kind, by: e.by, text: e.text, ...(e.status === undefined ? {} : { status: e.status }) }));
+      return link.trail.map((e) => ({ link: e.link, from: e.author === stationId() ? 'us' : 'them', seq: e.seq, at: e.at, kind: e.kind, by: e.by, text: e.text, ...(e.status === undefined ? {} : { status: e.status }), ...(e.attachments === undefined ? {} : { attachments: e.attachments }) }));
     },
 
     outbound: (dockId) => (outboxes.get(dockId)?.sent ?? []).map((s) => ({ ...s })).concat((outboxes.get(dockId)?.events ?? []).map((e) => ({ at: e.at, link: e.link, seq: e.seq, kind: e.kind, by: e.by, text: e.text, ackedAt: null }))).slice(-OUTBOX_SENT_KEEP),
@@ -456,6 +506,8 @@ export function createLinks(options: LinksOptions): Links {
     if (!fits(link, ev.kind, false) || ev.kind === 'offer') throw new Error(`dock ${dock.name} sent a ${ev.kind} that its side of the link cannot send`);
     const by = byOf(ev.by, dock.name);
     const event: LinkEvent = { ...ev, by, text: cleanLine(ev.text), ...(ev.status !== undefined && (TASK_STATUSES as readonly string[]).includes(ev.status) ? { status: ev.status } : {}) };
+    // deliverables ride on a status only
+    if (event.kind !== 'status') delete event.attachments;
     if (ev.kind === 'status' && event.status === undefined) throw new Error(`dock ${dock.name} sent a status with no status`);
     const known = link.seen[String(event.seq)];
     if (event.seq <= link.inSeq) {
@@ -484,9 +536,10 @@ export function createLinks(options: LinksOptions): Links {
     for (const key of Object.keys(link.seen)) if (Number(key) <= event.seq - LINK_TRAIL_MAX) delete link.seen[key];
     link.trail.push(event);
     clipTrail(link);
-    stateAfter(link, event);
+    stateAfter(link, event, false);
     touch(link);
     options.trace(link.peer, `link event ${event.kind} on ${link.id}`);
+    options.applied?.(link, event, false);
   }
 
   /** `<agent>@<station>`: the agent part checked, the station the dock's own name, whatever the body said. */
@@ -540,6 +593,7 @@ export function createLinks(options: LinksOptions): Links {
       by: typeof raw.by === 'string' ? cleanLine(raw.by, 80) : '',
       text: cleanLine(raw.text),
       ...((TASK_STATUSES as readonly unknown[]).includes(raw.status) ? { status: raw.status as TaskStatus } : {}),
+      ...((a) => (a.length === 0 ? {} : { attachments: a }))(readDeliverables(raw.attachments)),
     };
   }
 

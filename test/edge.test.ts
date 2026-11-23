@@ -2672,7 +2672,7 @@ describe('mcp', () => {
     expect(create?.inputSchema.properties?.title).toMatchObject({ maxLength: 200 });
     expect(create?.inputSchema.properties?.detail).toMatchObject({ maxLength: 4000 });
     const update = tools.find((t) => t.name === 'task_update');
-    expect(Object.keys(update?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'id', 'missionId', 'note', 'status']);
+    expect(Object.keys(update?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'attachments', 'id', 'localNotes', 'missionId', 'note', 'status']);
     expect([...(update?.inputSchema.required ?? [])]).toEqual(['id']);
     for (const name of ['task_list', 'task_create', 'task_update'] as const) expect(tools.find((t) => t.name === name)?.description).toBe(MCP_DESCRIPTIONS[name]);
     const write = tools.find((t) => t.name === 'log_write');
@@ -3823,6 +3823,14 @@ describe('web: REST', () => {
           linkViews: () => [],
           linkTrail: () => null,
           outbound: () => [],
+          rules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24 }),
+          setRules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24 }),
+          returnTask: async () => ({}) as never,
+          recallTask: async () => ({}) as never,
+          acceptDelivery: async () => ({}) as never,
+          asks: () => [],
+          answerAsk: async () => ({ state: 'refused' as const }),
+          requestHandoff: async () => ({ state: 'sent' as const, note: '' }),
           createCode: (input) => {
             calls.push(['code', input]);
             if ((input as { url?: unknown }).url === 'bad') throw new FakeHubError('bad_request', 'url must be a web address with no path', 'url');

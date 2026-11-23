@@ -164,7 +164,7 @@ export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 export const WORKTREE_DIR = 'worktrees';
 /** The online documentation: the one address every install surface (startup, --help, doctor, the page) links to. The site has one version only, so the link is not versioned. */
 export const DOCS_URL = 'https://gonogo.ulm0.com/';
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'knowledge_propose', 'knowledge_list', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'task_handoff', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'knowledge_propose', 'knowledge_list', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -973,6 +973,8 @@ export interface DockedAgent {
 export interface DockView {
   /** Docking 2: events of ours that wait for this station to ack them. */
   waiting?: number;
+  /** Docking 2: what this station may do with that one. */
+  rules?: DockRules;
   /** The station id of the other side. */
   id: string;
   /** What the other side calls itself: the part after the @ in "name@station". */
@@ -1057,6 +1059,8 @@ export interface Task {
   links?: string[];
   /** Docking 2: the notes of this task stay here: its status events leave without their text. */
   localNotes?: boolean;
+  /** Docking 2: the other station gave this task back (it reopened here as todo), or this station gave it back (it is done here). */
+  returned?: boolean;
 }
 
 /* ---- Docking 2: links (docs/docking-collab-spec.md) ---- */
@@ -1064,6 +1068,38 @@ export const LINK_STATES = ['offered', 'accepted', 'delivered', 'returned', 'rec
 export type LinkState = (typeof LINK_STATES)[number];
 export const LINK_PRIORITIES = ['low', 'normal', 'high'] as const;
 export type LinkPriority = (typeof LINK_PRIORITIES)[number];
+/** A deliverable: a link to where the work is, never its body. `ref` is checked by kind; a URL is never fetched. */
+export const DELIVERABLE_KINDS = ['pr', 'branch', 'commit', 'file', 'url'] as const;
+export interface Deliverable {
+  kind: (typeof DELIVERABLE_KINDS)[number];
+  ref: string;
+  label: string;
+}
+/** What a dock may do, per station (docs/docking-collab-spec.md, section 4): `handoff: ask` shows the Director the full text before it leaves. */
+export interface DockRules {
+  handoff: 'ask' | 'allow';
+  /** `off` refuses every task from this station; `auto` takes it. */
+  incoming: 'auto' | 'off';
+  /** A delivery closes the sender's task at once. */
+  autoAccept: boolean;
+  /** Hours of silence on an accepted link before this station's boss is told; 0 is never. */
+  staleHours: number;
+}
+/** A hand-off that waits for the Director's answer: exactly what would leave. */
+export interface HandoffAsk {
+  id: string;
+  dock: string;
+  dockName: string;
+  task: string;
+  assignee: string | null;
+  title: string;
+  detail: string;
+  due: string | null;
+  priority: LinkPriority;
+  onward: boolean;
+  budget: number | null;
+  at: number;
+}
 /** One entry of a trail: who, what, when. `by` is `<agent>@<station>`, never a bare name. */
 export interface LinkEventView {
   link: string;
@@ -1075,6 +1111,7 @@ export interface LinkEventView {
   by: string;
   text: string;
   status?: TaskStatus;
+  attachments?: Deliverable[];
 }
 /** One link, for the cards and the board: counts, states and cleaned titles only. */
 export interface LinkView {

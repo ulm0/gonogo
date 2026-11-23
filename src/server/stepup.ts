@@ -23,6 +23,7 @@ export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && path === '/api/rooms/main/migrate') return true;
   if (method === 'POST' && /^\/api\/knowledge\/[^/]+\/move$/.test(path)) return true;
   if (method === 'POST' && path === '/api/agents') return true;
+  if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path)) return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
@@ -62,6 +63,9 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (method === 'PUT' && path === '/api/autoupdate') return body === null || body.enabled === true || body.windows !== undefined ? 'turning on auto-update, or changing when it runs' : null;
   // a room made with a project folder starts its agents there
   if (method === 'POST' && path === '/api/rooms') return body !== null && body.dir !== undefined && body.dir !== null ? 'adding a room with a project folder' : null;
+  // what a docked station may do: FLIGHT sending without asking is the new way out for text
+  if (method === 'PATCH' && /^\/api\/docking\/[0-9a-f]{32}\/rules$/.test(path)) return 'changing what a docked station may do';
+  if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path) && body !== null && body.always === true) return 'letting FLIGHT send tasks to a station without asking';
   // the project folder: every agent that starts afterwards starts there
   if (method === 'PUT' && path === '/api/project-folder') return 'changing the project folder of the room';
   // the runtime settings (hops, Max Q, the agent command, what is scrubbed, ...): every write asks again, like the keys of the room
