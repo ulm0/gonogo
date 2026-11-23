@@ -18,7 +18,7 @@ Run `claude` once in an ordinary terminal and finish its sign-in (theme, login).
 ::: details Other engines, platforms, install problems
 - Another agent CLI instead of `claude`: [Engine Bay](../features/engine-bay.md); how far each was checked: [What was not verified](../reference/not-verified.md). Telemetry and Max Q need hooks (Claude Code, Gemini CLI).
 - Not Alpine (musl), not Windows. Do not install with `--no-optional`: the terminal library's binary is an optional package, and without it `gonogo` exits with code 1.
-- `EACCES ... mkdir '/usr/local/lib/node_modules/@ulm0'` on `npm i -g`: use nvm or fnm, or `npm config set prefix ~/.npm-global` and add its `bin` to the `PATH`.
+- `EACCES ... mkdir '/usr/local/lib/node_modules/@ulm0'` on `npm i -g`: use nvm or fnm, or `npm config set prefix ~/.npm-global`, then `export PATH=~/.npm-global/bin:$PATH` (add that line to `~/.bashrc` or `~/.zshrc` to keep it).
 :::
 
 </div>
@@ -40,20 +40,21 @@ It prints an address and a setup line (next step). Also: `brew install ulm0/tap/
 `pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@%VERSION%`. Use the scoped name (the unscoped `gonogo` on npm is another project and would run with your credentials) and the version: where `minimumReleaseAge` is set, pnpm refuses a young release or picks an older one for `@latest`.
 :::
 
-**With Docker**, credential first. On a machine where `claude` is signed in run `claude setup-token` and keep the token (or use `ANTHROPIC_API_KEY`; one of the two). Then, in an empty folder:
+**With Docker**, credential first. On a machine where `claude` is signed in run `claude setup-token` (it opens a browser on that machine to sign in, then prints the token) and keep the token, or use `ANTHROPIC_API_KEY`; one of the two. Then, in an empty folder (as root, drop `sudo`):
 
 ```
-export CLAUDE_CODE_OAUTH_TOKEN=<the token>
+export CLAUDE_CODE_OAUTH_TOKEN=PASTE_THE_TOKEN_HERE
 curl -fsSLO https://raw.githubusercontent.com/ulm0/gonogo/v%VERSION%/compose.yaml
 sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home
 printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env
-docker compose up -d && docker compose logs gonogo
+docker compose up -d
+sleep 5; docker compose logs gonogo
 ```
 
-The logs end with the same address and setup line. **The compose file mounts the host's Docker socket: root on the host for every agent in the container** ([Docker](./docker.md#clean-room-in-the-container); a plain `docker run` without the socket is on that page too).
+The address and the setup line are among the last lines of the log (they come a second after the container starts). **The compose file mounts the host's Docker socket: root on the host for every agent in the container** ([Docker](./docker.md#clean-room-in-the-container); a plain `docker run` without the socket is on that page too).
 
 ::: details No credential in Docker
-FLIGHT looks ready (green), its console says `Not logged in · Run /login`, and a brief gets no answer. Export the token and run `docker compose up -d` again, or open FLIGHT's console and type `/login`.
+FLIGHT looks ready (green), its console says `Not logged in · Run /login`, and a brief gets no answer. Export the token and run `docker compose up -d` again (the account is kept). On a server without a browser use the token: `/login` in FLIGHT's console needs one. A wrong token looks different: `Remote managed settings failed to load (authentication rejected (401))`, and the brief is still "delivered".
 :::
 
 </div>
