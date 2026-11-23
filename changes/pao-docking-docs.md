@@ -1,0 +1,1 @@
+- **Docking page rewritten for Docking 2.** What a link is, what the other station can and cannot do, hand off, return, recall, accept, deliverables, chains, missions, cost, suggestions, knowledge on request, the board, what leaves your station and the per-dock rules.
