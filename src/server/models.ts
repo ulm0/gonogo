@@ -8,8 +8,8 @@ import { randomBytes } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { POSITION_IDS } from '../shared/positions.js';
-import { EFFORTS, MODEL_PATTERN, PROVIDERS, providerInfo } from '../shared/protocol.js';
-import type { Effort, Logger, ModelDefaults, Provider } from '../shared/protocol.js';
+import { EFFORTS, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo } from '../shared/protocol.js';
+import type { Effort, Logger, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
 import { FILE_MODE, MODELS_FILE, nullLogger } from './constants.js';
 import { HubError } from './hub.js';
 
@@ -29,6 +29,10 @@ export interface ModelDefaultsStore {
   engine(): Provider;
   /** The room's default effort for Claude Code, or undefined. */
   effort(): Effort | undefined;
+  /** The room's default permission mode, or undefined (default). */
+  mode(): PermissionMode | undefined;
+  /** Sets the default mode, or clears it with null. A bad mode throws a HubError (bad_request, field `mode`); bypassPermissions needs `confirmBypass: true` (bad_request, field `confirmBypass`). */
+  setMode(mode: unknown, confirmBypass?: unknown): Promise<ModelDefaults>;
   /** Sets the default engine (any but `custom`), or clears it with null. A bad one throws a HubError (bad_request, field `engine`). */
   setEngine(engine: unknown): Promise<ModelDefaults>;
   /** Sets the default effort, or clears it with null. A bad level throws a HubError (bad_request, field `effort`). */
@@ -47,14 +51,15 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
   let positions: Record<string, string> = {};
   let engine: Provider | undefined;
   let effort: Effort | undefined;
+  let mode: PermissionMode | undefined;
   let chain: Promise<unknown> = Promise.resolve();
 
-  const view = (): ModelDefaults => ({ models: { ...models }, positions: { ...positions }, ...(engine ? { engine } : {}), ...(effort ? { effort } : {}) });
+  const view = (): ModelDefaults => ({ models: { ...models }, positions: { ...positions }, ...(engine ? { engine } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}) });
 
   /** Writes what `change` returns, or nothing when it equals what is saved; a failed write leaves the old values. */
   const save = async (change: () => void): Promise<void> => {
     const before = JSON.stringify(view());
-    const was = { models, positions, engine, effort };
+    const was = { models, positions, engine, effort, mode };
     change();
     if (JSON.stringify(view()) === before) return;
     const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
@@ -62,7 +67,7 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
       await writeFile(temp, JSON.stringify({ version: 1, ...view() }, null, 2), { flag: 'wx', mode: FILE_MODE });
       await rename(temp, path);
     } catch (error) {
-      ({ models, positions, engine, effort } = was);
+      ({ models, positions, engine, effort, mode } = was);
       await rm(temp, { force: true }).catch(() => undefined);
       throw new Error(`could not save the default models: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -79,6 +84,7 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
         models = Object.fromEntries(Object.entries(saved.models).filter(([provider, model]) => usable(provider, model))) as Partial<Record<Provider, string>>;
         if (typeof saved.engine === 'string' && (PROVIDERS as readonly string[]).includes(saved.engine) && saved.engine !== 'custom') engine = saved.engine as Provider;
         if (typeof saved.effort === 'string' && (EFFORTS as readonly string[]).includes(saved.effort)) effort = saved.effort as Effort;
+        if (typeof saved.mode === 'string' && saved.mode !== 'default' && (PERMISSION_MODES as readonly string[]).includes(saved.mode)) mode = saved.mode as PermissionMode;
         if (isRecord(saved.positions)) positions = Object.fromEntries(Object.entries(saved.positions).filter(([id, model]) => POSITION_IDS.includes(id) && typeof model === 'string' && MODEL_RE.test(model))) as Record<string, string>;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
@@ -89,6 +95,14 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
     view,
     engine: () => engine ?? 'claude',
     effort: () => effort,
+    mode: () => mode,
+    async setMode(value, confirmBypass) {
+      if (value !== null && value !== undefined && (typeof value !== 'string' || !(PERMISSION_MODES as readonly string[]).includes(value))) throw new HubError('bad_request', `mode must be one of: ${PERMISSION_MODES.join(', ')}, or null`, 'mode');
+      if (value === 'bypassPermissions' && confirmBypass !== true) throw new HubError('bad_request', 'bypassPermissions needs confirmBypass: true', 'confirmBypass');
+      const run = chain.then(() => save(() => void (mode = value === null || value === undefined || value === 'default' ? undefined : (value as PermissionMode))));
+      chain = run.catch(() => undefined);
+      return run.then(view);
+    },
     async setEngine(value) {
       if (value !== null && value !== undefined && (typeof value !== 'string' || !(PROVIDERS as readonly string[]).includes(value) || value === 'custom')) throw new HubError('bad_request', 'engine must be an engine of the hire form other than a custom command, or null', 'engine');
       const run = chain.then(() => save(() => void (engine = value === null || value === undefined || value === 'claude' ? undefined : (value as Provider))));

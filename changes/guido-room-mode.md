@@ -1,0 +1,1 @@
+Room default permission mode (Engine Bay): a mode select next to engine and effort; it preselects the hire form and is what a Relief or hire_agent request without a mode gets. bypassPermissions needs the confirmation, and a request that names no mode never gets it.

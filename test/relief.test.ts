@@ -201,6 +201,18 @@ describe('a request', () => {
     expect(relief.view().requests[1]).toMatchObject({ provider: 'claude' });
   });
 
+  it('uses the room\'s default mode when the request names none, except bypassPermissions (default); a named one wins', async () => {
+    relief = make({ defaultMode: () => 'acceptEdits' });
+    await ask();
+    expect(relief.view().requests[0]).toMatchObject({ mode: 'acceptEdits' });
+    await ask({ name: 'guido-2', mode: 'default' });
+    expect(relief.view().requests[1]).toMatchObject({ mode: 'default' });
+    relief = make({ defaultMode: () => 'bypassPermissions' });
+    await ask();
+    expect(relief.view().requests[0]).toMatchObject({ mode: 'default' });
+    await expect(ask({ name: 'guido-3', mode: 'bypassPermissions' })).rejects.toMatchObject({ field: 'mode' });
+  });
+
   it('answers a copy: changing the view does not change the request', async () => {
     await ask();
     relief.view().requests[0]!.name = 'other';

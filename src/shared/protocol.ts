@@ -931,6 +931,8 @@ export interface ModelDefaults {
   engine?: Provider;
   /** The room's default effort for a Claude Code console with none of its own. Absent means the CLI's own. */
   effort?: Effort;
+  /** The room's default permission mode: preselects the hire form, and is what a hire without a mode gets (bypassPermissions never: it falls back to default there). Absent means default. Ignored by an engine without permission modes. */
+  mode?: PermissionMode;
 }
 
 /** Telegram inbound (docs/features/relay.md): by long polling, by a webhook (uplink or one set on the bot), or off. `note` never holds a token. */

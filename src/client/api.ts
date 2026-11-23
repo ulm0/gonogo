@@ -68,6 +68,7 @@ import type {
   MissionRequest,
   Effort,
   ModelDefaults,
+  PermissionMode,
   Claim,
   KnowledgeRepo,
   KnowledgeView,
@@ -612,6 +613,11 @@ export async function removeDefaultSkill(name: string): Promise<PayloadDefaults>
 /** The room's default effort for Claude Code consoles with none of their own; null clears it. */
 export async function setDefaultEffort(effort: Effort | null): Promise<ModelDefaults> {
   return toModelDefaults(await call('PUT', '/models/effort', { effort }));
+}
+
+/** The room's default permission mode for hires that name none; null goes back to ask. bypassPermissions is refused without `confirmBypass`. */
+export async function setDefaultMode(mode: PermissionMode | null, confirmBypass = false): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', '/models/mode', { mode, ...(confirmBypass ? { confirmBypass: true } : {}) }));
 }
 
 export async function setPositionModel(position: string, model: string | null): Promise<ModelDefaults> {

@@ -36,6 +36,7 @@ Each console shows chips for **engine**, **model it starts with** and **effort**
 | Default | Use | API (null clears) |
 |---|---|---|
 | Default engine | preselects the hire form; engine of a hire naming none (form, Relief, `hire_agent`); never a custom command; an engine in the request wins | `PUT /api/models/engine` `{ engine }` |
+| Permission mode | preselects the mode of a new hire in the form; mode of a Relief or `hire_agent` request naming none (never bypass: that falls back to ask); bypass as the default needs the confirmation box; an engine without modes ignores it; Edit never changes an agent's mode | `PUT /api/models/mode` `{ mode, confirmBypass }` |
 | Claude Code effort | `--effort` of a Claude console with none | `PUT /api/models/effort` `{ effort }` |
 | Model by engine | model of a console with none | `PUT /api/models/<engine>` `{ "model": "sonnet" }` |
 | Model by position (16 positions) | Claude Code consoles only | `PUT /api/models/positions/<id>` `{ "model": "sonnet" }` |

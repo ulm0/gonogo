@@ -45,6 +45,8 @@ export interface ReliefOptions {
   checkWorktree?(dir: string): Promise<string | null>;
   /** The room's default engine, for a request that names none. Default claude. */
   defaultEngine?(): Provider;
+  /** The room's default permission mode, for a request that names none. Never bypassPermissions here: the Director reads the mode in the request, but nobody confirmed bypass. */
+  defaultMode?(): PermissionMode | undefined;
   now(): number;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
@@ -173,9 +175,11 @@ export function createRelief(options: ReliefOptions): Relief {
       if (engine === 'custom') throw bad('a custom command cannot be asked for: only the Director can hire one', 'engine');
       const provider = engine as Provider;
 
-      const asked = input.mode === undefined ? 'default' : input.mode;
+      const room = options.defaultMode?.();
+      const asked = input.mode === undefined ? (room === undefined || room === 'bypassPermissions' ? 'default' : room) : input.mode;
       if (typeof asked !== 'string' || !(PERMISSION_MODES as readonly string[]).includes(asked)) throw bad(`mode must be one of ${RELIEF_MODES.join(', ')}`, 'mode');
-      if (!(RELIEF_MODES as readonly string[]).includes(asked)) throw bad(`a request can ask for ${RELIEF_MODES.join(' or ')} at most, not ${asked}: only the Director can give more`, 'mode');
+      // the room's own default is the Director's choice; only what the agent asks is held to the most an agent can ask for
+      if (input.mode !== undefined && !(RELIEF_MODES as readonly string[]).includes(asked)) throw bad(`a request can ask for ${RELIEF_MODES.join(' or ')} at most, not ${asked}: only the Director can give more`, 'mode');
       // an engine without permission modes is started in default whatever is asked, and the Director is shown what will happen
       const mode: PermissionMode = providerInfo(provider).modes ? (asked as PermissionMode) : 'default';
 
