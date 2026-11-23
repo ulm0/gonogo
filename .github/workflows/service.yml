@@ -1,6 +1,6 @@
 name: Service
 
-# `gonogo service install` against a real service manager: systemd (a user manager on the runner), OpenRC (Alpine in a container), and launchd's
+# `gonogo service install` against a real service manager: systemd (a user manager on the runner), OpenRC (Debian in a container), and launchd's
 # plist on macOS. The packed tarball is installed globally, a stand-in `claude` satisfies the start-up check, and a room is started, reloaded
 # (the manager starts the next gonogo) and removed.
 on:
@@ -137,13 +137,15 @@ jobs:
         with:
           name: tarball
           path: pack
-      # Alpine with OpenRC; --init so that a stopped service's process is reaped (the container's own pid 1 would not)
-      - name: install, reload and uninstall under OpenRC
+      # Debian with OpenRC (a glibc system: gonogo's pty library has no musl build, so Alpine cannot run agents); --init so that a stopped
+      # service's process is reaped (the container's own pid 1 would not)
+      - name: install, an agent surviving a reload, uninstall under OpenRC
         run: |
-          docker run --rm --init -v "$PWD/pack:/pk:ro" node:24-alpine sh -ec '
-            apk add --no-cache openrc curl >/dev/null
+          docker run --rm --init -v "$PWD/pack:/pk:ro" node:24-bookworm sh -ec '
+            apt-get update >/dev/null
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openrc curl procps >/dev/null
             mkdir -p /run/openrc && touch /run/openrc/softlevel
-            adduser -D -h /home/ana ana
+            useradd -m ana
             npm install -g /pk/*.tgz >/dev/null 2>&1
             printf "#!/bin/sh\nexec sleep 1234567\n" > /usr/local/bin/claude && chmod +x /usr/local/bin/claude
             # as root with no user to run as: refused

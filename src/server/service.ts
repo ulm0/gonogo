@@ -206,7 +206,7 @@ export function renderOpenrc(spec: Spec, user: string, group: string): string {
     'export GONOGO_SERVICE=openrc',
     '',
     'depend() {',
-    '\tneed net',
+    '\tuse net',
     '}',
     '',
     'start_pre() {',

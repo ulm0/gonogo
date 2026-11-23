@@ -19,9 +19,9 @@ gonogo service uninstall
 |---|---|---|
 | Linux with systemd | `~/.config/systemd/user/gonogo.service` | `systemctl --user` |
 | macOS | `~/Library/LaunchAgents/com.ulm0.gonogo.plist` (log: `~/Library/Logs/gonogo.log`) | `launchctl` |
-| Alpine and other OpenRC | `/etc/init.d/gonogo`, running as your user | `rc-service` |
+| OpenRC (Gentoo, Artix, Devuan) | `/etc/init.d/gonogo`, running as your user | `rc-service` |
 
-Anything else gets "no service manager found": run gonogo yourself, for example in `tmux`. A container is its own service: use [Docker](./docker.md).
+gonogo itself needs glibc, so OpenRC on Alpine (musl) starts the server but cannot run agents. Anything else gets "no service manager found": run gonogo yourself, for example in `tmux`. A container is its own service: use [Docker](./docker.md).
 
 ## When it needs root
 
@@ -74,4 +74,4 @@ The Update key (npm and pnpm installs) installs the new version and then reloads
 
 ## Not verified
 
-systemd was run on a GitHub runner and OpenRC in an Alpine container (install, an agent surviving a reload, restart, stop, uninstall); launchd's file was only linted on macOS (a runner has no login session to load it into). Not run: a real boot, the polkit refusal of lingering and the `sudo` path on systemd, and a user whose home path has a space.
+systemd was run on a GitHub runner and OpenRC in a Debian container (install, an agent surviving a reload, restart, stop, uninstall); launchd's file was only linted on macOS (a runner has no login session to load it into). Not run: a real boot, the polkit refusal of lingering and the `sudo` path on systemd, and a user whose home path has a space.
