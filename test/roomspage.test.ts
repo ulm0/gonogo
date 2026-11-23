@@ -240,11 +240,11 @@ describe('the rooms list page script', () => {
     expect(byId.rooms?.children.length).toBeGreaterThan(0);
   });
 
-  it('a 401, with or without a token, goes to the login page; nothing else is drawn', async () => {
+  it('a 401 goes to the login page (with ?old=1 when the visit had the key of the first setup, so that the page can say why); nothing else is drawn', async () => {
     for (const token of [undefined, 'a'.repeat(64)]) {
       const { byId, replaced } = run({ rooms: [room()], status: 401, ...(token === undefined ? {} : { token }) });
       await settle();
-      expect(replaced).toEqual(['/login']);
+      expect(replaced).toEqual([token === undefined ? '/login' : '/login?old=1']);
       expect(byId.rooms?.children).toHaveLength(0);
     }
   });

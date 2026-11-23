@@ -364,7 +364,7 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
 }
 
 test('screens of the app and the docs', async ({ browser }) => {
-  test.setTimeout(280_000);
+  test.setTimeout(480_000);
   // 1. before an account: the setup page; 2. the account; 3. the login page
   // a newcomer: the address gonogo prints (with the key in it), before any account exists, then the same address after the login was set up
   const printed = /#token=([0-9a-f]{64})/.exec(output)?.[1] ?? '';

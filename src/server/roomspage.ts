@@ -302,7 +302,7 @@ async function load(){
   try{
     const res=await fetch('/api/rooms',{headers:token?{Authorization:'Bearer '+token}:{},cache:'no-store'});
     // no token, or one that no longer opens anything: the login (which says "set up" on an install with no account yet)
-    if(res.status===401){location.replace('/login');return}
+    if(res.status===401){location.replace(token?'/login?old=1':'/login');return}
     const body=await res.json(),next=body.rooms||[],text=JSON.stringify([next,body.layout||null]);
     rooms=next;layout=body.layout||null;
     // an install with one room (main, up) opens straight into it, from the printed address or a typed one; a click on Rooms from inside a room (the referrer is this site) still shows the list, and ?list asks for it

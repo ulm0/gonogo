@@ -248,6 +248,11 @@ describe('setup, login and the session cookie', () => {
     expect(page.status).toBe(200);
     expect(page.text).toContain('LOG IN');
     expect(page.text).toContain('Opened over plain http'.slice(0, 0));
+    expect(page.text).not.toContain('first setup');
+    // the address gonogo printed (with the key of the first setup) is refused once a login exists: the rooms page sends it here with ?old=1
+    const old = await call('GET', '/login?old=1');
+    expect(old.status).toBe(200);
+    expect(old.text).toContain('That address was for the first setup, before a login existed. Sign in with your name and password.');
   });
 
   it('a spoofed X-Forwarded-For changes nothing without --trusted-proxy: the same bucket', async () => {

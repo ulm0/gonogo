@@ -631,7 +631,9 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
         if (path === '/login') {
           if (state !== 'account') return (redirect(res, '/setup'), true);
           const rp = rpOf(req, who);
-          return (html(res, 200, auth.locked() && !isLocalClass(who.cls) ? 'locked' : 'login', { plain: plainHttp(req, who), passkey: rp !== null && options.passkeys?.has(rp) === true }), true);
+          // the address gonogo printed has the key of the first setup in it: once a login exists the page of the rooms sends that visit here with ?old=1, and the page says why
+          const oldLink = (req.url ?? '').includes('?') && new URLSearchParams((req.url ?? '').split('?').slice(1).join('?')).get('old') === '1';
+          return (html(res, 200, auth.locked() && !isLocalClass(who.cls) ? 'locked' : 'login', { plain: plainHttp(req, who), passkey: rp !== null && options.passkeys?.has(rp) === true, ...(oldLink ? { message: 'That address was for the first setup, before a login existed. Sign in with your name and password.' } : {}) }), true);
         }
         if (state === 'account') return (redirect(res, '/login'), true);
         return (html(res, isLocalClass(who.cls) ? 200 : 403, isLocalClass(who.cls) ? 'setup' : 'unset', { plain: plainHttp(req, who) }), true);
