@@ -119,6 +119,38 @@
   --seq-base: #e6e3db;
 }
 
+[data-livery='low-ink-dark'] {
+  --body: #1b1b1a;
+  --panel: #212120;
+  --key: #292928;
+  --well: #151514;
+  --edge: #3a3a37;
+  --edge-2: #55554f;
+  --text: #e6e4de;
+  --text-2: #cac8c1;
+  --muted: #a3a199;
+  --lcd: #0f0f0e;
+  --lcd-text: #e4e2dc;
+  --lcd-dim: #a3a199;
+  --lcd-warm: #e8cf8f;
+  --work: #9aa6e0;
+  --you: #cfa24a;
+  --you-tint: #33291a;
+  --you-edge: #7a6430;
+  --you-ink: #ecd699;
+  --you-key: #9c8238;
+  --go: #6fae88;
+  --go-tint: #1a2b22;
+  --go-ink: #b4dcc3;
+  --go-lit: #86c79d;
+  --nogo: #cf6a6a;
+  --nogo-text: #f2a3a3;
+  --nogo-tint: #3a1f1f;
+  --track: #3a3a37;
+  --seq-base: #2a2a28;
+  color-scheme: dark;
+}
+
 [data-livery='high-contrast'] {
   --body: #ffffff;
   --panel: #ffffff;
@@ -148,4 +180,36 @@
   --nogo-tint: #ffd6dc;
   --track: #6b6b6b;
   --seq-base: #c4c4c4;
+}
+
+[data-livery='high-contrast-dark'] {
+  --body: #000000;
+  --panel: #000000;
+  --key: #000000;
+  --well: #1c1c1c;
+  --edge: #ffffff;
+  --edge-2: #bfbfbf;
+  --text: #ffffff;
+  --text-2: #f2f2f2;
+  --muted: #d9d9d9;
+  --lcd: #000000;
+  --lcd-text: #ffffff;
+  --lcd-dim: #d0d0d0;
+  --lcd-warm: #ffe27a;
+  --work: #9db0ff;
+  --you: #ffc233;
+  --you-tint: #3d2c00;
+  --you-edge: #ffd666;
+  --you-ink: #fff0c2;
+  --you-key: #ffd666;
+  --go: #4ce08a;
+  --go-tint: #003d1a;
+  --go-ink: #d4ffe5;
+  --go-lit: #6cf0a0;
+  --nogo: #ff6b7d;
+  --nogo-text: #ffb3bd;
+  --nogo-tint: #4d0010;
+  --track: #8c8c8c;
+  --seq-base: #4d4d4d;
+  color-scheme: dark;
 }

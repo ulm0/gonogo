@@ -8,7 +8,7 @@ LIVERY (round key in the top bar) picks gonogo's look and can ask an agent to de
 
 A livery sets the 28 colour tokens of `src/client/tokens.css` (`--body`, `--panel`, `--key`, `--text`, `--lcd`, the signals, ...). Each is a plain CSS colour: `#rgb`, `#rrggbb`, `rgb()`, `hsl()` or `oklch()`; no alpha, names or `var()`.
 
-Built in: **Instrument** (default), **Night Shift** (dark graphite, mint screen), **Low Ink** (near-white paper, thin lines, pale tints), **High Contrast** (black on white, all text 7:1 or better).
+Built in: **Instrument** (default), **Night Shift** (dark graphite, mint screen), **Low Ink** (near-white paper, thin lines, pale tints), **Low Ink Dark** (dim graphite, pale text, thin quiet lines), **High Contrast** (black on white, all text 7:1 or better) and **High Contrast Dark** (white on black, all text 7:1 or better).
 
 **Refused unless:** every text token reaches 4.5:1 (WCAG 2) on its surfaces (pairs in the spec and `src/shared/livery.ts`), and `--lcd` (terminal screen) is dark.
 

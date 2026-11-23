@@ -26,6 +26,11 @@ const SCHEMES = [
   { name: 'light', slug: 'instrument' },
   { name: 'dark', slug: 'night-shift' },
 ] as const;
+// the two dark liveries that are not the night one: each gets the room and the main views (not every look of the app)
+const EXTRA_LIVERIES = [
+  { name: 'low-ink-dark', slug: 'low-ink-dark' },
+  { name: 'high-contrast-dark', slug: 'high-contrast-dark' },
+] as const;
 const DOCS_PAGES = [
   ['home', '/'],
   ['getting-started', '/guide/getting-started'],
@@ -643,6 +648,19 @@ test('screens of the app and the docs', async ({ browser }) => {
       await app(page, group, true);
       await dockedChip(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docked chip: ${error.message.split('\n')[0]}`));
       await updateFlow(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: update flow: ${error.message.split("\n")[0]}`));
+      await context.close();
+    }
+  }
+
+  // the room and the main views in the other two dark liveries
+  for (const look of EXTRA_LIVERIES) {
+    const chooser = await browser.newContext({ storageState: state });
+    await api(chooser, 'PUT', '/api/livery', { slug: look.slug }).catch((error: Error) => void missed.push(`livery ${look.slug}: ${error.message.split('\n')[0]}`));
+    await chooser.close();
+    for (const size of SIZES) {
+      const group = `${look.name}-${size.name}`;
+      const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+      await app(await context.newPage(), group, false);
       await context.close();
     }
   }
