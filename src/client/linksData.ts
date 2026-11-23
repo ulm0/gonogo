@@ -41,5 +41,6 @@ export function useLinks(): LinkView[] {
       return () => void watchers.delete(w);
     },
     () => current,
+    () => current,
   );
 }
