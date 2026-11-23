@@ -250,7 +250,7 @@ Environment:
 export type ParsedArgs =
   | { kind: 'help' }
   | { kind: 'version' }
-  | { kind: 'doctor' }
+  | { kind: 'doctor'; all?: boolean }
   | { kind: 'update' }
   | { kind: 'reload'; home?: string }
   | { kind: 'ptyhost'; home: string }
@@ -278,6 +278,7 @@ function parsePort(value: string, label: string): number {
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (argv.includes('--help') || argv.includes('-h')) return { kind: 'help' };
   if (argv.includes('--version') || argv.includes('-v')) return { kind: 'version' };
+  if (argv[0] === 'doctor' && argv.length === 2 && argv[1] === '--all') return { kind: 'doctor', all: true };
   if (argv[0] === 'doctor' || argv[0] === 'update') return argv.length === 1 ? { kind: argv[0] } : { kind: 'error', message: `${argv[0]} takes no arguments` };
   // the hidden entry of a room: what `gonogo` was before it became the supervisor; main() refuses it without the pipe the supervisor holds
   if (argv[0] === '__room') {
@@ -1828,7 +1829,7 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
   if (parsed.kind === 'doctor') {
     const checks = await checkEngines(env);
     const { kind } = installInfo(env);
-    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null, kind === 'brew' ? `gonogo itself: ${installNote(kind, false)}` : null).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\n${doorTable()}\n\ndoctor never runs`));
+    process.stdout.write(formatDoctor(checks, env.GONOGO_AGENT_CMD?.trim() || null, kind === 'brew' ? `gonogo itself: ${installNote(kind, false)}` : null, parsed.all === true).replace('\ndoctor never runs', `\n${doctorLine(await gitVersion(env))}\n\n${doorTable()}\n\ndoctor never runs`));
     // Docker self-update: only in a container
     if (installInfo(env).kind === 'docker') {
       const socket = env.GONOGO_DOCKER_SOCKET || SOCKET_PATH;

@@ -225,6 +225,29 @@ describe('analyzeScreen', () => {
     expect(analyzeScreen([...box(''), '  plan 73% wk', '  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ? for shortcuts'], 42).dialog).toBeNull();
   });
 
+  it('reads the words of Claude Code that it is not signed in, on any row but a line of the transcript that quotes them', () => {
+    const box = (text: string): string[] => ['─'.repeat(40), `${PROMPT_GLYPH}${NBSP}${text}`, '─'.repeat(40)];
+    for (const line of ['  Not logged in · Run /login', 'Not logged in · Please run /login', '  Invalid API key · Please run /login', '  Please run /login to continue']) {
+      expect(analyzeScreen([...box(''), line], 60).signedOut, line).toBe(true);
+    }
+    expect(analyzeScreen([...box(''), '  ? for shortcuts'], 60).signedOut).toBe(false);
+    for (const line of ['  Remote managed settings failed to load (authentication rejected (401))', '  API Error: 401 authentication_error', '  OAuth token has expired', '  Invalid API key · Please run /login']) {
+      expect(analyzeScreen([...box(''), line], 70), line).toMatchObject({ authRejected: true });
+    }
+    expect(analyzeScreen(['● It said "authentication rejected"', ...box('')], 80).authRejected).toBe(false);
+    expect(analyzeScreen(['● The message was "Not logged in · Run /login", so I asked you to log in', ...box('')], 80).signedOut).toBe(false);
+    // RETRO's screens: tool output and a wrapped line of the assistant, above the box, are the transcript
+    const tool = ['● Bash(git push)', '  ⎿  remote: authentication rejected', ...box('')];
+    expect(analyzeScreen(tool, 80)).toMatchObject({ authRejected: false, signedOut: false });
+    expect(analyzeScreen(['  OAuth token has expired, so the CI job failed.', ...box('')], 80)).toMatchObject({ authRejected: false, signedOut: false });
+    expect(analyzeScreen(['  Remote managed settings failed to load (authentication rejected (401))', ...box('')], 80).authRejected).toBe(false); // above the box
+    // with no box found: only the last rows
+    const bare = ['x', 'y', 'z', 'w', 'v', 'u', 't', '  Not logged in · Run /login'];
+    expect(analyzeScreen(bare, 60).signedOut).toBe(true);
+    expect(analyzeScreen(['  Not logged in · Run /login', ...bare.slice(0, 7), ...bare.slice(0, 6)], 60).signedOut).toBe(false);
+    expect(analyzeScreen(['> why does it say Not logged in · Run /login?', ...box('')], 80).signedOut).toBe(false);
+  });
+
   it('finds the box on the real screen of FLIGHT (t110): 42 columns and a plugin banner set into the rule above the box', () => {
     const rows = [
       '✻ Churned for 13s · done 1:37 AM',
@@ -245,7 +268,7 @@ describe('analyzeScreen', () => {
 
   it('finds the idle box, an empty one included (the NBSP must survive)', () => {
     const rows = ['', '  some output', ...box(''), '  ? for shortcuts'];
-    expect(analyzeScreen(rows, 80)).toEqual({ cols: 80, rows: rows.length, promptBox: true, dialog: null, promptText: '', modal: false });
+    expect(analyzeScreen(rows, 80)).toEqual({ cols: 80, rows: rows.length, promptBox: true, dialog: null, promptText: '', modal: false, signedOut: false, authRejected: false });
   });
 
   it('reports a placeholder or typed text as information, trimmed', () => {
@@ -267,7 +290,7 @@ describe('analyzeScreen', () => {
     expect(analyzeScreen([RULE_CHAR.repeat(19), `${PROMPT_GLYPH}${NBSP}`, RULE_CHAR.repeat(19)], 40).promptBox).toBe(false);
     expect(analyzeScreen([rule(), `${PROMPT_GLYPH}${NBSP}hello`], 40).promptBox).toBe(false);
     expect(analyzeScreen([`${PROMPT_GLYPH}${NBSP}hello`, rule()], 40).promptBox).toBe(false);
-    expect(analyzeScreen([], 40)).toEqual({ cols: 40, rows: 0, promptBox: false, dialog: null, promptText: null, modal: false });
+    expect(analyzeScreen([], 40)).toEqual({ cols: 40, rows: 0, promptBox: false, dialog: null, promptText: null, modal: false, signedOut: false, authRejected: false });
   });
 
   it('takes the lowest box when an older echo also sits between rules', () => {
@@ -1205,7 +1228,7 @@ describe('terminal host with a real pty', () => {
       await until(() => host.screen('a')?.promptBox === true, 'the parsed box');
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.every((probe) => probe === null)).toBe(true); // the listener runs right after mirror.write, before it is parsed
-      expect(host.screen('a')).toEqual({ cols: 120, rows: 40, promptBox: true, dialog: null, promptText: '', modal: false });
+      expect(host.screen('a')).toEqual({ cols: 120, rows: 40, promptBox: true, dialog: null, promptText: '', modal: false, signedOut: false, authRejected: false });
     });
 
     it('survives a handler that throws: the others still run, the host keeps working, an unsubscribed handler is silent', async () => {

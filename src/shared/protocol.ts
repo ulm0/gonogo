@@ -2210,6 +2210,10 @@ export interface ScreenProbe {
   promptText: string | null;
   /** A modal with no numbered cursor (a text field, "Press Enter", "Esc to cancel") is on a screen with no prompt box. Read only by the 60 s safety net; absent from an older pty host. */
   modal?: boolean;
+  /** Claude Code's screen says it is not signed in ("Not logged in · Run /login"). Absent from an older pty host. */
+  signedOut?: boolean;
+  /** Claude Code's screen says its credential was rejected ("authentication rejected (401)"). Absent from an older pty host. */
+  authRejected?: boolean;
 }
 export interface TitleInfo {
   glyph: TitleGlyph;
