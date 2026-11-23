@@ -129,11 +129,11 @@ export function ProjectFolderBlock(): ReactElement {
             <form className="pf-editor" onSubmit={submit} aria-label="Change the project folder">
               <input id={id} className="input" type="text" autoComplete="off" spellCheck={false} aria-label="Folder" placeholder="the whole path, e.g. /home/you/project" value={text} onChange={(e) => setText(e.target.value)} />
               <div className="rules-keys">
-                <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || text.trim() === '' || undefined}>
+                <button type="submit" className="btn" data-kind="primary" aria-label="Set the project folder" aria-disabled={busy || text.trim() === '' || undefined}>
                   Set
                 </button>
                 {view.source === 'set' && (
-                  <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => send(null)}>
+                  <button type="button" className="btn" aria-label="Reset the project folder" aria-disabled={busy || undefined} onClick={() => send(null)}>
                     Reset
                   </button>
                 )}

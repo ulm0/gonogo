@@ -344,14 +344,14 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await measure(page, group, 'project folder: a broad folder warns before the save', '.lay-rules');
   await view(page, group, 'project folder: a refused folder', async () => {
     await page.getByLabel('Folder', { exact: true }).fill('relative/path');
-    await page.getByRole('button', { name: 'Set', exact: true }).click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Set the project folder' }).click({ timeout: 3000 });
     await stepUpIfAsked(page);
     await page.locator('.pf-editor [role=alert]').waitFor({ timeout: 5000 });
   }, true);
   await measure(page, group, 'project folder: a refused folder', '.lay-rules');
   await view(page, group, 'project folder: set, the boss runs elsewhere', async () => {
     await page.getByLabel('Folder', { exact: true }).fill(tmpdir());
-    await page.getByRole('button', { name: 'Set', exact: true }).click({ timeout: 3000 });
+    await page.getByRole('button', { name: 'Set the project folder' }).click({ timeout: 3000 });
     await stepUpIfAsked(page);
     await page.getByRole('button', { name: 'Restart the boss now' }).waitFor({ timeout: 5000 });
   }, true);
@@ -359,7 +359,7 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await measureDuplicates(page, group, 'project folder: set, the boss runs elsewhere', '.lay-rules');
   // back to the default, so that the shots that follow are as before
   await page.getByRole('button', { name: 'Change the project folder' }).click({ timeout: 3000 }).catch(() => undefined);
-  await page.getByRole('button', { name: 'Reset', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
+  await page.getByRole('button', { name: 'Reset the project folder' }).click({ timeout: 3000 }).catch(() => undefined);
   await stepUpIfAsked(page);
   await view(page, group, 'livery', () => open(page, 'Livery'), true);
   await view(page, group, 'patch panel', async () => {

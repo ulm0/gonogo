@@ -23,6 +23,9 @@ describe('the project folder row', () => {
     expect(rules.indexOf('Project folder')).toBeLessThan(rules.indexOf('<Group id="agents"'));
     const block = readFileSync('src/client/ProjectFolder.tsx', 'utf8');
     expect(block).toMatch(/view\.source === 'set' && \(\s*<button[^>]*onClick=\{\(\) => send\(null\)\}/);
+    // the keys have names of their own (the Tab name block above has a Set too)
+    expect(block).toContain('aria-label="Set the project folder"');
+    expect(block).toContain('aria-label="Reset the project folder"');
     expect(block).toContain('Restart the boss now');
     // the server's warning about the folder (gonogo's own, or a broad one) is shown in the warning tone, next to the value, and never blocks the Set key
     expect(block).toMatch(/view\.warning === 'string' && view\.warning !== ''/);
