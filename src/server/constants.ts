@@ -272,6 +272,8 @@ export const RULE_MIN_RUN = 20; // a rule row holds a run of at least this many 
 export const BOX_MAX_ROWS = 10;
 /** The Director's message waits this long for a screen that shows no prompt box (and no dialog, and no hook says the agent works): then the pointer is typed anyway. */
 export const DIRECTOR_STUCK_FORCE_MS = 60_000;
+/** The hooks have said idle for this long and the window title still says working: Claude Code left a stale spinner, and the hooks are the ones believed (t110 follow-up). */
+export const TITLE_STALE_MS = 10_000;
 /** ...and after this long without a pointer the Director is told, on his phone too: his words are not silently waiting. */
 export const DIRECTOR_STUCK_ALERT_MS = 180_000;
 export const TITLE_IDLE_GLYPH = '✳'; // "✳": not running a turn (also while a permission dialog is open!)

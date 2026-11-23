@@ -2187,6 +2187,8 @@ export interface TitleInfo {
   title: string;
   /** ms epoch when the glyph class last changed. */
   since: number;
+  /** ms epoch when the title TEXT last changed: a live spinner changes it all the time, a frozen one never. Absent from an older pty host (then `since`). */
+  textSince?: number;
 }
 export interface ExitInfo {
   /** Exit code, or null when killed by a signal. */

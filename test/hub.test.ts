@@ -18,6 +18,7 @@ import {
   CUSTOM_START_MS,
   DIRECTOR_STUCK_ALERT_MS,
   DIRECTOR_STUCK_FORCE_MS,
+  TITLE_STALE_MS,
   DELIVERY_COALESCE_MS,
   DELIVERY_SETTLE_MS,
   DRAFT_EXPIRY_MS,
@@ -180,7 +181,7 @@ interface Harness {
   read(name: string): ReadMessagesResult;
   exit(name: string, info?: Partial<ExitInfo>): void;
   setScreen(name: string, probe: Partial<ScreenProbe> | null): void;
-  setTitle(name: string, glyph: TitleGlyph | null, since?: number): void;
+  setTitle(name: string, glyph: TitleGlyph | null, since?: number, textSince?: number): void;
   setOutput(name: string, bytes: number): void;
   frames(name: string): AgentView[];
   items(id: string): ActivityItem[];
@@ -460,9 +461,9 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     setScreen: (name, probe) => {
       screens.set(name, probe === null ? null : { ...OPEN_BOX, ...probe });
     },
-    setTitle: (name, glyph, since) => {
+    setTitle: (name, glyph, since, textSince) => {
       if (glyph === null) titles.set(name, null);
-      else titles.set(name, { glyph, title: glyph === 'idle' ? '✳ Claude Code' : '◐ Claude Code', since: since ?? now });
+      else titles.set(name, { glyph, title: glyph === 'idle' ? '✳ Claude Code' : '◐ Claude Code', since: since ?? now, ...(textSince === undefined ? {} : { textSince }) });
     },
     setOutput: (name, bytes) => void output.set(name, bytes),
     frames: (name) =>
@@ -1442,6 +1443,43 @@ describe('delivery to each recipient state (5.9)', () => {
       h.setScreen('ana', { dialog: null });
       await h.advance(RECONCILE_TICK_MS);
       expect(h.typed).toHaveLength(1);
+    });
+    // a title whose class never holds for a second (so the state is never flipped to working by it), set fresh at each step; `frozen`: its text is the same since the start
+    const flicker = async (h: Harness, ms: number, frozenSince?: number): Promise<void> => {
+      for (let spent = 0; spent < ms; spent += 500) {
+        h.setTitle('ana', 'working', undefined, frozenSince);
+        await h.advance(500);
+      }
+      h.setTitle('ana', 'working', undefined, frozenSince);
+    };
+    it('a stale working title (frozen text, the hooks said idle, the box is found, nothing else on screen) does not hold mail for ever: typed after TITLE_STALE_MS, not before', async () => {
+      const h = await withAna();
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '' });
+      const frozenSince = h.now();
+      h.send('user', 'ana');
+      await flicker(h, TITLE_STALE_MS - 4_000, frozenSince);
+      expect(h.typed).toHaveLength(0);
+      expect(h.msg('m1')).toMatchObject({ note: 'waiting: ana is not ready for input' });
+      await flicker(h, 6_000 + RECONCILE_TICK_MS * 2, frozenSince);
+      expect(h.view('ana').state).toBe('idle');
+      expect(h.typed).toHaveLength(1);
+    });
+    it('an animating title (its text keeps changing) is a live turn the hooks never announced: it keeps waiting however long', async () => {
+      const h = await withAna();
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '' });
+      h.send('user', 'ana');
+      await flicker(h, TITLE_STALE_MS * 4); // textSince is the current time at every step
+      expect(h.view('ana').state).toBe('idle');
+      expect(h.typed).toHaveLength(0);
+    });
+    it('the state working still waits: the title is only overruled by an idle the hooks gave', async () => {
+      const h = await withAna();
+      h.hook('ana', 'UserPromptSubmit');
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '' });
+      h.send('user', 'ana');
+      await flicker(h, TITLE_STALE_MS * 3, h.now());
+      expect(h.view('ana').state).toBe('working');
+      expect(h.typed).toHaveLength(0);
     });
     it('a generic modal ("Esc to cancel") is never forced, for any sender', async () => {
       const h = await withAna();
