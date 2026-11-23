@@ -1,0 +1,91 @@
+// Docking 2 link views: the words of the card line, the board and the attachments.
+import { describe, expect, it } from 'vitest';
+import { attachmentHref, boardRows, canRecall, canReturn, costLine, dueLine, incoming, linkLine, outgoing, overCap, progressLine, reviewCount, trailLine, waitingLine } from '../src/client/links.js';
+import type { DockView, LinkView } from '../src/shared/protocol.js';
+
+const link = (patch: Partial<LinkView> = {}): LinkView => ({ id: 'dl_1', kind: 'task', role: 'sender', peer: 'd1', peerName: 'lab', mine: 't4', theirs: 't9', title: 'Fix the login', state: 'accepted', theirStatus: 'doing', stale: false, waiting: 0, updatedAt: 100, onward: false, trail: [], ...patch });
+
+describe('the line of a card', () => {
+  it('says where it is and what it is doing, with the last note', () => {
+    expect(linkLine(link({ note: 'waiting on a key' }))).toBe('at lab: doing · “waiting on a key”');
+    expect(linkLine(link())).toBe('at lab: doing');
+  });
+  it('shows a chain hop by hop', () => {
+    expect(linkLine(link({ chain: [{ station: 'ops', task: 't2' }], via: 'ops' }))).toBe('at lab → at ops: doing');
+  });
+  it('says every state in words', () => {
+    expect(linkLine(link({ state: 'offered', theirStatus: undefined }))).toBe('offered to lab, not taken yet');
+    expect(linkLine(link({ state: 'delivered' }))).toContain('ready for you to accept');
+    expect(linkLine(link({ state: 'returned' }))).toBe('returned by lab');
+    expect(linkLine(link({ state: 'detached' }))).toBe('undocked from lab (last known: doing)');
+    expect(linkLine(link({ role: 'receiver', state: 'accepted' }))).toBe('from lab');
+  });
+  it('counts what waits for a station that does not answer', () => {
+    const down = { status: 'down' } as DockView;
+    expect(waitingLine(link({ waiting: 3 }), down)).toBe('lab: not reachable, 3 events waiting');
+    expect(waitingLine(link({ waiting: 1 }), down)).toContain('1 event waiting');
+    expect(waitingLine(link({ waiting: 3 }), { status: 'ok' } as DockView)).toBeNull();
+    expect(waitingLine(link(), down)).toBeNull();
+  });
+});
+
+describe('progress, cost, due', () => {
+  it('words a split and a mission', () => {
+    expect(progressLine(link({ progress: { done: 2, total: 3 } }))).toBe('2 of 3 delivered');
+    expect(progressLine(link({ kind: 'mission', progress: { done: 3, total: 5 } }))).toBe('at lab: 3 of 5');
+    expect(progressLine(link())).toBeNull();
+  });
+  it('words the cost as an estimate, against the cap, or as not reported', () => {
+    expect(costLine(link({ cost: { usd: 3.1, cap: 5 } }))).toBe('lab: $3.10 of $5.00 (estimate)');
+    expect(costLine(link({ cost: { usd: 3.1 } }))).toBe('lab: $3.10 (estimate)');
+    expect(costLine(link({ cost: null }))).toBe('cost not reported');
+    expect(costLine(link())).toBe('cost not reported');
+    expect(overCap(link({ cost: { usd: 5, cap: 5 } }))).toBe(true);
+    expect(overCap(link({ cost: { usd: 1, cap: 5 } }))).toBe(false);
+  });
+  it('says due and a priority that is not normal', () => {
+    expect(dueLine(link({ due: '2026-12-01', priority: 'high' }))).toBe('due 2026-12-01 · high priority');
+    expect(dueLine(link({ priority: 'normal' }))).toBeNull();
+  });
+});
+
+describe('the trail and the deliverables', () => {
+  it('writes one line for an event and one for a loss', () => {
+    const at = new Date(2026, 10, 23, 14, 3).getTime();
+    expect(trailLine({ author: 'd1', seq: 1, at, kind: 'status', by: 'ana@lab', text: 'doing' }, at)).toBe('14:03 ana@lab: status doing');
+    expect(trailLine({ author: 'd1', seq: 2, at, kind: 'lost', by: 'lab', text: '3 status events were not delivered' }, at)).toBe('14:03 3 status events were not delivered');
+  });
+  it('opens only an https address of a PR or a link; the rest is text', () => {
+    expect(attachmentHref({ kind: 'pr', ref: 'https://github.com/o/r/pull/1', label: 'PR' })).toBe('https://github.com/o/r/pull/1');
+    expect(attachmentHref({ kind: 'url', ref: 'http://x.example/', label: 'x' })).toBeNull();
+    expect(attachmentHref({ kind: 'url', ref: 'https://u:p@x.example/', label: 'x' })).toBeNull();
+    expect(attachmentHref({ kind: 'url', ref: 'javascript:alert(1)', label: 'x' })).toBeNull();
+    expect(attachmentHref({ kind: 'branch', ref: 'main', label: 'b' })).toBeNull();
+    expect(attachmentHref({ kind: 'file', ref: 'https://x.example/', label: 'f' })).toBeNull();
+  });
+});
+
+describe('what a card and the board take from the list', () => {
+  const list = [link(), link({ id: 'dl_2', mine: 't5', state: 'delivered', updatedAt: 50 }), link({ id: 'dl_3', role: 'receiver', mine: 't7', peer: 'd2', peerName: 'ops' }), link({ id: 'dl_4', mine: 't4', kind: 'mission' }), link({ id: 'dl_5', state: 'done', mine: 't6', stale: true })];
+  it('finds the outgoing links of a task and its one incoming link', () => {
+    expect(outgoing(list, 'task', 't4').map((l) => l.id)).toEqual(['dl_1']);
+    expect(incoming(list, 'task', 't7')?.id).toBe('dl_3');
+    expect(incoming(list, 'task', 't4')).toBeUndefined();
+  });
+  it('lists OUT with the ones to review first, by station and by state group', () => {
+    expect(boardRows(list, 'out', '', 'all').map((l) => l.id)).toEqual(['dl_2', 'dl_5', 'dl_1', 'dl_4']);
+    expect(boardRows(list, 'out', '', 'review').map((l) => l.id)).toEqual(['dl_2']);
+    expect(boardRows(list, 'out', '', 'closed').map((l) => l.id)).toEqual(['dl_5']);
+    expect(boardRows(list, 'out', '', 'open').map((l) => l.id)).toEqual(['dl_2', 'dl_1', 'dl_4']);
+    expect(boardRows(list, 'in', '', 'all').map((l) => l.id)).toEqual(['dl_3']);
+    expect(boardRows(list, 'in', 'd1', 'all')).toEqual([]);
+    expect(reviewCount(list)).toBe(1);
+  });
+  it('lets the receiver give back and the sender withdraw, only while it is open', () => {
+    expect(canReturn(link({ role: 'receiver', state: 'accepted' }))).toBe(true);
+    expect(canReturn(link({ role: 'receiver', state: 'done' }))).toBe(false);
+    expect(canReturn(link({ state: 'accepted' }))).toBe(false);
+    expect(canRecall(link({ state: 'accepted' }))).toBe(true);
+    expect(canRecall(link({ state: 'delivered' }))).toBe(false);
+  });
+});

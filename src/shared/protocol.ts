@@ -2915,3 +2915,82 @@ export interface RecorderCommitRequest {
   message: string;
   scope: RecorderScope;
 }
+
+/* ---- Docking 2: links between stations (docs/docking-collab-spec.md). The shapes the page reads; the server cleans every text before it reaches them. ---- */
+export type LinkState = 'offered' | 'accepted' | 'delivered' | 'returned' | 'recalled' | 'done' | 'detached' | 'refused';
+export type LinkEventKind = 'offer' | 'accept' | 'status' | 'note' | 'ask' | 'reply' | 'return' | 'recall' | 'refuse' | 'lost' | 'cost';
+export interface LinkAttachment {
+  kind: 'pr' | 'branch' | 'commit' | 'file' | 'url';
+  ref: string;
+  label: string;
+}
+export interface LinkEventView {
+  /** The station id that wrote it. */
+  author: string;
+  seq: number;
+  at: number;
+  kind: LinkEventKind;
+  /** "agent@station", or "director@station". */
+  by: string;
+  text: string;
+  via?: string;
+  attachments?: LinkAttachment[];
+}
+export interface LinkView {
+  id: string;
+  kind: 'task' | 'mission';
+  /** `sender`: this station handed it out (an OUT row of the board); `receiver`: it holds it (IN). */
+  role: 'sender' | 'receiver';
+  /** The dock id of the other station, and the name it calls itself. */
+  peer: string;
+  peerName: string;
+  /** The task or mission here, and the one over there (null before it is taken). */
+  mine: string;
+  theirs: string | null;
+  title: string;
+  state: LinkState;
+  /** The other side's own status word of its task (todo, doing, blocked, review, done), and its last note. */
+  theirStatus?: TaskStatus;
+  note?: string;
+  due?: string;
+  priority?: 'low' | 'normal' | 'high';
+  /** A chain of hand-ons, display text only: [{station:'ops', task:'t9'}]. `via` says the hop that reported. */
+  chain?: Array<{ station: string; task: string }>;
+  via?: string;
+  /** A split, or a mission: what is delivered of the whole. */
+  progress?: { done: number; total: number };
+  /** Cost the receiver chose to report, dollars to the cent, always an estimate; null when it reports none. `cap` is the sender's budget for the link. */
+  cost?: { usd: number; cap?: number } | null;
+  stale: boolean;
+  /** Events held in the outbox for a station that does not answer. */
+  waiting: number;
+  updatedAt: number;
+  onward: boolean;
+  trail: LinkEventView[];
+}
+export interface DockRules {
+  handoff: 'ask' | 'allow';
+  incoming: 'auto' | 'ask' | 'off';
+  autoAccept: 'off' | 'on';
+  reportCost: 'off' | 'on';
+  serve: 'off' | 'on';
+  staleHours: number;
+}
+/** A handoff FLIGHT wants to send while the rule of the dock is `ask`: the whole text that would leave, for the Director's GO. */
+export interface HandoffAsk {
+  id: string;
+  dock: string;
+  station: string;
+  from: string;
+  task: { title: string; detail: string };
+  at: number;
+}
+/** One authored event as it left for a dock (the Outbound view; only the Director's session can read it). */
+export interface OutboundEvent {
+  link: string;
+  dock: string;
+  kind: LinkEventKind | 'knowledge';
+  at: number;
+  text: string;
+  ackedAt: number | null;
+}
