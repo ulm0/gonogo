@@ -1,0 +1,1 @@
+- **Shift+Enter in a reply is a new line.** The reply box under a message (the inbox and the Party Line) sent the message on Shift+Enter. It is now a text box like the Brief box: Enter sends, Shift+Enter makes a new line, and the Enter that confirms an input-method composition sends nothing.
