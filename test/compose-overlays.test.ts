@@ -139,8 +139,8 @@ describe('gonogo expose points at the overlay of its provider', () => {
 describe('compose.yaml forwards the names the page is reached by', () => {
   const base = read('compose.yaml');
 
-  it('forwards GONOGO_ALLOWED_HOSTS, PUBLIC_URL, TRUSTED_PROXY and CLIENT_IP_HEADER with no value, so an unset one stays unset', () => {
-    for (const key of ['GONOGO_ALLOWED_HOSTS', 'GONOGO_PUBLIC_URL', 'GONOGO_TRUSTED_PROXY', 'GONOGO_CLIENT_IP_HEADER']) expect(base, key).toMatch(new RegExp(`^ {6}${key}:\\s*$`, 'm'));
+  it('forwards the settings read from the environment with no value, so an unset one stays unset', () => {
+    for (const key of ['GONOGO_ALLOWED_HOSTS', 'GONOGO_PUBLIC_URL', 'GONOGO_TRUSTED_PROXY', 'GONOGO_CLIENT_IP_HEADER', 'GONOGO_MAX_WORKING', 'GONOGO_LOG_LEVEL', 'GONOGO_STATION', 'GONOGO_UPDATE_CHECK']) expect(base, key).toMatch(new RegExp(`^ {6}${key}:\\s*$`, 'm'));
   });
 
   it('an empty forwarded value is no host name, no proxy and no public address', () => {

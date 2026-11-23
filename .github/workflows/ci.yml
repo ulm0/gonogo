@@ -73,29 +73,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Start gonogo with compose.yaml and an allowed name
-        env:
-          GONOGO_PORT: '17777'
-          GONOGO_ALLOWED_HOSTS: box.local
+      # The Director's own flow: variables exported by his .envrc, then the compose file piped in from the repository (curl .../compose.yaml | docker compose -f - up -d).
+      - name: Start gonogo from the file on stdin with the exported variables
         run: |
           data="$RUNNER_TEMP/gonogo-data"
           sudo install -d -o 1000 -g 1000 -m 0755 "$data" "$data/state" "$data/claude" "$data/projects" "$data/home"
-          export GONOGO_DATA="$data" DOCKER_GID="$(stat -L -c %g /var/run/docker.sock)"
-          docker compose up -d
+          export GONOGO_DATA="$data"
+          export DOCKER_GID="$(stat -L -c %g /var/run/docker.sock)"
+          export GONOGO_HOST="0.0.0.0"
+          export GONOGO_PORT=17777
+          export GONOGO_ALLOWED_HOSTS="192.168.86.222,${HOSTNAME},${HOSTNAME}.local"
+          cat compose.yaml | docker compose -f - up -d
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:17777/rooms/health && break; sleep 2; done
           curl -fsS http://127.0.0.1:17777/rooms/health
-          allowed=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: box.local:7777' http://127.0.0.1:17777/)
+          for name in 192.168.86.222 "$HOSTNAME" "$HOSTNAME.local"; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $name:7777" http://127.0.0.1:17777/)
+            echo "$name: $code"
+            [[ "$code" =~ ^(200|30[1-8])$ ]] || { echo "::error::$name is in GONOGO_ALLOWED_HOSTS and got $code: compose.yaml does not forward it"; exit 1; }
+          done
           other=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: other.test:7777' http://127.0.0.1:17777/)
-          echo "box.local: $allowed, other.test: $other"
-          [[ "$allowed" =~ ^(200|30[1-8])$ ]] || { echo "::error::a name in GONOGO_ALLOWED_HOSTS got $allowed: compose.yaml does not forward it"; exit 1; }
+          echo "other.test: $other"
           [ "$other" = 403 ] || { echo "::error::a name nobody allowed got $other, not 403"; exit 1; }
       - if: always()
-        env:
-          GONOGO_DATA: /nonexistent
-          DOCKER_GID: '0'
         run: |
-          docker compose logs --tail 40 || true
-          docker compose down -v --timeout 20 || true
+          docker logs --tail 40 "$(docker ps -aq --filter label=com.docker.compose.service=gonogo | head -1)" || true
+          docker rm -f $(docker ps -aq --filter label=com.docker.compose.service=gonogo) || true
 
   # CHANGELOG.md is changed only by the release pull request (it also changes the version); everyone else adds changes/<branch>.md.
   changelog:
