@@ -575,7 +575,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   const hostOk = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
-    // an IP address is accepted whatever its range: nothing needs configuring to reach gonogo by the address of the computer; a NAME needs the list
+    // a non-public IP address (loopback, private, link-local, CGNAT) is accepted: nothing needs configuring to reach gonogo by the address of the computer; a NAME or a public address needs the list
     return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || allowedNames.has(name) || isIpLiteralHost(header));
   };
 
