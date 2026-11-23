@@ -11,7 +11,7 @@ const PRIORITIES: ReadonlyArray<{ value: '' | LinkPriority; label: string }> = [
 
 export function OfferTermsFields({ id, station, terms, problems, onChange }: { id: string; station: string; terms: OfferTerms; problems: { due?: string; budget?: string }; onChange(next: OfferTerms): void }): ReactElement {
   return (
-    <details className="dk-terms">
+    <details className="dk-fold dk-terms">
       <summary>Terms (optional)</summary>
       <div className="dk-handoff">
         <div className="field">

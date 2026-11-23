@@ -216,7 +216,7 @@ async function dockingTwo(page: Page, group: string): Promise<void> {
   await view(page, group, 'docking 2: the board across stations', () => page.locator('.dk-board').scrollIntoViewIfNeeded({ timeout: 3000 }), true);
   await view(page, group, 'docking 2: ask a station what it knows', async () => {
     await page.locator('.dk-ask > summary').first().click({ timeout: 3000 });
-    await page.getByLabel('Question').first().fill('How do we release?');
+    await page.locator('.dk-ask input[type=text]').first().fill('How do we release?');
     await page.getByRole('button', { name: 'Ask lab' }).click({ timeout: 3000 });
     await page.locator('.dk-ask-answer').waitFor({ timeout: 5000 });
   }, true);
