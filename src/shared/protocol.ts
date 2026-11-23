@@ -2511,8 +2511,8 @@ export interface DockLink {
 export interface HubOptions {
   /** Messages with hops above this go to the user instead (default 8, GONOGO_MAX_HOPS). */
   maxHops: number;
-  /** Working directory of the boss when the roster is empty (the directory gonogo was started from). */
-  bossDir: string;
+  /** Working directory of the boss when the roster is empty (the directory gonogo was started from, or the room's project folder: a function reads it live). */
+  bossDir: string | (() => string);
   /** Max Q at start: at most this many agents work at once; null or absent = off (GONOGO_MAX_WORKING). */
   maxWorking?: number | null;
   /** Redline's automatic detectors (loop, error storm, ping-pong). Default true; GONOGO_REDLINE=off. Hub.trip works either way. */

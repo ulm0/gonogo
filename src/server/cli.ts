@@ -32,6 +32,7 @@ import {
 } from './constants.js';
 import type { LogLevel } from './constants.js';
 import { createSettings, globalSetting } from './settings.js';
+import { checkFolder, createProjectFolder, writeFolder } from './projectfolder.js';
 import type { SettingKey } from './settings.js';
 import { createRitualTemplate } from './ritual.js';
 import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
@@ -199,7 +200,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo update
        gonogo reload
        gonogo tui [--room <id>] [--url <address>] [--token <token>] [--home <dir>]
-       gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
+       gonogo rooms add <id> [--name <text>] [--dir <project folder>] | list | remove <id> [--home <dir>]
       gonogo rooms migrate-main [--dry-run | --undo] [--home <dir>]
        gonogo token rotate [--home <dir>]
        gonogo knowledge list | export | import <file> | alias | move | keep  (the Director's claims: docs/features/knowledge.md)
@@ -258,7 +259,7 @@ export type ParsedArgs =
   | { kind: 'auth'; args: string[]; home?: string }
   | { kind: 'expose'; args: string[]; home?: string }
   | { kind: 'knowledge'; args: string[]; home?: string }
-  | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string }
+  | { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; dir?: string; home?: string }
   | { kind: 'migrate-main'; mode: 'move' | 'dry-run' | 'undo'; home?: string }
   | { kind: 'selfupdate'; target: string; expect: string; home: string; image: string }
   | { kind: 'run'; options: StartOptions }
@@ -320,11 +321,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     // `gonogo rooms` alone (or with flags) is what `gonogo` is now; kept for one release
     if (action !== 'add' && action !== 'list' && action !== 'remove') return parseArgs(argv.slice(1));
     const rest = argv.slice(2);
-    const out: { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; home?: string } = { kind: 'rooms', action };
+    const out: { kind: 'rooms'; action: 'add' | 'list' | 'remove'; id?: string; name?: string; dir?: string; home?: string } = { kind: 'rooms', action };
     for (let i = 0; i < rest.length; i += 1) {
       const arg = rest[i] ?? '';
-      if ((arg === '--home' || arg === '--name') && rest[i + 1] !== undefined && rest[i + 1] !== '') {
+      if ((arg === '--home' || arg === '--name' || (arg === '--dir' && action === 'add')) && rest[i + 1] !== undefined && rest[i + 1] !== '') {
         if (arg === '--home') out.home = rest[i + 1];
+        else if (arg === '--dir') out.dir = rest[i + 1];
         else out.name = rest[i + 1];
         i += 1;
       } else if (!arg.startsWith('-') && out.id === undefined && action !== 'list') {
@@ -664,6 +666,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
 
     const roomKeys = createRoomKeys({ dir: home.dir, log: log.child('room-keys') });
     await roomKeys.load();
+    // the room's project folder (docs/features/rooms.md, "Folders"): not the home of gonogo, and not the root home of the supervisor
+    const projectFolder = createProjectFolder({ roomHome: home.dir, fallback: cwd, forbidden: [home.dir, ...(env.GONOGO_KNOWLEDGE_DIR ? [dirname(env.GONOGO_KNOWLEDGE_DIR)] : [])], log: log.child('folder') });
     // runtime settings (docs/runtime-settings-spec.md): the room's file over the file of every room over the environment
     const runtime = createSettings({ roomHome: home.dir, globalPath: options.roomChild === true ? (env.GONOGO_GLOBAL_SETTINGS?.trim() || null) : null, env, log: log.child('settings') });
     /** What the files say (not the environment: that is the default the options and resolveSettings already hold), or null. */
@@ -945,7 +949,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('hub'),
     };
-    const hubInstance = createHub(io, { maxHops: Number(fromFiles('maxHops') ?? maxHops), bossDir: cwd, maxWorking: filesWorking() === undefined ? maxWorking : (filesWorking() as number | null), redline, defaultEngine: () => modelDefaults.engine() });
+    const hubInstance = createHub(io, { maxHops: Number(fromFiles('maxHops') ?? maxHops), bossDir: () => projectFolder.get().dir, maxWorking: filesWorking() === undefined ? maxWorking : (filesWorking() as number | null), redline, defaultEngine: () => modelDefaults.engine() });
     hub = hubInstance;
     /** A setting changed (here, or in another room): what can be applied now is. The rest says so in the view (`applies`). */
     const applyRuntime = (): void => {
@@ -971,7 +975,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const info = (): ServerInfo => ({
       protocol: PROTOCOL_VERSION,
       version,
-      cwd,
+      // the room's project folder, read at each answer: the hire form's default Working directory follows a change at once
+      cwd: projectFolder.get().dir,
       home: home.dir,
       host: bound.host,
       port: bound.port,
@@ -1355,6 +1360,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       models: modelDefaults,
       features: audited(features, audit, FEATURES_AUDIT),
       roomKeys: audited(roomKeys, blackBox.record, ROOM_KEYS_AUDIT),
+      projectFolder: { store: projectFolder, audit: blackBox.record, boss: () => ((boss) => (boss === undefined ? null : { name: boss.name, dir: boss.dir }))(hubInstance.views().find((v) => v.boss)) },
       settings: {
         store: runtime,
         apply: applyRuntime,
@@ -1625,7 +1631,26 @@ async function runMigrateMainCommand(parsed: Extract<ParsedArgs, { kind: 'migrat
 async function runRoomsCommand(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, env: Env): Promise<void> {
   const root = parsed.home === undefined ? homeOf(env) : resolve(parsed.home);
   if (parsed.action === 'add') {
+    // a folder that is not one adds nothing
+    let folder: string | null = null;
+    if (parsed.dir !== undefined) {
+      try {
+        folder = checkFolder(resolve(parsed.dir), [root]);
+      } catch (error) {
+        process.stderr.write(`gonogo: --dir: ${error instanceof Error ? error.message : String(error)}\n`);
+        exit(2);
+        return;
+      }
+    }
     const room = addRoom(root, parsed.id, parsed.name);
+    if (folder !== null) {
+      try {
+        writeFolder(roomHome(root, room.id), folder);
+      } catch (error) {
+        removeRoom(root, room.id);
+        throw error;
+      }
+    }
     process.stdout.write(`added room ${room.id} (${room.name}). A running gonogo starts it within 2 seconds; its files will be in ${roomHome(root, room.id)}\n`);
   } else if (parsed.action === 'remove') {
     removeRoom(root, parsed.id);

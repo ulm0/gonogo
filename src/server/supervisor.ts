@@ -22,6 +22,7 @@ import { createAuthHttp } from './authhttp.js';
 import { createDevices } from './devicelogin.js';
 import { createPasskeys } from './passkeys.js';
 import { GLOBAL_SETTINGS_FILE, globalSetting } from './settings.js';
+import { checkFolder, FolderError, writeFolder } from './projectfolder.js';
 import { KNOWLEDGE_DIR, nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
@@ -883,7 +884,29 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }
       const body = await readBody(req);
       if (method === 'POST') {
+        // a folder that is not one adds no room; and a room that starts its agents in a folder is the Director's own doing: a session (asked for the password again), not a key or a terminal
+        let folder: string | null = null;
+        if (body.dir !== undefined && body.dir !== null) {
+          if (grant.kind === 'key' || grant.kind === 'tui') return sendApiError(res, 403, "a project folder is set from the Director's own login: agents start in it", 'forbidden');
+          const reason = authHttp.stepUpNeeded(grant, 'POST', '/api/rooms', body);
+          if (reason !== null) return authHttp.stepUpDenied(req, res, reason, false);
+          try {
+            folder = checkFolder(body.dir, [options.home]);
+          } catch (error) {
+            if (error instanceof FolderError) throw new RoomsError(error.message);
+            throw error;
+          }
+        }
         const entry = addRoom(options.home, body.id, typeof body.name === 'string' ? body.name : undefined);
+        if (folder !== null) {
+          try {
+            writeFolder(homeOfRoom(entry.id), folder);
+          } catch (error) {
+            removeRoom(options.home, entry.id);
+            throw error;
+          }
+          log.info(`room ${entry.id}: project folder ${folder}`);
+        }
         reconcile();
         return sendJson(res, 201, (await roomView(entry.id)) ?? entry);
       }

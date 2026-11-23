@@ -95,6 +95,8 @@ describe('gonogo rooms (the command line)', () => {
     expect(parseArgs(['token'])).toMatchObject({ kind: 'error' });
     expect(parseArgs(['token', 'show'])).toMatchObject({ kind: 'error' });
     expect(parseArgs(['rooms', 'add', 'team', '--name', 'The team'])).toEqual({ kind: 'rooms', action: 'add', id: 'team', name: 'The team' });
+    expect(parseArgs(['rooms', 'add', 'team', '--dir', '/srv/team'])).toEqual({ kind: 'rooms', action: 'add', id: 'team', dir: '/srv/team' });
+    expect(parseArgs(['rooms', 'list', '--dir', '/x'])).toMatchObject({ kind: 'error' });
     expect(parseArgs(['rooms', 'list', '--home', '/h'])).toEqual({ kind: 'rooms', action: 'list', home: '/h' });
     expect(parseArgs(['rooms', 'remove', 'team'])).toEqual({ kind: 'rooms', action: 'remove', id: 'team' });
     expect(parseArgs(['rooms', 'add'])).toMatchObject({ kind: 'error', message: 'rooms add needs a room id' });
@@ -1108,5 +1110,32 @@ describe('runtime settings through the supervisor (t112)', () => {
     await new Promise((r) => setTimeout(r, 1500));
     expect(existsSync(roomFile('c', 'settings-lines'))).toBe(false);
     expect(existsSync(roomFile('main', 'settings-lines'))).toBe(false);
+  }, 40_000);
+});
+
+describe('a room with a project folder (t113)', () => {
+  const post = (s: Supervisor, body: unknown): Promise<Response> => api(s, '/api/rooms', s.directorToken, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('POST /api/rooms with a folder stores it in the new room, and a folder that is not one (or is the home of gonogo) adds no room', async () => {
+    const s = await supervise();
+    const folder = mkdtempSync(join(tmpdir(), 'gng-pf-room-'));
+    try {
+      const made = await post(s, { id: 'docs', dir: folder });
+      expect(made.status).toBe(201);
+      expect(JSON.parse(readFileSync(join(home, 'rooms', 'docs', 'project-folder.json'), 'utf8'))).toEqual({ version: 1, dir: folder });
+      expect(statSync(join(home, 'rooms', 'docs', 'project-folder.json')).mode & 0o777).toBe(0o600);
+      for (const dir of [join(folder, 'nope'), 'relative', home, join(home, 'rooms'), 7]) {
+        const refused = await post(s, { id: 'other', dir });
+        expect(refused.status, String(dir)).toBe(400);
+        expect(loadRooms(home).map((r) => r.id)).toEqual(['main', 'docs']);
+        expect(existsSync(join(home, 'rooms', 'other'))).toBe(false);
+      }
+      // no folder, or null: a room like before
+      expect((await post(s, { id: 'plain' })).status).toBe(201);
+      expect((await post(s, { id: 'plain2', dir: null })).status).toBe(201);
+      expect(existsSync(join(home, 'rooms', 'plain', 'project-folder.json'))).toBe(false);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   }, 40_000);
 });

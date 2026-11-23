@@ -3185,7 +3185,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const boss: AgentRecord = {
         name: freeBossName(),
         role: BOSS_ROLE,
-        dir: options.bossDir,
+        dir: typeof options.bossDir === 'function' ? options.bossDir() : options.bossDir,
         mode: 'default',
         sessionId: io.newSessionId(),
         desk: 0,

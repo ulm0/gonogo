@@ -96,6 +96,8 @@ import type { Telemetry } from './telemetry.js';
 import type { Relay } from './relay.js';
 import type { ModelDefaultsStore } from './models.js';
 import type { PayloadDefaultsStore } from './payloaddefaults.js';
+import { FolderError } from './projectfolder.js';
+import type { ProjectFolder } from './projectfolder.js';
 import { commandProgram, isSettingKey, SETTING_KEYS, SettingsError } from './settings.js';
 import type { Settings } from './settings.js';
 import type { RoomKeys } from './roomkeys.js';
@@ -200,6 +202,8 @@ export interface WebOptions {
   /** Room keys (docs/features/room-keys.md): absent in tests that do not need it (the routes answer 404). Names only ever leave the server. */
   roomKeys?: Pick<RoomKeys, 'view' | 'set' | 'remove'>;
   /** Runtime settings (docs/runtime-settings-spec.md): absent in tests that do not need it (the routes answer 404). */
+  /** The room's project folder (docs/features/rooms.md): absent in tests that do not need it (the routes answer 404). */
+  projectFolder?: { store: ProjectFolder; audit: AuditRecord; boss(): { name: string; dir: string } | null };
   settings?: { store: Settings; apply(): void; audit: AuditRecord; announce(): void };
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
@@ -1605,6 +1609,32 @@ export function createWebServer(options: WebOptions): WebServer {
             sendJson(res, 200, { row: done.row });
           } catch (error) {
             if (error instanceof SettingsError) return sendApiError(res, error.kind === 'conflict' ? 409 : 400, error.message, error.kind, 'value');
+            throw error;
+          }
+        },
+      };
+    }
+    // GET /api/project-folder; PUT /api/project-folder ({ dir: string | null }): only the Director's own login session may change it, who asked comes from the supervisor over the local socket
+    if (s[1] === 'project-folder' && s.length === 2) {
+      const folder = options.projectFolder;
+      if (!folder) return null;
+      const view = (): Record<string, unknown> => ({ ...folder.store.get(), boss: folder.boss() });
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, view());
+          const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+          const actor = typeof actorHeader === 'string' && /^(session|token|socket|tui|key:[0-9a-f]{1,12})$/.test(actorHeader) ? actorHeader : 'unknown';
+          if (actor !== 'session') return sendApiError(res, 403, "the project folder is changed from the Director's own login: agents start in it", 'forbidden');
+          const body = await jsonObject(req, res);
+          if (!body) return;
+          if (body.dir !== null && typeof body.dir !== 'string') return sendApiError(res, 400, 'dir is the whole path of a folder, or null for the default', 'bad_request', 'dir');
+          try {
+            const done = folder.store.set(body.dir);
+            folder.audit('config', `project folder by ${actor}: ${JSON.stringify(done.before)} -> ${JSON.stringify(done.after)}`);
+            sendJson(res, 200, { ...view(), note: 'The agents that run keep their folder; a new or restarted agent starts in this one.' });
+          } catch (error) {
+            if (error instanceof FolderError) return sendApiError(res, 400, error.message, 'bad_request', 'dir');
             throw error;
           }
         },
