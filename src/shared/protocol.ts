@@ -1728,6 +1728,8 @@ export interface ProjectFolderView {
   source: 'set' | 'default';
   default: string;
   boss: { name: string; dir: string } | null;
+  /** About the folder in force, set or default: it is or holds gonogo's own folder, or it is a broad one. Said next to the value; never a refusal. */
+  warning?: string | null;
   /** After a write: what the change does and does not reach. */
   note?: string;
 }

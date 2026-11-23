@@ -24,5 +24,8 @@ describe('the project folder row', () => {
     const block = readFileSync('src/client/ProjectFolder.tsx', 'utf8');
     expect(block).toMatch(/view\.source === 'set' && \(\s*<button[^>]*onClick=\{\(\) => send\(null\)\}/);
     expect(block).toContain('Restart the boss now');
+    // the server's warning about the folder (gonogo's own, or a broad one) is shown in the warning tone, next to the value, and never blocks the Set key
+    expect(block).toMatch(/view\.warning === 'string' && view\.warning !== ''/);
+    expect(block).toMatch(/className="flood pf-warning" data-tone="amber" role="note"/);
   });
 });

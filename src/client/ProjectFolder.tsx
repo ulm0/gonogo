@@ -84,6 +84,11 @@ export function ProjectFolderBlock(): ReactElement {
               {sourceText(view.source)}
             </span>
           </p>
+          {typeof view.warning === 'string' && view.warning !== '' && (
+            <p className="flood pf-warning" data-tone="amber" role="note">
+              {view.warning}
+            </p>
+          )}
           {view.note !== undefined && <p className="hint">{view.note}</p>}
           {bossNeedsRestart(view) && view.boss !== null && (
             <div className="flood pf-restart" data-tone="amber" role="note">
