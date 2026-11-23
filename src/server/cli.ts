@@ -667,7 +667,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const roomKeys = createRoomKeys({ dir: home.dir, log: log.child('room-keys') });
     await roomKeys.load();
     // the room's project folder (docs/features/rooms.md, "Folders"): not the home of gonogo, and not the root home of the supervisor
-    const projectFolder = createProjectFolder({ roomHome: home.dir, fallback: cwd, forbidden: [home.dir, ...(env.GONOGO_KNOWLEDGE_DIR ? [dirname(env.GONOGO_KNOWLEDGE_DIR)] : [])], env, log: log.child('folder') });
+    const projectFolder = createProjectFolder({ roomHome: home.dir, fallback: cwd, own: [home.dir, ...(env.GONOGO_KNOWLEDGE_DIR ? [dirname(env.GONOGO_KNOWLEDGE_DIR)] : [])], env, log: log.child('folder') });
     // runtime settings (docs/runtime-settings-spec.md): the room's file over the file of every room over the environment
     const runtime = createSettings({ roomHome: home.dir, globalPath: options.roomChild === true ? (env.GONOGO_GLOBAL_SETTINGS?.trim() || null) : null, env, log: log.child('settings') });
     /** What the files say (not the environment: that is the default the options and resolveSettings already hold), or null. */
@@ -976,8 +976,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       protocol: PROTOCOL_VERSION,
       version,
       // the room's project folder, read at each answer: the hire form's default Working directory follows a change at once
-      // a default that is itself too broad to start agents in (the home directory) is not offered as the working directory: the page asks for a folder
-      cwd: ((f) => (f.needsFolder ? '' : f.dir))(projectFolder.get()),
+      cwd: projectFolder.get().dir,
       home: home.dir,
       host: bound.host,
       port: bound.port,
@@ -1636,7 +1635,7 @@ async function runRoomsCommand(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, e
     let folder: string | null = null;
     if (parsed.dir !== undefined) {
       try {
-        folder = checkFolder(resolve(parsed.dir), [root], env);
+        folder = checkFolder(resolve(parsed.dir));
       } catch (error) {
         process.stderr.write(`gonogo: --dir: ${error instanceof Error ? error.message : String(error)}\n`);
         exit(2);

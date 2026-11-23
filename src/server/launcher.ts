@@ -8,7 +8,6 @@ import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import { broadReason } from './projectfolder.js';
 import type { Payload, Provider, SubagentSettings } from '../shared/protocol.js';
 import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO } from '../shared/protocol.js';
 import type {
@@ -374,6 +373,12 @@ function withTrust(doc: JsonObject, dirs: readonly string[]): JsonObject {
   return { ...doc, projects: merged };
 }
 
+/** `outer` is `inner` or holds it. */
+const holds = (outer: string, inner: string): boolean => {
+  const way = relative(outer, inner);
+  return way === '' || (way !== '..' && !way.startsWith(`..${sep}`) && !isAbsolute(way));
+};
+
 /**
  * Claude Code trusts every non-git folder below a trusted one, so trust for the root, for the home directory or for a
  * folder above gonogo's or Claude's own files would switch the trust dialog and the hook gate off far beyond the
@@ -381,7 +386,16 @@ function withTrust(doc: JsonObject, dirs: readonly string[]): JsonObject {
  * shortcut: paths are compared as spelled, so another letter case of the same folder on a case-insensitive disk passes; upgrade when a real run shows it.
  */
 async function broadTrustReason(dirs: readonly string[], guards: readonly { path: string; what: string }[]): Promise<string | null> {
-  return broadReason(dirs, guards);
+  for (const dir of dirs) {
+    if (dir === parse(dir).root) return 'it is the root of the file system';
+    for (const guard of guards) {
+      for (const path of new Set([guard.path, await realpath(guard.path).catch(() => guard.path)])) {
+        if (!holds(dir, path)) continue;
+        return relative(dir, path) === '' ? `it is ${guard.what}` : `it holds ${guard.what} (${guard.path})`;
+      }
+    }
+  }
+  return null;
 }
 
 /**

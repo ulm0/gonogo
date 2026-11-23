@@ -1,7 +1,8 @@
 /**
  * The project folder of a room (docs/features/rooms.md, "Folders"): where its boss starts and what the hire form offers as the working directory. Kept in
- * `<room home>/project-folder.json`; without it a room works in the folder gonogo was started from, as before. A folder is checked every time one is
- * set, and the value kept is its real path (a link is followed once, at the moment it is set).
+ * `<room home>/project-folder.json`; without it a room works in the folder gonogo was started from, as before. Only the SHAPE of a folder is checked, every
+ * time one is set or read (the Director decides which folder is his project: nothing is refused by where it is); a folder that is broad or holds gonogo's
+ * own files comes with a warning for the page to show next to it. The value kept is the real path (a link is followed once, at the moment it is set).
  */
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync, accessSync, statSync, constants } from 'node:fs';
 import { homedir } from 'node:os';
@@ -20,42 +21,31 @@ const holds = (outer: string, inner: string): boolean => {
   return way === '' || (way !== '..' && !way.startsWith(`..${sep}`) && !isAbsolute(way));
 };
 
-/**
- * Claude Code trusts every non-git folder below a trusted one, so a project folder that is the root, the home directory or a folder above gonogo's or Claude's own
- * files would switch the trust dialog and the hook gate off far beyond the project the owner meant. Why `dirs` (the folder and its real path) is too broad, or null.
- * The one rule of the launcher (it refuses to record trust for such a folder) and of the place where a folder is chosen: the Director learns it when he sets it.
- */
-export function broadReason(dirs: readonly string[], guards: readonly { path: string; what: string }[]): string | null {
-  for (const dir of dirs) {
-    if (dir === parse(dir).root) return 'it is the root of the file system';
-    for (const guard of guards) {
-      let real = guard.path;
-      try {
-        real = realpathSync(guard.path);
-      } catch {
-        // not made yet: as spelled
-      }
-      for (const path of new Set([guard.path, real])) {
-        if (!holds(dir, path)) continue;
-        return relative(dir, path) === '' ? `it is ${guard.what}` : `it holds ${guard.what} (${guard.path})`;
-      }
-    }
+const realOf = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
   }
+};
+
+/**
+ * What the Director should know about a folder he picked, or null: it is, holds or lies inside gonogo's own folders (agents there can change gonogo's settings and
+ * keys without asking), or it is so broad (the root, a home directory, the folder of Claude Code's configuration) that agents can read everything under it.
+ * `own` are gonogo's folders (its home, the root home of the supervisor). Nothing here refuses anything.
+ */
+export function folderWarning(real: string, own: readonly string[], env: Record<string, string | undefined> = process.env): string | null {
+  for (const path of own) {
+    const there = realOf(path);
+    if (holds(there, real) || holds(real, there)) return "Agents can read and change gonogo's own settings and keys in this folder without asking.";
+  }
+  const sensitive = [homedir(), env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude')];
+  if (real === parse(real).root || sensitive.some((path) => holds(real, realOf(path)))) return 'Broad folder: agents can read everything under it.';
   return null;
 }
 
-/** The folders a project folder may not be, or hold: the owner's home directory, gonogo's own folders, Claude Code's configuration folder. */
-export const folderGuards = (own: readonly string[], env: Record<string, string | undefined>): Array<{ path: string; what: string }> => [
-  { path: homedir(), what: 'your home directory' },
-  ...own.map((path) => ({ path, what: "gonogo's home directory" })),
-  { path: env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude'), what: "Claude Code's configuration folder" },
-];
-
-/**
- * The real path of `input` when it may be a project folder: text, absolute, no NUL, an existing directory the process can read, and neither one of
- * `forbidden` (gonogo's own folders: state, tokens, keys) nor inside one, nor so broad that Claude's trust would reach gonogo's or Claude's own files (`~`, `/`, a folder that holds them).
- */
-export function checkFolder(input: unknown, forbidden: readonly string[], env: Record<string, string | undefined> = process.env): string {
+/** The real path of `input` when it has the shape of a project folder: text, absolute, no NUL, an existing directory the process can read. Nothing else is refused. */
+export function checkFolder(input: unknown): string {
   if (typeof input !== 'string' || input.trim() === '') throw new FolderError('give the folder as text');
   const text = input.trim();
   if (text.includes('\u0000')) throw new FolderError('a folder cannot contain a NUL character');
@@ -74,17 +64,6 @@ export function checkFolder(input: unknown, forbidden: readonly string[], env: R
     throw new FolderError(directory ? `${real} cannot be read by gonogo` : `${text} is not a folder`);
   }
   if (!directory) throw new FolderError(`${text} is not a folder`);
-  for (const own of forbidden) {
-    let there: string;
-    try {
-      there = realpathSync(own);
-    } catch {
-      continue; // a folder of gonogo's that is not made yet cannot be chosen by accident
-    }
-    if (real === there || real.startsWith(there.endsWith(sep) ? there : there + sep)) throw new FolderError(`${real} is gonogo's own folder (its state, tokens and keys): choose your project's folder`);
-  }
-  const broad = broadReason([...new Set([text, real])], folderGuards(forbidden, env));
-  if (broad !== null) throw new FolderError(`${real} is too broad: ${broad}, and Claude's trust of a folder covers every folder below it. Choose your project's folder`);
   return real;
 }
 
@@ -105,41 +84,30 @@ export function writeFolder(roomHome: string, dir: string | null): void {
   const path = join(roomHome, PROJECT_FOLDER_FILE);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
-  if (dir === null) {
-    writeFileSync(temp, `${JSON.stringify({ version: 1 })}\n`, { mode: 0o600, flag: 'wx' });
-  } else {
-    writeFileSync(temp, `${JSON.stringify({ version: 1, dir })}\n`, { mode: 0o600, flag: 'wx' });
-  }
+  writeFileSync(temp, `${JSON.stringify(dir === null ? { version: 1 } : { version: 1, dir })}\n`, { mode: 0o600, flag: 'wx' });
   renameSync(temp, path);
 }
 
 export interface ProjectFolder {
   /**
-   * The folder in force: the stored one when it still passes the checks (a file somebody planted, or a folder that is gone, is not trusted), else the one gonogo
-   * was started in. `needsFolder`: that default is itself too broad to start agents in, so the Director is asked to set one.
+   * The folder in force: the stored one when it still has the shape of a folder (a file somebody planted, or a folder that is gone, does not), else the one
+   * gonogo was started in. `warning`: what the Director should know about that folder, or null.
    */
-  get(): { dir: string; source: 'set' | 'default'; default: string; needsFolder: boolean };
-  /** Checks and stores (null: back to the default). Throws a FolderError. */
-  set(input: string | null): { before: string; after: string };
+  get(): { dir: string; source: 'set' | 'default'; default: string; warning: string | null };
+  /** Checks the shape and stores (null: back to the default). Throws a FolderError. */
+  set(input: string | null): { before: string; after: string; warning: string | null };
 }
 
-export function createProjectFolder(options: { roomHome: string; fallback: string; forbidden: readonly string[]; env?: Record<string, string | undefined>; log?: Logger }): ProjectFolder {
+export function createProjectFolder(options: { roomHome: string; fallback: string; own: readonly string[]; env?: Record<string, string | undefined>; log?: Logger }): ProjectFolder {
   const log = options.log ?? nullLogger;
   const env = options.env ?? process.env;
   let warned = '';
-  const needsFolder = ((): boolean => {
-    try {
-      checkFolder(options.fallback, options.forbidden, env);
-      return false;
-    } catch {
-      return true;
-    }
-  })();
   const get: ProjectFolder['get'] = () => {
     const stored = readFolder(options.roomHome, log);
     if (stored !== null) {
       try {
-        return { dir: checkFolder(stored, options.forbidden, env), source: 'set', default: options.fallback, needsFolder: false };
+        const dir = checkFolder(stored);
+        return { dir, source: 'set', default: options.fallback, warning: folderWarning(dir, options.own, env) };
       } catch (error) {
         if (warned !== stored) {
           warned = stored;
@@ -147,15 +115,15 @@ export function createProjectFolder(options: { roomHome: string; fallback: strin
         }
       }
     }
-    return { dir: options.fallback, source: 'default', default: options.fallback, needsFolder };
+    return { dir: options.fallback, source: 'default', default: options.fallback, warning: folderWarning(options.fallback, options.own, env) };
   };
   return {
     get,
     set(input) {
       const before = get().dir;
-      const dir = input === null ? null : checkFolder(input, options.forbidden, env);
-      writeFolder(options.roomHome, dir);
-      return { before, after: get().dir };
+      writeFolder(options.roomHome, input === null ? null : checkFolder(input));
+      const now = get();
+      return { before, after: now.dir, warning: now.warning };
     },
   };
 }
