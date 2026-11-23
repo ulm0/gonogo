@@ -629,6 +629,42 @@ describe('Payload fold: what a console starts with and where each item comes fro
       'agent:skill:review:on',
     ]);
   });
+  describe('the global servers (claude mcp add --scope user)', () => {
+    const view = (over: { host?: boolean; cleanRoom?: boolean } = {}) => ({
+      host: over.host ?? true,
+      cleanRoom: over.cleanRoom ?? false,
+      source: 'global (claude mcp --scope user)',
+      servers: [
+        { name: 'pulsar', type: 'http' as const, target: 'https://gamma.pulsar.codes', overriddenBy: null },
+        { name: 'web', type: 'http' as const, target: 'https://x.test', overriddenBy: 'room' as const },
+        { name: 'mine', type: 'stdio' as const, target: 'npx', overriddenBy: null },
+      ],
+    });
+    const globalRows = (extra: Partial<Values>, g = view()): string[] =>
+      payloadRows(room, { ...EMPTY, ...extra }, g).map((r) => `${r.from}:${r.kind}:${r.name}:${r.on ? 'on' : 'off'}${r.canSwitch || r.from === 'agent' ? '' : ':fixed'}${r.note === '' ? '' : `:${r.note}`}`);
+
+    it('come first, a room default or the console\'s own of the same name replaces one, and a switched-off one can be switched back', () => {
+      expect(globalRows({})).toEqual([
+        'global:server:pulsar:on',
+        'global:server:web:off:fixed:replaced by a room default',
+        'global:server:mine:on',
+        'room:server:files:on',
+        'room:server:web:on',
+        'room:skill:review:on',
+      ]);
+      expect(globalRows({ servers: '{"mine":{"command":"x"}}' }).filter((r) => r.startsWith('global:server:mine'))).toEqual(["global:server:mine:off:fixed:replaced by this agent's own"]);
+      expect(globalRows({ offServers: ['pulsar'] })[0]).toBe('global:server:pulsar:off:switched off for this agent');
+    });
+
+    it('follow the room\'s two switches: a Clean Room console has them only when the room says so, a host console unless it says no, and an engine other than Claude Code never', () => {
+      expect(globalRows({ cleanRoom: true }, view())).toEqual([]);
+      expect(globalRows({ cleanRoom: true }, view({ cleanRoom: true }))).toHaveLength(3);
+      expect(globalRows({}, view({ host: false }))).toEqual(['room:server:files:on', 'room:server:web:on', 'room:skill:review:on']);
+      expect(globalRows({ provider: 'gemini' }).some((r) => r.startsWith('global'))).toBe(false);
+      expect(payloadRows(room, { ...EMPTY }, null).some((r) => r.from === 'global')).toBe(false);
+    });
+  });
+
   it('a switched-off item says so and can be switched back', () => {
     expect(rowsOf({ offServers: ['web'], offSkills: ['review'] })).toEqual(['room:server:files:on', 'room:server:web:off:switched off for this agent', 'room:skill:review:off:switched off for this agent']);
   });

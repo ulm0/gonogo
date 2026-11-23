@@ -35,7 +35,7 @@ import { createSettings, globalSetting } from './settings.js';
 import { checkFolder, createProjectFolder, writeFolder } from './projectfolder.js';
 import type { SettingKey } from './settings.js';
 import { createRitualTemplate } from './ritual.js';
-import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, EGRESS_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, EGRESS_AUDIT, GLOBAL_MCP_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, lanAddresses, stationName } from './docking.js';
@@ -102,6 +102,7 @@ import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { createRules } from './rules.js';
 import { createEgress } from './egress.js';
+import { createGlobalMcpStore, globalView, readGlobalMcp } from './globalmcp.js';
 import { createEgressSettings } from './egresssettings.js';
 import { runKnowledgeCli } from './knowledgecli.js';
 import { doorTable } from './door.js';
@@ -756,6 +757,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await startupStore.load();
     const coauthorStore = createCoauthorStore({ dir: home.dir, log: log.child('coauthor') });
     await coauthorStore.load();
+    const globalMcp = createGlobalMcpStore({ dir: home.dir, log: log.child('global mcp') });
+    await globalMcp.load();
     const egressSettings = createEgressSettings({ dir: home.dir, log: log.child('egress') });
     await egressSettings.load();
     const egress = createEgress({
@@ -783,6 +786,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
       rules: () => rulesStore.text(),
+      globalMcp: {
+        enabled: (cleanRoom) => globalMcp.enabled(cleanRoom),
+        saw: (servers) =>
+          void globalMcp.observe(servers).then((fresh) => {
+            for (const s of fresh) downlink.post('startup', s.was === undefined ? `A new user-scope MCP server ${s.name} → ${s.target === '' ? 'no address' : s.target} was added; it now starts with every agent.` : `The user-scope MCP server ${s.name} now points to ${s.target === '' ? 'no address' : s.target} (was ${s.was === '' ? 'no address' : s.was}).`);
+          }),
+      },
       egress: { enabled: () => egressSettings.view().anthropic, issue: (agent, key) => egress.issue(agent, key), revoke: (agent) => egress.revoke(agent), basePath: (token) => egress.basePath(token) },
       // one line at each start, a count and fixed words: nothing from a repository reaches the role text. Waits for the checks at most 3 s.
       knowledge: async (name) => {
@@ -1493,6 +1503,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rules: audited(rulesStore, blackBox.record, RULES_AUDIT),
       egress,
       egressSettings: audited(egressSettings, blackBox.record, EGRESS_AUDIT),
+      globalMcp: {
+        store: audited(globalMcp, blackBox.record, GLOBAL_MCP_AUDIT),
+        view: async () => {
+          const configRoot = typeof env.CLAUDE_CONFIG_DIR === 'string' && env.CLAUDE_CONFIG_DIR.trim() !== '' ? env.CLAUDE_CONFIG_DIR : homedir();
+          const room = new Set(Object.keys(payloadDefaults.get()?.mcpServers ?? {}));
+          const servers = globalView(await readGlobalMcp(join(configRoot, '.claude.json')), (name) => (room.has(name) ? 'room' : null));
+          return { ...globalMcp.view(), source: 'global (claude mcp --scope user)', servers, added: globalMcp.added().filter((a) => servers.some((s) => s.name === a.name && s.target === a.target)) };
+        },
+      },
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -1605,6 +1624,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('coauthor close', () => coauthorStore.close());
       await step('rules close', () => rulesStore.close());
       await step('egress settings close', () => egressSettings.close());
+      await step('global mcp close', () => globalMcp.close());
       await step('startup close', async () => {
         await startupStore.close();
         await runState.close();

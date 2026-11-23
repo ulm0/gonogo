@@ -96,6 +96,7 @@ import type {
   SubagentSettings,
   CoauthorSettings,
   EgressSettings,
+  GlobalMcpView,
   RulesView,
   HoldAllResult,
   ResumeAllResult,
@@ -729,6 +730,19 @@ export async function roomsUpdate(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Global MCP servers: the user-scope servers of Claude Code and the room's two switches (docs/features/global-mcp.md). Turning one on asks for a step-up. */
+const globalMcpOf = (value: unknown): GlobalMcpView => {
+  const record = asRecord(value);
+  if (record === null || typeof record.host !== 'boolean' || typeof record.cleanRoom !== 'boolean' || typeof record.source !== 'string' || !Array.isArray(record.servers)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as GlobalMcpView;
+};
+export async function globalMcp(): Promise<GlobalMcpView> {
+  return globalMcpOf(await call('GET', '/global-mcp'));
+}
+export async function setGlobalMcp(patch: { host?: boolean; cleanRoom?: boolean }): Promise<GlobalMcpView> {
+  return globalMcpOf(await call('PUT', '/global-mcp', patch));
 }
 
 /** Egress: whether a Clean Room agent holds the Anthropic API key (docs/features/egress.md). A change asks for a step-up. */

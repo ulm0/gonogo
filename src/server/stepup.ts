@@ -28,6 +28,7 @@ export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && path === '/api/agents') return true;
   if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path)) return true;
   if (method === 'PUT' && path === '/api/models/mode') return true;
+  if (method === 'PUT' && path === '/api/global-mcp') return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
@@ -36,10 +37,12 @@ export function bodyMatters(method: string, path: string): boolean {
  * setting, so one that does not say egress:true can end an agent's own). Only a browser session (with its step-up) or the terminal may weaken it.
  */
 export const egressChange = (method: string, path: string): boolean =>
-  (method === 'PUT' && path === '/api/egress') || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
+  (method === 'PUT' && (path === '/api/egress' || path === '/api/global-mcp')) || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
 export function weakensEgress(method: string, path: string, body: Record<string, unknown> | null): boolean {
   if (body === null) return true;
   if (path === '/api/egress') return body.anthropic !== true;
+  // an API key never carries a step-up, so it may not add the user's MCP servers (and their tokens) to a Clean Room either
+  if (path === '/api/global-mcp') return body.cleanRoom === true || body.host === true;
   const room = body.cleanRoom;
   if (typeof room !== 'object' || room === null) return false;
   const egress = (room as Record<string, unknown>).egress;
@@ -93,6 +96,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   // a default server is a program every agent of the room starts, with the keys in its env
   if (/^\/api\/payload-defaults(\/|$)/.test(path)) return 'the Payload defaults of the room';
   if (/^\/api\/features(\/|$)/.test(path)) return 'the feature switches';
+  // the user-scope MCP servers become tools of every agent (a program started with its rights, with its keys): turning them on asks, turning them off does not
+  if (method === 'PUT' && path === '/api/global-mcp') return body === null || body.host === true || body.cleanRoom === true ? 'adding the global MCP servers to the agents' : null;
   // where a Clean Room's API key is held: turning it off puts the key back in the container
   if (/^\/api\/egress(\/|$)/.test(path)) return 'where a Clean Room keeps its API key';
   // the rules of the room reach every agent at the authority of a system prompt

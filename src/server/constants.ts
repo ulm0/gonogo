@@ -32,6 +32,8 @@ export const STARTUP_FILE = 'startup.json';
 export const COAUTHOR_FILE = 'coauthor.json';
 /** The room's egress setting (docs/features/egress.md): whether a Clean Room agent holds no Anthropic key. */
 export const EGRESS_FILE = 'egress.json';
+/** Global MCP servers (docs/features/global-mcp.md): whether the user-scope servers of Claude Code are added to an agent's, host and Clean Room. */
+export const GLOBAL_MCP_FILE = 'global-mcp.json';
 /** The rules of the room (docs/features/door.md): one text file in the room's home, at most this many bytes. */
 export const RULES_FILE = 'rules.md';
 export const RULES_MAX_BYTES = 8 * 1024;
