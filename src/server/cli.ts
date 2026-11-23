@@ -758,7 +758,15 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await coauthorStore.load();
     const egressSettings = createEgressSettings({ dir: home.dir, log: log.child('egress') });
     await egressSettings.load();
-    const egress = createEgress({ log: log.child('egress') });
+    const egress = createEgress({
+      // a live reload keeps the tokens of the agents that keep running (hashes only, 0600, in the run folder); the key of such an agent is found again by its name
+      file: settings.ptyHost ? join(runDir(home.dir), 'egress-tokens.json') : null,
+      keyOf: (agent) => {
+        const real = { ...roomKeys.values(true), ...clearance.values(agent) }.ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY;
+        return typeof real === 'string' && real.trim() !== '' ? real : undefined;
+      },
+      log: log.child('egress'),
+    });
     const rulesStore = createRules({ dir: home.dir, now: Date.now, log: log.child('rules') });
     await rulesStore.load();
     const subagentStore = createSubagentStore({ dir: home.dir, log: log.child('subagents') });

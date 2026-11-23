@@ -15,6 +15,7 @@
  * shortcut: API-key mode only: a subscription (OAuth) token is not swapped, see docs/features/egress.md.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { lookup } from 'node:dns';
 import type { LookupFunction } from 'node:net';
 import { BlockList, isIP } from 'node:net';
@@ -44,7 +45,8 @@ const DROP_BACK = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'tr
 /** Addresses a request to the API must never be sent to: this machine, private networks, link-local (cloud metadata), carrier-grade NAT, and the machine's own addresses. */
 const blocked = new BlockList();
 for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 4], ['240.0.0.0', 4]] as const) blocked.addSubnet(net, prefix, 'ipv4');
-for (const [net, prefix] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) blocked.addSubnet(net, prefix, 'ipv6');
+// NAT64 (64:ff9b::/96), 6to4 (2002::/16) and the IPv4-compatible block (::/96, which holds ::1) carry an IPv4 address that must not be reached, so none of them is allowed
+for (const [net, prefix] of [['::', 96], ['::', 128], ['::1', 128], ['64:ff9b::', 96], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) blocked.addSubnet(net, prefix, 'ipv6');
 
 /** Whether the proxy may connect to this address. An IPv4-mapped IPv6 address is judged as the IPv4 it holds. */
 export function publicAddress(address: string, own: ReadonlySet<string> = ownAddresses()): boolean {
@@ -62,6 +64,13 @@ const sameHash = (a: string, b: string): boolean => timingSafeEqual(Buffer.from(
 export interface EgressOptions {
   /** For tests: where the upstream is. Default api.anthropic.com over https. */
   upstream?: { protocol: 'http:' | 'https:'; hostname: string; port: number };
+  /**
+   * Where the token hashes are kept, 0600, so that a live reload (a new server taking over agents that keep running) does not end their tokens; null: not kept.
+   * Only hashes and agent names are written, never a token or a key. A token whose agent is not live is revoked by the launcher's `keepTokens` at the start.
+   */
+  file?: string | null;
+  /** The real key of an agent, by name, for a token that came back from the file (there is no closure of the start that made it). */
+  keyOf?(agent: string): string | undefined;
   /** For tests: which addresses may be connected to. Default `publicAddress`. */
   allowAddress?(address: string): boolean;
   log: Logger;
@@ -83,7 +92,7 @@ export interface Egress {
 interface Entry {
   agent: string;
   hash: string;
-  key: () => string | undefined;
+  key: (() => string | undefined) | null;
   active: number;
 }
 
@@ -99,6 +108,30 @@ export function createEgress(options: EgressOptions): Egress {
   const allow = options.allowAddress ?? ((address: string) => publicAddress(address));
   const byHash = new Map<string, Entry>();
   const byAgent = new Map<string, Entry>();
+  const file = options.file ?? null;
+  const persist = (): void => {
+    if (file === null) return;
+    try {
+      const temp = `${file}.${process.pid}.tmp`;
+      writeFileSync(temp, JSON.stringify({ version: 1, tokens: [...byAgent.values()].map((e) => ({ agent: e.agent, hash: e.hash })) }), { mode: 0o600 });
+      renameSync(temp, file);
+    } catch (error) {
+      log.warn(`egress: could not save the tokens (${(error as NodeJS.ErrnoException).code ?? 'error'}): a live reload will end them`);
+    }
+  };
+  if (file !== null) {
+    try {
+      const saved = JSON.parse(readFileSync(file, 'utf8')) as { tokens?: Array<{ agent?: unknown; hash?: unknown }> };
+      for (const t of Array.isArray(saved.tokens) ? saved.tokens : []) {
+        if (typeof t.agent !== 'string' || typeof t.hash !== 'string' || !/^[0-9a-f]{64}$/.test(t.hash)) continue;
+        const entry: Entry = { agent: t.agent, hash: t.hash, key: null, active: 0 };
+        byHash.set(entry.hash, entry);
+        byAgent.set(entry.agent, entry);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('egress: the saved tokens could not be read');
+    }
+  }
 
   /** The connection goes to the address that was checked: the lookup that http(s) asks for is the one that answers, and a bad address in it ends the request. */
   const guarded: LookupFunction = (hostname, lookupOptions, callback) => {
@@ -153,6 +186,7 @@ export function createEgress(options: EgressOptions): Egress {
     if (old === undefined) return;
     byHash.delete(old.hash);
     byAgent.delete(agent);
+    persist();
   };
   const basePath = (token: string): string => `/${EGRESS_PATH}/${token}/${EGRESS_SERVICE_ANTHROPIC}`;
 
@@ -163,6 +197,7 @@ export function createEgress(options: EgressOptions): Egress {
       const entry: Entry = { agent, hash: hashOf(token), key, active: 0 };
       byHash.set(entry.hash, entry);
       byAgent.set(agent, entry);
+      persist();
       return token;
     },
     revoke,
@@ -174,10 +209,10 @@ export function createEgress(options: EgressOptions): Egress {
       const entry = parsed === null ? undefined : entryOf(parsed.token);
       // one answer for a wrong token and for a token that was revoked: nothing says which
       if (parsed === null) return send(res, 404, 'not found');
-      if (entry === undefined) return send(res, 403, 'forbidden');
+      if (entry === undefined) return send(res, 403, 'forbidden: this address is no longer valid (restart the agent to get a new one)');
       const method = req.method ?? 'GET';
       if (!METHODS.has(method)) return send(res, 405, 'method not allowed');
-      const key = entry.key();
+      const key = entry.key === null ? options.keyOf?.(entry.agent) : entry.key();
       if (key === undefined || !KEY_RE.test(key)) return send(res, 503, 'no usable API key is set for this agent');
       if (entry.active >= EGRESS_CONCURRENT_MAX) return send(res, 429, 'too many requests at once');
       let bytes = 0;

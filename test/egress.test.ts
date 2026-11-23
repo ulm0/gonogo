@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../src/shared/protocol.js';
 import { createEgress, EGRESS_CONCURRENT_MAX, publicAddress } from '../src/server/egress.js';
+import { weakensEgress } from '../src/server/stepup.js';
 import type { Egress } from '../src/server/egress.js';
 import { createEgressSettings } from '../src/server/egresssettings.js';
 
@@ -236,6 +237,83 @@ describe('which addresses are public', () => {
     const own = Object.values(networkInterfaces()).flatMap((l) => l ?? []).find((i) => !i.internal);
     if (own !== undefined) expect(publicAddress(own.address)).toBe(false);
     expect(publicAddress('8.8.8.8', new Set(['8.8.8.8']))).toBe(false);
+  });
+});
+
+describe('the addresses that wrap another one', () => {
+  it('NAT64, 6to4 and the IPv4-compatible block are refused, whatever address is inside, and so are the mapped ones', () => {
+    for (const ip of ['64:ff9b::808:808', '64:ff9b::7f00:1', '64:ff9b::a9fe:a9fe', '2002:808:808::1', '2002:7f00:1::1', '2002:a9fe:a9fe::', '::808:808', '::7f00:1', '::ffff:7f00:1']) expect(publicAddress(ip), ip).toBe(false);
+    expect(publicAddress('2606:4700:4700::1111')).toBe(true);
+  });
+});
+
+describe('what an API key may not do', () => {
+  it('weakensEgress: off or not-on at the room, egress:false in a hire, and an edit that does not say egress:true', () => {
+    expect(weakensEgress('PUT', '/api/egress', { anthropic: false })).toBe(true);
+    expect(weakensEgress('PUT', '/api/egress', {})).toBe(true);
+    expect(weakensEgress('PUT', '/api/egress', null)).toBe(true);
+    expect(weakensEgress('PUT', '/api/egress', { anthropic: true })).toBe(false);
+    expect(weakensEgress('POST', '/api/agents', { cleanRoom: { egress: false } })).toBe(true);
+    expect(weakensEgress('POST', '/api/agents', { cleanRoom: {} })).toBe(false);
+    expect(weakensEgress('POST', '/api/agents', { name: 'x' })).toBe(false);
+    expect(weakensEgress('PATCH', '/api/agents/ana', { cleanRoom: {} })).toBe(true);
+    expect(weakensEgress('PATCH', '/api/agents/ana', { cleanRoom: { egress: true } })).toBe(false);
+    expect(weakensEgress('PATCH', '/api/agents/ana', { role: 'x' })).toBe(false);
+  });
+});
+
+describe('a live reload', () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'gonogo-egress-reload-'));
+    await boot();
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+  const again = (file: string, keyOf?: (agent: string) => string | undefined): Egress => createEgress({ upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort }, allowAddress: () => true, file, ...(keyOf === undefined ? {} : { keyOf }), log });
+
+  it('keeps the tokens of agents that keep running: the new server takes the same token, finds the key by the agent\'s name, and the file holds hashes only, 0600', async () => {
+    const file = join(dir, 'egress-tokens.json');
+    const old = again(file);
+    const token = old.issue('ana', () => REAL);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    const text = await readFile(file, 'utf8');
+    expect(text).not.toContain(token);
+    expect(text).not.toContain(REAL);
+    expect(JSON.parse(text)).toEqual({ version: 1, tokens: [{ agent: 'ana', hash: expect.stringMatching(/^[0-9a-f]{64}$/) }] });
+    // the new server: no closure of the start that made the token, only the name
+    egress = again(file, (agent) => (agent === 'ana' ? 'sk-ant-from-the-name' : undefined));
+    // the front of the test calls the one that is current
+    expect((await call(`${base(token)}/v1/models`)).status).toBe(200);
+    expect(seen.at(-1)?.headers['x-api-key']).toBe('sk-ant-from-the-name');
+    // an agent the new server does not find a key for is a plain 503
+    const other = old.issue('ben', () => REAL);
+    egress = again(file, () => undefined);
+    expect((await call(`${base(other)}/v1/models`)).status).toBe(503);
+  });
+
+  it('the launcher drops the tokens of agents that are not live (keepTokens), a stop removes its token from the file, and a damaged or planted file is ignored', async () => {
+    const file = join(dir, 'egress-tokens.json');
+    const first = again(file);
+    const a = first.issue('ana', () => REAL);
+    const b = first.issue('ben', () => REAL);
+    egress = again(file, () => REAL);
+    egress.revoke('ben');
+    expect((await call(`${base(b)}/v1/models`)).status).toBe(403);
+    expect((await call(`${base(a)}/v1/models`)).status).toBe(200);
+    expect((JSON.parse(await readFile(file, 'utf8')) as { tokens: unknown[] }).tokens).toHaveLength(1);
+    egress.revoke('ana');
+    expect((JSON.parse(await readFile(file, 'utf8')) as { tokens: unknown[] }).tokens).toEqual([]);
+    for (const text of ['{ nope', JSON.stringify({ version: 1, tokens: [{ agent: 'x', hash: 'short' }, { agent: 3, hash: 'a'.repeat(64) }, 'str'] }), JSON.stringify({ tokens: 5 })]) {
+      await writeFile(file, text);
+      const e = again(file, () => REAL);
+      expect(e.has('x')).toBe(false);
+    }
+  });
+
+  it('a token that is not valid says to restart the agent', async () => {
+    expect((await call(`${base('a'.repeat(64))}/v1/models`)).text).toContain('restart the agent');
   });
 });
 

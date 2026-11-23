@@ -30,6 +30,21 @@ export function bodyMatters(method: string, path: string): boolean {
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
+/**
+ * The routes where an API key must not turn egress off, or leave it to the room: the room setting, a hire, an edit of an agent (an edit REPLACES the Clean Room
+ * setting, so one that does not say egress:true can end an agent's own). Only a browser session (with its step-up) or the terminal may weaken it.
+ */
+export const egressChange = (method: string, path: string): boolean =>
+  (method === 'PUT' && path === '/api/egress') || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
+export function weakensEgress(method: string, path: string, body: Record<string, unknown> | null): boolean {
+  if (body === null) return true;
+  if (path === '/api/egress') return body.anthropic !== true;
+  const room = body.cleanRoom;
+  if (typeof room !== 'object' || room === null) return false;
+  const egress = (room as Record<string, unknown>).egress;
+  return method === 'POST' ? egress === false : egress !== true;
+}
+
 /** The walls of the Clean Room, weakest first: a hire below the room's own sandbox is a weaker one than the Director set. */
 const FLAVOR_RANK = ['docker', 'gvisor', 'microvm'];
 
