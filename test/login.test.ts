@@ -1144,6 +1144,33 @@ describe('the device login of a terminal through the supervisor', () => {
     expect((await typeCode(cookies, flow.user_code)).status).toBe(404);
   });
 
+  it('adding a room with a project folder is the Director\'s own doing: a session (after the password check), not a key or a terminal; a room without a folder is open to a key as before', async () => {
+    const cookies = await bootDevice();
+    const key = String((await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'k', scope: 'full' })).body.key);
+    const approved = await startFlow();
+    await decide(cookies, approved.user_code, 'approve');
+    dclock += 6000;
+    const tui = (JSON.parse((await poll(approved.device_code)).text) as { token: string }).token;
+    const folder = mkdtempSync(join(tmpdir(), 'gng-pf-login-'));
+    try {
+      const add = (headers: Record<string, string>, body: Record<string, unknown>) => call('POST', '/api/rooms', { ...JSONH, ...headers }, JSON.stringify(body));
+      const session = { ...cookieHeader(cookies), ...origin() };
+      expect((await add({ authorization: `Bearer ${key}` }, { id: 'a', dir: folder })).status).toBe(403);
+      expect((await add({ authorization: `Bearer ${tui}` }, { id: 'a', dir: folder })).status).toBe(403);
+      expect(existsSync(join(home, 'rooms', 'a'))).toBe(false);
+      expect((await add({ authorization: `Bearer ${key}` }, { id: 'plain' })).status).toBe(201);
+      // the dry run of a folder says what exists on this computer: the Director's own login only
+      const check = (headers: Record<string, string>) => call('GET', `/api/rooms/check-folder?dir=${encodeURIComponent(folder)}`, headers);
+      expect((await check({ authorization: `Bearer ${key}` })).status).toBe(403);
+      expect((await check({ authorization: `Bearer ${tui}` })).status).toBe(403);
+      expect((await check(session)).status).toBe(200);
+      expect((await add(session, { id: 'b', dir: folder })).status).toBe(201);
+      expect(JSON.parse(readFileSync(join(home, 'rooms', 'b', 'project-folder.json'), 'utf8')).dir).toBe(folder);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it('who changed a runtime setting reaches the room as x-gonogo-actor only on /api/settings, from the grant and never from the sender; a stale session is asked for the password', async () => {
     const cookies = await bootDevice();
     const key = String((await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'k', scope: 'full' })).body.key);

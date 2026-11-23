@@ -6507,7 +6507,8 @@ describe('cli: startGonogo', () => {
       const fakes = installFakes();
       const env = { PATH: process.env.PATH, GONOGO_SEED_CLAUDE: 'true', CLAUDE_CONFIG_DIR: '/cfg' };
       const { running, cwd } = await startCli({ env, maxHops: 5, agentCmd: ['node', 'fake.mjs'] });
-      expect(fakes.captured.hubOptions).toMatchObject({ maxHops: 5, bossDir: cwd, maxWorking: null, redline: true });
+      expect(fakes.captured.hubOptions).toMatchObject({ maxHops: 5, maxWorking: null, redline: true });
+      expect((fakes.captured.hubOptions?.bossDir as () => string)()).toBe(cwd);
       const launcherOptions = fakes.captured.launcherOptions;
       expect(launcherOptions).toMatchObject({ homeDir: running.home, seed: true, env, agentCmd: expect.any(Function) as unknown });
       expect((launcherOptions?.agentCmd as () => string[] | null)()).toEqual(['node', 'fake.mjs']);
