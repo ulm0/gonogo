@@ -19,8 +19,13 @@ import type { DockedAgent, DockingView, SendResult, StationMessage, Task } from 
 const T0 = 1_700_000_000_000;
 const STATUS: Record<string, number> = { bad_request: 400, unauthorized: 401, not_found: 404, conflict: 409, too_large: 413, rate_limited: 429, unavailable: 503, internal: 500 };
 
+/** Every docking this file made: stopped, and its background writes (outbox, trail, rules) awaited, before the folders go (a write that lands after the rm is ENOTEMPTY). */
+const running: Docking[] = [];
 const cleanups: Array<() => void> = [];
-afterEach(() => {
+afterEach(async () => {
+  for (const docking of running.splice(0)) await docking.close().catch(() => undefined);
+  // writes that a close started a moment ago
+  for (let i = 0; i < 10; i += 1) await new Promise((r) => setTimeout(r, 0));
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
@@ -178,6 +183,7 @@ function world(): World {
       });
       await station.docking.load();
       stations.set(origin, station);
+      running.push(station.docking);
       return station;
     },
   };
