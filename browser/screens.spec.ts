@@ -467,6 +467,8 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.locator('.topbar').waitFor({ timeout: 30_000 });
     await page.getByRole('button', { name: /staff a console/i }).first().click({ timeout: 3000 });
   });
+  await view(page, group, 'hire form: a position picked, the rest folded', () => page.getByRole('button', { name: /^FAO/ }).first().click({ timeout: 3000 }), true);
+  await view(page, group, 'hire form: more settings open', () => page.locator('summary', { hasText: 'MORE SETTINGS' }).click({ timeout: 3000 }), true);
   await page.keyboard.press('Escape');
   // a fresh room page for what follows: the form must not be open when the Patch Panel is asked for
   await page.goto(`${base}/r/main/`);

@@ -202,6 +202,10 @@ export function initialValues(
   return seat !== '' && seat !== BOSS_POSITION ? choosePosition(base, seat, agents, true) : base;
 }
 
+/** Whether an agent has anything set in MORE SETTINGS beyond what a new one starts with: the fold opens by itself only then (keyCount: the keys already stored for it). */
+export const differsFromDefault = (v: Values, keyCount: number): boolean =>
+  v.model !== '' || v.effort !== '' || v.cleanRoom || v.worktree || v.remoteControl || !v.autostart || !v.coauthor || v.rules !== '' || v.mode !== 'default' || v.servers !== '' || v.skills !== '' || v.offServers.length > 0 || v.offSkills.length > 0 || keyCount > 0;
+
 /** The short form of a position's summary for a tile: the words before the first colon or comma. */
 export const positionShort = (summary: string): string => summary.split(/[:,]/)[0]?.trim() ?? summary;
 
