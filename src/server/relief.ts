@@ -14,8 +14,8 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { positionById, POSITION_IDS } from '../shared/positions.js';
-import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
+import type { AgentView, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
 import { providerInfo } from '../shared/protocol.js';
 import { RELIEF_PENDING_MAX, RELIEF_RATE_MAX, RELIEF_RATE_WINDOW_MS, RELIEF_TTL_MS } from './constants.js';
 import { isRecord } from './hooks.js';
@@ -45,6 +45,8 @@ export interface ReliefOptions {
   checkWorktree?(dir: string): Promise<string | null>;
   /** The room's default engine, for a request that names none. Default claude. */
   defaultEngine?(): Provider;
+  /** The room's default sandbox flavor of the Clean Room (absent: docker). */
+  defaultSandbox?(): CleanRoomFlavor | undefined;
   /** The room's default permission mode, for a request that names none. Never bypassPermissions here: the Director reads the mode in the request, but nobody confirmed bypass. */
   defaultMode?(): PermissionMode | undefined;
   now(): number;
@@ -225,10 +227,14 @@ export function createRelief(options: ReliefOptions): Relief {
       const at = now();
       made.push(at);
       const id = `h${seq}`;
-      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(wantsWorktree ? { worktree: {} } : {}) };
+      // the wall the new Clean Room agent will have, shown on the card: the boss's own flavor or the room's default, and whether it is below the room's default
+      const roomFlavor = options.defaultSandbox?.() ?? 'docker';
+      const flavor = cleanRoom === null ? undefined : (cleanRoom.flavor ?? roomFlavor);
+      const flavorBelowRoom = flavor !== undefined && CLEAN_ROOM_FLAVORS.indexOf(flavor) < CLEAN_ROOM_FLAVORS.indexOf(roomFlavor);
+      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(flavor === undefined ? {} : { flavor }), ...(flavorBelowRoom ? { flavorBelowRoom } : {}), ...(wantsWorktree ? { worktree: {} } : {}) };
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
-      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}${modeFromRoom ? " (the room's default)" : ''}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}`, { kind: 'relief', id });
+      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}${modeFromRoom ? " (the room's default)" : ''}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}${flavor === undefined ? '' : `, Clean Room sandbox ${flavor}${flavorBelowRoom ? " (below the room's default)" : ''}`}`, { kind: 'relief', id });
       return { id, status: 'pending', note: `waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
     },
 

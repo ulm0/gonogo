@@ -467,6 +467,22 @@ describe('a Clean Room boss', () => {
     views = [{ ...flight(), dir: box, cleanRoom: { image: 'img:1' } }];
   });
 
+  it('shows the sandbox flavor the new agent gets (the boss\'s own, else the room\'s default) and says when that is below the room\'s default; notes it in the Downlink', async () => {
+    relief = make({ defaultSandbox: () => 'gvisor' });
+    views = [{ ...flight(), dir: box, cleanRoom: {} }];
+    await relief.request(BOSS, { name: 'ana', role: 'r' }); // boss has no flavor: the room's
+    views = [{ ...flight(), dir: box, cleanRoom: { flavor: 'docker' } }];
+    await relief.request(BOSS, { name: 'ben', role: 'r' }); // the boss's own is weaker than the room's
+    views = [{ ...flight(), dir: box, cleanRoom: { flavor: 'microvm' } }];
+    await relief.request(BOSS, { name: 'cat', role: 'r' });
+    expect(relief.view().requests.map((r) => [r.flavor, r.flavorBelowRoom])).toEqual([['gvisor', undefined], ['docker', true], ['microvm', undefined]]);
+    expect(events.filter(([, t]) => t.includes('Clean Room sandbox')).map(([, t]) => t.replace(/^.*Clean Room sandbox /, ''))).toEqual(['gvisor', "docker (below the room's default)", 'microvm']);
+    relief = make({ defaultSandbox: () => 'gvisor' });
+    views = [flight()];
+    await relief.request(BOSS, { name: 'dan', role: 'r', dir: project });
+    expect(relief.view().requests.at(-1)).not.toHaveProperty('flavor');
+  });
+
   it('hires Clean Room agents in its own folder, by default there', async () => {
     await relief.request(BOSS, { name: 'ana', role: 'r' });
     await relief.request(BOSS, { name: 'ben', role: 'r', dir: join(box, 'sub') });

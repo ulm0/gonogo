@@ -1,5 +1,5 @@
 import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
-import type { AgentView, CleanRoom, PayloadDefaults, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, McpServer, ModelDefaults, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, PayloadDefaults, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, CleanRoomFlavor, McpServer, ModelDefaults, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { parseRulesText, rulesOf, rulesToText } from './permissions.js';
 import { positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -37,6 +37,8 @@ export interface Values {
   offSkills: string[];
   /** Clean Room: run the agent in a container on its own worktree. Claude Code only. */
   cleanRoom: boolean;
+  /** Clean Room sandbox flavor of this agent; '' is the room's default. */
+  sandbox: '' | CleanRoomFlavor;
   /** Worktree: the agent starts in its own git worktree on the host. Any engine; not with a Clean Room, which has one. */
   worktree: boolean;
   /** Remote Control: start the agent with --remote-control, to approve in the Claude app. Claude Code only, not with a Clean Room. */
@@ -188,6 +190,7 @@ export function initialValues(
     offServers: current?.payloadOff?.mcpServers ?? [],
     offSkills: current?.payloadOff?.skills ?? [],
     cleanRoom: Boolean(current?.cleanRoom),
+    sandbox: current?.cleanRoom?.flavor ?? '',
     worktree: Boolean(current?.worktree),
     remoteControl: Boolean(current?.remoteControl),
     rules: rulesToText(current?.permissions),
@@ -343,10 +346,11 @@ export function payloadRows(defaults: PayloadDefaults | null, values: Values): P
   return rows;
 }
 
-/** The Clean Room the form describes: only for Claude Code, and a setting made through the API (an image) stays when the box stays ticked. */
+/** The Clean Room the form describes: only for Claude Code, and a setting made through the API (an image) stays when the box stays ticked; the flavor is the form's (empty: the room's default). */
 export function cleanRoomOf(values: Values, original: AgentView | null): CleanRoom | null {
   if (values.provider !== 'claude' || !values.cleanRoom) return null;
-  return original?.cleanRoom ?? {};
+  const { flavor: _flavor, ...kept } = original?.cleanRoom ?? {};
+  return { ...kept, ...(values.sandbox === '' ? {} : { flavor: values.sandbox }) };
 }
 
 /** The Remote Control the form describes: Claude Code only, and a Clean Room has no claude.ai login. */

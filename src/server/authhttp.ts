@@ -15,7 +15,8 @@ import { authPage, authPageHeaders, PASSKEY_SCRIPT } from './authpage.js';
 import type { AuthPageExtra } from './authpage.js';
 import type { Passkeys } from './passkeys.js';
 import { relyingParty } from './passkeys.js';
-import { bodyMatters, stepUpReason } from './stepup.js';
+import { bodyMatters, needsRoomSandbox, stepUpReason } from './stepup.js';
+import type { StepUpContext } from './stepup.js';
 import type { AuthPageKind } from './authpage.js';
 import { nullLogger } from './constants.js';
 import { bearerToken, readBody, sendApiError, sendJson, sendText } from './hooks.js';
@@ -73,7 +74,9 @@ export interface AuthHttp {
   /** True when the body of this change decides whether it needs a step-up (hire, edit of an agent): the proxy reads it first. */
   stepUpBody(method: string, path: string): boolean;
   /** Whether this change by this grant needs the password (and code) again now; `body` is the parsed JSON object, or null. */
-  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
+  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null, context?: StepUpContext): string | null;
+  /** Whether the body names a flavor the room's default must be known for. */
+  stepUpWantsRoom(method: string, path: string, body: Record<string, unknown> | null): boolean;
   /** The 403 that tells the page to ask for the password again. */
   stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string, tui?: boolean): void;
 }
@@ -593,10 +596,11 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     csrfOk,
     whoOf,
     stepUpBody: bodyMatters,
-    stepUpNeeded: (grant, method, path, body) => {
-      if (grant.kind === 'tui') return stepUpReason(method, path, body);
+    stepUpWantsRoom: needsRoomSandbox,
+    stepUpNeeded: (grant, method, path, body, context) => {
+      if (grant.kind === 'tui') return stepUpReason(method, path, body, context);
       if (grant.kind !== 'session' || grant.sessionId === undefined || auth.stepFresh(grant.sessionId)) return null;
-      return stepUpReason(method, path, body);
+      return stepUpReason(method, path, body, context);
     },
     stepUpDenied,
     pageHeaders: () => ({

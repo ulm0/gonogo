@@ -50,7 +50,7 @@ import { createProposalStore } from './knowledgeproposals.js';
 import { createKnowledgeStore } from './knowledgestore.js';
 import { parseLegs } from './knowledgeparse.js';
 import { createSafeGit } from './safegit.js';
-import { checkCleanRoom } from './cleanroom.js';
+import { checkCleanRoom, cleanRoomFlavors } from './cleanroom.js';
 import { checkWorktree, removeWorktree, worktreeBranch, worktreePath, worktreeStatus } from './worktree.js';
 import { acquireSupervisorLock, openHome } from './home.js';
 import { createLauncher, parseAgentCmd } from './launcher.js';
@@ -776,6 +776,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return knowledgeLine(stale);
       },
       defaultEffort: () => modelDefaults.effort(),
+      defaultSandbox: () => modelDefaults.sandbox(),
       defaultPermissions: () => permissionDefaults.get(),
       payloadDefaults: () => payloadDefaults.get(),
       subagents: () => subagentStore.view(),
@@ -922,7 +923,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         if (!info.isDirectory()) return { ok: false, error: `not a directory: ${p}` };
         return { ok: true, path: resolve(p) };
       },
-      checkCleanRoom: (dir) => checkCleanRoom(dir, env),
+      checkCleanRoom: (dir, flavor) => checkCleanRoom(dir, env, flavor),
       checkWorktree: (dir) => checkWorktree(dir, env),
       loadRoster: async () => home.loadRoster(),
       startup: () => startupStore.view(),
@@ -1198,6 +1199,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       hub: hubInstance,
       defaultEngine: () => modelDefaults.engine(),
       defaultMode: () => modelDefaults.mode(),
+      defaultSandbox: () => modelDefaults.sandbox(),
       checkDirectory: io.checkDirectory,
       checkWorktree: (dir) => checkWorktree(dir, env),
       now: io.now,
@@ -1437,6 +1439,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
       },
       engines: () => checkEngines(env),
+      cleanRoomFlavors: () => cleanRoomFlavors(env, modelDefaults.sandbox()),
       hangar: createHangar(roots),
       worktrees: {
         has: (name) => hubInstance.views().some((v) => v.name === name && v.worktree !== null),

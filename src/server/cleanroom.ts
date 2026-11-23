@@ -11,8 +11,8 @@ import { existsSync } from 'node:fs';
 import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { basename, join } from 'node:path';
-import { CLEAN_ROOM_DIR, cleanRoomBranch } from '../shared/protocol.js';
-import type { AgentRecord, CleanRoom, Provider } from '../shared/protocol.js';
+import { CLEAN_ROOM_DIR, CLEAN_ROOM_FLAVORS, CLEAN_ROOM_RUNTIMES, cleanRoomBranch } from '../shared/protocol.js';
+import type { AgentRecord, CleanRoom, CleanRoomFlavor, CleanRoomFlavors, Provider } from '../shared/protocol.js';
 import { cwdInWorktree, ensureWorktree, messageOf, run, topOf } from './worktree.js';
 export { ensureWorktree };
 import type { Env } from './worktree.js';
@@ -25,6 +25,7 @@ import {
   CLEAN_ROOM_NETWORK_ENV,
   CLEAN_ROOM_NETWORK_PATTERN,
   CLEAN_ROOM_NETWORK_SELF,
+  CLEAN_ROOM_RUNTIMES_ENV,
   DIR_MODE,
   DOCKER_BIN,
 } from './constants.js';
@@ -39,12 +40,69 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 export function parseCleanRoom(value: unknown, provider: Provider | undefined): CleanRoomCheck {
   if (!isRecord(value)) return { ok: false, error: 'cleanRoom must be an object' };
   if ((provider ?? 'claude') !== 'claude') return { ok: false, error: 'a Clean Room runs Claude Code agents only' };
-  const unknown = Object.keys(value).find((key) => key !== 'image');
+  const unknown = Object.keys(value).find((key) => key !== 'image' && key !== 'flavor');
   if (unknown !== undefined) return { ok: false, error: `cleanRoom has no field "${unknown}"` };
-  const { image } = value;
-  if (image === undefined) return { ok: true, cleanRoom: {} };
-  if (typeof image !== 'string' || !IMAGE_RE.test(image)) return { ok: false, error: 'the image must be a Docker image name or id (letters, digits and . _ / : @ -)' };
-  return { ok: true, cleanRoom: { image } };
+  const { image, flavor } = value;
+  if (image !== undefined && (typeof image !== 'string' || !IMAGE_RE.test(image))) return { ok: false, error: 'the image must be a Docker image name or id (letters, digits and . _ / : @ -)' };
+  if (flavor !== undefined && !(CLEAN_ROOM_FLAVORS as readonly unknown[]).includes(flavor)) return { ok: false, error: `the flavor must be one of: ${CLEAN_ROOM_FLAVORS.join(', ')}` };
+  return { ok: true, cleanRoom: { ...(image === undefined ? {} : { image }), ...(flavor === undefined ? {} : { flavor: flavor as CleanRoomFlavor }) } };
+}
+
+/** The flavor an agent runs in: its own, else the room's default, else docker. */
+export const cleanRoomFlavor = (cleanRoom: CleanRoom, roomDefault: CleanRoomFlavor | undefined): CleanRoomFlavor => cleanRoom.flavor ?? roomDefault ?? 'docker';
+
+/** The Docker runtime names `docker info` lists (Runtimes) plus the ones the operator declares (GONOGO_CLEANROOM_RUNTIMES), or why `docker info` could not be read. `docker` itself needs none. */
+export async function dockerRuntimes(env: Env): Promise<{ names: string[]; note?: string }> {
+  const declared = (env[CLEAN_ROOM_RUNTIMES_ENV] ?? '').split(',').map((n) => n.trim()).filter((n) => /^[A-Za-z0-9._-]{1,64}$/.test(n));
+  try {
+    const parsed: unknown = JSON.parse(await run(DOCKER_BIN, ['info', '--format', '{{json .Runtimes}}'], env));
+    return { names: [...new Set([...(isRecord(parsed) ? Object.keys(parsed) : []), ...declared])] };
+  } catch (error) {
+    return { names: declared, note: `"docker info" failed: ${messageOf(error)}` };
+  }
+}
+
+/** What the page shows: each flavor, whether Docker has its runtime. */
+export async function cleanRoomFlavors(env: Env, roomDefault: CleanRoomFlavor | undefined): Promise<CleanRoomFlavors> {
+  const { names, note } = await dockerRuntimes(env);
+  const available = Object.fromEntries(CLEAN_ROOM_FLAVORS.map((f) => [f, CLEAN_ROOM_RUNTIMES[f] === null || names.includes(CLEAN_ROOM_RUNTIMES[f] as string)])) as Record<CleanRoomFlavor, boolean>;
+  return { available, default: roomDefault ?? 'docker', ...(note === undefined ? {} : { note }) };
+}
+
+/** Why a flavor cannot be used, or null: its runtime is not one Docker lists, or it is the microVM, which cannot share gonogo's network (the bridge mode that it needs is not built yet). Never a fallback to runc. */
+export function flavorProblem(flavor: CleanRoomFlavor, runtimes: readonly string[], network: string | null): string | null {
+  const runtime = CLEAN_ROOM_RUNTIMES[flavor];
+  if (runtime === null) return null;
+  if (!runtimes.includes(runtime)) return `the ${flavor} Clean Room needs the Docker runtime ${runtime}, and "docker info" does not list it: not installed`;
+  if (flavor === 'microvm' && (network === null || network === 'host' || network.startsWith('container:'))) return 'the microvm Clean Room cannot start yet: Kata cannot join gonogo\'s network (GONOGO_CLEANROOM_NETWORK=container:<gonogo>), and the bridge network mode it needs (GONOGO_CLEANROOM_NETWORK=bridge:<network>) is not built';
+  return null;
+}
+
+/**
+ * A flavor with a runtime is created, then checked, and only then started: `docker create` with the arguments of the run, `docker inspect` of what Docker
+ * really chose (HostConfig.Runtime), and the start is `docker start -a -i <container>`. A container whose runtime is not the one asked for (or that Docker
+ * refused to create) is removed and the start is refused with the reason: never runc in place of the wall that was chosen. `args` is the output of buildDockerArgs.
+ */
+export async function createVerified(args: readonly string[], runtime: string, container: string, env: Env): Promise<string[]> {
+  if (args[0] !== 'run') throw new Error('createVerified takes the arguments of docker run');
+  try {
+    await run(DOCKER_BIN, ['create', ...args.slice(1)], env);
+  } catch (error) {
+    await removeContainer(container, env);
+    throw new Error(`Docker could not create the Clean Room container with the runtime ${runtime}: ${messageOf(error)}`);
+  }
+  let got = '';
+  try {
+    got = (await run(DOCKER_BIN, ['inspect', '--format', '{{.HostConfig.Runtime}}', container], env)).trim();
+  } catch (error) {
+    await removeContainer(container, env);
+    throw new Error(`could not check the runtime of the Clean Room container: ${messageOf(error)}`);
+  }
+  if (got !== runtime) {
+    await removeContainer(container, env);
+    throw new Error(`the Clean Room container has the runtime ${JSON.stringify(got)}, not ${runtime}: it was removed and nothing started`);
+  }
+  return ['start', '-a', '-i', container];
 }
 
 /** The agent's own image, else GONOGO_CLEANROOM_IMAGE, else the project's `ghcr.io/ulm0/gonogo`. */
@@ -116,10 +174,13 @@ export async function checkDocker(env: Env): Promise<void> {
 export const repoRoot = (dir: string, env: Env): Promise<string> => topOf(dir, env, 'Clean Room needs');
 
 /** What the hub asks at hire and edit: null when Docker works and `dir` is in a repository, else why not. */
-export async function checkCleanRoom(dir: string, env: Env): Promise<string | null> {
+export async function checkCleanRoom(dir: string, env: Env, flavor?: CleanRoomFlavor): Promise<string | null> {
   try {
     cleanRoomNetwork(env);
     await checkDocker(env);
+    // a flavor asked for by name: its runtime must be there (the room's default is checked when it is set, and again at every start, where the microVM's missing network mode is refused too)
+    const runtime = flavor === undefined ? null : CLEAN_ROOM_RUNTIMES[flavor];
+    if (flavor !== undefined && runtime !== null && !(await dockerRuntimes(env)).names.includes(runtime)) return `the ${flavor} Clean Room needs the Docker runtime ${runtime}, and "docker info" does not list it: not installed`;
     await repoRoot(dir, env);
     return null;
   } catch (error) {
@@ -164,11 +225,15 @@ export function cleanRoomHostProblem(env: Env, platform: string, inContainer: bo
 }
 
 /** Everything a start needs on disk: Docker checked, the worktree there, the container's home made. `base` is agents/<name>. */
-export async function prepareCleanRoom(agent: AgentRecord, homeDir: string, base: string, env: Env): Promise<CleanRoomPlace> {
+export async function prepareCleanRoom(agent: AgentRecord, homeDir: string, base: string, env: Env, roomDefault?: CleanRoomFlavor): Promise<CleanRoomPlace> {
   const network = cleanRoomNetwork(env);
   const refused = cleanRoomHostProblem(env, process.platform, existsSync('/.dockerenv') || existsSync('/run/.containerenv'), network);
   if (refused !== null) throw new Error(refused);
   await checkDocker(env);
+  // fail closed: a flavor whose runtime is gone, or the microVM, is refused here; the start never falls back to runc
+  const flavor = cleanRoomFlavor(agent.cleanRoom ?? {}, roomDefault);
+  const problem = flavorProblem(flavor, (await dockerRuntimes(env)).names, network);
+  if (problem !== null) throw new Error(problem);
   let hostNet = false;
   if (network !== null) {
     const self = network.slice('container:'.length);
@@ -217,6 +282,8 @@ export const containerUrl = (hubUrl: string): string => hubUrl.replace(/^http:\/
  */
 export function buildDockerArgs(input: {
   image: string;
+  /** The sandbox flavor: gvisor and microvm add `--runtime <name>`, docker adds nothing. */
+  flavor?: CleanRoomFlavor;
   uid: number;
   gid: number;
   place: CleanRoomPlace;
@@ -231,6 +298,7 @@ export function buildDockerArgs(input: {
   }
   return [
     'run', '--rm', '-i', '-t', '--init',
+    ...(CLEAN_ROOM_RUNTIMES[input.flavor ?? 'docker'] === null ? [] : ['--runtime', CLEAN_ROOM_RUNTIMES[input.flavor ?? 'docker'] as string]),
     '--name', place.container,
     '--user', `${input.uid}:${input.gid}`,
     // the container shares gonogo's network namespace (and so its edge network): it needs no capability, and a setuid program in the image must not gain one

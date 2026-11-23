@@ -12,6 +12,23 @@ The `Clean Room` box of the hire and edit form (Claude Code agents only) runs th
 
 The form and each start refuse with the reason when one is missing.
 
+## Sandbox flavor
+
+Three flavors, each a Docker runtime (one table, `CLEAN_ROOM_RUNTIMES` in `src/shared/protocol.ts`):
+
+| Flavor | Docker runtime | `docker run` |
+|---|---|---|
+| `docker` (default) | runc | no `--runtime` |
+| `gvisor` | `runsc` | `--runtime runsc` |
+| `microvm` | `io.containerd.kata.v2` | `--runtime io.containerd.kata.v2` |
+
+The room's default is set in Flight Rules, DEFAULTS (`PUT /api/models/sandbox`, stored in `models.json`; absent means `docker`); each agent can override it in the Clean Room box of its hire or Edit form (`cleanRoom.flavor`; absent means the room's). `GET /api/cleanroom/flavors` says which runtimes `docker info` lists: a flavor without its runtime shows as "not installed" and the server refuses it (400) when it is set. **A start fails closed:** if the runtime is gone at the start, the agent does not start and the console shows the reason; gonogo never falls back to runc. A flavor with its own runtime is not started by `docker run`: the container is created (`docker create`), `docker inspect` must report `HostConfig.Runtime` equal to the runtime asked for, and only then is it started (`docker start -a -i`); a container that reports another runtime is removed and the start refused. If `docker info` does not list a runtime that Docker can still use (a shim such as `io.containerd.kata.v2`), declare it with `GONOGO_CLEANROOM_RUNTIMES=io.containerd.kata.v2` (comma separated): the start then attempts it, and is still refused when Docker refuses or the inspect disagrees.
+
+Changing the room default asks for the password again, and so does editing an agent's Clean Room, and so does hiring a Clean Room agent with a flavor weaker than the room's default ("hiring below the room's sandbox"). A hire request through Relief (`hire_agent`) shows the sandbox flavor on its card, with "(below the room's default)" when it is weaker than the room's.
+
+- **gVisor** uses the same `--network container:<gonogo>` path. Whether that works with runsc is **not verified**.
+- **microVM** (Kata) cannot join another container's network, so a start is refused with a message naming the missing bridge mode (`GONOGO_CLEANROOM_NETWORK=bridge:<network>`). That mode is not built; the flavor is selectable only when its runtime exists. See `docs/cleanroom-microvm-decision.md`.
+
 ## What it does
 
 - **The copy:** at first start gonogo makes a git worktree `~/.gonogo/cleanroom/<name>` on a new branch `gonogo/<name>` from `HEAD` (uncommitted changes are not in it). The agent starts in the matching subfolder. gonogo never removes the worktree or branch.

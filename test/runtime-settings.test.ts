@@ -198,6 +198,18 @@ describe('the route of a room', () => {
     }
   });
 
+  it('the room default sandbox: the flavors say which runtimes Docker lists; one that is not installed is refused (400, field sandbox), docker and null are kept', async () => {
+    const flavors = await call('GET', '/api/cleanroom/flavors');
+    expect(flavors.status).toBe(200);
+    expect(flavors.json).toMatchObject({ available: { docker: true }, default: 'docker' }); // this machine has no gvisor or Kata runtime for the test
+    expect((flavors.json.available as Record<string, boolean>).gvisor).toBe(false);
+    for (const sandbox of ['gvisor', 'microvm']) expect(await call('PUT', '/api/models/sandbox', { sandbox }, 'session'), sandbox).toMatchObject({ status: 400, json: { field: 'sandbox' } });
+    expect(await call('PUT', '/api/models/sandbox', { sandbox: 'warp' }, 'session')).toMatchObject({ status: 400, json: { field: 'sandbox' } });
+    expect((await call('PUT', '/api/models/sandbox', { sandbox: 'docker' }, 'session')).status).toBe(200);
+    expect((await call('PUT', '/api/models/sandbox', { sandbox: null }, 'session')).status).toBe(200);
+    expect((await call('GET', '/api/models')).json).not.toHaveProperty('sandbox');
+  });
+
   it('lists the eight keys with their source, takes a value from a session, and says where it came from after', async () => {
     const list = await call('GET', '/api/settings');
     expect(list.status).toBe(200);

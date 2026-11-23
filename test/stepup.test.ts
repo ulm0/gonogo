@@ -1,6 +1,6 @@
 // Which changes ask for the password again (docs/login-spec.md, step-up): an ALLOW-list for an edit, so a field added later is asked about by default.
 import { describe, expect, it } from 'vitest';
-import { bodyMatters, stepUpReason } from '../src/server/stepup.js';
+import { bodyMatters, needsRoomSandbox, stepUpReason } from '../src/server/stepup.js';
 
 describe('auto-update (it runs code of the publisher unattended)', () => {
   const put = (body: Record<string, unknown> | null) => stepUpReason('PUT', '/api/autoupdate', body);
@@ -74,6 +74,27 @@ describe('a hire', () => {
     expect(hire({ name: 'x', cleanRoom: true })).toBeNull();
     expect(hire({ name: 'x', remoteControl: false })).toBeNull();
     expect(hire({ name: 'x', command: null, keys: null })).toBeNull();
+  });
+});
+
+describe('a hire below the room sandbox', () => {
+  it('a Clean Room flavor weaker than the room default asks; equal, stronger or none does not; the room default is docker when unknown', () => {
+    const hire = (flavor?: string) => stepUpReason('POST', '/api/agents', { name: 'x', cleanRoom: flavor === undefined ? {} : { flavor } }, { roomSandbox: 'gvisor' });
+    expect(hire('docker')).toBe("hiring below the room's sandbox");
+    expect(hire('gvisor')).toBeNull();
+    expect(hire('microvm')).toBeNull();
+    expect(hire()).toBeNull();
+    expect(stepUpReason('POST', '/api/agents', { name: 'x', cleanRoom: { flavor: 'docker' } })).toBeNull();
+    expect(needsRoomSandbox('POST', '/api/agents', { cleanRoom: { flavor: 'docker' } })).toBe(true);
+    expect(needsRoomSandbox('POST', '/api/agents', { cleanRoom: {} })).toBe(false);
+    expect(needsRoomSandbox('PATCH', '/api/agents/ana', { cleanRoom: { flavor: 'docker' } })).toBe(false);
+  });
+});
+
+describe('the room default sandbox', () => {
+  it('changing it asks for the password again, whatever the value (toward docker is a downgrade)', () => {
+    for (const sandbox of ['docker', 'gvisor', 'microvm', null]) expect(stepUpReason('PUT', '/api/models/sandbox', { sandbox })).toBe("changing the sandbox of the room's Clean Room agents");
+    expect(stepUpReason('GET', '/api/cleanroom/flavors', null)).toBeNull();
   });
 });
 

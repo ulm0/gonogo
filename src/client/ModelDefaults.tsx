@@ -4,11 +4,11 @@
  */
 import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { Effort, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
+import type { CleanRoomFlavor, CleanRoomFlavors, Effort, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
 import { POSITIONS } from '../shared/positions.js';
-import { EFFORTS, MODEL_PATTERN, PROVIDERS, providerInfo } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, EFFORTS, MODEL_PATTERN, PROVIDERS, providerInfo } from '../shared/protocol.js';
 import * as api from './api.js';
-import { MODEL_PROVIDERS, publishModelDefaults } from './models.js';
+import { FLAVOR_TEXT, MODEL_PROVIDERS, publishModelDefaults } from './models.js';
 import { useRun } from './WallView.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
@@ -68,7 +68,7 @@ function Row({ label, names, saved, set, onSaved }: { label: string; names: read
 }
 
 /** One select of the DEFAULTS block: the saved value, '' for none, saved at once on a change. */
-function Pick({ label, saved, options, empty, set, onSaved }: { label: string; saved: string; options: ReadonlyArray<{ value: string; text: string }>; empty: string; set(value: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void }): ReactElement {
+function Pick({ label, saved, options, empty, set, onSaved }: { label: string; saved: string; options: ReadonlyArray<{ value: string; text: string; disabled?: boolean }>; empty: string; set(value: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void }): ReactElement {
   const id = useId();
   const { busy, error, run } = useRun();
   return (
@@ -79,7 +79,7 @@ function Pick({ label, saved, options, empty, set, onSaved }: { label: string; s
       <select id={id} className="input" data-fit value={saved} disabled={busy} onChange={(event) => run(async () => onSaved(await set(event.target.value === '' ? null : event.target.value)))}>
         <option value="">{empty}</option>
         {options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option key={o.value} value={o.value} disabled={o.disabled}>
             {o.text}
           </option>
         ))}
@@ -140,6 +140,20 @@ function ModePick({ saved, onSaved }: { saved: PermissionMode | undefined; onSav
   );
 }
 
+/** The room's default sandbox flavor of the Clean Room; one whose runtime Docker does not list shows as not installed and cannot be picked. */
+function SandboxPick({ saved, flavors, onSaved }: { saved: ModelDefaults['sandbox']; flavors: CleanRoomFlavors | null; onSaved(next: ModelDefaults): void }): ReactElement {
+  return (
+    <Pick
+      label="Clean Room sandbox"
+      saved={saved ?? ''}
+      empty={FLAVOR_TEXT.docker}
+      options={CLEAN_ROOM_FLAVORS.filter((f) => f !== 'docker').map((f) => ({ value: f, text: `${FLAVOR_TEXT[f]}${flavors !== null && !flavors.available[f] ? ' (not installed)' : ''}`, disabled: flavors !== null && !flavors.available[f] && saved !== f }))}
+      set={(flavor) => api.setDefaultSandbox(flavor as CleanRoomFlavor | null)}
+      onSaved={onSaved}
+    />
+  );
+}
+
 export function ModelDefaultsBlock(): ReactElement {
   const titleId = useId();
   const [defaults, setDefaults] = useState<ModelDefaults | null>(null);
@@ -147,6 +161,14 @@ export function ModelDefaultsBlock(): ReactElement {
     setDefaults(next);
     publishModelDefaults(next);
   };
+  const [flavors, setFlavors] = useState<CleanRoomFlavors | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.cleanRoomFlavors().then((found) => live && setFlavors(found), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -177,6 +199,7 @@ export function ModelDefaultsBlock(): ReactElement {
           <ul className="rules-model-list">
             <Pick label="Default engine" saved={defaults.engine ?? ''} empty="Claude Code" options={PROVIDERS.filter((p) => p !== 'custom' && p !== 'claude').map((p) => ({ value: p, text: providerInfo(p).label }))} set={(engine) => api.setDefaultEngine(engine as Provider | null)} onSaved={saved} />
             <ModePick saved={defaults.mode} onSaved={saved} />
+            <SandboxPick saved={defaults.sandbox} flavors={flavors} onSaved={saved} />
             <Pick label="Claude Code effort" saved={defaults.effort ?? ''} empty="its own" options={EFFORTS.map((e) => ({ value: e, text: e }))} set={(effort) => api.setDefaultEffort(effort as Effort | null)} onSaved={saved} />
           </ul>
           {defaults.engine !== undefined && (!providerInfo(defaults.engine).hooks || !providerInfo(defaults.engine).mcp) && (
