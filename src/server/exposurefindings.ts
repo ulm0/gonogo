@@ -28,6 +28,8 @@ export interface Finding {
 export interface FindingsInput {
   /** `account` once the login is set up. */
   account: string;
+  /** When the account was set up (0 when there never was one): a new account or a reset is a new situation for `no-login`. */
+  accountEpoch: number;
   mfa: boolean;
   bindHost: string;
   inContainer: boolean;
@@ -67,17 +69,17 @@ export function findingsOf(input: FindingsInput): Finding[] {
   const reachedBeyondLoopback = input.requestHost !== undefined && hostClass(input.requestHost) !== 'loopback';
   const beyond = (!input.inContainer && !LOOPBACK_BIND.includes(input.bindHost)) || input.pages.some((name) => hostClass(name) !== 'loopback') || reachedBeyondLoopback;
   if (!hasLogin && beyond) {
-    add('no-login', 'high', 'Anyone who can reach this address can open gonogo: there is no login yet.', 'Set up the login: open gonogo from this machine or your local network and choose a name and a password.');
+    add('no-login', 'high', 'Anyone who can reach this address can open gonogo: there is no login yet.', 'Set up the login: open gonogo from this machine or your local network and choose a name and a password.', String(input.accountEpoch));
   }
   if (reachedBeyondLoopback && !input.requestHttps) {
-    add('plain-http', 'medium', 'You are on plain http: the password and the token travel in the clear on this network.', 'On a network you trust that is acceptable. For anything wider, use a name with https (see Exposing gonogo safely).');
+    add('plain-http', 'medium', 'You are on plain http: the password and the token travel in the clear on this network.', 'On a network you trust that is acceptable. For anything wider, use a name with https (see Exposing gonogo safely).', input.requestHost ?? '');
   }
   for (const address of [...new Set([...input.pages, ...input.hooks].filter((name) => hostIpRange(name) === 'public'))]) {
     add('public-ip-listed', 'high', `gonogo answers to the public address ${address}: its page is served from the internet by address, without https.`, `Remove --allow-host ${address} (GONOGO_ALLOWED_HOSTS), or put a name with https in front of it.`, address);
   }
   const publicName = input.pages.find((name) => hostIpRange(name) === null && hostClass(name) === 'public');
   if (publicName !== undefined && hasLogin && !input.mfa) {
-    add('public-name-no-mfa', 'high', `${publicName} is a public address and the login has no second factor.`, 'Turn on the second factor (TOTP) in Flight Rules, LOGIN.');
+    add('public-name-no-mfa', 'high', `${publicName} is a public address and the login has no second factor.`, 'Turn on the second factor (TOTP) in Flight Rules, LOGIN.', publicName);
   }
   for (const entry of input.trustedProxies.filter(proxyTooWide)) {
     add('trusted-proxy-wide', 'high', `${entry} is trusted to say who a visitor is, and it is a public address or a range wider than one host: anybody there can pretend to be anyone.`, 'Name only the one host of your own proxy in --trusted-proxy.', entry);

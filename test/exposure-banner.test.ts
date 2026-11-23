@@ -16,6 +16,7 @@ describe('what the banner lists', () => {
     const list = bannerFindings([f('update-checks-off', 'info'), f('no-login', 'high'), f('a', 'medium'), f('version-behind', 'info'), f('b', 'high'), f('c', 'medium')]);
     expect(list.map((x) => x.id)).toEqual(['b', 'a', 'c', 'update-checks-off']);
   });
+    expect(bannerFindings([f('no-login-0123456789ab', 'high'), f('b', 'high')]).map((x) => x.id)).toEqual(['b']);
   it('is red with a high one, else amber, and counts in words', () => {
     expect(bannerTone([f('a', 'high')])).toBe('nogo');
     expect(bannerTone([f('a'), f('b', 'info')])).toBe('amber');

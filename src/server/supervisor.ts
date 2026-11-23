@@ -716,6 +716,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     const newer = newerNow();
     return findingsOf({
       account: auth.state(),
+      accountEpoch: auth.epoch(),
       mfa: auth.mfa().enabled,
       bindHost: options.host,
       inContainer: options.inContainer === true,

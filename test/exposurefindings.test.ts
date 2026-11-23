@@ -9,7 +9,7 @@ import type { FindingsInput } from '../src/server/exposurefindings.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
-const base: FindingsInput = { account: 'account', mfa: true, bindHost: '127.0.0.1', inContainer: false, pages: [], hooks: [], requestHost: '127.0.0.1:7777', requestHttps: false, dockerSocketMounted: false, trustedProxies: [], keys: [], now: 1_800_000_000_000, agents: [], folders: [], updateChecksOff: false, behind: null };
+const base: FindingsInput = { account: 'account', accountEpoch: 0, mfa: true, bindHost: '127.0.0.1', inContainer: false, pages: [], hooks: [], requestHost: '127.0.0.1:7777', requestHttps: false, dockerSocketMounted: false, trustedProxies: [], keys: [], now: 1_800_000_000_000, agents: [], folders: [], updateChecksOff: false, behind: null };
 const ids = (input: Partial<FindingsInput>): string[] => findingsOf({ ...base, ...input }).map((f) => f.kind);
 
 describe('findingsOf', () => {
@@ -158,19 +158,35 @@ describe('the routes of the supervisor', () => {
     expect((await call(s.port, 'GET', '/api/exposure/findings', '127.0.0.1', null)).status).toBe(401);
     expect((await call(s.port, 'GET', '/api/exposure/findings', '127.0.0.1', token)).json).toEqual({ findings: [] });
     const lan = (await call(s.port, 'GET', '/api/exposure/findings', '192.168.1.5', token)).json.findings as Array<{ id: string }>;
-    expect(lan.map((f) => f.id)).toEqual(['no-login', 'plain-http']);
+    expect(lan.map((f) => f.id.replace(/-[0-9a-f]{12}$/, ''))).toEqual(['no-login', 'plain-http']);
+    const plain = lan[1]?.id ?? '';
+    expect(plain).toBe(findingId('plain-http', '192.168.1.5'));
     expect(lan.every((f) => !('kind' in f))).toBe(true);
     expect((await call(s.port, 'POST', '/api/exposure/dismiss', '192.168.1.5', token, { id: 'docker-socket' })).status).toBe(400); // not a finding now
     expect((await call(s.port, 'POST', '/api/exposure/dismiss', '192.168.1.5', token, {})).status).toBe(400);
-    expect((await call(s.port, 'POST', '/api/exposure/dismiss', '192.168.1.5', token, { id: 'plain-http' })).status).toBe(200);
-    expect(readDismissed(home)).toEqual(['plain-http']);
+    expect((await call(s.port, 'POST', '/api/exposure/dismiss', '192.168.1.5', token, { id: plain })).status).toBe(200);
+    expect(readDismissed(home)).toEqual([plain]);
     const after = (await call(s.port, 'GET', '/api/exposure/findings', '192.168.1.5', token)).json.findings as Array<{ id: string }>;
-    expect(after.map((f) => f.id)).toEqual(['no-login']); // plain-http stays hidden, no-login is another id and still shows
+    expect(after.map((f) => f.id)).toEqual([lan[0]?.id]); // plain-http stays hidden, no-login is another id and still shows
     await s.stop();
     const again = await boot();
     const text = (await call(again.port, 'GET', '/api/exposure/findings', '192.168.1.5', again.directorToken as string)).json.findings as Array<{ id: string }>;
-    expect(text.map((f) => f.id)).toEqual(['no-login']);
+    expect(text.map((f) => f.id)).toEqual([lan[0]?.id]);
     expect(existsSync(join(home, EXPOSURE_DISMISSED_FILE))).toBe(true);
-    expect(readFileSync(join(home, EXPOSURE_DISMISSED_FILE), 'utf8')).toContain('plain-http');
+    expect(readFileSync(join(home, EXPOSURE_DISMISSED_FILE), 'utf8')).toContain(plain);
   }, 40_000);
+});
+
+describe('findings that change with the situation', () => {
+  const id = (input: Partial<FindingsInput>, kind: string): string | undefined => findingsOf({ ...base, ...input }).find((f) => f.kind === kind)?.id;
+  it('no-login: a new account (or a reset after one) is a new situation, the same one is not', () => {
+    const open = { account: 'fresh', bindHost: '0.0.0.0' };
+    expect(id({ ...open, accountEpoch: 0 }, 'no-login')).toBe(id({ ...open, accountEpoch: 0 }, 'no-login'));
+    expect(id({ ...open, accountEpoch: 0 }, 'no-login')).not.toBe(id({ ...open, accountEpoch: 1_700_000_000_000 }, 'no-login'));
+  });
+  it('plain-http: by host; public-name-no-mfa: by the public name', () => {
+    expect(id({ requestHost: '192.168.1.5:7777' }, 'plain-http')).not.toBe(id({ requestHost: '192.168.1.6:7777' }, 'plain-http'));
+    expect(id({ mfa: false, pages: ['a.example.com'] }, 'public-name-no-mfa')).not.toBe(id({ mfa: false, pages: ['b.example.com'] }, 'public-name-no-mfa'));
+    expect(id({ mfa: false, pages: ['a.example.com'] }, 'public-name-no-mfa')).toBe(id({ mfa: false, pages: ['a.example.com'] }, 'public-name-no-mfa'));
+  });
 });
