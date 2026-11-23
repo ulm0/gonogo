@@ -1498,6 +1498,15 @@ describe('delivery to each recipient state (5.9)', () => {
       await h.advance(NEEDS_YOU_CLEAR_MS + RECONCILE_TICK_MS * 2);
       expect(h.view('ana').state).not.toBe('needs_you');
     });
+    it('a credential Claude Code rejected is needs_you with its own reason and note, held like no login', async () => {
+      const h = await withAna();
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '', authRejected: true });
+      h.send('user', 'ana');
+      await h.advance(RECONCILE_TICK_MS * 2);
+      expect(h.view('ana')).toMatchObject({ state: 'needs_you', needsKind: 'dialog', needsReason: 'Claude Code rejected its credential: check the token' });
+      expect(h.msg('m1').note).toBe("waiting: ana's credential was rejected");
+      expect(h.typed).toHaveLength(0);
+    });
     it('a generic modal ("Esc to cancel") is never forced, for any sender', async () => {
       const h = await withAna();
       await h.hireRaw('bob');

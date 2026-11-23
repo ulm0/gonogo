@@ -2182,6 +2182,8 @@ export interface ScreenProbe {
   modal?: boolean;
   /** Claude Code's screen says it is not signed in ("Not logged in · Run /login"). Absent from an older pty host. */
   signedOut?: boolean;
+  /** Claude Code's screen says its credential was rejected ("authentication rejected (401)"). Absent from an older pty host. */
+  authRejected?: boolean;
 }
 export interface TitleInfo {
   glyph: TitleGlyph;

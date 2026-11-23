@@ -231,6 +231,10 @@ describe('analyzeScreen', () => {
       expect(analyzeScreen([...box(''), line], 60).signedOut, line).toBe(true);
     }
     expect(analyzeScreen([...box(''), '  ? for shortcuts'], 60).signedOut).toBe(false);
+    for (const line of ['  Remote managed settings failed to load (authentication rejected (401))', '  API Error: 401 authentication_error', '  OAuth token has expired']) {
+      expect(analyzeScreen([...box(''), line], 70), line).toMatchObject({ authRejected: true });
+    }
+    expect(analyzeScreen(['● It said "authentication rejected"', ...box('')], 80).authRejected).toBe(false);
     expect(analyzeScreen(['● The message was "Not logged in · Run /login", so I asked you to log in', ...box('')], 80).signedOut).toBe(false);
     expect(analyzeScreen(['> why does it say Not logged in · Run /login?', ...box('')], 80).signedOut).toBe(false);
   });
@@ -255,7 +259,7 @@ describe('analyzeScreen', () => {
 
   it('finds the idle box, an empty one included (the NBSP must survive)', () => {
     const rows = ['', '  some output', ...box(''), '  ? for shortcuts'];
-    expect(analyzeScreen(rows, 80)).toEqual({ cols: 80, rows: rows.length, promptBox: true, dialog: null, promptText: '', modal: false, signedOut: false });
+    expect(analyzeScreen(rows, 80)).toEqual({ cols: 80, rows: rows.length, promptBox: true, dialog: null, promptText: '', modal: false, signedOut: false, authRejected: false });
   });
 
   it('reports a placeholder or typed text as information, trimmed', () => {
@@ -277,7 +281,7 @@ describe('analyzeScreen', () => {
     expect(analyzeScreen([RULE_CHAR.repeat(19), `${PROMPT_GLYPH}${NBSP}`, RULE_CHAR.repeat(19)], 40).promptBox).toBe(false);
     expect(analyzeScreen([rule(), `${PROMPT_GLYPH}${NBSP}hello`], 40).promptBox).toBe(false);
     expect(analyzeScreen([`${PROMPT_GLYPH}${NBSP}hello`, rule()], 40).promptBox).toBe(false);
-    expect(analyzeScreen([], 40)).toEqual({ cols: 40, rows: 0, promptBox: false, dialog: null, promptText: null, modal: false, signedOut: false });
+    expect(analyzeScreen([], 40)).toEqual({ cols: 40, rows: 0, promptBox: false, dialog: null, promptText: null, modal: false, signedOut: false, authRejected: false });
   });
 
   it('takes the lowest box when an older echo also sits between rules', () => {
@@ -1215,7 +1219,7 @@ describe('terminal host with a real pty', () => {
       await until(() => host.screen('a')?.promptBox === true, 'the parsed box');
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.every((probe) => probe === null)).toBe(true); // the listener runs right after mirror.write, before it is parsed
-      expect(host.screen('a')).toEqual({ cols: 120, rows: 40, promptBox: true, dialog: null, promptText: '', modal: false, signedOut: false });
+      expect(host.screen('a')).toEqual({ cols: 120, rows: 40, promptBox: true, dialog: null, promptText: '', modal: false, signedOut: false, authRejected: false });
     });
 
     it('survives a handler that throws: the others still run, the host keeps working, an unsubscribed handler is silent', async () => {

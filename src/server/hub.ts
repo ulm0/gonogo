@@ -145,6 +145,7 @@ import {
   SESSION_MISSING_TEXT,
   STARTUP_DIALOG_REASON,
   SIGNED_OUT_REASON,
+  AUTH_REJECTED_REASON,
   STARTUP_READY_TIMEOUT_MS,
   STARTUP_WAVE,
   STARTUP_WAVE_TIMEOUT_MS,
@@ -491,6 +492,8 @@ interface Rt {
   stuckLogged: string | null;
   /** The screen says Claude Code is not signed in: the agent is held at needs_you and its mail waits for the login. */
   signedOut: boolean;
+  /** The credential Claude Code has was refused: the same hold as no login, with its own words. */
+  authRejected: boolean;
   /** The last tool call (name and input) and how many times in a row it came, for the agent itself ('main') and for each subagent by its agent_id (docs/subagents-spec.md). */
   repeat: Map<string, { sig: string; count: number }>;
   /** Times of failed tool calls (the same keys) and of API errors in their windows, oldest first. */
@@ -683,6 +686,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       stuckAlerted: null,
       stuckLogged: null,
       signedOut: false,
+      authRejected: false,
       repeat: new Map(),
       toolFailAt: new Map(),
       subagents: new Map(),
@@ -996,7 +1000,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       case 'working':
         return `waiting: ${name} is working`;
       case 'needs_you':
-        return rt.signedOut ? `waiting: ${name} isn't signed in` : `waiting: ${name} needs you`;
+        return rt.authRejected ? `waiting: ${name}'s credential was rejected` : rt.signedOut ? `waiting: ${name} isn't signed in` : `waiting: ${name} needs you`;
       case 'idle':
         return 'waiting: about to type the pointer';
       case 'starting':
@@ -1368,8 +1372,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const probe = screenOf(rt);
       if (probe === null) return;
       // a pointer typed into a console with no login answers nothing: the mail waits for the Director's /login
-      if (probe.signedOut === true) {
-        setWaitNotes(rt, `waiting: ${name} isn't signed in`);
+      if (probe.signedOut === true || probe.authRejected === true) {
+        setWaitNotes(rt, probe.authRejected === true ? `waiting: ${name}'s credential was rejected` : `waiting: ${name} isn't signed in`);
         return;
       }
       const notReady = `waiting: ${name} is not ready for input`;
@@ -1690,10 +1694,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const info = titleOf(rt);
     const probe = screenOf(rt);
     // Claude Code with no login looks idle (a box, a quiet title) and answers nothing: it is the Director's to fix, not a ready agent
-    rt.signedOut = probe?.signedOut === true;
+    rt.authRejected = probe?.authRejected === true;
+    rt.signedOut = probe?.signedOut === true || rt.authRejected;
     if (rt.signedOut && (rt.state === 'starting' || rt.state === 'idle')) {
-      log.warn(`${rt.record.name} is not signed in to Claude Code`);
-      setState(rt, 'needs_you', { kind: 'dialog', reason: SIGNED_OUT_REASON });
+      log.warn(`${rt.record.name} ${rt.authRejected ? 'has a credential that Claude Code rejected' : 'is not signed in to Claude Code'}`);
+      setState(rt, 'needs_you', { kind: 'dialog', reason: rt.authRejected ? AUTH_REJECTED_REASON : SIGNED_OUT_REASON });
     }
     // How long the glyph has disagreed with the state, not how long the glyph class has existed: a Stop sets idle at
     // once while the title still shows the working glyph for 10 to 30 ms, and the glyph's age is the whole turn.

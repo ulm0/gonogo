@@ -32,6 +32,7 @@ import {
   DIALOG_PATTERNS,
   GENERIC_DIALOG_PATTERN,
   SIGNED_OUT_PATTERN,
+  AUTH_REJECTED_PATTERN,
   ENTER,
   EXIT_TAIL_CHARS,
   EXIT_TAIL_LINES,
@@ -75,6 +76,7 @@ const isRule = (row: string): boolean => RULE_RUN.test(row) || RULE_EDGE.test(ro
 const BOX_PREFIX = PROMPT_GLYPH + NBSP;
 const GENERIC_DIALOG = new RegExp(GENERIC_DIALOG_PATTERN, 'i');
 const SIGNED_OUT = new RegExp(SIGNED_OUT_PATTERN, 'i');
+const AUTH_REJECTED = new RegExp(AUTH_REJECTED_PATTERN, 'i');
 const DIALOGS = DIALOG_PATTERNS.map(({ kind, source }) => ({ kind, regex: new RegExp(source) }));
 
 /** The lowest row that is a prompt row between two rules, or -1. The lowest is the live box, not an echo in the transcript. */
@@ -113,6 +115,7 @@ export function analyzeScreen(rows: readonly string[], cols: number): ScreenProb
     modal: boxRow < 0 && lines.some((line) => GENERIC_DIALOG.test(line)),
     // a line of the transcript that quotes the words (the assistant's, or the Director's) is not a state
     signedOut: lines.some((line) => SIGNED_OUT.test(line) && !/^\s*[●⏺>]/.test(line)),
+    authRejected: lines.some((line) => AUTH_REJECTED.test(line) && !/^\s*[●⏺>]/.test(line)),
     promptText: boxRow >= 0 ? rows[boxRow].slice(BOX_PREFIX.length).trim() : null,
   };
 }

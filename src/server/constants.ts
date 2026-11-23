@@ -303,6 +303,9 @@ export const GENERIC_DIALOG_PATTERN = '(?:Enter|↵) to (?:confirm|select|contin
 export const STARTUP_DIALOG_REASON = 'first run of Claude Code: finish its setup in the console';
 /** Claude Code says on its screen that it has no login ("Not logged in · Run /login", "Invalid API key · Please run /login"). Looked for on every row but the input box. */
 export const SIGNED_OUT_PATTERN = 'Not logged in\\b[^\\n]{0,12}/login|Please run /login|Run /login to';
+/** A credential Claude Code has and the server refuses ("Remote managed settings failed to load (authentication rejected (401))", "OAuth token has expired"). */
+export const AUTH_REJECTED_PATTERN = 'authentication rejected|authentication_error|OAuth token has (?:expired|been revoked)|Invalid bearer token';
+export const AUTH_REJECTED_REASON = 'Claude Code rejected its credential: check the token';
 export const SIGNED_OUT_REASON = "Claude Code isn't signed in: open this console and run /login (or set the credential)";
 /** needs_you reason when a dialog is on screen but no PermissionRequest hook announced it. */
 export const SCREEN_DIALOG_REASON = 'a dialog is waiting in the terminal: answer it there';
