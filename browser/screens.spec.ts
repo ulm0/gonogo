@@ -420,7 +420,11 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
   await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
-  await view(page, group, t('mission with a link'), () => page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 }), true);
+  await view(page, group, t('mission with a link'), async () => {
+    await page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 });
+    // the links are read when the view opens: wait for the line of the mission's link
+    await page.locator('.dk-link').first().waitFor({ timeout: 5000 });
+  }, true);
   await view(page, group, t('launch window'), () => open(page, 'Launch Window'), true);
   if (full) await view(page, group, 'launch window history', () => page.getByRole('button', { name: /^History of/ }).first().click({ timeout: 3000 }), true);
   await view(page, group, t('flight plan'), () => open(page, 'Flight Plan'), true);
