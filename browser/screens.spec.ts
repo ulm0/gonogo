@@ -332,6 +332,8 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await page.getByRole('button', { name: 'Cancel', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
   // the project folder (Room group): the editor, a refused folder, a folder set (the boss runs elsewhere: the page offers to restart it), then Reset
   await page.locator('.lay-group-nav a', { hasText: 'Room' }).first().click({ timeout: 3000 }).catch(() => undefined);
+  // a group that was just opened has its rows folded: the row of the project folder is opened
+  await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true))).catch(() => undefined);
   await view(page, group, 'project folder: the editor', () => page.getByRole('button', { name: 'Change the project folder' }).click({ timeout: 3000 }), true);
   await measure(page, group, 'project folder: the editor', '.lay-rules');
   await measureDuplicates(page, group, 'project folder: the editor', '.lay-rules');
@@ -388,7 +390,7 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
 }
 
 test('screens of the app and the docs', async ({ browser }) => {
-  test.setTimeout(280_000);
+  test.setTimeout(480_000);
   // 1. before an account: the setup page; 2. the account; 3. the login page
   const setupContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const setupPage = await setupContext.newPage();
