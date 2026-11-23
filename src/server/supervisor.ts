@@ -37,7 +37,7 @@ import { isPushPath, pushApi } from './pushhttp.js';
 import { addRoom, updateRoom, loadRooms, recordMainHome, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { exposureProblem, parsePublicUrl } from './exposure.js';
-import { splitAllowed } from './hosts.js';
+import { isIpLiteralHost, splitAllowed } from './hosts.js';
 import { forbiddenHostText } from './forbiddenhost.js';
 import { hostName } from './web.js';
 
@@ -576,7 +576,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   const hostOk = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
-    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || allowedNames.has(name));
+    // a non-public IP address (loopback, private, link-local, CGNAT) is accepted: nothing needs configuring to reach gonogo by the address of the computer; a NAME or a public address needs the list
+    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || allowedNames.has(name) || isIpLiteralHost(header));
   };
 
   /** Requests that came in on the local socket. */

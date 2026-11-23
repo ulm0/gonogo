@@ -65,3 +65,9 @@ docker compose logs gonogo
 ```
 
 Update: `docker compose pull && docker compose up -d` (own build: tag it `ghcr.io/ulm0/gonogo:latest` first). **Every compose command stops without `GONOGO_DATA`**. Paths, network and socket details: [Clean Room](../features/clean-room.md#gonogo-in-a-container-compose).
+
+## Reaching it from another device
+
+Open `http://<the address of this computer>:7777` from any device on your network: the addresses of a home or office network (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`), link-local ones and the CGNAT ones that Tailscale gives need no configuration. A name (`gonogo.lan`, a name behind a proxy) and a public IP address must be listed in `GONOGO_ALLOWED_HOSTS`; without it the answer is a 403 that says so, so that `docker compose up -d` on a server never serves the page to the internet by its address. An address is safe to accept because a page of another site can only reach gonogo by a name (the DNS rebinding the Host check is for); the login and its rules by the kind of address still apply.
+
+**On a LAN, set up the account first** (the page asks, on the first visit). For anything wider than your own network, use a name with https: plain http sends the password and the token in the clear, and the page says so on a private address.
