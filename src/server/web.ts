@@ -9,8 +9,10 @@ import type { Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
-import { PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, CLEAN_ROOM_RUNTIMES, PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
+  CleanRoomFlavor,
+  CleanRoomFlavors,
   AuditRecord,
   UpdateView,
   AutoUpdateView,
@@ -108,6 +110,8 @@ import type { FeatureStore } from './features.js';
 import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
+import type { Egress } from './egress.js';
+import type { EgressSettingsStore } from './egresssettings.js';
 import type { RulesStore } from './rules.js';
 import { ROUTE_BODY_MAX_BYTES, ROUTE_KEY_HEADER, sameKey } from './telegramroute.js';
 import type { Rollout } from './rollout.js';
@@ -206,7 +210,9 @@ export interface WebOptions {
   projectFolder?: { store: ProjectFolder; audit: AuditRecord; boss(): { name: string; dir: string } | null; /** The folder in force changed: tell the open pages (the hire form's default). */ changed?(): void };
   settings?: { store: Settings; apply(): void; audit: AuditRecord; announce(): void };
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
-  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort' | 'setMode'>;
+  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort' | 'setMode' | 'setSandbox' | 'sandbox'>;
+  /** Clean Room: which sandbox flavors this Docker has a runtime for. */
+  cleanRoomFlavors?: () => Promise<CleanRoomFlavors>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
@@ -232,6 +238,10 @@ export interface WebOptions {
   ritualTemplate?: RitualTemplateStore;
   /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
   coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
+  /** Egress (egress.ts): the proxy a Clean Room agent's Anthropic requests go through; absent in tests that do not need it (the route answers 404). */
+  egress?: Pick<Egress, 'handle'>;
+  /** The room's egress setting (egresssettings.ts); absent in tests that do not need it (the routes answer 404). Writing it needs a step-up. */
+  egressSettings?: Pick<EgressSettingsStore, 'view' | 'set'>;
   /** Telegram and several rooms: the key of this install and what to do with an update another room offers (telegramroute.ts). Absent outside a supervisor: the route answers 404. */
   telegramRoute?: { key: string; take(body: Record<string, unknown>): { claimed: boolean } };
   /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */
@@ -315,7 +325,7 @@ interface Client {
   closed: boolean;
 }
 
-type RouteKind = 'api' | 'hook' | 'mcp' | 'uplink' | 'dock' | 'ws' | 'static';
+type RouteKind = 'api' | 'hook' | 'mcp' | 'egress' | 'uplink' | 'dock' | 'ws' | 'static';
 
 interface ApiRoute {
   allow: readonly string[];
@@ -380,6 +390,8 @@ function classify(segments: string[]): RouteKind {
       return 'hook';
     case 'mcp':
       return 'mcp';
+    case 'egress':
+      return 'egress';
     case 'uplink':
       return 'uplink';
     case 'dock':
@@ -395,6 +407,7 @@ const ALLOW_BY_KIND: Record<RouteKind, string> = {
   api: 'GET, POST, PATCH, DELETE',
   hook: 'POST',
   mcp: 'POST',
+  egress: 'GET, HEAD, POST, DELETE',
   uplink: 'POST',
   dock: 'GET, POST',
   ws: 'GET',
@@ -702,7 +715,7 @@ export function createWebServer(options: WebOptions): WebServer {
   const originAllowed = (req: IncomingMessage, kind: RouteKind): boolean => {
     const origin = req.headers.origin;
     if (origin === undefined) return true;
-    if (kind === 'hook' || kind === 'mcp' || kind === 'uplink' || kind === 'dock') return false;
+    if (kind === 'hook' || kind === 'mcp' || kind === 'egress' || kind === 'uplink' || kind === 'dock') return false;
     let url: URL;
     try {
       url = new URL(origin);
@@ -878,6 +891,11 @@ export function createWebServer(options: WebOptions): WebServer {
   const matchApi = (s: string[]): ApiRoute | null => {
     if (s.length === 2 && s[1] === 'state') {
       return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, snapshot()) };
+    }
+    if (s.length === 3 && s[1] === 'cleanroom' && s[2] === 'flavors') {
+      const flavors = options.cleanRoomFlavors;
+      if (!flavors) return null;
+      return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, await flavors()) };
     }
     if (s.length === 2 && s[1] === 'engines') {
       const engines = options.engines;
@@ -1621,6 +1639,23 @@ export function createWebServer(options: WebOptions): WebServer {
           },
         };
       }
+      // PUT /api/models/sandbox: the room's default Clean Room flavor; a flavor whose runtime Docker does not list is refused
+      if (s.length === 3 && s[2] === 'sandbox') {
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            const flavor = body.sandbox;
+            const probe = options.cleanRoomFlavors;
+            if (typeof flavor === 'string' && flavor !== 'docker' && probe) {
+              const have = await probe();
+              if ((CLEAN_ROOM_FLAVORS as readonly string[]).includes(flavor) && !have.available[flavor as CleanRoomFlavor]) return sendApiError(res, 400, `the ${flavor} Clean Room needs the Docker runtime ${String(CLEAN_ROOM_RUNTIMES[flavor as CleanRoomFlavor])}, and Docker does not list it: not installed`, 'bad_request', 'sandbox');
+            }
+            sendJson(res, 200, await changed(models.setSandbox(flavor)));
+          },
+        };
+      }
       // PUT /api/models/mode: the room's default permission mode; bypassPermissions needs confirmBypass: true, as a hire does
       if (s.length === 3 && s[2] === 'mode') {
         return {
@@ -1821,6 +1856,18 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!viaSocket.has(req) || !sameKey(typeof given === 'string' ? given : undefined, route.key)) return sendApiError(res, 404, 'not found', 'not_found');
           const body = await jsonObject(req, res, ROUTE_BODY_MAX_BYTES);
           if (body) sendJson(res, 200, route.take(body));
+        },
+      };
+    }
+    if (s[1] === 'egress' && s.length === 2) {
+      const egress = options.egressSettings;
+      if (!egress) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, egress.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await egress.set(body));
         },
       };
     }
@@ -2258,7 +2305,7 @@ export function createWebServer(options: WebOptions): WebServer {
     }
     const segments = parseTarget(req.url);
     const kind = segments === null ? null : classify(segments);
-    if (viaContainer && kind !== 'hook' && kind !== 'mcp') {
+    if (viaContainer && kind !== 'hook' && kind !== 'mcp' && kind !== 'egress') {
       sendText(res, 403, 'forbidden host');
       return;
     }
@@ -2286,6 +2333,11 @@ export function createWebServer(options: WebOptions): WebServer {
         return;
       case 'mcp':
         if (segments.length === 1) await mcpHandler(req, res);
+        else sendNotFound(res);
+        return;
+      case 'egress':
+        // the token in the path is the whole credential (egress.ts); nothing else of the request is looked at here
+        if (options.egress) await options.egress.handle(req, res);
         else sendNotFound(res);
         return;
       case 'ws':

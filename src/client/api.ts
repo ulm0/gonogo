@@ -69,6 +69,8 @@ import type {
   Effort,
   ModelDefaults,
   PermissionMode,
+  CleanRoomFlavor,
+  CleanRoomFlavors,
   Claim,
   KnowledgeRepo,
   KnowledgeView,
@@ -93,6 +95,7 @@ import type {
   AutoUpdateWindow,
   SubagentSettings,
   CoauthorSettings,
+  EgressSettings,
   RulesView,
   HoldAllResult,
   ResumeAllResult,
@@ -621,6 +624,19 @@ export async function setDefaultEffort(effort: Effort | null): Promise<ModelDefa
   return toModelDefaults(await call('PUT', '/models/effort', { effort }));
 }
 
+/** Which Clean Room sandbox flavors this Docker has a runtime for, and the room's default. */
+export async function cleanRoomFlavors(): Promise<CleanRoomFlavors> {
+  const value = asRecord(await call('GET', '/cleanroom/flavors'));
+  const available = asRecord(value?.available);
+  if (value === null || available === null) throw failure('The server sent an answer gonogo does not understand.');
+  return value as unknown as CleanRoomFlavors;
+}
+
+/** The room's default Clean Room sandbox flavor; null goes back to docker. A flavor whose runtime Docker does not list is refused. */
+export async function setDefaultSandbox(sandbox: CleanRoomFlavor | null): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', '/models/sandbox', { sandbox }));
+}
+
 /** The room's default permission mode for hires that name none; null goes back to ask. bypassPermissions is refused without `confirmBypass`. */
 export async function setDefaultMode(mode: PermissionMode | null, confirmBypass = false): Promise<ModelDefaults> {
   return toModelDefaults(await call('PUT', '/models/mode', { mode, ...(confirmBypass ? { confirmBypass: true } : {}) }));
@@ -713,6 +729,19 @@ export async function roomsUpdate(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Egress: whether a Clean Room agent holds the Anthropic API key (docs/features/egress.md). A change asks for a step-up. */
+const egressOf = (value: unknown): EgressSettings => {
+  const record = asRecord(value);
+  if (record === null || typeof record.anthropic !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as EgressSettings;
+};
+export async function egressSettings(): Promise<EgressSettings> {
+  return egressOf(await call('GET', '/egress'));
+}
+export async function setEgressSettings(patch: EgressSettings): Promise<EgressSettings> {
+  return egressOf(await call('PUT', '/egress', patch));
 }
 
 /** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */

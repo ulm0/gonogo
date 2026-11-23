@@ -73,7 +73,7 @@ function item(id: string, from: string, to: string, extra: Partial<ActivityItem>
   };
 }
 
-const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', offServers: [], offSkills: [], cleanRoom: false, worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
+const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', offServers: [], offSkills: [], cleanRoom: false, sandbox: '', egress: '', worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
 
 describe('staffing a seat, no position or a custom command', () => {
   it('picking a position after a custom command makes the agent a Claude one and replaces the placeholder role', () => {
@@ -306,6 +306,30 @@ describe('the Clean Room box', () => {
     expect(hireRequest(base)).not.toHaveProperty('cleanRoom');
     expect(cleanRoomOf(on, null)).toEqual({});
     expect(cleanRoomOf(base, null)).toBeNull();
+  });
+
+  it('carries the sandbox flavor: empty is the room\'s default (no field), a flavor replaces the saved one and keeps the image', () => {
+    expect(cleanRoomOf({ ...on, sandbox: 'gvisor' }, null)).toEqual({ flavor: 'gvisor' });
+    expect(hireRequest({ ...on, sandbox: 'microvm' })).toMatchObject({ cleanRoom: { flavor: 'microvm' } });
+    const saved = { cleanRoom: { image: 'mine', flavor: 'gvisor' as const } } as AgentView;
+    expect(cleanRoomOf({ ...on, sandbox: '' }, saved)).toEqual({ image: 'mine' });
+    expect(cleanRoomOf({ ...on, sandbox: 'docker' }, saved)).toEqual({ image: 'mine', flavor: 'docker' });
+    expect(initialValues({ mode: 'edit', name: 'ana' }, { ...saved, name: 'ana' } as AgentView, { ana: saved }, '/work').sandbox).toBe('gvisor');
+  });
+
+  it('the API key box: follow the room (nothing sent), keep it out, or leave it in; the stored image stays', () => {
+    expect(cleanRoomOf({ ...on, egress: 'on' }, null)).toEqual({ egress: true });
+    expect(cleanRoomOf({ ...on, egress: 'off' }, null)).toEqual({ egress: false });
+    expect(hireRequest({ ...on, egress: 'on' })).toMatchObject({ cleanRoom: { egress: true } });
+    const stored = agent('ana', 1, { cleanRoom: { image: 'my/image', egress: true } });
+    const values = initialValues({ mode: 'edit', name: 'ana' }, stored, { ana: stored }, '/cwd');
+    expect(values.egress).toBe('on');
+    expect(editRequest(values, stored, true)).toBeNull();
+    expect(cleanRoomOf({ ...values, egress: '' }, stored)).toEqual({ image: 'my/image' });
+    expect(editRequest({ ...values, egress: 'off' }, stored, true)).toEqual({ cleanRoom: { image: 'my/image', egress: false } });
+    expect(editRequest({ ...values, egress: '' }, stored, true)).toEqual({ cleanRoom: { image: 'my/image' } });
+    // for an agent that has none of it, the box starts on "follow the room"
+    expect(initialValues({ mode: 'edit', name: 'bo' }, agent('bo', 1, { cleanRoom: {} }), {}, '/cwd').egress).toBe('');
   });
 
   it('is never sent for another engine, and turning to one clears it', () => {

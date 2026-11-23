@@ -2958,6 +2958,28 @@ describe('end to end with the stand-in agent', () => {
     await again.run.stop();
   }, 120_000);
 
+  it('Clean Room egress: a switch, off by default, saved by the API, kept across a restart, in the Black Box as on or off, and out of an agent\'s reach', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    expect((await api(h, 'GET', '/api/egress')).body).toEqual({ anthropic: false });
+    expect((await api(h, 'PUT', '/api/egress', { anthropic: true })).body).toEqual({ anthropic: true });
+    expect((await stat(join(h.home, 'egress.json'))).mode & 0o777).toBe(0o600);
+    for (const bad of [{ anthropic: 'yes' }, {}, { anthropic: true, hosts: ['evil.example'] }]) expect((await api<ApiError>(h, 'PUT', '/api/egress', bad)).status, JSON.stringify(bad)).toBe(400);
+    expect((await api(h, 'GET', '/api/egress')).body).toEqual({ anthropic: true });
+    const events = (await api<AuditView>(h, 'GET', '/api/black-box')).body.events.map((e) => e.text).join('\n');
+    expect(events).toContain('Director set Clean Room egress for the Anthropic key on');
+    // an agent's token reaches no route of the page's API
+    const agentToken = await readToken(h, 'flight');
+    expect((await api(h, 'GET', '/api/egress', undefined, agentToken)).status).toBe(401);
+    expect((await api(h, 'PUT', '/api/egress', { anthropic: false }, agentToken)).status).toBe(401);
+    await h.run.stop();
+    const again = await startServer({ home: h.home });
+    expect((await api(again, 'GET', '/api/egress')).body).toEqual({ anthropic: true });
+    // the proxy route is there for a container, and a token that was never issued is 403 (no key, no upstream)
+    expect((await api(again, 'POST', `/egress/${'a'.repeat(64)}/anthropic/v1/messages`, {}, null)).status).toBe(403);
+    await again.run.stop();
+  }, 120_000);
+
   it('Room rules: one text, saved by the API, kept across a restart, in the Black Box by length only, and out of an agent\'s reach', async () => {
     const h = await startServer();
     await waitState(h, 'flight', 'idle');

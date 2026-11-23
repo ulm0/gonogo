@@ -3,7 +3,7 @@
  * A console's own model wins; the room's applies when it has none, at the next start.
  */
 import { useEffect, useSyncExternalStore } from 'react';
-import type { ModelDefaults, Provider } from '../shared/protocol.js';
+import type { CleanRoomFlavor, ModelDefaults, Provider } from '../shared/protocol.js';
 import { PROVIDERS, providerInfo } from '../shared/protocol.js';
 import { effectiveModel as startModel } from '../shared/details.js';
 import * as api from './api.js';
@@ -64,3 +64,6 @@ export function useModelDefaults(): ModelDefaults | null {
     () => shared,
   );
 }
+
+/** The Clean Room flavors as a person reads them, with the runtime each needs. */
+export const FLAVOR_TEXT: Readonly<Record<CleanRoomFlavor, string>> = { docker: 'Docker (runc)', gvisor: 'gVisor (runsc)', microvm: 'microVM (Kata)' };

@@ -35,7 +35,7 @@ import { createSettings, globalSetting } from './settings.js';
 import { checkFolder, createProjectFolder, writeFolder } from './projectfolder.js';
 import type { SettingKey } from './settings.js';
 import { createRitualTemplate } from './ritual.js';
-import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, EGRESS_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, lanAddresses, stationName } from './docking.js';
@@ -50,7 +50,7 @@ import { createProposalStore } from './knowledgeproposals.js';
 import { createKnowledgeStore } from './knowledgestore.js';
 import { parseLegs } from './knowledgeparse.js';
 import { createSafeGit } from './safegit.js';
-import { checkCleanRoom } from './cleanroom.js';
+import { checkCleanRoom, cleanRoomFlavors } from './cleanroom.js';
 import { checkWorktree, removeWorktree, worktreeBranch, worktreePath, worktreeStatus } from './worktree.js';
 import { acquireSupervisorLock, openHome } from './home.js';
 import { createLauncher, parseAgentCmd } from './launcher.js';
@@ -101,6 +101,8 @@ import { createStartupStore } from './startup.js';
 import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { createRules } from './rules.js';
+import { createEgress } from './egress.js';
+import { createEgressSettings } from './egresssettings.js';
 import { runKnowledgeCli } from './knowledgecli.js';
 import { doorTable } from './door.js';
 import { MANAGERS, realHost, serviceControl, serviceInstall, serviceStatus, serviceUninstall, type Manager, type ServiceOptions } from './service.js';
@@ -754,6 +756,17 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await startupStore.load();
     const coauthorStore = createCoauthorStore({ dir: home.dir, log: log.child('coauthor') });
     await coauthorStore.load();
+    const egressSettings = createEgressSettings({ dir: home.dir, log: log.child('egress') });
+    await egressSettings.load();
+    const egress = createEgress({
+      // a live reload keeps the tokens of the agents that keep running (hashes only, 0600, in the run folder); the key of such an agent is found again by its name
+      file: settings.ptyHost ? join(runDir(home.dir), 'egress-tokens.json') : null,
+      keyOf: (agent) => {
+        const real = { ...roomKeys.values(true), ...clearance.values(agent) }.ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY;
+        return typeof real === 'string' && real.trim() !== '' ? real : undefined;
+      },
+      log: log.child('egress'),
+    });
     const rulesStore = createRules({ dir: home.dir, now: Date.now, log: log.child('rules') });
     await rulesStore.load();
     const subagentStore = createSubagentStore({ dir: home.dir, log: log.child('subagents') });
@@ -770,12 +783,14 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
       rules: () => rulesStore.text(),
+      egress: { enabled: () => egressSettings.view().anthropic, issue: (agent, key) => egress.issue(agent, key), revoke: (agent) => egress.revoke(agent), basePath: (token) => egress.basePath(token) },
       // one line at each start, a count and fixed words: nothing from a repository reaches the role text. Waits for the checks at most 3 s.
       knowledge: async (name) => {
         const stale = await Promise.race([staleFor(name, true), new Promise<number>((resolve) => setTimeout(() => resolve(0), KNOWLEDGE_START_MS).unref())]).catch(() => 0);
         return knowledgeLine(stale);
       },
       defaultEffort: () => modelDefaults.effort(),
+      defaultSandbox: () => modelDefaults.sandbox(),
       defaultPermissions: () => permissionDefaults.get(),
       payloadDefaults: () => payloadDefaults.get(),
       subagents: () => subagentStore.view(),
@@ -939,7 +954,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         if (!info.isDirectory()) return { ok: false, error: `not a directory: ${p}` };
         return { ok: true, path: resolve(p) };
       },
-      checkCleanRoom: (dir) => checkCleanRoom(dir, env),
+      checkCleanRoom: (dir, flavor) => checkCleanRoom(dir, env, flavor),
       checkWorktree: (dir) => checkWorktree(dir, env),
       loadRoster: async () => home.loadRoster(),
       startup: () => startupStore.view(),
@@ -1247,6 +1262,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       hub: hubInstance,
       defaultEngine: () => modelDefaults.engine(),
       defaultMode: () => modelDefaults.mode(),
+      defaultSandbox: () => modelDefaults.sandbox(),
       checkDirectory: io.checkDirectory,
       checkWorktree: (dir) => checkWorktree(dir, env),
       now: io.now,
@@ -1475,6 +1491,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       coauthor: audited(coauthorStore, blackBox.record, COAUTHOR_AUDIT),
       ...(routeKey === '' ? {} : { telegramRoute: { key: routeKey, take: (body: Record<string, unknown>) => takeOffer(body, { owns: (u) => uplinks.ownsReply(u), deliver: (u) => uplinks.deliverPolled(u, '') }) } }),
       rules: audited(rulesStore, blackBox.record, RULES_AUDIT),
+      egress,
+      egressSettings: audited(egressSettings, blackBox.record, EGRESS_AUDIT),
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),
       relief: audited(relief, blackBox.record, RELIEF_AUDIT),
       rollout,
@@ -1486,6 +1504,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
       },
       engines: () => checkEngines(env),
+      cleanRoomFlavors: () => cleanRoomFlavors(env, modelDefaults.sandbox()),
       hangar: createHangar(roots),
       worktrees: {
         has: (name) => hubInstance.views().some((v) => v.name === name && v.worktree !== null),
@@ -1585,6 +1604,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('subagents close', () => subagentStore.close());
       await step('coauthor close', () => coauthorStore.close());
       await step('rules close', () => rulesStore.close());
+      await step('egress settings close', () => egressSettings.close());
       await step('startup close', async () => {
         await startupStore.close();
         await runState.close();

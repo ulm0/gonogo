@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, ReactNode } from 'react';
-import { EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, keyWarning, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
-import type { AgentView, EngineCheck, PermissionMode, PhoneMode, Provider } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, keyWarning, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
+import type { AgentView, CleanRoomFlavors, EngineCheck, PermissionMode, PhoneMode, Provider } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
 import { PermissionsEditor } from './PermissionsEditor.js';
 import { effectiveEffort, effectiveModel as startModel } from '../shared/details.js';
-import { modelNote, useModelDefaults } from './models.js';
+import { FLAVOR_TEXT, modelNote, useModelDefaults } from './models.js';
 import { hasServer, mergeServer } from './registry.js';
 import { RegistryPicker } from './RegistryPicker.js';
 import {
@@ -248,6 +248,14 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [moreOpen, setMoreOpen] = useState(() => form.mode === 'edit' && differsFromDefault(values, Object.keys(current?.keys ?? {}).length));
   const [checks, setChecks] = useState<EngineCheck[]>([]);
   const roomModels = useModelDefaults();
+  const [flavors, setFlavors] = useState<CleanRoomFlavors | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.cleanRoomFlavors().then((found) => live && setFlavors(found), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   // The room's default engine preselects a new hire, once the defaults are known and only while the form is still as it opened.
   const preselected = useRef(false);
   useEffect(() => {
@@ -656,6 +664,22 @@ function Staff({ form }: { form: Target }): ReactElement {
       </button>
     </section>
   );
+  const sandboxSelect = values.cleanRoom && (
+    <Control id={`${id}-sandbox`} label="Sandbox" hint={`How the container is walled off. Docker is the default wall; gVisor and a microVM need their runtime installed in Docker (docker info lists it). The room's default is ${FLAVOR_TEXT[roomModels?.sandbox ?? 'docker']}. gVisor with gonogo's container network is not verified yet. The microVM cannot start yet: it needs a network mode gonogo does not have.`}>
+      <select id={`${id}-sandbox`} className="input" value={values.sandbox} onChange={(event) => change({ sandbox: event.target.value as Values['sandbox'] }, 'cleanRoom')}>
+        <option value="">Room default ({FLAVOR_TEXT[roomModels?.sandbox ?? 'docker']})</option>
+        {CLEAN_ROOM_FLAVORS.map((flavor) => {
+          const missing = flavors !== null && !flavors.available[flavor];
+          return (
+            <option key={flavor} value={flavor} disabled={missing && values.sandbox !== flavor}>
+              {FLAVOR_TEXT[flavor]}
+              {missing ? ' (not installed)' : ''}
+            </option>
+          );
+        })}
+      </select>
+    </Control>
+  );
   const cleanRoomBox = values.provider === 'claude' && (
     <div className="staff-clean" data-invalid={cleanError !== undefined ? '' : undefined}>
       <div className="staff-check">
@@ -674,10 +698,21 @@ function Staff({ form }: { form: Target }): ReactElement {
           {cleanError}
         </p>
       )}
+      {values.cleanRoom && (
+        <div className="field">
+          <label htmlFor={`${id}-clean-egress`}>Anthropic API key</label>
+          <select id={`${id}-clean-egress`} className="input" value={values.egress} onChange={(event) => change({ egress: event.target.value as Values['egress'] }, 'cleanRoom')}>
+            <option value="">Follow the room's setting</option>
+            <option value="on">Keep it out of the container (a proxy holds it)</option>
+            <option value="off">Leave it in the container</option>
+          </select>
+        </div>
+      )}
       <p className="hint" id={`${id}-clean-hint`}>
         Runs in a Docker container that holds only a copy of the project (a git worktree on the branch gonogo/{values.name === '' ? 'name' : values.name}) and this console's own files. Docker must be running and the folder must be inside a git repository. To
         take the work back, commit in the worktree and merge the branch.
       </p>
+      {sandboxSelect}
     </div>
   );
   // a Clean Room has a worktree already

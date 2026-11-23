@@ -8,7 +8,10 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRoomProxy } from '../src/server/roomproxy.js';
-import { bodyMatters, stepUpReason } from '../src/server/stepup.js';
+import { bodyMatters, needsRoomSandbox, stepUpReason } from '../src/server/stepup.js';
+
+/** What the fake rooms answer for the room's default sandbox (GET /api/models); `broken` is an answer that is not JSON. */
+let roomSandbox: string | null | 'broken' = null;
 import { validRoomId } from '../src/server/rooms.js';
 import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
 
@@ -43,6 +46,10 @@ async function fakeRoom(name: string): Promise<Fake> {
       if (req.url === '/page') {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': 'default-src *', 'x-content-type-options': 'nosniff', connection: 'close' });
         return res.end('<p>room</p>');
+      }
+      if (req.url === '/api/models') {
+        res.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
+        return res.end(roomSandbox === 'broken' ? 'not json' : JSON.stringify({ models: {}, positions: {}, ...(roomSandbox === null ? {} : { sandbox: roomSandbox }) }));
       }
       if (req.url === '/redirect') {
         res.writeHead(302, { Location: '/elsewhere' });
@@ -106,7 +113,8 @@ const fakeAuth = {
   pageHeaders: () => ({ 'content-security-policy': "default-src 'self'", 'x-content-type-options': 'nosniff' }),
   // session s2 has not been checked for a while: the step-up asks about it
   stepUpBody: bodyMatters,
-  stepUpNeeded: (grant: { kind: string; sessionId?: string }, method: string, path: string, body: Record<string, unknown> | null) => (grant.kind === 'session' && grant.sessionId === 's2' ? stepUpReason(method, path, body) : null),
+  stepUpWantsRoom: needsRoomSandbox,
+  stepUpNeeded: (grant: { kind: string; sessionId?: string }, method: string, path: string, body: Record<string, unknown> | null, context?: { roomSandbox?: string }) => (grant.kind === 'session' && grant.sessionId === 's2' ? stepUpReason(method, path, body, context) : null),
   stepUpDenied: (_req: http.IncomingMessage, res: http.ServerResponse, reason: string) => void res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ stepUp: true, reason })),
   alive: (id: string) => aliveSessions.has(id),
   touchSession: (id: string) => void touched.push(id),
@@ -237,6 +245,11 @@ describe('rooms proxy: HTTP', () => {
     for (const path of ['/api/telegram/route', '/Api/Telegram/Route', '/api/%74elegram/route', '/%61pi/telegram/route', '/api/telegram/route?x=1', '/api/telegram/route/', '/api/telegram/anything', '/r/main/api/telegram/route']) {
       expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
     }
+    expect(main.seen).toHaveLength(0);
+  });
+
+  it('the egress proxy is the agents\' route: closed to the browser side, at the root and under a room, in any case or encoding', async () => {
+    for (const path of ['/egress/x/anthropic/v1/messages', '/Egress/x', '/%65gress/x', '/EGRESS', '/r/main/egress/x/anthropic/v1/messages', '/r/a/%45gress/x']) expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
     expect(main.seen).toHaveLength(0);
   });
 
@@ -534,6 +547,17 @@ describe('rooms proxy: the login', () => {
     // the edit is an allow-list: a folder, the Clean Room, a worktree, remote control and keys all ask
     for (const body of [{ cleanRoom: false }, { dir: '/' }, { confirmBypass: true }, { worktree: true }, { remoteControl: true }, { keys: { K: 'v' } }]) expect((await send(stale, 'PATCH', '/api/agents/ana', body)).status, JSON.stringify(body)).toBe(403);
     expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: false })).status).toBe(403);
+    // a Clean Room hire below the room's own sandbox asks; at or above it, or with no flavor, it does not; a room that cannot say is read as the strongest wall
+    roomSandbox = 'gvisor';
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: { flavor: 'docker' } })).status).toBe(403);
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: { flavor: 'gvisor' } })).status).toBe(200);
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: { flavor: 'microvm' } })).status).toBe(200);
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: {} })).status).toBe(200);
+    roomSandbox = null;
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: { flavor: 'docker' } })).status).toBe(200);
+    roomSandbox = 'broken';
+    expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: { flavor: 'gvisor' } })).status).toBe(403);
+    roomSandbox = null;
     // the body that went through reached the room whole
     expect(main.seen.filter((x) => x.method === 'PATCH').at(-1)?.body).toBe('{"model":"x"}');
     for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/payload-defaults/servers/x'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);
@@ -554,6 +578,41 @@ describe('rooms proxy: the login', () => {
     expect((await get('/api/permissions', { cookie: 'gonogo-session=s2' })).status).toBe(200);
     // and a key or the old token is not a session: the check is the session's
     expect((await send({ authorization: 'Bearer gnk_full', 'content-type': 'application/json' }, 'PUT', '/api/permissions', {})).status).toBe(200);
+  });
+
+  it('S3: an API key may not turn Clean Room egress off, or leave it to the room, by the room setting, a hire or an edit; it may turn it on, and a browser session is not held to this', async () => {
+    const key = { authorization: 'Bearer gnk_full', 'content-type': 'application/json' };
+    const send = (headers: Record<string, string>, method: string, path: string, body: unknown) => get(path, headers, method, JSON.stringify(body));
+    const before = main.seen.length;
+    for (const [method, path, body] of [
+      ['PUT', '/api/egress', { anthropic: false }],
+      ['PUT', '/api/egress', {}],
+      ['PUT', '/api/egress', { anthropic: 'yes' }],
+      ['POST', '/api/agents', { name: 'x', cleanRoom: { egress: false } }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: {} }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: { image: 'a/b' } }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: { egress: false } }],
+      ['PUT', '/api/agents/ana', { cleanRoom: { egress: false } }],
+      ['PUT', '/api/%65gress', { anthropic: false }],
+      ['PUT', '/r/a/api/egress', { anthropic: false }],
+    ] as const) {
+      expect((await send(key, method, path, body)).status, `${method} ${path} ${JSON.stringify(body)}`).toBe(403);
+    }
+    expect((await get('/api/egress', key, 'PUT', 'not json')).status).toBe(403);
+    expect(main.seen.length).toBe(before);
+    // what only strengthens, or is not about egress, goes through
+    for (const [method, path, body] of [
+      ['PUT', '/api/egress', { anthropic: true }],
+      ['POST', '/api/agents', { name: 'x', cleanRoom: {} }],
+      ['POST', '/api/agents', { name: 'x', cleanRoom: { egress: true } }],
+      ['POST', '/api/agents', { name: 'x', mode: 'default' }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: { egress: true } }],
+      ['PATCH', '/api/agents/ana', { role: 'x' }],
+    ] as const) {
+      expect((await send(key, method, path, body)).status, `${method} ${path} ${JSON.stringify(body)}`).toBe(200);
+    }
+    // a session turns it off, as the page does (the step-up is the session's own)
+    expect((await send({ cookie: 'gonogo-session=s1', origin: base, 'content-type': 'application/json' }, 'PUT', '/api/egress', { anthropic: false })).status).toBe(200);
   });
 
   const openAs = (path: string, headers: Record<string, string>, protocols: string[] = [WS_SUBPROTOCOL]): Promise<WebSocket> =>

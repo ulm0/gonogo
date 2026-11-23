@@ -690,6 +690,8 @@ const VALUES: Values = {
   offServers: [],
   offSkills: [],
   cleanRoom: false,
+  sandbox: '',
+  egress: '',
   worktree: false,
   remoteControl: false,
   rules: '',

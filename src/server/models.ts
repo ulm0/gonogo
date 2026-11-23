@@ -8,8 +8,8 @@ import { randomBytes } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { POSITION_IDS } from '../shared/positions.js';
-import { EFFORTS, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo } from '../shared/protocol.js';
-import type { Effort, Logger, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, EFFORTS, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo } from '../shared/protocol.js';
+import type { CleanRoomFlavor, Effort, Logger, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
 import { FILE_MODE, MODELS_FILE, nullLogger } from './constants.js';
 import { HubError } from './hub.js';
 
@@ -33,6 +33,10 @@ export interface ModelDefaultsStore {
   mode(): PermissionMode | undefined;
   /** Sets the default mode, or clears it with null. A bad mode throws a HubError (bad_request, field `mode`); bypassPermissions needs `confirmBypass: true` (bad_request, field `confirmBypass`). */
   setMode(mode: unknown, confirmBypass?: unknown): Promise<ModelDefaults>;
+  /** The room's default Clean Room sandbox flavor, or undefined (docker). */
+  sandbox(): CleanRoomFlavor | undefined;
+  /** Sets the default flavor, or clears it with null. A bad one throws a HubError (bad_request, field `sandbox`). Whether Docker has its runtime is the caller's check. */
+  setSandbox(flavor: unknown): Promise<ModelDefaults>;
   /** Sets the default engine (any but `custom`), or clears it with null. A bad one throws a HubError (bad_request, field `engine`). */
   setEngine(engine: unknown): Promise<ModelDefaults>;
   /** Sets the default effort, or clears it with null. A bad level throws a HubError (bad_request, field `effort`). */
@@ -54,14 +58,15 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
   let mode: PermissionMode | undefined;
   /** When bypassPermissions was confirmed as the room default; written with it, read back to accept it. */
   let bypassConfirmedAt: number | undefined;
+  let sandbox: CleanRoomFlavor | undefined;
   let chain: Promise<unknown> = Promise.resolve();
 
-  const view = (): ModelDefaults => ({ models: { ...models }, positions: { ...positions }, ...(engine ? { engine } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}) });
+  const view = (): ModelDefaults => ({ models: { ...models }, positions: { ...positions }, ...(engine ? { engine } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(sandbox ? { sandbox } : {}) });
 
   /** Writes what `change` returns, or nothing when it equals what is saved; a failed write leaves the old values. */
   const save = async (change: () => void): Promise<void> => {
     const before = JSON.stringify(view());
-    const was = { models, positions, engine, effort, mode, bypassConfirmedAt };
+    const was = { models, positions, engine, effort, mode, bypassConfirmedAt, sandbox };
     change();
     if (JSON.stringify(view()) === before) return;
     const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
@@ -69,7 +74,7 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
       await writeFile(temp, JSON.stringify({ version: 1, ...view(), ...(mode === 'bypassPermissions' && bypassConfirmedAt !== undefined ? { bypassConfirmedAt } : {}) }, null, 2), { flag: 'wx', mode: FILE_MODE });
       await rename(temp, path);
     } catch (error) {
-      ({ models, positions, engine, effort, mode, bypassConfirmedAt } = was);
+      ({ models, positions, engine, effort, mode, bypassConfirmedAt, sandbox } = was);
       await rm(temp, { force: true }).catch(() => undefined);
       throw new Error(`could not save the default models: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -89,6 +94,7 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
         // bypassPermissions is read back only with the stamp that setMode writes when a person confirmed it: a planted file must not preselect it
         if (typeof saved.mode === 'string' && saved.mode !== 'default' && (PERMISSION_MODES as readonly string[]).includes(saved.mode) && (saved.mode !== 'bypassPermissions' || typeof saved.bypassConfirmedAt === 'number')) mode = saved.mode as PermissionMode;
         if (mode === 'bypassPermissions') bypassConfirmedAt = saved.bypassConfirmedAt as number;
+        if (typeof saved.sandbox === 'string' && saved.sandbox !== 'docker' && (CLEAN_ROOM_FLAVORS as readonly string[]).includes(saved.sandbox)) sandbox = saved.sandbox as CleanRoomFlavor;
         if (isRecord(saved.positions)) positions = Object.fromEntries(Object.entries(saved.positions).filter(([id, model]) => POSITION_IDS.includes(id) && typeof model === 'string' && MODEL_RE.test(model))) as Record<string, string>;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
@@ -100,6 +106,13 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
     engine: () => engine ?? 'claude',
     effort: () => effort,
     mode: () => mode,
+    sandbox: () => sandbox,
+    async setSandbox(value) {
+      if (value !== null && value !== undefined && (typeof value !== 'string' || !(CLEAN_ROOM_FLAVORS as readonly string[]).includes(value))) throw new HubError('bad_request', `sandbox must be one of: ${CLEAN_ROOM_FLAVORS.join(', ')}, or null`, 'sandbox');
+      const run = chain.then(() => save(() => void (sandbox = value === null || value === undefined || value === 'docker' ? undefined : (value as CleanRoomFlavor))));
+      chain = run.catch(() => undefined);
+      return run.then(view);
+    },
     async setMode(value, confirmBypass) {
       if (value !== null && value !== undefined && (typeof value !== 'string' || !(PERMISSION_MODES as readonly string[]).includes(value))) throw new HubError('bad_request', `mode must be one of: ${PERMISSION_MODES.join(', ')}, or null`, 'mode');
       if (value === 'bypassPermissions' && confirmBypass !== true) throw new HubError('bad_request', 'bypassPermissions needs confirmBypass: true', 'confirmBypass');

@@ -199,6 +199,10 @@ export const ROOM_KEYS_AUDIT: Table = {
 export const RULES_AUDIT: Table = {
   set: ['config', (_args, result) => (isRecord(result) && typeof result.bytes === 'number' ? (result.bytes === 0 ? 'Director removed the room rules' : `Director changed the room rules (${result.bytes} bytes)`) : null)],
 };
+/** Egress: that the room's setting changed, and to what; never a key. */
+export const EGRESS_AUDIT: Table = {
+  set: ['config', (_args, result) => (isRecord(result) && typeof result.anthropic === 'boolean' ? `Director set Clean Room egress for the Anthropic key ${result.anthropic ? 'on' : 'off'}` : null)],
+};
 export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const AUTOUPDATE_AUDIT: Table = { set: ['config', 'Director changed auto-update'], skip: ['config', 'Director skipped a version for auto-update'] };

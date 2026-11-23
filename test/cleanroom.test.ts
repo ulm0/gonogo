@@ -8,9 +8,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRecord } from '../src/shared/protocol.js';
+import { CLEAN_ROOM_RUNTIMES } from '../src/shared/protocol.js';
 import {
   cleanRoomHostProblem,
   buildDockerArgs,
+  cleanRoomFlavor,
+  cleanRoomFlavors,
+  createVerified,
+  dockerRuntimes,
+  flavorProblem,
   checkCleanRoom,
   checkDocker,
   cleanRoomImage,
@@ -74,6 +80,12 @@ describe('parseCleanRoom', () => {
     }
   });
 
+  it('takes egress as a boolean beside the image, and nothing else for it', () => {
+    expect(parseCleanRoom({ egress: true }, 'claude')).toEqual({ ok: true, cleanRoom: { egress: true } });
+    expect(parseCleanRoom({ egress: false, image: 'gonogo' }, 'claude')).toEqual({ ok: true, cleanRoom: { image: 'gonogo', egress: false } });
+    for (const egress of ['yes', 1, null, {}]) expect(parseCleanRoom({ egress }, 'claude'), String(egress)).toEqual({ ok: false, error: 'cleanRoom.egress must be true or false' });
+  });
+
   it('refuses what is not a setting, a field it does not know, an image docker would read as an option, and another engine', () => {
     const refused = (value: unknown, provider?: Parameters<typeof parseCleanRoom>[1]): string => {
       const checked = parseCleanRoom(value, provider);
@@ -85,6 +97,97 @@ describe('parseCleanRoom', () => {
     for (const image of ['', '-v', '--privileged', 'a b', 'a;b', 'a\nb', 'a'.repeat(201), 3, null]) expect(refused({ image }), String(image)).toMatch(/Docker image name/);
     expect(refused({}, 'gemini')).toBe('a Clean Room runs Claude Code agents only');
     expect(refused({}, 'custom')).toBe('a Clean Room runs Claude Code agents only');
+  });
+});
+
+describe('the sandbox flavor', () => {
+  it('parse: a flavor is one of docker, gvisor, microvm, with or without an image; anything else is refused', () => {
+    for (const flavor of ['docker', 'gvisor', 'microvm']) expect(parseCleanRoom({ flavor }, 'claude'), flavor).toEqual({ ok: true, cleanRoom: { flavor } });
+    expect(parseCleanRoom({ image: 'gonogo', flavor: 'gvisor' }, 'claude')).toEqual({ ok: true, cleanRoom: { image: 'gonogo', flavor: 'gvisor' } });
+    for (const flavor of ['runc', 'kata', '', 'GVISOR', 3, null]) expect(parseCleanRoom({ flavor }, 'claude'), String(flavor)).toMatchObject({ ok: false, error: 'the flavor must be one of: docker, gvisor, microvm' });
+  });
+
+  it('the runtime table: docker has none (runc), gvisor is runsc, microvm is Kata', () => {
+    expect(CLEAN_ROOM_RUNTIMES).toEqual({ docker: null, gvisor: 'runsc', microvm: 'io.containerd.kata.v2' });
+  });
+
+  it('resolution: the agent\'s own flavor, else the room\'s default, else docker', () => {
+    expect(cleanRoomFlavor({}, undefined)).toBe('docker');
+    expect(cleanRoomFlavor({}, 'gvisor')).toBe('gvisor');
+    expect(cleanRoomFlavor({ flavor: 'docker' }, 'gvisor')).toBe('docker');
+    expect(cleanRoomFlavor({ flavor: 'microvm' }, 'gvisor')).toBe('microvm');
+  });
+
+  it('availability reads the Runtimes of docker info: a flavor without its runtime is not available; a stopped Docker makes every flavor but docker unavailable, with the reason', async () => {
+    expect(await dockerRuntimes(env)).toEqual({ names: ['runc', 'io.containerd.runc.v2'] });
+    expect(await cleanRoomFlavors(env, undefined)).toEqual({ available: { docker: true, gvisor: false, microvm: false }, default: 'docker' });
+    const withRunsc = { ...env, FAKE_DOCKER_RUNTIMES: 'runc,runsc,io.containerd.kata.v2' };
+    expect(await cleanRoomFlavors(withRunsc, 'gvisor')).toEqual({ available: { docker: true, gvisor: true, microvm: true }, default: 'gvisor' });
+    const down = await cleanRoomFlavors({ ...env, FAKE_DOCKER_FAIL: '1' }, undefined);
+    expect(down.available).toEqual({ docker: true, gvisor: false, microvm: false });
+    expect(down.note).toMatch(/docker info" failed: Cannot connect/);
+  });
+
+  it('a flavor whose runtime is missing is refused with its name; the microVM is refused on gonogo\'s network (the bridge mode is not built), whatever is installed', () => {
+    expect(flavorProblem('docker', [], 'container:gng')).toBeNull();
+    expect(flavorProblem('gvisor', ['runc'], null)).toBe('the gvisor Clean Room needs the Docker runtime runsc, and "docker info" does not list it: not installed');
+    expect(flavorProblem('gvisor', ['runsc'], 'container:gng')).toBeNull();
+    expect(flavorProblem('microvm', ['runc'], null)).toMatch(/needs the Docker runtime io.containerd.kata.v2.*not installed/);
+    for (const network of [null, 'host', 'container:gng']) expect(flavorProblem('microvm', ['io.containerd.kata.v2'], network), String(network)).toMatch(/bridge network mode.*not built/);
+  });
+
+  it('argv: docker adds no --runtime, gvisor adds --runtime runsc, microvm --runtime io.containerd.kata.v2, right after the run options', () => {
+    const place = { worktree: '/h/cleanroom/ana', cwd: '/h/cleanroom/ana', home: '/h/agents/ana/cleanroom-home', container: 'gonogo-ana-0123456789ab', network: null };
+    const args = (flavor?: 'docker' | 'gvisor' | 'microvm'): string[] => buildDockerArgs({ image: 'gonogo', ...(flavor === undefined ? {} : { flavor }), uid: 1, gid: 1, place, agentDir: '/h/agents/ana', names: [], command: ['claude'] });
+    expect(args()).not.toContain('--runtime');
+    expect(args('docker')).not.toContain('--runtime');
+    expect(args('gvisor').slice(0, 7)).toEqual(['run', '--rm', '-i', '-t', '--init', '--runtime', 'runsc']);
+    expect(args('microvm').slice(5, 7)).toEqual(['--runtime', 'io.containerd.kata.v2']);
+    expect(args('gvisor').filter((a) => a === '--runtime')).toHaveLength(1);
+  });
+
+  it('a runtime the operator declares counts as there although docker info does not list it, and the start still has to be verified', async () => {
+    const declared = { ...env, GONOGO_CLEANROOM_RUNTIMES: 'io.containerd.kata.v2, bad name' };
+    expect((await dockerRuntimes(declared)).names).toEqual(['runc', 'io.containerd.runc.v2', 'io.containerd.kata.v2']);
+    expect((await cleanRoomFlavors(declared, undefined)).available).toEqual({ docker: true, gvisor: false, microvm: true });
+    expect((await dockerRuntimes({ ...declared, FAKE_DOCKER_FAIL: '1' })).names).toEqual(['io.containerd.kata.v2']);
+  });
+
+  it('createVerified: create, inspect the runtime Docker chose, and only then a start by name; a lie, a refusal and a failed inspect remove the container and stop the start', async () => {
+    const state = join(tmp, 'state');
+    const log = join(tmp, 'docker.log');
+    const base = { ...env, FAKE_DOCKER_STATE: state, FAKE_DOCKER_LOG: log, GONOGO_CLEANROOM_RUNTIMES: 'runsc' };
+    const place = { worktree: repo, cwd: repo, home: join(home, 'h'), container: 'gonogo-ana-0123456789ab', network: null as string | null };
+    const run = buildDockerArgs({ image: 'gonogo', flavor: 'gvisor', uid: 1, gid: 1, place, agentDir: home, names: [], command: ['node', '-e', ''] });
+    await mkdir(home, { recursive: true });
+    expect(await createVerified(run, 'runsc', place.container, { ...base, FAKE_DOCKER_RUNTIMES: 'runc,runsc' })).toEqual(['start', '-a', '-i', place.container]);
+    const lines = (await readFile(log, 'utf8')).trim().split('\n').map((l) => JSON.parse(l) as { verb?: string; argv: string[] });
+    expect(lines[0]).toMatchObject({ verb: 'create', runtime: 'runsc' });
+    expect(lines[0]?.argv.slice(0, 3)).toEqual(['--rm', '-i', '-t']);
+    // Docker chose another runtime: removed, refused, the reason names both
+    await expect(createVerified(run, 'runsc', place.container, { ...base, FAKE_DOCKER_RUNTIMES: 'runc,runsc', FAKE_DOCKER_RUNTIME_ACTUAL: 'runc' })).rejects.toThrow('has the runtime "runc", not runsc: it was removed and nothing started');
+    expect((await readFile(log, 'utf8')).trim().split('\n').map((l) => JSON.parse(l) as { verb?: string; argv: string[] }).at(-1)).toMatchObject({ verb: 'rm', argv: ['-f', place.container] });
+    // Docker refuses the runtime outright (declared by the operator, not there): its words reach the message, and nothing is run by runc
+    await expect(createVerified(run, 'runsc', place.container, { ...base, FAKE_DOCKER_RUNTIMES: 'runc' })).rejects.toThrow(/could not create the Clean Room container with the runtime runsc: .*unknown or invalid runtime name: runsc/);
+  });
+
+  it('checkCleanRoom: a named flavor needs its runtime; docker and no flavor do not', async () => {
+    expect(await checkCleanRoom(repo, env, 'docker')).toBeNull();
+    expect(await checkCleanRoom(repo, env)).toBeNull();
+    expect(await checkCleanRoom(repo, env, 'gvisor')).toMatch(/needs the Docker runtime runsc.*not installed/);
+    expect(await checkCleanRoom(repo, { ...env, FAKE_DOCKER_RUNTIMES: 'runc,runsc' }, 'gvisor')).toBeNull();
+  });
+
+  it('prepare fails closed: a flavor with no runtime, and the microVM, stop the start with the reason, and nothing falls back to runc', async () => {
+    const base = join(home, 'agents', 'ana');
+    await expect(prepareCleanRoom(record({ cleanRoom: { flavor: 'gvisor' } }), home, base, env)).rejects.toThrow(/gvisor Clean Room needs the Docker runtime runsc/);
+    await expect(prepareCleanRoom(record(), home, base, env, 'gvisor')).rejects.toThrow(/gvisor Clean Room needs the Docker runtime runsc/); // the room default
+    const kata = { ...env, FAKE_DOCKER_RUNTIMES: 'runc,io.containerd.kata.v2' };
+    await expect(prepareCleanRoom(record({ cleanRoom: { flavor: 'microvm' } }), home, base, kata)).rejects.toThrow(/bridge network mode.*not built/);
+    expect(await exists(join(home, 'cleanroom', 'ana'))).toBe(false); // refused before the worktree
+    const runsc = { ...env, FAKE_DOCKER_RUNTIMES: 'runc,runsc' };
+    await expect(prepareCleanRoom(record({ cleanRoom: { flavor: 'gvisor' } }), home, base, runsc)).resolves.toMatchObject({ network: null });
+    await expect(prepareCleanRoom(record(), home, join(home, 'agents', 'ben'), env)).resolves.toBeDefined(); // docker: as before
   });
 });
 
@@ -428,6 +531,93 @@ describe('the launcher starts a Clean Room agent through docker', () => {
     expect(prepared.spec.env.IS_DEMO).toBe('1');
   });
 
+  describe('egress: the Anthropic key stays out of the container', () => {
+    const SECRET_OAUTH = 'sk-ant-oat-the-oauth-secret';
+    interface Calls {
+      issued: Array<{ agent: string; key: string | undefined }>;
+      revoked: string[];
+    }
+    const withEgress = async (agent: AgentRecord, room: boolean, extra: Record<string, string> = {}, keys?: Record<string, string>) => {
+      const calls: Calls = { issued: [], revoked: [] };
+      const launcher = createLauncher({
+        homeDir: home,
+        hubUrl: () => 'http://127.0.0.1:7777',
+        seed: false,
+        env: { ...env, ...extra },
+        ...(keys === undefined ? {} : { keys: () => keys }),
+        egress: {
+          enabled: () => room,
+          issue: (name, key) => (calls.issued.push({ agent: name, key: key() }), 'f'.repeat(64)),
+          revoke: (name) => void calls.revoked.push(name),
+          basePath: (token) => `/egress/${token}/anthropic`,
+        },
+      });
+      return { launcher, calls, prepared: await launcher.prepareStart(agent, { generation: 1, flag: null }) };
+    };
+    const named = (args: string[]): string[] => args.flatMap((arg, i) => (args[i - 1] === '-e' && !arg.includes('=') ? [arg] : [])).sort();
+
+    it('on for the room: no real key by any name, in the container, the command line or the docker process; a placeholder and the base URL instead', async () => {
+      const { prepared, calls } = await withEgress(record(), true, { ANTHROPIC_API_KEY: KEY, CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH, AWS_SECRET_ACCESS_KEY: 'not-for-the-container' });
+      const { args, env: childEnv } = prepared.spec;
+      expect(named(args)).toEqual(['ANTHROPIC_BASE_URL', 'COLORTERM', 'GONOGO_API_KEY', 'GONOGO_TOKEN', 'IS_DEMO', 'TERM']);
+      expect(childEnv.ANTHROPIC_BASE_URL).toBe(`http://host.docker.internal:7777/egress/${'f'.repeat(64)}/anthropic`);
+      expect(childEnv.GONOGO_API_KEY).toMatch(/^gnp_[0-9a-f]{32}$/);
+      expect(childEnv.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(childEnv.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+      // nowhere in what the launcher hands to docker: the real key is only in the proxy's closure
+      for (const secret of [KEY, SECRET_OAUTH]) expect(JSON.stringify(prepared.spec), secret).not.toContain(secret);
+      expect(calls.issued).toEqual([{ agent: 'ana', key: KEY }]);
+    });
+
+    it('the proxy gets the key at request time, from the agent\'s Clearance first, else gonogo\'s own environment', async () => {
+      const own = await withEgress(record(), true, { ANTHROPIC_API_KEY: KEY }, { ANTHROPIC_API_KEY: 'sk-ant-from-clearance' });
+      expect(own.calls.issued[0]?.key).toBe('sk-ant-from-clearance');
+      expect(JSON.stringify(own.prepared.spec)).not.toContain('sk-ant-from-clearance');
+      expect(named(own.prepared.spec.args)).not.toContain('ANTHROPIC_API_KEY');
+    });
+
+    it('the agent\'s own setting wins over the room\'s, either way, and with nothing set the room decides', async () => {
+      const off = await withEgress(record({ cleanRoom: { egress: false } }), true, { ANTHROPIC_API_KEY: KEY });
+      expect(off.calls.issued).toEqual([]);
+      expect(off.prepared.spec.env.GONOGO_API_KEY).toBe(KEY);
+      const on = await withEgress(record({ cleanRoom: { egress: true } }), false, { ANTHROPIC_API_KEY: KEY });
+      expect(on.calls.issued).toHaveLength(1);
+      expect(on.prepared.spec.env.GONOGO_API_KEY).not.toBe(KEY);
+      const inherit = await withEgress(record({ cleanRoom: {} }), false, { ANTHROPIC_API_KEY: KEY });
+      expect(inherit.calls.issued).toEqual([]);
+    });
+
+    it('off (the default): the start is exactly what it was, credentials and all', async () => {
+      const plain = await start(record(), { CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH, ANTHROPIC_API_KEY: KEY });
+      const { prepared, calls } = await withEgress(record(), false, { CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH, ANTHROPIC_API_KEY: KEY });
+      expect(calls.issued).toEqual([]);
+      expect(named(prepared.spec.args)).toEqual(named(plain.prepared.spec.args));
+      expect(prepared.spec.env.GONOGO_API_KEY).toBe(KEY);
+      expect(prepared.spec.env.CLAUDE_CODE_OAUTH_TOKEN).toBe(SECRET_OAUTH);
+      expect(prepared.spec.env.ANTHROPIC_BASE_URL).toBeUndefined();
+    });
+
+    it('on with no API key (a subscription token only) changes nothing and says so; the token stays as it was', async () => {
+      const { prepared, calls } = await withEgress(record(), true, { CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH });
+      expect(calls.issued).toEqual([]);
+      expect(named(prepared.spec.args)).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+      expect(prepared.spec.env.ANTHROPIC_BASE_URL).toBeUndefined();
+    });
+
+    it('the proxy token goes when the agent\'s does: at the stop, and when the start fails', async () => {
+      const { launcher, calls } = await withEgress(record(), true, { ANTHROPIC_API_KEY: KEY });
+      launcher.revoke('ana', 1);
+      expect(calls.revoked).toEqual(['ana']);
+      // a revoke of another generation is not this start's
+      launcher.revoke('ana', 7);
+      expect(calls.revoked).toEqual(['ana']);
+      const again = await launcher.prepareStart(record(), { generation: 2, flag: null });
+      expect(again.spec.env.ANTHROPIC_BASE_URL).toContain('/egress/');
+      launcher.keepTokens([]);
+      expect(calls.revoked).toEqual(['ana', 'ana']);
+    });
+  });
+
   it('a restart resumes the session that the container\'s own home holds', async () => {
     const { launcher } = await start(record());
     const projects = join(home, 'agents', 'ana', 'cleanroom-home', 'projects', 'p');
@@ -467,6 +657,37 @@ describe('the launcher starts a Clean Room agent through docker', () => {
     const launcher = createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env: { ...env, FAKE_DOCKER_FAIL: '1' } });
     await expect(launcher.prepareStart(record(), { generation: 1, flag: null })).rejects.toThrow(/Clean Room needs Docker, and "docker version" failed: Cannot connect/);
     expect(await exists(join(home, 'agents', 'ana', 'token'))).toBe(false);
+  });
+
+  describe('the sandbox flavor at a start', () => {
+    const flavored = (extra: Record<string, string>, roomDefault?: 'gvisor' | 'microvm' | 'docker') =>
+      createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env: { ...env, FAKE_DOCKER_STATE: join(tmp, 'state'), FAKE_DOCKER_LOG: join(tmp, 'flavor.log'), ...extra }, ...(roomDefault === undefined ? {} : { defaultSandbox: () => roomDefault }) });
+    const prepare = (launcher: ReturnType<typeof flavored>, agent: AgentRecord) => launcher.prepareStart(agent, { generation: 1, flag: null });
+
+    it('docker: one docker run, as always; no create, no --runtime', async () => {
+      const { spec } = await prepare(flavored({}), record());
+      expect(spec.args[0]).toBe('run');
+      expect(spec.args).not.toContain('--runtime');
+    });
+
+    it('gvisor (own, or the room\'s default): created with --runtime runsc, the runtime verified, then started by name', async () => {
+      for (const [agent, roomDefault] of [[record({ cleanRoom: { flavor: 'gvisor' } }), undefined], [record(), 'gvisor' as const]] as const) {
+        const { spec } = await prepare(flavored({ FAKE_DOCKER_RUNTIMES: 'runc,runsc' }, roomDefault), agent);
+        expect(spec.args).toEqual(['start', '-a', '-i', containerName(join(home, 'cleanroom', 'ana'))]);
+      }
+      const created = (await readFile(join(tmp, 'flavor.log'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l) as { verb?: string; runtime?: string; argv: string[] }).filter((l) => l.verb === 'create');
+      expect(created.map((c) => c.runtime)).toEqual(['runsc', 'runsc']);
+      expect(created[0]?.argv).toContain('--runtime');
+    });
+
+    it('fails closed: no runtime, a runtime Docker lied about, and the microVM, each refuse the start with the reason and nothing runs', async () => {
+      await expect(prepare(flavored({}), record({ cleanRoom: { flavor: 'gvisor' } }))).rejects.toThrow(/needs the Docker runtime runsc.*not installed/);
+      await expect(prepare(flavored({ FAKE_DOCKER_RUNTIMES: 'runc,runsc', FAKE_DOCKER_RUNTIME_ACTUAL: 'runc' }), record({ cleanRoom: { flavor: 'gvisor' } }))).rejects.toThrow(/has the runtime "runc", not runsc/);
+      await expect(prepare(flavored({ FAKE_DOCKER_RUNTIMES: 'runc,io.containerd.kata.v2' }), record({ cleanRoom: { flavor: 'microvm' } }))).rejects.toThrow(/bridge network mode/);
+      // declared by the operator but not there: Docker refuses, and so does the start
+      await expect(prepare(flavored({ GONOGO_CLEANROOM_RUNTIMES: 'runsc' }), record({ cleanRoom: { flavor: 'gvisor' } }))).rejects.toThrow(/unknown or invalid runtime name: runsc/);
+      expect(await exists(join(home, 'agents', 'ana', 'token'))).toBe(false);
+    });
   });
 
   it('refuses to start when the folder is no longer inside a repository', async () => {

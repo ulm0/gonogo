@@ -30,6 +30,8 @@ export const RUN_STATE_MAX_AGE_MS = 7 * 24 * 3_600_000;
 export const RUN_STATE_FILE = 'run-state.json';
 export const STARTUP_FILE = 'startup.json';
 export const COAUTHOR_FILE = 'coauthor.json';
+/** The room's egress setting (docs/features/egress.md): whether a Clean Room agent holds no Anthropic key. */
+export const EGRESS_FILE = 'egress.json';
 /** The rules of the room (docs/features/door.md): one text file in the room's home, at most this many bytes. */
 export const RULES_FILE = 'rules.md';
 export const RULES_MAX_BYTES = 8 * 1024;
@@ -355,6 +357,8 @@ export const CLEAN_ROOM_IMAGE_ENV = 'GONOGO_CLEANROOM_IMAGE';
 export const CLEAN_ROOM_DEFAULT_IMAGE = 'ghcr.io/ulm0/gonogo';
 /** Set when gonogo itself runs in a container: `container:<its name>`, the network a Clean Room joins instead of reaching the host. */
 export const CLEAN_ROOM_NETWORK_ENV = 'GONOGO_CLEANROOM_NETWORK';
+/** Runtimes the operator declares (comma separated) although `docker info` does not list them (a shim runtime such as io.containerd.kata.v2): a start attempts them, and is still refused when Docker refuses or the container does not report that runtime. */
+export const CLEAN_ROOM_RUNTIMES_ENV = 'GONOGO_CLEANROOM_RUNTIMES';
 export const CLEAN_ROOM_NETWORK_PATTERN = '^container:[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$';
 /** GONOGO_CLEANROOM_NETWORK value meaning gonogo's own container, found by its host name. */
 export const CLEAN_ROOM_NETWORK_SELF = 'container:self';

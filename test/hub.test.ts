@@ -157,6 +157,7 @@ interface Harness {
   spawns: SpawnRequest[];
   /** The directories the hub asked the Clean Room check about. */
   cleanRoomChecks: string[];
+  cleanRoomFlavorsAsked: string[];
   stops: Array<{ name: string; generation: number }>;
   renames: Array<[string, string]>;
   /** Names the hub asked the terminal host to forget, in order. */
@@ -226,6 +227,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   const notices: Array<[string, string]> = [];
   const spawns: SpawnRequest[] = [];
   const cleanRoomChecks: string[] = [];
+  const cleanRoomFlavorsAsked: string[] = [];
   const stops: Array<{ name: string; generation: number }> = [];
   const renames: Array<[string, string]> = [];
   const forgotten: string[] = [];
@@ -288,8 +290,9 @@ function makeHarness(options: HarnessOptions = {}): Harness {
       if (script.missingDirs.has(path)) return { ok: false, error: `directory does not exist: ${path}` };
       return { ok: true, path: path.replace(/\/+$/, '') };
     },
-    checkCleanRoom: async (dir) => {
+    checkCleanRoom: async (dir, flavor) => {
       cleanRoomChecks.push(dir);
+      if (flavor !== undefined) cleanRoomFlavorsAsked.push(flavor);
       return script.cleanRoomProblem;
     },
     loadRoster: async () => ({ version: 1, agents: roster.map((record) => ({ ...record })) }),
@@ -408,6 +411,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     notices,
     spawns,
     cleanRoomChecks,
+    cleanRoomFlavorsAsked,
     stops,
     renames,
     forgotten,
@@ -5933,6 +5937,16 @@ describe('Clean Room: a container on its own worktree (hire and edit)', () => {
     expect(h.view('ana').name).toBe('ana');
     const renamed = await h.hub.edit('ana', { name: 'bea', cleanRoom: null });
     expect(renamed).toMatchObject({ name: 'bea', cleanRoom: null });
+  });
+
+  it('the flavor is parsed, kept, and sent to the Docker check by name; a bad one is 400, and a flavor whose runtime is missing is the check\'s reason', async () => {
+    const h = await started();
+    expect((await hireWith(h, { flavor: 'gvisor' })).cleanRoom).toEqual({ flavor: 'gvisor' });
+    expect(h.cleanRoomFlavorsAsked).toEqual(['gvisor']);
+    await expectHubReject(hireWith(h, { flavor: 'kata' }, { name: 'ben', dir: '/work/ben' }), 'bad_request', /the flavor must be one of: docker, gvisor, microvm/, 'cleanRoom');
+    h.script.cleanRoomProblem = 'the microvm Clean Room needs the Docker runtime io.containerd.kata.v2, and "docker info" does not list it: not installed';
+    await expectHubReject(hireWith(h, { flavor: 'microvm' }, { name: 'cat', dir: '/work/cat' }), 'bad_request', /not installed/, 'cleanRoom');
+    h.script.cleanRoomProblem = null;
   });
 
   it('a hub whose IO has no check hires as asked (the fakes of the other tests)', async () => {

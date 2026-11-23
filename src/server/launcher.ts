@@ -9,7 +9,7 @@ import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, sym
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import type { Payload, Provider, SubagentSettings } from '../shared/protocol.js';
-import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO } from '../shared/protocol.js';
+import { CLEAN_ROOM_RUNTIMES, cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO } from '../shared/protocol.js';
 import type {
   AgentIdentity,
   AgentRecord,
@@ -61,7 +61,7 @@ import { coauthorEnv, ensureHooksDir, realHookNames } from './coauthor.js';
 import { remoteControlName } from './remotecontrol.js';
 import { effectiveRules } from './permissions.js';
 import { mergePayload } from './payload.js';
-import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
+import { buildDockerArgs, cleanRoomFlavor, cleanRoomImage, createVerified, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { isRecord } from './hooks.js';
 import { doorText, projectFile } from './door.js';
@@ -522,6 +522,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
     byToken.delete(current.hash);
     byAgent.delete(name);
     saveTokens();
+    // the proxy's token goes with the agent's: a stopped agent's base URL is worth nothing
+    options.egress?.revoke(name);
     if (current.container !== undefined) removals.set(name, removeContainer(current.container, options.env ?? process.env));
     try {
       unlinkSync(join(agentDir(name), AGENT_TOKEN_FILE));
@@ -659,7 +661,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       if (provider !== 'claude') return await prepareOther(agent, provider, base, hubUrl, memoryPath, token);
       // Clean Room: a container has the worktree and the agent's own folder only, so it gets a home of its own under the agent's folder.
       if (agent.cleanRoom !== undefined) await removals.get(name);
-      const clean = agent.cleanRoom === undefined ? null : await prepareCleanRoom(agent, homeDir, base, env);
+      const clean = agent.cleanRoom === undefined ? null : await prepareCleanRoom(agent, homeDir, base, env, options.defaultSandbox?.());
       // A fresh container home has no folder trust and no login, so its dialogs are skipped as in seed mode.
       const plain = await plainWorktree(agent, env);
       const seed = options.seed || clean !== null;
@@ -716,6 +718,23 @@ export function createLauncher(options: LauncherOptions): Launcher {
       }
       const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const childEnv = buildChildEnv({ base: env, token, seed, keys, gh: await ensureGh() });
+      // Egress (egress.ts): the container holds a placeholder and a base URL, never the Anthropic API key (API-key mode: a subscription token is not swapped)
+      let egressOn = false;
+      if (clean !== null && options.egress !== undefined && (agent.cleanRoom?.egress ?? options.egress.enabled())) {
+        if (moveApiKey) {
+          const proxyToken = options.egress.issue(name, () => {
+            const real = keysOf(agent).ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY;
+            return hasText(real) ? real : undefined;
+          });
+          egressOn = true;
+          childEnv.GONOGO_API_KEY = `gnp_${randomBytes(16).toString('hex')}`;
+          childEnv.ANTHROPIC_BASE_URL = `${agentUrl}${options.egress.basePath(proxyToken)}`;
+          delete childEnv.ANTHROPIC_API_KEY;
+          delete childEnv.CLAUDE_CODE_OAUTH_TOKEN;
+        } else {
+          log.warn(`egress is on for ${name} but it has no Anthropic API key to keep out of its container: nothing changes (a subscription token is not covered)`);
+        }
+      }
       // a Clean Room has no git of the Director's inside: nothing to mark there
       if (clean === null) Object.assign(childEnv, await withCoauthor(agent, childEnv, startDir, base, true));
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
@@ -728,9 +747,15 @@ export function createLauncher(options: LauncherOptions): Launcher {
         if (uid === undefined || gid === undefined) throw new Error('Clean Room needs a user id: it runs on macOS and Linux only');
         // by name: docker reads the values from its own environment, so no secret is on the command line
         // The agent's own keys go the same way: the container gets their names, and nothing else of the host's environment.
-        const names = [...new Set([...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS, ...Object.keys(keys)])].filter((variable) => hasText(childEnv[variable]));
+        // with egress on, the real Anthropic key (by any of its names) is not passed at all: the container gets the placeholder and the base URL
+        const kept = (variable: string): boolean => !egressOn || (variable !== 'ANTHROPIC_API_KEY' && variable !== 'CLAUDE_CODE_OAUTH_TOKEN');
+        const names = [...new Set([...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS, ...(egressOn ? ['ANTHROPIC_BASE_URL'] : []), ...Object.keys(keys)])].filter((variable) => kept(variable) && hasText(childEnv[variable]));
         const command: [string, ...string[]] = [file, ...leading, ...claudeArgs];
-        const args = buildDockerArgs({ image: cleanRoomImage(agent.cleanRoom ?? {}, env), uid, gid, place: clean, agentDir: base, names, command });
+        const flavor = cleanRoomFlavor(agent.cleanRoom ?? {}, options.defaultSandbox?.());
+        const runArgs = buildDockerArgs({ image: cleanRoomImage(agent.cleanRoom ?? {}, env), flavor, uid, gid, place: clean, agentDir: base, names, command });
+        // a runtime of its own is verified before the agent's process starts; docker (runc) runs as it always did
+        const runtime = CLEAN_ROOM_RUNTIMES[flavor];
+        const args = runtime === null ? runArgs : await createVerified(runArgs, runtime, clean.container, childEnv);
         spec = { file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree };
         const started = byAgent.get(name);
         if (started?.generation === opts.generation) started.container = clean.container;
@@ -771,6 +796,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
         if (live.some((l) => l.name === name && l.generation === v.generation)) continue;
         byToken.delete(v.hash);
         byAgent.delete(name);
+        options.egress?.revoke(name);
       }
       saveTokens();
     },

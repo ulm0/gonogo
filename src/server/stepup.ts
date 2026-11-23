@@ -18,6 +18,9 @@ const UNATTENDED = new Set(['auto', 'bypassPermissions']);
 const given = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && value !== false && !(typeof value === 'object' && Object.keys(value as object).length === 0);
 
 /** The body decides these two (hire; edit of an agent), so the proxy reads it first. */
+/** The hire is where the room's default sandbox matters: the proxy asks the room for it before it decides. */
+export const needsRoomSandbox = (method: string, path: string, body: Record<string, unknown> | null): boolean => method === 'POST' && path === '/api/agents' && typeof body?.cleanRoom === 'object' && body.cleanRoom !== null && typeof (body.cleanRoom as Record<string, unknown>).flavor === 'string';
+
 export function bodyMatters(method: string, path: string): boolean {
   if (method === 'PUT' && path === '/api/autoupdate') return true;
   if (method === 'POST' && path === '/api/rooms/main/migrate') return true;
@@ -28,15 +31,43 @@ export function bodyMatters(method: string, path: string): boolean {
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
+/**
+ * The routes where an API key must not turn egress off, or leave it to the room: the room setting, a hire, an edit of an agent (an edit REPLACES the Clean Room
+ * setting, so one that does not say egress:true can end an agent's own). Only a browser session (with its step-up) or the terminal may weaken it.
+ */
+export const egressChange = (method: string, path: string): boolean =>
+  (method === 'PUT' && path === '/api/egress') || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
+export function weakensEgress(method: string, path: string, body: Record<string, unknown> | null): boolean {
+  if (body === null) return true;
+  if (path === '/api/egress') return body.anthropic !== true;
+  const room = body.cleanRoom;
+  if (typeof room !== 'object' || room === null) return false;
+  const egress = (room as Record<string, unknown>).egress;
+  return method === 'POST' ? egress === false : egress !== true;
+}
+
+/** The walls of the Clean Room, weakest first: a hire below the room's own sandbox is a weaker one than the Director set. */
+const FLAVOR_RANK = ['docker', 'gvisor', 'microvm'];
+
+/** What the proxy knows of the room for the rule: its default sandbox flavor (`docker` when none). */
+export interface StepUpContext {
+  roomSandbox?: string;
+}
+
 /** Why this change needs a fresh check, or null when it does not. `body` is the parsed JSON object, or null when there is none or it is not one. */
-export function stepUpReason(method: string, path: string, body: Record<string, unknown> | null): string | null {
+export function stepUpReason(method: string, path: string, body: Record<string, unknown> | null, context: StepUpContext = {}): string | null {
   if (!CHANGES.has(method)) return null;
   if (method === 'POST' && path === '/api/agents') {
     if (body === null) return 'hiring an agent';
     if (body.command !== undefined && body.command !== null) return 'hiring an agent with a command of your own';
     if (typeof body.mode === 'string' && UNATTENDED.has(body.mode)) return 'hiring an agent that works without asking';
+    // a Clean Room with a wall below the room's own default: a session that has not stepped up cannot undercut what the Director stepped up to set
+    const flavor = typeof body.cleanRoom === 'object' && body.cleanRoom !== null ? (body.cleanRoom as Record<string, unknown>).flavor : undefined;
+    if (typeof flavor === 'string' && FLAVOR_RANK.indexOf(flavor) < FLAVOR_RANK.indexOf(context.roomSandbox ?? 'docker')) return "hiring below the room's sandbox";
     // outside a Clean Room, with a remote control or with keys of its own: more than a plain hire
     if (body.cleanRoom === false) return 'hiring an agent outside a Clean Room';
+    // a Clean Room that keeps its API key inside its container, against the room's setting
+    if (typeof body.cleanRoom === 'object' && body.cleanRoom !== null && (body.cleanRoom as Record<string, unknown>).egress === false) return 'hiring a Clean Room agent that holds its own API key';
     if (given(body.remoteControl)) return 'hiring an agent with remote control';
     if (given(body.keys)) return 'hiring an agent with keys of its own';
     if (given(body.payload) || given(body.permissions)) return 'hiring an agent with a payload or permissions of its own';
@@ -50,6 +81,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (method === 'PUT' && path === '/api/models/mode') return body !== null && typeof body.mode === 'string' && UNATTENDED.has(body.mode) ? 'setting the room to work without asking' : body === null ? 'setting the room to work without asking' : null;
   // marking a note or a claim shareable is publishing it to a docked station
   if (method === 'PUT' && path === '/api/dock-shares') return 'sharing with a docked station';
+  // the room's default sandbox: a weaker wall for the Clean Room agents of the room (toward docker), or a stronger one the Director may not have asked for; the password again either way
+  if (method === 'PUT' && path === '/api/models/sandbox') return 'changing the sandbox of the room\'s Clean Room agents';
   // Hangar writes and Recorder commits, per agent
   if (/^\/api\/agents\/[^/]+\/file$/.test(path)) return 'writing a file in an agent\'s folder';
   if (/^\/api\/agents\/[^/]+\/git\/commit$/.test(path)) return 'making a commit';
@@ -60,6 +93,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   // a default server is a program every agent of the room starts, with the keys in its env
   if (/^\/api\/payload-defaults(\/|$)/.test(path)) return 'the Payload defaults of the room';
   if (/^\/api\/features(\/|$)/.test(path)) return 'the feature switches';
+  // where a Clean Room's API key is held: turning it off puts the key back in the container
+  if (/^\/api\/egress(\/|$)/.test(path)) return 'where a Clean Room keeps its API key';
   // the rules of the room reach every agent at the authority of a system prompt
   if (/^\/api\/rules(\/|$)/.test(path)) return 'the rules of the room';
   if (/^\/api\/(uplinks|relay|docking)(\/|$)/.test(path)) return 'a secret of Uplink, Relay or Docking';

@@ -3,6 +3,7 @@
  * tests can reach it.
  */
 import { positionById } from '../shared/positions.js';
+import { FLAVOR_TEXT } from './models.js';
 import { providerInfo } from '../shared/protocol.js';
 import type { PermissionMode, ReliefRequest } from '../shared/protocol.js';
 
@@ -48,7 +49,7 @@ export function reliefRows(request: ReliefRequest, now: number): ReliefRow[] {
     { label: 'Mode', value: providerInfo(request.provider).modes ? `${MODE_TEXT[request.mode]}${request.modeFromRoom === true ? " (the room's default)" : ''}` : 'none: this engine has no permission modes in gonogo, its own rules apply' },
     { label: 'Folder', value: request.dir },
   ];
-  if (request.cleanRoom !== null) rows.push({ label: 'Clean Room', value: request.cleanRoom.image === undefined ? 'yes: its own container and branch' : `yes: its own container and branch, image ${request.cleanRoom.image}` });
+  if (request.cleanRoom !== null) rows.push({ label: 'Clean Room', value: `${request.cleanRoom.image === undefined ? 'yes: its own container and branch' : `yes: its own container and branch, image ${request.cleanRoom.image}`}${request.flavor === undefined ? '' : `, sandbox ${FLAVOR_TEXT[request.flavor]}${request.flavorBelowRoom === true ? " (below the room's default)" : ''}`}` });
   if (request.worktree !== undefined && request.worktree !== null) rows.push({ label: 'Worktree', value: 'yes: its own git worktree and branch of the repository of the folder' });
   rows.push({ label: 'Waits', value: expiresText(request, now) });
   return rows;

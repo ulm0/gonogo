@@ -22,6 +22,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Grant } from './authhttp.js';
 import { keyMayDo } from './auth.js';
+import { egressChange, weakensEgress } from './stepup.js';
 import { isIpLiteralHost } from './hosts.js';
 import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
@@ -50,7 +51,8 @@ export interface ProxyAuth {
   alive(sessionId: string): boolean;
   touchSession(sessionId: string): void;
   stepUpBody(method: string, path: string): boolean;
-  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
+  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null, context?: { roomSandbox?: string }): string | null;
+  stepUpWantsRoom(method: string, path: string, body: Record<string, unknown> | null): boolean;
   stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string, tui?: boolean): void;
 }
 
@@ -99,7 +101,7 @@ function kindOf(rest: string): Kind {
   // decoded, because a room's router decodes it (/%68ook is /hook there); suspicious() has already made sure it decodes
   const first = decodeURIComponent(rest.split('/')[1] ?? '');
   // case-insensitive on purpose: a router that folds case must not find an agent's route through here
-  if (['hook', 'mcp'].includes(first.toLowerCase())) return 'closed';
+  if (['hook', 'mcp', 'egress'].includes(first.toLowerCase())) return 'closed';
   // the route the rooms of an install offer each other Telegram updates on (telegramroute.ts) is for the local socket and the other rooms, not for a browser or a tunnel
   const [, , second = '', third = ''] = rest.split('?')[0]!.split('/').map((s) => decodeURIComponent(s).toLowerCase());
   if (first.toLowerCase() === 'api' && second === 'telegram' && third !== '') return 'closed';
@@ -303,6 +305,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       // a message of the Director: the browser route of messages, with a login session (or the browser token of an install with no account yet). Not a key, not the local socket, not a terminal.
       let director = false;
       let actor: string | null = null;
+      /** A key making a change that could take the API key back into a Clean Room container: refused unless it only strengthens (stepup.ts weakensEgress). */
+      let keyEgress = false;
       if (target.kind === 'browser' && !((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
         const grant = options.auth.grant(req, 'api');
         if (grant === null) {
@@ -318,6 +322,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           sendText(res, 403, 'this key may not do that');
           return true;
         }
+        if (grant.kind === 'key' && egressChange(req.method ?? 'GET', target.decoded)) keyEgress = true;
         if (grant.kind === 'session' || grant.kind === 'tui') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
         director = (grant.kind === 'session' || grant.kind === 'token') && req.method === 'POST' && target.decoded === '/api/messages';
         if (target.decoded.startsWith('/api/settings') || target.decoded === '/api/docking/addresses' || target.decoded === '/api/project-folder' || target.decoded === '/api/models/mode' || target.decoded === '/api/project-folder/check' || target.decoded.startsWith('/api/docking/') || target.decoded.startsWith('/api/links/') || target.decoded.startsWith('/api/handoff-requests') || target.decoded === '/api/dock-shares') actor = grant.kind === 'key' ? `key:${(grant.keyId ?? '').slice(0, 12)}` : grant.kind;
@@ -342,6 +347,22 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       if (buffered === null) req.pipe(upstream);
       else upstream.end(buffered);
       };
+      if (keyEgress) {
+        const method = req.method ?? 'GET';
+        void readBody(req, 64 * 1024).then((got) => {
+          if (!got.ok) return void sendText(res, got.reason === 'too_large' ? 413 : 400, 'the body could not be read');
+          let parsed: Record<string, unknown> | null = null;
+          try {
+            const value: unknown = JSON.parse(got.body.toString('utf8'));
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+          } catch {
+            // not JSON: the room answers 400, and a body nobody could read is the strictest case
+          }
+          if (weakensEgress(method, target.decoded, parsed)) return void sendText(res, 403, 'an API key may not turn off, or leave to the room, where a Clean Room keeps its API key: do it in the browser');
+          forward(got.body);
+        });
+        return true;
+      }
       if (stepUp === null) {
         forward(null);
         return true;
@@ -363,9 +384,28 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         } catch {
           // not JSON: the room answers 400; the strictest reading of a body nobody could read is that it needs the check
         }
-        const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed);
-        if (reason !== null) options.auth.stepUpDenied(req, res, reason, asked.grant.kind === 'tui');
-        else forward(got.body);
+        const decide = (roomSandbox: string | undefined): void => {
+          const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed, roomSandbox === undefined ? {} : { roomSandbox });
+          if (reason !== null) options.auth.stepUpDenied(req, res, reason, asked.grant.kind === 'tui');
+          else forward(got.body);
+        };
+        // a hire that names a Clean Room flavor is judged against the room's own default, which only the room knows: asked on its socket (a room that does not answer is read as the strongest wall, so the hire asks for the password)
+        if (!options.auth.stepUpWantsRoom(asked.method, asked.path, parsed)) return decide(undefined);
+        const ask = http.request({ socketPath: target.room.socket, method: 'GET', path: '/api/models', headers: { host: '127.0.0.1', accept: 'application/json' }, timeout: 1500 }, (answer) => {
+          const chunks: Buffer[] = [];
+          answer.on('data', (c: Buffer) => chunks.push(c));
+          answer.on('end', () => {
+            try {
+              const value = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sandbox?: unknown }).sandbox;
+              decide(typeof value === 'string' ? value : 'docker');
+            } catch {
+              decide('microvm');
+            }
+          });
+        });
+        ask.on('timeout', () => ask.destroy());
+        ask.on('error', () => decide('microvm'));
+        ask.end();
       });
       return true;
     },
