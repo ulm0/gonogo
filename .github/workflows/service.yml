@@ -1,0 +1,165 @@
+name: Service
+
+# `gonogo service install` against a real service manager: systemd (a user manager on the runner), OpenRC (Alpine in a container), and launchd's
+# plist on macOS. The packed tarball is installed globally, a stand-in `claude` satisfies the start-up check, and a room is started, reloaded
+# (the manager starts the next gonogo) and removed.
+on:
+  push:
+    branches: [main]
+    paths: [src/server/service.ts, src/server/reload.ts, src/server/cli.ts, package.json, .github/workflows/service.yml]
+  pull_request:
+    paths: [src/server/service.ts, src/server/reload.ts, src/server/cli.ts, package.json, .github/workflows/service.yml]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: service-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No version: it installs the pnpm that package.json `packageManager` pins.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          mkdir pack
+          pnpm pack --pack-destination pack
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball
+          path: pack/*.tgz
+          if-no-files-found: error
+
+  systemd:
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: pack
+      - run: npm install -g "$PWD"/pack/*.tgz
+      # A user manager for the runner's user: lingering starts user@<uid>.service, and the commands below talk to its bus.
+      - name: A systemd user manager
+        run: |
+          sudo loginctl enable-linger "$USER"
+          for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/bus" ] && break; sleep 1; done
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - name: A stand-in claude (gonogo refuses to start without one on the PATH)
+        run: |
+          mkdir -p "$HOME/bin"
+          printf '#!/bin/sh\nexec sleep 100000\n' > "$HOME/bin/claude"
+          chmod +x "$HOME/bin/claude"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: install --now, status, reload, uninstall
+        run: |
+          set -x
+          gonogo service install --pty-host --port 7788 --now
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:7788/rooms/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:7788/rooms/health
+          gonogo service status
+          # the unit holds the absolute node, the entry, and a PATH with the stand-in claude
+          grep -q "^ExecStart=$(command -v node) " ~/.config/systemd/user/gonogo.service
+          grep -q "$HOME/bin" ~/.config/systemd/user/gonogo.service
+          before=$(systemctl --user show -p MainPID --value gonogo.service)
+          gonogo reload
+          for i in $(seq 1 40); do
+            now=$(systemctl --user show -p MainPID --value gonogo.service)
+            [ "$now" != "$before" ] && [ "$now" != 0 ] && curl -fsS http://127.0.0.1:7788/rooms/health && break
+            sleep 1
+          done
+          [ "$now" != "$before" ] && [ "$now" != 0 ] || { echo "::error::the manager did not start a new gonogo after reload"; systemctl --user status gonogo.service || true; exit 1; }
+          systemctl --user is-active gonogo.service
+          # exactly one gonogo supervisor: the reload did not start a second one next to the manager's
+          [ "$(pgrep -fc 'gonogo --home')" = 1 ]
+          gonogo service uninstall
+          ! systemctl --user is-active gonogo.service
+          [ ! -e ~/.config/systemd/user/gonogo.service ]
+      - if: failure()
+        run: journalctl --user -u gonogo.service --no-pager | tail -60
+
+  openrc:
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: pack
+      # Alpine with OpenRC; --init so that a stopped service's process is reaped (the container's own pid 1 would not)
+      - name: install, reload and uninstall under OpenRC
+        run: |
+          docker run --rm --init -v "$PWD/pack:/pk:ro" node:24-alpine sh -ec '
+            apk add --no-cache openrc curl >/dev/null
+            mkdir -p /run/openrc && touch /run/openrc/softlevel
+            adduser -D -h /home/ana ana
+            npm install -g /pk/*.tgz >/dev/null 2>&1
+            printf "#!/bin/sh\nexec sleep 100000\n" > /usr/local/bin/claude && chmod +x /usr/local/bin/claude
+            # as root with no user to run as: refused
+            ! gonogo service install --pty-host 2>/dev/null
+            gonogo service install --user ana --pty-host --port 7788 --now
+            for i in $(seq 1 40); do curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break; sleep 1; done
+            curl -fsS http://127.0.0.1:7788/rooms/health
+            gonogo service status
+            # runs as ana, not as root
+            ps -o user,args | grep "gonogo --home" | grep -v grep | grep -q "^ana "
+            before=$(pgrep -f "gonogo --home" | head -1)
+            su ana -c "gonogo reload --home /home/ana/.gonogo"
+            for i in $(seq 1 40); do
+              now=$(pgrep -f "gonogo --home" | head -1)
+              [ -n "$now" ] && [ "$now" != "$before" ] && curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break
+              sleep 1
+            done
+            [ "$now" != "$before" ]
+            gonogo service status
+            gonogo service uninstall
+            [ ! -e /etc/init.d/gonogo ]
+            [ -z "$(pgrep -f "gonogo --home")" ]
+          '
+
+  launchd:
+    needs: pack
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: pack
+      - run: npm install -g "$PWD"/pack/*.tgz
+      # Not started: a CI runner has no login session to load a LaunchAgent into. The file is what has to be right.
+      - name: install without --now, lint the plist, uninstall
+        run: |
+          set -x
+          gonogo service install --pty-host --port 7788
+          plist="$HOME/Library/LaunchAgents/com.ulm0.gonogo.plist"
+          plutil -lint "$plist"
+          /usr/libexec/PlistBuddy -c 'Print :KeepAlive' -c 'Print :RunAtLoad' -c 'Print :AbandonProcessGroup' -c 'Print :ProgramArguments:0' "$plist"
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$plist")" = "$(command -v node)" ]
+          gonogo service status || [ $? = 3 ]
+          gonogo service uninstall
+          [ ! -e "$plist" ]
