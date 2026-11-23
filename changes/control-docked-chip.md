@@ -1,0 +1,1 @@
+- **A "Docked" chip in the room.** The status strip shows which stations this one is connected to ("Docked: lab, ops", "Docked 2" on a phone) with a dot for each, and turns amber with "lab down" when one does not answer. Pressing it opens Docking in Flight Rules. With no station docked there is no chip.
