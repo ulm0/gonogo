@@ -1,5 +1,5 @@
 /** Docker self-update (docs/self-update-spec.md): the words of the confirmation the Update button shows in a container, with no React. */
-import type { AgentState, StartupPolicy } from '../shared/protocol.js';
+import type { AgentState, RolloutView, StartupPolicy } from '../shared/protocol.js';
 
 /** Agents that would be cut off by the stop (working, or waiting for you) and those that are idle; stopped ones are not counted. */
 export function agentCounts(states: readonly AgentState[]): { working: number; idle: number } {
@@ -41,3 +41,21 @@ export function verifyPanel(verify: 'unattested' | 'unchecked'): { problem: stri
  * does not bring a dismissed strip back; an update that is running always shows.
  */
 export const stripDismissed = (dismissed: string | null, shown: string, busy: boolean): boolean => dismissed !== null && dismissed !== '' && dismissed === shown && !busy;
+
+/**
+ * Whether the update strip under the top bar is NOT drawn, from the same facts the strip uses: nothing to show (no newer version and no result left by an update), or the
+ * version it would show was dismissed. The version key asks this too, so it has its own Update key exactly when the strip has none.
+ */
+export function stripHidden(rollout: RolloutView | null, dismissed: string | null): boolean {
+  if (rollout === null) return true;
+  const update = rollout.update;
+  const busy = update !== undefined && (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off');
+  // what the last Docker self-update left (done, rolled back) is shown after the restart, when the new version is no longer "newer"
+  const result = update !== undefined && (update.state === 'done' || (update.state === 'failed' && !rollout.newer));
+  if ((!rollout.newer && !result) || (rollout.latest === null && !result)) return true;
+  return stripDismissed(dismissed, rollout.latest ?? update?.version ?? '', busy);
+}
+
+/** The same for any room: main draws the update strip by stripHidden; another room draws its note for the newer version unless that version was dismissed. */
+export const noStripFor = (inMainRoom: boolean, rollout: RolloutView | null, dismissed: string | null, newer: string): boolean =>
+  inMainRoom ? stripHidden(rollout, dismissed) : dismissed !== null && dismissed !== '' && dismissed === newer;

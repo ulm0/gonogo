@@ -412,7 +412,8 @@ export function createSemantic(options: SemanticOptions): Semantic {
     running = running.then(async () => {
       try {
         await step();
-        if (pending.length > 0 || state === 'indexing') options.changed?.();
+        // off or not set up, step() leaves `pending` as it is and changes nothing: no frame (it told the page every tick, for ever)
+        if (options.on() && configured && (pending.length > 0 || state === 'indexing')) options.changed?.();
       } catch (e) {
         log.warn('the semantic loop failed', e);
       }

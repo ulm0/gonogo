@@ -26,7 +26,7 @@ that gets the message works as it always does, and Max Q, Redline and held mail 
 - **The endpoint** is `POST /uplink/:id`, outside `/api` and outside the browser token (`handleUplink` in `web.ts`; the
   route kind `uplink`). The sender proves itself in one of two ways, and either one is enough:
   `X-Gonogo-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body keyed with the secret text (the 64 characters, not
-  the bytes they spell), or `Authorization: Bearer <secret>`. Both are compared in constant time. The signature is over
+  the bytes they spell), or `Authorization: Bearer <secret>` (only on a room's own port: the supervisor's proxy never forwards `Authorization`, so behind it the signature is the only proof). Both are compared in constant time. The signature is over
   the bytes as they arrived, before anything is parsed. The bearer form is there for senders that cannot sign; it sends
   the secret itself, so it wants HTTPS.
 - **The answers.** 202 `{ ok, id, status }` when a message was made (`status` is the hub's: `queued`, `held` or

@@ -83,6 +83,8 @@ const PREFIX = /^\/r\/([^/?#]*)(\/[^?#]*)?(\?[^#]*)?$/;
 const ROOT_ALIASES = /^\/(?:api|ws|uplink|dock|hook|mcp)(?:\/|$)|^\/(?:sw\.js|manifest\.webmanifest|apple-touch-icon\.png|favicon\.(?:ico|svg)|icon-[\w-]+\.png|lockup\.svg)$/;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const DROPPED = new Set(['authorization', 'cookie', 'host', 'origin', 'forwarded', 'x-real-ip']);
+/** The only `x-gonogo-` headers that go on to a room, and only for `/dock/` and `/uplink/`: a docked station's signed call (docs/docking-spec.md) and a generic webhook's `X-Gonogo-Signature`. They prove themselves to the room, which checks them. */
+const SIGNED_CALL = new Set(['x-gonogo-station', 'x-gonogo-timestamp', 'x-gonogo-nonce', 'x-gonogo-signature']);
 /** The one header the proxy adds for a room (docs/features/relay.md): "this POST /api/messages was made by a browser session that is signed in". Whatever a sender puts under any `x-gonogo-` name is dropped first, so only this code can say it. */
 export const DIRECTOR_HEADER = 'x-gonogo-director';
 /** Who asked, for a change of the room's settings: `session`, `key:<id>`, `token`, `socket` or `tui`. The room believes it only from this socket; a sender's own copy is dropped like every x-gonogo- header. */
@@ -230,7 +232,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
     const out: http.OutgoingHttpHeaders = {};
     for (const [name, value] of Object.entries(req.headers)) {
       const lower = name.toLowerCase();
-      if (DROPPED.has(lower) || lower.startsWith('x-forwarded-') || lower.startsWith('x-gonogo-') || (!upgrade && HOP.has(lower))) continue;
+      if (DROPPED.has(lower) || lower.startsWith('x-forwarded-') || (lower.startsWith('x-gonogo-') && !(target.kind === 'passthrough' && SIGNED_CALL.has(lower))) || (!upgrade && HOP.has(lower))) continue;
       if (upgrade && lower === 'sec-websocket-protocol') continue;
       out[lower] = value;
     }

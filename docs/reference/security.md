@@ -31,7 +31,7 @@ REFLECT only reads and copies one agent's `memory.md` and never writes it. The a
 
 ## Uplink
 
-**`POST /uplink/<id>` takes no browser token.** It needs that uplink's secret (a body signature, or the secret as a bearer token). At most 256 KiB and 30 a minute per uplink. Unknown and disabled uplinks both answer 404. The Host check applies; a request with an `Origin` header is refused. An agent reads a delivery as a message from you.
+**`POST /uplink/<id>` takes no browser token.** It needs that uplink's secret (a body signature; the secret as a bearer token only when a room is called directly, because the supervisor does not forward `Authorization`). At most 256 KiB and 30 a minute per uplink. Unknown and disabled uplinks both answer 404. The Host check applies; a request with an `Origin` header is refused. An agent reads a delivery as a message from you.
 
 ## Relief
 
