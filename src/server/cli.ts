@@ -1134,6 +1134,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       emit: (view) => web?.broadcast({ t: 'docking', docking: view }),
       emitLinks: (links) => web?.broadcast({ t: 'links', links }),
       missions,
+      knowledge: {
+        entries: (query) => missionLog.search(query, 50).hits.map((h) => ({ id: h.id, title: h.title, snippet: h.snippet, date: new Date(h.updatedAt).toISOString().slice(0, 10) })),
+        claims: async () => {
+          const found: Array<{ key: string; statement: string; date: string }> = [];
+          for (const repoId of Object.keys(await knowledgeStore.repos())) {
+            for (const c of (await knowledgeStore.claims(repoId)).claims) if (c.state === 'active') found.push({ key: `${repoId}/${c.id}`, statement: c.statement, date: c.date });
+          }
+          return found;
+        },
+      },
       setLinkBudget: (linkId, usd) => void propellant.setBudget({ links: { [linkId]: usd } }).catch((error: unknown) => log.warn('a link budget could not be saved', error)),
       spentOnTask: (taskId) => propellant.view().cost.tasks?.[taskId]?.usd,
       roomBudgetCap: () => {

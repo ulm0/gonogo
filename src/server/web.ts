@@ -210,7 +210,7 @@ export interface WebOptions {
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
-  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'handOffMission' | 'linkViews' | 'linkTrail' | 'outbound' | 'rules' | 'setRules' | 'returnTask' | 'recallTask' | 'acceptDelivery' | 'asks' | 'answerAsk' | 'requestHandoff'>;
+  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'handOffMission' | 'askKnowledge' | 'suggest' | 'shares' | 'setShare' | 'linkViews' | 'linkTrail' | 'outbound' | 'rules' | 'setRules' | 'returnTask' | 'recallTask' | 'acceptDelivery' | 'asks' | 'answerAsk' | 'requestHandoff'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
   /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
@@ -1159,6 +1159,21 @@ export function createWebServer(options: WebOptions): WebServer {
       if (s[3] === 'test') return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await uplinks.test(id)) };
       return null;
     }
+    // Docking 2, S5: what the Director marked shareable for docked stations (his own login): GET lists, PUT sets one entry or claim for exactly the docks named
+    if (s[1] === 'dock-shares' && s.length === 2) {
+      const docking = options.docking;
+      if (!docking) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+          if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "what is shared with a station is the Director's own login's to see and to set", 'forbidden');
+          if (req.method === 'GET') return sendJson(res, 200, { shares: docking.shares() });
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await docking.setShare(body.kind, body.id, body.docks));
+        },
+      };
+    }
     // Docking 2: hand-offs that wait for the Director, with the whole text that would leave; his answer is go or no, and `always` sets that station to allow
     if (s[1] === 'handoff-requests' && (s.length === 2 || (s.length === 4 && s[3] === 'answer'))) {
       const docking = options.docking;
@@ -1240,6 +1255,20 @@ export function createWebServer(options: WebOptions): WebServer {
           run: async (req, res) => {
             const body = await jsonObject(req, res);
             if (body) sendJson(res, 201, id === 'code' ? docking.createCode(body) : await docking.pair(body));
+          },
+        };
+      }
+      // the Director asks a docked station's shared knowledge himself
+      if (s.length === 4 && s[3] === 'knowledge') {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+            if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "a request for another station's knowledge is made from the Director's own login", 'forbidden');
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            const dockName = docking.view().docks.find((d) => d.id === id)?.name;
+            sendJson(res, 200, await docking.askKnowledge(dockName, body.query));
           },
         };
       }

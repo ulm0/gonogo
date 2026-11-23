@@ -25,6 +25,7 @@ import {
   OUTBOX_SENT_KEEP,
 } from './constants.js';
 import { isRecord } from './hooks.js';
+import { redactSecrets } from './triggers.js';
 import { HubError } from './hub.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -215,7 +216,7 @@ const REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 export function readDeliverable(raw: unknown): Deliverable | null {
   if (!isRecord(raw) || typeof raw.kind !== 'string' || !(DELIVERABLE_KINDS as readonly string[]).includes(raw.kind) || typeof raw.ref !== 'string') return null;
   const ref = raw.ref.trim();
-  if (ref === '' || ref.length > 300 || UNSAFE.test(ref)) return null;
+  if (ref === '' || ref.length > 300 || UNSAFE.test(ref) || redactSecrets(ref) !== ref) return null;
   UNSAFE.lastIndex = 0;
   const kind = raw.kind as Deliverable['kind'];
   if (kind === 'pr' || kind === 'url') {
@@ -431,7 +432,8 @@ export function createLinks(options: LinksOptions): Links {
 
     record(link, kind, by, text, status, extra = {}) {
       const queue = extra.queue !== false;
-      const clean = cleanLine(text);
+      // what leaves is cleaned like what comes in, and secrets in it are replaced (the Outbound view shows this very text)
+      const clean = redactSecrets(cleanLine(text));
       const attachments = extra.attachments === undefined ? [] : readDeliverables(extra.attachments);
       const event: LinkEvent = { link: link.id, author: stationId(), seq: link.outSeq + 1, at: now(), kind, by: cleanLine(by, 80), text: clean, ...(status === undefined ? {} : { status }), ...(attachments.length === 0 ? {} : { attachments }), ...(extra.via !== undefined && new RegExp(STATION_NAME_PATTERN).test(extra.via) ? { via: extra.via } : {}) };
       link.outSeq = event.seq;

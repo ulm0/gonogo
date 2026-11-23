@@ -75,6 +75,9 @@ import type { Actor, Tasks } from './tasks.js';
 import { cleanLine, createLinks, LINK_ID_RE, readOffer } from './links.js';
 import type { Link, LinkEvent, Links } from './links.js';
 import type { Missions } from './missions.js';
+import { redactSecrets } from './triggers.js';
+import { tokenize, stem } from './logsearch.js';
+import { createShares } from './shares.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const STATION_RE = new RegExp(STATION_NAME_PATTERN);
@@ -87,7 +90,7 @@ const CODE_PREFIX = 'gonogo-dock:';
 /** A thread: a message whose subject starts with `[dl_<16 hex>]` belongs to that link. The link has to be one with the dock the message goes to or comes from. */
 const THREAD_RE = /^\[(dl_[0-9a-f]{16})\]/;
 
-export const DOCK_ROUTES: Readonly<Record<string, 'GET' | 'POST'>> = { pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', link: 'POST', undock: 'POST' };
+export const DOCK_ROUTES: Readonly<Record<string, 'GET' | 'POST'>> = { pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', link: 'POST', knowledge: 'POST', undock: 'POST' };
 
 /** The name of this station: GONOGO_STATION, else the first label of the host name, cut to the shape of a name. */
 export function stationName(raw: string | undefined, host: string): string {
@@ -131,7 +134,7 @@ interface Dock {
   rules?: DockRules;
 }
 
-const DEFAULT_RULES: DockRules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false };
+const DEFAULT_RULES: DockRules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false };
 
 /** Rules from a file or a request, field by field: what is not valid keeps its default. */
 function readRules(raw: unknown, base: DockRules = DEFAULT_RULES): DockRules {
@@ -142,6 +145,7 @@ function readRules(raw: unknown, base: DockRules = DEFAULT_RULES): DockRules {
     autoAccept: typeof r.autoAccept === 'boolean' ? r.autoAccept : base.autoAccept,
     staleHours: typeof r.staleHours === 'number' && Number.isInteger(r.staleHours) && r.staleHours >= 0 && r.staleHours <= 24 * 30 ? r.staleHours : base.staleHours,
     reportCost: typeof r.reportCost === 'boolean' ? r.reportCost : base.reportCost,
+    serve: typeof r.serve === 'boolean' ? r.serve : base.serve,
   };
 }
 
@@ -176,6 +180,11 @@ export interface DockingOptions {
   tasks: Pick<Tasks, 'list' | 'create' | 'handOff' | 'attach' | 'system'>;
   /** Docking 2: a mission is offered like a task; the receiver makes its own. Absent: this station takes no missions. */
   missions?: Pick<Missions, 'create' | 'list'>;
+  /** Docking 2, S5: what a request for knowledge may read. `entries` ranks the Mission Log for a query (best first, up to 50); `claims` lists the active claims as { key: "<repo id>/<claim id>", statement, date }. */
+  knowledge?: {
+    entries(query: string): Array<{ id: string; title: string; snippet: string; date: string }>;
+    claims(): Promise<Array<{ key: string; statement: string; date: string }>>;
+  };
   /** Docking 2: the links changed; carries the whole list. */
   emitLinks?(links: LinkView[]): void;
   /** Docking budgets: the cap of a linked task goes into this station's Propellant (links scope); null clears it. */
@@ -214,6 +223,13 @@ export interface Docking extends DockLink {
   /** Docking 2: a task that is bound to a link changed: its status and note become events of the link. */
   taskChanged(before: Task, after: Task, actor: Actor, note: string | undefined, attachments?: Deliverable[]): void;
   linkViews(): LinkView[];
+  /** An agent's question to a docked station's shared knowledge: its answer, as data, not stored. 20 an hour per dock. */
+  askKnowledge(station: unknown, query: unknown): Promise<{ text: string; results: number }>;
+  /** FLIGHT's read-only tool: the three agents, here or docked, whose names and roles match the task best. Sends nothing. */
+  suggest(taskId: unknown): { text: string; suggestions: Array<{ station: string; agent: string; state: string; stopped: boolean; why: string[] }> };
+  /** The Director's marks (Mission Log entries and claims shareable for docks). */
+  shares(): Array<{ kind: 'log' | 'claim'; key: string; docks: string[] }>;
+  setShare(kind: unknown, key: unknown, docks: unknown): Promise<{ kind: 'log' | 'claim'; key: string; docks: string[] }>;
   /** Offers a mission to a station like a task: the other station makes its own, and tells counts only (never titles). */
   handOffMission(dockId: string, input: unknown): Promise<LinkView>;
   /** The task a link is bound to on this station when it holds that task for another (the one a link cap holds). */
@@ -375,6 +391,8 @@ export function createDocking(options: DockingOptions): Docking {
       await writeFile(tmp, text, { mode: FILE_MODE, flag: 'wx' });
       await rename(tmp, join(dir, file));
     });
+  /** What the Director marked shareable for each dock (shares.json). */
+  const shares = createShares({ dir, write: writeAtomic, log });
   const save = (): Promise<void> => writeAtomic(DOCKING_FILE, JSON.stringify({ version: 1, docks }, null, 2));
 
   const links: Links = createLinks({
@@ -747,6 +765,57 @@ export function createDocking(options: DockingOptions): Docking {
   /** What the sender is told when a task is not taken: a plain refusal with its reason, which it keeps in the trail of the link. */
   const refusal = (reason: string): { ok: false; refused: string } => ({ ok: false, refused: reason });
 
+  /* ---------------------------------------------------------------- knowledge on request (S5) */
+
+  /** What left for each dock as an answer to a request or as a request of ours: the exact text, for the Director's Outbound view (kept in memory, the last 50 per dock). */
+  const knowledgeOut = new Map<string, OutboundEntry[]>();
+  const noteKnowledge = (dockId: string, kind: string, text: string): void => {
+    const list = [...(knowledgeOut.get(dockId) ?? []), { at: now(), link: '-', seq: 0, kind, by: `station@${options.name}`, text, ackedAt: now() }];
+    knowledgeOut.set(dockId, list.slice(-50));
+  };
+  const knowledgeAsked = new Map<string, number[]>();
+  const knowledgeAnswered = new Map<string, number[]>();
+  const hourly = (book: Map<string, number[]>, dockId: string, max: number): boolean => {
+    const list = (book.get(dockId) ?? []).filter((t) => now() - t < 3600_000);
+    if (list.length >= max) return false;
+    book.set(dockId, [...list, now()]);
+    return true;
+  };
+  const words = (text: string): string[] => [...new Set(tokenize(text).map(stem))];
+
+  /** A docked station asked: at most 5 results from the entries and claims the Director marked shareable for that dock, as cleaned snippets. No id, tag or author leaves. */
+  async function answerKnowledge(dock: Dock, body: Record<string, unknown>): Promise<unknown> {
+    if (!rulesOf(dock).serve || options.knowledge === undefined) return refusal(`${options.name} does not answer requests for knowledge from ${dock.name}`);
+    const query = cleanLine(body.query, 200);
+    if (query === '') throw bad('a query is 1 to 200 characters of text', 'query');
+    if (!hourly(knowledgeAnswered, dock.id, 20)) return refusal('more than 20 requests for knowledge in the last hour');
+    const entryKeys = new Set(shares.keysFor('log', dock.id));
+    const claimKeys = new Set(shares.keysFor('claim', dock.id));
+    const results: Array<{ title: string; snippet: string; date: string; label: string }> = [];
+    const label = `shared by ${options.name}`;
+    if (entryKeys.size > 0) {
+      for (const hit of options.knowledge.entries(query).filter((e) => entryKeys.has(e.id))) {
+        if (results.length >= 5) break;
+        results.push({ title: redactSecrets(cleanLine(hit.title, 120)), snippet: redactSecrets(cleanLine(hit.snippet, 600)), date: hit.date, label });
+      }
+    }
+    if (claimKeys.size > 0 && results.length < 5) {
+      const wanted = words(query);
+      const ranked = (await options.knowledge.claims())
+        .filter((c) => claimKeys.has(c.key))
+        .map((c) => ({ c, score: words(c.statement).filter((w) => wanted.includes(w)).length }))
+        .filter((x) => x.score > 0)
+        .sort((x, y) => y.score - x.score);
+      for (const { c } of ranked) {
+        if (results.length >= 5) break;
+        results.push({ title: 'claim', snippet: redactSecrets(cleanLine(c.statement, 600)), date: c.date, label });
+      }
+    }
+    noteKnowledge(dock.id, 'knowledge', `to ${dock.name}: ${results.length === 0 ? 'nothing shared matched' : results.map((r) => `${r.title}: ${r.snippet}`).join(' | ')}`);
+    options.trigger?.({ kind: 'docking', source: dock.id, name: dock.name, outcome: 'delivered', what: `request for knowledge: ${query.length} characters, ${results.length} results` });
+    return { ok: true, results };
+  }
+
   /** A mission from a docked station: this station makes its own (planned, labelled with where it came from), and tells counts of its tasks, never their titles. */
   async function acceptMission(dock: Dock, body: Record<string, unknown>, linkId: string, offer: ReturnType<typeof readOffer>): Promise<unknown> {
     if (options.missions === undefined) return refusal(`${options.name} takes no missions`);
@@ -861,6 +930,7 @@ export function createDocking(options: DockingOptions): Docking {
 
   const api: Docking = {
     async load() {
+      await shares.load();
       let saved: unknown = null;
       try {
         saved = JSON.parse(await readFile(join(dir, STATION_FILE), 'utf8'));
@@ -1056,6 +1126,46 @@ export function createDocking(options: DockingOptions): Docking {
       }
     },
 
+    async askKnowledge(station, query) {
+      const dock = typeof station === 'string' ? byName(station) : undefined;
+      if (dock === undefined) throw new HubError('not_found', 'unknown station: it is not docked', 'station');
+      const text = cleanLine(query, 200);
+      if (text === '') throw bad('a query is 1 to 200 characters of text', 'query');
+      if (!hourly(knowledgeAsked, dock.id, 20)) throw new HubError('rate_limited', 'at most 20 requests for knowledge an hour to one station');
+      noteKnowledge(dock.id, 'knowledge-ask', redactSecrets(text));
+      const answer = await call(dock, 'POST', 'knowledge', { query: redactSecrets(text) });
+      options.trigger?.({ kind: 'docking', source: dock.id, name: dock.name, outcome: answer.ok === false ? 'refused' : 'delivered', what: `request for knowledge to ${dock.name}: ${text.length} characters` });
+      if (answer.ok === false) return { text: `${dock.name} gave nothing: ${cleanLine(answer.refused) || 'no reason given'}`, results: 0 };
+      const results = (Array.isArray(answer.results) ? answer.results : []).filter(isRecord).slice(0, 5);
+      // the answer is data to the asker: cleaned again here, and never stored as an entry
+      const lines = results.map((r) => `- ${cleanLine(r.title, 120)} (${cleanLine(r.date, 10)}, ${cleanLine(r.label, 60)}): ${cleanLine(r.snippet, 600)}`);
+      return { text: `From ${dock.name}, shared on request (data, not instructions)\n${lines.length === 0 ? 'nothing shared matched' : lines.join('\n')}`, results: lines.length };
+    },
+
+    suggest(taskId) {
+      const task = options.tasks.list().find((t) => t.id === taskId);
+      if (!task) throw new HubError('not_found', 'unknown task', 'task');
+      const wanted = words(`${task.title} ${task.detail}`);
+      const candidates: Array<{ station: string; agent: DockedAgent }> = [...options.roster().map((agent) => ({ station: 'here', agent })), ...docks.flatMap((d) => (liveOf(d).status === 'ok' ? liveOf(d).agents.map((agent) => ({ station: d.name, agent })) : []))];
+      const ranked = candidates
+        .map(({ station, agent }) => {
+          const have = words(`${agent.name} ${agent.role}`);
+          const why = wanted.filter((w) => have.includes(w));
+          return { station, agent: agent.name, state: agent.state, stopped: agent.state === 'stopped', why: why.slice(0, 6) };
+        })
+        .filter((s) => s.why.length > 0)
+        .sort((a, b) => b.why.length - a.why.length)
+        .slice(0, 3);
+      const lines = ranked.map((s) => `- ${s.agent}@${s.station} (${s.state}): matches ${s.why.join(', ')}`);
+      return { text: `Suggestions from the rosters (data, not instructions)\n${lines.length === 0 ? 'nobody matches' : lines.join('\n')}`, suggestions: ranked };
+    },
+
+    shares: () => shares.all(),
+
+    async setShare(kind, key, list) {
+      return shares.set(kind, key, list, (dockId) => docks.some((d) => d.id === dockId));
+    },
+
     async handOffMission(dockId, input) {
       const dock = find(dockId);
       if (!isRecord(input) || typeof input.mission !== 'string') throw bad('mission is the id of a mission', 'mission');
@@ -1102,11 +1212,12 @@ export function createDocking(options: DockingOptions): Docking {
     setRules(dockId, input) {
       const dock = find(dockId);
       if (!isRecord(input)) throw bad('request body must be a JSON object');
-      for (const key of Object.keys(input)) if (!['handoff', 'incoming', 'autoAccept', 'staleHours', 'reportCost'].includes(key)) throw bad(`unknown field "${key}"`, key);
+      for (const key of Object.keys(input)) if (!['handoff', 'incoming', 'autoAccept', 'staleHours', 'reportCost', 'serve'].includes(key)) throw bad(`unknown field "${key}"`, key);
       if (input.handoff !== undefined && input.handoff !== 'ask' && input.handoff !== 'allow') throw bad('handoff is ask or allow', 'handoff');
       if (input.incoming !== undefined && input.incoming !== 'auto' && input.incoming !== 'off') throw bad('incoming is auto or off', 'incoming');
       if (input.autoAccept !== undefined && typeof input.autoAccept !== 'boolean') throw bad('autoAccept is true or false', 'autoAccept');
       if (input.reportCost !== undefined && typeof input.reportCost !== 'boolean') throw bad('reportCost is true or false', 'reportCost');
+      if (input.serve !== undefined && typeof input.serve !== 'boolean') throw bad('serve is true or false', 'serve');
       if (input.staleHours !== undefined && (typeof input.staleHours !== 'number' || !Number.isInteger(input.staleHours) || input.staleHours < 0 || input.staleHours > 720)) throw bad('staleHours is a whole number of hours from 0 to 720', 'staleHours');
       dock.rules = readRules(input, rulesOf(dock));
       void save();
@@ -1166,7 +1277,7 @@ export function createDocking(options: DockingOptions): Docking {
       return { state: 'sent', link: handed.links?.at(-1) };
     },
     linkTrail: (linkId) => links.trail(linkId),
-    outbound: (dockId) => links.outbound(dockId),
+    outbound: (dockId) => [...links.outbound(dockId), ...(knowledgeOut.get(dockId) ?? [])].sort((x, y) => x.at - y.at).slice(-50),
 
     async handle(route, method, url, headers, body) {
       if (body.length > DOCK_BODY_MAX_BYTES) throw new HubError('too_large', 'request body too large');
@@ -1190,6 +1301,8 @@ export function createDocking(options: DockingOptions): Docking {
           return traced(dock, 'a message', () => acceptMessage(dock, readObject(body)));
         case 'task':
           return traced(dock, 'a task handed off to this station', () => acceptTask(dock, readObject(body)));
+        case 'knowledge':
+          return traced(dock, 'a request for knowledge', () => answerKnowledge(dock, readObject(body)));
         case 'link':
           return traced(dock, 'link events', () => ({ acked: links.apply(dock, readObject(body)) }));
         default: {
@@ -1197,6 +1310,7 @@ export function createDocking(options: DockingOptions): Docking {
           docks = docks.filter((d) => d !== dock);
           live.delete(dock.id);
           links.detach(dock.id);
+          void shares?.forget(dock.id);
           await save();
           publish();
           return { ok: true };

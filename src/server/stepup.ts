@@ -48,6 +48,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   }
   // the room's default mode: auto or bypass makes every hire from the form start without asking; clearing it or a milder mode stays free
   if (method === 'PUT' && path === '/api/models/mode') return body !== null && typeof body.mode === 'string' && UNATTENDED.has(body.mode) ? 'setting the room to work without asking' : body === null ? 'setting the room to work without asking' : null;
+  // marking a note or a claim shareable is publishing it to a docked station
+  if (method === 'PUT' && path === '/api/dock-shares') return 'sharing with a docked station';
   // Hangar writes and Recorder commits, per agent
   if (/^\/api\/agents\/[^/]+\/file$/.test(path)) return 'writing a file in an agent\'s folder';
   if (/^\/api\/agents\/[^/]+\/git\/commit$/.test(path)) return 'making a commit';

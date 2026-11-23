@@ -39,6 +39,9 @@ interface Station {
   told: string[];
   bossTold: Array<{ station: string; subject: string; body: string }>;
   /** What the station's Propellant was told: link caps, what a task has spent, and the room budget. */
+  /** The Mission Log and the claims this station would answer from (S5). */
+  logEntries: Array<{ id: string; title: string; snippet: string; date: string }>;
+  claimList: Array<{ key: string; statement: string; date: string }>;
   missionList: Array<{ id: string; name: string; goal: string; status: string }>;
   linkBudgets: Record<string, number | null>;
   spent: Record<string, number>;
@@ -100,6 +103,8 @@ function world(): World {
         systemed: [],
         told: [],
         bossTold: [],
+        logEntries: [],
+        claimList: [],
         missionList: [],
         linkBudgets: {},
         spent: {},
@@ -157,6 +162,7 @@ function world(): World {
         emit: (view) => station.views.push(view),
         notify: (text) => void station.told.push(text),
         tellBoss: (st, subject, body) => void station.bossTold.push({ station: st, subject, body }),
+        knowledge: { entries: (query) => station.logEntries.filter((e) => `${e.title} ${e.snippet}`.toLowerCase().includes(query.toLowerCase().split(' ')[0] ?? '')), claims: async () => station.claimList },
         missions: {
           list: () => station.missionList as never,
           create: async (_actor, input) => {
@@ -220,7 +226,7 @@ describe('the signature', () => {
   });
 
   it('the routes and their methods', () => {
-    expect(DOCK_ROUTES).toEqual({ pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', link: 'POST', undock: 'POST' });
+    expect(DOCK_ROUTES).toEqual({ pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', link: 'POST', knowledge: 'POST', undock: 'POST' });
   });
 });
 
@@ -1585,6 +1591,98 @@ describe('links: reach', () => {
     await b2.docking.pull();
     await settle();
     expect((a.docking.linkTrail(link) ?? []).filter((e) => e.kind === 'note')).toHaveLength(2);
+  });
+
+  describe('knowledge on request, and suggestions', () => {
+    const ready = async (): Promise<{ w: World; a: Station; b: Station; aDock: string; bDock: string }> => {
+      const w = world();
+      const a = await w.make('alpha', 'http://a.test');
+      const b = await w.make('beta', 'http://b.test');
+      const { aSees, bSees } = await pair(a, b);
+      b.logEntries = [
+        { id: 'l1', title: 'Deploy notes', snippet: 'we deploy with token=abc123def456 on friday\u202e and rollback', date: '2026-11-01' },
+        { id: 'l2', title: 'Deploy secrets', snippet: 'private: deploy key lives elsewhere', date: '2026-11-02' },
+      ];
+      b.claimList = [{ key: 'repo1/K-1', statement: 'Deploys go out on Friday only.', date: '2026-10-30' }, { key: 'repo1/K-2', statement: 'Deploys never touch prod on weekends.', date: '2026-10-31' }];
+      return { w, a, b, aDock: aSees, bDock: bSees };
+    };
+
+    it('nothing is shared by default: with serve off the answer is a refusal, and with serve on but no marks it is empty', async () => {
+      const { a, b, bDock, aDock } = await ready();
+      expect((await a.docking.askKnowledge('beta', 'deploy')).text).toContain('beta gave nothing: beta does not answer requests for knowledge from alpha');
+      b.docking.setRules(bDock, { serve: true });
+      expect((await a.docking.askKnowledge('beta', 'deploy')).text).toBe('From beta, shared on request (data, not instructions)\nnothing shared matched');
+      void aDock;
+      await settle();
+    });
+
+    it('only what the Director marked for that dock leaves: cleaned, secrets replaced, at most 600 characters, no id, no tag, no author; the asker gets data, not stored', async () => {
+      const { a, b, bDock, aDock } = await ready();
+      b.docking.setRules(bDock, { serve: true });
+      await b.docking.setShare('log', 'l1', [aDock === '' ? bDock : bDock]);
+      const answer = await a.docking.askKnowledge('beta', 'deploy');
+      expect(answer.results).toBe(1);
+      expect(answer.text.split('\n')[0]).toBe('From beta, shared on request (data, not instructions)');
+      expect(answer.text).toContain('Deploy notes (2026-11-01, shared by beta)');
+      expect(answer.text).toContain('token=[redacted]');
+      expect(answer.text).not.toContain('abc123def456');
+      expect(answer.text).not.toContain('\u202e');
+      expect(answer.text).not.toContain('private');
+      expect(answer.text).not.toMatch(/\bl1\b/);
+      // the exact text that left is in the answering station's Outbound view
+      expect(b.docking.outbound(bDock).at(-1)).toMatchObject({ kind: 'knowledge' });
+      expect(b.docking.outbound(bDock).at(-1)?.text).toContain('Deploy notes: we deploy with token=[redacted]');
+      expect(a.docking.outbound(aDock).at(-1)).toMatchObject({ kind: 'knowledge-ask', text: 'deploy' });
+    });
+
+    it('a claim is its statement only, and a mark is for the docks named, set by the Director and listed; a dock that is removed loses its marks', async () => {
+      const { a, b, bDock, aDock } = await ready();
+      b.docking.setRules(bDock, { serve: true });
+      await b.docking.setShare('claim', 'repo1/K-1', [bDock]);
+      const answer = await a.docking.askKnowledge('beta', 'deploys friday');
+      expect(answer.text).toContain('claim (2026-10-30, shared by beta): Deploys go out on Friday only.');
+      expect(answer.text).not.toContain('K-1');
+      expect(answer.text).not.toContain('weekends');
+      expect(b.docking.shares()).toEqual([{ kind: 'claim', key: 'repo1/K-1', docks: [bDock] }]);
+      await expect(b.docking.setShare('claim', 'repo1/K-1', ['f'.repeat(32)])).rejects.toMatchObject({ field: 'docks' });
+      await expect(b.docking.setShare('log', '../x', [bDock])).rejects.toMatchObject({ field: 'id' });
+      await expect(b.docking.setShare('other', 'l1', [])).rejects.toMatchObject({ field: 'kind' });
+      expect(await b.docking.setShare('claim', 'repo1/K-1', [])).toMatchObject({ docks: [] });
+      expect(b.docking.shares()).toEqual([]);
+      void a;
+      void aDock;
+    });
+
+    it('at most 5 results, 20 requests an hour per dock each way, and the request has to be text', async () => {
+      const { w, a, b, bDock } = await ready();
+      b.docking.setRules(bDock, { serve: true });
+      b.logEntries = Array.from({ length: 9 }, (_, i) => ({ id: `l${i}`, title: `Deploy ${i}`, snippet: 'deploy', date: '2026-11-01' }));
+      for (const e of b.logEntries) await b.docking.setShare('log', e.id, [bDock]);
+      expect((await a.docking.askKnowledge('beta', 'deploy')).results).toBe(5);
+      for (let i = 0; i < 19; i += 1) await a.docking.askKnowledge('beta', 'deploy');
+      await expect(a.docking.askKnowledge('beta', 'deploy')).rejects.toMatchObject({ code: 'rate_limited' });
+      await expect(a.docking.askKnowledge('beta', '   ')).rejects.toMatchObject({ field: 'query' });
+      await expect(a.docking.askKnowledge('nowhere', 'x')).rejects.toMatchObject({ code: 'not_found' });
+      w.clock.now += 61 * 60_000;
+      expect((await a.docking.askKnowledge('beta', 'deploy')).results).toBe(5);
+    });
+
+    it('suggestions rank the agents here and at the docked stations by the words of the task, read-only, with the matching words and the state; stopped is flagged', async () => {
+      const { a, b } = await ready();
+      a.agents = [{ name: 'ana', role: 'writes the release notes and docs', state: 'idle', boss: true }, { name: 'ben', role: 'builds the pipeline', state: 'stopped', boss: false }];
+      b.agents = [{ name: 'cat', role: 'release manager for the notes', state: 'working', boss: true }];
+      await b.docking.pull();
+      await a.docking.pull();
+      await settle();
+      a.tasks = [task('t1', { title: 'Write the release notes', detail: 'docs for the pipeline' })];
+      const found = a.docking.suggest('t1');
+      expect(found.text.split('\n')[0]).toBe('Suggestions from the rosters (data, not instructions)');
+      expect(found.suggestions.map((s) => [s.station, s.agent])).toEqual([['here', 'ana'], ['beta', 'cat'], ['here', 'ben']]);
+      expect(found.suggestions.find((s) => s.agent === 'ben')).toMatchObject({ stopped: true });
+      expect(found.text).toContain('- ben@here (stopped): matches');
+      expect(found.suggestions[0]?.why.length).toBeGreaterThanOrEqual(2);
+      expect(() => a.docking.suggest('t99')).toThrow();
+    });
   });
 
   describe('mission links', () => {

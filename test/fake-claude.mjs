@@ -40,6 +40,8 @@ const ALLOWED_TOOLS = [
   'mcp__gonogo__task_create',
   'mcp__gonogo__task_update',
   'mcp__gonogo__task_handoff',
+  'mcp__gonogo__station_suggest',
+  'mcp__gonogo__knowledge_ask',
   'mcp__gonogo__log_write',
   'mcp__gonogo__log_search',
   'mcp__gonogo__log_read',
