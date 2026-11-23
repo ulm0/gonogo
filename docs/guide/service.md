@@ -62,7 +62,7 @@ stop the running gonogo first (Ctrl+C), then run gonogo service start
 
 ## OpenRC
 
-`/etc/init.d` needs root, so as your user the first line is the sudo line; the script is also staged in `<home>/service/gonogo.initd` with the three commands to do it by hand. Under `sudo` it writes `/etc/init.d/gonogo`, runs `rc-update add gonogo default` and `rc-service gonogo restart`. The script has `command_user` set to your user, never root, and logs to `/var/log/gonogo.log`. Paths without spaces or special characters only: OpenRC splits the arguments itself.
+`/etc/init.d` needs root, so as your user the first line is the sudo line; the script is also staged in `<home>/service/gonogo.initd` with the three commands to do it by hand. Under `sudo` it writes `/etc/init.d/gonogo`, runs `rc-update add gonogo default` and `rc-service gonogo restart`. The script has `command_user` set to your user, never root, and logs to `/var/log/gonogo.log`.
 
 ## status and uninstall
 
@@ -74,4 +74,4 @@ The Update key (npm and pnpm installs) installs the new version and then reloads
 
 ## Not verified
 
-systemd was run on a GitHub runner and OpenRC in a Debian container (install, an agent surviving a reload, restart, stop, uninstall); launchd's file was only linted on macOS (a runner has no login session to load it into). Not run: a real boot, the polkit refusal of lingering and the `sudo` path on systemd, and a user whose home path has a space.
+systemd was run on a GitHub runner and OpenRC in a Debian container (install, an agent surviving a reload, restart, stop, uninstall); launchd's file was only linted on macOS (a runner has no login session to load it into). Not run: a real boot, the polkit refusal of lingering and the `sudo` path on systemd, and a user whose home path has a space (a space in `--home` was run on systemd and OpenRC).

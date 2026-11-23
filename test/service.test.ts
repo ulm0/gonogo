@@ -1,9 +1,10 @@
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { detectManager, flagsText, renderLaunchd, renderOpenrc, renderSystemd, resolveSpec, serviceControl, serviceInstall, serviceStatus, serviceUninstall, systemdWord, xmlText, type Ran, type ServiceHost } from '../src/server/service.js';
+import { detectManager, flagsArgv, flagsText, renderLaunchd, renderOpenrc, renderSystemd, resolveSpec, serviceControl, serviceInstall, serviceStatus, serviceUninstall, systemdWord, xmlText, type Ran, type ServiceHost } from '../src/server/service.js';
 
 type Call = [string, string[]];
 
@@ -394,8 +395,6 @@ describe('gonogo service: OpenRC', () => {
     expect(() => serviceInstall(root.host, {})).toThrow(/--user/);
     expect(() => serviceInstall(withOpenrc({ uid: 0, user: 'root', group: 'root' }).host, { user: 'root' })).toThrow(/--user/);
     expect(() => serviceInstall(withOpenrc({ uid: 0, user: 'root', group: 'root' }).host, { user: 'a b' })).toThrow(/not a user name/);
-    const spaced = withOpenrc();
-    expect(serviceInstall(spaced.host, { home: '/h/with space' }).lines[0]).toMatch(/cannot take "\/h\/with space"/);
   });
 
   it('uninstall and start without root say This needs root first; as root they run', () => {
@@ -413,6 +412,49 @@ describe('gonogo service: OpenRC', () => {
     mkdirSync(staged.host.initDir, { recursive: true });
     writeFileSync(join(staged.host.initDir, 'gonogo'), '');
     expect(serviceControl(staged.host, 'restart', { port: undefined }).lines[0]).toBe('This needs root: run `sudo gonogo service restart`');
+  });
+});
+
+describe('gonogo service: a space in a path', () => {
+  const sp = { argv: ['/opt/my node/bin/node', '/usr/local/bin/gonogo', '--home', "/srv/my agents/it's", '--pty-host'], path: '/opt/my node/bin:/usr/bin', home: "/srv/my agents/it's", cwd: '/home/my user' };
+
+  it('systemd quotes each word of ExecStart and the working folder', () => {
+    const unit = renderSystemd(sp);
+    expect(unit).toContain('ExecStart="/opt/my node/bin/node" /usr/local/bin/gonogo --home "/srv/my agents/it\'s" --pty-host\n');
+    expect(unit).toContain('WorkingDirectory="/home/my user"\n');
+  });
+
+  it('launchd holds each argument in its own <string>, spaces and all', () => {
+    const plist = renderLaunchd(sp, '/home/my user/Library/Logs/gonogo.log');
+    expect(plist).toContain("<string>/opt/my node/bin/node</string>");
+    expect(plist).toContain("<string>/srv/my agents/it&apos;s</string>");
+    expect(plist).toContain('<key>WorkingDirectory</key>\n  <string>/home/my user</string>');
+  });
+
+  it('OpenRC: what openrc-run does with the values (an eval of them, unquoted) gives back the same words', () => {
+    const rc = renderOpenrc(sp, 'ana', 'ana');
+    const assignments = rc.split('\n').filter((l) => /^(command|command_args|directory)=/.test(l)).join('\n');
+    // the same expansion as supervise-daemon.sh: eval printf '%s\n' $command -- $command_args $directory
+    const out = spawnSync('sh', ['-c', assignments + "\neval printf '%s\\\\n' $command -- $command_args -- $directory"], { encoding: 'utf8' });
+    expect(out.status).toBe(0);
+    expect(out.stdout.split('\n').slice(0, -1)).toEqual(['/opt/my node/bin/node', '--', '/usr/local/bin/gonogo', '--home', "/srv/my agents/it's", '--pty-host', '--', '/home/my user']);
+  });
+
+  it('the child of a root install gets the flags as an array: a space in --home arrives whole', () => {
+    expect(flagsArgv({ home: '/srv/my agents', port: 7000, user: 'ana' })).toEqual(['--home', '/srv/my agents', '--port', '7000', '--user', 'ana']);
+    const { host, calls } = fake({ uid: 0, user: 'root', group: 'root' }, { 'id -u ana': { code: 0, stdout: '1000\n' }, 'loginctl enable-linger ana': { code: 0 } });
+    mkdirSync(host.systemdRunDir);
+    host.env.SUDO_USER = 'ana';
+    serviceInstall(host, { home: '/srv/my agents', ptyHost: true });
+    const child = calls.find(([f, a]) => f === 'runuser' && a.includes('service'));
+    const args = child?.[1] ?? [];
+    expect(args.slice(args.indexOf('service'))).toEqual(['service', 'install', '--home', '/srv/my agents', '--pty-host']);
+  });
+
+  it('install writes a unit that holds a spaced --home as one word', () => {
+    const { host } = fake({}, SYSTEMD_UP);
+    serviceInstall(host, { home: '/srv/my agents', noStart: true });
+    expect(readFileSync(join(host.userHome, '.config/systemd/user/gonogo.service'), 'utf8')).toContain('--home "/srv/my agents"');
   });
 });
 

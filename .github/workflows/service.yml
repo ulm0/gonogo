@@ -124,6 +124,12 @@ jobs:
           gonogo service start
           for i in $(seq 1 40); do health && break; sleep 1; done
           gonogo service uninstall
+          # a space in --home reaches gonogo as one word
+          gonogo service install --pty-host --port 7788 --home "$HOME/my agents"
+          for i in $(seq 1 40); do health && break; sleep 1; done
+          [ -f "$HOME/my agents/token" ]
+          grep -q -- "--home \"$HOME/my agents\"" "$unit"
+          gonogo service uninstall
       - if: failure()
         run: journalctl --user -u gonogo.service --no-pager | tail -60
 
@@ -170,6 +176,12 @@ jobs:
             [ "$now" != "$before" ]
             [ "$(pgrep -u ana -f "[s]leep 1234567" | head -1)" = "$agent" ]
             gonogo service status
+            # a space in --home reaches gonogo as one word (openrc-run evals the arguments)
+            gonogo service install --user ana --pty-host --port 7788 --home "/home/ana/my agents"
+            for i in $(seq 1 40); do curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break; sleep 1; done
+            [ -f "/home/ana/my agents/token" ]
+            gonogo service install --user ana --pty-host --port 7788
+            for i in $(seq 1 40); do curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break; sleep 1; done
             # without root: the sudo line comes first
             su ana -c "gonogo service install --pty-host --port 7788" > /tmp/out.txt 2>&1 && exit 1
             head -1 /tmp/out.txt | grep -q "This needs root: run .sudo gonogo service install --port 7788 --pty-host."

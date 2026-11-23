@@ -183,15 +183,17 @@ export function renderLaunchd(spec: Spec, log: string): string {
 
 export function renderOpenrc(spec: Spec, user: string, group: string): string {
   const [program, ...args] = spec.argv;
+  // openrc-run expands these unquoted inside an `eval`: a word with a space or a quote carries its own quotes, and the whole value is quoted for the assignment
+  const word = (w: string): string => shellQuote(PLAIN.test(w) ? w : shellQuote(w));
   return [
     '#!/sbin/openrc-run',
     '# Written by `gonogo service install`; `gonogo service uninstall` prints how to remove it. It runs gonogo as an ordinary user.',
     `name="gonogo"`,
     `description="gonogo, mission control for coding agents"`,
-    `command=${shellQuote(program ?? '')}`,
-    `command_args=${shellQuote(args.join(' '))}`,
+    `command=${word(program ?? '')}`,
+    `command_args=${shellQuote(args.map((a) => (PLAIN.test(a) ? a : shellQuote(a))).join(' '))}`,
     `command_user=${shellQuote(`${user}:${group}`)}`,
-    `directory=${shellQuote(spec.cwd)}`,
+    `directory=${word(spec.cwd)}`,
     // supervise-daemon starts it again when it exits, and a reload and an Update make gonogo exit 0 on purpose
     'supervisor="supervise-daemon"',
     'respawn_delay=3',
@@ -294,12 +296,12 @@ function resolveManager(host: ServiceHost, options: ServiceOptions, start = fals
   return { manager };
 }
 
-/** The flags as the person gave them, for a command line printed back to them. */
-export function flagsText(options: ServiceOptions): string {
+/** The flags as the person gave them, as arguments (no quoting: for a program started without a shell). */
+export function flagsArgv(options: ServiceOptions): string[] {
   const parts: string[] = [];
   const add = (flag: string, value?: string | number): void => {
     parts.push(flag);
-    if (value !== undefined) parts.push(PLAIN.test(String(value)) ? String(value) : shellQuote(String(value)));
+    if (value !== undefined) parts.push(String(value));
   };
   if (options.home !== undefined) add('--home', options.home);
   if (options.host !== undefined) add('--host', options.host);
@@ -308,7 +310,12 @@ export function flagsText(options: ServiceOptions): string {
   if (options.noStart === true) add('--no-start');
   if (options.manager !== undefined) add('--manager', options.manager);
   if (options.user !== undefined) add('--user', options.user);
-  return parts.join(' ');
+  return parts;
+}
+
+/** The same flags as a line to print for a shell: a value with a space or a quote is quoted. */
+export function flagsText(options: ServiceOptions): string {
+  return flagsArgv(options).map((w) => (PLAIN.test(w) ? w : shellQuote(w))).join(' ');
 }
 
 /** The first lines when a step needs root and this is not root: the exact command to run again with sudo. */
@@ -373,7 +380,7 @@ function installForUser(host: ServiceHost, action: string, options: ServiceOptio
   // the user's own PATH (their profile), not sudo's secure_path
   const login = host.run('runuser', ['-u', user, '--', 'sh', '-lc', 'printf %s "$PATH"']);
   const userPath = ranOk(login) && login.stdout.trim() !== '' ? login.stdout.trim() : host.env.PATH ?? '/usr/local/bin:/usr/bin:/bin';
-  const childFlags = flagsText({ ...options, user: undefined }).split(' ').filter((x) => x !== '');
+  const childFlags = flagsArgv({ ...options, user: undefined });
   const r = host.run('runuser', ['-u', user, '--', 'env', `HOME=${home}`, `USER=${user}`, `LOGNAME=${user}`, `PATH=${userPath}`, `XDG_RUNTIME_DIR=/run/user/${uid}`, `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus`, host.node, host.entry ?? 'gonogo', 'service', action, ...childFlags]);
   const text = [r.stdout.trim(), r.stderr.trim()].filter((x) => x !== '').join('\n');
   return { code: r.code ?? 1, lines: [...lines, ...(text === '' ? [] : text.split('\n'))] };
@@ -436,7 +443,6 @@ export function serviceInstall(host: ServiceHost, options: ServiceOptions): Resu
 
   // OpenRC: /etc/init.d needs root. As the invoking user the file is staged in the home and the commands are printed after the one line that says what to do.
   const { user, group } = who;
-  for (const word of spec.argv) if (!PLAIN.test(word)) return { code: 1, lines: [`OpenRC cannot take "${word}" in a command line: use a path without spaces or special characters for node, gonogo and --home.`] };
   const text = renderOpenrc(spec, user, group);
   if (!root) {
     const staged = join(spec.home, 'service', 'gonogo.initd');
