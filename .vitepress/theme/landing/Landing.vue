@@ -357,7 +357,7 @@ const SMALL = [
       <div class="flood lp-final" data-tone="amber">
         <span class="label">T-minus · go/no-go poll · Director</span>
         <h2 id="lp-final" class="disp lp-word">Director, are you go?</h2>
-        <p class="lp-note">Node 24, macOS or Linux, and one agent CLI signed in (Claude Code, Codex, Gemini CLI, Antigravity, opencode, pi, ...). The rest is in the guide.</p>
+        <p class="lp-note">Node 24, macOS or Linux, and one agent CLI that has run once and is signed in (Claude Code, Codex, Gemini CLI, Antigravity, opencode, pi, ...). Or Docker. New here? <a href="/guide/glossary">The words you will meet</a>.</p>
         <div class="lp-actions">
           <a class="btn" data-kind="primary" data-size="big" href="/guide/getting-started">Go: get started</a>
           <a class="btn" data-size="big" href="/reference/not-verified">Hold: read what is not verified</a>
