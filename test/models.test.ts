@@ -88,6 +88,22 @@ describe('the default permission mode', () => {
     expect(await store.setMode('bypassPermissions', true)).toMatchObject({ mode: 'bypassPermissions' });
   });
 
+  it('bypassPermissions is read back only with the stamp setMode writes: a planted file does not preselect it', async () => {
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: {}, mode: 'bypassPermissions' }));
+    const planted = createModelDefaults({ dir: tmp });
+    await planted.load();
+    expect(planted.mode()).toBeUndefined();
+    const store = createModelDefaults({ dir: tmp });
+    await store.setMode('bypassPermissions', true);
+    const saved = JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'));
+    expect(typeof saved.bypassConfirmedAt).toBe('number');
+    const again = createModelDefaults({ dir: tmp });
+    await again.load();
+    expect(again.mode()).toBe('bypassPermissions');
+    await again.setMode('auto');
+    expect(JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'))).not.toHaveProperty('bypassConfirmedAt');
+  });
+
   it('are dropped from a file when not usable, and an older file without one still loads', async () => {
     await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: { claude: 'opus' }, mode: 'warp' }));
     const store = createModelDefaults({ dir: tmp });

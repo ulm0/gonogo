@@ -207,6 +207,12 @@ describe('a request', () => {
     expect(relief.view().requests[0]).toMatchObject({ mode: 'acceptEdits' });
     await ask({ name: 'guido-2', mode: 'default' });
     expect(relief.view().requests[1]).toMatchObject({ mode: 'default' });
+    relief = make({ defaultMode: () => 'auto' });
+    await ask();
+    expect(relief.view().requests[0]).toMatchObject({ mode: 'auto', modeFromRoom: true });
+    expect(events.at(-1)?.[1]).toContain("auto (the room's default)");
+    await ask({ name: 'guido-4', mode: 'acceptEdits' });
+    expect(relief.view().requests[1]).not.toHaveProperty('modeFromRoom');
     relief = make({ defaultMode: () => 'bypassPermissions' });
     await ask();
     expect(relief.view().requests[0]).toMatchObject({ mode: 'default' });

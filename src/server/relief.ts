@@ -182,6 +182,8 @@ export function createRelief(options: ReliefOptions): Relief {
       if (input.mode !== undefined && !(RELIEF_MODES as readonly string[]).includes(asked)) throw bad(`a request can ask for ${RELIEF_MODES.join(' or ')} at most, not ${asked}: only the Director can give more`, 'mode');
       // an engine without permission modes is started in default whatever is asked, and the Director is shown what will happen
       const mode: PermissionMode = providerInfo(provider).modes ? (asked as PermissionMode) : 'default';
+      // the Director is told when the mode is the room's default and not something the boss asked for
+      const modeFromRoom = input.mode === undefined && mode !== 'default' && room === mode;
 
       const { position, role } = input;
       if (position !== undefined && (typeof position !== 'string' || !POSITION_IDS.includes(position))) throw bad(`position must be one of ${POSITION_IDS.join(', ')}`, 'position');
@@ -223,10 +225,10 @@ export function createRelief(options: ReliefOptions): Relief {
       const at = now();
       made.push(at);
       const id = `h${seq}`;
-      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, cleanRoom, ...(wantsWorktree ? { worktree: {} } : {}) };
+      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(wantsWorktree ? { worktree: {} } : {}) };
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
-      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}`, { kind: 'relief', id });
+      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}${modeFromRoom ? " (the room's default)" : ''}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}`, { kind: 'relief', id });
       return { id, status: 'pending', note: `waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
     },
 

@@ -52,6 +52,8 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
   let engine: Provider | undefined;
   let effort: Effort | undefined;
   let mode: PermissionMode | undefined;
+  /** When bypassPermissions was confirmed as the room default; written with it, read back to accept it. */
+  let bypassConfirmedAt: number | undefined;
   let chain: Promise<unknown> = Promise.resolve();
 
   const view = (): ModelDefaults => ({ models: { ...models }, positions: { ...positions }, ...(engine ? { engine } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}) });
@@ -59,15 +61,15 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
   /** Writes what `change` returns, or nothing when it equals what is saved; a failed write leaves the old values. */
   const save = async (change: () => void): Promise<void> => {
     const before = JSON.stringify(view());
-    const was = { models, positions, engine, effort, mode };
+    const was = { models, positions, engine, effort, mode, bypassConfirmedAt };
     change();
     if (JSON.stringify(view()) === before) return;
     const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
     try {
-      await writeFile(temp, JSON.stringify({ version: 1, ...view() }, null, 2), { flag: 'wx', mode: FILE_MODE });
+      await writeFile(temp, JSON.stringify({ version: 1, ...view(), ...(mode === 'bypassPermissions' && bypassConfirmedAt !== undefined ? { bypassConfirmedAt } : {}) }, null, 2), { flag: 'wx', mode: FILE_MODE });
       await rename(temp, path);
     } catch (error) {
-      ({ models, positions, engine, effort, mode } = was);
+      ({ models, positions, engine, effort, mode, bypassConfirmedAt } = was);
       await rm(temp, { force: true }).catch(() => undefined);
       throw new Error(`could not save the default models: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -84,7 +86,9 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
         models = Object.fromEntries(Object.entries(saved.models).filter(([provider, model]) => usable(provider, model))) as Partial<Record<Provider, string>>;
         if (typeof saved.engine === 'string' && (PROVIDERS as readonly string[]).includes(saved.engine) && saved.engine !== 'custom') engine = saved.engine as Provider;
         if (typeof saved.effort === 'string' && (EFFORTS as readonly string[]).includes(saved.effort)) effort = saved.effort as Effort;
-        if (typeof saved.mode === 'string' && saved.mode !== 'default' && (PERMISSION_MODES as readonly string[]).includes(saved.mode)) mode = saved.mode as PermissionMode;
+        // bypassPermissions is read back only with the stamp that setMode writes when a person confirmed it: a planted file must not preselect it
+        if (typeof saved.mode === 'string' && saved.mode !== 'default' && (PERMISSION_MODES as readonly string[]).includes(saved.mode) && (saved.mode !== 'bypassPermissions' || typeof saved.bypassConfirmedAt === 'number')) mode = saved.mode as PermissionMode;
+        if (mode === 'bypassPermissions') bypassConfirmedAt = saved.bypassConfirmedAt as number;
         if (isRecord(saved.positions)) positions = Object.fromEntries(Object.entries(saved.positions).filter(([id, model]) => POSITION_IDS.includes(id) && typeof model === 'string' && MODEL_RE.test(model))) as Record<string, string>;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
@@ -99,7 +103,10 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
     async setMode(value, confirmBypass) {
       if (value !== null && value !== undefined && (typeof value !== 'string' || !(PERMISSION_MODES as readonly string[]).includes(value))) throw new HubError('bad_request', `mode must be one of: ${PERMISSION_MODES.join(', ')}, or null`, 'mode');
       if (value === 'bypassPermissions' && confirmBypass !== true) throw new HubError('bad_request', 'bypassPermissions needs confirmBypass: true', 'confirmBypass');
-      const run = chain.then(() => save(() => void (mode = value === null || value === undefined || value === 'default' ? undefined : (value as PermissionMode))));
+      const run = chain.then(() => save(() => {
+        mode = value === null || value === undefined || value === 'default' ? undefined : (value as PermissionMode);
+        bypassConfirmedAt = mode === 'bypassPermissions' ? Date.now() : undefined;
+      }));
       chain = run.catch(() => undefined);
       return run.then(view);
     },

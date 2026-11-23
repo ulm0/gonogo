@@ -1523,7 +1523,13 @@ export function createWebServer(options: WebOptions): WebServer {
           allow: ['PUT'],
           run: async (req, res) => {
             const body = await jsonObject(req, res);
-            if (body) sendJson(res, 200, await changed(models.setMode(body.mode, body.confirmBypass)));
+            if (!body) return;
+            // a mode that works without asking is set from the Director's own login, never by a key or a terminal
+            if (body.mode === 'auto' || body.mode === 'bypassPermissions') {
+              const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+              if (actorHeader !== 'session' && actorHeader !== 'token' && actorHeader !== 'socket') return sendApiError(res, 403, "a room default that works without asking is set from the Director's own login, not by a key or a terminal", 'forbidden');
+            }
+            sendJson(res, 200, await changed(models.setMode(body.mode, body.confirmBypass)));
           },
         };
       }

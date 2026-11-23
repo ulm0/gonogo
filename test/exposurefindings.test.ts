@@ -9,7 +9,7 @@ import type { FindingsInput } from '../src/server/exposurefindings.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
-const base: FindingsInput = { account: 'account', accountEpoch: 0, mfa: true, bindHost: '127.0.0.1', inContainer: false, pages: [], hooks: [], requestHost: '127.0.0.1:7777', requestHttps: false, dockerSocketMounted: false, trustedProxies: [], keys: [], now: 1_800_000_000_000, agents: [], folders: [], updateChecksOff: false, behind: null };
+const base: FindingsInput = { account: 'account', accountEpoch: 0, roomModes: [], mfa: true, bindHost: '127.0.0.1', inContainer: false, pages: [], hooks: [], requestHost: '127.0.0.1:7777', requestHttps: false, dockerSocketMounted: false, trustedProxies: [], keys: [], now: 1_800_000_000_000, agents: [], folders: [], updateChecksOff: false, behind: null };
 const ids = (input: Partial<FindingsInput>): string[] => findingsOf({ ...base, ...input }).map((f) => f.kind);
 
 describe('findingsOf', () => {
@@ -175,6 +175,13 @@ describe('the routes of the supervisor', () => {
     expect(existsSync(join(home, EXPOSURE_DISMISSED_FILE))).toBe(true);
     expect(readFileSync(join(home, EXPOSURE_DISMISSED_FILE), 'utf8')).toContain(plain);
   }, 40_000);
+});
+
+describe('the room default mode', () => {
+  it('a room whose default for new agents is auto or bypass is a finding; ask and accept edits are not', () => {
+    expect(findingsOf({ ...base, roomModes: [{ room: 'main', mode: 'auto' }, { room: 'r2', mode: 'bypassPermissions' }, { room: 'r3', mode: 'acceptEdits' }] }).map((f) => f.kind)).toEqual(['room-mode-unattended', 'room-mode-unattended']);
+    expect(findingsOf({ ...base, roomModes: [] })).toEqual([]);
+  });
 });
 
 describe('findings that change with the situation', () => {
