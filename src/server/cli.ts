@@ -102,7 +102,7 @@ import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { createRules } from './rules.js';
 import { runKnowledgeCli } from './knowledgecli.js';
 import { doorTable } from './door.js';
-import { MANAGERS, realHost, serviceInstall, serviceStatus, serviceUninstall, type Manager, type ServiceOptions } from './service.js';
+import { MANAGERS, realHost, serviceControl, serviceInstall, serviceStatus, serviceUninstall, type Manager, type ServiceOptions } from './service.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { verifyImage } from './attest.js';
 import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
@@ -199,7 +199,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
        gonogo reload
-       gonogo service install [--now] [--home <dir>] [--host <addr>] [--port <n>] [--pty-host] | uninstall | status
+       gonogo service install [--no-start] [--home <dir>] [--host <addr>] [--port <n>] [--pty-host] | uninstall | start | stop | restart | status
        gonogo tui [--room <id>] [--url <address>] [--token <token>] [--home <dir>]
        gonogo rooms add <id> [--name <text>] | list | remove <id> [--home <dir>]
       gonogo rooms migrate-main [--dry-run | --undo] [--home <dir>]
@@ -217,7 +217,7 @@ Commands:
   auth                  the login account: reset it, make API keys, confirm after a tamper alarm (gonogo auth --help)
   expose                print (or write) the config that publishes gonogo through a tunnel or proxy, and check the public address (docs: Expose); it runs nothing
   reload                hand over to the installed gonogo without stopping the agents (needs --pty-host; not in Docker)
-  service               run gonogo under systemd (a user unit), launchd or OpenRC: install writes the file and prints how to start it, --now also starts it (docs: Run it as a service)
+  service               run gonogo under systemd (a user unit), launchd or OpenRC: install writes the file and starts it (--no-start only writes it); start, stop, restart, status, uninstall (docs: Run it as a service)
   tui                   a terminal client of a running gonogo: the room, the inbox, go and no-go, and a console (gonogo tui --help)
   update                print the command that updates gonogo the way it was installed (it never runs it)
 
@@ -255,7 +255,7 @@ export type ParsedArgs =
   | { kind: 'doctor' }
   | { kind: 'update' }
   | { kind: 'reload'; home?: string }
-  | { kind: 'service'; action: 'install' | 'uninstall' | 'status'; options: ServiceOptions }
+  | { kind: 'service'; action: 'install' | 'uninstall' | 'start' | 'stop' | 'restart' | 'status'; options: ServiceOptions }
   | { kind: 'ptyhost'; home: string }
   | { kind: 'room'; options: StartOptions }
   | { kind: 'token'; home?: string }
@@ -290,12 +290,13 @@ function serviceInstallKind(env: Env): InstallKind {
 /** `gonogo service install|uninstall|status` and the few flags of the unit it writes. */
 function parseService(rest: readonly string[]): ParsedArgs {
   const action = rest[0];
-  if (action !== 'install' && action !== 'uninstall' && action !== 'status') return { kind: 'error', message: 'service needs install, uninstall or status' };
+  if (action !== 'install' && action !== 'uninstall' && action !== 'start' && action !== 'stop' && action !== 'restart' && action !== 'status') return { kind: 'error', message: 'service needs install, uninstall, start, stop, restart or status' };
   const options: ServiceOptions = {};
   for (let i = 1; i < rest.length; i += 1) {
     const flag = rest[i] ?? '';
-    if (flag === '--now' || flag === '--pty-host') {
-      if (flag === '--now') options.now = true;
+    if (flag === '--now') return { kind: 'error', message: '--now is gone: service install starts the service; add --no-start to only write the file' };
+    if (flag === '--no-start' || flag === '--pty-host') {
+      if (flag === '--no-start') options.noStart = true;
       else options.ptyHost = true;
       continue;
     }
@@ -314,7 +315,7 @@ function parseService(rest: readonly string[]): ParsedArgs {
       return { kind: 'error', message: e instanceof Error ? e.message : String(e) };
     }
   }
-  if (action !== 'install' && (options.host !== undefined || options.port !== undefined || options.ptyHost === true || options.now === true)) return { kind: 'error', message: `service ${action} takes only --home, --manager and --user` };
+  if (action !== 'install' && (options.host !== undefined || options.port !== undefined || options.ptyHost === true || options.noStart === true)) return { kind: 'error', message: `service ${action} takes only --home, --manager and --user` };
   return { kind: 'service', action, options };
 }
 
@@ -1946,8 +1947,8 @@ export async function main(argv: string[], env: Env = process.env): Promise<void
     try {
       const info = userInfo();
       const host = realHost(serviceInstallKind(env), process.argv[1], env, { username: info.username, homedir: info.homedir, gid: info.gid });
-      const run = parsed.action === 'install' ? serviceInstall : parsed.action === 'uninstall' ? serviceUninstall : serviceStatus;
-      const result = run(host, parsed.options);
+      const { action } = parsed;
+      const result = action === 'install' ? serviceInstall(host, parsed.options) : action === 'uninstall' ? serviceUninstall(host, parsed.options) : action === 'status' ? serviceStatus(host, parsed.options) : serviceControl(host, action, parsed.options);
       process.stdout.write(`${result.lines.join('\n')}\n`);
       exit(result.code);
     } catch (e) {
