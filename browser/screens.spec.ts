@@ -271,6 +271,44 @@ async function dockedChip(page: Page, group: string): Promise<void> {
   await view(page, group, 'docked chip: opens Docking in Flight Rules', () => page.locator('.dock-chip').click({ timeout: 3000 }), true);
 }
 
+/** COMMS "Needs you": the state frame is given two questions to the Director (a go/no-go and a plain question), a hire request, and a handoff waits for GO, so that the strip has all four kinds. */
+async function needsYou(page: Page, group: string): Promise<void> {
+  const message = (id: string, from: string, subject: string, body: string): Record<string, unknown> => ({ type: 'message', id, at: Date.now() - 600_000, from, subject, body, truncated: false, inReplyTo: null, read: false, archived: false });
+  const items = [
+    message('m9001', 'flight', 'Go/no-go: release 0.18', 'The tests are green on main and the notes are written. Go or no-go to tag 0.18 now?'),
+    message('m9002', 'ana', 'Which branch should I use?', 'The fix could go on main or on next. Which one do you want?'),
+  ];
+  const relief = { id: 'h9', by: 'flight', at: Date.now() - 300_000, expiresAt: Date.now() + 3_600_000, name: 'cara', position: null, role: 'You write the release notes for each version, one page, from the changelog fragments.', dir: '/home/runner/work/gonogo/gonogo', provider: 'claude', mode: 'default', cleanRoom: null };
+  await page.routeWebSocket(/\/ws(\?|$)/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (typeof message === 'string') {
+        try {
+          const frame = JSON.parse(message) as { t?: string; state?: { downlink?: { unread: number; items: unknown[] }; relief?: { requests: unknown[] } } };
+          if (frame.t === 'state' && frame.state !== undefined) {
+            frame.state.downlink = { unread: items.length, items };
+            frame.state.relief = { requests: [relief] };
+          }
+          ws.send(JSON.stringify(frame));
+          return;
+        } catch {
+          // not a frame of text: passed on as it is
+        }
+      }
+      ws.send(message);
+    });
+  });
+  await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'ha9', dock: 'dk1', dockName: 'lab', task: 't4', assignee: 'cara', title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour.', due: null, priority: 'normal', onward: false, budget: null, at: Date.now() }] } }));
+  await page.goto(`${base}/r/main/`);
+  await page.locator('.topbar').waitFor({ timeout: 30_000 });
+  await view(page, group, 'comms: needs you', async () => {
+    await open(page, 'Comms');
+    await page.locator('.needs-you').waitFor({ timeout: 10_000 });
+  }, true);
+  await measure(page, group, 'comms: needs you', '.comms');
+}
+
 async function updateFlow(page: Page, group: string): Promise<void> {
   let current = rolloutOf();
   let tell: (rollout: Record<string, unknown>) => void = () => undefined;
@@ -743,6 +781,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       await app(page, group, true);
       await dockedChip(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docked chip: ${error.message.split('\n')[0]}`));
       await dockingTwo(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docking 2: ${error.message.split('\n')[0]}`));
+      await needsYou(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: needs you: ${error.message.split('\n')[0]}`));
       await updateFlow(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: update flow: ${error.message.split("\n")[0]}`));
       await context.close();
     }
