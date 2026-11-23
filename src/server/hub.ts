@@ -1365,7 +1365,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (probe === null) return;
       const notReady = `waiting: ${name} is not ready for input`;
       // the hooks are the authority: idle by the Stop hook for TITLE_STALE_MS, a title that still says working is a spinner Claude Code left behind
-      const glyph = ((g) => (g === 'working' && rt.state === 'idle' && io.now() - rt.stateSince >= TITLE_STALE_MS ? 'stale' : g))(titleOf(rt)?.glyph);
+      // and a title that is still changing is a spinner that is alive (another plugin's Stop hook can start a turn the hooks never announce): only one that has not changed its text for as long is stale
+      const live = titleOf(rt);
+      const glyph = live?.glyph === 'working' && rt.state === 'idle' && io.now() - rt.stateSince >= TITLE_STALE_MS && io.now() - (live.textSince ?? live.since) >= TITLE_STALE_MS ? 'stale' : live?.glyph;
       if (!probe.promptBox || probe.dialog !== null || glyph === 'working') {
         // Nobody's mail waits unseen on a screen that shows nothing wrong, and the Director is told when his own words do: a screen gonogo cannot read (no prompt box where claude's input is) would hold them for ever.
         const first = queued(rt).find((record) => record.from === 'user');
