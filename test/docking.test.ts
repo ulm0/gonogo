@@ -1415,8 +1415,8 @@ describe('links: the flow', () => {
 
   it('the rules: defaults, changed field by field and checked, kept in docking.json, and shown in the dock', async () => {
     const { a, dock } = await linked();
-    expect(a.docking.view().docks[0]?.rules).toEqual({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false });
-    expect(a.docking.setRules(dock, { staleHours: 6, handoff: 'allow' })).toEqual({ handoff: 'allow', incoming: 'auto', autoAccept: false, staleHours: 6, reportCost: false });
+    expect(a.docking.view().docks[0]?.rules).toEqual({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false });
+    expect(a.docking.setRules(dock, { staleHours: 6, handoff: 'allow' })).toEqual({ handoff: 'allow', incoming: 'auto', autoAccept: false, staleHours: 6, reportCost: false, serve: false });
     for (const bad of [{ handoff: 'sometimes' }, { incoming: 'ask' }, { autoAccept: 'yes' }, { staleHours: -1 }, { staleHours: 1.5 }, { staleHours: 721 }, { nope: 1 }]) expect(() => a.docking.setRules(dock, bad), JSON.stringify(bad)).toThrow();
     await settle();
     expect(JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')).docks[0].rules).toMatchObject({ handoff: 'allow', staleHours: 6 });

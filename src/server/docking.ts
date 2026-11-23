@@ -1220,7 +1220,7 @@ export function createDocking(options: DockingOptions): Docking {
       if (input.serve !== undefined && typeof input.serve !== 'boolean') throw bad('serve is true or false', 'serve');
       if (input.staleHours !== undefined && (typeof input.staleHours !== 'number' || !Number.isInteger(input.staleHours) || input.staleHours < 0 || input.staleHours > 720)) throw bad('staleHours is a whole number of hours from 0 to 720', 'staleHours');
       dock.rules = readRules(input, rulesOf(dock));
-      void save();
+      save().catch((error: unknown) => log.error('docking could not write', error));
       publish();
       return dock.rules;
     },
