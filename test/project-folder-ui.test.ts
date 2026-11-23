@@ -19,7 +19,7 @@ describe('the project folder row', () => {
 
   it('is a row of the Room group, and Reset only comes when a folder is set', () => {
     const rules = readFileSync('src/client/Rules.tsx', 'utf8');
-    expect(rules).toMatch(/<Row name="Project folder" now=\{folderNow \?\? folder\}><ProjectFolderBlock onChanged=\{[^}]*\}\} \/><\/Row>/);
+    expect(rules).toContain('<Row name="Project folder" now={folderNow ?? folder}><ProjectFolderBlock onChanged={(next) => setFolderNow(folderRowText(next))} /></Row>');
     expect(rules.indexOf('Project folder')).toBeLessThan(rules.indexOf('<Group id="agents"'));
     const block = readFileSync('src/client/ProjectFolder.tsx', 'utf8');
     expect(block).toMatch(/view\.source === 'set' && \(\s*<button[^>]*onClick=\{\(\) => send\(null\)\}/);
