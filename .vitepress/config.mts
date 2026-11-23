@@ -78,6 +78,7 @@ export default defineConfig({
           { text: 'The room', link: '/guide/the-room' },
           { text: 'Glossary', link: '/guide/glossary' },
           { text: 'Running in Docker', link: '/guide/docker' },
+          { text: 'Run it as a service', link: '/guide/service' },
           { text: 'Exposing it safely (HTTPS)', link: '/https' },
           { text: 'Expose: print the config, then check', link: '/features/expose' },
           { text: 'Expose: Tailscale Serve', link: '/expose/tailscale' },

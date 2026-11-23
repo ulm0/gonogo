@@ -79,9 +79,20 @@ export function isSupervisorProcess(pid: number, entry: string | undefined = pro
   }
 }
 
+/** True when the supervisor of this home was started by a service manager (gonogo service install): its environment holds GONOGO_SERVICE. Linux only; false when it cannot be read. */
+function underService(homeDir: string): boolean {
+  try {
+    const pid = Number.parseInt(readFileSync(join(homeDir, 'run', 'supervisor.lock'), 'utf8').trim(), 10);
+    return Number.isInteger(pid) && pid > 0 && readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').some((v) => v.startsWith('GONOGO_SERVICE=') && v.length > 'GONOGO_SERVICE='.length);
+  } catch {
+    return false;
+  }
+}
+
 /** `gonogo reload`: asks the supervisor of this home to hand over (SIGUSR2). Returns a line to print, or throws. */
 export function requestReload(homeDir: string, docker: boolean): string {
-  if (docker) throw new Error('in Docker the supervisor is the container\'s only process, and re-executing it would end the container: update with the Update key (self-update) or "docker compose pull && docker compose up -d"');
+  // a manager inside the container (an OpenRC or systemd image) starts the next gonogo itself: that is not the container's only process
+  if (docker && !underService(homeDir)) throw new Error('in Docker the supervisor is the container\'s only process, and re-executing it would end the container: update with the Update key (self-update) or "docker compose pull && docker compose up -d"');
   const lock = join(homeDir, 'run', 'supervisor.lock');
   if (!existsSync(lock)) throw new Error(`no gonogo is running with the home ${homeDir}`);
   const pid = Number.parseInt(readFileSync(lock, 'utf8').trim(), 10);
