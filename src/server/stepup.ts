@@ -60,6 +60,10 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (/^\/api\/engines?(\/|$)/.test(path)) return 'the keys of an engine';
   // auto-update runs code of the publisher unattended: turning it on or moving its window asks; turning it off and SKIP THIS VERSION never do (they only make it do less)
   if (method === 'PUT' && path === '/api/autoupdate') return body === null || body.enabled === true || body.windows !== undefined ? 'turning on auto-update, or changing when it runs' : null;
+  // a room made with a project folder starts its agents there
+  if (method === 'POST' && path === '/api/rooms') return body !== null && body.dir !== undefined && body.dir !== null ? 'adding a room with a project folder' : null;
+  // the project folder: every agent that starts afterwards starts there
+  if (method === 'PUT' && path === '/api/project-folder') return 'changing the project folder of the room';
   // the runtime settings (hops, Max Q, the agent command, what is scrubbed, ...): every write asks again, like the keys of the room
   if (method === 'PUT' && /^\/api\/settings\/[A-Za-z]+$/.test(path)) return `changing the runtime setting ${path.split('/').pop() ?? ''}`;
   // stopping rooms kills the agents in them at once (and stop-all every room), and removing a room takes it off the list: the password again. Starting one room is not asked (the server does it at boot anyway); starting all of them is.

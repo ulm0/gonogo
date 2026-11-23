@@ -91,9 +91,9 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
   const html = roomsPage(null, '1.2.3');
   const scripts = [...html.matchAll(/<script>([^]*?)<\/script>/g)].map((m) => m[1] ?? '');
   const byId: Record<string, Node> = {};
-  for (const id of ['rooms', 'move', 'note', 'add', 'gate', 'sum', 'live', 'title', 'loading', 'new', 'cancel']) byId[id] = make(id === 'add' ? 'form' : 'div');
+  for (const id of ['rooms', 'move', 'note', 'add', 'gate', 'sum', 'live', 'title', 'loading', 'new', 'cancel', 'dirnote']) byId[id] = make(id === 'add' ? 'form' : 'div');
   byId.gate?.append(make('h2'), make('p'));
-  byId.add?.elements && Object.assign(byId.add.elements, { id: make('input'), name: make('input') });
+  byId.add?.elements && Object.assign(byId.add.elements, { id: make('input'), name: make('input'), dir: make('input') });
   const root = Object.assign(make('html'), { style: { props: {} as Record<string, string>, setProperty(n: string, v: string) { this.props[n] = v; } } });
   doc = { activeElement: null, title: '', documentElement: root };
   const saved: Record<string, string> = {};
@@ -109,12 +109,14 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
       sent.push(init.headers ?? {});
       const call: Call = { method: init.method ?? 'GET', url, ...(init.body === undefined ? {} : { body: JSON.parse(init.body) as Record<string, unknown> }) };
       calls.push(call);
-      const custom = call.method === 'GET' ? undefined : options.respond?.(call);
+      const custom = call.method === 'GET' && !call.url.includes('check-folder') ? undefined : options.respond?.(call);
       if (custom !== undefined) return { status: custom.status, ok: custom.status < 300, json: async () => custom.body };
       const status = options.status ?? 200;
       return { status, ok: status < 300, json: async () => ({ rooms: options.rooms, ...(options.layout === undefined ? {} : { layout: options.layout }) }) };
     },
     setInterval: () => 0,
+    setTimeout: (fn: () => void) => globalThis.setTimeout(fn, 0),
+    clearTimeout: (id: number) => globalThis.clearTimeout(id),
     JSON,
     Number,
     String,
@@ -454,5 +456,94 @@ describe('stopping and starting rooms', () => {
     const none = run({ token: 'a'.repeat(64), rooms: [room()] });
     await settle();
     expect(none.byId.sum?.querySelector('[data-f="start-all"]')).toBeNull();
+  });
+});
+
+describe('the new-room form and its project folder', () => {
+  const submit = async (byId: Record<string, Node>, values: { id: string; name?: string; dir?: string }): Promise<void> => {
+    const form = byId.add as Node;
+    form.elements.id!.value = values.id;
+    form.elements.name!.value = values.name ?? '';
+    form.elements.dir!.value = values.dir ?? '';
+    form.fire('submit', { preventDefault() {} });
+    await settle();
+  };
+
+  it('has an optional folder field, with its hint, in the form', () => {
+    const html = roomsPage(null, '1.2.3');
+    expect(html).toContain('PROJECT FOLDER (OPTIONAL)');
+    expect(html).toContain('name="dir"');
+    expect(html).toContain('A folder asks for your password.');
+  });
+
+  it('posts the folder only when one is given', async () => {
+    const { byId, calls } = run({ token: 'a'.repeat(64), rooms: [room()], respond: () => ({ status: 201, body: {} }) });
+    await settle();
+    await submit(byId, { id: 'plain' });
+    await submit(byId, { id: 'docs', name: 'Docs', dir: '/home/me/docs' });
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ id: 'plain' }, { id: 'docs', name: 'Docs', dir: '/home/me/docs' }]);
+  });
+
+  it('a folder that needs the password asks for it in the same box as the other asks, and makes the room after it with the same body', async () => {
+    let asked = 0;
+    const { byId, calls } = run({
+      token: 'a'.repeat(64),
+      rooms: [room()],
+      respond: (call) => {
+        if (call.url === '/api/auth/stepup') return { status: 200, body: {} };
+        if (call.url === '/api/rooms') return ++asked === 1 ? { status: 403, body: { error: 'confirm with your password', stepUp: true } } : { status: 201, body: {} };
+        return undefined;
+      },
+    });
+    await settle();
+    await submit(byId, { id: 'docs', dir: '/home/me/docs' });
+    const step = byId.move?.querySelector('[data-f="step:password"]');
+    expect(step).not.toBeNull();
+    (step as Node).value = 'pw';
+    byId.move?.querySelector('[data-f="step:go"]')?.fire('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((c) => [c.url, c.body])).toEqual([
+      ['/api/rooms', { id: 'docs', dir: '/home/me/docs' }],
+      ['/api/auth/stepup', { password: 'pw' }],
+      ['/api/rooms', { id: 'docs', dir: '/home/me/docs' }],
+    ]);
+  });
+
+  it('while a folder is typed the server is asked, and its warning or its reason shows under the field; nothing blocks, and no answer says nothing', async () => {
+    const answers: Record<string, { status: number; body: unknown }> = {
+      '/broad': { status: 200, body: { ok: true, warning: 'Broad folder: agents can read everything under it.' } },
+      '/nope': { status: 200, body: { ok: false, reason: '/nope does not exist on this computer', warning: null } },
+      '/fine': { status: 200, body: { ok: true, warning: null } },
+      '/old': { status: 404, body: { error: 'not found' } },
+    };
+    const { byId, calls } = run({ token: 'a'.repeat(64), rooms: [room()], respond: (call) => (call.url.includes('check-folder') ? answers[decodeURIComponent(call.url.split('dir=')[1] ?? '')] : undefined) });
+    await settle();
+    const form = byId.add as Node;
+    const type = async (value: string): Promise<void> => {
+      form.elements.dir!.value = value;
+      form.elements.dir!.fire('input');
+      await new Promise((r) => setTimeout(r, 450));
+    };
+    await type('/broad');
+    expect(calls.some((c) => c.url === '/api/rooms/check-folder?dir=%2Fbroad')).toBe(true);
+    expect(byId.dirnote?.hidden).toBe(false);
+    expect(text(byId.dirnote)).toBe('Broad folder: agents can read everything under it.');
+    expect(byId.dirnote?.dataset.tone).toBe('amber');
+    await type('/nope');
+    expect(text(byId.dirnote)).toBe('/nope does not exist on this computer');
+    expect(byId.dirnote?.className).toBe('error');
+    await type('/fine');
+    expect(byId.dirnote?.hidden).toBe(true);
+    await type('/old');
+    expect(byId.dirnote?.hidden).toBe(true);
+    await type('');
+    expect(byId.dirnote?.hidden).toBe(true);
+  });
+
+  it('a refused folder is said in words and the form stays', async () => {
+    const { byId } = run({ token: 'a'.repeat(64), rooms: [room()], respond: () => ({ status: 400, body: { error: '/nope does not exist on this computer' } }) });
+    await settle();
+    await submit(byId, { id: 'docs', dir: '/nope' });
+    expect(text(byId.note)).toContain('/nope does not exist on this computer');
   });
 });

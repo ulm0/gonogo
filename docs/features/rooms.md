@@ -64,6 +64,21 @@ A stop is refused with 409 while a T-minus poll or Static fire is open in that r
 
 Every stop and start is written to the supervisor's log and to the Downlink of room `main`, with who did it and the result. While main is stopped, login alerts and these lines are held (20 of each) and said when it is running again, with a count of what was dropped. Stopping main also stops the Telegram poll, phone approvals, the update hook and auto-update until it starts.
 
+## Folders
+
+Everything gonogo keeps lives in its home (`~/.gonogo`, or the folder you gave with `--home`): one folder per room, `rooms/<id>/`, and room `main` at the root of an older home. Start gonogo from anywhere: where your agents WORK is the room's **project folder**, set apart from that.
+
+- **Default:** the folder gonogo was started in, as always. A room with no project folder behaves exactly as before. Under `gonogo service` that is the user's home directory, and the page shows the broad-folder warning until a folder is set.
+- **Set one:** Flight Rules → Room → Project folder, `gonogo rooms add <id> --dir <folder>`, or the folder field of the new-room form. It is the folder the boss starts in and the one the hire form offers as the Working directory (each agent can still choose another).
+- **What is accepted:** the whole path of a folder that exists and that gonogo can read; the path kept is the real one (a link is followed when it is set). Nothing is refused by WHERE it is: your project is yours to choose. A folder that is or holds gonogo's own folders comes with the warning "Agents can read and change gonogo's own settings and keys in this folder without asking."; the root, your home directory or a folder that holds it, with "Broad folder: agents can read everything under it." The page shows the warning next to the folder (`warning` in `GET /api/project-folder`). Claude Code still asks its own trust question in such a folder: gonogo records no trust for the home directory, gonogo's home or Claude's configuration folder.
+- **Who may:** only the Director's own login session, and it asks for the password again. A key, a terminal login or an agent cannot: agents start in this folder. A change is in the Black Box (who, old → new).
+- **When it applies:** to agents that are hired or restarted after the change, and to a boss made after it. A running agent keeps its folder. `GET /api/project-folder` names the boss and the folder it runs in, so the page can offer to restart it (`PATCH /api/agents/<boss>` with the new `dir`, then restart).
+- **If it goes away:** a room whose stored folder is deleted, or that no longer has the shape of one (somebody wrote the file by hand), uses the folder gonogo was started in again, and the log says so once. The stored value is checked every time it is read.
+
+Before you save: `GET /api/project-folder/check?dir=<path>` (a room) and `GET /api/rooms/check-folder?dir=<path>` (the new-room form) answer `{ ok, dir, reason, warning }` for what a save would find, and write nothing; only the Director's own login (a session, or the browser token of an install with no account) may ask, since they say what exists on this computer. A change is told to every open page at once (the hire form's default follows it).
+
+State: `<room home>/project-folder.json` (0600).
+
 ## The list page
 
 Open the printed address. Each room is a card: a light (green running, amber blinking needs you, red crashed, dim stopped), name (else id; main is "Main"), a state word, agents running of all, how many need you or work, last activity, tab name, `r/<id>`, and the reason if crashed. OPEN goes to `/r/<id>/` (disabled while not running). With only main, the page offers a new room. The ROOMS key in every room's top bar goes back. The page uses the livery of this browser and plain styles without a build.
