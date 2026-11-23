@@ -144,7 +144,7 @@ function ModePick({ saved, onSaved }: { saved: PermissionMode | undefined; onSav
 function SandboxPick({ saved, flavors, onSaved }: { saved: ModelDefaults['sandbox']; flavors: CleanRoomFlavors | null; onSaved(next: ModelDefaults): void }): ReactElement {
   return (
     <Pick
-      label="Clean Room sandbox"
+      label="Clean Room sandbox (gVisor on gonogo's network: not verified; microVM: cannot start yet)"
       saved={saved ?? ''}
       empty={FLAVOR_TEXT.docker}
       options={CLEAN_ROOM_FLAVORS.filter((f) => f !== 'docker').map((f) => ({ value: f, text: `${FLAVOR_TEXT[f]}${flavors !== null && !flavors.available[f] ? ' (not installed)' : ''}`, disabled: flavors !== null && !flavors.available[f] && saved !== f }))}

@@ -665,7 +665,7 @@ function Staff({ form }: { form: Target }): ReactElement {
     </section>
   );
   const sandboxSelect = values.cleanRoom && (
-    <Control id={`${id}-sandbox`} label="Sandbox" hint={`How the container is walled off. Docker is the default wall; gVisor and a microVM need their runtime installed in Docker (docker info lists it). The room's default is ${FLAVOR_TEXT[roomModels?.sandbox ?? 'docker']}. The microVM cannot start yet: it needs a network mode gonogo does not have.`}>
+    <Control id={`${id}-sandbox`} label="Sandbox" hint={`How the container is walled off. Docker is the default wall; gVisor and a microVM need their runtime installed in Docker (docker info lists it). The room's default is ${FLAVOR_TEXT[roomModels?.sandbox ?? 'docker']}. gVisor with gonogo's container network is not verified yet. The microVM cannot start yet: it needs a network mode gonogo does not have.`}>
       <select id={`${id}-sandbox`} className="input" value={values.sandbox} onChange={(event) => change({ sandbox: event.target.value as Values['sandbox'] }, 'cleanRoom')}>
         <option value="">Room default ({FLAVOR_TEXT[roomModels?.sandbox ?? 'docker']})</option>
         {CLEAN_ROOM_FLAVORS.map((flavor) => {
