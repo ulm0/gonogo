@@ -137,9 +137,9 @@ describe('a fresh install', () => {
     await boot();
     const via = (host: string) => call('GET', '/setup', { host });
     expect((await via('192.168.1.5')).status).toBe(200);
-    const publicIp = await via('8.8.8.8');
+    const publicIp = await call('GET', '/setup', { host: '8.8.8.8', accept: 'text/html' });
     expect(publicIp.status).toBe(403);
-    expect(publicIp.text).toContain('Add it with --allow-host 8.8.8.8');
+    expect(publicIp.text).toContain('--allow-host 8.8.8.8');
     // an address with a foreign Origin is refused on a POST like any other host
     const foreign = await call('POST', '/api/auth/setup', { ...FORM, origin: 'http://evil.example.com', host: '192.168.1.5' }, form({ token: setupToken(), user: 'director', password: PASSWORD }));
     expect(foreign.status).toBe(403);

@@ -57,7 +57,7 @@ export function bearerToken(header: string | undefined): string | null {
 
 export function sendText(res: ServerResponse, status: number, text: string): void {
   if (res.headersSent || res.writableEnded) return;
-  res.writeHead(status, { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(text) });
+  res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Content-Length': Buffer.byteLength(text) });
   res.end(text);
 }
 

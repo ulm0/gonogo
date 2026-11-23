@@ -14,17 +14,19 @@ describe('readyUrl', () => {
 });
 
 describe('containerHint', () => {
-  it('says, on one line, how to reach a gonogo in a container from another machine', () => {
+  it('says, on one line, how to reach a gonogo in a container from another device, with the port the host publishes', () => {
     const text = containerHint(7777, null);
     expect(text.split('\n').filter(Boolean)).toHaveLength(1);
-    expect(text).toContain("From any other device on your network, open http://<this computer's address>:7777");
-    expect(text).toContain('GONOGO_HOST in compose.yaml');
+    expect(text).toContain("open http://<this machine's address>:7777 from any device on your network");
     expect(text).toContain('GONOGO_ALLOWED_HOSTS');
+    expect(containerHint(7777, null, { GONOGO_PUBLISHED_PORT: '8080' })).toContain(':8080 from any device');
+    expect(containerHint(7777, null, { GONOGO_PUBLISHED_PORT: 'x; rm' })).toContain(':7777 from any device'); // only a port number is believed
+    expect(containerHint(7777, null)).not.toMatch(/172\./);
   });
-  it('with a public address named, it says that one is the address and where it is allowed', () => {
-    const text = containerHint(7777, 'https://gonogo.example.com');
-    expect(text).toContain('https://gonogo.example.com');
-    expect(text).not.toContain('<this computer');
+  it('with a public address named, it prints that one', () => {
+    const text = containerHint(7777, 'https://gonogo.example.com/', { GONOGO_PUBLISHED_PORT: '8080' });
+    expect(text).toContain('open https://gonogo.example.com from any device');
+    expect(text).not.toContain('<this machine');
     expect(text.endsWith('\n')).toBe(true);
   });
 });

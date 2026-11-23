@@ -22,13 +22,14 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Grant } from './authhttp.js';
 import { keyMayDo } from './auth.js';
-import { forbiddenHostText, isIpLiteralHost } from './hosts.js';
+import { isIpLiteralHost } from './hosts.js';
 import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import { readBody, sendText } from './hooks.js';
 import { validRoomId } from './rooms.js';
+import { forbiddenHostText } from './forbiddenhost.js';
 import { hostName } from './web.js';
 
 export interface ProxyRoom {
@@ -185,7 +186,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   function resolve(req: IncomingMessage, fail: (status: number, text: string) => void): Target | null {
     const parts = split(req.url ?? '');
     if (parts === null) return (fail(400, 'bad request'), null);
-    if (!hostAllowed(req.headers.host)) return (fail(403, forbiddenHostText(req.headers.host)), null);
+    if (!hostAllowed(req.headers.host)) return (fail(403, forbiddenHostText(req.headers.host, req.headers.accept)), null);
     const prefixed = PREFIX.exec(req.url ?? '');
     let id = 'main';
     let rest = parts.path;

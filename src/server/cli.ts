@@ -1725,10 +1725,15 @@ export function readyUrl(url: string, publicUrl: string | null): string {
   return `${publicUrl.replace(/\/+$/, '')}/${at === -1 ? '' : url.slice(at)}`;
 }
 
-/** In a container the listening address is the container's own: what to do to reach it from another machine. One line, on stderr (stdout keeps its one `gonogo ready:` line for scripts). */
-export function containerHint(port: number, publicUrl: string | null): string {
-  if (publicUrl !== null) return `gonogo: in a container: the address above is the public one you gave (${publicUrl}); allow that name with GONOGO_ALLOWED_HOSTS if it is not.\n`;
-  return `gonogo: in a container, 127.0.0.1 is the container's own. From any other device on your network, open http://<this computer's address>:${port} (the port is published on GONOGO_HOST in compose.yaml); a name instead of an address needs GONOGO_ALLOWED_HOSTS.\n`;
+/**
+ * In a container the listening address is the container's own: what to do to reach it from another device. One line, on stderr (stdout keeps its one `gonogo ready:` line for
+ * scripts). The container cannot see the LAN address of the host (only its own 172.x, which would not work), so the address is a placeholder; the port is the one the HOST
+ * publishes (GONOGO_PUBLISHED_PORT, set by compose), else the one gonogo listens on.
+ */
+export function containerHint(port: number, publicUrl: string | null, env: Env = {}): string {
+  if (publicUrl !== null) return `gonogo: in a container: open ${publicUrl.replace(/\/+$/, '')} from any device (a name needs GONOGO_ALLOWED_HOSTS).\n`;
+  const published = /^\d{1,5}$/.test(env.GONOGO_PUBLISHED_PORT ?? '') ? env.GONOGO_PUBLISHED_PORT : String(port);
+  return `gonogo: in a container, 127.0.0.1 is the container's own: open http://<this machine's address>:${published} from any device on your network (a name instead of an address needs GONOGO_ALLOWED_HOSTS).\n`;
 }
 
 /** `gonogo`: the supervisor. The front port, the room list and one `gonogo __room` process per room. */
@@ -1799,7 +1804,7 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
   // the address people are given: the public one when the Director named it, not the loopback address the server listens on (in a container that one is misleading)
   const shown = readyUrl(running.url, settings.publicUrl);
   process.stdout.write(`gonogo ready: ${shown}\n`);
-  if (installInfo(env).docker) process.stderr.write(containerHint(running.port, settings.publicUrl));
+  if (installInfo(env).docker) process.stderr.write(containerHint(running.port, settings.publicUrl, env));
   if (running.setupToken !== null) {
     // printed once, when it is made: single use, one hour, answered on this machine or the local network only (docs/login-spec.md R1, R3)
     process.stdout.write(`gonogo setup: open ${shown.split('#')[0]?.replace(/\/$/, '')}/setup and give this setup token (one use, one hour; it is also in ${join(settings.home, 'setup-token')}): ${running.setupToken}\n`);

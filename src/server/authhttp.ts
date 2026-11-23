@@ -2,10 +2,10 @@
  * The HTTP face of the login, in the supervisor (docs/login-spec.md): the pages, `/api/auth/...`, the cookies, and the one question the proxy
  * asks of every request: who is this (`grant`).
  */
+import { forbiddenHostText } from './forbiddenhost.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '../shared/protocol.js';
-import { forbiddenHostText } from './hosts.js';
 import { WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import { hostName } from './web.js';
 import { hostClass, isLocalClass, KEY_SCOPES, LIFETIME, TUI_PREFIX } from './auth.js';
@@ -254,7 +254,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
 
   async function post(req: IncomingMessage, res: ServerResponse, which: 'login' | 'setup' | 'second'): Promise<void> {
     const who = whoOf(req);
-    if (!options.hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host));
+    if (!options.hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host, req.headers.accept));
     if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
     const body = await readForm(req);
     if (body === null) return sendApiError(res, 400, 'send a form or application/json, under 8 KiB', 'bad_request');
@@ -312,7 +312,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     if (path === '/api/auth/status' && method === 'GET') {
       return sendJson(res, 200, { state: auth.state(), setup: isLocalClass(who.cls) && ['fresh', 'none'].includes(auth.state()), locked: auth.locked(), host: who.cls }, { 'Cache-Control': 'no-store' });
     }
-    if (!options.hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host));
+    if (!options.hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host, req.headers.accept));
     // the tamper confirmation: on a loopback or private Host, or through the local socket, with the Director's password
     if (path === '/api/auth/confirm' && method === 'POST') {
       if (!local.has(req) && !isLocalClass(who.cls)) return sendApiError(res, 403, 'confirm on the machine gonogo runs on', 'forbidden');
@@ -534,7 +534,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
    */
   async function devicePage(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
     const method = req.method ?? 'GET';
-    if (!options.hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host));
+    if (!options.hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host, req.headers.accept));
     const who = whoOf(req);
     const devices = options.devices;
     if (devices === undefined || !deviceAllowed(who)) return sendText(res, 404, 'not found');
@@ -626,7 +626,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
       }
       if (path === '/login' || path === '/setup') {
         if (method !== 'GET' && method !== 'HEAD') return (sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET, HEAD' }), true);
-        if (!options.hostOk(req.headers.host)) return (sendText(res, 403, forbiddenHostText(req.headers.host)), true);
+        if (!options.hostOk(req.headers.host)) return (sendText(res, 403, forbiddenHostText(req.headers.host, req.headers.accept)), true);
         const who = whoOf(req);
         const state = auth.state();
         if (state === 'damaged') return (html(res, 503, 'damaged'), true);

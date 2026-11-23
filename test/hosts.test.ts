@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { forbiddenHostText, hostIpRange, isIpLiteralHost } from '../src/server/hosts.js';
+import { forbiddenHostText } from '../src/server/forbiddenhost.js';
+import { hostIpRange, isIpLiteralHost } from '../src/server/hosts.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
@@ -28,22 +29,22 @@ describe('isIpLiteralHost', () => {
   });
 });
 
-describe('forbiddenHostText', () => {
-  it('starts with the two old words, names the name, says what to do, and echoes only a clean name', () => {
-    const text = forbiddenHostText('Gonogo.Example.com:7777');
-    expect(text.startsWith('forbidden host')).toBe(true);
-    expect(text).toContain('does not answer to gonogo.example.com');
-    expect(text).toContain('--allow-host gonogo.example.com');
-    expect(text).toContain('GONOGO_ALLOWED_HOSTS=gonogo.example.com');
-    expect(text).toContain('Open it by its IP address on your network');
-    const pub = forbiddenHostText('8.8.8.8:7777');
-    expect(pub).toContain('a public address. Add it with --allow-host 8.8.8.8 (or GONOGO_ALLOWED_HOSTS=8.8.8.8), and set up the login first.');
-    for (const hostile of ['<script>alert(1)</script>', 'a b', 'x"y', undefined]) {
-      const out = forbiddenHostText(hostile);
-      expect(out, String(hostile)).not.toMatch(/script|alert|a b|x"y/);
-      expect(out).toContain('that name');
-    }
-    expect(forbiddenHostText('x'.repeat(200)).length).toBeLessThan(400);
+describe('forbiddenHostText (the one of #255, with the words for addresses after its first line)', () => {
+  const HTML = 'text/html,application/xhtml+xml';
+  it('is exactly `forbidden host` for a program, and for a browser that line first, then what to do', () => {
+    expect(forbiddenHostText('nas.lan:7777', undefined)).toBe('forbidden host');
+    expect(forbiddenHostText('nas.lan', 'application/json')).toBe('forbidden host');
+    const page = forbiddenHostText('Gonogo.Example.com:7777', HTML).split('\n');
+    expect(page[0]).toBe('forbidden host');
+    expect(page.join('\n')).toContain('GONOGO_ALLOWED_HOSTS=Gonogo.Example.com');
+    expect(forbiddenHostText('<script>x</script>', HTML)).not.toContain('<script>');
+  });
+  it('a public IP address is told to be listed with the login set up first, and where an address needs nothing', () => {
+    const page = forbiddenHostText('8.8.8.8:7777', HTML);
+    expect(page.split('\n')[0]).toBe('forbidden host');
+    expect(page).toContain('the public address 8.8.8.8. Add it: set GONOGO_ALLOWED_HOSTS=8.8.8.8, or start gonogo with --allow-host 8.8.8.8, and set up the login first.');
+    expect(page).toContain('needs no setting');
+    expect(forbiddenHostText('8.8.8.8', undefined)).toBe('forbidden host');
   });
 });
 
@@ -56,9 +57,9 @@ describe('the front port', () => {
     if (home !== '') rmSync(home, { recursive: true, force: true });
   });
 
-  const get = (port: number, host: string): Promise<{ status: number; body: string }> =>
+  const get = (port: number, host: string, accept = 'text/html'): Promise<{ status: number; body: string }> =>
     new Promise((resolve, reject) => {
-      const req = http.request({ host: '127.0.0.1', port, path: '/api/rooms', method: 'GET', headers: { host } }, (res) => {
+      const req = http.request({ host: '127.0.0.1', port, path: '/api/rooms', method: 'GET', headers: { host, accept } }, (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
@@ -77,12 +78,13 @@ describe('the front port', () => {
     }
     const refused = await get(sup.port, 'nas.lan:7777');
     expect(refused.status).toBe(403);
-    expect(refused.body).toContain('forbidden host: gonogo does not answer to nas.lan');
+    expect(refused.body.split('\n')[0]).toBe('forbidden host');
     expect(refused.body).toContain('--allow-host nas.lan');
+    expect((await get(sup.port, 'nas.lan:7777', 'application/json')).body).toBe('forbidden host');
     expect((await get(sup.port, '1.2.3.4.evil.com')).status).toBe(403);
     const publicIp = await get(sup.port, '8.8.8.8:80');
     expect(publicIp.status).toBe(403);
-    expect(publicIp.body).toContain('Add it with --allow-host 8.8.8.8');
+    expect(publicIp.body).toContain('--allow-host 8.8.8.8');
     expect((await get(sup.port, '0.0.0.0:7777')).status).toBe(403);
     expect((await get(sup.port, '0x7f.1')).status).toBe(403);
     await sup.stop();

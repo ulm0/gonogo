@@ -69,15 +69,6 @@ export function isIpLiteralHost(header: string | undefined): boolean {
   return range === 'loopback' || range === 'private';
 }
 
-/** The 403 of a Host the front port does not answer to. Starts with the two words older tools look for; names what to do, and echoes only a normalised name (the header is the sender's). */
-export function forbiddenHostText(header: string | undefined): string {
-  const name = header === undefined ? null : normalizeHost(header);
-  const shown = name === null ? 'that name' : name.slice(0, 80);
-  const flag = name === null ? '<name>' : shown;
-  if (hostIpRange(header) === 'public') return `forbidden host: gonogo does not answer to ${shown}, a public address. Add it with --allow-host ${flag} (or GONOGO_ALLOWED_HOSTS=${flag}), and set up the login first.`;
-  return `forbidden host: gonogo does not answer to ${shown}. Open it by its IP address on your network, or allow the name with --allow-host ${flag} (or GONOGO_ALLOWED_HOSTS=${flag}).`;
-}
-
 export interface AllowedHosts {
   /** Hosts that serve the page (and everything else). */
   pages: Set<string>;
