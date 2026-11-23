@@ -13,7 +13,7 @@ import { unreadText } from './inbox.js';
 import { CHANGELOG_URL, inMain, ROLLOUT_SHOW, useNewer, useRolloutDismissed } from './newer.js';
 import { activeOf, activeText } from './plan.js';
 import { showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
-import { stripHidden } from './selfupdate.js';
+import { noStripFor } from './selfupdate.js';
 import { versionLabel } from './topbarModel.js';
 import logo from '../../docs/brand/lockup.svg';
 
@@ -75,7 +75,7 @@ function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
     <Pop className="lay-version" name={label.name} label={label.text}>
       {(close) => {
         // the strip under the top bar already has the Update key while it is shown (it is dismissed in this browser, or it is not): the version key then points to it, so no key is there twice
-        const noStrip = newer !== null && !installing && (inMain ? stripHidden(rollout, dismissed) : dismissed === newer);
+        const noStrip = newer !== null && !installing && noStripFor(inMain, rollout, dismissed, newer);
         return (
         <div className="lay-version-pop">
           <p className="lay-pop-title">

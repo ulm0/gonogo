@@ -55,3 +55,7 @@ export function stripHidden(rollout: RolloutView | null, dismissed: string | nul
   if ((!rollout.newer && !result) || (rollout.latest === null && !result)) return true;
   return stripDismissed(dismissed, rollout.latest ?? update?.version ?? '', busy);
 }
+
+/** The same for any room: main draws the update strip by stripHidden; another room draws its note for the newer version unless that version was dismissed. */
+export const noStripFor = (inMainRoom: boolean, rollout: RolloutView | null, dismissed: string | null, newer: string): boolean =>
+  inMainRoom ? stripHidden(rollout, dismissed) : dismissed !== null && dismissed !== '' && dismissed === newer;

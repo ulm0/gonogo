@@ -1,6 +1,6 @@
 // The update strip and the version key's Update key: one rule says whether the strip is drawn (src/client/selfupdate.ts stripHidden).
 import { describe, expect, it } from 'vitest';
-import { stripHidden } from '../src/client/selfupdate.js';
+import { noStripFor, stripHidden } from '../src/client/selfupdate.js';
 import { setRolloutDismissed } from '../src/client/newer.js';
 import type { RolloutView, UpdateView } from '../src/shared/protocol.js';
 
@@ -20,6 +20,16 @@ describe('whether the update strip is drawn', () => {
     expect(stripHidden(rollout({ newer: false, latest: '0.13.1', update: undefined }), null)).toBe(true);
     expect(stripHidden(rollout({ newer: false, latest: '0.13.1' }), null)).toBe(false); // the result of the last update
     expect(stripHidden(rollout({ update: update({ state: 'running' }) }), '0.14.0')).toBe(false);
+  });
+});
+
+describe('in a room other than main', () => {
+  it('has the Update key (the link to main) only when the note of this room was dismissed for that version', () => {
+    expect(noStripFor(false, null, null, '0.14.0')).toBe(false);
+    expect(noStripFor(false, null, '', '0.14.0')).toBe(false);
+    expect(noStripFor(false, null, '0.13.1', '0.14.0')).toBe(false);
+    expect(noStripFor(false, null, '0.14.0', '0.14.0')).toBe(true);
+    expect(noStripFor(true, rollout(), '0.14.0', '0.14.0')).toBe(true); // main goes by the strip's own rule
   });
 });
 

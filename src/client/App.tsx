@@ -24,12 +24,12 @@ import { FlightRules } from './Rules.js';
 import { isPanelKey, VIEW_FEATURE } from './shell.js';
 import { PhoneConsoleScreen, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
-import { readStored, useFeature, useStore, writeStored } from './store.js';
+import { useFeature, useStore } from './store.js';
 import { agentCounts, stripHidden, UPDATE_TRUST_TEXT, updateDialogText, verifyPanel } from './selfupdate.js';
 import { MAIN_PATH } from './base.js';
 import { copyText } from './uplink.js';
 import { SERVER_GONE_TEXT } from './wording.js';
-import { inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, setRolloutDismissed, useNewer, useRolloutDismissed } from './newer.js';
+import { inMain, ROLLOUT_SHOW, setRolloutDismissed, useNewer, useRolloutDismissed } from './newer.js';
 import { SetupStrip } from './SetupStrip.js';
 import { PhoneBar, TopBar } from './TopBar.js';
 import './shell.css';
@@ -132,7 +132,7 @@ function GoneStrip(): ReactElement | null {
 function OtherRoomStrip(): ReactElement | null {
   const info = useStore((s) => s.info);
   const latest = useNewer();
-  const [dismissed, setDismissed] = useState(() => readStored(ROLLOUT_DISMISSED_KEY));
+  const dismissed = useRolloutDismissed();
   if (inMain || latest === null || info === null || dismissed === latest) return null;
   return (
     <aside className="rollout-strip" aria-label="Update">
@@ -147,8 +147,7 @@ function OtherRoomStrip(): ReactElement | null {
         className="btn"
         data-kind="quiet"
         onClick={() => {
-          writeStored(ROLLOUT_DISMISSED_KEY, latest);
-          setDismissed(latest);
+          setRolloutDismissed(latest);
         }}
       >
         Dismiss
