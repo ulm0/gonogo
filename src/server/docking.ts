@@ -134,7 +134,7 @@ interface Dock {
   rules?: DockRules;
 }
 
-const DEFAULT_RULES: DockRules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false };
+const DEFAULT_RULES: DockRules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false, ask: false };
 
 /** Rules from a file or a request, field by field: what is not valid keeps its default. */
 function readRules(raw: unknown, base: DockRules = DEFAULT_RULES): DockRules {
@@ -146,6 +146,7 @@ function readRules(raw: unknown, base: DockRules = DEFAULT_RULES): DockRules {
     staleHours: typeof r.staleHours === 'number' && Number.isInteger(r.staleHours) && r.staleHours >= 0 && r.staleHours <= 24 * 30 ? r.staleHours : base.staleHours,
     reportCost: typeof r.reportCost === 'boolean' ? r.reportCost : base.reportCost,
     serve: typeof r.serve === 'boolean' ? r.serve : base.serve,
+    ask: typeof r.ask === 'boolean' ? r.ask : base.ask,
   };
 }
 
@@ -224,7 +225,7 @@ export interface Docking extends DockLink {
   taskChanged(before: Task, after: Task, actor: Actor, note: string | undefined, attachments?: Deliverable[]): void;
   linkViews(): LinkView[];
   /** An agent's question to a docked station's shared knowledge: its answer, as data, not stored. 20 an hour per dock. */
-  askKnowledge(station: unknown, query: unknown): Promise<{ text: string; results: number }>;
+  askKnowledge(station: unknown, query: unknown, by?: 'director' | 'agent'): Promise<{ text: string; results: number }>;
   /** FLIGHT's read-only tool: the three agents, here or docked, whose names and roles match the task best. Sends nothing. */
   suggest(taskId: unknown): { text: string; suggestions: Array<{ station: string; agent: string; state: string; stopped: boolean; why: string[] }> };
   /** The Director's marks (Mission Log entries and claims shareable for docks). */
@@ -1126,9 +1127,11 @@ export function createDocking(options: DockingOptions): Docking {
       }
     },
 
-    async askKnowledge(station, query) {
+    async askKnowledge(station, query, by = 'director') {
       const dock = typeof station === 'string' ? byName(station) : undefined;
       if (dock === undefined) throw new HubError('not_found', 'unknown station: it is not docked', 'station');
+      // an agent's request leaves for another station only where the Director turned `ask` on for that dock; his own ask on the page needs no rule
+      if (by === 'agent' && !rulesOf(dock).ask) throw new HubError('forbidden', `asking ${dock.name} for knowledge is off: the Director turns it on in the rules of that station`, 'station');
       const text = cleanLine(query, 200);
       if (text === '') throw bad('a query is 1 to 200 characters of text', 'query');
       if (!hourly(knowledgeAsked, dock.id, 20)) throw new HubError('rate_limited', 'at most 20 requests for knowledge an hour to one station');
@@ -1212,12 +1215,13 @@ export function createDocking(options: DockingOptions): Docking {
     setRules(dockId, input) {
       const dock = find(dockId);
       if (!isRecord(input)) throw bad('request body must be a JSON object');
-      for (const key of Object.keys(input)) if (!['handoff', 'incoming', 'autoAccept', 'staleHours', 'reportCost', 'serve'].includes(key)) throw bad(`unknown field "${key}"`, key);
+      for (const key of Object.keys(input)) if (!['handoff', 'incoming', 'autoAccept', 'staleHours', 'reportCost', 'serve', 'ask'].includes(key)) throw bad(`unknown field "${key}"`, key);
       if (input.handoff !== undefined && input.handoff !== 'ask' && input.handoff !== 'allow') throw bad('handoff is ask or allow', 'handoff');
       if (input.incoming !== undefined && input.incoming !== 'auto' && input.incoming !== 'off') throw bad('incoming is auto or off', 'incoming');
       if (input.autoAccept !== undefined && typeof input.autoAccept !== 'boolean') throw bad('autoAccept is true or false', 'autoAccept');
       if (input.reportCost !== undefined && typeof input.reportCost !== 'boolean') throw bad('reportCost is true or false', 'reportCost');
       if (input.serve !== undefined && typeof input.serve !== 'boolean') throw bad('serve is true or false', 'serve');
+      if (input.ask !== undefined && typeof input.ask !== 'boolean') throw bad('ask is true or false', 'ask');
       if (input.staleHours !== undefined && (typeof input.staleHours !== 'number' || !Number.isInteger(input.staleHours) || input.staleHours < 0 || input.staleHours > 720)) throw bad('staleHours is a whole number of hours from 0 to 720', 'staleHours');
       dock.rules = readRules(input, rulesOf(dock));
       save().catch((error: unknown) => log.error('docking could not write', error));

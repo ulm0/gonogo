@@ -253,7 +253,8 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
       (args) =>
         guarded('knowledge_ask', async () => {
           if (!deps.docking) return toolResult({ ok: false, error: 'Docking is not available' }, true);
-          return toolResult({ ok: true, ...(await deps.docking.askKnowledge(args.station, args.query)) }, false);
+          if (hub.rosterFor(agent, generation).boss !== agent) return toolResult({ ok: false, error: 'only the boss may ask another station for knowledge' }, true);
+          return toolResult({ ok: true, ...(await deps.docking.askKnowledge(args.station, args.query, 'agent')) }, false);
         }),
     );
 

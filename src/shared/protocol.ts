@@ -1093,6 +1093,8 @@ export interface DockRules {
   autoAccept: boolean;
   /** Hours of silence on an accepted link before this station's boss is told; 0 is never. */
   staleHours: number;
+  /** The boss of this station may ask this dock for knowledge with the `knowledge_ask` tool (an agent-started request that leaves for another station). Default off; the Director's own ask on the page needs no rule. */
+  ask: boolean;
   /** This station answers this dock's knowledge requests, from the entries and claims the Director marked shareable for it only. Default off. */
   serve: boolean;
   /** This station tells the other what a task it holds for it has cost (dollars to the cent, an estimate, nothing else). Default off. */
