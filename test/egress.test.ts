@@ -2,9 +2,9 @@ import http, { createServer } from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { networkInterfaces } from 'node:os';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../src/shared/protocol.js';
 import { createEgress, EGRESS_CONCURRENT_MAX, publicAddress } from '../src/server/egress.js';
@@ -310,6 +310,34 @@ describe('a live reload', () => {
       const e = again(file, () => REAL);
       expect(e.has('x')).toBe(false);
     }
+  });
+
+  it('a planted second token for one agent: only the last of the file is kept, and a stop removes it too', async () => {
+    const file = join(dir, 'egress-tokens.json');
+    const first = '1'.repeat(64);
+    const planted = '2'.repeat(64);
+    await writeFile(file, JSON.stringify({ version: 1, tokens: [{ agent: 'ana', hash: first }, { agent: 'ana', hash: planted }, { agent: 'ben', hash: '3'.repeat(64) }] }));
+    const e = again(file, () => REAL);
+    expect(e.has('ana')).toBe(true);
+    e.revoke('ana');
+    expect(e.has('ana')).toBe(false);
+    const saved = JSON.parse(await readFile(file, 'utf8')) as { tokens: Array<{ agent: string; hash: string }> };
+    expect(saved.tokens).toEqual([{ agent: 'ben', hash: '3'.repeat(64) }]);
+    // nothing of ana's is left to match: a new instance has neither hash
+    const next = again(file, () => REAL);
+    expect(next.has('ana')).toBe(false);
+  });
+
+  it('the file is written by a random temporary name with wx, never through a link planted at the old name', async () => {
+    const file = join(dir, 'egress-tokens.json');
+    const target = join(dir, 'victim.txt');
+    await writeFile(target, 'keep');
+    await symlink(target, `${file}.${process.pid}.tmp`);
+    const e = again(file);
+    e.issue('ana', () => REAL);
+    expect(await readFile(target, 'utf8')).toBe('keep');
+    expect((JSON.parse(await readFile(file, 'utf8')) as { tokens: unknown[] }).tokens).toHaveLength(1);
+    expect((await readdir(dir)).filter((n) => n.endsWith('.tmp') && n !== `${basename(file)}.${process.pid}.tmp`)).toEqual([]);
   });
 
   it('a token that is not valid says to restart the agent', async () => {

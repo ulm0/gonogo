@@ -112,8 +112,9 @@ export function createEgress(options: EgressOptions): Egress {
   const persist = (): void => {
     if (file === null) return;
     try {
-      const temp = `${file}.${process.pid}.tmp`;
-      writeFileSync(temp, JSON.stringify({ version: 1, tokens: [...byAgent.values()].map((e) => ({ agent: e.agent, hash: e.hash })) }), { mode: 0o600 });
+      // a random name and `wx`: nothing that is already there (a link planted at the name) is written through
+      const temp = `${file}.${randomBytes(4).toString('hex')}.tmp`;
+      writeFileSync(temp, JSON.stringify({ version: 1, tokens: [...byAgent.values()].map((e) => ({ agent: e.agent, hash: e.hash })) }), { mode: 0o600, flag: 'wx' });
       renameSync(temp, file);
     } catch (error) {
       log.warn(`egress: could not save the tokens (${(error as NodeJS.ErrnoException).code ?? 'error'}): a live reload will end them`);
@@ -124,6 +125,9 @@ export function createEgress(options: EgressOptions): Egress {
       const saved = JSON.parse(readFileSync(file, 'utf8')) as { tokens?: Array<{ agent?: unknown; hash?: unknown }> };
       for (const t of Array.isArray(saved.tokens) ? saved.tokens : []) {
         if (typeof t.agent !== 'string' || typeof t.hash !== 'string' || !/^[0-9a-f]{64}$/.test(t.hash)) continue;
+        // one token per agent, the last one of the file: an earlier line for the same agent is dropped, so a planted second one does not outlive a stop
+        const earlier = byAgent.get(t.agent);
+        if (earlier !== undefined) byHash.delete(earlier.hash);
         const entry: Entry = { agent: t.agent, hash: t.hash, key: null, active: 0 };
         byHash.set(entry.hash, entry);
         byAgent.set(entry.agent, entry);
@@ -182,11 +186,14 @@ export function createEgress(options: EgressOptions): Egress {
   }
 
   const revoke = (agent: string): void => {
-    const old = byAgent.get(agent);
-    if (old === undefined) return;
-    byHash.delete(old.hash);
-    byAgent.delete(agent);
-    persist();
+    // every token of this agent, however it got in
+    let any = byAgent.delete(agent);
+    for (const [hash, entry] of byHash) {
+      if (entry.agent !== agent) continue;
+      byHash.delete(hash);
+      any = true;
+    }
+    if (any) persist();
   };
   const basePath = (token: string): string => `/${EGRESS_PATH}/${token}/${EGRESS_SERVICE_ANTHROPIC}`;
 
