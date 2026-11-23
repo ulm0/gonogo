@@ -887,7 +887,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
         // a folder that is not one adds no room; and a room that starts its agents in a folder is the Director's own doing: a session (asked for the password again), not a key or a terminal
         let folder: string | null = null;
         if (body.dir !== undefined && body.dir !== null) {
-          if (grant.kind === 'key' || grant.kind === 'tui') return sendApiError(res, 403, "a project folder is set from the Director's own login: agents start in it", 'forbidden');
+          if (grant.kind !== 'session' && grant.kind !== 'token') return sendApiError(res, 403, "a project folder is set from the Director's own login: agents start in it", 'forbidden');
           const reason = authHttp.stepUpNeeded(grant, 'POST', '/api/rooms', body);
           if (reason !== null) return authHttp.stepUpDenied(req, res, reason, false);
           try {

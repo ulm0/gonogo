@@ -1625,7 +1625,8 @@ export function createWebServer(options: WebOptions): WebServer {
           if (req.method === 'GET') return sendJson(res, 200, view());
           const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
           const actor = typeof actorHeader === 'string' && /^(session|token|socket|tui|key:[0-9a-f]{1,12})$/.test(actorHeader) ? actorHeader : 'unknown';
-          if (actor !== 'session') return sendApiError(res, 403, "the project folder is changed from the Director's own login: agents start in it", 'forbidden');
+          // the Director: his login session, or the browser token of an install that has no account yet (the same two the Director's messages are taken from)
+          if (actor !== 'session' && actor !== 'token') return sendApiError(res, 403, "the project folder is changed from the Director's own login: agents start in it", 'forbidden');
           const body = await jsonObject(req, res);
           if (!body) return;
           if (body.dir !== null && typeof body.dir !== 'string') return sendApiError(res, 400, 'dir is the whole path of a folder, or null for the default', 'bad_request', 'dir');
