@@ -5,36 +5,42 @@ pageClass: countdown
 
 # Getting started
 
-Run coding agents (Claude Code, Codex, Gemini CLI and more) as real CLIs in terminals you watch from a browser tab; they message each other and share a task board. One Node process; state is files in one directory; closing the tab stops nothing.
+Run coding agents (Claude Code, Codex, Gemini CLI and more) as real CLIs in terminals you watch from a browser tab; they message each other and share a task board. New words: [Glossary](./glossary.md).
 
 <RoomMock class="doc-mock" />
 
 <div class="t-step">
 
-## Requirements
+## Before you start
 
-1. **Run `claude` once in an ordinary terminal and finish its sign-in** (theme, login). gonogo starts it for you, but an installed `claude` that never ran stops at its own first-run dialogs inside the web terminal. (Another engine: [Engine Bay](../features/engine-bay.md). In Docker, see below.)
-2. Node 24+, and `git` (Recorder, worktrees and the Black Box need it); macOS or Linux with glibc 2.28+ (not Alpine, not Windows). Do not install with `--no-optional`: the terminal library's binary is an optional package, and without it `gonogo` prints the library's message and exits with code 1.
-3. The agent CLI is on the `PATH`: `claude` (written against 2.1.325) or another. Telemetry and Max Q need hooks (Claude Code, Gemini CLI); other engines show state from their output. How far each was checked: [What was not verified](../reference/not-verified.md).
+Run `claude` once in an ordinary terminal and finish its sign-in (theme, login). gonogo starts it for you, but one that never ran stops at its own first-run dialogs inside the web terminal. You also need Node 24+, `git`, and macOS or Linux (glibc 2.28+).
+
+::: details Other engines, platforms, install problems
+- Another agent CLI instead of `claude`: [Engine Bay](../features/engine-bay.md); how far each was checked: [What was not verified](../reference/not-verified.md). Telemetry and Max Q need hooks (Claude Code, Gemini CLI).
+- Not Alpine (musl), not Windows. Do not install with `--no-optional`: the terminal library's binary is an optional package, and without it `gonogo` exits with code 1.
+- `EACCES ... mkdir '/usr/local/lib/node_modules/@ulm0'` on `npm i -g`: use nvm or fnm, or `npm config set prefix ~/.npm-global` and add its `bin` to the `PATH`.
+:::
 
 </div>
 
 <div class="t-step">
 
-## Run it
+## Start it
+
+**With npm**
 
 ```
-npm i -g @ulm0/gonogo@latest && gonogo     # install the command
-pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@%VERSION%   # or run once with pnpm
-brew install ulm0/tap/gonogo               # or Homebrew; update: brew upgrade gonogo
-pnpm install && pnpm build && pnpm start   # or from a clone (`corepack enable pnpm`)
+npm i -g @ulm0/gonogo@latest
+gonogo
 ```
 
-Scoped name only: the unscoped `gonogo` on npm is another project, and `pnpm dlx gonogo` runs it with your credentials. With pnpm, name the version and exempt gonogo: where `minimumReleaseAge` is set, a young release is refused and `@latest` picks an older one (dependencies keep the check). `EACCES: permission denied, mkdir '/usr/local/lib/node_modules/@ulm0'` on `npm i -g`: use nvm or fnm, or `npm config set prefix ~/.npm-global` and add its `bin` to the `PATH`. [Options](../reference/configuration.md#options) follow the command: `gonogo --port 7780`, `pnpm start --port 7780`.
+It prints an address and a setup line (next step). Also: `brew install ulm0/tap/gonogo`, or from a clone `pnpm install && pnpm build && pnpm start`. [Options](../reference/configuration.md#options) follow the command (`--port 7780`).
 
-### Or in Docker
+::: details pnpm dlx
+`pnpm --config.minimum-release-age-exclude=@ulm0/gonogo dlx @ulm0/gonogo@%VERSION%`. Use the scoped name (the unscoped `gonogo` on npm is another project and would run with your credentials) and the version: where `minimumReleaseAge` is set, pnpm refuses a young release or picks an older one for `@latest`.
+:::
 
-Put the credential first: without it FLIGHT looks ready (green), its console says `Not logged in · Run /login`, and a brief gets no answer. On a machine where `claude` is signed in, run `claude setup-token` and keep the token (or use `ANTHROPIC_API_KEY`; one of the two, not both). Then, in an empty folder:
+**With Docker**, credential first. On a machine where `claude` is signed in run `claude setup-token` and keep the token (or use `ANTHROPIC_API_KEY`; one of the two). Then, in an empty folder:
 
 ```
 export CLAUDE_CODE_OAUTH_TOKEN=<the token>
@@ -44,7 +50,11 @@ printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /va
 docker compose up -d && docker compose logs gonogo
 ```
 
-The logs end with the two lines of [First run](#first-run) (the `gonogo ready:` address and the setup token): open the `/setup` address. Forgot the token? Export it and run `docker compose up -d` again, or open FLIGHT's console and type `/login`. **`compose.yaml` mounts the host's Docker socket, which is root on the host for every agent in the container** ([Docker](./docker.md#clean-room-in-the-container)); for a plain `docker run` without the socket see [Docker](./docker.md).
+The logs end with the same address and setup line. **The compose file mounts the host's Docker socket: root on the host for every agent in the container** ([Docker](./docker.md#clean-room-in-the-container); a plain `docker run` without the socket is on that page too).
+
+::: details No credential in Docker
+FLIGHT looks ready (green), its console says `Not logged in · Run /login`, and a brief gets no answer. Export the token and run `docker compose up -d` again, or open FLIGHT's console and type `/login`.
+:::
 
 </div>
 
@@ -52,16 +62,16 @@ The logs end with the two lines of [First run](#first-run) (the `gonogo ready:` 
 
 ## First run
 
-It prints, on stdout (the rest is stderr):
-
 ```
 gonogo ready: http://127.0.0.1:7777/#token=<64 hex characters>
 gonogo setup: open http://127.0.0.1:7777/setup and give this setup token (one use, one hour; it is also in ~/.gonogo/setup-token): <token>
 ```
 
-Open `/setup`, give the setup token, a name and a password of 12+ characters: you are signed in ([Login](../features/login.md)). Setup is answered on this machine and your local network only. Once the account exists the `#token=` address stops working (the file is deleted for good); scripts and `gonogo tui` use the local socket, or a key (`gonogo auth key add <name> --remote`). The token after `#` is never sent to a server: the page keeps it and clears the address bar. **The URL and the setup token are passwords: the server runs shells.**
+Open `/setup`, give the setup token, a name and a password of 12+ characters: you are signed in ([Login](../features/login.md)). Once the account exists the `#token=` address stops working for good. **The address and the setup token are passwords: the server runs shells.**
 
-**Browser on another machine** (a NAS, a VPS, a home server)? gonogo listens on `127.0.0.1` only. On your own machine run `ssh -L 7777:127.0.0.1:7777 you@host`, then open the address there. Other ways in (Tailscale, a proxy): [Exposing gonogo safely](../https.md).
+::: details Browser on another machine (NAS, VPS)
+gonogo listens on `127.0.0.1` only. On your own machine run `ssh -L 7777:127.0.0.1:7777 you@host`, then open the address there. Tailscale or a proxy: [Exposing gonogo safely](../https.md). Setup is answered on this machine and your local network only. Scripts and `gonogo tui` use the local socket, or a key (`gonogo auth key add <name> --remote`).
+:::
 
 </div>
 
@@ -69,8 +79,12 @@ Open `/setup`, give the setup token, a name and a password of 12+ characters: yo
 
 ## Staff your first console
 
-`+ STAFF A CONSOLE` (or an open cell): pick an engine (Claude Code by default), a name (lowercase letters, digits, hyphens, at most 32), a role, an absolute working directory that exists on the gonogo machine (`~` is not expanded; the form starts with the folder gonogo was started in) and a permission mode ([Permissions](../features/permissions.md); `bypassPermissions` needs a ticked box). At most 24 agents; edits apply at the next restart. Folds: [Payload](../features/payload.md), [Clean Room](../features/clean-room.md), MODEL and CLEARANCE ([Engine Bay](../features/engine-bay.md#model)). `gonogo doctor` lists the agent CLIs found; [Rollout](../features/rollout.md) tells you about a newer gonogo. New words? [Glossary](./glossary.md). Docs: <https://gonogo.ulm0.com/>.
+`+ STAFF A CONSOLE`: an engine (Claude Code by default), a name (lowercase letters, digits, hyphens), a role, a working directory (absolute, must exist; the form starts with the folder gonogo was started in) and a permission mode ([Permissions](../features/permissions.md)). Type your first brief in the box under the room: it goes to FLIGHT. The answer shows in FLIGHT's console; an agent that messages you shows in the Downlink (the unread count on COMMS).
 
-**Your first brief.** Type it in the box under the room (it goes to FLIGHT). The answer shows in FLIGHT's console; an agent that messages you shows in the Downlink (the unread count on COMMS).
+::: details Hire form details
+Name at most 32 characters; role at most 4000; `~` is not expanded in the directory; `bypassPermissions` needs a ticked box. At most 24 agents; edits apply at the next restart. Folds: [Payload](../features/payload.md), [Clean Room](../features/clean-room.md), MODEL and CLEARANCE ([Engine Bay](../features/engine-bay.md#model)). [Rollout](../features/rollout.md) tells you about a newer gonogo.
+:::
+
+`gonogo doctor` lists the agent CLIs found.
 
 </div>
