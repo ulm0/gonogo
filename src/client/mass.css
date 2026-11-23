@@ -1,6 +1,6 @@
 /*
  * Mass Budget: the memory file of a console, under the panel's header. A row (name, size, REFLECT), the warning in the tint of a
- * console that needs you, and small hints. REFLECT is a 44 px key (primitives.css). The colours are tokens, so the four liveries hold.
+ * console that needs you, and small hints. REFLECT is a 44 px key (primitives.css). The colours are tokens, so every livery holds.
  */
 
 .mass {

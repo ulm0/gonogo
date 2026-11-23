@@ -116,21 +116,22 @@ describe('the token list and the rule', () => {
     }
   });
 
-  it('passes every livery that ships, and the high-contrast one at 7:1 or better', () => {
-    expect(BUILTIN_LIVERIES.map((l) => l.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'high-contrast']);
+  it('passes every livery that ships, and the two high-contrast ones at 7:1 or better', () => {
+    expect(BUILTIN_LIVERIES.map((l) => l.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'low-ink-dark', 'high-contrast', 'high-contrast-dark']);
     for (const l of BUILTIN_LIVERIES) {
       expect(checkLivery(l.tokens), l.slug).toEqual([]);
       expect(checkLivery(l.tokens, true), l.slug).toEqual([]);
       expect(slugOf(l.name), l.slug).toBe(l.slug);
       expect(new Set(Object.keys(l.tokens)), l.slug).toEqual(new Set(LIVERY_NAMES));
     }
-    const high = BUILTIN_LIVERIES[3]!;
-    for (const [text, surfaces] of CONTRAST_PAIRS) for (const s of surfaces) expect(contrast(high.tokens[text as keyof typeof high.tokens], high.tokens[s as keyof typeof high.tokens])!, `${text} on ${s}`).toBeGreaterThanOrEqual(7);
+    for (const high of BUILTIN_LIVERIES.filter((l) => l.slug.startsWith('high-contrast'))) {
+      for (const [text, surfaces] of CONTRAST_PAIRS) for (const s of surfaces) expect(contrast(high.tokens[text as keyof typeof high.tokens], high.tokens[s as keyof typeof high.tokens])!, `${high.slug}: ${text} on ${s}`).toBeGreaterThanOrEqual(7);
+    }
   });
 
-  it('makes four looks that differ: no two share a body, and only the night one is dark', () => {
-    expect(new Set(BUILTIN_LIVERIES.map((l) => l.tokens['--body'])).size).toBe(4);
-    expect(BUILTIN_LIVERIES.map((l) => schemeOf(l.tokens))).toEqual(['light', 'dark', 'light', 'light']);
+  it('makes six looks that differ: no two share a body, and the three dark ones are the night, low ink and high contrast dark', () => {
+    expect(new Set(BUILTIN_LIVERIES.map((l) => l.tokens['--body'])).size).toBe(6);
+    expect(BUILTIN_LIVERIES.map((l) => schemeOf(l.tokens))).toEqual(['light', 'dark', 'light', 'dark', 'light', 'dark']);
   });
 
   it('rejects a livery whose text falls under 4.5:1, and says which pair and by how much', () => {
@@ -224,11 +225,11 @@ describe('Livery: the store', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('starts with the four that ship and the default chosen, and writes nothing until something changes', async () => {
+  it('starts with the six that ship and the default chosen, and writes nothing until something changes', async () => {
     const l = await loaded();
     const v = l.view();
     expect(v.current).toBe(DEFAULT_LIVERY);
-    expect(v.liveries.map((e) => [e.slug, e.builtin, e.author])).toEqual([['instrument', true, null], ['night-shift', true, null], ['low-ink', true, null], ['high-contrast', true, null]]);
+    expect(v.liveries.map((e) => [e.slug, e.builtin, e.author])).toEqual([['instrument', true, null], ['night-shift', true, null], ['low-ink', true, null], ['low-ink-dark', true, null], ['high-contrast', true, null], ['high-contrast-dark', true, null]]);
     expect(await readdir(join(dir, LIVERY_DIR))).toEqual([]);
     expect((await stat(join(dir, LIVERY_DIR))).mode & 0o777).toBe(0o700);
     expect(await readdir(dir)).toEqual([LIVERY_DIR]);
@@ -245,7 +246,7 @@ describe('Livery: the store', () => {
     expect((await stat(file)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 1, name: 'Dusk', description: 'Blue hour.', author: 'ana', tokens: good() });
     expect(l.view().current).toBe('instrument');
-    expect(l.view().liveries.map((e) => e.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'high-contrast', 'dusk']);
+    expect(l.view().liveries.map((e) => e.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'low-ink-dark', 'high-contrast', 'high-contrast-dark', 'dusk']);
     expect(frames).toHaveLength(1);
     expect(frames[0]!.livery.current).toBe('instrument');
     expect(events).toEqual([['livery', 'ana submitted the livery "Dusk". Pick it in the Livery view to try it.']]);
