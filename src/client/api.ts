@@ -68,6 +68,7 @@ import type {
   MissionRequest,
   Effort,
   ModelDefaults,
+  PermissionMode,
   Claim,
   KnowledgeRepo,
   KnowledgeView,
@@ -76,9 +77,11 @@ import type {
   ProjectFolderView,
   LinkView,
   DockRules,
-  HandoffAsk,
   OutboundEntry,
+  HandoffAsk,
+  LinkPriority,
   LinkEventView,
+  ExposureFindingView,
   RoomKeysView,
   RuntimeSettingKey,
   RuntimeSettingRow,
@@ -109,6 +112,7 @@ import type {
   SemanticView,
 } from '../shared/protocol.js';
 import { withBase } from './base.js';
+import { changesExposure, EXPOSURE_REFRESH } from './exposureModel.js';
 import {
   API_PREFIX,
   RECONNECT_DELAYS_MS,
@@ -223,6 +227,8 @@ async function callOnce(method: string, path: string, body?: unknown): Promise<u
       diagnostics === undefined ? {} : { diagnostics },
     );
   }
+  // a write may open or close something the banner of the insecure setup lists
+  if (typeof window !== 'undefined' && changesExposure(method, path)) window.dispatchEvent(new Event(EXPOSURE_REFRESH));
   return parsed;
 }
 
@@ -613,6 +619,11 @@ export async function removeDefaultSkill(name: string): Promise<PayloadDefaults>
 /** The room's default effort for Claude Code consoles with none of their own; null clears it. */
 export async function setDefaultEffort(effort: Effort | null): Promise<ModelDefaults> {
   return toModelDefaults(await call('PUT', '/models/effort', { effort }));
+}
+
+/** The room's default permission mode for hires that name none; null goes back to ask. bypassPermissions is refused without `confirmBypass`. */
+export async function setDefaultMode(mode: PermissionMode | null, confirmBypass = false): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', '/models/mode', { mode, ...(confirmBypass ? { confirmBypass: true } : {}) }));
 }
 
 export async function setPositionModel(position: string, model: string | null): Promise<ModelDefaults> {
@@ -1035,6 +1046,27 @@ export async function handoffAsks(): Promise<HandoffAsk[]> {
 }
 /** GO or NO-GO on a handoff; `always` turns the dock's rule to Allow (the password is asked again). The answer says whether it was sent. */
 export const answerHandoff = async (id: string, go: boolean, always = false): Promise<'sent' | 'refused'> => (asRecord(await call('POST', `/handoff-requests/${encodeURIComponent(id)}/answer`, { go, always }))?.state === 'sent' ? 'sent' : 'refused');
+
+/** What the Director marked as shareable, and with which docks: Mission Log entries ('log', by id) and claims ('claim', by <repository id>/<claim id>). */
+export interface DockShare {
+  kind: 'log' | 'claim';
+  key: string;
+  docks: string[];
+}
+export async function dockShares(): Promise<DockShare[]> {
+  const list = asRecord(await call('GET', '/dock-shares'))?.shares;
+  return Array.isArray(list) ? (list as DockShare[]) : [];
+}
+/** Marks one entry or claim shareable for exactly these docks (none clears it). */
+export const setDockShare = async (kind: DockShare['kind'], id: string, docks: string[]): Promise<DockShare> => (await call('PUT', '/dock-shares', { kind, id, docks })) as DockShare;
+/** The Director asks a docked station's shared knowledge: the answer is data, with its first line fixed by the server, and is not stored. */
+export async function askDockKnowledge(dock: string, query: string): Promise<{ text: string; results: number }> {
+  return (await call('POST', '/docking/' + encodeURIComponent(dock) + '/knowledge', { query })) as { text: string; results: number };
+}
+/** Offers a mission to a station like a task: the other station makes its own mission and tells counts only. */
+export async function handOffMission(dock: string, offer: { mission: string; due?: string; priority?: LinkPriority }): Promise<LinkView> {
+  return asRecord(await call('POST', '/docking/' + encodeURIComponent(dock) + '/handoff', offer)) as unknown as LinkView;
+}
 
 /** Livery: choose, delete, ask an agent for a new one. The list comes in the state and in `livery` frames; each call answers with it as it is now. */
 export async function selectLivery(slug: string): Promise<LiveryView> {
@@ -1584,10 +1616,10 @@ export interface AccountView {
 /** One call to `/api/auth/...`: the supervisor's own route (a room has none), so the path is absolute and the session cookie is the credential. */
 const authCall = (method: string, path: string, body?: unknown): Promise<unknown> => viaStepUp(() => authCallOnce(method, path, body));
 
-async function authCallOnce(method: string, path: string, body?: unknown): Promise<unknown> {
+async function authCallOnce(method: string, path: string, body?: unknown, base = '/api/auth'): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/auth${path}`, {
+    response = await fetch(`${base}${path}`, {
       method,
       headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -1607,6 +1639,8 @@ async function authCallOnce(method: string, path: string, body?: unknown): Promi
     const error = asRecord(parsed);
     throw Object.assign(failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true, passkey: error.passkey === true } : {});
   }
+  // the login and the keys are findings too (no second factor, an old key)
+  if (typeof window !== 'undefined' && base === '/api/auth' && changesExposure(method, '/auth')) window.dispatchEvent(new Event(EXPOSURE_REFRESH));
   return parsed;
 }
 
@@ -1697,4 +1731,23 @@ function toAutoUpdate(value: unknown): AutoUpdateView {
   const record = asRecord(value);
   if (record === null || typeof record.enabled !== 'boolean' || !Array.isArray(record.windows) || !Array.isArray(record.skipped)) throw failure('The server sent an answer gonogo does not understand.');
   return value as AutoUpdateView;
+}
+
+/** The banner's list. null when this login may not read it (a key, a terminal login: 403) or it cannot be read: the banner then shows nothing. */
+export async function exposureFindings(): Promise<ExposureFindingView[] | null> {
+  try {
+    const list = asRecord(await authCallOnce('GET', '/findings', undefined, '/api/exposure'))?.findings;
+    return Array.isArray(list) ? (list as ExposureFindingView[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Dismisses one finding for good. A 400 is not an error: it was not a current finding (it has gone), and the list is read again. */
+export async function dismissExposure(id: string): Promise<void> {
+  try {
+    await authCallOnce('POST', '/dismiss', { id }, '/api/exposure');
+  } catch (e) {
+    if ((e as ApiFailure).status !== 400) throw e;
+  }
 }

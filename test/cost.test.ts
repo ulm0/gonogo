@@ -25,9 +25,12 @@ let projects: string;
 let transcript: string;
 let clock: number;
 let events: [DownlinkEventKind, string][];
+/** Every ledger a test made: its appends are asynchronous, so they are finished before the folder is removed (rm races a write: ENOTEMPTY). */
+let made: Propellant[] = [];
+const keep = (p: Propellant): Propellant => (made.push(p), p);
 
 const make = async (): Promise<Propellant> => {
-  const p = createPropellant({ dir: home, projectsRoot: projects, now: () => clock, log: quiet, notify: (k, t) => events.push([k, t]) });
+  const p = keep(createPropellant({ dir: home, projectsRoot: projects, now: () => clock, log: quiet, notify: (k, t) => events.push([k, t]) }));
   await p.load();
   return p;
 };
@@ -44,6 +47,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await Promise.all(made.map((p) => p.close()));
+  made = [];
   await rm(root, { recursive: true, force: true });
 });
 
@@ -170,7 +175,7 @@ describe('cost in the view', () => {
   it('re-prices the whole history when the table changes', async () => {
     await writeFile(transcript, reply('a', 'claude-haiku-4-5', { output_tokens: 1_000_000 }));
     let table = mergePrices();
-    const p = createPropellant({ dir: home, projectsRoot: projects, now: () => clock, log: quiet, prices: () => table });
+    const p = keep(createPropellant({ dir: home, projectsRoot: projects, now: () => clock, log: quiet, prices: () => table }));
     await p.load();
     await p.record('ana', transcript);
     expect(p.view().cost.room.usd.day).toBeCloseTo(5, 6);
@@ -232,7 +237,7 @@ describe('cost in the view', () => {
 
   it('re-runs the 80 % warning and the over check when a price changes', async () => {
     let table = mergePrices();
-    const p = createPropellant({ dir: home, projectsRoot: projects, now: () => clock, log: quiet, prices: () => table, notify: (k, t) => events.push([k, t]) });
+    const p = keep(createPropellant({ dir: home, projectsRoot: projects, now: () => clock, log: quiet, prices: () => table, notify: (k, t) => events.push([k, t]) }));
     await p.load();
     await appendFile(transcript, reply('a', 'claude-haiku-4-5', { output_tokens: 1_000_000 })); // $5
     await p.record('ana', transcript);
@@ -339,7 +344,7 @@ describe('budget', () => {
     await p.close();
     const saved = JSON.parse(await readFile(join(home, 'propellant.json'), 'utf8')) as { version: number; budget: unknown };
     expect(saved.version).toBe(1);
-    expect(saved.budget).toEqual({ room: { month: 50 }, agents: { ben: { day: 3 } }, missions: {} });
+    expect(saved.budget).toEqual({ room: { month: 50 }, agents: { ben: { day: 3 } }, missions: {}, links: {} });
     const again = await make();
     expect(again.view().cost.room.budget).toEqual({ month: 50 });
     expect(again.view().cost.agents.ben?.budget).toEqual({ day: 3 });

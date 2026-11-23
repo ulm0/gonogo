@@ -3,6 +3,8 @@
  * setting, checks Docker and the repository, makes the worktree once and builds the `docker run` arguments. The launcher
  * puts them together with the files and the environment of a Claude Code start.
  */
+import { idsFromCgroup, idsFromMountinfo, selfProbe } from './selfid.js';
+import type { SelfProbe } from './selfid.js';
 import { createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { existsSync } from 'node:fs';
@@ -58,10 +60,31 @@ export function cleanRoomImage(cleanRoom: CleanRoom, env: Env): string {
  * Code blocks HTTP hooks to those. `container:self` is gonogo's own container by its host name, which Docker sets to the
  * container's short id unless `hostname` is set, so compose needs no fixed container name.
  */
-export function cleanRoomNetwork(env: Env, host: string = hostname()): string | null {
+/**
+ * gonogo's own container, by the rule of the update path (selfid.ts): the id its own files name (mountinfo, cgroup), and only when they name exactly ONE. Two ids are two
+ * containers and nothing is guessed. With none, the host name counts only when it is itself a container id (12 to 64 hex characters, what Docker sets by default): under
+ * `network_mode: host` the host name is the HOST's. Anything else is refused with what to set.
+ */
+const ownContainerFix = "set GONOGO_CLEANROOM_NETWORK=container:<the name of gonogo's own container>";
+
+export function ownContainerRef(probe: SelfProbe = selfProbe.current, host: string = hostname()): string {
+  const fix = `set ${CLEAN_ROOM_NETWORK_ENV}=container:<the name of gonogo's own container> instead of container:self`;
+  let ids: string[] = [];
+  try {
+    ids = [...new Set([...idsFromMountinfo(probe.mountinfo()), ...idsFromCgroup(probe.cgroup())])];
+  } catch {
+    // the files cannot be read: below
+  }
+  if (ids.length > 1) throw new Error(`${CLEAN_ROOM_NETWORK_ENV}=container:self cannot tell which container is gonogo's own: its files name ${ids.length} (${ids.map((id) => id.slice(0, 12)).join(', ')}); ${fix}`);
+  if (ids.length === 1) return ids[0] as string;
+  if (/^[0-9a-f]{12,64}$/.test(host)) return host;
+  throw new Error(`${CLEAN_ROOM_NETWORK_ENV}=container:self cannot tell which container is gonogo's own: its files name none and the host name ${JSON.stringify(host.slice(0, 40))} is not a container id; ${fix}`);
+}
+
+export function cleanRoomNetwork(env: Env, host?: string): string | null {
   const raw = env[CLEAN_ROOM_NETWORK_ENV]?.trim();
   if (!raw) return null;
-  const value = raw === CLEAN_ROOM_NETWORK_SELF ? `container:${host}` : raw;
+  const value = raw === CLEAN_ROOM_NETWORK_SELF ? `container:${host ?? ownContainerRef()}` : raw;
   if (!NETWORK_RE.test(value)) throw new Error(`${CLEAN_ROOM_NETWORK_ENV} must be ${CLEAN_ROOM_NETWORK_SELF} or container:<name of gonogo's own container>, not ${JSON.stringify(raw)}`);
   return value;
 }
@@ -113,7 +136,7 @@ export interface CleanRoomPlace {
   home: string;
   /** The container's name, one per worktree: a start or an exit removes the container of that name. */
   container: string;
-  /** `container:<gonogo's container>` from GONOGO_CLEANROOM_NETWORK, or null: the host's network through host.docker.internal. */
+  /** `container:<gonogo's container>` from GONOGO_CLEANROOM_NETWORK, `host` when that container runs with `network_mode: host`, or null: the host's network through host.docker.internal. */
   network: string | null;
 }
 
@@ -146,6 +169,7 @@ export async function prepareCleanRoom(agent: AgentRecord, homeDir: string, base
   const refused = cleanRoomHostProblem(env, process.platform, existsSync('/.dockerenv') || existsSync('/run/.containerenv'), network);
   if (refused !== null) throw new Error(refused);
   await checkDocker(env);
+  let hostNet = false;
   if (network !== null) {
     const self = network.slice('container:'.length);
     let mounts: unknown;
@@ -156,8 +180,13 @@ export async function prepareCleanRoom(agent: AgentRecord, homeDir: string, base
     }
     const error = sameMountError(mounts, homeDir, self);
     if (error !== null) throw new Error(error);
-    // The Clean Room shares this container's hosts file; keeping the name (not 127.0.0.1) keeps the Host rule: hooks and MCP only.
-    const address = await lookup(CLEAN_ROOM_HOST).then((found) => found.address, () => 'nothing');
+    // with `network_mode: host` gonogo has the host's network and so a Clean Room that joins gonogo's network gets the host's: it is joined as `--network host` (the same reach as gonogo itself), with the name host.docker.internal on 127.0.0.1
+    // inspected by the id that was resolved, and what Docker answers must be that very container (an Id that starts with it): a name or a short prefix never stands for another
+    const answer = await run(DOCKER_BIN, ['inspect', '--format', '{{.Id}} {{.HostConfig.NetworkMode}}', self], env).then((out) => out.trim().split(/\s+/), () => ['', '']);
+    if (/^[0-9a-f]{12,64}$/.test(self) && !(answer[0] ?? '').startsWith(self)) throw new Error(`${CLEAN_ROOM_NETWORK_ENV} names the container ${self}, and Docker answered with another container (${(answer[0] ?? '').slice(0, 12) || 'none'}): ${ownContainerFix}`);
+    hostNet = answer[1] === 'host';
+    // The Clean Room shares this container's hosts file; keeping the name (not 127.0.0.1) keeps the Host rule: hooks and MCP only. (With host networking it is told the name by --add-host.)
+    const address = hostNet ? '127.0.0.1' : await lookup(CLEAN_ROOM_HOST).then((found) => found.address, () => 'nothing');
     if (!address.startsWith('127.')) throw new Error(`${CLEAN_ROOM_HOST} names ${address} in the container ${self}, not 127.0.0.1: start it with --add-host ${CLEAN_ROOM_HOST}:127.0.0.1 (compose.yaml has it)`);
   }
   const top = await realpath(await repoRoot(agent.dir, env));
@@ -172,7 +201,7 @@ export async function prepareCleanRoom(agent: AgentRecord, homeDir: string, base
   for (const path of [home, join(home, '.claude.json')]) {
     if ((await lstat(path).catch(() => null))?.isSymbolicLink()) throw new Error(`${path} is a symbolic link, and a Clean Room never follows one out of its folder: delete it`);
   }
-  return { worktree, cwd, home, container, network };
+  return { worktree, cwd, home, container, network: hostNet ? 'host' : network };
 }
 
 /** The URL an agent in a container reaches gonogo by: the loopback host of the server's URL becomes the host's name. */
@@ -206,7 +235,7 @@ export function buildDockerArgs(input: {
     '--user', `${input.uid}:${input.gid}`,
     // the container shares gonogo's network namespace (and so its edge network): it needs no capability, and a setuid program in the image must not gain one
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-    ...(place.network === null ? ['--add-host', `${CLEAN_ROOM_HOST}:host-gateway`] : ['--network', place.network]),
+    ...(place.network === null ? ['--add-host', `${CLEAN_ROOM_HOST}:host-gateway`] : place.network === 'host' ? ['--network', 'host', '--add-host', `${CLEAN_ROOM_HOST}:127.0.0.1`] : ['--network', place.network]),
     '-e', `HOME=${place.home}`,
     '-e', `CLAUDE_CONFIG_DIR=${place.home}`,
     ...input.names.flatMap((name) => ['-e', name]),

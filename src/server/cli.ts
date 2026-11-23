@@ -811,6 +811,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       dir: home.dir,
       plan: () => quota.view(),
       attribute: workingOn,
+      linkTask: (linkId) => dockingRef?.linkTask(linkId),
       prices: () => prices.table(),
       // the 80 % budget warning: the inbox and Relay, not the Black Box (it is not a trip)
       notify: (kind, text) => {
@@ -889,10 +890,26 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     };
 
     /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, a mission's budget the agents working on it, an agent's own only that agent. */
+    const linkCapTold = new Set<string>();
     const enforce = (name: string): void => {
       const over = propellant.over(name);
       if (over === null || !hub) return;
       const claude = hub.views().filter((v) => v.provider === 'claude').map((v) => v.name);
+      // a docking link's cap holds the agents working on that one task and nothing else (a hold, not a Redline of the room or of an agent)
+      if (over.scope === 'link') {
+        for (const n of claude.filter((c) => workingOn(c).task === over.task)) {
+          try {
+            hub.hold(n);
+          } catch (e) {
+            log.debug(`could not hold ${n}`, e);
+          }
+        }
+        if (over.link !== undefined && !linkCapTold.has(over.link)) {
+          linkCapTold.add(over.link);
+          tell('flight-plan', `${over.reason}: its agents are held; raise or clear the cap in Propellant, or return the task`);
+        }
+        return;
+      }
       const names = over.scope === 'room' ? claude : over.scope === 'mission' ? claude.filter((n) => workingOn(n).mission === over.mission) : [name];
       for (const n of names) {
         try {
@@ -1076,7 +1093,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       now: io.now,
       hasMission: (id) => missionsRef?.has(id) ?? false,
       afterChange: (list) => missionsRef?.observe(list),
-      afterUpdate: (before, after, actor, note) => dockingRef?.taskChanged(before, after, actor, note),
+      afterUpdate: (before, after, actor, note, attachments) => dockingRef?.taskChanged(before, after, actor, note, attachments),
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
       send: (actor, request) =>
         actor.kind === 'user'
@@ -1116,6 +1133,34 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       tasks,
       emit: (view) => web?.broadcast({ t: 'docking', docking: view }),
       emitLinks: (links) => web?.broadcast({ t: 'links', links }),
+      missions,
+      knowledge: {
+        entries: (query) => missionLog.search(query, 50).hits.map((h) => ({ id: h.id, title: h.title, snippet: h.snippet, date: new Date(h.updatedAt).toISOString().slice(0, 10) })),
+        claims: async () => {
+          const found: Array<{ key: string; statement: string; date: string }> = [];
+          for (const repoId of Object.keys(await knowledgeStore.repos())) {
+            for (const c of (await knowledgeStore.claims(repoId)).claims) if (c.state === 'active') found.push({ key: `${repoId}/${c.id}`, statement: c.statement, date: c.date });
+          }
+          return found;
+        },
+      },
+      setLinkBudget: (linkId, usd) => void propellant.setBudget({ links: { [linkId]: usd } }).catch((error: unknown) => log.warn('a link budget could not be saved', error)),
+      spentOnTask: (taskId) => propellant.view().cost.tasks?.[taskId]?.usd,
+      roomBudgetCap: () => {
+        const caps = Object.values(propellant.view().cost.room.budget).filter((n): n is number => typeof n === 'number');
+        return caps.length === 0 ? undefined : Math.max(...caps);
+      },
+      notify: (text) => tell('flight-plan', text),
+      tellBoss: (station, subject, body) => {
+        const boss = hubInstance.views().find((v) => v.boss);
+        if (boss === undefined) return;
+        try {
+          // from `station` at the docked station: a name that is no agent of ours and no Director, so it cannot be mistaken for either
+          hubInstance.sendFromStation(station, { from: 'station', to: boss.name, subject, body, hops: 0 });
+        } catch (error) {
+          log.warn('the boss could not be told of a task from a docked station', error);
+        }
+      },
       log: log.child('docking'),
     });
     dockingRef = docking;
@@ -1201,6 +1246,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const relief = createRelief({
       hub: hubInstance,
       defaultEngine: () => modelDefaults.engine(),
+      defaultMode: () => modelDefaults.mode(),
       checkDirectory: io.checkDirectory,
       checkWorktree: (dir) => checkWorktree(dir, env),
       now: io.now,

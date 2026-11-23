@@ -13,6 +13,7 @@ import { moneyText } from '../shared/prices.js';
 import { actionsOf, budgetShare, emptyMissionValues, progressOf, ritualProgress, ritualTextProblem, sourceText, spendText, sortMissions, STATUS_LABELS, STATUS_TONES, tasksOf, tickedText, validateMission } from './missionsModel.js';
 import type { MissionValues } from './missionsModel.js';
 import { LinkLines } from './LinkLines.js';
+import { MissionHandOff } from './MissionHandOff.js';
 import { incoming, outgoing } from './links.js';
 import { useLinks } from './linksData.js';
 import { cardId, labelOf } from './plan.js';
@@ -367,6 +368,7 @@ function Detail({ mission }: { mission: Mission }): ReactElement {
           {error}
         </p>
       )}
+      <MissionHandOff mission={mission} />
       <div className="mis-keys" role="group" aria-label={`Change ${mission.name}`}>
         {actionsOf(mission.status).map((a) => (
           <button key={a.to} type="button" className="btn" data-kind={a.to === 'active' ? 'primary' : undefined} aria-disabled={busy || undefined} onClick={() => run(() => api.updateMission(mission.id, { status: a.to }))}>

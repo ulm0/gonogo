@@ -1,5 +1,5 @@
 import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
-import type { AgentView, CleanRoom, PayloadDefaults, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, McpServer, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, PayloadDefaults, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, McpServer, ModelDefaults, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { parseRulesText, rulesOf, rulesToText } from './permissions.js';
 import { positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -117,6 +117,13 @@ export function chooseCustom(values: Values, agents: Readonly<Record<string, Age
 /** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
 export function chooseEngine(values: Values, provider: Provider): Values {
   return { ...values, provider, model: '', effort: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom, worktree: values.worktree && !(provider === 'claude' && values.cleanRoom), remoteControl: provider === 'claude' && values.remoteControl, rules: provider === 'claude' ? values.rules : '' };
+}
+
+/** A new hire as it opens: the room's default engine, then its default permission mode (an engine without modes keeps ask; bypass is preselected but still confirmed in the form). A form the person already touched is left alone. */
+export function withRoomDefaults(values: Values, defaults: Pick<ModelDefaults, 'engine' | 'mode'>): Values {
+  if (values.provider !== 'claude' || values.name !== '' || values.role !== '') return values;
+  const chosen = defaults.engine === undefined ? values : chooseEngine(values, defaults.engine);
+  return defaults.mode !== undefined && providerInfo(chosen.provider).modes ? { ...chosen, mode: defaults.mode, confirm: false } : chosen;
 }
 
 /** What the form says under the engine select about the program: found (and where, which version) or not, with the vendor's install command. The command is shown, never run. */

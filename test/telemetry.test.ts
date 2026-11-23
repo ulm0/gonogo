@@ -12,10 +12,13 @@ const quiet: Logger = { debug: () => {}, info: () => {}, warn: () => {}, error: 
 
 let home: string;
 let clock: number;
+/** Every recorder a test made: its appends are asynchronous, so they are finished before the folder is removed (rm races a write and fails with ENOTEMPTY). */
+let made: Telemetry[] = [];
 
 const make = async (): Promise<Telemetry> => {
   const t = createTelemetry({ dir: home, now: () => clock, log: quiet });
   await t.load();
+  made.push(t);
   return t;
 };
 const file = (): Promise<string> => readFile(join(home, 'telemetry.jsonl'), 'utf8').catch(() => '');
@@ -27,6 +30,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await Promise.all(made.map((t) => t.close()));
+  made = [];
   await rm(home, { recursive: true, force: true });
 });
 

@@ -1,24 +1,9 @@
 /** Docking 2 (docs/docking-collab-spec.md): the words and the choices of the link views, with no React. */
-import type { DockView, LinkAttachment, LinkEventView, LinkState, LinkView, TaskStatus } from '../shared/protocol.js';
+import type { Deliverable, DockView, LinkEventView, LinkState, LinkView, TaskStatus } from '../shared/protocol.js';
 import { atText } from './uplink.js';
 
-/** What the server's link view does not carry yet (docs/docking-collab-spec.md: missions, chains, cost, stale, notes): the page reads these when they are there and says nothing when they are not. */
-export interface LinkExtras {
-  kind?: 'task' | 'mission';
-  note?: string;
-  chain?: Array<{ station: string; task: string }>;
-  via?: string;
-  progress?: { done: number; total: number };
-  /** Reported cost in dollars (an estimate), null when the other side reports none. The sender's cap is `budget` of the view. */
-  cost?: { usd: number } | null;
-  stale?: boolean;
-}
-export type LinkItem = LinkView & LinkExtras;
-/** An event of a trail as the page shows it: the server's, plus the deliverables when it carries them. */
-export interface TrailItem extends LinkEventView {
-  via?: string;
-  attachments?: LinkAttachment[];
-}
+export type LinkItem = LinkView;
+export type TrailItem = LinkEventView;
 
 const STATUS_WORDS: Record<TaskStatus, string> = { todo: 'to do', doing: 'doing', blocked: 'blocked', review: 'in review', done: 'done' };
 
@@ -33,7 +18,7 @@ export function linkLine(link: LinkItem): string {
       case 'recalled': return `${from}: they withdrew it`;
       case 'done': return `${from}: accepted`;
       case 'detached': return `${from}: undocked`;
-      default: return from;
+      default: return link.chain === undefined || link.chain.length === 0 ? from : `${from} (${link.chain.map((h) => `${h.station} ${h.task}`).join(' → ')})`;
     }
   }
   switch (link.state) {
@@ -45,9 +30,9 @@ export function linkLine(link: LinkItem): string {
     case 'refused': return `${peer} refused it`;
     case 'detached': return `undocked from ${peer}${link.peerStatus === null ? '' : ` (last known: ${STATUS_WORDS[link.peerStatus as TaskStatus]})`}`;
     default: {
-      const where = link.chain === undefined || link.via === undefined ? `at ${peer}` : `at ${peer} → at ${link.via}`;
-      const status = link.peerStatus === null ? 'taken' : STATUS_WORDS[link.peerStatus as TaskStatus];
-      return `${where}: ${status}${link.note === undefined || link.note === '' ? '' : ` · “${link.note}”`}`;
+      // a station further on reported through this one: its own word comes after the arrow ("ops: doing")
+      if (link.via !== undefined) return `at ${peer} → ${link.via}`;
+      return `at ${peer}: ${link.peerStatus === null ? 'taken' : STATUS_WORDS[link.peerStatus as TaskStatus]}`;
     }
   }
 }
@@ -64,13 +49,20 @@ export function progressLine(link: LinkItem): string | null {
 }
 
 /** "lab: $3.10 of $5.00 (estimate)", or that no cost is reported. An estimate at list prices, never a bill. */
+/** The cap of a link: the one the other station says it applied, else the budget of the offer. */
+const capOf = (link: LinkItem): number | null => link.cost?.cap ?? link.budget;
+
 export function costLine(link: LinkItem): string {
   if (link.cost === undefined || link.cost === null) return 'cost not reported';
   const usd = (n: number): string => '$' + n.toFixed(2);
-  return `${link.peerName}: ${usd(link.cost.usd)}${link.budget === null ? '' : ` of ${usd(link.budget)}`} (estimate)`;
+  const cap = capOf(link);
+  return `${link.peerName}: ${usd(link.cost.usd)}${cap === null ? '' : ` of ${usd(cap)}`} (estimate)`;
 }
 
-export const overCap = (link: LinkItem): boolean => link.cost !== undefined && link.cost !== null && link.budget !== null && link.cost.usd >= link.budget;
+export const overCap = (link: LinkItem): boolean => {
+  const cap = capOf(link);
+  return link.cost !== undefined && link.cost !== null && cap !== null && link.cost.usd >= cap;
+};
 
 /** Due and priority, for both cards. */
 export function dueLine(link: LinkItem): string | null {
@@ -81,13 +73,13 @@ export function dueLine(link: LinkItem): string | null {
 /** The one line of a trail event: "14:03 ana@lab: status doing". `lost` has no author line. */
 export function trailLine(event: TrailItem, now: number): string {
   const when = atText(event.at, now);
-  if (event.kind === 'lost') return `${when} ${event.text}`;
+  if (event.kind === 'lost') return `${when} ${event.text}${event.first === undefined ? '' : ` (events ${event.first} to ${event.seq})`}`;
   const kind = event.kind === 'status' ? 'status' : event.kind;
   return `${when} ${event.by}: ${kind}${event.text === '' ? '' : ` ${event.text}`}${event.via === undefined ? '' : ` (via ${event.via})`}`;
 }
 
 /** A deliverable as a link: only an https address is one (a PR or a URL), opened by the person and never fetched by gonogo. Others are plain text. */
-export function attachmentHref(a: LinkAttachment): string | null {
+export function attachmentHref(a: Deliverable): string | null {
   if (a.kind !== 'pr' && a.kind !== 'url') return null;
   try {
     const url = new URL(a.ref);
@@ -97,7 +89,7 @@ export function attachmentHref(a: LinkAttachment): string | null {
   }
 }
 
-export const KIND_WORDS: Record<LinkAttachment['kind'], string> = { pr: 'Pull request', branch: 'Branch', commit: 'Commit', file: 'File', url: 'Link' };
+export const KIND_WORDS: Record<Deliverable['kind'], string> = { pr: 'Pull request', branch: 'Branch', commit: 'Commit', file: 'File', url: 'Link' };
 
 /** The outgoing links of a task or mission (the card shows them), the incoming one (a task has at most one). */
 export const outgoing = (links: readonly LinkItem[], kind: LinkItem['kind'], mine: string): LinkItem[] => links.filter((l) => l.role === 'sender' && (l.kind ?? 'task') === kind && l.mine === mine);
@@ -117,11 +109,11 @@ export const STATE_FILTERS: ReadonlyArray<{ id: 'all' | 'open' | 'review' | 'clo
 ];
 const CLOSED: readonly LinkState[] = ['done', 'recalled', 'refused', 'detached', 'returned'];
 
-/** The board: one direction (OUT sent, IN held), filtered by station and by state group; the ones to review and the stale ones first. */
+/** The board: one direction (OUT sent, IN held), filtered by station and by state group; the ones to review first. */
 export function boardRows(links: readonly LinkItem[], direction: 'out' | 'in', station: string, filter: 'all' | 'open' | 'review' | 'closed'): LinkItem[] {
   const wanted = links.filter((l) => (direction === 'out' ? l.role === 'sender' : l.role === 'receiver') && (station === '' || l.peer === station));
   const shown = wanted.filter((l) => (filter === 'all' ? true : filter === 'closed' ? CLOSED.includes(l.state) : filter === 'review' ? needsReview(l) : !CLOSED.includes(l.state)));
-  return shown.map((l, i) => ({ l, i })).sort((a, b) => Number(needsReview(b.l)) - Number(needsReview(a.l)) || Number(b.l.stale === true) - Number(a.l.stale === true) || b.l.updatedAt - a.l.updatedAt || a.i - b.i).map(({ l }) => l);
+  return shown.map((l, i) => ({ l, i })).sort((a, b) => Number(needsReview(b.l)) - Number(needsReview(a.l)) || b.l.updatedAt - a.l.updatedAt || a.i - b.i).map(({ l }) => l);
 }
 
 /** The count a Docking row shows: what waits for the Director (a delivery to review). */

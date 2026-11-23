@@ -206,11 +206,11 @@ export interface WebOptions {
   projectFolder?: { store: ProjectFolder; audit: AuditRecord; boss(): { name: string; dir: string } | null; /** The folder in force changed: tell the open pages (the hire form's default). */ changed?(): void };
   settings?: { store: Settings; apply(): void; audit: AuditRecord; announce(): void };
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
-  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
+  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort' | 'setMode'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
-  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'linkViews' | 'linkTrail' | 'outbound'>;
+  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'handOffMission' | 'askKnowledge' | 'suggest' | 'shares' | 'setShare' | 'linkViews' | 'linkTrail' | 'outbound' | 'rules' | 'setRules' | 'returnTask' | 'recallTask' | 'acceptDelivery' | 'asks' | 'answerAsk' | 'requestHandoff'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
   /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
@@ -639,6 +639,7 @@ export function createWebServer(options: WebOptions): WebServer {
     hub,
     resolveToken: options.resolveToken,
     tasks: options.tasks,
+    ...(options.docking === undefined ? {} : { docking: options.docking }),
     missions: options.missions,
     review: options.review,
     missionLog: options.missionLog,
@@ -1158,12 +1159,59 @@ export function createWebServer(options: WebOptions): WebServer {
       if (s[3] === 'test') return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await uplinks.test(id)) };
       return null;
     }
+    // Docking 2, S5: what the Director marked shareable for docked stations (his own login): GET lists, PUT sets one entry or claim for exactly the docks named
+    if (s[1] === 'dock-shares' && s.length === 2) {
+      const docking = options.docking;
+      if (!docking) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+          if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "what is shared with a station is the Director's own login's to see and to set", 'forbidden');
+          if (req.method === 'GET') return sendJson(res, 200, { shares: docking.shares() });
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await docking.setShare(body.kind, body.id, body.docks));
+        },
+      };
+    }
+    // Docking 2: hand-offs that wait for the Director, with the whole text that would leave; his answer is go or no, and `always` sets that station to allow
+    if (s[1] === 'handoff-requests' && (s.length === 2 || (s.length === 4 && s[3] === 'answer'))) {
+      const docking = options.docking;
+      if (!docking) return null;
+      return {
+        allow: s.length === 2 ? ['GET'] : ['POST'],
+        run: async (req, res) => {
+          const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+          if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "what FLIGHT wants to send is shown to the Director's own login", 'forbidden');
+          if (s.length === 2) return sendJson(res, 200, { requests: docking.asks() });
+          const body = await jsonObject(req, res);
+          if (!body) return;
+          if (typeof body.go !== 'boolean') return sendApiError(res, 400, 'go is true or false', 'bad_request', 'go');
+          sendJson(res, 200, await docking.answerAsk(s[2] ?? '', body.go, body.always === true));
+        },
+      };
+    }
     // Docking 2: the links of this station (counts, states and cleaned titles) and the trail of one
-    if (s[1] === 'links' && s.length <= 3) {
+    if (s[1] === 'links' && s.length <= 4) {
       const docking = options.docking;
       if (!docking) return null;
       if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, { links: docking.linkViews() }) };
       const id = s[2] ?? '';
+      // return, recall, accept: the Director's own decisions (his login), each on one link
+      if (s.length === 4 && ['return', 'recall', 'accept'].includes(s[3] ?? '')) {
+        const action = s[3] as 'return' | 'recall' | 'accept';
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+            if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "a task is given back, recalled or accepted from the Director's own login", 'forbidden');
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            const view = action === 'accept' ? await docking.acceptDelivery(id) : action === 'return' ? await docking.returnTask(id, body.reason) : await docking.recallTask(id, body.reason);
+            sendJson(res, 200, { link: view });
+          },
+        };
+      }
       return {
         allow: ['GET'],
         run: (_req, res) => {
@@ -1210,13 +1258,42 @@ export function createWebServer(options: WebOptions): WebServer {
           },
         };
       }
-      if (s.length === 3) return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await docking.undock(id)) };
+      // the Director asks a docked station's shared knowledge himself
+      if (s.length === 4 && s[3] === 'knowledge') {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+            if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "a request for another station's knowledge is made from the Director's own login", 'forbidden');
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            const dockName = docking.view().docks.find((d) => d.id === id)?.name;
+            sendJson(res, 200, await docking.askKnowledge(dockName, body.query));
+          },
+        };
+      }
+      // what a station may do (send without asking, take tasks, accept at once): read by the Director's login, set with it
+      if (s.length === 4 && s[3] === 'rules') {
+        return {
+          allow: ['GET', 'PATCH'],
+          run: async (req, res) => {
+            const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+            if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "what a docked station may do is set from the Director's own login", 'forbidden');
+            if (req.method === 'GET') return sendJson(res, 200, { rules: docking.rules(id) });
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, { rules: docking.setRules(id, body) });
+          },
+        };
+      }
+      if (s.length === 3) {
+        return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await docking.undock(id)) };
+      }
       if (s[3] !== 'handoff') return null;
       return {
         allow: ['POST'],
         run: async (req, res) => {
           const body = await jsonObject(req, res);
-          if (body) sendJson(res, 200, await docking.handOff(id, body));
+          if (body) sendJson(res, 200, typeof body.mission === 'string' ? { link: await docking.handOffMission(id, body) } : await docking.handOff(id, body));
         },
       };
     }
@@ -1541,6 +1618,22 @@ export function createWebServer(options: WebOptions): WebServer {
           run: async (req, res) => {
             const body = await jsonObject(req, res);
             if (body) sendJson(res, 200, await changed(key === 'engine' ? models.setEngine(body.engine) : models.setEffort(body.effort)));
+          },
+        };
+      }
+      // PUT /api/models/mode: the room's default permission mode; bypassPermissions needs confirmBypass: true, as a hire does
+      if (s.length === 3 && s[2] === 'mode') {
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            // a mode that works without asking is set from the Director's own login, never by a key or a terminal
+            if (body.mode === 'auto' || body.mode === 'bypassPermissions') {
+              const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+              if (actorHeader !== 'session' && actorHeader !== 'token' && actorHeader !== 'socket') return sendApiError(res, 403, "a room default that works without asking is set from the Director's own login, not by a key or a terminal", 'forbidden');
+            }
+            sendJson(res, 200, await changed(models.setMode(body.mode, body.confirmBypass)));
           },
         };
       }
@@ -2124,7 +2217,9 @@ export function createWebServer(options: WebOptions): WebServer {
   const handleDock = async (req: IncomingMessage, res: ServerResponse, segments: string[]): Promise<void> => {
     const docking = options.docking;
     const route = segments[1] ?? '';
-    if (!docking || segments.length !== 2 || !Object.hasOwn(DOCK_ROUTES, route) || options.features?.isOn('docking') === false) {
+    // /dock/link/<id>: the repair route (what this station holds of one link), GET
+    const repair = segments.length === 3 && route === 'link' && /^dl_[0-9a-f]{16}$/.test(segments[2] ?? '');
+    if (!docking || (segments.length !== 2 && !repair) || !Object.hasOwn(DOCK_ROUTES, route) || options.features?.isOn('docking') === false) {
       sendNotFound(res);
       return;
     }
@@ -2132,8 +2227,8 @@ export function createWebServer(options: WebOptions): WebServer {
       sendApiError(res, 503, 'starting', 'unavailable');
       return;
     }
-    if (req.method !== DOCK_ROUTES[route]) {
-      sendMethodNotAllowed(res, DOCK_ROUTES[route] ?? 'POST');
+    if (req.method !== (repair ? 'GET' : DOCK_ROUTES[route])) {
+      sendMethodNotAllowed(res, repair ? 'GET' : (DOCK_ROUTES[route] ?? 'POST'));
       return;
     }
     const body = await readBody(req, DOCK_BODY_MAX_BYTES);
@@ -2143,7 +2238,7 @@ export function createWebServer(options: WebOptions): WebServer {
       return;
     }
     try {
-      sendJson(res, 200, await docking.handle(route, req.method, req.url ?? '', req.headers, body.body));
+      sendJson(res, 200, await docking.handle(repair ? `link/${segments[2]}` : route, req.method, req.url ?? '', req.headers, body.body));
     } catch (e) {
       sendHubError(res, e);
     }

@@ -32,22 +32,21 @@ export const RULE_FIELDS: readonly RuleField[] = [
     key: 'reportCost',
     label: 'Tell this station what its tasks cost here',
     help: (s) => `Dollars to the cent, as an estimate, nothing else. Off: ${s} sees "cost not reported".`,
-    options: [{ value: 'off', label: 'Do not report' }, { value: 'on', label: 'Report' }],
+    options: [{ value: 'false', label: 'Do not report' }, { value: 'true', label: 'Report' }],
   },
   {
     key: 'serve',
     label: 'Answer knowledge questions from this station',
     help: (s) => `Only for Mission Log entries and claims you marked as shareable with ${s}. Off: it gets nothing.`,
-    options: [{ value: 'off', label: 'Do not answer' }, { value: 'on', label: 'Answer' }],
+    options: [{ value: 'false', label: 'Do not answer' }, { value: 'true', label: 'Answer' }],
   },
 ];
 
-/** The fields the server has: reportCost and serve arrive with the mission and knowledge slices, and are not drawn before. */
-export const fieldsOf = (rules: DockRules): RuleField[] => RULE_FIELDS.filter((f) => f.key !== 'reportCost' && f.key !== 'serve' ? true : rules[f.key] !== undefined);
+const BOOLEAN_KEYS: ReadonlyArray<RuleField['key']> = ['autoAccept', 'reportCost', 'serve'];
 
-/** The value a select shows (booleans are 'true'/'false'), and the patch a choice makes. */
-export const valueOf = (rules: DockRules, key: RuleField['key']): string => String(rules[key] ?? '');
-export const patchOf = (key: RuleField['key'], value: string): Partial<DockRules> => ({ [key]: key === 'autoAccept' ? value === 'true' : value }) as Partial<DockRules>;
+/** The value a select shows (the on/off rules are 'true'/'false'), and the patch a choice makes. */
+export const valueOf = (rules: DockRules, key: RuleField['key']): string => String(rules[key]);
+export const patchOf = (key: RuleField['key'], value: string): Partial<DockRules> => ({ [key]: BOOLEAN_KEYS.includes(key) ? value === 'true' : value }) as Partial<DockRules>;
 
 export const STALE_HELP = (s: string): string => `A task ${s} accepted and has not touched for this many hours tells your boss. 0 turns it off.`;
 

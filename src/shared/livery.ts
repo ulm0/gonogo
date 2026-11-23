@@ -1,5 +1,5 @@
 /**
- * Livery (docs/livery-spec.md): the colour tokens a look is made of, the rule a livery must pass, and the four that ship.
+ * Livery (docs/livery-spec.md): the colour tokens a look is made of, the rule a livery must pass, and the six that ship.
  *
  * A livery is a value for every token of LIVERY_TOKENS (the colour tokens of src/client/tokens.css), each a plain CSS colour:
  * `#rgb`, `#rrggbb`, `rgb()`, `hsl()` or `oklch()`, with no alpha, written with commas or with spaces. The server checks a
@@ -229,7 +229,7 @@ export function liveryProperties(tokens: LiveryTokens): Array<[string, string]> 
   return [...LIVERY_NAMES.flatMap((name): Array<[string, string]> => (isColour(tokens[name]) ? [[name, (tokens[name] as string).trim()]] : [])), ['color-scheme', schemeOf(tokens)]];
 }
 
-/* ---- the four that ship ---- */
+/* ---- the six that ship ---- */
 
 export interface BuiltinLivery {
   slug: string;
@@ -346,6 +346,41 @@ export const BUILTIN_LIVERIES: readonly BuiltinLivery[] = [
     },
   },
   {
+    slug: 'low-ink-dark',
+    name: 'Low Ink Dark',
+    description: 'Dim graphite with pale text and thin quiet lines: little light, little colour, for working at night.',
+    tokens: {
+      '--body': '#1b1b1a',
+      '--panel': '#212120',
+      '--key': '#292928',
+      '--well': '#151514',
+      '--edge': '#3a3a37',
+      '--edge-2': '#55554f',
+      '--text': '#e6e4de',
+      '--text-2': '#cac8c1',
+      '--muted': '#a3a199',
+      '--lcd': '#0f0f0e',
+      '--lcd-text': '#e4e2dc',
+      '--lcd-dim': '#a3a199',
+      '--lcd-warm': '#e8cf8f',
+      '--work': '#9aa6e0',
+      '--you': '#cfa24a',
+      '--you-tint': '#33291a',
+      '--you-edge': '#7a6430',
+      '--you-ink': '#ecd699',
+      '--you-key': '#9c8238',
+      '--go': '#6fae88',
+      '--go-tint': '#1a2b22',
+      '--go-ink': '#b4dcc3',
+      '--go-lit': '#86c79d',
+      '--nogo': '#cf6a6a',
+      '--nogo-text': '#f2a3a3',
+      '--nogo-tint': '#3a1f1f',
+      '--track': '#3a3a37',
+      '--seq-base': '#2a2a28',
+    },
+  },
+  {
     slug: 'high-contrast',
     name: 'High Contrast',
     description: 'Black on white with black lines and strong signals: every text is 7:1 or better.',
@@ -380,12 +415,47 @@ export const BUILTIN_LIVERIES: readonly BuiltinLivery[] = [
       '--seq-base': '#c4c4c4',
     },
   },
+  {
+    slug: 'high-contrast-dark',
+    name: 'High Contrast Dark',
+    description: 'White on black with white lines and strong signals: every text is 7:1 or better.',
+    tokens: {
+      '--body': '#000000',
+      '--panel': '#000000',
+      '--key': '#000000',
+      '--well': '#1c1c1c',
+      '--edge': '#ffffff',
+      '--edge-2': '#bfbfbf',
+      '--text': '#ffffff',
+      '--text-2': '#f2f2f2',
+      '--muted': '#d9d9d9',
+      '--lcd': '#000000',
+      '--lcd-text': '#ffffff',
+      '--lcd-dim': '#d0d0d0',
+      '--lcd-warm': '#ffe27a',
+      '--work': '#9db0ff',
+      '--you': '#ffc233',
+      '--you-tint': '#3d2c00',
+      '--you-edge': '#ffd666',
+      '--you-ink': '#fff0c2',
+      '--you-key': '#ffd666',
+      '--go': '#4ce08a',
+      '--go-tint': '#003d1a',
+      '--go-ink': '#d4ffe5',
+      '--go-lit': '#6cf0a0',
+      '--nogo': '#ff6b7d',
+      '--nogo-text': '#ffb3bd',
+      '--nogo-tint': '#4d0010',
+      '--track': '#8c8c8c',
+      '--seq-base': '#4d4d4d',
+    },
+  },
 ];
 
 /** The default livery as the table of tokens, for a fallback. */
 export const INSTRUMENT = BUILTIN_LIVERIES[0] as BuiltinLivery;
 
-/** The four that ship as entries of a view; a copy each call, so that no caller can change what ships. */
+/** The six that ship as entries of a view; a copy each call, so that no caller can change what ships. */
 export const builtinEntries = (): LiveryEntry[] => BUILTIN_LIVERIES.map((b) => ({ ...b, tokens: { ...b.tokens }, builtin: true, author: null }));
-/** What a page shows before the server has said: the default livery chosen, the four that ship. */
+/** What a page shows before the server has said: the default livery chosen, the six that ship. */
 export const defaultView = (): LiveryView => ({ current: DEFAULT_LIVERY, liveries: builtinEntries() });

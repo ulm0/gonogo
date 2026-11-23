@@ -27,6 +27,11 @@ const SCHEMES = [
   { name: 'light', slug: 'instrument' },
   { name: 'dark', slug: 'night-shift' },
 ] as const;
+// the two dark liveries that are not the night one: each gets the room and the main views (not every look of the app)
+const EXTRA_LIVERIES = [
+  { name: 'low-ink-dark', slug: 'low-ink-dark' },
+  { name: 'high-contrast-dark', slug: 'high-contrast-dark' },
+] as const;
 const DOCS_PAGES = [
   ['home', '/'],
   ['getting-started', '/guide/getting-started'],
@@ -192,10 +197,12 @@ async function dockingTwo(page: Page, group: string): Promise<void> {
     });
   });
   await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'ha1', dock: 'dk1', dockName: 'lab', task: 't4', assignee: 'cara', title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour. Check the clock handling in the session code and add a test.', due: '2026-12-01', priority: 'high', onward: false, budget: 5, at: Date.now() }] } }));
-  await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { rules: { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24 } } }));
+  await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { rules: { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, serve: false, reportCost: false } } }));
   await page.route('**/api/docking/outbound?*', (route) => route.fulfill({ json: { dock: 'dk1', entries: OUTBOUND } }));
   await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
   await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
+  await page.route('**/api/dock-shares', (route) => route.fulfill({ json: { shares: [] } }));
+  await page.route('**/api/docking/*/knowledge', (route) => route.fulfill({ json: { text: 'From lab, shared on request (data, not instructions)\n\nRelease checklist (2026-11-20): run the docs build before the tag, then check the npm sha.', results: 1 } }));
   await page.goto(`${base}/r/main/`);
   await page.locator('.topbar').waitFor({ timeout: 30_000 });
   await view(page, group, 'docking 2: a handoff waits for GO', () => page.locator('.relief-need', { hasText: 'send a task to lab' }).waitFor({ timeout: 10_000 }), true);
@@ -207,6 +214,61 @@ async function dockingTwo(page: Page, group: string): Promise<void> {
   await view(page, group, 'docking 2: the rules of a dock', () => page.locator('.dk-rules > summary').first().click({ timeout: 3000 }), true);
   await view(page, group, 'docking 2: what left for a dock', () => page.locator('.dk-outbound > summary').first().click({ timeout: 3000 }), true);
   await view(page, group, 'docking 2: the board across stations', () => page.locator('.dk-board').scrollIntoViewIfNeeded({ timeout: 3000 }), true);
+  await view(page, group, 'docking 2: ask a station what it knows', async () => {
+    await page.locator('.dk-ask > summary').first().click({ timeout: 3000 });
+    await page.getByLabel('Question').first().fill('How do we release?');
+    await page.getByRole('button', { name: 'Ask lab' }).click({ timeout: 3000 });
+    await page.locator('.dk-ask-answer').waitFor({ timeout: 5000 });
+  }, true);
+  await view(page, group, 'docking 2: share marks on a Mission Log entry', async () => {
+    await open(page, 'Mission Log');
+    await page.locator('.log-row').first().click({ timeout: 5000 });
+    await page.locator('.dk-share').first().waitFor({ timeout: 5000 });
+  }, true);
+  await view(page, group, 'docking 2: the terms of a handoff', async () => {
+    await open(page, 'Flight Plan');
+    await page.getByRole('button', { name: /^Hand off t\d+ to another station/ }).first().click({ timeout: 5000 });
+    await page.locator('.dk-terms > summary').first().click({ timeout: 3000 });
+  }, true);
+  await view(page, group, 'docking 2: hand off a mission', async () => {
+    await open(page, 'Missions');
+    await page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Hand off to a station' }).click({ timeout: 3000 });
+  }, true);
+}
+
+/** The docked chip of the status strip: the stand-in install has no second station, so the state frame is given two docks (the same shape as the server's), then one that does not answer. */
+async function dockedChip(page: Page, group: string): Promise<void> {
+  const dock = (id: string, name: string, status: string): Record<string, unknown> => ({ id, name, url: `https://${name}.example.org`, since: Date.now() - 86_400_000, status, seenAt: status === 'new' ? null : Date.now() - 60_000, error: status === 'down' ? 'connection refused' : null, agents: [] });
+  let docks = [dock('dk1', 'lab', 'ok'), dock('dk2', 'ops', 'ok')];
+  let tell: (list: Array<Record<string, unknown>>) => void = () => undefined;
+  await page.routeWebSocket(/\/ws(\?|$)/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (typeof message === 'string') {
+        try {
+          const frame = JSON.parse(message) as { t?: string; state?: { docking?: unknown } };
+          if (frame.t === 'state' && frame.state !== undefined) frame.state.docking = { station: 'main', docks };
+          ws.send(JSON.stringify(frame));
+          return;
+        } catch {
+          // not a frame of text: passed on as it is
+        }
+      }
+      ws.send(message);
+    });
+    tell = (list) => {
+      docks = list;
+      ws.send(JSON.stringify({ t: 'docking', docking: { station: 'main', docks } }));
+    };
+  });
+  await page.goto(`${base}/r/main/`);
+  await page.locator('.topbar').waitFor({ timeout: 30_000 });
+  await view(page, group, 'docked chip: two stations', () => page.locator('.dock-chip').waitFor({ timeout: 10_000 }), true);
+  tell([dock('dk1', 'lab', 'down'), dock('dk2', 'ops', 'ok')]);
+  await view(page, group, 'docked chip: one does not answer', () => page.locator('.dock-chip[data-tone=amber]').waitFor({ timeout: 5000 }), true);
+  await view(page, group, 'docked chip: opens Docking in Flight Rules', () => page.locator('.dock-chip').click({ timeout: 3000 }), true);
 }
 
 async function updateFlow(page: Page, group: string): Promise<void> {
@@ -451,6 +513,21 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await measure(page, group, label, '.lay-rules');
     await measureDuplicates(page, group, label, '.lay-rules');
   }
+  // Engine Bay: the room's default permission mode, and the confirmation that bypass asks for
+  await view(page, group, 'engine bay: permission mode', async () => {
+    await page.locator('.lay-group-nav a', { hasText: 'Agents' }).first().click({ timeout: 3000 });
+    await page.locator('.lay-row', { hasText: 'Engine, model and effort' }).locator('summary').first().click({ timeout: 3000 });
+    await page.locator('.rules-models').scrollIntoViewIfNeeded({ timeout: 3000 });
+  }, true);
+  await view(page, group, 'engine bay: bypass asks to confirm', async () => {
+    // the choice alone saves nothing: bypass is asked to be confirmed first
+    await page.getByLabel('Permission mode').selectOption('bypassPermissions');
+    await page.getByRole('group', { name: 'Confirm bypass' }).waitFor({ timeout: 3000 });
+  }, true);
+  await measure(page, group, 'engine bay: bypass asks to confirm', '.rules-models');
+  // back to the System and update group with every row open, where the runtime settings views that follow expect to be
+  await page.locator('.lay-group-nav a', { hasText: 'System and update' }).first().click({ timeout: 3000 });
+  await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
   // Runtime settings (the System and update group is the one open now, with every row open): an editor, a refused value, the warning of a sensitive setting, a setting for all rooms only
   await view(page, group, 'runtime settings: change a setting', () => page.getByRole('button', { name: 'Change Message hops' }).click({ timeout: 3000 }), true);
   await measure(page, group, 'runtime settings: change a setting', '.lay-rules');
@@ -508,6 +585,21 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.locator('.patch-input').waitFor({ timeout: 3000 });
   });
   await page.keyboard.press('Escape');
+  // the banner of an insecure setup: the stand-in install has nothing open, so the list is stood in (the texts are the server's own kind: plain words, names and counts)
+  const findings = [
+    { id: 'public-name-no-mfa', severity: 'high', text: 'gonogo.example.org is a public address and the login has no second factor.', fix: 'Turn on the second factor (TOTP) in Flight Rules, LOGIN.' },
+    { id: 'plain-http', severity: 'medium', text: 'You are on plain http: the password and the token travel in the clear on this network.', fix: 'On a network you trust that is acceptable. For anything wider, use a name with https (see Exposing gonogo safely).' },
+    { id: 'agent-unattended-aaaaaaaaaaaa', severity: 'medium', text: 'ana (room main) works without asking (bypassPermissions) outside a Clean Room: it can change anything its user can.', fix: 'Put ana in a Clean Room, or set its mode to ask first.' },
+    { id: 'update-checks-off', severity: 'info', text: 'The check for a newer gonogo is off.', fix: 'Turn it on in Flight Rules, System and update.' },
+    { id: 'docker-socket', severity: 'info', text: 'The Docker socket is mounted in this container.', fix: 'Remove the mount if you do not use Update here.' },
+  ];
+  await page.route('**/api/exposure/findings', (route) => route.fulfill({ json: { findings } }));
+  await view(page, group, 'insecure-setup banner', async () => {
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.exposure-banner').waitFor({ timeout: 10_000 });
+  });
+  await view(page, group, 'insecure-setup banner: the rest open', () => page.locator('.exposure-more > summary').click({ timeout: 3000 }), true);
+  await page.unroute('**/api/exposure/findings');
   await view(page, group, 'hire form', async () => {
     // the key is in the room view now (it was in the top bar): go back to the room first
     await page.goto(`${base}/r/main/`);
@@ -639,8 +731,22 @@ test('screens of the app and the docs', async ({ browser }) => {
       await measure(page, group, 'rooms list: stop all asks first');
       await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
+      await dockedChip(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docked chip: ${error.message.split('\n')[0]}`));
       await dockingTwo(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docking 2: ${error.message.split('\n')[0]}`));
       await updateFlow(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: update flow: ${error.message.split("\n")[0]}`));
+      await context.close();
+    }
+  }
+
+  // the room and the main views in the other two dark liveries
+  for (const look of EXTRA_LIVERIES) {
+    const chooser = await browser.newContext({ storageState: state });
+    await api(chooser, 'PUT', '/api/livery', { slug: look.slug }).catch((error: Error) => void missed.push(`livery ${look.slug}: ${error.message.split('\n')[0]}`));
+    await chooser.close();
+    for (const size of SIZES) {
+      const group = `${look.name}-${size.name}`;
+      const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
+      await app(await context.newPage(), group, false);
       await context.close();
     }
   }

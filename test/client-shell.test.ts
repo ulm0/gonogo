@@ -20,7 +20,7 @@ describe('Patch Panel lines', () => {
     expect(list.find((c) => c.id === 'console:ana')?.label).toBe('Open FIDO');
     for (const view of Object.keys(VIEW_NAMES).filter((v) => v !== 'comms')) expect(list.map((c) => c.id)).toContain(`view:${view}`);
     expect(list.map((c) => c.id)).toEqual(expect.arrayContaining(['comms:inbox', 'comms:traffic', 'comms:threads']));
-    expect(ids()).toEqual(expect.arrayContaining(['hire', 'brief', 'poll', 'livery:night-shift', 'livery:low-ink', 'livery:high-contrast']));
+    expect(ids()).toEqual(expect.arrayContaining(['hire', 'brief', 'poll', 'livery:night-shift', 'livery:low-ink', 'livery:low-ink-dark', 'livery:high-contrast', 'livery:high-contrast-dark']));
     // the livery in use is not offered, nor reading an empty inbox
     expect(ids()).not.toContain('livery:instrument');
     expect(ids()).not.toContain('read');

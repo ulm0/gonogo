@@ -1,4 +1,4 @@
-import type { DockHandoffRequest, DockView, Task } from '../shared/protocol.js';
+import type { DockHandoffRequest, DockView, LinkPriority, Task } from '../shared/protocol.js';
 import { atText } from './uplink.js';
 
 // What Docking shows and asks, kept out of DockingPanel.tsx so that it can be tested without a DOM.
@@ -80,4 +80,36 @@ export const handoffChoices = (dock: DockView): Choice[] => [
 /** A task that is open here and was not handed off can go, when a station is docked. */
 export const canHandOff = (task: Task, docks: readonly DockView[]): boolean => docks.length > 0 && task.status !== 'done' && task.handedOff === undefined;
 
-export const handoffRequest = (task: Task, assignee: string): DockHandoffRequest => ({ task: task.id, assignee: assignee === '' ? null : assignee });
+/** The terms of an offer as the form holds them (text), and what they say to the server: nothing for a box left empty. */
+export interface OfferTerms {
+  due: string;
+  priority: '' | LinkPriority;
+  onward: boolean;
+  budget: string;
+}
+export const NO_TERMS: OfferTerms = { due: '', priority: '', onward: false, budget: '' };
+
+/** One line per box that is wrong, before the call (the server says the same words): a date as YYYY-MM-DD, dollars from 0 to 1,000,000. */
+export function offerProblems(terms: OfferTerms): { due?: string; budget?: string } {
+  const out: { due?: string; budget?: string } = {};
+  const due = terms.due.trim();
+  if (due !== '' && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || Number.isNaN(Date.parse(due + 'T00:00:00Z')) || new Date(due + 'T00:00:00Z').toISOString().slice(0, 10) !== due)) out.due = 'Type a date as YYYY-MM-DD.';
+  const budget = terms.budget.trim();
+  if (budget !== '' && (!/^\d{1,7}(\.\d{1,2})?$/.test(budget) || Number(budget) > 1_000_000)) out.budget = 'Type dollars, 0 to 1000000, with at most two decimals.';
+  return out;
+}
+
+const termFields = (terms: OfferTerms): Pick<DockHandoffRequest, 'due' | 'priority' | 'onward' | 'budget'> => ({
+  ...(terms.due.trim() === '' ? {} : { due: terms.due.trim() }),
+  ...(terms.priority === '' ? {} : { priority: terms.priority }),
+  ...(terms.onward ? { onward: true } : {}),
+  ...(terms.budget.trim() === '' ? {} : { budget: Number(terms.budget) }),
+});
+
+export const handoffRequest = (task: Task, assignee: string, terms: OfferTerms = NO_TERMS): DockHandoffRequest => ({ task: task.id, assignee: assignee === '' ? null : assignee, ...termFields(terms) });
+
+/** A mission is offered with a date and a priority only: no onward, no budget (the other station makes its own mission). */
+export const missionOffer = (mission: string, terms: OfferTerms): { mission: string; due?: string; priority?: LinkPriority } => {
+  const { due, priority } = termFields(terms);
+  return { mission, ...(due === undefined ? {} : { due }), ...(priority === undefined ? {} : { priority }) };
+};

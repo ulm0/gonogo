@@ -326,6 +326,43 @@ describe('rooms proxy: HTTP', () => {
     expect(a.seen).toHaveLength(2);
   });
 
+  it('passes the four headers of a signed station call or webhook to the room, and no other x-gonogo- header, anywhere', async () => {
+    const signed = { 'x-gonogo-station': 'beta', 'x-gonogo-timestamp': '1795000000000', 'x-gonogo-nonce': 'ab'.repeat(16), 'x-gonogo-signature': 'cd'.repeat(32) };
+    // a sender's own copy of what only the proxy may say: it must not reach the room
+    const forged = { 'x-gonogo-director': 'web', 'x-gonogo-actor': 'session', 'x-gonogo-other': '1' };
+    const lastOf = (room: Fake): Seen => room.seen[room.seen.length - 1]!;
+    const only = (headers: http.IncomingHttpHeaders): string[] => Object.keys(headers).filter((name) => name.startsWith('x-gonogo-')).sort();
+    for (const [path, room] of [['/dock/roster', main], ['/r/a/dock/roster', a], ['/uplink/u1', main], ['/r/a/uplink/u1', a]] as const) {
+      const res = await get(path, { ...signed, ...forged }, path.includes('roster') ? 'GET' : 'POST', path.includes('roster') ? undefined : '{}');
+      expect(res.status, path).toBe(200);
+      const seen = lastOf(room);
+      expect(only(seen.headers), path).toEqual(Object.keys(signed).sort());
+      for (const [name, value] of Object.entries(signed)) expect(seen.headers[name], path + ' ' + name).toBe(value);
+      expect(seen.headers.authorization, path).toBeUndefined();
+    }
+    // a browser route and a WebSocket never take them: only the proxy says x-gonogo-director / -actor there
+    for (const path of ['/api/state', '/r/a/api/state']) {
+      expect((await get(path, { ...director, ...signed, ...forged })).status, path).toBe(200);
+      expect(only(lastOf(path.startsWith('/r/a') ? a : main).headers), path).toEqual([]);
+    }
+  });
+
+  it('POST /api/messages loses x-gonogo-signature and x-gonogo-actor; POST /dock/message keeps the four signing headers and loses the actor', async () => {
+    const signed = { 'x-gonogo-station': 'beta', 'x-gonogo-timestamp': '1795000000000', 'x-gonogo-nonce': 'ab'.repeat(16), 'x-gonogo-signature': 'cd'.repeat(32) };
+    const message = await get('/api/messages', { ...director, 'x-gonogo-signature': signed['x-gonogo-signature'], 'x-gonogo-actor': 'token' }, 'POST', '{}');
+    expect(message.status).toBe(200);
+    const api = main.seen[main.seen.length - 1]!;
+    expect(api.url).toBe('/api/messages');
+    expect(api.headers['x-gonogo-signature']).toBeUndefined();
+    expect(api.headers['x-gonogo-actor']).toBeUndefined();
+    const dock = await get('/dock/message', { ...signed, 'x-gonogo-actor': 'token' }, 'POST', '{}');
+    expect(dock.status).toBe(200);
+    const seen = main.seen[main.seen.length - 1]!;
+    expect(seen.url).toBe('/dock/message');
+    for (const [name, value] of Object.entries(signed)) expect(seen.headers[name], name).toBe(value);
+    expect(seen.headers['x-gonogo-actor']).toBeUndefined();
+  });
+
   it('answers 404 for an unknown room, a bad id, and ids that try to leave; 400 for a path that tries to leave the room', async () => {
     expect((await get('/r/nope/api/state', director)).status).toBe(404);
     for (const id of ['A', '1x', 'a.b', '..', '%2e%2e', 'a%2fb', 'a%00']) expect(await raw(`/r/${id}/api/state`, director), id).toBe(404);

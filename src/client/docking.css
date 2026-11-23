@@ -225,3 +225,33 @@
   grid-column: 1 / -1;
   min-width: 0;
 }
+
+.dk-share {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.dk-share .hint {
+  margin: 0;
+}
+
+.dk-terms {
+  flex-basis: 100%;
+}
+
+.dk-terms summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.dk-ask-answer {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

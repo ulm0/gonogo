@@ -23,6 +23,8 @@ export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && path === '/api/rooms/main/migrate') return true;
   if (method === 'POST' && /^\/api\/knowledge\/[^/]+\/move$/.test(path)) return true;
   if (method === 'POST' && path === '/api/agents') return true;
+  if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path)) return true;
+  if (method === 'PUT' && path === '/api/models/mode') return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
@@ -44,6 +46,10 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
     if (body === null) return 'editing an agent';
     return Object.keys(body).some((field) => body[field] !== undefined && !PLAIN_EDIT_FIELDS.has(field)) ? 'changing what an agent may do' : null;
   }
+  // the room's default mode: auto or bypass makes every hire from the form start without asking; clearing it or a milder mode stays free
+  if (method === 'PUT' && path === '/api/models/mode') return body !== null && typeof body.mode === 'string' && UNATTENDED.has(body.mode) ? 'setting the room to work without asking' : body === null ? 'setting the room to work without asking' : null;
+  // marking a note or a claim shareable is publishing it to a docked station
+  if (method === 'PUT' && path === '/api/dock-shares') return 'sharing with a docked station';
   // Hangar writes and Recorder commits, per agent
   if (/^\/api\/agents\/[^/]+\/file$/.test(path)) return 'writing a file in an agent\'s folder';
   if (/^\/api\/agents\/[^/]+\/git\/commit$/.test(path)) return 'making a commit';
@@ -62,6 +68,9 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (method === 'PUT' && path === '/api/autoupdate') return body === null || body.enabled === true || body.windows !== undefined ? 'turning on auto-update, or changing when it runs' : null;
   // a room made with a project folder starts its agents there
   if (method === 'POST' && path === '/api/rooms') return body !== null && body.dir !== undefined && body.dir !== null ? 'adding a room with a project folder' : null;
+  // what a docked station may do: FLIGHT sending without asking is the new way out for text
+  if (method === 'PATCH' && /^\/api\/docking\/[0-9a-f]{32}\/rules$/.test(path)) return 'changing what a docked station may do';
+  if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path) && body !== null && body.always === true) return 'letting FLIGHT send tasks to a station without asking';
   // the project folder: every agent that starts afterwards starts there
   if (method === 'PUT' && path === '/api/project-folder') return 'changing the project folder of the room';
   // the runtime settings (hops, Max Q, the agent command, what is scrubbed, ...): every write asks again, like the keys of the room

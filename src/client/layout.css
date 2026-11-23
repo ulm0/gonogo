@@ -141,3 +141,8 @@
   .lay-group-nav .btn { flex: none; min-height: 44px; }
 }
 .lay-row-body :is(.win-block, .up, .rl, .dk) > .loop-head { justify-content: flex-start; }
+
+/* the docked chip: a dot for each station, then the words; amber when one does not answer */
+.dock-chip { display: inline-flex; align-items: center; gap: 6px; }
+.dock-chip .led { flex: none; }
+.dock-chip[data-tone='amber'] { background: var(--you-tint); border-color: var(--you-key); }

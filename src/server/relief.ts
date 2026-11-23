@@ -45,6 +45,8 @@ export interface ReliefOptions {
   checkWorktree?(dir: string): Promise<string | null>;
   /** The room's default engine, for a request that names none. Default claude. */
   defaultEngine?(): Provider;
+  /** The room's default permission mode, for a request that names none. Never bypassPermissions here: the Director reads the mode in the request, but nobody confirmed bypass. */
+  defaultMode?(): PermissionMode | undefined;
   now(): number;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
@@ -173,11 +175,15 @@ export function createRelief(options: ReliefOptions): Relief {
       if (engine === 'custom') throw bad('a custom command cannot be asked for: only the Director can hire one', 'engine');
       const provider = engine as Provider;
 
-      const asked = input.mode === undefined ? 'default' : input.mode;
+      const room = options.defaultMode?.();
+      const asked = input.mode === undefined ? (room === undefined || room === 'bypassPermissions' ? 'default' : room) : input.mode;
       if (typeof asked !== 'string' || !(PERMISSION_MODES as readonly string[]).includes(asked)) throw bad(`mode must be one of ${RELIEF_MODES.join(', ')}`, 'mode');
-      if (!(RELIEF_MODES as readonly string[]).includes(asked)) throw bad(`a request can ask for ${RELIEF_MODES.join(' or ')} at most, not ${asked}: only the Director can give more`, 'mode');
+      // the room's own default is the Director's choice; only what the agent asks is held to the most an agent can ask for
+      if (input.mode !== undefined && !(RELIEF_MODES as readonly string[]).includes(asked)) throw bad(`a request can ask for ${RELIEF_MODES.join(' or ')} at most, not ${asked}: only the Director can give more`, 'mode');
       // an engine without permission modes is started in default whatever is asked, and the Director is shown what will happen
       const mode: PermissionMode = providerInfo(provider).modes ? (asked as PermissionMode) : 'default';
+      // the Director is told when the mode is the room's default and not something the boss asked for
+      const modeFromRoom = input.mode === undefined && mode !== 'default' && room === mode;
 
       const { position, role } = input;
       if (position !== undefined && (typeof position !== 'string' || !POSITION_IDS.includes(position))) throw bad(`position must be one of ${POSITION_IDS.join(', ')}`, 'position');
@@ -219,10 +225,10 @@ export function createRelief(options: ReliefOptions): Relief {
       const at = now();
       made.push(at);
       const id = `h${seq}`;
-      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, cleanRoom, ...(wantsWorktree ? { worktree: {} } : {}) };
+      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(wantsWorktree ? { worktree: {} } : {}) };
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
-      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}`, { kind: 'relief', id });
+      notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}${modeFromRoom ? " (the room's default)" : ''}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}`, { kind: 'relief', id });
       return { id, status: 'pending', note: `waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
     },
 

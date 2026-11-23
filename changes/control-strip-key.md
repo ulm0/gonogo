@@ -1,1 +1,0 @@
-- **Update key when the strip is not there.** With a newer version out, the version key could say the Update key was in the strip under the top bar while the strip was not drawn, so there was nothing to press. The strip and the key now share one rule and one copy of the dismissal.

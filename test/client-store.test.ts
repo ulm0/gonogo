@@ -420,10 +420,10 @@ describe('downlink', () => {
 describe('livery', () => {
   const dusk = { slug: 'dusk', name: 'Dusk', description: '', builtin: false, author: 'ana', tokens: { '--body': '#112233' } };
 
-  it('starts with the four that ship and the default chosen, takes the livery of the state, and replaces it with each livery frame', () => {
+  it('starts with the six that ship and the default chosen, takes the livery of the state, and replaces it with each livery frame', () => {
     const start = emptyState().livery;
     expect(start.current).toBe('instrument');
-    expect(start.liveries.map((e) => e.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'high-contrast']);
+    expect(start.liveries.map((e) => e.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'low-ink-dark', 'high-contrast', 'high-contrast-dark']);
     const view = { current: 'dusk', liveries: [...start.liveries, dusk] };
     const first = run([{ t: 'state', state: { ...snapshot([agent('flight', 0)]), livery: view } }]);
     expect(first.livery).toBe(view);

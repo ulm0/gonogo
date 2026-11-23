@@ -116,14 +116,6 @@ export function LinkLine({ link, dock }: { link: LinkItem; dock: DockView | unde
           {link.role === 'sender' ? 'OUT' : 'IN'}
         </span>{' '}
         <span>{linkLine(link)}</span>
-        {link.stale && (
-          <>
-            {' '}
-            <span className="chip" data-tone="amber">
-              STALE
-            </span>
-          </>
-        )}
       </p>
       {(due !== null || progress !== null) && <p className="hint">{[due, progress].filter((x) => x !== null).join(' · ')}</p>}
       {link.role === 'sender' && (

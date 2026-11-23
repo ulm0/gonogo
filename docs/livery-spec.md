@@ -42,14 +42,16 @@ pairs, `CONTRAST_PAIRS`, that is also what the brief to the agent quotes and wha
 One more rule: `--lcd` must be dark (relative luminance under 0.2), because the terminal draws its own colours (Claude Code's
 palette) for a dark screen. The ratio is not rounded up: 4.49 fails.
 
-### The four that ship
+### The six that ship
 
 | Slug | Look | Lowest pair |
 |---|---|---|
 | `instrument` | The default and today's look: warm grey, a green screen. Applied by no style at all: the CSS is the livery. | 4.86 |
-| `night-shift` | Graphite with a mint screen and softer signals, for the night. The only dark one. | 5.47 |
+| `night-shift` | Graphite with a mint screen and softer signals, for the night. | 5.47 |
 | `low-ink` | Near-white paper, thin grey lines and pale tints, so that little toner is used when printed. | 6.66 |
+| `low-ink-dark` | Dim graphite, pale warm-grey text, thin quiet lines and muted signals: little light and little colour, for the night. | 5.63 |
 | `high-contrast` | Black on white with black lines and strong signals. Every pair is at least 7:1 (a test asserts it). | 8.44 |
+| `high-contrast-dark` | White on black with white lines and strong signals. Every pair is at least 7:1 (a test asserts it). | 9.40 |
 
 They are not copies of a brand: the palettes are made here. Every one of them passes `checkLivery`, in a test.
 

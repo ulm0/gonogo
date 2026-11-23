@@ -5,9 +5,9 @@ const min = (n: number): number => T - n * 60_000;
 const base = { theirs: null, due: null, priority: 'normal', onward: false, budget: null, waiting: 0 };
 
 export const LINKS = [
-  { ...base, id: 'dl_aaaaaaaaaaaaaaaa', role: 'sender', peer: 'dk1', peerName: 'lab', mine: 't1', theirs: 't9', title: 'Write the release notes', state: 'delivered', peerStatus: 'review', due: '2026-12-01', priority: 'high', budget: 5, cost: { usd: 3.1 }, events: 3, updatedAt: min(5) },
-  { ...base, id: 'dl_bbbbbbbbbbbbbbbb', role: 'sender', peer: 'dk2', peerName: 'ops', mine: 't2', theirs: 't3', title: 'Review the notes', state: 'accepted', peerStatus: 'doing', note: 'waiting on a key', chain: [{ station: 'lab', task: 't5' }], via: 'lab', stale: true, onward: true, progress: { done: 2, total: 3 }, cost: null, events: 1, updatedAt: min(2000) },
-  { ...base, id: 'dl_cccccccccccccccc', kind: 'mission', role: 'sender', peer: 'dk1', peerName: 'lab', mine: 'ms1', theirs: 'ms4', title: 'Ship the release', state: 'accepted', peerStatus: null, progress: { done: 3, total: 5 }, cost: { usd: 1.2 }, events: 0, updatedAt: min(30) },
+  { ...base, id: 'dl_aaaaaaaaaaaaaaaa', role: 'sender', peer: 'dk1', peerName: 'lab', mine: 't1', theirs: 't9', title: 'Write the release notes', state: 'delivered', peerStatus: 'review', due: '2026-12-01', priority: 'high', budget: 5, cost: { usd: 3.1, estimate: true }, events: 3, updatedAt: min(5) },
+  { ...base, id: 'dl_bbbbbbbbbbbbbbbb', role: 'sender', peer: 'dk2', peerName: 'ops', mine: 't2', theirs: 't3', title: 'Review the notes', state: 'accepted', peerStatus: 'doing', chain: [{ station: 'lab', task: 't5' }], via: 'lab: doing', onward: true, progress: { done: 2, total: 3, blocked: 0, review: 1 }, cost: null, events: 1, updatedAt: min(2000) },
+  { ...base, id: 'dl_cccccccccccccccc', kind: 'mission', role: 'sender', peer: 'dk1', peerName: 'lab', mine: 'ms1', theirs: 'ms4', title: 'Ship the release', state: 'accepted', peerStatus: null, progress: { done: 3, total: 5, blocked: 0, review: 1 }, cost: { usd: 1.2, estimate: true }, events: 0, updatedAt: min(30) },
   { ...base, id: 'dl_dddddddddddddddd', role: 'receiver', peer: 'dk2', peerName: 'ops', mine: 't7', theirs: 't11', title: 'Check the install on arm64', state: 'accepted', peerStatus: 'todo', due: '2026-11-30', waiting: 2, events: 1, updatedAt: min(15) },
 ];
 

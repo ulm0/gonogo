@@ -764,6 +764,21 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     expect((await call('POST', '/api/rooms/start-all', fresh, '{}')).status).toBe(200);
     expect((await call('DELETE', '/api/rooms/%63', fresh, '{}')).status).toBe(200);
   }, 40_000);
+  it('step-up: the room default mode: auto and bypass are refused with stepUp:true when the check is old (fresh passes), a milder mode or clearing is free', async () => {
+    const { cookies } = await withTotp();
+    const [h] = json(cookieHeader(cookies), {});
+    const put = (body: Record<string, unknown>): Promise<Answer> => call('PUT', '/api/models/mode', h, JSON.stringify(body));
+    expect((await put({ mode: 'auto' })).status).toBe(200); // fresh
+    clock += 6 * 60_000;
+    for (const body of [{ mode: 'auto' }, { mode: 'bypassPermissions', confirmBypass: true }]) {
+      const refused = await put(body);
+      expect(refused.status, JSON.stringify(body)).toBe(403);
+      expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true });
+    }
+    expect((await put({ mode: 'acceptEdits' })).status).toBe(200);
+    expect((await put({ mode: null })).status).toBe(200);
+  });
+
   it('step-up: a runtime setting is refused with stepUp:true when the check is old, plain and with an encoded key name; reading is not', async () => {
     const { cookies } = await withTotp();
     const [h] = json(cookieHeader(cookies), {});
@@ -1169,6 +1184,42 @@ describe('the device login of a terminal through the supervisor', () => {
     expect(JSON.parse((await poll(flow.device_code)).text)).toEqual({ error: 'access_denied' });
     // the code is spent
     expect((await typeCode(cookies, flow.user_code)).status).toBe(404);
+  });
+
+  it('the banner of an insecure setup: a session may dismiss a finding, a key or a terminal login may only read them', async () => {
+    const cookies = await bootDevice();
+    const key = String((await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'k', scope: 'full' })).body.key);
+    const approved = await startFlow();
+    await decide(cookies, approved.user_code, 'approve');
+    dclock += 6000;
+    const tui = (JSON.parse((await poll(approved.device_code)).text) as { token: string }).token;
+    const session = { ...cookieHeader(cookies), ...origin() };
+    const host = '192.168.1.5';
+    const read = (headers: Record<string, string>) => call('GET', '/api/exposure/findings', { ...headers, host });
+    const found = (await read(session)).text;
+    const ids: string[] = JSON.parse(found).findings.map((f: { id: string }) => f.id);
+    expect(ids.map((id) => id.replace(/-[0-9a-f]{12}$/, ''))).toEqual(['plain-http', 'public-name-no-mfa']); // the test supervisor lists a public name and has no second factor
+    // the list is a map of the weak spots: no key (read scope included) and no terminal login may read it
+    expect((await read({ authorization: `Bearer ${key}` })).status).toBe(403);
+    expect((await read({ authorization: `Bearer ${tui}` })).status).toBe(403);
+    const dismiss = (headers: Record<string, string>) => call('POST', '/api/exposure/dismiss', { ...JSONH, ...headers, host, origin: `http://${host}` }, JSON.stringify({ id: ids[0] }));
+    expect((await dismiss({ authorization: `Bearer ${key}` })).status).toBe(403);
+    expect((await dismiss({ authorization: `Bearer ${tui}` })).status).toBe(403);
+    expect(JSON.parse((await read(session)).text).findings).toHaveLength(2);
+  });
+
+  it('the room default mode: a terminal login gets 403 (step-up) for auto and bypass; a milder mode is open to a full key', async () => {
+    const cookies = await bootDevice();
+    const key = String((await socketCall(sup.socketPath, 'POST', '/api/auth/keys', { name: 'k', scope: 'full' })).body.key);
+    const approved = await startFlow();
+    await decide(cookies, approved.user_code, 'approve');
+    dclock += 6000;
+    const tui = (JSON.parse((await poll(approved.device_code)).text) as { token: string }).token;
+    const put = (headers: Record<string, string>, body: Record<string, unknown>) => call('PUT', '/api/models/mode', { ...JSONH, ...headers }, JSON.stringify(body));
+    for (const body of [{ mode: 'auto' }, { mode: 'bypassPermissions', confirmBypass: true }]) {
+      expect((await put({ authorization: `Bearer ${tui}` }, body)).status, `tui ${JSON.stringify(body)}`).toBe(403);
+    }
+    expect((await put({ authorization: `Bearer ${key}` }, { mode: 'acceptEdits' })).status).toBe(200);
   });
 
   it('adding a room with a project folder is the Director\'s own doing: a session (after the password check), not a key or a terminal; a room without a folder is open to a key as before', async () => {
