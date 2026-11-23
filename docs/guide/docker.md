@@ -64,3 +64,7 @@ docker compose logs gonogo
 ```
 
 Update: `docker compose pull && docker compose up -d` (own build: tag it `ghcr.io/ulm0/gonogo:latest` first). **Every compose command stops without `GONOGO_DATA`**. Paths, network and socket details: [Clean Room](../features/clean-room.md#gonogo-in-a-container-compose).
+
+## Reaching it from another device
+
+Open `http://<the address of this computer>:7777` from any device on your network: an IP address needs no configuration. A name (`gonogo.lan`, a public name behind a proxy) must be listed in `GONOGO_ALLOWED_HOSTS`; without it the answer is a 403 that says so. An IP address is safe to accept because a page of another site can only reach gonogo by a name (the DNS rebinding the Host check is for); the login and its rules by the kind of address still apply.

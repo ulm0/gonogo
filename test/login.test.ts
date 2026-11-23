@@ -133,6 +133,18 @@ describe('a fresh install', () => {
     expect(wrong.text).not.toContain('Wrong name or password.');
   });
 
+  it('an IP address is a Host with no configuration: a private one gets the setup page, a public one is answered but gets no setup (the rules of a public name)', async () => {
+    await boot();
+    const via = (host: string) => call('GET', '/setup', { host });
+    expect((await via('192.168.1.5')).status).toBe(200);
+    const publicIp = await via('8.8.8.8');
+    expect(publicIp.status).not.toBe(404);
+    expect(publicIp.text).not.toContain('SET UP THE LOGIN');
+    const post = await call('POST', '/api/auth/setup', { ...FORM, origin: 'http://8.8.8.8', host: '8.8.8.8' }, form({ token: setupToken(), user: 'director', password: PASSWORD }));
+    expect(post.status).toBe(403);
+    expect((await via('nas.example.com')).status).toBe(403);
+  });
+
   it('B2: Host 127.0.0.1 with a forwarding header is a request somebody passed on: setup is refused as from a public name', async () => {
     await boot();
     const forwarded = { 'x-forwarded-for': '8.8.8.8' };

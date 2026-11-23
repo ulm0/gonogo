@@ -6,7 +6,7 @@
 
 - gonogo listens on `127.0.0.1` unless you pass `--host`. No TLS: to reach it from elsewhere, see [Reverse proxy](#reverse-proxy).
 - Every `/api` call and the `/ws` WebSocket need a login: a session cookie, an API key, or the local unix socket (`<home>/run/api.sock`). Until an account exists, the old browser token does it; **once one has been made the token is deleted and never comes back** ([Login](../features/login.md)). The built client files need nothing; they hold no state. **A signed-in session can run anything on this machine.**
-- A request whose `Host` is not a loopback name, the bind address or an `--allow-host` name gets 403, as does a browser request whose `Origin` is not its own `Host`. This blocks DNS rebinding and cross-site requests.
+- A request whose `Host` is not a loopback name, an IP address (any range: nothing to configure to reach gonogo by the address of the computer), the bind address or an `--allow-host` name gets 403 (its words say what to do), as does a browser request whose `Origin` is not its own `Host`. This blocks DNS rebinding and cross-site requests.
 - Agents never see the browser token. Each agent start gets its own token in `GONOGO_TOKEN` (never on a command line), valid only for the hook and tool endpoints.
 - Agents always call the server on `127.0.0.1`, whatever you bind. A Clean Room container uses `host.docker.internal` instead, accepted as `Host` for the hook and tool endpoints only (agent token still needed, `Origin` still refused); every other route answers 403 `forbidden host` for that name.
 

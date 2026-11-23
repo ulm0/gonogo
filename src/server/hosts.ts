@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 /**
  * The one place a Host is read (docs/expose-spec.md R10). Every check that asks "which name is this?" (the allow-lists, the proxy, the
  * login's class, the hooks-only hosts) goes through `normalizeHost`, and every match is an exact match on its result, so no two checks can
@@ -27,6 +29,19 @@ export function normalizeHost(value: string): string | null {
   if (name.endsWith('.')) name = name.slice(0, -1);
   // one trailing dot is the same name; an empty label (a leading dot, `..`, a second trailing dot) is no name
   return name !== '' && /^[a-z0-9._-]+$/.test(name) && !name.startsWith('.') && !name.endsWith('.') && !name.includes('..') ? name : null;
+}
+
+/** Whether `header` names an IP address (dotted IPv4, or an IPv6 in brackets), not a name: a browser sends one only to somebody who went to that address, so no page of another site can put it in a Host (DNS rebinding needs a name). */
+export function isIpLiteralHost(header: string | undefined): boolean {
+  const name = header === undefined ? null : normalizeHost(header);
+  return name !== null && isIP(name) !== 0;
+}
+
+/** The 403 of a Host the front port does not answer to. Starts with the two words older tools look for; names what to do, and echoes only a normalised name (the header is the sender's). */
+export function forbiddenHostText(header: string | undefined): string {
+  const name = header === undefined ? null : normalizeHost(header);
+  const shown = name === null ? 'that name' : name.slice(0, 80);
+  return `forbidden host: gonogo does not answer to ${shown}. Open it by its IP address, or allow the name with --allow-host ${name === null ? '<name>' : shown} (or GONOGO_ALLOWED_HOSTS=${name === null ? '<name>' : shown}).`;
 }
 
 export interface AllowedHosts {

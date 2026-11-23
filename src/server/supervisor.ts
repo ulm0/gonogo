@@ -37,7 +37,7 @@ import { isPushPath, pushApi } from './pushhttp.js';
 import { addRoom, updateRoom, loadRooms, recordMainHome, roomText, MAIN_ROOM, removeRoom, removeSupervisorFile, RoomsError, roomHome, validRoomId, writeSupervisorFile } from './rooms.js';
 import type { RoomEntry } from './rooms.js';
 import { exposureProblem, parsePublicUrl } from './exposure.js';
-import { splitAllowed } from './hosts.js';
+import { forbiddenHostText, isIpLiteralHost, splitAllowed } from './hosts.js';
 import { hostName } from './web.js';
 
 const DIRECTOR_TOKEN_FILE = 'token';
@@ -575,7 +575,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
 
   const hostOk = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
-    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || allowedNames.has(name));
+    // an IP address is accepted whatever its range: nothing needs configuring to reach gonogo by the address of the computer; a NAME needs the list
+    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || allowedNames.has(name) || isIpLiteralHost(header));
   };
 
   /** Requests that came in on the local socket. */
@@ -935,7 +936,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     // the login pages and /api/auth are the supervisor's own
     if (authHttp.handle(req, res)) return;
     if (proxy.handle(req, res)) return;
-    if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
+    if (!hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host));
     const path = (req.url ?? '').split('?')[0] ?? '';
     const get = req.method === 'GET' || req.method === 'HEAD';
     // the Docker healthcheck: no token, never proxied; 503 until main has been ready once, then 200 for as long as this process runs

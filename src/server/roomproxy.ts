@@ -22,6 +22,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Grant } from './authhttp.js';
 import { keyMayDo } from './auth.js';
+import { forbiddenHostText, isIpLiteralHost } from './hosts.js';
 import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -132,7 +133,7 @@ function reservedPath(rest: string): boolean {
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   const hostAllowed = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
-    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name) || (options.hooksHosts?.has(name) ?? false));
+    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name) || (options.hooksHosts?.has(name) ?? false) || isIpLiteralHost(header));
   };
   const hooksOnly = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
@@ -184,7 +185,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   function resolve(req: IncomingMessage, fail: (status: number, text: string) => void): Target | null {
     const parts = split(req.url ?? '');
     if (parts === null) return (fail(400, 'bad request'), null);
-    if (!hostAllowed(req.headers.host)) return (fail(403, 'forbidden host'), null);
+    if (!hostAllowed(req.headers.host)) return (fail(403, forbiddenHostText(req.headers.host)), null);
     const prefixed = PREFIX.exec(req.url ?? '');
     let id = 'main';
     let rest = parts.path;

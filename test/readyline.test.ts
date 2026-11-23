@@ -17,7 +17,7 @@ describe('containerHint', () => {
   it('says, on one line, how to reach a gonogo in a container from another machine', () => {
     const text = containerHint(7777, null);
     expect(text.split('\n').filter(Boolean)).toHaveLength(1);
-    expect(text).toContain("From another machine, open http://<this computer's address>:7777");
+    expect(text).toContain("From any other device on your network, open http://<this computer's address>:7777");
     expect(text).toContain('GONOGO_HOST in compose.yaml');
     expect(text).toContain('GONOGO_ALLOWED_HOSTS');
   });

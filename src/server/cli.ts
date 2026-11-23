@@ -1728,7 +1728,7 @@ export function readyUrl(url: string, publicUrl: string | null): string {
 /** In a container the listening address is the container's own: what to do to reach it from another machine. One line, on stderr (stdout keeps its one `gonogo ready:` line for scripts). */
 export function containerHint(port: number, publicUrl: string | null): string {
   if (publicUrl !== null) return `gonogo: in a container: the address above is the public one you gave (${publicUrl}); allow that name with GONOGO_ALLOWED_HOSTS if it is not.\n`;
-  return `gonogo: in a container, 127.0.0.1 is the container's own. From another machine, open http://<this computer's address>:${port} (the port is published on GONOGO_HOST in compose.yaml) and allow that name with GONOGO_ALLOWED_HOSTS.\n`;
+  return `gonogo: in a container, 127.0.0.1 is the container's own. From any other device on your network, open http://<this computer's address>:${port} (the port is published on GONOGO_HOST in compose.yaml); a name instead of an address needs GONOGO_ALLOWED_HOSTS.\n`;
 }
 
 /** `gonogo`: the supervisor. The front port, the room list and one `gonogo __room` process per room. */
