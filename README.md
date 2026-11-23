@@ -24,13 +24,11 @@ Docker, credential first (`claude setup-token` on a machine where `claude` is si
 VERSION=0.14.0
 export CLAUDE_CODE_OAUTH_TOKEN=PASTE_THE_TOKEN_HERE
 curl -fsSLO https://raw.githubusercontent.com/ulm0/gonogo/v$VERSION/compose.yaml
-sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home
-printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env
 docker compose up -d
 sleep 5; docker compose logs gonogo
 ```
 
-It prints a `gonogo ready:` address and a `gonogo setup:` line (Docker: the logs): open `/setup`, give the setup token, make your account. The token and the setup token are passwords: the server runs shells as you. State is in `~/.gonogo` (`/state/gonogo` in Docker). The port stays on `127.0.0.1`; from another machine use `ssh -L 7777:127.0.0.1:7777 you@host`, and for webhooks see [`docs/https.md`](docs/https.md). New words: [Getting started](https://gonogo.ulm0.com/guide/glossary).
+It prints a `gonogo ready:` address and a `gonogo setup:` line (Docker: the logs): open `/setup`, give the setup token, make your account. The token and the setup token are passwords: the server runs shells as you. State is in `~/.gonogo` (`/state/gonogo` in Docker). With Docker the port is published on every interface and the login (the setup token in the log) is what keeps others out; `GONOGO_HOST=127.0.0.1` in a `.env` keeps it on the machine. Otherwise it stays on `127.0.0.1`: from another machine use `ssh -L 7777:127.0.0.1:7777 you@host`. For webhooks see [`docs/https.md`](docs/https.md). New words: [Getting started](https://gonogo.ulm0.com/guide/glossary).
 
 [`compose.yaml`](compose.yaml) mounts the host's Docker socket, **which gives the container and every agent in it root over the host** ([Clean Room in the container](docs/guide/docker.md#clean-room-in-the-container)); a plain `docker run` without it is in [Docker](docs/guide/docker.md).
 

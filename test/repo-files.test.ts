@@ -107,14 +107,17 @@ describe('Dockerfile', () => {
 });
 
 describe('compose.yaml', () => {
-  it('requires GONOGO_DATA and never builds a path on ${PWD} (a UI runs compose with no shell, so PWD is empty and every path broke silently)', () => {
+  it('defaults GONOGO_DATA to ./gonogo-data but never silently on an empty ${PWD} (a UI runs compose with no shell, so PWD is empty and every path broke silently)', () => {
     const compose = read('compose.yaml');
     const live = compose.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
-    expect(live).not.toContain('PWD');
-    expect(live).not.toMatch(/\$\{GONOGO_DATA(?!:\?)/);
-    expect(live.match(/\$\{GONOGO_DATA:\?[^}]+\}/g)?.length).toBeGreaterThanOrEqual(6);
-    expect(read('docs', 'guide', 'docker.md')).toContain('GONOGO_DATA=%s');
-    expect(compose).toMatch(/make a file named \.env/);
+    // every use is the whole expression: the variable, else the working directory (and an empty one STOPS compose), then /gonogo-data
+    expect(live).not.toMatch(/\$\{GONOGO_DATA(?!:-\$\{PWD:\?|:\+yes\})/);
+    expect(live).not.toMatch(/\$\{PWD(?!:\?)/);
+    expect(live.match(/\$\{GONOGO_DATA:-\$\{PWD:\?[^}]+\}\/gonogo-data\}/g)?.length).toBeGreaterThanOrEqual(6);
+    expect(live).not.toContain('DOCKER_GID');
+    expect(live).not.toContain('group_add');
+    expect(live).toContain('${GONOGO_HOST:-0.0.0.0}');
+    expect(compose).toMatch(/docker compose up -d/);
   });
 });
 
@@ -122,7 +125,7 @@ describe('the HOME of the container is persisted as a whole', () => {
   it('compose binds <data>/home on /home/node, the image and the compose file point no XDG or git config elsewhere, and nothing reads /state/config', () => {
     const compose = read('compose.yaml');
     const live = compose.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
-    expect(live).toMatch(/- \$\{GONOGO_DATA:\?[^}]+\}\/home:\/home\/node\n/);
+    expect(live).toMatch(/- \$\{GONOGO_DATA:-\$\{PWD:\?[^}]+\}\/gonogo-data\}\/home:\/home\/node\n/);
     const docker = read('Dockerfile');
     const liveDocker = docker.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
     for (const text of [live, liveDocker]) {
@@ -141,8 +144,8 @@ describe('the HOME of the container is persisted as a whole', () => {
     expect(entry).toMatch(/\[ -w "\$HOME" \] \|\| echo .*chown 1000:1000/);
     expect(entry).toMatch(/exec gonogo "\$@"\n$/);
     expect(statSync(join(root, 'packaging', 'docker', 'entrypoint.sh')).mode & 0o111).not.toBe(0);
-    expect(compose).toContain('gonogo-data/home');
-    expect(read('docs', 'guide', 'docker.md')).toContain('gonogo-data/home');
+    expect(compose).toContain('./gonogo-data');
+    expect(read('docs', 'guide', 'docker.md')).toContain('./gonogo-data');
   });
 });
 

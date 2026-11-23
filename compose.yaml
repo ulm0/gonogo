@@ -1,12 +1,16 @@
-# gonogo in Docker, with Clean Room. The server runs as uid 1000. You may make the folders yourself, once, as root on the Docker host:
-#   install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home    # next to this file
-# or leave them out: a folder Docker makes root's (compose from ZimaOS or Portainer) is given to uid 1000 by the entrypoint, which starts as root for that one job.
-# Then make a file named .env next to this one (compose reads it for every command, from a shell or from a UI such as ZimaOS or Portainer):
-#   GONOGO_DATA=/absolute/path/to/gonogo-data                  # the folder above, by its ABSOLUTE path; every compose command stops without it
-#   DOCKER_GID=<the output of: stat -L -c %g /var/run/docker.sock>
-# (or export both in your shell, and then every compose command must see them). With CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported:
-#   docker compose up -d           # pulls the published image the first time
-#   docker compose logs gonogo     # the `gonogo ready:` line is the URL, token included
+# gonogo in Docker, with Clean Room. The server runs as uid 1000.
+#   docker compose up -d           # next to this file: pulls the published image the first time; nothing else to set
+#   docker compose logs gonogo     # the `gonogo ready:` line and the `gonogo setup:` line (the setup token)
+# Then open http://<this machine's address>:7777 from any device on your network and make your account.
+# The data folder defaults to ./gonogo-data next to this file; Docker makes it, and the entrypoint (which starts as root for that one job) gives it to uid 1000.
+# The socket's group is found by the image itself: no DOCKER_GID.
+# Settings, in a file named .env next to this one (compose reads it for every command, from a shell or from a UI such as ZimaOS or Portainer), or exported:
+#   GONOGO_DATA=/absolute/path/to/gonogo-data   # another data folder, by its ABSOLUTE path (no colon in it). Run from a UI that has no working directory,
+#                                               # compose stops and asks for it instead of guessing
+#   GONOGO_HOST=127.0.0.1                       # publish on this machine only (the default is every interface, 0.0.0.0)
+#   GONOGO_PORT=7777                            # the published port
+#   GONOGO_ALLOWED_HOSTS=name,name              # names (not addresses) you reach it by: a LAN name, a reverse proxy
+# With CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (never both) exported.
 # Update to the latest release: docker compose pull && docker compose up -d
 # More rooms in the same container: add them from the list page at /, or `docker compose exec gonogo gonogo rooms add <id>` (docs/features/rooms.md).
 # A second, separate deployment: GONOGO_PORT=7778 GONOGO_DATA=$PWD/gonogo-data-2 docker compose -p gonogo-2 up -d
@@ -15,8 +19,7 @@
 # that do not run in a Clean Room. Hire only agents you would let run as root on this machine.
 #
 # The host's Docker mounts a Clean Room's folders by their host paths, so the data folder is mounted at the same path
-# inside, by its absolute path: GONOGO_DATA is required, with no default (a default built on $PWD is empty when compose runs from a UI such as
-# ZimaOS or Portainer, and every path below would silently break). No colon in the path.
+# inside, by its absolute path.
 services:
   gonogo:
     image: ghcr.io/ulm0/gonogo:latest
@@ -25,7 +28,7 @@ services:
     # container restarts: restart that console.
     restart: always
     ports:
-      - ${GONOGO_HOST:-127.0.0.1}:${GONOGO_PORT:-7777}:7777   # another instance: another GONOGO_PORT and GONOGO_DATA
+      - ${GONOGO_HOST:-0.0.0.0}:${GONOGO_PORT:-7777}:7777   # another instance: another GONOGO_PORT and GONOGO_DATA
     environment:
       # No value: forwarded from your shell, so the secret is not written here.
       CLAUDE_CODE_OAUTH_TOKEN:
@@ -41,23 +44,25 @@ services:
       GONOGO_LOG_LEVEL:
       GONOGO_STATION:
       GONOGO_UPDATE_CHECK:
-      GONOGO_HOME: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/state
-      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/claude
+      GONOGO_HOME: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/state
+      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/claude
       # A Clean Room joins this container's network (self: found by its host name, so no fixed container name).
       GONOGO_CLEANROOM_NETWORK: container:self
+      # What the ready line says to open: the port the host publishes (the server inside listens on 7777).
+      GONOGO_PUBLISHED_PORT: ${GONOGO_PORT:-7777}
+      # Set when you gave GONOGO_DATA yourself (empty when the default ./gonogo-data is in use): the entrypoint says which, and warns about a new empty default folder.
+      GONOGO_DATA_GIVEN: ${GONOGO_DATA:+yes}
     # The Clean Room shares this hosts file: its hook URLs name host.docker.internal, which the server limits to hooks and MCP.
     extra_hosts:
       - host.docker.internal:127.0.0.1
     # The boss's first working directory, where your projects go.
-    working_dir: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/projects
-    group_add:
-      - ${DOCKER_GID:?set DOCKER_GID to the group id of the Docker socket, stat -L -c %g /var/run/docker.sock}
+    working_dir: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/projects
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}:${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}
+      - ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}:${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}
       # The whole HOME of the container (the image's /home/node holds only dotfiles): gh's login, ~/.gitconfig, ~/.aws and the rest survive a
       # new container (docker compose up after a pull, a self-update, which keeps this bind)
-      - ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/home:/home/node
+      - ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/home:/home/node
     # gonogo is a supervisor and one process per room: every room stops its own agents within 12 seconds (in parallel) and the
     # supervisor waits 17 for the slowest before it kills one, so Docker must wait longer than that.
     stop_grace_period: 60s

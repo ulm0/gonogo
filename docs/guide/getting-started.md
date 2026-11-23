@@ -45,8 +45,6 @@ It prints an address and a setup line (next step). Also: `brew install ulm0/tap/
 ```
 export CLAUDE_CODE_OAUTH_TOKEN=PASTE_THE_TOKEN_HERE
 curl -fsSLO https://raw.githubusercontent.com/ulm0/gonogo/v%VERSION%/compose.yaml
-sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home
-printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env
 docker compose up -d
 sleep 5; docker compose logs gonogo
 ```
