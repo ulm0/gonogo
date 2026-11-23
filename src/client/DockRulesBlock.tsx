@@ -3,7 +3,7 @@ import { useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import type { DockRules, DockView } from '../shared/protocol.js';
 import * as api from './api.js';
-import { RULE_FIELDS, STALE_HELP, staleProblem } from './dockRules.js';
+import { fieldsOf, patchOf, STALE_HELP, staleProblem, valueOf } from './dockRules.js';
 import { useRun } from './WallView.js';
 
 export function DockRulesBlock({ dock }: { dock: DockView }): ReactElement {
@@ -50,10 +50,10 @@ export function DockRulesBlock({ dock }: { dock: DockView }): ReactElement {
       {rules === null && loadError === null && <p className="hint">Reading the rules…</p>}
       {rules !== null && (
         <div className="dk-rules-body">
-          {RULE_FIELDS.map((f) => (
+          {fieldsOf(rules).map((f) => (
             <div className="field" key={f.key}>
               <label htmlFor={`${id}-${f.key}`}>{f.label}</label>
-              <select id={`${id}-${f.key}`} className="input" value={rules[f.key]} aria-disabled={busy || undefined} aria-describedby={`${id}-${f.key}-h`} onChange={(e) => save({ [f.key]: e.target.value } as Partial<DockRules>)}>
+              <select id={`${id}-${f.key}`} className="input" value={valueOf(rules, f.key)} aria-disabled={busy || undefined} aria-describedby={`${id}-${f.key}-h`} onChange={(e) => save(patchOf(f.key, e.target.value))}>
                 {f.options.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}

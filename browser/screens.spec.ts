@@ -191,8 +191,8 @@ async function dockingTwo(page: Page, group: string): Promise<void> {
       ws.send(message);
     });
   });
-  await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'h1', dock: 'dk1', station: 'lab', from: 'flight', at: Date.now(), task: { title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour. Check the clock handling in the session code and add a test.' } }] } }));
-  await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { handoff: 'ask', incoming: 'auto', autoAccept: 'off', reportCost: 'off', serve: 'off', staleHours: 24 } }));
+  await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'ha1', dock: 'dk1', dockName: 'lab', task: 't4', assignee: 'cara', title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour. Check the clock handling in the session code and add a test.', due: '2026-12-01', priority: 'high', onward: false, budget: 5, at: Date.now() }] } }));
+  await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { rules: { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24 } } }));
   await page.route('**/api/docking/outbound?*', (route) => route.fulfill({ json: { dock: 'dk1', entries: OUTBOUND } }));
   await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
   await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));

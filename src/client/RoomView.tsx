@@ -347,7 +347,7 @@ export function Needs({ phone }: { phone: boolean }): ReactElement | null {
         <ReliefNeed key={request.id} request={request} legend={legendOf(legends, request.by)} onFail={setFailed} />
       ))}
       {asks.map((ask) => (
-        <HandoffNeed key={ask.id} ask={ask} legend={legendOf(legends, ask.from)} />
+        <HandoffNeed key={ask.id} ask={ask} legend="FLIGHT" />
       ))}
     </div>
   );

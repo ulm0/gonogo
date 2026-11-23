@@ -2,23 +2,29 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { alwaysText, askText, askTitle, RULE_FIELDS, staleProblem } from '../src/client/dockRules.js';
+import { alwaysText, askRows, askText, askTitle, fieldsOf, patchOf, RULE_FIELDS, staleProblem, valueOf } from '../src/client/dockRules.js';
 import { HandoffNeed } from '../src/client/HandoffAsks.js';
 import type { HandoffAsk } from '../src/shared/protocol.js';
 
-const ask: HandoffAsk = { id: 'h1', dock: 'dk1', station: 'lab', from: 'flight', task: { title: 'Fix the login', detail: 'The token expires too early.\nSee the log.' }, at: 1 };
+const ask: HandoffAsk = { id: 'ha1', dock: 'dk1', dockName: 'lab', task: 't4', assignee: null, title: 'Fix the login', detail: 'The token expires too early.\nSee the log.', due: null, priority: 'normal', onward: false, budget: null, at: 1 };
 
 describe('the rules', () => {
-  it('cover the five settings of the spec, each with a plain line that names the station', () => {
-    expect(RULE_FIELDS.map((f) => f.key)).toEqual(['handoff', 'incoming', 'autoAccept', 'reportCost', 'serve']);
+  it('draw the three settings the server has, and the other two only when it sends them', () => {
+    const rules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24 } as const;
+    expect(fieldsOf({ ...rules }).map((f) => f.key)).toEqual(['handoff', 'incoming', 'autoAccept']);
+    expect(fieldsOf({ ...rules, reportCost: 'off', serve: 'off' }).map((f) => f.key)).toEqual(['handoff', 'incoming', 'autoAccept', 'reportCost', 'serve']);
     for (const f of RULE_FIELDS) expect(f.help('lab')).toContain('lab');
-    expect(RULE_FIELDS.find((f) => f.key === 'handoff')?.options.map((o) => o.value)).toEqual(['ask', 'allow']);
-    expect(RULE_FIELDS.find((f) => f.key === 'incoming')?.options.map((o) => o.value)).toEqual(['auto', 'ask', 'off']);
+    expect(RULE_FIELDS.find((f) => f.key === 'incoming')?.options.map((o) => o.value)).toEqual(['auto', 'off']); // ask is not built
   });
-  it('take hours from 0 to a year', () => {
+  it('show a boolean as a choice and patch it back as a boolean', () => {
+    expect(valueOf({ handoff: 'ask', incoming: 'auto', autoAccept: true, staleHours: 24 }, 'autoAccept')).toBe('true');
+    expect(patchOf('autoAccept', 'false')).toEqual({ autoAccept: false });
+    expect(patchOf('handoff', 'allow')).toEqual({ handoff: 'allow' });
+  });
+  it('take hours from 0 to 30 days', () => {
     expect(staleProblem('24')).toBeUndefined();
-    expect(staleProblem('0')).toBeUndefined();
-    for (const bad of ['', '-1', '1.5', 'x', '8761', '12345']) expect(staleProblem(bad), bad).toBeDefined();
+    expect(staleProblem('720')).toBeUndefined();
+    for (const bad of ['', '-1', '1.5', 'x', '721', '12345']) expect(staleProblem(bad), bad).toBeDefined();
   });
 });
 
@@ -26,8 +32,15 @@ describe('the GO on a handoff', () => {
   it('says the words the spec fixes for Always, and shows the whole text that would leave', () => {
     expect(alwaysText('lab')).toBe('Always for lab: FLIGHT can then send tasks, and what it writes in them, to lab without asking you.');
     expect(askText(ask)).toBe('Fix the login\n\nThe token expires too early.\nSee the log.');
-    expect(askText({ ...ask, task: { title: 'Fix', detail: '' } })).toBe('Fix');
+    expect(askText({ ...ask, title: 'Fix', detail: '' })).toBe('Fix');
     expect(askTitle(ask, 'FLIGHT')).toBe('FLIGHT wants to send a task to lab');
+  });
+  it('says what else goes with it, and that it may go onward', () => {
+    expect(askRows(ask)).toEqual([{ label: 'For', value: 'nobody yet: it lands with the boss there' }]);
+    const rows = askRows({ ...ask, assignee: 'cara', due: '2026-12-01', priority: 'high', budget: 5, onward: true });
+    expect(rows.map((r) => r.label)).toEqual(['For', 'Due', 'Priority', 'Budget', 'Onward']);
+    expect(rows[0]?.value).toBe('cara at lab');
+    expect(rows[3]?.value).toBe('$5.00, enforced by lab');
   });
   it('is drawn with the full text, the Always box (off), and GO and NO-GO keys that name the station', () => {
     const html = renderToString(createElement(HandoffNeed, { ask, legend: 'FLIGHT' }));

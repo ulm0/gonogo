@@ -2990,18 +2990,29 @@ export interface LinkAttachment {
 }
 export interface DockRules {
   handoff: 'ask' | 'allow';
+  /** 'ask' is not built: the page offers auto and off. */
   incoming: 'auto' | 'ask' | 'off';
-  autoAccept: 'off' | 'on';
-  reportCost: 'off' | 'on';
-  serve: 'off' | 'on';
+  autoAccept: boolean;
+  /** Whole hours, 0 (off) to 720. */
   staleHours: number;
+  /** Arrive with the mission and cost slices; the page shows them when they are there. */
+  reportCost?: 'off' | 'on';
+  serve?: 'off' | 'on';
 }
-/** A handoff FLIGHT wants to send while the rule of the dock is `ask`: the whole text that would leave, for the Director's GO. */
+/** A handoff FLIGHT wants to send while the rule of the dock is `ask`: what would leave, for the Director's GO (GET /api/handoff-requests). */
 export interface HandoffAsk {
   id: string;
   dock: string;
-  station: string;
-  from: string;
-  task: { title: string; detail: string };
+  dockName: string;
+  /** The task here, and the agent over there it is meant for, or null. */
+  task: string;
+  assignee: string | null;
+  title: string;
+  detail: string;
+  due: string | null;
+  priority: 'low' | 'normal' | 'high';
+  /** The other station may pass it on to a third. */
+  onward: boolean;
+  budget: number | null;
   at: number;
 }

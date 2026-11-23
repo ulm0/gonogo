@@ -1010,9 +1010,9 @@ export const acceptLink = (id: string): Promise<unknown> => call('POST', linkPat
 /** Gives a task back (the receiver) or sends a delivery back (the sender): the reason is up to 200 characters. */
 export const returnLink = (id: string, reason: string): Promise<unknown> => call('POST', linkPath(id, 'return'), { reason });
 /** The sender withdraws what is not done yet. */
-export const recallLink = (id: string): Promise<unknown> => call('POST', linkPath(id, 'recall'));
-export const dockRules = async (dock: string): Promise<DockRules> => (await call('GET', `/docking/${encodeURIComponent(dock)}/rules`)) as DockRules;
-export const setDockRules = async (dock: string, patch: Partial<DockRules>): Promise<DockRules> => (await call('PATCH', `/docking/${encodeURIComponent(dock)}/rules`, patch)) as DockRules;
+export const recallLink = (id: string, reason = ''): Promise<unknown> => call('POST', linkPath(id, 'recall'), { reason });
+export const dockRules = async (dock: string): Promise<DockRules> => (asRecord(await call('GET', `/docking/${encodeURIComponent(dock)}/rules`))?.rules ?? {}) as DockRules;
+export const setDockRules = async (dock: string, patch: Partial<DockRules>): Promise<DockRules> => (asRecord(await call('PATCH', `/docking/${encodeURIComponent(dock)}/rules`, patch))?.rules ?? {}) as DockRules;
 /** The events that left for a dock, in full (only the Director's session may read them). */
 export async function outbound(dock: string): Promise<OutboundEntry[]> {
   const list = asRecord(await call('GET', `/docking/outbound?dock=${encodeURIComponent(dock)}`))?.entries;
@@ -1033,7 +1033,8 @@ export async function handoffAsks(): Promise<HandoffAsk[]> {
     throw e;
   }
 }
-export const answerHandoff = (id: string, go: boolean, always = false): Promise<unknown> => call('POST', `/handoff-requests/${encodeURIComponent(id)}/answer`, { go, always });
+/** GO or NO-GO on a handoff; `always` turns the dock's rule to Allow (the password is asked again). The answer says whether it was sent. */
+export const answerHandoff = async (id: string, go: boolean, always = false): Promise<'sent' | 'refused'> => (asRecord(await call('POST', `/handoff-requests/${encodeURIComponent(id)}/answer`, { go, always }))?.state === 'sent' ? 'sent' : 'refused');
 
 /** Livery: choose, delete, ask an agent for a new one. The list comes in the state and in `livery` frames; each call answers with it as it is now. */
 export async function selectLivery(slug: string): Promise<LiveryView> {

@@ -3,7 +3,7 @@ import { useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { HandoffAsk } from '../shared/protocol.js';
 import * as api from './api.js';
-import { alwaysText, askText, askTitle } from './dockRules.js';
+import { alwaysText, askRows, askText, askTitle } from './dockRules.js';
 import { refreshAsks } from './linksData.js';
 import { useRun } from './WallView.js';
 
@@ -22,6 +22,14 @@ export function HandoffNeed({ ask, legend }: { ask: HandoffAsk; legend: string }
       <span className="led need-led" data-on="true" data-blink="true" aria-hidden="true" />
       <div className="need-text">
         <h3 className="disp need-title">{title}</h3>
+        <dl className="relief-rows">
+          {askRows(ask).map((row) => (
+            <div key={row.label} className="relief-row">
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
         <p className="relief-role-label" id={`${id}-text`}>
           What would leave, in full:
         </p>
@@ -30,7 +38,7 @@ export function HandoffNeed({ ask, legend }: { ask: HandoffAsk; legend: string }
         </p>
         <div className="staff-check dk-always">
           <input id={`${id}-always`} type="checkbox" className="check" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-          <label htmlFor={`${id}-always`}>{alwaysText(ask.station)}</label>
+          <label htmlFor={`${id}-always`}>{alwaysText(ask.dockName)}</label>
         </div>
         {error !== null && (
           <p className="error" role="alert">
@@ -39,10 +47,10 @@ export function HandoffNeed({ ask, legend }: { ask: HandoffAsk; legend: string }
         )}
       </div>
       <div className="go-buttons">
-        <button type="button" className="btn" data-kind="danger" data-size="big" aria-disabled={busy || undefined} aria-label={`NO-GO: do not send this task to ${ask.station}`} onClick={() => answer(false)}>
+        <button type="button" className="btn" data-kind="danger" data-size="big" aria-disabled={busy || undefined} aria-label={`NO-GO: do not send this task to ${ask.dockName}`} onClick={() => answer(false)}>
           NO-GO
         </button>
-        <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={busy || undefined} aria-label={`GO: send this task to ${ask.station}`} onClick={() => answer(true)}>
+        <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={busy || undefined} aria-label={`GO: send this task to ${ask.dockName}`} onClick={() => answer(true)}>
           GO
         </button>
       </div>
