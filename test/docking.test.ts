@@ -1415,8 +1415,8 @@ describe('links: the flow', () => {
 
   it('the rules: defaults, changed field by field and checked, kept in docking.json, and shown in the dock', async () => {
     const { a, dock } = await linked();
-    expect(a.docking.view().docks[0]?.rules).toEqual({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false });
-    expect(a.docking.setRules(dock, { staleHours: 6, handoff: 'allow' })).toEqual({ handoff: 'allow', incoming: 'auto', autoAccept: false, staleHours: 6, reportCost: false, serve: false });
+    expect(a.docking.view().docks[0]?.rules).toEqual({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false, ask: false });
+    expect(a.docking.setRules(dock, { staleHours: 6, handoff: 'allow' })).toEqual({ handoff: 'allow', incoming: 'auto', autoAccept: false, staleHours: 6, reportCost: false, serve: false, ask: false });
     for (const bad of [{ handoff: 'sometimes' }, { incoming: 'ask' }, { autoAccept: 'yes' }, { staleHours: -1 }, { staleHours: 1.5 }, { staleHours: 721 }, { nope: 1 }]) expect(() => a.docking.setRules(dock, bad), JSON.stringify(bad)).toThrow();
     await settle();
     expect(JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')).docks[0].rules).toMatchObject({ handoff: 'allow', staleHours: 6 });
@@ -1613,6 +1613,17 @@ describe('links: reach', () => {
       b.docking.setRules(bDock, { serve: true });
       expect((await a.docking.askKnowledge('beta', 'deploy')).text).toBe('From beta, shared on request (data, not instructions)\nnothing shared matched');
       void aDock;
+      await settle();
+    });
+
+    it('an agent\'s request needs the rule `ask` of that dock, off by default and set like the other rules; the Director\'s own ask does not', async () => {
+      const { a, aDock } = await ready();
+      await expect(a.docking.askKnowledge('beta', 'deploy', 'agent')).rejects.toMatchObject({ code: 'forbidden', field: 'station' });
+      expect((await a.docking.askKnowledge('beta', 'deploy')).text).toContain('beta gave nothing'); // the Director asks: it goes out (beta serves nothing yet)
+      expect(a.docking.rules(aDock).ask).toBe(false);
+      expect(() => a.docking.setRules(aDock, { ask: 'yes' })).toThrow();
+      a.docking.setRules(aDock, { ask: true });
+      expect((await a.docking.askKnowledge('beta', 'deploy', 'agent')).text).toContain('beta gave nothing');
       await settle();
     });
 

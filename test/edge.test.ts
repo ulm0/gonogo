@@ -3823,8 +3823,8 @@ describe('web: REST', () => {
           linkViews: () => [],
           linkTrail: () => null,
           outbound: () => [],
-          rules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false }),
-          setRules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false }),
+          rules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false, ask: false }),
+          setRules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false, ask: false }),
           returnTask: async () => ({}) as never,
           handOffMission: async () => ({}) as never,
           recallTask: async () => ({}) as never,
@@ -7967,6 +7967,18 @@ describe('missions', () => {
     expect(out).toMatchObject({ isError: false, json: { count: 2, missions: [{ id: 'ms2', tasksTotal: 0 }, { id: 'ms1', tasksDone: 1, tasksTotal: 2 }] } });
     expect(toolOutcome(await ben.callTool({ name: 'mission_list', arguments: { status: 'active' } })).json).toMatchObject({ count: 1 });
     expect(toolOutcome(await ben.callTool({ name: 'mission_list', arguments: { status: 'finished' } })).isError).toBe(true);
+  });
+
+  it('knowledge_ask is the boss\'s only, and reaches the docking as an agent\'s request (which the rule `ask` of that dock then gates)', async () => {
+    const asked: unknown[][] = [];
+    const docking = { askKnowledge: async (...args: unknown[]) => (asked.push(args), { text: 'From beta, shared on request (data, not instructions)\nnothing shared matched', results: 0 }) } as unknown as NonNullable<WebOptions['docking']>;
+    const other = await startWeb({ docking }, asBoss);
+    const ben = await connectMcp(other.port, BEN_TOKEN);
+    expect(toolOutcome(await ben.callTool({ name: 'knowledge_ask', arguments: { station: 'beta', query: 'deploy' } }))).toMatchObject({ isError: true, text: '{"ok":false,"error":"only the boss may ask another station for knowledge"}' });
+    expect(asked).toEqual([]);
+    const ana = await connectMcp(other.port, ANA_TOKEN);
+    expect(toolOutcome(await ana.callTool({ name: 'knowledge_ask', arguments: { station: 'beta', query: 'deploy' } }))).toMatchObject({ isError: false });
+    expect(asked).toEqual([['beta', 'deploy', 'agent']]);
   });
 
   it('lets only the boss make or change a mission, as itself whatever the call says', async () => {
