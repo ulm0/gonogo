@@ -118,6 +118,7 @@ import {
   DIRECTOR_TURN_CHARS,
   DIRECTOR_STUCK_ALERT_MS,
   DIRECTOR_STUCK_FORCE_MS,
+  TITLE_STALE_MS,
   LEGACY_POINTER_MAX_CHARS,
   DIRECTOR_TURNS_TOTAL_CHARS,
   POINTER_MAX_ATTEMPTS,
@@ -1363,7 +1364,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const probe = screenOf(rt);
       if (probe === null) return;
       const notReady = `waiting: ${name} is not ready for input`;
-      const glyph = titleOf(rt)?.glyph;
+      // the hooks are the authority: idle by the Stop hook for TITLE_STALE_MS, a title that still says working is a spinner Claude Code left behind
+      const glyph = ((g) => (g === 'working' && rt.state === 'idle' && io.now() - rt.stateSince >= TITLE_STALE_MS ? 'stale' : g))(titleOf(rt)?.glyph);
       if (!probe.promptBox || probe.dialog !== null || glyph === 'working') {
         // Nobody's mail waits unseen on a screen that shows nothing wrong, and the Director is told when his own words do: a screen gonogo cannot read (no prompt box where claude's input is) would hold them for ever.
         const first = queued(rt).find((record) => record.from === 'user');

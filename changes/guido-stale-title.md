@@ -1,0 +1,1 @@
+- **A stale "working" window title no longer holds mail for ever.** When the hooks have said an agent is idle for 10 seconds, its input box is on screen and no dialog is, a title that still says working (Claude Code left a spinner behind) is not believed: the pointer is typed. Mail for an agent whose hooks say working still waits.

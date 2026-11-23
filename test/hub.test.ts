@@ -18,6 +18,7 @@ import {
   CUSTOM_START_MS,
   DIRECTOR_STUCK_ALERT_MS,
   DIRECTOR_STUCK_FORCE_MS,
+  TITLE_STALE_MS,
   DELIVERY_COALESCE_MS,
   DELIVERY_SETTLE_MS,
   DRAFT_EXPIRY_MS,
@@ -1442,6 +1443,34 @@ describe('delivery to each recipient state (5.9)', () => {
       h.setScreen('ana', { dialog: null });
       await h.advance(RECONCILE_TICK_MS);
       expect(h.typed).toHaveLength(1);
+    });
+    // a title whose spinner never settles on one class for a second (so the state is never flipped to working by it): set fresh at each step
+    const flicker = async (h: Harness, ms: number): Promise<void> => {
+      for (let spent = 0; spent < ms; spent += 500) {
+        h.setTitle('ana', 'working');
+        await h.advance(500);
+      }
+      h.setTitle('ana', 'working');
+    };
+    it('a stale working title (the hooks said idle, the box is found, nothing else on screen) does not hold mail for ever: typed after TITLE_STALE_MS, not before', async () => {
+      const h = await withAna();
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '' });
+      h.send('user', 'ana');
+      await flicker(h, TITLE_STALE_MS - 4_000);
+      expect(h.typed).toHaveLength(0);
+      expect(h.msg('m1')).toMatchObject({ note: 'waiting: ana is not ready for input' });
+      await flicker(h, 6_000 + RECONCILE_TICK_MS * 2);
+      expect(h.view('ana').state).toBe('idle');
+      expect(h.typed).toHaveLength(1);
+    });
+    it('the state working still waits: the title is only overruled by an idle the hooks gave', async () => {
+      const h = await withAna();
+      h.hook('ana', 'UserPromptSubmit');
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '' });
+      h.send('user', 'ana');
+      await flicker(h, TITLE_STALE_MS * 3);
+      expect(h.view('ana').state).toBe('working');
+      expect(h.typed).toHaveLength(0);
     });
     it('a generic modal ("Esc to cancel") is never forced, for any sender', async () => {
       const h = await withAna();
