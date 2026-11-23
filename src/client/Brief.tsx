@@ -8,6 +8,9 @@ import { openNewMission } from './store.js';
 import { briefSentText } from './wording.js';
 import './loop.css';
 
+/** Enter sends, Shift+Enter makes a newline; Enter that confirms an input-method composition is not a send. Every box that sends on Enter asks this. */
+export const enterSends = (event: Pick<KeyboardEvent<HTMLTextAreaElement>, 'key' | 'shiftKey' | 'nativeEvent'>): boolean => event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing;
+
 /** The phone layout hides the label, so its placeholder has to say whom the box is for. */
 const PHONE = '(max-width: 699px)';
 const onPhone = (): boolean => typeof matchMedia === 'function' && matchMedia(PHONE).matches;
@@ -54,8 +57,7 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
     void send();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    // Enter sends, Shift+Enter makes a newline; Enter that confirms an input-method composition is not a send.
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+    if (enterSends(event)) {
       event.preventDefault();
       void send();
     }

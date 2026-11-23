@@ -22,6 +22,7 @@ import {
   engineOptions,
   FIELDS,
   hireRequest,
+  differsFromDefault,
   initialValues,
   needsBypassConfirm,
   positionShort,
@@ -243,6 +244,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [attempts, setAttempts] = useState(0);
   const [foldOpen, setFoldOpen] = useState(() => values.servers !== '' || values.skills !== '');
   const [keysOpen, setKeysOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(() => form.mode === 'edit' && differsFromDefault(values, Object.keys(current?.keys ?? {}).length));
   const [checks, setChecks] = useState<EngineCheck[]>([]);
   const roomModels = useModelDefaults();
   // The room's default engine preselects a new hire, once the defaults are known and only while the form is still as it opened.
@@ -438,7 +440,7 @@ function Staff({ form }: { form: Target }): ReactElement {
     <Control
       id={`${id}-name`}
       label="Name"
-      hint={nameLocked ? 'Stop the console to rename it.' : 'Lowercase letters, digits and hyphens. Other agents address it by this name.'}
+      hint={nameLocked ? 'Stop the console to rename it.' : 'A short name. You and the other agents reach this console by it: lowercase letters, digits and hyphens.'}
       error={nameError}
     >
       <input
@@ -466,7 +468,7 @@ function Staff({ form }: { form: Target }): ReactElement {
           'The command is saved in plain text. Keep secrets out of it: set them as keys below.'
         ) : (
           <>
-            A path on the machine where gonogo runs.
+            The project folder this agent works in, on the machine where gonogo runs. It starts as the room’s Project folder.
             {info?.seed === true && <span className="staff-block">{SEED_NOTE}</span>}
           </>
         )
@@ -941,6 +943,16 @@ function Staff({ form }: { form: Target }): ReactElement {
       </div>
     </details>
   );
+  // Up front: engine, name, folder (and the role of an agent with no position, which has none yet). The rest is optional and sits under MORE SETTINGS, which opens by itself for a problem in it, a bypass to confirm, or an agent that already has something set there.
+  const roleUp = noPosition && !custom;
+  const inMore: Field[] = ['role', 'model', 'effort', 'mode', 'confirmBypass', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'payload.mcpServers', 'payload.skills', 'keys'];
+  const moreShown = moreOpen || confirming || inMore.some((f) => (f !== 'role' || !roleUp) && shown(f) !== undefined);
+  const more = (children: ReactElement): ReactElement => (
+    <details className="staff-fold staff-more" open={moreShown} onToggle={(event) => setMoreOpen(event.currentTarget.open)}>
+      <summary className="label">MORE SETTINGS · OPTIONAL</summary>
+      <div className="staff-fold-body">{children}</div>
+    </details>
+  );
   const alert = topError !== null && (
     <p className="error staff-alert" role="alert" tabIndex={-1}>
       {topError}
@@ -963,20 +975,25 @@ function Staff({ form }: { form: Target }): ReactElement {
             <fieldset className="staff-fields" disabled={busy}>
               {nameField}
               {commandField}
-              {roleField}
-              {modelField}
-              {effortField}
+              {roleUp && roleField}
               {dirField}
-              {cleanRoomBox}
-              {worktreeBox}
-              {remoteBox}
-              {coauthorBox}
-              {autostartBox}
-              {modes}
-              {confirmPanel}
-              {payloadFold}
-              {rulesFold}
-              {keysFold}
+              {more(
+                <>
+                  {!roleUp && roleField}
+                  {modelField}
+                  {effortField}
+                  {cleanRoomBox}
+                  {worktreeBox}
+                  {remoteBox}
+                  {coauthorBox}
+                  {autostartBox}
+                  {modes}
+                  {confirmPanel}
+                  {payloadFold}
+                  {rulesFold}
+                  {keysFold}
+                </>,
+              )}
             </fieldset>
             {alert}
             <div className="staff-foot">
@@ -1059,23 +1076,29 @@ function Staff({ form }: { form: Target }): ReactElement {
         </section>
         <form className="staff-form module" aria-label="Console" noValidate ref={formRef} onSubmit={onSubmit}>
           <h2 className="label">B · Console</h2>
+          <p className="hint staff-lead">Pick a position or No position, name it and point it at a folder. Everything else can wait.</p>
           <fieldset className="staff-fields" disabled={busy}>
             {engineField}
             {nameField}
             {commandField}
-            {roleField}
-            {modelField}
-            {effortField}
+            {roleUp && roleField}
             {dirField}
-            {cleanRoomBox}
-            {worktreeBox}
-            {remoteBox}
-            {coauthorBox}
-            {modes}
-            {confirmPanel}
-            {payloadFold}
-            {rulesFold}
-            {keysFold}
+            {more(
+              <>
+                {!roleUp && roleField}
+                {modelField}
+                {effortField}
+                {cleanRoomBox}
+                {worktreeBox}
+                {remoteBox}
+                {coauthorBox}
+                {modes}
+                {confirmPanel}
+                {payloadFold}
+                {rulesFold}
+                {keysFold}
+              </>,
+            )}
           </fieldset>
           {alert}
           <div className="staff-foot">

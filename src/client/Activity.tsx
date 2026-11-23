@@ -1,8 +1,8 @@
 import { useId, useMemo, useState } from 'react';
-import type { FormEvent, ReactElement } from 'react';
+import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import type { ActivityItem, AgentView } from '../shared/protocol.js';
 import * as api from './api.js';
-import { Brief } from './Brief.js';
+import { Brief, enterSends } from './Brief.js';
 import { chipOf, FILTERS, filterCounts, filterItems, legendOf, noteOf, replyRequest, routeText, subjectOf, ofAgent, trafficOf } from './loop.js';
 import type { FilterId } from './loop.js';
 import { useStore } from './store.js';
@@ -38,8 +38,8 @@ export function Reply({
   const [result, setResult] = useState<{ text: string; failed: boolean } | null>(null);
   const to = legendOf(item.from, agents);
 
-  async function send(event: FormEvent): Promise<void> {
-    event.preventDefault();
+  async function send(event?: FormEvent): Promise<void> {
+    event?.preventDefault();
     const body = text.trim();
     if (busy || body === '') return;
     setBusy(true);
@@ -65,14 +65,17 @@ export function Reply({
       <label className="legend" htmlFor={`${id}-reply`}>
         Reply to {to}
       </label>
-      <input
+      <textarea
         id={`${id}-reply`}
-        className="input loop-reply-input"
-        type="text"
+        className="textarea loop-reply-input"
+        rows={1}
         value={text}
         autoComplete="off"
         aria-describedby={`${id}-result`}
         onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+          if (enterSends(event)) void send(event);
+        }}
       />
       <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || text.trim() === ''}>
         {busy ? 'Sending…' : 'Send'}
