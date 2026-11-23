@@ -456,6 +456,25 @@ describe('the Mission Log with meaning', () => {
 });
 
 describe('while the feature is off', () => {
+  it('after a restart, an entry written while it was off is queued and indexed once it is on (the queue is rebuilt from the log at load)', async () => {
+    const first = await configured();
+    await first.idle();
+    await first.stop();
+    const before = calls.length;
+    entries.push(entry('l4', 'Cache', 'the memo cache key'));
+    let on = false;
+    const second = make({ on: () => on });
+    await second.load();
+    await second.idle();
+    expect(calls.length, 'nothing is sent while it is off').toBe(before);
+    on = true;
+    await second.idle();
+    const sent = calls.slice(before).flatMap((c) => c.texts).join(' ');
+    expect(sent).toContain('memo cache key');
+    expect(sent, 'the entries that were indexed already are not sent again').not.toContain('compile');
+    await second.stop();
+  });
+
   it('a written entry makes no frame for the page: nothing is indexed, so nothing changes (it sent an empty log frame every tick)', async () => {
     let frames = 0;
     const s = make({ on: () => false, changed: () => void (frames += 1), tickMs: 5 });
