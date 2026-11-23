@@ -454,3 +454,16 @@ describe('the Mission Log with meaning', () => {
     expect(log.all().map((e) => e.id)).toEqual(['l2']);
   });
 });
+
+describe('while the feature is off', () => {
+  it('a written entry makes no frame for the page: nothing is indexed, so nothing changes (it sent an empty log frame every tick)', async () => {
+    let frames = 0;
+    const s = make({ on: () => false, changed: () => void (frames += 1), tickMs: 5 });
+    await s.load();
+    s.changed('l1');
+    s.start();
+    await new Promise((r) => setTimeout(r, 60));
+    await s.stop();
+    expect(frames).toBe(0);
+  });
+});
