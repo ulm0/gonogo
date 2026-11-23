@@ -123,10 +123,10 @@ jobs:
             gonogo service status
             # runs as ana, not as root
             ps -o user,args | grep "gonogo --home" | grep -v grep | grep -q "^ana "
-            before=$(pgrep -f "gonogo --home" | head -1)
+            before=$(pgrep -u ana -f "gonogo --home" | head -1)
             su ana -c "gonogo reload --home /home/ana/.gonogo"
             for i in $(seq 1 40); do
-              now=$(pgrep -f "gonogo --home" | head -1)
+              now=$(pgrep -u ana -f "gonogo --home" | head -1)
               [ -n "$now" ] && [ "$now" != "$before" ] && curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break
               sleep 1
             done
@@ -134,7 +134,7 @@ jobs:
             gonogo service status
             gonogo service uninstall
             [ ! -e /etc/init.d/gonogo ]
-            [ -z "$(pgrep -f "gonogo --home")" ]
+            [ -z "$(pgrep -u ana -f "gonogo --home")" ]
           '
 
   launchd:
