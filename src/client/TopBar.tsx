@@ -10,10 +10,10 @@ import { CheckNow } from './CheckNow.js';
 import { Pop } from './Pop.js';
 import { MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
 import { unreadText } from './inbox.js';
-import { CHANGELOG_URL, inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { CHANGELOG_URL, inMain, ROLLOUT_SHOW, useNewer, useRolloutDismissed } from './newer.js';
 import { activeOf, activeText } from './plan.js';
-import { readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
-import { stripDismissed } from './selfupdate.js';
+import { showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { stripHidden } from './selfupdate.js';
 import { versionLabel } from './topbarModel.js';
 import logo from '../../docs/brand/lockup.svg';
 
@@ -58,6 +58,8 @@ const commsName = (unread: number): string => (unread === 0 ? 'Comms' : `Comms, 
 function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
   const info = useStore((s) => s.info);
   const newer = useNewer();
+  const rollout = useStore((s) => s.rollout);
+  const dismissed = useRolloutDismissed();
   const canUpdate = useStore((s) => s.rollout?.canUpdate === true);
   const canUndo = useStore((s) => s.rollout?.update?.undo === true);
   const installing = useStore((s) => ['running', 'reloading', 'handed-off'].includes(s.rollout?.update?.state ?? ''));
@@ -73,13 +75,13 @@ function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
     <Pop className="lay-version" name={label.name} label={label.text}>
       {(close) => {
         // the strip under the top bar already has the Update key while it is shown (it is dismissed in this browser, or it is not): the version key then points to it, so no key is there twice
-        const stripHidden = newer !== null && !installing && stripDismissed(readStored(ROLLOUT_DISMISSED_KEY), newer, false);
+        const noStrip = newer !== null && !installing && (inMain ? stripHidden(rollout, dismissed) : dismissed === newer);
         return (
         <div className="lay-version-pop">
           <p className="lay-pop-title">
             gonogo {info.version} <span className="chip" data-tone={newer === null ? 'go' : 'amber'}>{newer === null ? 'up to date' : 'update available'}</span>
           </p>
-          {newer !== null && <p className="hint">{newer} is out.{stripHidden ? ' Updating stops every agent while it installs, and it can be undone.' : ' The Update key is in the strip under the top bar.'}</p>}
+          {newer !== null && <p className="hint">{newer} is out.{noStrip ? ' Updating stops every agent while it installs, and it can be undone.' : ' The Update key is in the strip under the top bar.'}</p>}
           {inMain && <CheckNow />}
           {undoError !== null && (
             <p className="error" role="alert">
@@ -118,7 +120,7 @@ function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
             </div>
           )}
           <div className="lay-pop-keys" hidden={ask !== null}>
-            {newer !== null && stripHidden && (
+            {newer !== null && noStrip && (
               inMain ? (
                 <button
                   type="button"
