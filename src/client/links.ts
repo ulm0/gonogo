@@ -44,8 +44,8 @@ export const waitingLine = (link: LinkItem, dock: DockView | undefined): string 
 /** "2 of 3 delivered" for a split, "at lab: 3 of 5" for a mission. */
 export function progressLine(link: LinkItem): string | null {
   if (link.progress === undefined) return null;
-  const { done, total } = link.progress;
-  return link.kind === 'mission' ? `at ${link.peerName}: ${done} of ${total}` : `${done} of ${total} delivered`;
+  const { done, total, doing } = link.progress;
+  return link.kind === 'mission' ? `at ${link.peerName}: ${done} of ${total}${doing === undefined || doing === 0 ? '' : `, ${doing} doing`}` : `${done} of ${total} delivered`;
 }
 
 /** "lab: $3.10 of $5.00 (estimate)", or that no cost is reported. An estimate at list prices, never a bill. */

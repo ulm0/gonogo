@@ -36,6 +36,7 @@ describe('progress, cost, due', () => {
   it('words a split and a mission', () => {
     expect(progressLine(link({ progress: { done: 2, total: 3, blocked: 0, review: 0 } }))).toBe('2 of 3 delivered');
     expect(progressLine(link({ kind: 'mission', progress: { done: 3, total: 5, blocked: 0, review: 0 } }))).toBe('at lab: 3 of 5');
+    expect(progressLine(link({ kind: 'mission', progress: { done: 3, total: 5, blocked: 0, review: 0, doing: 2 } }))).toBe('at lab: 3 of 5, 2 doing');
     expect(progressLine(link())).toBeNull();
   });
   it('words the cost as an estimate, against the cap, or as not reported', () => {
