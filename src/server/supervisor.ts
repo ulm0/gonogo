@@ -22,7 +22,7 @@ import { createAuthHttp } from './authhttp.js';
 import { createDevices } from './devicelogin.js';
 import { createPasskeys } from './passkeys.js';
 import { GLOBAL_SETTINGS_FILE, globalSetting } from './settings.js';
-import { checkFolder, checkWithWarning, FolderError, writeFolder } from './projectfolder.js';
+import { checkFolder, checkWithWarning, FolderError, folderWarning, readFolder, writeFolder } from './projectfolder.js';
 import { KNOWLEDGE_DIR, nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
@@ -685,9 +685,35 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
   };
 
   /** The findings behind the banner of an insecure setup, and their dismissal (only the Director's own login: a key or a terminal cannot silence a warning). */
-  const currentFindings = (req: http.IncomingMessage): Finding[] => {
+  const currentFindings = async (req: http.IncomingMessage): Promise<Finding[]> => {
     const peer = req.socket.remoteAddress ?? '';
     const proxied = (options.trustedProxies ?? []).includes(peer) && String(req.headers['x-forwarded-proto'] ?? '').toLowerCase() === 'https';
+    // the agents of the rooms that run, by name and mode: asked like the list page asks (a room that does not answer in 1.5 s adds nothing)
+    const agents: Array<{ room: string; name: string; mode: string; cleanRoom: boolean }> = [];
+    await Promise.all(
+      [...children.values()].map(async (child) => {
+        if (child.port === null) return;
+        try {
+          const body = (await askRoom(child, '/api/state', 1500)) as { agents?: Array<{ name?: unknown; mode?: unknown; cleanRoom?: unknown }> };
+          for (const a of Array.isArray(body.agents) ? body.agents : []) if (typeof a.name === 'string' && typeof a.mode === 'string') agents.push({ room: child.entry.id, name: a.name, mode: a.mode, cleanRoom: a.cleanRoom !== null && a.cleanRoom !== undefined });
+        } catch {
+          // no answer: no finding from this room
+        }
+      }),
+    );
+    // a project folder that is or holds gonogo's own folder (read from the file: the room need not answer)
+    const folders: Array<{ room: string }> = [];
+    for (const child of children.values()) {
+      const stored = readFolder(homeOfRoom(child.entry.id));
+      if (stored === null) continue;
+      try {
+        if ((folderWarning(checkFolder(stored), [options.home]) ?? '').startsWith('Agents can read and change')) folders.push({ room: child.entry.id });
+      } catch {
+        // not a folder any more: the room falls back by itself
+      }
+    }
+    const off = updateCheckOff(globalSetting(join(options.home, GLOBAL_SETTINGS_FILE), 'updateCheck', options.env) ?? undefined) || options.roomArgs?.includes('--no-update-check') === true;
+    const newer = newerNow();
     return findingsOf({
       account: auth.state(),
       mfa: auth.mfa().enabled,
@@ -698,6 +724,13 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       requestHost: localReqs.has(req) ? '127.0.0.1' : req.headers.host,
       requestHttps: proxied || (req.socket as { encrypted?: boolean }).encrypted === true,
       dockerSocketMounted: options.inContainer === true && existsSync(options.env.GONOGO_DOCKER_SOCKET || SOCKET_PATH),
+      trustedProxies: options.trustedProxies ?? [],
+      keys: auth.keys().map((k) => ({ id: k.id, name: k.name, scope: k.scope, remote: k.remote, created: k.created, expires: k.expires })),
+      now: (options.now ?? Date.now)(),
+      agents,
+      folders,
+      updateChecksOff: off,
+      behind: !off && newer !== null && options.version !== undefined ? { running: options.version, latest: newer.latest } : null,
     });
   };
   async function exposureApi(req: http.IncomingMessage, res: http.ServerResponse, grant: NonNullable<ReturnType<typeof authHttp.grant>>, dismissing: boolean): Promise<void> {
@@ -705,15 +738,17 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       const method = req.method ?? '';
       if (!dismissing) {
         if (method !== 'GET') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET' });
+        // the list is a map of the weak spots: the Director's own login and this machine's socket, never a key (read scope included) or a terminal login
+        if (grant.kind === 'key' || grant.kind === 'tui') return sendApiError(res, 403, "the findings are for the Director's own login", 'forbidden');
         const hidden = new Set(readDismissed(options.home));
-        return sendJson(res, 200, { findings: currentFindings(req).filter((f) => !hidden.has(f.id)) }, { 'Cache-Control': 'no-store' });
+        return sendJson(res, 200, { findings: (await currentFindings(req)).filter((f) => !hidden.has(f.id)).map(({ kind: _kind, ...f }) => f) }, { 'Cache-Control': 'no-store' });
       }
       if (method !== 'POST') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'POST' });
       if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
       if (grant.kind !== 'session' && grant.kind !== 'token') return sendApiError(res, 403, "a warning is dismissed from the Director's own login", 'forbidden');
       const body = await readBody(req);
       const id = typeof body.id === 'string' ? body.id : '';
-      if (!currentFindings(req).some((f) => f.id === id)) return sendApiError(res, 400, 'that is not a finding of this gonogo now', 'bad_request', 'id');
+      if (!(await currentFindings(req)).some((f) => f.id === id)) return sendApiError(res, 400, 'that is not a finding of this gonogo now', 'bad_request', 'id');
       dismissFinding(options.home, id);
       return sendJson(res, 200, { ok: true });
     } catch (error) {

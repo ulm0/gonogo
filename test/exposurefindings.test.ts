@@ -4,13 +4,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { dismiss, EXPOSURE_DISMISSED_FILE, findingsOf, readDismissed } from '../src/server/exposurefindings.js';
+import { dismiss, EXPOSURE_DISMISSED_FILE, findingId, findingsOf, readDismissed } from '../src/server/exposurefindings.js';
 import type { FindingsInput } from '../src/server/exposurefindings.js';
 import { startSupervisor } from '../src/server/supervisor.js';
 import type { Supervisor } from '../src/server/supervisor.js';
 
-const base: FindingsInput = { account: 'account', mfa: true, bindHost: '127.0.0.1', inContainer: false, pages: [], hooks: [], requestHost: '127.0.0.1:7777', requestHttps: false, dockerSocketMounted: false };
-const ids = (input: Partial<FindingsInput>): string[] => findingsOf({ ...base, ...input }).map((f) => f.id);
+const base: FindingsInput = { account: 'account', mfa: true, bindHost: '127.0.0.1', inContainer: false, pages: [], hooks: [], requestHost: '127.0.0.1:7777', requestHttps: false, dockerSocketMounted: false, trustedProxies: [], keys: [], now: 1_800_000_000_000, agents: [], folders: [], updateChecksOff: false, behind: null };
+const ids = (input: Partial<FindingsInput>): string[] => findingsOf({ ...base, ...input }).map((f) => f.kind);
 
 describe('findingsOf', () => {
   it('has nothing to say about a login on this machine', () => {
@@ -40,15 +40,63 @@ describe('findingsOf', () => {
   });
   it('the Docker socket mounted in a container', () => {
     expect(ids({ dockerSocketMounted: true })).toEqual(['docker-socket']);
-    expect(findingsOf({ ...base, dockerSocketMounted: true })[0]).toMatchObject({ severity: 'info', text: expect.stringContaining('root over the host') as string });
+    expect(findingsOf({ ...base, dockerSocketMounted: true })[0]).toMatchObject({ severity: 'info', text: 'The agents can reach the Docker socket too, which is root on this host; the Update key and Clean Room need it.' });
   });
   it('every finding has plain words for what it is and what to do', () => {
     const all = findingsOf({ ...base, account: 'fresh', mfa: false, bindHost: '0.0.0.0', pages: ['8.8.8.8', 'gonogo.example.com'], requestHost: '192.168.1.5', dockerSocketMounted: true });
-    expect(all.map((f) => f.id)).toEqual(['no-login', 'plain-http', 'public-ip-listed', 'docker-socket']);
+    expect(all.map((f) => f.kind)).toEqual(['no-login', 'plain-http', 'public-ip-listed', 'docker-socket']);
     for (const f of all) {
       expect(f.text.length).toBeGreaterThan(20);
       expect(f.fix.length).toBeGreaterThan(20);
     }
+  });
+});
+
+describe('findingsOf: the findings that carry a subject', () => {
+  const DAY = 24 * 3600_000;
+  it('a trusted proxy that is a public address or a range, by name', () => {
+    expect(ids({ trustedProxies: ['127.0.0.1', '192.168.1.2'] })).toEqual([]);
+    expect(ids({ trustedProxies: ['8.8.8.8'] })).toEqual(['trusted-proxy-wide']);
+    expect(ids({ trustedProxies: ['10.0.0.0/8'] })).toEqual(['trusted-proxy-wide']);
+    expect(findingsOf({ ...base, trustedProxies: ['8.8.8.8'] })[0]?.text).toContain('8.8.8.8');
+  });
+  it('agents that work without asking outside a Clean Room, one per agent, by name; a Clean Room or a mode that asks is fine', () => {
+    const agents = [
+      { room: 'main', name: 'ana', mode: 'bypassPermissions', cleanRoom: false },
+      { room: 'main', name: 'ben', mode: 'auto', cleanRoom: false },
+      { room: 'docs', name: 'ana', mode: 'bypassPermissions', cleanRoom: false },
+      { room: 'main', name: 'cy', mode: 'bypassPermissions', cleanRoom: true },
+      { room: 'main', name: 'di', mode: 'default', cleanRoom: false },
+    ];
+    const found = findingsOf({ ...base, agents });
+    expect(found.map((f) => f.kind)).toEqual(['agent-unattended', 'agent-unattended', 'agent-unattended']);
+    expect(new Set(found.map((f) => f.id)).size).toBe(3); // the same name in another room is another finding
+    expect(found[0]?.text).toContain('ana (room main) works without asking (bypassPermissions)');
+  });
+  it('a project folder that holds gonogo, by room', () => {
+    expect(findingsOf({ ...base, folders: [{ room: 'docs' }] })[0]).toMatchObject({ kind: 'folder-holds-home', text: expect.stringContaining('room docs') as string });
+  });
+  it('a remote full key that is old or lives for years, by name; a short-lived, local or narrower one is fine; the secret is never there', () => {
+    const now = base.now;
+    const key = (over: Record<string, unknown>) => ({ id: 'k1', name: 'ops', scope: 'full', remote: true, created: now - DAY, expires: now + 30 * DAY, ...over });
+    expect(ids({ keys: [key({})] })).toEqual([]);
+    expect(ids({ keys: [key({ created: now - 100 * DAY })] })).toEqual(['old-remote-key']);
+    expect(ids({ keys: [key({ expires: now + 400 * DAY })] })).toEqual(['old-remote-key']);
+    expect(ids({ keys: [key({ remote: false, created: now - 100 * DAY })] })).toEqual([]);
+    expect(ids({ keys: [key({ scope: 'read', created: now - 100 * DAY })] })).toEqual([]);
+    expect(findingsOf({ ...base, keys: [key({ created: now - 100 * DAY })] })[0]?.text).toContain('"ops"');
+  });
+  it('update checks off, or the running version behind the latest release (info)', () => {
+    expect(ids({ updateChecksOff: true })).toEqual(['update-checks-off']);
+    expect(ids({ behind: { running: '0.12.0', latest: '0.13.0' } })).toEqual(['version-behind']);
+    expect(ids({ updateChecksOff: true, behind: { running: '0.12.0', latest: '0.13.0' } })).toEqual(['update-checks-off']);
+    expect(findingsOf({ ...base, updateChecksOff: true })[0]?.severity).toBe('info');
+  });
+  it('the id is a hash of the kind and the subject: stable, different per subject, the bare kind without one', () => {
+    expect(findingId('no-login')).toBe('no-login');
+    expect(findingId('agent-unattended', 'main/ana')).toBe(findingId('agent-unattended', 'main/ana'));
+    expect(findingId('agent-unattended', 'main/ana')).not.toBe(findingId('agent-unattended', 'main/ben'));
+    expect(findingId('agent-unattended', 'main/ana')).toMatch(/^agent-unattended-[0-9a-f]{12}$/);
   });
 });
 
@@ -74,6 +122,8 @@ describe('the dismissal file', () => {
     expect(readDismissed(r)).toEqual([]);
     for (let i = 0; i < 60; i += 1) dismiss(r, `id-${i}`);
     expect(readDismissed(r)).toHaveLength(50);
+    expect(readDismissed(r)[0]).toBe('id-10'); // the oldest went
+    expect(readDismissed(r).at(-1)).toBe('id-59');
   });
 });
 
@@ -109,6 +159,7 @@ describe('the routes of the supervisor', () => {
     expect((await call(s.port, 'GET', '/api/exposure/findings', '127.0.0.1', token)).json).toEqual({ findings: [] });
     const lan = (await call(s.port, 'GET', '/api/exposure/findings', '192.168.1.5', token)).json.findings as Array<{ id: string }>;
     expect(lan.map((f) => f.id)).toEqual(['no-login', 'plain-http']);
+    expect(lan.every((f) => !('kind' in f))).toBe(true);
     expect((await call(s.port, 'POST', '/api/exposure/dismiss', '192.168.1.5', token, { id: 'docker-socket' })).status).toBe(400); // not a finding now
     expect((await call(s.port, 'POST', '/api/exposure/dismiss', '192.168.1.5', token, {})).status).toBe(400);
     expect((await call(s.port, 'POST', '/api/exposure/dismiss', '192.168.1.5', token, { id: 'plain-http' })).status).toBe(200);

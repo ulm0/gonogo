@@ -1183,7 +1183,9 @@ describe('the device login of a terminal through the supervisor', () => {
     const read = (headers: Record<string, string>) => call('GET', '/api/exposure/findings', { ...headers, host });
     const found = (await read(session)).text;
     expect(JSON.parse(found).findings.map((f: { id: string }) => f.id)).toEqual(['plain-http', 'public-name-no-mfa']); // the test supervisor lists a public name and has no second factor
-    expect((await read({ authorization: `Bearer ${key}` })).status).toBe(200);
+    // the list is a map of the weak spots: no key (read scope included) and no terminal login may read it
+    expect((await read({ authorization: `Bearer ${key}` })).status).toBe(403);
+    expect((await read({ authorization: `Bearer ${tui}` })).status).toBe(403);
     const dismiss = (headers: Record<string, string>) => call('POST', '/api/exposure/dismiss', { ...JSONH, ...headers, host, origin: `http://${host}` }, JSON.stringify({ id: 'plain-http' }));
     expect((await dismiss({ authorization: `Bearer ${key}` })).status).toBe(403);
     expect((await dismiss({ authorization: `Bearer ${tui}` })).status).toBe(403);
