@@ -7,7 +7,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DOCK_ROUTES, createDocking, signCall, stationName } from '../src/server/docking.js';
+import { DOCK_ROUTES, createDocking, lanAddresses, signCall, stationName } from '../src/server/docking.js';
 import type { Docking } from '../src/server/docking.js';
 import { DOCK_CODE_TTL_MS, DOCK_PULL_MS, DOCK_RATE_MAX, DOCK_RATE_WINDOW_MS, DOCK_SKEW_MS, nullLogger } from '../src/server/constants.js';
 import { hubErrorInfo } from '../src/server/hooks.js';
@@ -292,7 +292,7 @@ describe('a code as people carry it', () => {
     });
   });
 
-  it('the view carries the network addresses of this computer for the Address box', async () => {
+  it('the hints carry the network addresses of this computer for the Address box, and the view never does', async () => {
     const docking = createDocking({
       dir: mkdtempSync(join(tmpdir(), 'gonogo-dock-')),
       name: 'alpha',
@@ -305,7 +305,26 @@ describe('a code as people carry it', () => {
       emit: () => undefined,
       log: nullLogger,
     });
-    expect(docking.view().addresses).toEqual(['192.168.0.5']);
+    expect(docking.hints()).toEqual({ addresses: ['192.168.0.5'], container: false });
+    expect(JSON.stringify(docking.view())).not.toContain('192.168.0.5');
+  });
+
+  it('lanAddresses: no bridge, virtual or link-local interface, 192.168 before 10 before the rest and 172.16/12 last, and none at all in a container', () => {
+    const net = (address: string, internal = false, family: string | number = 'IPv4') => ({ family, address, internal });
+    const nets = {
+      lo: [net('127.0.0.1', true)],
+      eth0: [net('172.22.0.2'), net('fe80::1', false, 'IPv6')],
+      docker0: [net('172.17.0.1')],
+      'br-1a2b3c': [net('172.18.0.1')],
+      veth9: [net('10.9.9.9')],
+      virbr0: [net('192.168.122.1')],
+      wlan0: [net('192.168.1.20'), net('169.254.3.4')],
+      enp3: [net('10.0.0.7'), net('203.0.113.9'), net('192.168.1.20')],
+    };
+    expect(lanAddresses(nets, false)).toEqual(['192.168.1.20', '10.0.0.7', '203.0.113.9', '172.22.0.2']);
+    expect(lanAddresses(nets, true)).toEqual([]);
+    expect(lanAddresses({ docker0: [net('172.17.0.1')], lo: [net('127.0.0.1', true)] }, false)).toEqual([]);
+    expect(lanAddresses({ eth0: [net('192.168.0.5', false, 4)] }, false)).toEqual(['192.168.0.5']);
   });
 });
 

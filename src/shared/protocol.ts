@@ -989,8 +989,13 @@ export interface DockingView {
   /** This station's own name. */
   station: string;
   docks: DockView[];
-  /** The network addresses (IPv4) of this computer, for the Address box when the page was opened as localhost. Empty when none is known. */
-  addresses?: string[];
+}
+/** GET /api/docking/addresses: for the Address box when the page was opened as localhost. Not part of the state: only a login session (or the local socket) is told. */
+export interface DockHints {
+  /** The addresses of this computer a station on the network may be able to reach, best first. Empty when none is known (or not told to this sender). */
+  addresses: string[];
+  /** gonogo runs in a container: its own addresses are not the host's. */
+  container: boolean;
 }
 /** POST /api/docking/code: the public address of this station, as the other side will reach it. */
 export interface DockCodeRequest {

@@ -35,7 +35,7 @@ export function suggestedAddress(origin: string, addresses: readonly string[]): 
 }
 
 /** The page's own address is the default answer, but the other station cannot reach a name that works only on this computer. */
-export function localNote(address: string): string | null {
+export function localNote(address: string, container = false): string | null {
   let host: string;
   try {
     host = new URL(address).hostname;
@@ -43,7 +43,10 @@ export function localNote(address: string): string | null {
     return null;
   }
   const here = host === 'localhost' || host === '[::1]' || host.startsWith('127.') || host === '0.0.0.0';
-  return here ? 'This address works only on this computer. The other station needs one it can reach: this computer\'s address on your network, a public name or a VPN address.' : null;
+  if (!here) return null;
+  return container
+    ? 'This address works only on this computer. gonogo runs in a container, so it cannot tell the computer\'s own address: use the host\'s network address (the one in your browser\'s address bar from another machine).'
+    : 'This address works only on this computer. The other station needs one it can reach: this computer\'s address on your network, a public name or a VPN address.';
 }
 
 export const toneOf = (dock: DockView): 'go' | 'nogo' | 'quiet' => (dock.status === 'ok' ? 'go' : dock.status === 'down' ? 'nogo' : 'quiet');

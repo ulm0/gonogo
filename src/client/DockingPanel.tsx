@@ -28,16 +28,33 @@ interface Problems {
 }
 
 /** The address of this station, and for Pair the code. Make a code answers with the code, Pair with a new row. */
-function Form({ mode, addresses, onDone, onMade, onNotice }: { mode: Mode; addresses: readonly string[]; onDone(): void; onMade(made: DockCode): void; onNotice(text: string): void }): ReactElement {
+function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; onMade(made: DockCode): void; onNotice(text: string): void }): ReactElement {
   const id = useId();
-  const [address, setAddress] = useState(suggestedAddress(roomOrigin(), addresses));
+  const [address, setAddress] = useState(roomOrigin());
+  const [container, setContainer] = useState(false);
+  const typed = useRef(false);
+  // the computer's own network address, when the page was opened as localhost: only where the Director has not typed one
+  useEffect(() => {
+    let alive = true;
+    void api.dockHints().then(
+      (hints) => {
+        if (!alive) return;
+        setContainer(hints.container);
+        if (!typed.current) setAddress(suggestedAddress(roomOrigin(), hints.addresses));
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [code, setCode] = useState('');
   const [problems, setProblems] = useState<Problems>({});
   const [topError, setTopError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const first = useRef<HTMLInputElement | null>(null);
   useEffect(() => first.current?.focus(), []);
-  const note = localNote(address.trim());
+  const note = localNote(address.trim(), container);
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -82,6 +99,7 @@ function Form({ mode, addresses, onDone, onMade, onNotice }: { mode: Mode; addre
         aria-invalid={problems.address !== undefined}
         aria-describedby={[`${id}-address-hint`, problems.address !== undefined ? `${id}-address-error` : ''].filter(Boolean).join(' ')}
         onChange={(e) => {
+          typed.current = true;
           setAddress(e.target.value);
           setProblems((p) => ({ ...p, address: undefined }));
         }}
@@ -283,7 +301,7 @@ export function DockingPanel(): ReactElement {
           This station is <strong>{docking.station}</strong>. Its agents are written to as name@{docking.station}. Dock only with people you trust: their agents can reach yours.
         </p>
       )}
-      {mode !== null && <Form key={mode} mode={mode} addresses={docking.addresses ?? []} onDone={() => closeTo(() => setMode(null))} onMade={setMade} onNotice={setNotice} />}
+      {mode !== null && <Form key={mode} mode={mode} onDone={() => closeTo(() => setMode(null))} onMade={setMade} onNotice={setNotice} />}
       {made !== null && <CodePanel made={made} now={now} onDone={() => closeTo(() => setMade(null))} onNotice={setNotice} />}
       <div className="win-list module">
         {docking.docks.length === 0 ? (

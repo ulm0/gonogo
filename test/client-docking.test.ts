@@ -86,6 +86,14 @@ describe('handing a task off', () => {
   });
 });
 
+describe('localNote in a container', () => {
+  it('says to use the host\'s network address, as seen from another machine', () => {
+    expect(localNote('http://127.0.0.1:7777', true)).toMatch(/runs in a container.*host's network address.*address bar/);
+    expect(localNote('http://127.0.0.1:7777', false)).not.toMatch(/container/);
+    expect(localNote('http://192.168.0.5:7777', true)).toBeNull();
+  });
+});
+
 describe('suggestedAddress', () => {
   it('starts the Address box with a network address of the computer when the page was opened as localhost, and keeps the scheme and the port', () => {
     expect(suggestedAddress('http://127.0.0.1:7777', ['192.168.0.5'])).toBe('http://192.168.0.5:7777');

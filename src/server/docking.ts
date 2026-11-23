@@ -36,6 +36,7 @@ import type {
   DockCode,
   DockedAgent,
   DockLink,
+  DockHints,
   DockingView,
   DockView,
   Logger,
@@ -138,6 +139,8 @@ export interface DockingOptions {
   roster(): DockedAgent[];
   /** The network addresses of this computer (not loopback), for the page's Address box. */
   addresses?(): string[];
+  /** gonogo runs in a container: no address of its own is the computer's. */
+  container?: boolean;
   tasks: Pick<Tasks, 'list' | 'create' | 'handOff'>;
   /** The history of triggers (docs/features/triggers.md): a hand-off to a station and every call that came in from one. */
   trigger?(entry: TriggerInput): void;
@@ -154,6 +157,8 @@ export interface Docking extends DockLink {
   /** Pulls every roster now and every DOCK_PULL_MS. */
   start(): void;
   view(): DockingView;
+  /** What the Address box may start with. The route decides who is told. */
+  hints(): DockHints;
   /** The input is a JSON value from the wire. The code is shown once and holds a token that works once. */
   createCode(input: unknown): DockCode;
   pair(input: unknown): Promise<DockView>;
@@ -178,6 +183,18 @@ function publicUrl(value: unknown, field: string): string {
   }
   if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || url.pathname !== '/') throw fail;
   return url.origin;
+}
+
+/** The addresses of this computer that another computer on the network may reach, best first: not a container's, not a bridge or a virtual interface, not link-local; 192.168.x, then 10.x, then the rest, 172.16/12 last. */
+export function lanAddresses(nets: Record<string, ReadonlyArray<{ family: string | number; address: string; internal: boolean }> | undefined>, container: boolean): string[] {
+  if (container) return [];
+  const rank = (a: string): number => (a.startsWith('192.168.') ? 0 : a.startsWith('10.') ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(a) ? 3 : 2);
+  const found: string[] = [];
+  for (const [name, list] of Object.entries(nets)) {
+    if (/^(lo|docker|br-|veth|virbr|cni|flannel|cali|tun|tap|vmnet|utun|awdl|llw)/i.test(name)) continue;
+    for (const a of list ?? []) if ((a.family === 'IPv4' || a.family === 4) && !a.internal && !a.address.startsWith('169.254.')) found.push(a.address);
+  }
+  return [...new Set(found)].sort((x, y) => rank(x) - rank(y)).slice(0, 4);
 }
 
 /** Whether a host name is this computer only: loopback, `localhost`, the wildcard. */
@@ -302,7 +319,7 @@ export function createDocking(options: DockingOptions): Docking {
     const state = liveOf(dock);
     return { id: dock.id, name: dock.name, url: dock.url, since: dock.since, status: state.status, seenAt: state.seenAt, error: state.error, agents: state.agents.map((a) => ({ ...a })) };
   };
-  const view = (): DockingView => ({ station: options.name, docks: docks.map(dockView), addresses: options.addresses?.() ?? [] });
+  const view = (): DockingView => ({ station: options.name, docks: docks.map(dockView) });
   /** Tells the browsers, unless nothing they show has changed since the last time. */
   const publish = (): void => {
     const next = view();
@@ -547,6 +564,7 @@ export function createDocking(options: DockingOptions): Docking {
     },
 
     view,
+    hints: () => ({ addresses: options.addresses?.() ?? [], container: options.container === true }),
 
     stations: () => docks.map((d) => d.name),
 

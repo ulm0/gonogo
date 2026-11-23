@@ -206,7 +206,7 @@ export interface WebOptions {
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
-  docking?: Pick<Docking, 'view' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
+  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
   /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
@@ -1159,6 +1159,17 @@ export function createWebServer(options: WebOptions): WebServer {
       if (!docking) return null;
       if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, docking.view()) };
       const id = s[2] ?? '';
+      // the layout of the network goes to the Director's own login (or this machine's socket): a key, a terminal and anything else is told nothing
+      if (s.length === 3 && id === 'addresses') {
+        return {
+          allow: ['GET'],
+          run: (req, res) => {
+            const actor = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+            const hints = docking.hints();
+            sendJson(res, 200, actor === 'session' || actor === 'socket' ? hints : { addresses: [], container: hints.container });
+          },
+        };
+      }
       if (s.length === 3 && (id === 'code' || id === 'pair')) {
         return {
           allow: ['POST'],
