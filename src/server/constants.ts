@@ -300,7 +300,10 @@ export const DIALOG_PATTERNS: ReadonlyArray<{ kind: DialogKind; source: string }
  */
 export const GENERIC_DIALOG_PATTERN = '(?:Enter|↵) to (?:confirm|select|continue|submit)|Esc to (?:cancel|go back|exit)|Press Enter';
 /** The one reason text for startup dialogs (design). */
-export const STARTUP_DIALOG_REASON = 'startup dialog: answer it in the terminal';
+export const STARTUP_DIALOG_REASON = 'first run of Claude Code: finish its setup in the console';
+/** Claude Code says on its screen that it has no login ("Not logged in · Run /login", "Invalid API key · Please run /login"). Looked for on every row but the input box. */
+export const SIGNED_OUT_PATTERN = 'Not logged in\\b[^\\n]{0,12}/login|Please run /login|Run /login to';
+export const SIGNED_OUT_REASON = "Claude Code isn't signed in: open this console and run /login (or set the credential)";
 /** needs_you reason when a dialog is on screen but no PermissionRequest hook announced it. */
 export const SCREEN_DIALOG_REASON = 'a dialog is waiting in the terminal: answer it there';
 

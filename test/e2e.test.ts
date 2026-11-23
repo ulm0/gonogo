@@ -1094,7 +1094,7 @@ describe('end to end with the stand-in agent', () => {
       const h = await startServer({ env: { FAKE_CLAUDE_DIALOG: 'trust' } });
       const flight = await waitState(h, 'flight', 'needs_you', 20_000);
       expect(flight).toMatchObject({ needsKind: 'startup_dialog', needsReason: STARTUP_DIALOG_REASON });
-      expect(STARTUP_DIALOG_REASON).toBe('startup dialog: answer it in the terminal');
+      expect(STARTUP_DIALOG_REASON).toBe('first run of Claude Code: finish its setup in the console');
       const c = await Client.open(h);
       const { terminal } = await c.attach('flight');
       await terminal.waitRow((row) => row.includes('Quick safety check: Is this a project you created or one you trust?'), 5000, 'the dialog on the snapshot');

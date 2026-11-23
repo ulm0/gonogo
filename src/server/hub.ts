@@ -144,6 +144,7 @@ import {
   SESSION_IN_USE_TEXT,
   SESSION_MISSING_TEXT,
   STARTUP_DIALOG_REASON,
+  SIGNED_OUT_REASON,
   STARTUP_READY_TIMEOUT_MS,
   STARTUP_WAVE,
   STARTUP_WAVE_TIMEOUT_MS,
@@ -488,6 +489,8 @@ interface Rt {
   stuckAlerted: string | null;
   /** The id of the oldest message whose wait on a not-ready screen was written to the log (once per episode). */
   stuckLogged: string | null;
+  /** The screen says Claude Code is not signed in: the agent is held at needs_you and its mail waits for the login. */
+  signedOut: boolean;
   /** The last tool call (name and input) and how many times in a row it came, for the agent itself ('main') and for each subagent by its agent_id (docs/subagents-spec.md). */
   repeat: Map<string, { sig: string; count: number }>;
   /** Times of failed tool calls (the same keys) and of API errors in their windows, oldest first. */
@@ -679,6 +682,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       redline: null,
       stuckAlerted: null,
       stuckLogged: null,
+      signedOut: false,
       repeat: new Map(),
       toolFailAt: new Map(),
       subagents: new Map(),
@@ -992,7 +996,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       case 'working':
         return `waiting: ${name} is working`;
       case 'needs_you':
-        return `waiting: ${name} needs you`;
+        return rt.signedOut ? `waiting: ${name} isn't signed in` : `waiting: ${name} needs you`;
       case 'idle':
         return 'waiting: about to type the pointer';
       case 'starting':
@@ -1363,6 +1367,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (isClaude(rt)) {
       const probe = screenOf(rt);
       if (probe === null) return;
+      // a pointer typed into a console with no login answers nothing: the mail waits for the Director's /login
+      if (probe.signedOut === true) {
+        setWaitNotes(rt, `waiting: ${name} isn't signed in`);
+        return;
+      }
       const notReady = `waiting: ${name} is not ready for input`;
       // the hooks are the authority: idle by the Stop hook for TITLE_STALE_MS, a title that still says working is a spinner Claude Code left behind
       // and a title that is still changing is a spinner that is alive (another plugin's Stop hook can start a turn the hooks never announce): only one that has not changed its text for as long is stale
@@ -1680,6 +1689,12 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   function reconcile(rt: Rt, now: number): void {
     const info = titleOf(rt);
     const probe = screenOf(rt);
+    // Claude Code with no login looks idle (a box, a quiet title) and answers nothing: it is the Director's to fix, not a ready agent
+    rt.signedOut = probe?.signedOut === true;
+    if (rt.signedOut && (rt.state === 'starting' || rt.state === 'idle')) {
+      log.warn(`${rt.record.name} is not signed in to Claude Code`);
+      setState(rt, 'needs_you', { kind: 'dialog', reason: SIGNED_OUT_REASON });
+    }
     // How long the glyph has disagreed with the state, not how long the glyph class has existed: a Stop sets idle at
     // once while the title still shows the working glyph for 10 to 30 ms, and the glyph's age is the whole turn.
     const since = info ? Math.max(info.since, rt.stateSince) : now;
@@ -1692,7 +1707,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       }
     } else if (rt.state === 'idle') {
       if (info?.glyph === 'working' && now - since >= TITLE_WORKING_CONFIRM_MS) setState(rt, 'working');
-    } else if (rt.state === 'needs_you' && rt.needsKind !== 'startup_dialog') {
+    } else if (rt.state === 'needs_you' && rt.needsKind !== 'startup_dialog' && !rt.signedOut) {
       if (probe && info && probe.promptBox && probe.dialog === null && info.glyph === 'idle') {
         // R2: the dialog was answered without a hook (denied, Esc). The title alone proves nothing, it shows the idle
         // glyph while a permission dialog is open; the screen says the dialog is gone.

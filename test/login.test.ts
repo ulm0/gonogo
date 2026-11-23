@@ -124,6 +124,15 @@ describe('a fresh install', () => {
     expect(setupToken()).toBe(sup.setupToken);
   });
 
+  it('a wrong setup token says that the setup token is wrong, not that the name or the password is', async () => {
+    await boot();
+    const host = `127.0.0.1:${sup.port}`;
+    const wrong = await call('POST', '/api/auth/setup', { ...FORM, ...origin(), host }, form({ token: 'f'.repeat(64), user: 'director', password: PASSWORD }));
+    expect(wrong.status).toBe(401);
+    expect(wrong.text).toContain('That setup token is wrong: copy it again from the start-up output');
+    expect(wrong.text).not.toContain('Wrong name or password.');
+  });
+
   it('B2: Host 127.0.0.1 with a forwarding header is a request somebody passed on: setup is refused as from a public name', async () => {
     await boot();
     const forwarded = { 'x-forwarded-for': '8.8.8.8' };

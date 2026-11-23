@@ -18,6 +18,7 @@ import {
   CUSTOM_START_MS,
   DIRECTOR_STUCK_ALERT_MS,
   DIRECTOR_STUCK_FORCE_MS,
+  SIGNED_OUT_REASON,
   TITLE_STALE_MS,
   DELIVERY_COALESCE_MS,
   DELIVERY_SETTLE_MS,
@@ -1016,7 +1017,7 @@ describe('startup timer (4.8)', () => {
       needsKind: 'startup_dialog',
       needsReason: STARTUP_DIALOG_REASON,
     });
-    expect(STARTUP_DIALOG_REASON).toBe('startup dialog: answer it in the terminal');
+    expect(STARTUP_DIALOG_REASON).toBe('first run of Claude Code: finish its setup in the console');
   });
 
   it('5 s without readiness and without output: looks again every STARTUP_RECHECK_MS', async () => {
@@ -1480,6 +1481,22 @@ describe('delivery to each recipient state (5.9)', () => {
       await flicker(h, TITLE_STALE_MS * 3, h.now());
       expect(h.view('ana').state).toBe('working');
       expect(h.typed).toHaveLength(0);
+    });
+    it('an agent whose screen says it is not signed in is needs_you with the reason, not idle; its mail says so; the reason goes when the screen no longer says it', async () => {
+      const h = await withAna();
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '', signedOut: true });
+      h.send('user', 'ana');
+      await h.advance(RECONCILE_TICK_MS * 2);
+      expect(h.view('ana')).toMatchObject({ state: 'needs_you', needsKind: 'dialog', needsReason: SIGNED_OUT_REASON });
+      expect(SIGNED_OUT_REASON).toBe("Claude Code isn't signed in: open this console and run /login (or set the credential)");
+      expect(h.msg('m1').note).toBe("waiting: ana isn't signed in");
+      expect(h.typed).toHaveLength(0);
+      await h.advance(DIRECTOR_STUCK_FORCE_MS * 2);
+      expect(h.typed).toHaveLength(0);
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '', signedOut: false });
+      h.setTitle('ana', 'idle');
+      await h.advance(NEEDS_YOU_CLEAR_MS + RECONCILE_TICK_MS * 2);
+      expect(h.view('ana').state).not.toBe('needs_you');
     });
     it('a generic modal ("Esc to cancel") is never forced, for any sender', async () => {
       const h = await withAna();

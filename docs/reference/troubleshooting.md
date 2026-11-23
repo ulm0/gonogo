@@ -11,3 +11,5 @@
 - **A rename says the name is taken by a notes folder left over from a removed agent.** `agents/<name>/` is still in the home ([State on disk](./configuration.md#state-on-disk)). Pick another name, or delete the folder if you do not need its `memory.md`. Hiring under that name works and reuses the old notes.
 - **`<file> was saved by a newer gonogo (format version N; ...)`.** Start the newer gonogo, move the file away, or restore its `.bak-v<n>` copy ([Versions of the saved state](./configuration.md#versions-of-the-saved-state)).
 - **`another gonogo is using <dir>`.** Stop the other one, or delete `server.lock` in that directory if none is running.
+
+- **An agent is "needs you" with "Claude Code isn't signed in".** Its console shows "Not logged in · Run /login". Open the agent's console and run `/login` there, or give the container the credential (`CLAUDE_CODE_OAUTH_TOKEN`, see the Docker guide). Until then the agent is not counted as ready and its mail waits ("waiting: <name> isn't signed in"). A first start of Claude Code on a computer shows its own setup (theme, login) first: the reason says "first run of Claude Code: finish its setup in the console".
