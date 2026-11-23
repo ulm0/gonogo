@@ -1718,6 +1718,24 @@ export function roomArgsOf(options: StartOptions, publicUrl: string | null = nul
   return [...(publicUrl === null ? [] : ['--public-url', publicUrl]),...(options.ptyHost === true ? ['--pty-host'] : []), ...(options.updateCheck === false ? ['--no-update-check'] : []), ...(options.seed === true ? ['--seed-claude'] : [])];
 }
 
+/** The address of the `gonogo ready:` line: the public URL when there is one (the token stays in the fragment), else the address gonogo listens on. */
+export function readyUrl(url: string, publicUrl: string | null): string {
+  if (publicUrl === null) return url;
+  const at = url.indexOf('#');
+  return `${publicUrl.replace(/\/+$/, '')}/${at === -1 ? '' : url.slice(at)}`;
+}
+
+/**
+ * In a container the listening address is the container's own: what to do to reach it from another device. One line, on stderr (stdout keeps its one `gonogo ready:` line for
+ * scripts). The container cannot see the LAN address of the host (only its own 172.x, which would not work), so the address is a placeholder; the port is the one the HOST
+ * publishes (GONOGO_PUBLISHED_PORT, set by compose), else the one gonogo listens on.
+ */
+export function containerHint(port: number, publicUrl: string | null, env: Env = {}): string {
+  if (publicUrl !== null) return `gonogo: in a container: open ${publicUrl.replace(/\/+$/, '')} from any device (a name needs GONOGO_ALLOWED_HOSTS).\n`;
+  const published = /^\d{1,5}$/.test(env.GONOGO_PUBLISHED_PORT ?? '') ? env.GONOGO_PUBLISHED_PORT : String(port);
+  return `gonogo: in a container, 127.0.0.1 is the container's own: open http://<this machine's address>:${published} from any device on your network (a name instead of an address needs GONOGO_ALLOWED_HOSTS).\n`;
+}
+
 /** `gonogo`: the supervisor. The front port, the room list and one `gonogo __room` process per room. */
 async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: Env): Promise<void> {
   const settings = resolveSettings(parsed.options);
@@ -1783,10 +1801,13 @@ async function runSupervisor(parsed: Extract<ParsedArgs, { kind: 'run' }>, env: 
   });
   // announced when main answers (or after 30 s): scripts that read this line and call /api at once must find the room there
   await running.whenReady(30_000);
-  process.stdout.write(`gonogo ready: ${running.url}\n`);
+  // the address people are given: the public one when the Director named it, not the loopback address the server listens on (in a container that one is misleading)
+  const shown = readyUrl(running.url, settings.publicUrl);
+  process.stdout.write(`gonogo ready: ${shown}\n`);
+  if (installInfo(env).docker) process.stderr.write(containerHint(running.port, settings.publicUrl, env));
   if (running.setupToken !== null) {
     // printed once, when it is made: single use, one hour, answered on this machine or the local network only (docs/login-spec.md R1, R3)
-    process.stdout.write(`gonogo setup: open ${running.url.split('#')[0]?.replace(/\/$/, '')}/setup and give this setup token (one use, one hour; it is also in ${join(settings.home, 'setup-token')}): ${running.setupToken}\n`);
+    process.stdout.write(`gonogo setup: open ${shown.split('#')[0]?.replace(/\/$/, '')}/setup and give this setup token (one use, one hour; it is also in ${join(settings.home, 'setup-token')}): ${running.setupToken}\n`);
   }
   log.info(`docs: ${DOCS_URL}`);
 }

@@ -119,15 +119,19 @@ describe('cleanRoomNetwork', () => {
     }
   });
 
-  it('ownContainerRef: the id its own files name (right under network_mode: host, where the host name is the host\'s), else the host name', () => {
+  it('ownContainerRef: exactly one id of its own files; two ids are refused; with none only a host name that is itself a container id counts, anything else is refused with what to set', () => {
     const id = 'd857cec6be89'.padEnd(64, '1');
     const files = (root: string) => ({ mountinfo: () => `1 2 0:1 ${root} /etc/hosts rw - ext4 /dev/sda rw`, cgroup: () => '0::/', macs: () => [], ips: () => [] });
     expect(ownContainerRef(files(`/var/lib/docker/containers/${id}/hosts`), 'the-hosts-name')).toBe(id);
-    expect(ownContainerRef({ ...files('/x'), mountinfo: () => '' }, 'the-hosts-name')).toBe('the-hosts-name');
-    expect(ownContainerRef({ ...files('/x'), cgroup: () => { throw new Error('unreadable'); } }, 'h')).toBe('h');
+    expect(ownContainerRef({ ...files('/x'), mountinfo: () => '' }, '3f2a9c1b7e04')).toBe('3f2a9c1b7e04'); // Docker's default host name is the short id
+    expect(() => ownContainerRef({ ...files('/x'), mountinfo: () => '' }, 'the-hosts-name')).toThrow(/cannot tell which container is gonogo's own: its files name none and the host name "the-hosts-name" is not a container id; set GONOGO_CLEANROOM_NETWORK=container:<the name of gonogo's own container>/);
+    expect(() => ownContainerRef({ ...files('/x'), cgroup: () => { throw new Error('unreadable'); } }, 'nas')).toThrow(/none/);
     const two = { ...files(`/var/lib/docker/containers/${id}/hosts`), cgroup: () => `0::/docker/${'e'.repeat(64)}` };
-    expect(ownContainerRef(two, 'h')).toBe('h'); // two ids: nothing is guessed
+    expect(() => ownContainerRef(two, '3f2a9c1b7e04')).toThrow(/its files name 2 \(d857cec6be89, eeeeeeeeeeee\)/); // nothing is guessed
     expect(cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: 'container:self' }, ownContainerRef(files(`/var/lib/docker/containers/${id}/hosts`), 'x'))).toBe(`container:${id}`);
+    // only the self value asks the files: an unset or a named network never throws for them
+    expect(cleanRoomNetwork({})).toBeNull();
+    expect(cleanRoomNetwork({ GONOGO_CLEANROOM_NETWORK: 'container:gonogo' })).toBe('container:gonogo');
   });
 
   it('reads container:self as gonogo own container, by its host name', () => {
@@ -330,11 +334,13 @@ describe('prepareCleanRoom', () => {
   it('with gonogo in network_mode: host the Clean Room is joined as --network host, with host.docker.internal on 127.0.0.1; in another mode nothing changes', async () => {
     const id = 'd857cec6be89'.padEnd(64, '1');
     const mounts = JSON.stringify([{ Type: 'bind', Source: home, Destination: home }]);
-    const place = await prepareCleanRoom(record(), home, join(home, 'agents', 'ana'), { ...env, GONOGO_CLEANROOM_NETWORK: `container:${id}`, FAKE_DOCKER_INSPECT_MOUNTS: mounts, FAKE_DOCKER_NETMODE: 'host' });
+    const place = await prepareCleanRoom(record(), home, join(home, 'agents', 'ana'), { ...env, GONOGO_CLEANROOM_NETWORK: `container:${id}`, FAKE_DOCKER_INSPECT_MOUNTS: mounts, FAKE_DOCKER_NETMODE: 'host', FAKE_DOCKER_ID: id });
     expect(place.network).toBe('host');
     const args = buildDockerArgs({ image: 'gonogo', uid: 1, gid: 1, place, agentDir: join(home, 'agents', 'ana'), names: [], command: ['claude'] });
     expect(args.slice(args.indexOf('--network'), args.indexOf('--network') + 4)).toEqual(['--network', 'host', '--add-host', 'host.docker.internal:127.0.0.1']);
     expect(args).not.toContain('host.docker.internal:host-gateway');
+    // docker answering with ANOTHER container's id for that reference is refused
+    await expect(prepareCleanRoom(record(), home, join(home, 'agents', 'cy'), { ...env, GONOGO_CLEANROOM_NETWORK: `container:${id}`, FAKE_DOCKER_INSPECT_MOUNTS: mounts, FAKE_DOCKER_NETMODE: 'host', FAKE_DOCKER_ID: 'f'.repeat(64) })).rejects.toThrow(/Docker answered with another container \(ffffffffffff\)/);
     // a mount that is not the same path still stops it, as before
     await expect(prepareCleanRoom(record(), home, join(home, 'agents', 'ben'), { ...env, GONOGO_CLEANROOM_NETWORK: `container:${id}`, FAKE_DOCKER_INSPECT_MOUNTS: '[]', FAKE_DOCKER_NETMODE: 'host' })).rejects.toThrow(/is not mounted into the container/);
   });

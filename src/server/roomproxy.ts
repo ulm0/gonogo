@@ -22,6 +22,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Grant } from './authhttp.js';
 import { keyMayDo } from './auth.js';
+import { isIpLiteralHost } from './hosts.js';
 import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -133,7 +134,7 @@ function reservedPath(rest: string): boolean {
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
   const hostAllowed = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);
-    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name) || (options.hooksHosts?.has(name) ?? false));
+    return name !== null && (['127.0.0.1', 'localhost', '::1'].includes(name) || options.allowedNames.has(name) || (options.hooksHosts?.has(name) ?? false) || isIpLiteralHost(header));
   };
   const hooksOnly = (header: string | undefined): boolean => {
     const name = header === undefined ? null : hostName(header);

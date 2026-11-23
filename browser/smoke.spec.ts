@@ -164,6 +164,19 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     expect(room.headers()['referrer-policy']).toBe('same-origin');
   });
 
+  // Enter in a box that sends: Shift+Enter is a new line and sends nothing (the Brief box and the reply boxes share the rule)
+  await test.step('shift+enter is a new line', async () => {
+    const box = page.locator('.brief-input');
+    // the box is off while FLIGHT is stopped (a room without a boss): then there is nothing to type in
+    if (!(await box.isEnabled({ timeout: 5000 }).catch(() => false))) return;
+    await box.fill('');
+    await box.pressSequentially('one');
+    await box.press('Shift+Enter');
+    await box.pressSequentially('two');
+    await expect(box).toHaveValue('one\ntwo');
+    await box.fill('');
+  });
+
   // 7. Flight Rules: the blocks the audit listed, drawn from the built client
   await test.step('flight rules blocks', async () => {
     // the switch of Knowledge anchors is off in a new room: turn it on, as the owner would in the Features block

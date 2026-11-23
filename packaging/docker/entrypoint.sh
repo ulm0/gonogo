@@ -40,6 +40,16 @@ fi
 # Past here this is uid 1000 (or the --user the container was started with).
 # A new, empty home (a fresh folder or volume on /home/node) gets the skeleton: .bashrc, .profile. Never over a file.
 cp -rn /etc/skel/. "$HOME"/ 2>/dev/null
+# Which data folder this is, once, in the log. A default folder (compose's ./gonogo-data, GONOGO_DATA not given) that is new and empty is the usual way to lose sight of
+# earlier data: an old install whose .env went missing, or compose run from another folder, starts empty without a word. Say so, with the way back.
+if [ -n "${GONOGO_HOME:-}" ]; then
+  data=$(dirname "$GONOGO_HOME")
+  if [ -z "${GONOGO_DATA_GIVEN:-}" ] && [ -z "$(ls -A "$GONOGO_HOME" 2>/dev/null)" ]; then
+    echo "gonogo: data folder $data is new and empty (the default, GONOGO_DATA is not set). If you had gonogo before, your data is elsewhere: stop this and set GONOGO_DATA=<its absolute path> in the .env next to compose.yaml." >&2
+  else
+    echo "gonogo: data folder $data" >&2
+  fi
+fi
 # 0.5.x kept gh's login and git's global config in /state/config (XDG_CONFIG_HOME): carry them into the home, so a plain `docker run` on the
 # same /state volume does not lose them when it has no home volume yet. Only while the target does not exist: a `gh auth logout` or a deleted ~/.gitconfig stays done.
 if [ -d /state/config/gh ] && [ ! -e "$HOME/.config/gh" ] && mkdir -p "$HOME/.config" 2>/dev/null; then cp -rn /state/config/gh "$HOME/.config/" 2>/dev/null; fi
