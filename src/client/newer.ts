@@ -7,6 +7,9 @@ import { useStore } from './store.js';
 /** The version by the logo says a newer one is out and asks the strip to show itself, even one dismissed for that version. */
 export const ROLLOUT_SHOW = 'gonogo:rollout-show';
 
+/** Where this browser remembers which version the Director dismissed on the update strip. */
+export const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
+
 export const CHANGELOG_URL = 'https://github.com/ulm0/gonogo/blob/main/CHANGELOG.md';
 
 /** The main room is the one that checks for a newer gonogo and updates it (a room under /r/<other>/ links there). */

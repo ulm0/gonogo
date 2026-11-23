@@ -2,15 +2,18 @@
  * The top bar (docs/ui-semantic.md, "The top bar"): the logo and the version as a key, the link lamp, Rooms, Comms, a Work menu, a visible "Jump to…" field and a ⋯ menu.
  * One row at 1280 px. On a phone the same things: the bar has logo, version, lamp, Rooms and Jump; a bar at the bottom has Room, Comms, Work and More.
  */
+import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { DOCS_URL } from '../shared/protocol.js';
+import * as api from './api.js';
 import { CheckNow } from './CheckNow.js';
 import { Pop } from './Pop.js';
 import { MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
 import { unreadText } from './inbox.js';
-import { CHANGELOG_URL, inMain, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { CHANGELOG_URL, inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
 import { activeOf, activeText } from './plan.js';
-import { showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { readStored, showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
+import { stripDismissed } from './selfupdate.js';
 import { versionLabel } from './topbarModel.js';
 import logo from '../../docs/brand/lockup.svg';
 
@@ -52,47 +55,109 @@ function UnreadCount(): ReactElement | null {
 const commsName = (unread: number): string => (unread === 0 ? 'Comms' : `Comms, ${unreadText(unread)}`);
 
 /** The version, as a key: whether this install is current, CHECK NOW, and what is out. In another room Update is main's, so it links there. */
-function VersionButton(): ReactElement | null {
+function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
   const info = useStore((s) => s.info);
   const newer = useNewer();
+  const canUpdate = useStore((s) => s.rollout?.canUpdate === true);
+  const canUndo = useStore((s) => s.rollout?.update?.undo === true);
+  const installing = useStore((s) => ['running', 'reloading', 'handed-off'].includes(s.rollout?.update?.state ?? ''));
+  const selfUpdate = useStore((s) => s.rollout?.selfUpdate === true);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  // one line of confirmation for what stops agents and is not asked elsewhere: UNDO, and an update that is not a container's (a container's is asked by the strip)
+  const [ask, setAsk] = useState<'update' | 'undo' | null>(null);
   // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
   setPublicOrigin(info?.publicUrl);
   if (info === null) return null;
-  const label = versionLabel(info.version, newer);
+  const label = versionLabel(info.version, newer, phone);
   return (
     <Pop className="lay-version" name={label.name} label={label.text}>
-      {(close) => (
+      {(close) => {
+        // the strip under the top bar already has the Update key while it is shown (it is dismissed in this browser, or it is not): the version key then points to it, so no key is there twice
+        const stripHidden = newer !== null && !installing && stripDismissed(readStored(ROLLOUT_DISMISSED_KEY), newer, false);
+        return (
         <div className="lay-version-pop">
           <p className="lay-pop-title">
             gonogo {info.version} <span className="chip" data-tone={newer === null ? 'go' : 'amber'}>{newer === null ? 'up to date' : 'update available'}</span>
           </p>
-          {newer !== null && <p className="hint">{newer} is out. Updating stops every agent while it installs, and it can be undone.</p>}
+          {newer !== null && <p className="hint">{newer} is out.{stripHidden ? ' Updating stops every agent while it installs, and it can be undone.' : ' The Update key is in the strip under the top bar.'}</p>}
           {inMain && <CheckNow />}
-          <div className="lay-pop-keys">
-            {newer !== null &&
-              (inMain ? (
+          {undoError !== null && (
+            <p className="error" role="alert">
+              {undoError}
+            </p>
+          )}
+          {ask !== null && (
+            <div className="lay-confirm" role="alertdialog" aria-label={ask === 'undo' ? 'UNDO the last update' : `Update to ${newer}`}>
+              <p>
+                {ask === 'undo'
+                  ? 'UNDO stops every agent and goes back to the version before this update.'
+                  : `Update to ${newer}? It installs the new version and reloads gonogo; the agents stop while it reloads unless gonogo runs with --pty-host.`}
+              </p>
+              <div className="lay-pop-keys">
                 <button
                   type="button"
                   className="btn"
                   data-kind="primary"
                   onClick={() => {
-                    window.dispatchEvent(new Event(ROLLOUT_SHOW));
+                    setAsk(null);
+                    if (ask === 'update') {
+                      window.dispatchEvent(new CustomEvent(ROLLOUT_SHOW, { detail: { start: true } }));
+                      close();
+                    } else {
+                      setUndoError(null);
+                      api.undoUpdate().then(close, (e: unknown) => setUndoError(e instanceof Error ? e.message : String(e)));
+                    }
+                  }}
+                >
+                  {ask === 'undo' ? 'UNDO now' : 'Update now'}
+                </button>
+                <button type="button" className="btn" data-kind="quiet" onClick={() => setAsk(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="lay-pop-keys" hidden={ask !== null}>
+            {newer !== null && stripHidden && (
+              inMain ? (
+                <button
+                  type="button"
+                  className="btn"
+                  data-kind="primary"
+                  onClick={() => {
+                    if (canUpdate && !selfUpdate) {
+                      setAsk('update');
+                      return;
+                    }
+                    window.dispatchEvent(new CustomEvent(ROLLOUT_SHOW, { detail: { start: canUpdate } }));
                     close();
                   }}
                 >
-                  Update to {newer}
+                  {canUpdate ? `Update to ${newer}` : 'How to update'}
                 </button>
               ) : (
                 <a className="btn" data-kind="primary" href={`${MAIN_PATH}?update`}>
                   Open main to update
                 </a>
-              ))}
+              )
+            )}
+            {canUndo && inMain && (
+              <button
+                type="button"
+                className="btn"
+                data-kind="quiet"
+                onClick={() => setAsk('undo')}
+              >
+                UNDO the last update
+              </button>
+            )}
             <a className="btn" data-kind="quiet" href={CHANGELOG_URL} target="_blank" rel="noreferrer noopener">
               What&apos;s new
             </a>
           </div>
         </div>
-      )}
+        );
+      }}
     </Pop>
   );
 }
@@ -163,7 +228,7 @@ export function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }):
       <h1 className="mark" aria-label="gonogo">
         <img className="mark-name" src={logo} alt="" aria-hidden="true" />
       </h1>
-      <VersionButton />
+      <VersionButton phone={phone} />
       <span className="topbar-grow" />
       <LinkLamp />
       {/* a round key on a phone: the bar has no room for the word beside the logo, the version, the lamp and Jump */}

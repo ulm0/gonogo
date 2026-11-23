@@ -25,11 +25,11 @@ import { isPanelKey, VIEW_FEATURE } from './shell.js';
 import { PhoneConsoleScreen, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
 import { readStored, useFeature, useStore, writeStored } from './store.js';
-import { agentCounts, updateDialogText } from './selfupdate.js';
+import { agentCounts, stripDismissed, UPDATE_TRUST_TEXT, updateDialogText, verifyPanel } from './selfupdate.js';
 import { MAIN_PATH } from './base.js';
 import { copyText } from './uplink.js';
 import { SERVER_GONE_TEXT } from './wording.js';
-import { inMain, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
 import { PhoneBar, TopBar } from './TopBar.js';
 import './shell.css';
 
@@ -119,7 +119,6 @@ function GoneStrip(): ReactElement | null {
   );
 }
 
-const ROLLOUT_DISMISSED_KEY = 'gonogo.rollout.dismissed';
 
 /**
  * The same note in a room other than main. Its Update key lives in main (it asks before it stops every agent of main, with their count), so
@@ -167,10 +166,16 @@ function RolloutStrip(): ReactElement | null {
   const [policy, setPolicy] = useState<StartupPolicy | null>(null);
   const agents = useStore((s) => s.agents);
   const strip = useRef<HTMLElement | null>(null);
+  // the version key asks for the update itself (detail.start), not only for the strip: one click there, then the one confirmation here
+  const startRef = useRef<(() => void) | null>(null);
+  // set again by the render that shows the strip: a render that returns nothing leaves it empty, so a request that outlives the strip never starts an update by itself
+  startRef.current = null;
+  const [wantStart, setWantStart] = useState(false);
   useEffect(() => {
-    const show = (): void => {
+    const show = (event?: Event): void => {
       writeStored(ROLLOUT_DISMISSED_KEY, '');
       setDismissed('');
+      if ((event as CustomEvent<{ start?: boolean }> | undefined)?.detail?.start === true) setWantStart(true);
       requestAnimationFrame(() => strip.current?.focus());
     };
     // opened from another room's note: show the strip at once
@@ -178,15 +183,24 @@ function RolloutStrip(): ReactElement | null {
     window.addEventListener(ROLLOUT_SHOW, show);
     return () => window.removeEventListener(ROLLOUT_SHOW, show);
   }, []);
+  useEffect(() => {
+    if (wantStart) {
+      setWantStart(false);
+      startRef.current?.();
+    }
+  }, [wantStart, dismissed, rollout]);
   const update = rollout?.update;
   const busy = update !== undefined && (update.state === 'running' || update.state === 'reloading' || update.state === 'handed-off');
   // what the last Docker self-update left (done, rolled back) is shown after the restart, when the new version is no longer "newer"
   const result = update !== undefined && (update.state === 'done' || (update.state === 'failed' && !(rollout?.newer ?? false)));
   if (rollout === null || (!rollout.newer && !result) || (rollout.latest === null && !result)) return null;
-  if (dismissed === rollout.latest && update === undefined) return null;
   const { command } = rollout;
   const latest = rollout.latest ?? update?.version ?? '';
+  if (stripDismissed(dismissed, latest, busy)) return null;
   const inContainer = rollout.selfUpdate === true;
+  // an image gonogo could not vouch for (the check was refused, or the image has no signature): said once, short, with the way on
+  const failedVerify = update?.state === 'failed' && (update.verify === 'unattested' || update.verify === 'unchecked') && rollout.newer && !busy ? update.verify : null;
+  const panelText = failedVerify === null ? null : verifyPanel(failedVerify);
   const press = (): void => {
     if (busy) return;
     setError(null);
@@ -198,6 +212,7 @@ function RolloutStrip(): ReactElement | null {
     setConfirming(true);
     api.startupSettings().then((found) => setPolicy(found.policy), () => setPolicy(null));
   };
+  startRef.current = press;
   return (
     <aside className="rollout-strip" aria-label="Update" ref={strip} tabIndex={-1}>
       {rollout.newer && (
@@ -206,7 +221,7 @@ function RolloutStrip(): ReactElement | null {
         </span>
       )}
       {rollout.canUpdate !== true && <code ref={code}>{command}</code>}
-      {rollout.canUpdate === true && rollout.newer && (
+      {rollout.canUpdate === true && rollout.newer && failedVerify === null && !confirming && (
         <button type="button" className="btn" aria-disabled={busy || undefined} onClick={press}>
           Update to {latest}
         </button>
@@ -214,6 +229,12 @@ function RolloutStrip(): ReactElement | null {
       {confirming && !busy && (
         <div className="rollout-confirm" role="alertdialog" aria-label={`Update to ${latest}`}>
           <p>{updateDialogText(latest, agentCounts(Object.values(agents).map((a) => a.state)), policy)}</p>
+          <details className="rollout-fold">
+            <summary className="btn" data-kind="quiet">
+              What this runs
+            </summary>
+            <p>{UPDATE_TRUST_TEXT}</p>
+          </details>
           <button
             type="button"
             className="btn"
@@ -230,13 +251,21 @@ function RolloutStrip(): ReactElement | null {
           </button>
         </div>
       )}
-      {update?.state === 'failed' && (update.verify === 'unattested' || update.verify === 'unchecked') && rollout.newer && !busy && (
-        <span className="rollout-confirm" role="alert">
-          {update.note}{' '}
+      {failedVerify !== null && panelText !== null && (
+        <div className="rollout-confirm" role="alert">
+          <p>{panelText.problem}</p>
+          {panelText.fix !== null && (
+            <details className="rollout-fix">
+              <summary className="btn" data-kind="quiet">
+                How to fix
+              </summary>
+              <p>{panelText.fix}</p>
+            </details>
+          )}
           <button type="button" className="btn" onClick={() => api.startUpdate(latest, true).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}>
-            {update.verify === 'unchecked' ? 'Update anyway (could not check)' : 'Update anyway (no attestation)'}
+            {panelText.button}
           </button>
-        </span>
+        </div>
       )}
       {update?.undo === true && (
         <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => api.undoUpdate().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}>
@@ -270,13 +299,20 @@ function RolloutStrip(): ReactElement | null {
       >
         Dismiss
       </button>
-      {rollout.installNote !== undefined && rollout.installNote !== '' && <span className="hint rollout-note">{rollout.installNote}</span>}
+      {rollout.installNote !== undefined && rollout.installNote !== '' && (
+        <details className="rollout-fold rollout-note">
+          <summary className="btn" data-kind="quiet">
+            About this install
+          </summary>
+          <p>{rollout.installNote}</p>
+        </details>
+      )}
       {error !== null && (
         <span className="error" role="alert">
           {error}
         </span>
       )}
-      {update !== undefined && update.state !== 'idle' && (
+      {update !== undefined && update.state !== 'idle' && failedVerify === null && (
         <div className="rollout-progress" role="status">
           <span>{update.note}</span>
           {update.tail.length > 0 && (

@@ -57,7 +57,7 @@ describe('every way the page reaches the server keeps the prefix', () => {
     const app = text('App.tsx');
     const bar = text('TopBar.tsx');
     expect(bar).toMatch(/<a className="btn"[^>]*href=\{ROOMS_PATH\}>\s*Rooms/);
-    expect(bar).toMatch(/<\/h1>\s*<VersionButton \/>/);
+    expect(bar).toMatch(/<\/h1>\s*<VersionButton[^>]*\/>/);
     expect(app).not.toMatch(/VersionCorner/);
     expect(app).toMatch(/<RolloutStrip \/>\s*<OtherRoomStrip \/>/);
     expect(readFileSync(new URL('../src/client/shell.css', import.meta.url), 'utf8')).not.toMatch(/version-corner/);
