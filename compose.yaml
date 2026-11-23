@@ -25,7 +25,7 @@ services:
     # container restarts: restart that console.
     restart: always
     ports:
-      - 127.0.0.1:${GONOGO_PORT:-7777}:7777   # another instance: another GONOGO_PORT and GONOGO_DATA
+      - ${GONOGO_HOST:-127.0.0.1}:${GONOGO_PORT:-7777}:7777   # another instance: another GONOGO_PORT and GONOGO_DATA
     environment:
       # No value: forwarded from your shell, so the secret is not written here.
       CLAUDE_CODE_OAUTH_TOKEN:
