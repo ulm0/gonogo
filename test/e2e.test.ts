@@ -2268,7 +2268,7 @@ describe('end to end with the stand-in agent', () => {
     expect(await api<ApiError>(a, 'GET', '/api/links/dl_0000000000000000')).toMatchObject({ status: 404 });
     expect(await api<ApiError>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: 'nope' })).toMatchObject({ status: 404, body: { field: 'task' } });
     const second = await api<Task>(a, 'POST', '/api/tasks', { title: 'Second' });
-    expect(await api<ApiError>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: second.body.id, assignee: 'nobody' })).toMatchObject({ status: 400, body: { code: 'bad_request', field: 'assignee' } });
+    expect(await api<ApiError>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: second.body.id, assignee: 'not a name!' })).toMatchObject({ status: 400, body: { code: 'bad_request', field: 'assignee' } });
     expect((await api<Task[]>(a, 'GET', '/api/tasks')).body.find((t) => t.id === second.body.id)).toMatchObject({ status: 'todo' });
 
     // what crosses the wire is signed: a call from beta's side, by hand
