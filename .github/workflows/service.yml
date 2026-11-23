@@ -155,7 +155,7 @@ jobs:
             curl -fsS http://127.0.0.1:7788/rooms/health
             gonogo service status
             # runs as ana, not as root
-            ps -o user,args | grep "gonogo --home" | grep -v grep | grep -q "^ana "
+            ps -eo user,args | grep "gonogo --home" | grep -v grep | grep -q "^ana "
             # an agent in the pty host; it must be the same process after the reload
             curl -fsS -X POST -H "Authorization: Bearer $(cat /home/ana/.gonogo/token)" -H "content-type: application/json" -d "{}" http://127.0.0.1:7788/api/agents/flight/restart >/dev/null
             for i in $(seq 1 30); do agent=$(pgrep -u ana -f "[s]leep 1234567" | head -1); [ -n "$agent" ] && break; sleep 1; done
