@@ -1,0 +1,1 @@
+- **Uplink docs: sign, do not send Bearer.** `X-Gonogo-Signature` is the proof that works behind the supervisor; `Authorization: Bearer` only works when a room is called directly.
