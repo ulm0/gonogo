@@ -1720,6 +1720,18 @@ export interface ApiError {
   needsForce?: boolean;
 }
 
+/* ---- the project folder of a room (docs/features/rooms.md, "Folders"): GET and PUT /api/project-folder ---- */
+
+/** Where the agents of the room work: the folder in force and where it comes from, the folder gonogo was started in (the default Reset goes back to), and the boss with the folder it runs in. */
+export interface ProjectFolderView {
+  dir: string;
+  source: 'set' | 'default';
+  default: string;
+  boss: { name: string; dir: string } | null;
+  /** After a write: what the change does and does not reach. */
+  note?: string;
+}
+
 /* ---- runtime settings (docs/runtime-settings-spec.md): GET /api/settings, PUT /api/settings/<key> ---- */
 
 export type RuntimeSettingKey = 'maxHops' | 'maxWorking' | 'agentCmd' | 'cleanRoomImage' | 'scrubEnv' | 'logLevel' | 'station' | 'updateCheck';
