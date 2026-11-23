@@ -934,6 +934,12 @@ export async function createDockCode(url: string): Promise<DockCode> {
   return code as unknown as DockCode;
 }
 
+/** What the Address box may start with: this computer's network addresses (empty for anyone but a login session). */
+export async function dockHints(): Promise<{ addresses: string[]; container: boolean }> {
+  const hints = asRecord(await call('GET', '/docking/addresses'));
+  return { addresses: Array.isArray(hints?.addresses) ? hints.addresses.filter((a): a is string => typeof a === 'string').slice(0, 4) : [], container: hints?.container === true };
+}
+
 /** `code` is what the other station's Director made; `url` is the address of this station as that one will reach it. */
 export async function pairDock(code: string, url: string): Promise<DockView> {
   const dock = asRecord(await call('POST', '/docking/pair', { code, url }));

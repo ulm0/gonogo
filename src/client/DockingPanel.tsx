@@ -10,7 +10,7 @@ import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { DOCKS_MAX } from '../shared/protocol.js';
 import type { DockCode, DockView, Task, TaskStatus } from '../shared/protocol.js';
 import * as api from './api.js';
-import { addressProblem, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, toneOf, undockedText, wordOf } from './docking.js';
+import { addressProblem, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, suggestedAddress, toneOf, undockedText, wordOf } from './docking.js';
 import { useNow, useStore } from './store.js';
 import { copyText } from './uplink.js';
 import { useRun } from './WallView.js';
@@ -31,13 +31,30 @@ interface Problems {
 function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; onMade(made: DockCode): void; onNotice(text: string): void }): ReactElement {
   const id = useId();
   const [address, setAddress] = useState(roomOrigin());
+  const [container, setContainer] = useState(false);
+  const typed = useRef(false);
+  // the computer's own network address, when the page was opened as localhost: only where the Director has not typed one
+  useEffect(() => {
+    let alive = true;
+    void api.dockHints().then(
+      (hints) => {
+        if (!alive) return;
+        setContainer(hints.container);
+        if (!typed.current) setAddress(suggestedAddress(roomOrigin(), hints.addresses));
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [code, setCode] = useState('');
   const [problems, setProblems] = useState<Problems>({});
   const [topError, setTopError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const first = useRef<HTMLInputElement | null>(null);
   useEffect(() => first.current?.focus(), []);
-  const note = localNote(address.trim());
+  const note = localNote(address.trim(), container);
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -82,6 +99,7 @@ function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; 
         aria-invalid={problems.address !== undefined}
         aria-describedby={[`${id}-address-hint`, problems.address !== undefined ? `${id}-address-error` : ''].filter(Boolean).join(' ')}
         onChange={(e) => {
+          typed.current = true;
           setAddress(e.target.value);
           setProblems((p) => ({ ...p, address: undefined }));
         }}
@@ -155,6 +173,7 @@ function CodePanel({ made, now, onDone, onNotice }: { made: DockCode; now: numbe
       <p>
         <strong>Docking code.</strong> {expiresText(made.expiresAt, now)} Give it to the Director of the other station: they paste it under Pair, with the address of their own station. gonogo will not show it again.
       </p>
+      {made.warning !== undefined && <p className="error">{made.warning}</p>}
       <input ref={field} readOnly className="input up-value" aria-label="Docking code" value={made.code} spellCheck={false} onFocus={selectAll} />
       <div className="up-keys">
         <button type="button" className="btn" onClick={() => void copyText(made.code).then((ok) => onNotice(ok ? 'Code copied.' : 'Could not copy. Select the code and copy it.'))}>

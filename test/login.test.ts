@@ -1164,6 +1164,12 @@ describe('the device login of a terminal through the supervisor', () => {
     expect((await put({ authorization: `Bearer ${tui}`, 'x-gonogo-actor': 'session' })).status).toBe(403); // a terminal login is asked for the password in the browser
     expect((await put({ ...session, 'x-gonogo-actor': 'key:ffffffffffff' })).status).toBe(200);
     expect(last().actor).toBe('session');
+    // the network addresses of the computer: the actor is told for that route too, so that the room can keep them from a key
+    const get = (headers: Record<string, string>) => call('GET', '/r/main/api/docking/addresses', headers);
+    await get(session);
+    expect(last()).toMatchObject({ url: '/api/docking/addresses', actor: 'session' });
+    await get({ authorization: `Bearer ${key}`, 'x-gonogo-actor': 'session' });
+    expect(last().actor).toMatch(/^key:[0-9a-f]{1,12}$/);
     // another route carries no actor
     await call('POST', '/r/main/api/messages', { ...JSONH, ...session }, JSON.stringify({ to: 'ana', body: 'go' }));
     expect(last()).toMatchObject({ url: '/api/messages', actor: null });

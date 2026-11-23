@@ -2196,8 +2196,8 @@ describe('end to end with the stand-in agent', () => {
     const docks = async (h: Harness): Promise<DockingView> => (await api<DockingView>(h, 'GET', '/api/docking')).body;
 
     // alone: a name and no docks, and name@station is not an address yet
-    expect(await docks(a)).toEqual({ station: 'alpha', docks: [] });
-    expect((await getState(a)).docking).toEqual({ station: 'alpha', docks: [] });
+    expect(await docks(a)).toMatchObject({ station: 'alpha', docks: [] });
+    expect((await getState(a)).docking).toMatchObject({ station: 'alpha', docks: [] });
     expect((await docks(b)).station).toBe('beta');
     await tell(a, 'ana', '@fake send bob@beta | hello | nobody is docked');
     expect(tools(a, 'ana', 'send_message').at(-1)).toMatchObject({ isError: true, result: { ok: false, error: 'unknown station "beta". No station is docked' } });
@@ -2210,7 +2210,9 @@ describe('end to end with the stand-in agent', () => {
     const made = await api<DockCode>(a, 'POST', '/api/docking/code', { url: a.base });
     expect(made.status).toBe(201);
     expect(made.body.expiresAt - Date.now()).toBeGreaterThan(14 * 60_000);
-    const paired = await api<DockView>(b, 'POST', '/api/docking/pair', { code: made.body.code, url: b.base });
+    // pasted the way it comes out of a chat: the words at its start lost, a line break in the middle, a full stop at the end
+    const pasted = `${made.body.code.slice('gonogo-dock:'.length, 50)}\n${made.body.code.slice(50)}.\n`;
+    const paired = await api<DockView>(b, 'POST', '/api/docking/pair', { code: pasted, url: b.base });
     expect(paired).toMatchObject({ status: 201, body: { name: 'alpha', url: a.base } });
     // the code works once
     expect(await api<ApiError>(b, 'POST', '/api/docking/pair', { code: made.body.code, url: b.base })).toMatchObject({ status: 409, body: { code: 'conflict' } });

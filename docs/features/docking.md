@@ -10,6 +10,10 @@ DOCKING (Flight Rules, Automation and connections, the row Docking) links two go
 2. On A: MAKE A CODE, enter A's address, send the code to B's Director (shown once, single use, 15 minutes).
 3. On B: PAIR, paste the code, enter B's address.
 
+**The code is read as people carry it:** with or without its first words (`gonogo-dock:`), with spaces, line breaks, quotes or a full stop around it. One that is cut short says so ("its token has 37 of 64 characters"): copy it again whole.
+
+**Addresses:** each address must be one the other computer can reach. When a page is opened as `localhost` the Address box starts with a network address of that computer (an IPv4 of a real interface, 192.168.x first, then 10.x; never a Docker bridge, a virtual or a link-local one; with the page's port) and says when the address works only on this computer. Inside a container gonogo cannot tell the computer's own address, so the box stays as it is and says to use the host's network address (the one in your browser's address bar from another machine). Only a login session is told the addresses (`GET /api/docking/addresses`); an API key or a terminal login gets none, and the state and the page's frames never carry them; the code made with such an address carries a warning. A station reached by an address it was not started for answers `forbidden host`; docking then says to start it with `--allow-host <address>` (or `GONOGO_ALLOWED_HOSTS`; `--allow-host <address>:hooks` opens only docking and webhooks to that name).
+
 The secret never travels; both sides derive it into `docking.json`. Each dock row polls every 30 seconds and has an AGENTS fold (`name@station`, state, role). An unreachable station shows NO ANSWER with the reason and keeps the last view.
 
 ## Use

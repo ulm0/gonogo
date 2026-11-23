@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { stat } from 'node:fs/promises';
-import { homedir, hostname } from 'node:os';
+import { homedir, hostname, networkInterfaces } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
@@ -37,7 +37,7 @@ import { createRitualTemplate } from './ritual.js';
 import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
-import { createDocking, stationName } from './docking.js';
+import { createDocking, lanAddresses, stationName } from './docking.js';
 import { createDownlink } from './downlink.js';
 import { createHub } from './hub.js';
 import { createHangar, createRoots } from './hangar.js';
@@ -1056,6 +1056,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       fetch: options.fetch ?? ((url, init) => fetch(url, init)),
       deliver: (station, message) => hubInstance.sendFromStation(station, message),
       roster: () => hubInstance.views().map((v) => ({ name: v.name, role: v.role.slice(0, ROSTER_ROLE_CHARS), state: v.state, boss: v.boss })),
+      addresses: () => lanAddresses(networkInterfaces(), installInfo(env).docker),
+      container: installInfo(env).docker,
       tasks,
       emit: (view) => web?.broadcast({ t: 'docking', docking: view }),
       log: log.child('docking'),

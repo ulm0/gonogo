@@ -232,6 +232,16 @@ describe('the route of a room', () => {
     expect(statSync(globalPath).mode & 0o777).toBe(0o600);
   });
 
+  it('the network addresses of the computer go to a login session or the local socket only; a key, a terminal and a request that says nothing get none, and the state never carries them', async () => {
+    const mine = await call('GET', '/api/docking/addresses', undefined, 'session');
+    expect(Array.isArray(mine.json.addresses)).toBe(true);
+    expect(typeof mine.json.container).toBe('boolean');
+    expect((await call('GET', '/api/docking/addresses', undefined, 'socket')).json.addresses).toEqual(mine.json.addresses);
+    for (const actor of [undefined, 'key:abc', 'tui', 'token', 'session; x']) expect((await call('GET', '/api/docking/addresses', undefined, actor)).json.addresses, String(actor)).toEqual([]);
+    const state = JSON.stringify((await call('GET', '/api/state')).json);
+    for (const address of mine.json.addresses as string[]) expect(state).not.toContain(address);
+  });
+
   it('applies what can be applied now: Max Q on the hub, the log level of the process; the Max Q control keeps its value in the room file', async () => {
     expect((await call('PUT', '/api/settings/maxWorking', { scope: 'room', value: '2' }, 'session')).status).toBe(200);
     expect((await call('GET', '/api/state')).json.governor).toMatchObject({ limit: 2 });
