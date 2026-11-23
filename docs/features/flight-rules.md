@@ -12,7 +12,7 @@ FLIGHT RULES (the ⋯ menu of the top bar, or the [Patch Panel](./patch-panel.md
 | LIVERY | name in use, key to [Livery](./livery.md) |
 | KNOWLEDGE (row "Switch and repositories"), SEMANTIC SEARCH | the Knowledge switch and its repositories ([Knowledge](./knowledge.md)); [semantic search](./semantic-search.md) of the Mission Log |
 | ALL STOP (row "Hold all agents") | the key that holds every console that can be held ([Autostart](./autostart.md)) |
-| LAUNCH WINDOW | key to schedules, [Uplink](./uplink.md), [Relay](./relay.md), [Docking](./docking.md) |
+| SCHEDULES, UPLINK, RELAY, DOCKING | Automation and connections: the schedules ([Launch Window](./launch-window.md) shows the same list and the history), [Uplink](./uplink.md) webhooks, [Relay](./relay.md) and [Docking](./docking.md), each in its own row with its controls in place |
 | CONSOLES | every console with EDIT (directory, role, engine, permission mode, payload). A console's own Propellant limit stays in its panel |
 | THIS BROWSER | [notifications](./notifications.md) switch, PUSH TO THIS DEVICE ([phone app](./mobile.md)), SHOW COMMISSIONING AGAIN |
 | PAYLOAD DEFAULTS | MCP servers and skill folders every agent gets; an agent's own Payload wins and can switch one off ([Payload](payload.md)). No value shown after saving |

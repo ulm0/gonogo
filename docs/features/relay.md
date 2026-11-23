@@ -2,7 +2,7 @@
 
 <RelayMock class="doc-mock" />
 
-RELAY (under UPLINK in Launch Window) takes Slack, GitHub, Linear and Telegram in through uplinks and forwards what agents send you to Slack or Telegram. Design and limits: [`docs/relay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/relay-spec.md).
+RELAY (Flight Rules, Automation and connections, the row Relay) takes Slack, GitHub, Linear and Telegram in through uplinks and forwards what agents send you to Slack or Telegram. Design and limits: [`docs/relay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/relay-spec.md).
 **Not tried against a real Slack, GitHub, Linear or Telegram** ([What was not verified](../reference/not-verified.md)).
 
 ## In

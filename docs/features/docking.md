@@ -2,7 +2,7 @@
 
 <DockingMock class="doc-mock" />
 
-DOCKING (under RELAY in the Launch Window view) links two gonogo servers so agents message across and tasks hand off. Each is a station with a name (`GONOGO_STATION`) and a random id in `station.json`. Design: [`docs/docking-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/docking-spec.md). **Only tried between two servers on one machine** ([What was not verified](../reference/not-verified.md)).
+DOCKING (Flight Rules, Automation and connections, the row Docking) links two gonogo servers so agents message across and tasks hand off. Each is a station with a name (`GONOGO_STATION`) and a random id in `station.json`. Design: [`docs/docking-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/docking-spec.md). **Only tried between two servers on one machine** ([What was not verified](../reference/not-verified.md)).
 
 ## Dock
 
