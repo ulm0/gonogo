@@ -5,28 +5,35 @@ import * as api from './api.js';
 import type { LinkItem } from './links.js';
 import { store, useStore } from './store.js';
 
-let loaded = false;
+let inflight: Promise<void> | null = null;
+let lastAt = 0;
 
 /** The list is in the store (the `links` frame keeps it); it is read once with GET /api/links, since the snapshot has none, and again when the tab comes back. */
-export async function refreshLinks(): Promise<void> {
-  try {
-    const list = await api.links();
-    loaded = true;
-    store.setState((s) => ({ ...s, links: list }));
-  } catch {
-    // a list that cannot be read keeps what was shown; the next try asks again
-  }
+export function refreshLinks(): Promise<void> {
+  // every card asks when it opens: one call serves all of them, and one that ran a second ago is enough
+  if (inflight !== null) return inflight;
+  if (Date.now() - lastAt < 1000) return Promise.resolve();
+  inflight = api
+    .links()
+    .then(
+      (list) => store.setState((s) => ({ ...s, links: list })),
+      () => undefined, // a list that cannot be read keeps what was shown; the next try asks again
+    )
+    .finally(() => {
+      lastAt = Date.now();
+      inflight = null;
+    });
+  return inflight;
 }
 
 /** For a test or a capture that has the list already. */
 export function setLinks(list: LinkItem[]): void {
-  loaded = true;
   store.setState((s) => ({ ...s, links: list }));
 }
 
 export function useLinks(): LinkItem[] {
   useEffect(() => {
-    if (!loaded) void refreshLinks();
+    void refreshLinks();
     const back = (): void => void refreshLinks();
     window.addEventListener('focus', back);
     return () => window.removeEventListener('focus', back);

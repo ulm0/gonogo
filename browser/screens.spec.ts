@@ -410,15 +410,15 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await measure(page, group, 'expanded');
     await page.getByRole('button', { name: /^Back/ }).click({ timeout: 3000 }).catch(() => undefined);
   }
+  // Docking 2: the stand-in install has no second station, so the links are stood in (the same shapes as the server's)
+  await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
+  await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
   await view(page, group, t('comms inbox'), async () => {
     await open(page, 'Comms');
     await page.getByRole('tab', { name: /inbox/i }).click({ timeout: 3000 });
   });
   await view(page, group, t('comms traffic'), () => page.getByRole('tab', { name: /traffic/i }).click({ timeout: 3000 }));
   await view(page, group, t('comms threads'), () => page.getByRole('tab', { name: /threads/i }).click({ timeout: 3000 }));
-  // Docking 2: the stand-in install has no second station, so the links are stood in (the same shapes as the server's)
-  await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
-  await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
   await view(page, group, t('mission with a link'), async () => {
     await page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 });
