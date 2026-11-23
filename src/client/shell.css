@@ -2157,6 +2157,12 @@
   gap: 8px 12px;
 }
 
+/* a high one is a solid red pill: the tint of a nogo chip is the colour of this banner */
+.exposure-row .chip[data-tone='nogo'] {
+  background: var(--nogo);
+  color: var(--panel);
+}
+
 .exposure-row .chip {
   justify-content: center;
   text-align: center;

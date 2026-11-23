@@ -463,9 +463,9 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await page.keyboard.press('Escape');
   // the banner of an insecure setup: the stand-in install has nothing open, so the list is stood in (the texts are the server's own kind: plain words, names and counts)
   const findings = [
-    { id: 'plain-http', severity: 'high', text: 'This page is reached over plain http from another computer: the login and the keys travel in the clear.', fix: 'Put gonogo behind https (a reverse proxy or a tunnel), or reach it only from this computer.' },
-    { id: 'public-name-no-mfa', severity: 'medium', text: 'gonogo.example.org reaches this install from the internet and the login has no second factor.', fix: 'Turn on a second factor in Flight Rules, Security.' },
-    { id: 'agent-unattended-aaaaaaaaaaaa', severity: 'medium', text: 'ana runs without asking before each tool.', fix: 'Set its permissions to Ask in its edit form.' },
+    { id: 'public-name-no-mfa', severity: 'high', text: 'gonogo.example.org is a public address and the login has no second factor.', fix: 'Turn on the second factor (TOTP) in Flight Rules, LOGIN.' },
+    { id: 'plain-http', severity: 'medium', text: 'You are on plain http: the password and the token travel in the clear on this network.', fix: 'On a network you trust that is acceptable. For anything wider, use a name with https (see Exposing gonogo safely).' },
+    { id: 'agent-unattended-aaaaaaaaaaaa', severity: 'medium', text: 'ana (room main) works without asking (bypassPermissions) outside a Clean Room: it can change anything its user can.', fix: 'Put ana in a Clean Room, or set its mode to ask first.' },
     { id: 'update-checks-off', severity: 'info', text: 'The check for a newer gonogo is off.', fix: 'Turn it on in Flight Rules, System and update.' },
     { id: 'docker-socket', severity: 'info', text: 'The Docker socket is mounted in this container.', fix: 'Remove the mount if you do not use Update here.' },
   ];
