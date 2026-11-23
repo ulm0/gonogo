@@ -39,6 +39,8 @@ import {
   voteOf,
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
+import { HandoffNeed } from './HandoffAsks.js';
+import { useHandoffAsks } from './linksData.js';
 import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showTraffic, useFeature, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
@@ -323,9 +325,10 @@ export function Needs({ phone }: { phone: boolean }): ReactElement | null {
   const list = useAgentList();
   const { legends } = useSeats();
   const relief = useStore((s) => s.relief);
+  const asks = useHandoffAsks();
   const [failed, setFailed] = useState<string | null>(null);
   const needing = needingYou(list);
-  if (needing.length === 0 && relief.length === 0 && failed === null) return null;
+  if (needing.length === 0 && relief.length === 0 && asks.length === 0 && failed === null) return null;
   return (
     // On a wide page the floods dock at the foot of the viewport while the matrix is on screen: the wall is tall and the floods sit below the matrix.
     <div className={phone ? 'needs' : 'needs needs-dock'}>
@@ -342,6 +345,9 @@ export function Needs({ phone }: { phone: boolean }): ReactElement | null {
       ))}
       {relief.map((request) => (
         <ReliefNeed key={request.id} request={request} legend={legendOf(legends, request.by)} onFail={setFailed} />
+      ))}
+      {asks.map((ask) => (
+        <HandoffNeed key={ask.id} ask={ask} legend={legendOf(legends, ask.from)} />
       ))}
     </div>
   );

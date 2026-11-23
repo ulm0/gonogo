@@ -171,6 +171,40 @@ const rolloutOf = (update?: Record<string, unknown>): Record<string, unknown> =>
   ...(update === undefined ? {} : { update }),
 });
 
+/** Docking 2 in the room: two docks (a routed WebSocket gives the state frame their list), a handoff waiting for GO, and the rules of a dock in Flight Rules. */
+async function dockingTwo(page: Page, group: string): Promise<void> {
+  const dock = (id: string, name: string, status: string): Record<string, unknown> => ({ id, name, url: `https://${name}.example.org`, since: Date.now() - 86_400_000, status, seenAt: Date.now() - 60_000, error: null, agents: [{ name: 'cara', role: 'Builds the notes', state: 'idle', boss: false }] });
+  await page.routeWebSocket(/\/ws(\?|$)/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (typeof message === 'string') {
+        try {
+          const frame = JSON.parse(message) as { t?: string; state?: { docking?: unknown } };
+          if (frame.t === 'state' && frame.state !== undefined) frame.state.docking = { station: 'main', docks: [dock('dk1', 'lab', 'ok'), dock('dk2', 'ops', 'ok')] };
+          ws.send(JSON.stringify(frame));
+          return;
+        } catch {
+          // not a frame of text: passed on as it is
+        }
+      }
+      ws.send(message);
+    });
+  });
+  await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'h1', dock: 'dk1', station: 'lab', from: 'flight', at: Date.now(), task: { title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour. Check the clock handling in the session code and add a test.' } }] } }));
+  await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { handoff: 'ask', incoming: 'auto', autoAccept: 'off', reportCost: 'off', serve: 'off', staleHours: 24 } }));
+  await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
+  await page.goto(`${base}/r/main/`);
+  await page.locator('.topbar').waitFor({ timeout: 30_000 });
+  await view(page, group, 'docking 2: a handoff waits for GO', () => page.locator('.relief-need', { hasText: 'send a task to lab' }).waitFor({ timeout: 10_000 }), true);
+  await page.locator('.topbar').getByRole('button', { name: 'More', exact: true }).click({ timeout: 3000 });
+  await page.getByRole('group', { name: 'More' }).getByRole('button', { name: 'Flight Rules', exact: true }).click({ timeout: 3000 });
+  await page.locator('.lay-group-nav a', { hasText: /Automation/ }).click({ timeout: 3000 });
+  await page.locator('.lay-row', { hasText: 'Docking: other stations' }).locator('summary').first().click({ timeout: 3000 });
+  await view(page, group, 'docking 2: the docks', () => page.locator('.dk-rules').first().waitFor({ timeout: 5000 }), true);
+  await view(page, group, 'docking 2: the rules of a dock', () => page.locator('.dk-rules > summary').first().click({ timeout: 3000 }), true);
+}
+
 async function updateFlow(page: Page, group: string): Promise<void> {
   let current = rolloutOf();
   let tell: (rollout: Record<string, unknown>) => void = () => undefined;
@@ -381,6 +415,7 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   // Docking 2: the stand-in install has no second station, so the links are stood in (the same shapes as the server's)
   await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
+  await view(page, group, t('mission with a link'), () => page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 }), true);
   await view(page, group, t('launch window'), () => open(page, 'Launch Window'), true);
   if (full) await view(page, group, 'launch window history', () => page.getByRole('button', { name: /^History of/ }).first().click({ timeout: 3000 }), true);
   await view(page, group, t('flight plan'), () => open(page, 'Flight Plan'), true);
@@ -595,6 +630,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       await measure(page, group, 'rooms list: stop all asks first');
       await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
+      await dockingTwo(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docking 2: ${error.message.split('\n')[0]}`));
       await updateFlow(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: update flow: ${error.message.split("\n")[0]}`));
       await context.close();
     }

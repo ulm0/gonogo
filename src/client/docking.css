@@ -137,3 +137,29 @@
   flex: 1 1 200px;
   min-width: 0;
 }
+
+.dk-rules-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.dk-rules-body .hint {
+  margin: 4px 0 0;
+}
+
+.dk-ask-text {
+  white-space: pre-wrap;
+}
+
+.dk-always {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+
+.dk-always input {
+  margin-top: 3px;
+}
