@@ -104,6 +104,10 @@
   margin-left: auto;
 }
 
+.commission [hidden] {
+  display: none;
+}
+
 .commission-steps {
   display: flex;
   flex-direction: column;

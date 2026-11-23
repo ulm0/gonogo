@@ -75,7 +75,7 @@ class Node {
   }
 }
 
-let doc: { activeElement: Node | null; title: string; documentElement: Node & { style: { setProperty(n: string, v: string): void; props: Record<string, string> } } };
+let doc: { activeElement: Node | null; title: string; referrer?: string; documentElement: Node & { style: { setProperty(n: string, v: string): void; props: Record<string, string> } } };
 const make = (tag: string): Node => new Node(tag);
 
 interface Call {
@@ -84,8 +84,9 @@ interface Call {
   body?: Record<string, unknown>;
 }
 
-function run(options: { token?: string; rooms: unknown[]; layout?: unknown; livery?: string; hash?: string; status?: number; respond?: (call: Call) => { status: number; body: unknown } | undefined }): { calls: Call[]; byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
+function run(options: { token?: string; rooms: unknown[]; layout?: unknown; livery?: string; hash?: string; search?: string; referrer?: string; status?: number; respond?: (call: Call) => { status: number; body: unknown } | undefined }): { calls: Call[]; byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; urls: string[]; ctx: vm.Context; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
   const replaced: string[] = [];
+  const urls: string[] = [];
   const sent: Array<Record<string, string>> = [];
   const calls: Call[] = [];
   const html = roomsPage(null, '1.2.3');
@@ -95,15 +96,15 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
   byId.gate?.append(make('h2'), make('p'));
   byId.add?.elements && Object.assign(byId.add.elements, { id: make('input'), name: make('input'), dir: make('input') });
   const root = Object.assign(make('html'), { style: { props: {} as Record<string, string>, setProperty(n: string, v: string) { this.props[n] = v; } } });
-  doc = { activeElement: null, title: '', documentElement: root };
+  doc = { activeElement: null, title: '', documentElement: root, referrer: options.referrer ?? 'http://127.0.0.1:7777/r/main/' } as typeof doc;
   const saved: Record<string, string> = {};
   if (options.livery !== undefined) saved['gonogo.livery'] = options.livery;
   if (options.token !== undefined) saved['gonogo.token'] = options.token;
   const context = {
     document: Object.assign(doc, { getElementById: (id: string) => byId[id] ?? null, createElement: make }),
     localStorage: { getItem: (k: string) => saved[k] ?? null, setItem: (k: string, v: string) => (saved[k] = v) },
-    location: { hash: options.hash ?? '', pathname: '/', replace: (to: string) => void replaced.push(to), assign: (to: string) => void replaced.push(`assign:${to}`) },
-    history: { replaceState() {} },
+    location: { hash: options.hash ?? '', search: options.search ?? '', origin: 'http://127.0.0.1:7777', pathname: '/', replace: (to: string) => void replaced.push(to), assign: (to: string) => void replaced.push(`assign:${to}`) },
+    history: { replaceState: (_s: unknown, _t: string, url: string) => void urls.push(url) },
     URLSearchParams,
     fetch: async (url: string, init: { headers?: Record<string, string>; method?: string; body?: string } = {}) => {
       sent.push(init.headers ?? {});
@@ -128,7 +129,7 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
   };
   vm.createContext(context);
   for (const script of scripts) vm.runInContext(script, context);
-  return { calls, byId, saved, replaced, sent, root };
+  return { calls, byId, saved, replaced, urls, ctx: context, sent, root };
 }
 
 const room = (patch: Record<string, unknown> = {}): Record<string, unknown> => ({ id: 'main', name: 'Main', state: 'running', agents: 15, running: 15, needsYou: 0, working: 0, lastActivity: null, tabName: null, note: null, ...patch });
@@ -242,11 +243,11 @@ describe('the rooms list page script', () => {
     expect(byId.rooms?.children.length).toBeGreaterThan(0);
   });
 
-  it('a 401, with or without a token, goes to the login page; nothing else is drawn', async () => {
+  it('a 401 goes to the login page (with ?old=1 when the visit had the key of the first setup, so that the page can say why); nothing else is drawn', async () => {
     for (const token of [undefined, 'a'.repeat(64)]) {
       const { byId, replaced } = run({ rooms: [room()], status: 401, ...(token === undefined ? {} : { token }) });
       await settle();
-      expect(replaced).toEqual(['/login']);
+      expect(replaced).toEqual([token === undefined ? '/login' : '/login?old=1']);
       expect(byId.rooms?.children).toHaveLength(0);
     }
   });
@@ -456,6 +457,56 @@ describe('stopping and starting rooms', () => {
     const none = run({ token: 'a'.repeat(64), rooms: [room()] });
     await settle();
     expect(none.byId.sum?.querySelector('[data-f="start-all"]')).toBeNull();
+  });
+});
+
+describe('an install with one room opens straight into it', () => {
+  const main = (patch: Record<string, unknown> = {}): Record<string, unknown> => room(patch);
+
+  it('goes to /r/main/ from the printed address or a typed one when main is the only room and it is up', async () => {
+    const { replaced } = run({ token: 'a'.repeat(64), rooms: [main()], referrer: '' });
+    await settle();
+    expect(replaced).toEqual(['/r/main/']);
+  });
+
+  it('decides on the first load only: a later poll that finds one room does not leave the list', async () => {
+    const rooms = [main(), main({ id: 'two', name: 'Two' })];
+    const { replaced, ctx } = run({ token: 'a'.repeat(64), rooms, referrer: '' });
+    await settle();
+    rooms.pop();
+    await vm.runInContext('load()', ctx);
+    expect(replaced).toEqual([]);
+  });
+
+  it('keeps ?list when it takes the token out of the address', () => {
+    const { urls } = run({ rooms: [], hash: '#token=' + 'a'.repeat(64), search: '?list' });
+    expect(urls).toEqual(['/?list']);
+  });
+
+  it('shows the list when the visit comes from a page of this site (the Rooms key of a room), or asks for it with ?list', async () => {
+    const fromRoom = run({ token: 'a'.repeat(64), rooms: [main()], referrer: 'http://127.0.0.1:7777/r/main/' });
+    await settle();
+    expect(fromRoom.replaced).toEqual([]);
+    expect(fromRoom.byId.rooms?.children).toHaveLength(2); // main's card and the one for a new room
+    const asked = run({ token: 'a'.repeat(64), rooms: [main()], search: '?list', referrer: '' });
+    await settle();
+    expect(asked.replaced).toEqual([]);
+  });
+
+  it('shows the list from two rooms on, and when main is not running', async () => {
+    const two = run({ token: 'a'.repeat(64), rooms: [main(), room({ id: 'docs', name: 'Docs' })], referrer: '' });
+    await settle();
+    expect(two.replaced).toEqual([]);
+    const down = run({ token: 'a'.repeat(64), rooms: [main({ state: 'stopped', agents: null })], referrer: '' });
+    await settle();
+    expect(down.replaced).toEqual([]);
+  });
+});
+
+describe('the scripts of the page', () => {
+  it('hold no control character (the whole page is scanned) but a line break or a tab: the browser would change it, and the hash of the Content-Security-Policy would no longer fit the script (the page would not run)', () => {
+    const html = roomsPage(null, '1.2.3');
+    expect(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(html)).toBe(false);
   });
 });
 

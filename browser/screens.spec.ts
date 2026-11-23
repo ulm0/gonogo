@@ -490,6 +490,22 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
 test('screens of the app and the docs', async ({ browser }) => {
   test.setTimeout(480_000);
   // 1. before an account: the setup page; 2. the account; 3. the login page
+  // a newcomer: the address gonogo prints (with the key in it), before any account exists, then the same address after the login was set up
+  const printed = /#token=([0-9a-f]{64})/.exec(output)?.[1] ?? '';
+  const newcomer = async (stage: string): Promise<void> => {
+    for (const size of SIZES) {
+      const context = await browser.newContext({ viewport: { width: size.width, height: size.height } });
+      const page = await context.newPage();
+      await page.goto(`${base}/${printed === '' ? '' : `#token=${printed}`}`);
+      await page.waitForLoadState('load');
+      await page.waitForTimeout(2500);
+      const group = `newcomer-${size.name}`;
+      await shoot(page, group, `${stage}: where the printed address lands (${new URL(page.url()).pathname})`, true);
+      await measure(page, group, stage, 'body');
+      await context.close();
+    }
+  };
+  await newcomer('before the login');
   const setupContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const setupPage = await setupContext.newPage();
   await setupPage.goto(`${base}/setup`);
@@ -498,6 +514,7 @@ test('screens of the app and the docs', async ({ browser }) => {
   await setupPage.locator('input[name=password]').fill(PASSWORD);
   await setupPage.locator('form button[type=submit], form input[type=submit]').first().click();
   await setupPage.waitForURL((url) => !url.pathname.startsWith('/setup'));
+  await newcomer('after the login: the same address');
   const state = await setupContext.storageState();
 
   const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -510,7 +527,7 @@ test('screens of the app and the docs', async ({ browser }) => {
   for (const size of SIZES) {
     const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
     const page = await context.newPage();
-    await page.goto(`${base}/`);
+    await page.goto(`${base}/?list`);
     await shoot(page, `empty-${size.name}`, 'rooms list', true);
     await app(page, `empty-${size.name}`, false);
     await context.close();
@@ -560,7 +577,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       const group = `${scheme.name}-${size.name}`;
       const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height }, permissions: ['clipboard-read', 'clipboard-write'] });
       const page = await context.newPage();
-      await page.goto(`${base}/`);
+      await page.goto(`${base}/?list`);
       await shoot(page, group, 'rooms list', true);
       await measure(page, group, 'rooms list');
       await view(page, group, 'rooms list: the new room form', () => page.getByRole('button', { name: 'NEW ROOM' }).click({ timeout: 5000 }), true);

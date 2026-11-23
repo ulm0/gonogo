@@ -104,7 +104,10 @@ describe('Commissioning', () => {
     const done = (s: ReturnType<typeof commissioningSteps>): string[] => s.filter((x) => x.done).map((x) => x.id);
     expect(done(commissioningSteps([agent('flight', { boss: true, state: 'needs_you' })], NO_PROPELLANT, defaultView(), new Set()))).toEqual([]);
     const limited = { ...NO_PROPELLANT, room: { ...NO_PROPELLANT.room, limits: { day: 1_000_000 } } };
+    expect(done(commissioningSteps([flight], limited, { ...defaultView(), current: 'night-shift' }, new Set(['note']), true))).toEqual(['flight', 'brief', 'propellant', 'livery', 'note']);
     expect(done(commissioningSteps([flight], limited, { ...defaultView(), current: 'night-shift' }, new Set(['note'])))).toEqual(['flight', 'propellant', 'livery', 'note']);
+    // a FLIGHT that is still starting, or that needs you (a startup question, a sign-in that is missing), is not staffed
+    expect(done(commissioningSteps([agent('flight', { boss: true, state: 'starting' })], NO_PROPELLANT, defaultView(), new Set()))).toEqual([]);
     expect(done(commissioningSteps([flight], NO_PROPELLANT, defaultView(), new Set(['livery'])))).toEqual(['flight', 'livery']);
   });
 });

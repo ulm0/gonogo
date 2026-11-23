@@ -30,12 +30,15 @@ import { MAIN_PATH } from './base.js';
 import { copyText } from './uplink.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import { inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { SetupStrip } from './SetupStrip.js';
 import { PhoneBar, TopBar } from './TopBar.js';
 import './shell.css';
 
 /* ---- system states (System.dc.html) ---- */
 
 function Unauthorized(): ReactElement {
+  // the address gonogo prints has the key of the first setup in it: once a login exists that key is refused, and the tab says so instead of a bare refusal
+  const oldLink = api.hadSetupLink();
   return (
     <main className="system" data-system="nogo">
       <section className="system-slab module flood" data-tone="nogo" aria-label="Not signed in">
@@ -44,11 +47,13 @@ function Unauthorized(): ReactElement {
           NOT SIGNED IN
         </p>
         <h1 className="disp system-word">NO-GO</h1>
-        <p className="system-lead">This tab is not signed in.</p>
-        <p className="system-text">Log in with your account. Before an account is set up, open the address gonogo printed when it started: the part after # is the key.</p>
+        <p className="system-lead">{oldLink ? 'This link was for the first setup.' : 'This tab is not signed in.'}</p>
+        <p className="system-text">
+          {oldLink ? 'A login exists now: sign in with your name and password. The address with # in it opens gonogo only until the login is set up.' : 'Log in with your account. Before an account is set up, open the address gonogo printed when it started: the part after # is the key.'}
+        </p>
         <p className="system-actions">
           <a className="btn" data-kind="primary" href="/login">
-            LOG IN
+            {oldLink ? 'SIGN IN' : 'LOG IN'}
           </a>
         </p>
       </section>
@@ -413,6 +418,7 @@ function Office(): ReactElement {
   return (
     <>
       <TopBar phone={phone} onPanel={() => setPanel(true)} />
+      <SetupStrip />
       <GoneStrip />
       <RolloutStrip />
       <OtherRoomStrip />

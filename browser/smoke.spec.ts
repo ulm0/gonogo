@@ -112,9 +112,13 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   await page.locator('form button[type=submit], form input[type=submit]').first().click();
   await page.locator('input[name=code]').fill(totp(secret, step + 1));
   await page.locator('form button[type=submit], form input[type=submit]').first().click();
-  await page.waitForURL(`${base}/`);
-  await expect(page.locator('a[href^="/r/main/"]').first()).toBeVisible();
+  // with one room "/" goes straight into it (main); the list is asked for
+  await page.waitForURL((url) => url.pathname === '/' || url.pathname === '/r/main/');
+  await expect(page.locator('.topbar')).toBeVisible();
   expectClean('/');
+  await page.goto(`${base}/?list`);
+  await expect(page.locator('a[href^="/r/main/"]').first()).toBeVisible();
+  expectClean('the list of rooms');
 
   // 3. the style sheet is applied and the fonts came
   await page.goto(`${base}/r/main/`);

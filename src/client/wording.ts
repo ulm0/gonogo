@@ -1,4 +1,4 @@
-import { STATE_LABELS } from '../shared/protocol.js';
+import { DOCS_URL, STATE_LABELS } from '../shared/protocol.js';
 import type { ExitSummary } from '../shared/protocol.js';
 
 // Words the owner reads, kept out of the components so that they can be tested without a DOM.
@@ -63,3 +63,6 @@ export function plainActivityNote(note: string): string {
   if (load !== null) return `waiting for Max Q: ${load[1]} of ${load[2]} agents working`;
   return note;
 }
+
+/** The glossary of the words the first screens use (room, console, FLIGHT, brief, Downlink); a page of the docs. */
+export const GLOSSARY_URL = `${DOCS_URL}guide/glossary`;

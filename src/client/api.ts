@@ -132,6 +132,9 @@ export type ApiFailure = Error & { field?: string; status?: number; stepUp?: boo
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/i;
 
 let token: string | null = null;
+/** This tab started with a key (the address gonogo prints, or one kept from before): if the server then refuses it, that address was for the first setup. */
+let openedWithKey = false;
+export const hadSetupLink = (): boolean => openedWithKey;
 let socket: WebSocket | null = null;
 let started = false;
 let attempting = false;
@@ -1422,6 +1425,7 @@ export function start(): void {
   });
   // no token: the page tries the session cookie of the login; a 401 then says "log in"
   token = findToken();
+  openedWithKey = token !== null;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && store.getState().connection === 'reconnecting') void connect();
   });

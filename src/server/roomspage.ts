@@ -102,7 +102,7 @@ const list=$('rooms'),note=$('note'),form=$('add'),gate=$('gate'),sum=$('sum'),t
 let token=null,rooms=null,layout=null,renaming=null,removing=null,stopping=null,forcing=null,seen='',said=-1,dry=null,ask=null;
 try{
   const h=new URLSearchParams(location.hash.slice(1));
-  if(/^[0-9a-f]{64}$/i.test(h.get(FRAG)||'')){token=h.get(FRAG);try{localStorage.setItem(KEY,token)}catch{}history.replaceState(null,'',location.pathname)}
+  if(/^[0-9a-f]{64}$/i.test(h.get(FRAG)||'')){token=h.get(FRAG);try{localStorage.setItem(KEY,token)}catch{}history.replaceState(null,'',location.pathname+location.search)}
   else token=localStorage.getItem(KEY);
 }catch{}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
@@ -302,9 +302,11 @@ async function load(){
   try{
     const res=await fetch('/api/rooms',{headers:token?{Authorization:'Bearer '+token}:{},cache:'no-store'});
     // no token, or one that no longer opens anything: the login (which says "set up" on an install with no account yet)
-    if(res.status===401){location.replace('/login');return}
+    if(res.status===401){location.replace(token?'/login?old=1':'/login');return}
     const body=await res.json(),next=body.rooms||[],text=JSON.stringify([next,body.layout||null]);
-    rooms=next;layout=body.layout||null;
+    const first=rooms===null;rooms=next;layout=body.layout||null;
+    // an install with one room (main, up) opens straight into it, from the printed address or a typed one; a click on Rooms from inside a room (the referrer is this site) still shows the list, and ?list asks for it
+    if(first&&next.length===1&&next[0].id==='main'&&next[0].state==='running'&&!/[?&]list/.test(location.search||'')&&!String(document.referrer||'').startsWith((location.origin||'')+'/')){location.replace('/r/main/');return}
     // while a name is being typed the cards stay as they are; the next poll draws what changed
     if(text!==seen&&renaming===null&&ask===null){seen=text;draw()}
   }catch{if(rooms===null)shut('Could not reach the server','Is gonogo still running? This page asks again in a few seconds.');else fail('Could not reach the server.')}
