@@ -68,6 +68,7 @@
 
   /* the version and the Rooms key came into the bar: its words give back 6 px of padding on each side (never the 44 px height) */
   .topbar .btn {
+    padding: 0 10px;
   }
 }
 
