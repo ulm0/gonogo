@@ -1114,6 +1114,15 @@ export interface LinkEventView {
   text: string;
   status?: TaskStatus;
   attachments?: Deliverable[];
+  /** A status that a station further on reported through this one: its name (display text only). */
+  via?: string;
+  /** On a `lost` event: the first `seq` it stands for (it covers `from` to `seq`). */
+  first?: number;
+}
+/** One hop of a chain of hand-offs: display text, never an address. */
+export interface ChainHop {
+  station: string;
+  task: string;
 }
 /** One link, for the cards and the board: counts, states and cleaned titles only. */
 export interface LinkView {
@@ -1133,6 +1142,10 @@ export interface LinkView {
   priority: LinkPriority;
   onward: boolean;
   budget: number | null;
+  /** The stations above this one, from the first sender: `A/t4 → B/t9` (this station is the last). Display text, checked, never acted on. */
+  chain?: ChainHop[];
+  /** What a station further on last reported through this link, "ops: doing". */
+  via?: string;
   /** Events in the trail, and events of ours that wait to be acked. */
   events: number;
   waiting: number;

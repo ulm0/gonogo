@@ -80,6 +80,9 @@ const NONCE_RE = /^[0-9a-f]{16,64}$/;
 const TASK_ID_RE = /^t[1-9]\d{0,5}$/;
 const CODE_PREFIX = 'gonogo-dock:';
 /** The routes under /dock and the one method each takes. */
+/** A thread: a message whose subject starts with `[dl_<16 hex>]` belongs to that link. The link has to be one with the dock the message goes to or comes from. */
+const THREAD_RE = /^\[(dl_[0-9a-f]{16})\]/;
+
 export const DOCK_ROUTES: Readonly<Record<string, 'GET' | 'POST'>> = { pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', link: 'POST', undock: 'POST' };
 
 /** The name of this station: GONOGO_STATION, else the first label of the host name, cut to the shape of a name. */
@@ -469,6 +472,21 @@ export function createDocking(options: DockingOptions): Docking {
     return transport(dock.name, dock.url + urlPath, method, headers, method === 'POST' ? body : undefined, timeoutMs);
   }
 
+  /** Once per start and dock, after the first answer: what the dock holds of each link, and what it lacks (a file lost, an outbox dropped) goes again. A dock that cannot say is left alone; the outbox does the rest. */
+  const repaired = new Set<string>();
+  async function repairLinks(dock: Dock): Promise<void> {
+    if (repaired.has(dock.id)) return;
+    repaired.add(dock.id);
+    for (const view of links.views().filter((l) => l.peer === dock.id && l.state !== 'detached' && l.state !== 'refused')) {
+      try {
+        const answer = await call(dock, 'GET', `link/${view.id}`);
+        links.repair(dock.id, view.id, answer.held);
+      } catch (error) {
+        log.debug(`repair of ${view.id} with ${dock.name} did not go: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
   /** Asks one station for its roster. Its failure is what the dock shows, not an error. */
   async function pullOne(dock: Dock): Promise<void> {
     const state = liveOf(dock);
@@ -476,6 +494,7 @@ export function createDocking(options: DockingOptions): Docking {
     state.pulling = true;
     try {
       const answer = await call(dock, 'GET', 'roster');
+      void repairLinks(dock);
       const station = isRecord(answer.station) ? answer.station : {};
       if (station.id !== dock.id) throw new HubError('conflict', 'the station at this address is not the one that was docked');
       // it may rename itself; the name is the part after the @, so two docks never share one
@@ -552,6 +571,7 @@ export function createDocking(options: DockingOptions): Docking {
     const mine = random(16);
     const dock: Dock = { id: theirId, name, url: theirUrl, secret: mac(token, 'secret', mine, nonce, id, theirId), since: now() };
     docks.push(dock);
+    links.reattach(dock.id);
     await save();
     publish();
     // no pull yet: the other side has not saved the dock until it reads this answer. Its first pull, right after, makes us pull.
@@ -559,6 +579,9 @@ export function createDocking(options: DockingOptions): Docking {
   }
 
   function acceptMessage(dock: Dock, body: Record<string, unknown>): SendResult {
+    // a thread tag has to name a link with the station that sends the message, else the message is refused (a station cannot write into the thread of another)
+    const tag = typeof body.subject === 'string' ? THREAD_RE.exec(body.subject)?.[1] : undefined;
+    if (tag !== undefined && links.of(dock.id, tag) === undefined) throw new HubError('bad_request', `the thread ${tag} is not a link with ${dock.name}`, 'subject');
     // the hub checks every field of a message from a station, as it does for one from an agent
     return options.deliver(dock.name, body as unknown as StationMessage);
   }
@@ -582,6 +605,11 @@ export function createDocking(options: DockingOptions): Docking {
         options.notify?.(`${name} gave back "${link.title}"${event.text === '' ? '' : `: ${event.text}`}`);
       } else if (event.kind === 'refuse') {
         options.notify?.(`${name} did not take "${link.title}"${event.text === '' ? '' : `: ${event.text}`}`);
+      }
+      // hop by hop: this task is also held here for the station above, which hears what the station below says, as "reported by <station>"
+      const above = links.incomingByTask(link.mine);
+      if (above !== undefined && above.state === 'accepted' && event.kind === 'status' && event.status !== undefined && /^[a-z0-9][a-z0-9-]{0,30}$/.test(link.peerName)) {
+        links.record(above, 'status', `station@${options.name}`, event.status, undefined, { via: link.peerName });
       }
     } else if (event.kind === 'recall') {
       // only the task that is bound to this link, and only if it is not done
@@ -679,6 +707,9 @@ export function createDocking(options: DockingOptions): Docking {
         const accept = have.trail.find((e) => e.kind === 'accept' && e.author === id);
         return { ok: true, id: have.mine, link: linkId, ...(accept === undefined ? {} : { accept }) };
       }
+      // what the offer says of the chain above its sender: no more than 3 stations in all, and not through this station again
+      if (offer !== null && offer.chain.length > 1) return refusal('a task goes through 3 stations at most');
+      if (offer !== null && offer.chain.some((hop) => hop.station === options.name)) return refusal(`${options.name} is already in the chain of this task`);
       if (links.incomingThisHour(dock.id) >= LINK_IN_PER_HOUR) return refusal(`more than ${LINK_IN_PER_HOUR} tasks in the last hour from this station`);
       if (links.openIncoming(dock.id) >= LINK_INCOMING_OPEN_MAX) return refusal(`this station already holds ${LINK_INCOMING_OPEN_MAX} open tasks from ${dock.name}`);
     }
@@ -707,6 +738,11 @@ export function createDocking(options: DockingOptions): Docking {
     if (linkId === null || offer === null) return { ok: true, id: task.id };
     await options.tasks.attach(task.id, { link: linkId, note: `handed off from ${dock.name}${theirs} on link ${linkId}` });
     const link = links.incoming(dock, linkId, task.id, offer, task.title, `director@${dock.name}`);
+    // the stations above this one, for the card: the sender's own chain and the sender (display text, never an address); the sender's task id, for the card
+    if (typeof body.id === 'string' && TASK_ID_RE.test(body.id)) {
+      link.theirs = body.id;
+      link.chain = [...offer.chain, { station: dock.name, task: body.id }];
+    }
     const accept = links.record(link, 'accept', `station@${options.name}`, '', undefined, { queue: false });
     tellIncoming(dock, task.title);
     // no agent of that name here: the station's boss gets the task and a message that says whose words they are (not the Director's)
@@ -796,12 +832,17 @@ export function createDocking(options: DockingOptions): Docking {
     async send(station, message) {
       const dock = byName(station);
       if (!dock) return { ok: false, note: `${station} is not docked` };
+      const tag = typeof message.subject === 'string' ? THREAD_RE.exec(message.subject)?.[1] : undefined;
+      const thread = tag === undefined ? undefined : links.of(dock.id, tag);
+      if (tag !== undefined && thread === undefined) return { ok: false, note: `the thread ${tag} is not a link with ${station}` };
       try {
         const answer = await call(dock, 'POST', 'message', message);
         const status = typeof answer.status === 'string' ? clip(answer.status) : 'unknown';
         const note = typeof answer.note === 'string' && answer.note !== '' ? `, ${clip(answer.note)}` : '';
         // the other hub's own words: its message is "undelivered" when it went to its Director
         if (answer.ok !== true) return { ok: false, note: `${station} did not deliver it: ${status}${note}` };
+        // a thread message is also an event of its link (a question or a reply; its words are the subject, the mail keeps the body)
+        if (thread !== undefined) links.record(thread, /^\[dl_[0-9a-f]{16}\]\s*re:/i.test(message.subject) ? 'reply' : 'ask', `${NAME_RE.test(message.from) ? message.from : 'agent'}@${options.name}`, message.subject.replace(THREAD_RE, '').trim());
         return { ok: true, note: `accepted by ${station}: ${status}${note}` };
       } catch (error) {
         return { ok: false, note: error instanceof Error ? error.message : String(error) };
@@ -859,6 +900,7 @@ export function createDocking(options: DockingOptions): Docking {
         throw refusal;
       }
       docks.push(dock);
+      links.reattach(dock.id);
       await save();
       publish();
       void pullOne(dock).then(publish);
@@ -892,6 +934,15 @@ export function createDocking(options: DockingOptions): Docking {
       const assignee = input.assignee ?? null;
       if (assignee !== null && (typeof assignee !== 'string' || !NAME_RE.test(assignee))) throw bad('assignee must be the name of an agent of that station, or null', 'assignee');
       const offer = readOffer(input);
+      // a task that came from another station goes on only if its offer said `onward`, to a station not already in its chain, and through 3 stations at most (a rule this gonogo honours, not a guarantee against a modified peer)
+      const upstream = links.incomingByTask(task.id);
+      if (upstream !== undefined) {
+        if (upstream.state !== 'accepted') throw new HubError('conflict', `this task is not held here any more (its link with ${upstream.peerName} is ${upstream.state})`, 'task');
+        if (!upstream.onward) throw new HubError('conflict', `${upstream.peerName} did not allow this task to be handed on: its offer did not say onward`, 'task');
+        if (upstream.chain.length >= 2) throw new HubError('conflict', 'a task goes through 3 stations at most: it cannot be handed on again', 'task');
+        if (upstream.peerName === dock.name || upstream.chain.some((hop) => hop.station === dock.name)) throw new HubError('conflict', `${dock.name} is already in the chain of this task: handing it on would make a loop`, 'task');
+        offer.chain = upstream.chain.map((hop) => ({ ...hop }));
+      }
       if ((task.links?.length ?? 0) >= LINKS_PER_TASK_MAX) throw new HubError('conflict', `a task has at most ${LINKS_PER_TASK_MAX} links to other stations`, 'task');
       if (links.outgoingThisHour(dock.id) >= LINK_OUT_PER_HOUR) throw new HubError('rate_limited', `at most ${LINK_OUT_PER_HOUR} tasks an hour to one station`);
       handing.add(task.id);
@@ -1008,6 +1059,15 @@ export function createDocking(options: DockingOptions): Docking {
       const dock = authenticate(method, url, headers, body);
       // it calls in, so it answers calls too: this is the first pull of the side that made the code, and the next one of a dock that was down
       if (route !== 'undock' && liveOf(dock).status !== 'ok') void pullOne(dock).then(publish);
+      // a station that was undocked and docked again: its first signed call gives its links the state they had
+      if (route !== 'undock') links.reattach(dock.id);
+      // the repair route: what this station holds of one link of that dock (the highest `seq` of each author), so that the dock can send what is lacking
+      if (route.startsWith('link/')) {
+        if (method !== 'GET') throw new HubError('bad_request', 'GET only');
+        const held = links.held(dock.id, route.slice(5));
+        if (held === null) throw new HubError('not_found', 'unknown link', 'link');
+        return { link: route.slice(5), held };
+      }
       switch (route) {
         case 'roster':
           return { station: { id, name: options.name }, agents: options.roster() };

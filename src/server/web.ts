@@ -2188,7 +2188,9 @@ export function createWebServer(options: WebOptions): WebServer {
   const handleDock = async (req: IncomingMessage, res: ServerResponse, segments: string[]): Promise<void> => {
     const docking = options.docking;
     const route = segments[1] ?? '';
-    if (!docking || segments.length !== 2 || !Object.hasOwn(DOCK_ROUTES, route) || options.features?.isOn('docking') === false) {
+    // /dock/link/<id>: the repair route (what this station holds of one link), GET
+    const repair = segments.length === 3 && route === 'link' && /^dl_[0-9a-f]{16}$/.test(segments[2] ?? '');
+    if (!docking || (segments.length !== 2 && !repair) || !Object.hasOwn(DOCK_ROUTES, route) || options.features?.isOn('docking') === false) {
       sendNotFound(res);
       return;
     }
@@ -2196,8 +2198,8 @@ export function createWebServer(options: WebOptions): WebServer {
       sendApiError(res, 503, 'starting', 'unavailable');
       return;
     }
-    if (req.method !== DOCK_ROUTES[route]) {
-      sendMethodNotAllowed(res, DOCK_ROUTES[route] ?? 'POST');
+    if (req.method !== (repair ? 'GET' : DOCK_ROUTES[route])) {
+      sendMethodNotAllowed(res, repair ? 'GET' : (DOCK_ROUTES[route] ?? 'POST'));
       return;
     }
     const body = await readBody(req, DOCK_BODY_MAX_BYTES);
@@ -2207,7 +2209,7 @@ export function createWebServer(options: WebOptions): WebServer {
       return;
     }
     try {
-      sendJson(res, 200, await docking.handle(route, req.method, req.url ?? '', req.headers, body.body));
+      sendJson(res, 200, await docking.handle(repair ? `link/${segments[2]}` : route, req.method, req.url ?? '', req.headers, body.body));
     } catch (e) {
       sendHubError(res, e);
     }

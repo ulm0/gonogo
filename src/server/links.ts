@@ -9,8 +9,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AGENT_NAME_PATTERN, DELIVERABLE_KINDS, LINK_PRIORITIES, TASK_STATUSES } from '../shared/protocol.js';
-import type { Deliverable, LinkEventView, LinkPriority, LinkState, LinkView, Logger, OutboundEntry, Task, TaskStatus } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, DELIVERABLE_KINDS, LINK_PRIORITIES, STATION_NAME_PATTERN, TASK_STATUSES } from '../shared/protocol.js';
+import type { ChainHop, Deliverable, LinkEventView, LinkPriority, LinkState, LinkView, Logger, OutboundEntry, Task, TaskStatus } from '../shared/protocol.js';
 import {
   DOCK_OUTBOX_FILE,
   LINK_BATCH_MAX,
@@ -49,6 +49,10 @@ export interface LinkEvent {
   status?: TaskStatus;
   /** Deliverables of a status: links to the work, never its body. */
   attachments?: Deliverable[];
+  /** A station further on, reported through this one (a `status` with no status of its own). */
+  via?: string;
+  /** `lost` only: the first `seq` it stands for. */
+  first?: number;
 }
 
 export interface Link {
@@ -66,6 +70,11 @@ export interface Link {
   priority: LinkPriority;
   onward: boolean;
   budget: number | null;
+  chain: ChainHop[];
+  /** What a station further on last reported, "ops: doing". */
+  via?: string;
+  /** The state before an undock: a redock resumes it. */
+  resume?: LinkState;
   trail: LinkEvent[];
   /** The last `seq` of ours, and the last of theirs that was applied in order. */
   outSeq: number;
@@ -120,7 +129,15 @@ export interface Links {
   of(dockId: string, id: string): Link | undefined;
   byTask(taskId: string): Link[];
   /** An event of ours. Stored, queued for the dock and sent at once without waiting for the answer. */
-  record(link: Link, kind: string, by: string, text: string, status?: TaskStatus, extra?: { queue?: boolean; attachments?: Deliverable[] }): LinkEvent;
+  record(link: Link, kind: string, by: string, text: string, status?: TaskStatus, extra?: { queue?: boolean; attachments?: Deliverable[]; via?: string }): LinkEvent;
+  /** The receiver's task of an incoming link, if this task came from another station. */
+  incomingByTask(taskId: string): Link | undefined;
+  /** An undocked station is docked again: its links resume the state they had. */
+  reattach(dockId: string): number;
+  /** What this station holds of a link: the highest `seq` of each author (the answer of the repair route), or null. */
+  held(dockId: string, linkId: string): Record<string, number> | null;
+  /** The peer says what it holds: what it lacks, and that this trail still has, goes into the outbox again. */
+  repair(dockId: string, linkId: string, theirs: unknown): number;
   /** The events a dock sent. Returns what it applied, per link, for the ack. Never throws for one bad event: it is refused and logged. */
   apply(dock: { id: string; name: string }, raw: unknown): Record<string, number>;
   /** An event of theirs that came in the answer of an offer (accept, refuse). */
@@ -141,6 +158,8 @@ export interface OfferFields {
   priority: LinkPriority;
   onward: boolean;
   budget: number | null;
+  /** The stations above the receiver, first sender first. At most 2: a task goes through 3 stations at most. */
+  chain: ChainHop[];
 }
 
 /** Text of another station, or ours on its way out: control, bidi and zero-width characters out, one line, cut. */
@@ -166,7 +185,16 @@ export function readOffer(body: Record<string, unknown>): OfferFields {
     if (typeof body.budget !== 'number' || !Number.isFinite(body.budget) || body.budget < 0 || body.budget > 1_000_000) throw bad('budget must be a number of dollars from 0 to 1000000', 'budget');
     budget = Math.round(body.budget * 100) / 100;
   }
-  return { due, priority, onward: body.onward === true, budget };
+  const chain: ChainHop[] = [];
+  if (body.chain !== undefined && body.chain !== null) {
+    if (!Array.isArray(body.chain)) throw bad('chain must be a list of { station, task }', 'chain');
+    if (body.chain.length > 2) throw bad('a task goes through 3 stations at most', 'chain');
+    for (const hop of body.chain) {
+      if (!isRecord(hop) || typeof hop.station !== 'string' || !new RegExp(STATION_NAME_PATTERN).test(hop.station) || typeof hop.task !== 'string' || !/^t[1-9]\d{0,5}$/.test(hop.task)) throw bad('a hop of the chain is { station, task }, a station name and a task id', 'chain');
+      chain.push({ station: hop.station, task: hop.task });
+    }
+  }
+  return { due, priority, onward: body.onward === true, budget, chain };
 }
 
 const hashOf = (e: Pick<LinkEvent, 'kind' | 'by' | 'text' | 'status' | 'attachments'>): string => createHash('sha256').update(JSON.stringify([e.kind, e.by, e.text, e.status ?? null, e.attachments ?? null])).digest('hex').slice(0, 16);
@@ -353,12 +381,51 @@ export function createLinks(options: LinksOptions): Links {
       return link !== undefined && link.peer === dockId ? link : undefined;
     },
     byTask: (taskId) => [...links.values()].filter((l) => l.mine === taskId),
+    incomingByTask: (taskId) => [...links.values()].find((l) => l.role === 'receiver' && l.mine === taskId),
+
+    reattach(dockId) {
+      let n = 0;
+      for (const link of links.values()) {
+        if (link.peer !== dockId || link.state !== 'detached') continue;
+        link.state = link.resume ?? 'accepted';
+        delete link.resume;
+        touch(link);
+        n += 1;
+      }
+      if (n > 0) {
+        save();
+        options.changed();
+      }
+      return n;
+    },
+
+    held(dockId, linkId) {
+      const link = api.of(dockId, linkId);
+      return link === undefined ? null : { [stationId()]: link.outSeq, [dockId]: link.inSeq };
+    },
+
+    repair(dockId, linkId, theirs) {
+      const link = api.of(dockId, linkId);
+      if (link === undefined || !isRecord(theirs)) return 0;
+      const have = typeof theirs[stationId()] === 'number' && Number.isSafeInteger(theirs[stationId()]) ? (theirs[stationId()] as number) : 0;
+      const b = box(dockId);
+      const queued = new Set(b.events.filter((e) => e.link === link.id).map((e) => e.seq));
+      const lacking = link.trail.filter((e) => e.author === stationId() && e.seq > have && e.kind !== 'offer' && e.seq > 0 && !queued.has(e.seq));
+      for (const event of lacking) b.events.push({ ...event, queuedAt: now() });
+      if (lacking.length > 0) {
+        b.events.sort((x, y) => (x.link === y.link ? x.seq - y.seq : 0));
+        save();
+        options.changed();
+        sendNow(dockId);
+      }
+      return lacking.length;
+    },
 
     record(link, kind, by, text, status, extra = {}) {
       const queue = extra.queue !== false;
       const clean = cleanLine(text);
       const attachments = extra.attachments === undefined ? [] : readDeliverables(extra.attachments);
-      const event: LinkEvent = { link: link.id, author: stationId(), seq: link.outSeq + 1, at: now(), kind, by: cleanLine(by, 80), text: clean, ...(status === undefined ? {} : { status }), ...(attachments.length === 0 ? {} : { attachments }) };
+      const event: LinkEvent = { link: link.id, author: stationId(), seq: link.outSeq + 1, at: now(), kind, by: cleanLine(by, 80), text: clean, ...(status === undefined ? {} : { status }), ...(attachments.length === 0 ? {} : { attachments }), ...(extra.via !== undefined && new RegExp(STATION_NAME_PATTERN).test(extra.via) ? { via: extra.via } : {}) };
       link.outSeq = event.seq;
       link.trail.push(event);
       clipTrail(link);
@@ -368,8 +435,10 @@ export function createLinks(options: LinksOptions): Links {
       if (kind !== 'offer' && queue) {
         const b = box(link.peer);
         b.events.push({ ...event, queuedAt: now() });
-        // past the cap the oldest goes; the lost events that say so are the next slice's
-        while (b.events.length > OUTBOX_PER_DOCK_MAX) b.events.shift();
+        // past the cap the oldest goes, and a `lost` event stands for what went
+        const gone: Array<LinkEvent & { queuedAt: number }> = [];
+        while (b.events.length > OUTBOX_PER_DOCK_MAX) gone.push(b.events.shift() as LinkEvent & { queuedAt: number });
+        if (gone.length > 0) markLost(link.peer, gone);
       }
       options.trace(link.peer, `link event ${kind} on ${link.id}`);
       save();
@@ -425,7 +494,11 @@ export function createLinks(options: LinksOptions): Links {
         retry.set(id, state);
         if (b === undefined || b.events.length === 0 || state.busy || (!force && now() < state.at)) continue;
         // an event unsent for 7 days is not worth the room: it goes (the next slice replaces it with a visible `lost`)
-        b.events = b.events.filter((e) => now() - e.queuedAt < OUTBOX_EVENT_MAX_AGE_MS);
+        const old = b.events.filter((e) => now() - e.queuedAt >= OUTBOX_EVENT_MAX_AGE_MS);
+        if (old.length > 0) {
+          b.events = b.events.filter((e) => !old.includes(e));
+          markLost(id, old);
+        }
         if (b.events.length === 0) continue;
         state.busy = true;
         const batch = b.events.slice(0, LINK_BATCH_MAX);
@@ -460,7 +533,11 @@ export function createLinks(options: LinksOptions): Links {
     },
 
     detach(dockId) {
-      for (const link of links.values()) if (link.peer === dockId) link.state = 'detached';
+      for (const link of links.values()) {
+        if (link.peer !== dockId) continue;
+        if (link.state !== 'detached') link.resume = link.state;
+        link.state = 'detached';
+      }
       outboxes.delete(dockId);
       retry.delete(dockId);
       save();
@@ -482,6 +559,8 @@ export function createLinks(options: LinksOptions): Links {
         priority: l.priority,
         onward: l.onward,
         budget: l.budget,
+        ...(l.chain.length === 0 ? {} : { chain: l.chain.map((h) => ({ ...h })) }),
+        ...(l.via === undefined ? {} : { via: l.via }),
         events: l.trail.length,
         waiting: (outboxes.get(l.peer)?.events ?? []).filter((e) => e.link === l.id).length,
         updatedAt: l.updatedAt,
@@ -491,7 +570,7 @@ export function createLinks(options: LinksOptions): Links {
     trail(id) {
       const link = links.get(id);
       if (!link) return null;
-      return link.trail.map((e) => ({ link: e.link, from: e.author === stationId() ? 'us' : 'them', seq: e.seq, at: e.at, kind: e.kind, by: e.by, text: e.text, ...(e.status === undefined ? {} : { status: e.status }), ...(e.attachments === undefined ? {} : { attachments: e.attachments }) }));
+      return link.trail.map((e) => ({ link: e.link, from: e.author === stationId() ? 'us' : 'them', seq: e.seq, at: e.at, kind: e.kind, by: e.by, text: e.text, ...(e.status === undefined ? {} : { status: e.status }), ...(e.attachments === undefined ? {} : { attachments: e.attachments }), ...(e.via === undefined ? {} : { via: e.via }), ...(e.first === undefined ? {} : { first: e.first }) }));
     },
 
     outbound: (dockId) => (outboxes.get(dockId)?.sent ?? []).map((s) => ({ ...s })).concat((outboxes.get(dockId)?.events ?? []).map((e) => ({ at: e.at, link: e.link, seq: e.seq, kind: e.kind, by: e.by, text: e.text, ackedAt: null }))).slice(-OUTBOX_SENT_KEEP),
@@ -499,6 +578,23 @@ export function createLinks(options: LinksOptions): Links {
 
     close: () => pending.then(() => undefined),
   };
+
+  /** Events that were given up on (the outbox was full, or they waited 7 days): one `lost` event per link stands for the range, on the wire and in the trail, so the loss is seen and the numbering has no hole. */
+  function markLost(dockId: string, dropped: ReadonlyArray<LinkEvent>): void {
+    const byLink = new Map<string, LinkEvent[]>();
+    for (const e of dropped) byLink.set(e.link, [...(byLink.get(e.link) ?? []), e]);
+    const b = box(dockId);
+    for (const [id, list] of byLink) {
+      const link = links.get(id);
+      if (link === undefined) continue;
+      const first = Math.min(...list.map((e) => e.seq));
+      const last = Math.max(...list.map((e) => e.seq));
+      const event: LinkEvent = { link: id, author: stationId(), seq: last, first, at: now(), kind: 'lost', by: `station@${options.station().name}`, text: `${list.length} event${list.length === 1 ? ' was' : 's were'} not delivered` };
+      link.trail = [...link.trail.filter((e) => !(e.author === stationId() && e.seq >= first && e.seq <= last)), event].sort((x, y) => x.at - y.at);
+      b.events = [...b.events.filter((e) => !(e.link === id && e.seq >= first && e.seq <= last)), { ...event, queuedAt: now() }];
+      options.trace(dockId, `link events lost on ${id}`, 'failed');
+    }
+  }
 
   /** One event of a dock, against the rules. Throws when it is refused; a no-op for one that is known. */
   function applyEvent(link: Link, dock: { id: string; name: string }, ev: LinkEvent): void {
@@ -508,10 +604,25 @@ export function createLinks(options: LinksOptions): Links {
     const event: LinkEvent = { ...ev, by, text: cleanLine(ev.text), ...(ev.status !== undefined && (TASK_STATUSES as readonly string[]).includes(ev.status) ? { status: ev.status } : {}) };
     // deliverables ride on a status only
     if (event.kind !== 'status') delete event.attachments;
-    if (ev.kind === 'status' && event.status === undefined) throw new Error(`dock ${dock.name} sent a status with no status`);
+    if (ev.kind === 'status' && event.status === undefined && event.via === undefined) throw new Error(`dock ${dock.name} sent a status with no status`);
+    // only a status carries a station further on; a `first` is the business of a `lost` and nothing else
+    if (event.kind !== 'status') delete event.via;
+    if (event.kind !== 'lost') delete event.first;
     const known = link.seen[String(event.seq)];
     if (event.seq <= link.inSeq) {
       if (known !== undefined && known !== hashOf(event)) throw new Error(`dock ${dock.name} tried to rewrite event ${event.seq}`);
+      return;
+    }
+    // a `lost` event stands for the range `first` to `seq` that the peer gave up on: when its start is not ahead of what is held here, it fills the gap
+    if (event.kind === 'lost' && event.first !== undefined && event.first <= link.inSeq + 1 && event.seq > link.inSeq) {
+      link.held = link.held.filter((h) => h.seq > event.seq);
+      take(link, event);
+      for (;;) {
+        const next = link.held.find((h) => h.seq === link.inSeq + 1);
+        if (!next) break;
+        link.held = link.held.filter((h) => h !== next);
+        take(link, next);
+      }
       return;
     }
     if (event.seq > link.inSeq + 1) {
@@ -537,6 +648,7 @@ export function createLinks(options: LinksOptions): Links {
     link.trail.push(event);
     clipTrail(link);
     stateAfter(link, event, false);
+    if (event.via !== undefined) link.via = `${event.via}: ${event.text}`.slice(0, 80);
     touch(link);
     options.trace(link.peer, `link event ${event.kind} on ${link.id}`);
     options.applied?.(link, event, false);
@@ -556,7 +668,7 @@ export function createLinks(options: LinksOptions): Links {
     try {
       offer = readOffer(raw);
     } catch {
-      offer = { due: null, priority: 'normal', onward: false, budget: null };
+      offer = { due: null, priority: 'normal', onward: false, budget: null, chain: [] };
     }
     const trail = (Array.isArray(raw.trail) ? raw.trail : []).map(readEvent).filter((e): e is LinkEvent => e !== null).slice(-LINK_TRAIL_MAX);
     const seen: Record<string, string> = {};
@@ -578,6 +690,8 @@ export function createLinks(options: LinksOptions): Links {
       updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now(),
       held: [],
       seen,
+      ...(typeof raw.via === 'string' ? { via: cleanLine(raw.via, 80) } : {}),
+      ...((['offered', 'accepted', 'delivered', 'returned', 'recalled', 'done', 'refused'] as const).find((s) => s === raw.resume) === undefined ? {} : { resume: raw.resume as LinkState }),
     };
   }
 
@@ -593,6 +707,8 @@ export function createLinks(options: LinksOptions): Links {
       by: typeof raw.by === 'string' ? cleanLine(raw.by, 80) : '',
       text: cleanLine(raw.text),
       ...((TASK_STATUSES as readonly unknown[]).includes(raw.status) ? { status: raw.status as TaskStatus } : {}),
+      ...(typeof raw.via === 'string' && new RegExp(STATION_NAME_PATTERN).test(raw.via) ? { via: raw.via } : {}),
+      ...(raw.kind === 'lost' && typeof raw.first === 'number' && Number.isSafeInteger(raw.first) && raw.first >= 1 && raw.first <= raw.seq ? { first: raw.first } : {}),
       ...((a) => (a.length === 0 ? {} : { attachments: a }))(readDeliverables(raw.attachments)),
     };
   }
