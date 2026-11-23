@@ -36,7 +36,8 @@ const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 const ID_RE = /^t[1-9]\d{0,5}$/;
 const MISSION_ID_RE = /^ms[1-9]\d{0,5}$/;
 const CREATE_FIELDS = ['title', 'detail', 'assignee', 'missionId'];
-const PATCH_FIELDS = ['status', 'assignee', 'note', 'missionId'];
+const PATCH_FIELDS = ['status', 'assignee', 'note', 'missionId', 'localNotes'];
+const LINK_ID_RE = /^dl_[0-9a-f]{16}$/;
 
 /**
  * Who changes the board: the Director, an agent with the generation of its token (the message of an assignment is sent as that
@@ -60,6 +61,8 @@ export interface TasksOptions {
   afterChange?(tasks: Task[]): void;
   /** Downlink: an agent moved a task to blocked or review. */
   notify?: DownlinkNotify;
+  /** Docking 2: a task that is bound to a link changed; `before` is the task as it was. The status and the note become events of the link. */
+  afterUpdate?(before: Task, after: Task, actor: Actor, note: string | undefined): void;
   log: Logger;
 }
 
@@ -71,6 +74,8 @@ export interface Tasks {
   create(actor: Actor, input: unknown): Promise<Task>;
   /** Docking: the task was copied to `station`. It is done here, and says where it went. conflict when it is done or was handed off already. */
   handOff(id: string, station: string, assignee: string | null): Promise<Task>;
+  /** Docking 2: binds a task to a link (as receiver `link`, as sender one of `links`, at most 10) with a line of history. conflict when it is bound as receiver already. */
+  attach(id: string, binding: { link?: string; outgoing?: string; note: string }): Promise<Task>;
   /** A change that changes nothing answers with the task as it is and writes nothing. */
   update(actor: Actor, id: string, input: unknown): Promise<Task>;
   remove(id: string): Promise<void>;
@@ -94,6 +99,7 @@ interface Fields {
   assignee?: string | null;
   note?: string;
   missionId?: string | null;
+  localNotes?: boolean;
 }
 
 /** The fields a request may carry, checked one by one. A task is made with a title; a change has at least one field. */
@@ -132,6 +138,10 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
     if (whole && input.missionId === null) throw bad('missionId must be the id of a mission', 'missionId');
     out.missionId = input.missionId;
   }
+  if (input.localNotes !== undefined) {
+    if (typeof input.localNotes !== 'boolean') throw bad('localNotes must be true or false', 'localNotes');
+    out.localNotes = input.localNotes;
+  }
   if (input.note !== undefined) {
     // one line: the history is a list of lines
     const note = typeof input.note === 'string' ? input.note.replace(/\s+/g, ' ').trim() : '';
@@ -144,7 +154,7 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
 /** A saved record read back; one that is not a task throws, and the caller skips it. Unlike a request, it may name an agent that is gone. */
 function fromRecord(raw: unknown, at: number): Task {
   if (!isRecord(raw) || typeof raw.id !== 'string' || !ID_RE.test(raw.id)) throw new Error('no valid id');
-  const { id, title, detail, status, assignee, createdBy, createdAt, updatedAt, notes, handedOff, missionId } = raw;
+  const { id, title, detail, status, assignee, createdBy, createdAt, updatedAt, notes, handedOff, missionId, link, links, localNotes } = raw;
   if (typeof title !== 'string' || title === '' || title.length > TASK_TITLE_MAX_CHARS) throw new Error('no valid title');
   if (typeof status !== 'string' || !(TASK_STATUSES as readonly string[]).includes(status)) throw new Error('no valid status');
   return {
@@ -159,6 +169,9 @@ function fromRecord(raw: unknown, at: number): Task {
     notes: Array.isArray(notes) ? notes.filter((n): n is string => typeof n === 'string').slice(-TASK_NOTES_MAX) : [],
     ...(typeof handedOff === 'string' && STATION_RE.test(handedOff) ? { handedOff } : {}),
     ...(typeof missionId === 'string' && MISSION_ID_RE.test(missionId) ? { missionId } : {}),
+    ...(typeof link === 'string' && LINK_ID_RE.test(link) ? { link } : {}),
+    ...(Array.isArray(links) && links.some((l) => typeof l === 'string' && LINK_ID_RE.test(l)) ? { links: links.filter((l): l is string => typeof l === 'string' && LINK_ID_RE.test(l)).slice(0, 10) } : {}),
+    ...(localNotes === true ? { localNotes } : {}),
   };
 }
 
@@ -294,6 +307,31 @@ export function createTasks(options: TasksOptions): Tasks {
       return copy(next);
     },
 
+    async attach(id, binding) {
+      const task = find(id);
+      const next = copy(task);
+      if (binding.link !== undefined) {
+        if (!LINK_ID_RE.test(binding.link)) throw bad('link must be a link id', 'link');
+        if (task.link !== undefined && task.link !== binding.link) throw new HubError('conflict', 'this task came to this station on another link already', 'task');
+        next.link = binding.link;
+      }
+      if (binding.outgoing !== undefined) {
+        if (!LINK_ID_RE.test(binding.outgoing)) throw bad('link must be a link id', 'link');
+        const have = task.links ?? [];
+        if (!have.includes(binding.outgoing)) {
+          if (have.length >= 10) throw new HubError('conflict', 'a task has at most 10 links to other stations', 'task');
+          next.links = [...have, binding.outgoing];
+        }
+      }
+      const at = now();
+      next.updatedAt = at;
+      next.notes.push(line({ kind: 'user' }, binding.note, at));
+      next.notes = next.notes.slice(-TASK_NOTES_MAX);
+      tasks[tasks.indexOf(task)] = next;
+      await changed();
+      return copy(next);
+    },
+
     async update(actor, id, input) {
       const task = find(id);
       const patch = validate(input, false, options.isAgent, hasMission);
@@ -314,6 +352,11 @@ export function createTasks(options: TasksOptions): Tasks {
         else next.missionId = patch.missionId;
         parts.push(patch.missionId === null ? 'unlinked from its mission' : `mission ${patch.missionId}`);
       }
+      if (patch.localNotes !== undefined && (patch.localNotes === true) !== (task.localNotes === true)) {
+        if (patch.localNotes) next.localNotes = true;
+        else delete next.localNotes;
+        parts.push(patch.localNotes ? 'notes stay on this station' : 'notes may leave with status events');
+      }
       if (patch.note !== undefined) parts.push(patch.note);
       if (parts.length === 0) return copy(task);
       next.updatedAt = at;
@@ -327,6 +370,8 @@ export function createTasks(options: TasksOptions): Tasks {
       }
       prune();
       await changed();
+      // a task that is bound to a link tells the other station by itself: nobody has to remember to report
+      if (task.link !== undefined || (task.links?.length ?? 0) > 0) options.afterUpdate?.(task, next, actor, patch.note);
       return copy(next);
     },
 

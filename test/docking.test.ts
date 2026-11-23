@@ -2,7 +2,7 @@
 // hands each call to the other's `handle`, so the signatures, the replay and expiry rules and the pairing run for real while
 // nothing needs a socket. The same two stations over real HTTP are scenario 30 of e2e.test.ts.
 import { createHmac } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import type { IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +30,7 @@ interface Station {
   delivered: Array<{ station: string; message: StationMessage }>;
   created: Array<{ actor: unknown; input: Record<string, unknown> }>;
   handedOff: Array<{ id: string; station: string; assignee: string | null }>;
+  attached: Array<{ id: string; link?: string; outgoing?: string; note: string }>;
   /** What this station told the history of triggers. */
   triggers: Array<Record<string, unknown>>;
   tasks: Task[];
@@ -83,6 +84,7 @@ function world(): World {
         delivered: [],
         created: [],
         handedOff: [],
+        attached: [],
         triggers: [],
         tasks: [],
         views: [],
@@ -111,7 +113,16 @@ function world(): World {
             if (typeof title !== 'string' || title === '') throw hubError('bad_request', 'title is required', 'title');
             const assignee = (input as { assignee?: unknown }).assignee;
             if (assignee === 'nobody') throw hubError('bad_request', 'assignee must be the name of an agent in the room, or null', 'assignee');
-            return { id: 't9', title, detail: String((input as { detail?: unknown }).detail ?? ''), status: 'todo', assignee: null, createdBy: 'user', createdAt: clock.now, updatedAt: clock.now, notes: [] };
+            const made: Task = { id: `t${8 + station.created.length}`, title, detail: String((input as { detail?: unknown }).detail ?? ''), status: 'todo', assignee: null, createdBy: 'user', createdAt: clock.now, updatedAt: clock.now, notes: [] };
+            station.tasks.push(made);
+            return made;
+          },
+          attach: async (id, binding) => {
+            station.attached.push({ id, ...binding });
+            const found = station.tasks.find((t) => t.id === id)!;
+            const next = { ...found, ...(binding.link === undefined ? {} : { link: binding.link }), ...(binding.outgoing === undefined ? {} : { links: [...(found.links ?? []), binding.outgoing] }) };
+            station.tasks[station.tasks.indexOf(found)] = next;
+            return next;
           },
           handOff: async (id, to, assignee) => {
             station.handedOff.push({ id, station: to, assignee });
@@ -171,7 +182,7 @@ describe('the signature', () => {
   });
 
   it('the routes and their methods', () => {
-    expect(DOCK_ROUTES).toEqual({ pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', undock: 'POST' });
+    expect(DOCK_ROUTES).toEqual({ pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', link: 'POST', undock: 'POST' });
   });
 });
 
@@ -281,7 +292,7 @@ describe('a code as people carry it', () => {
       fetch: async () => new Response('forbidden host', { status: 403 }),
       deliver: () => ({ ok: true, id: 'm1', to: 'x', status: 'queued', note: null }),
       roster: () => [],
-      tasks: { list: () => [], create: async () => ({}) as Task, handOff: async () => ({}) as Task },
+      tasks: { list: () => [], create: async () => ({}) as Task, handOff: async () => ({}) as Task, attach: async () => ({}) as Task },
       emit: () => undefined,
       log: nullLogger,
     });
@@ -301,7 +312,7 @@ describe('a code as people carry it', () => {
       deliver: () => ({ ok: true, id: 'm1', to: 'x', status: 'queued', note: null }),
       roster: () => [],
       addresses: () => ['192.168.0.5'],
-      tasks: { list: () => [], create: async () => ({}) as Task, handOff: async () => ({}) as Task },
+      tasks: { list: () => [], create: async () => ({}) as Task, handOff: async () => ({}) as Task, attach: async () => ({}) as Task },
       emit: () => undefined,
       log: nullLogger,
     });
@@ -694,7 +705,7 @@ describe('calls between docked stations', () => {
       },
       deliver: () => ({ ok: true, id: 'm1', to: 'x', status: 'queued', note: null }),
       roster: () => [],
-      tasks: { list: () => [], create: async () => task('t1'), handOff: async () => task('t1') },
+      tasks: { list: () => [], create: async () => task('t1'), handOff: async () => task('t1'), attach: async () => task('t1') },
       emit: () => undefined,
       log: nullLogger,
     });
@@ -830,7 +841,7 @@ describe('the roster', () => {
       },
       deliver: () => ({ ok: true, id: 'm1', to: 'x', status: 'queued', note: null }),
       roster: () => [],
-      tasks: { list: () => [], create: async () => task('t1'), handOff: async () => task('t1') },
+      tasks: { list: () => [], create: async () => task('t1'), handOff: async () => task('t1'), attach: async () => task('t1') },
       emit: () => undefined,
       every: (fn, ms) => {
         every = ms;
@@ -934,14 +945,16 @@ describe('handing off a task', () => {
     return { a, b, dock: aSees };
   }
 
-  it('copies it to the other board, assigned there, and marks it handed off here', async () => {
+  it('copies it to the other board, assigned there, and binds it to a link here: it stays open', async () => {
     const { a, b, dock } = await ready();
     const done = await a.docking.handOff(dock, { task: 't1', assignee: 'bob' });
     expect(b.created).toEqual([
       { actor: { kind: 'dock', station: 'alpha' }, input: { title: 'Task t1', detail: 'Handed off from alpha (its task t1).\n\nFix the build.', assignee: 'bob' } },
     ]);
-    expect(a.handedOff).toEqual([{ id: 't1', station: 'beta', assignee: 'bob' }]);
-    expect(done).toMatchObject({ id: 't1', status: 'done', handedOff: 'beta' });
+    expect(a.attached).toHaveLength(1);
+    expect(a.attached[0]).toMatchObject({ id: 't1', note: expect.stringMatching(/^handed off to bob@beta on link dl_[0-9a-f]{16}$/) as string });
+    expect(done).toMatchObject({ id: 't1', status: 'todo', links: [expect.stringMatching(/^dl_[0-9a-f]{16}$/) as string] });
+    expect(done.handedOff).toBeUndefined();
   });
 
   it('two hand-offs of one task at once copy it once', async () => {
@@ -956,7 +969,7 @@ describe('handing off a task', () => {
     const { a, b, dock } = await ready();
     await a.docking.handOff(dock, { task: 't1' });
     expect(b.created[0]?.input).not.toHaveProperty('assignee');
-    expect(a.handedOff).toEqual([{ id: 't1', station: 'beta', assignee: null }]);
+    expect(a.attached[0]?.note).toMatch(/^handed off to beta on link dl_/);
   });
 
   it('cuts a detail that would not fit once the line that says where it came from is added', async () => {
@@ -970,8 +983,9 @@ describe('handing off a task', () => {
   it('a hand-off is in the history of triggers: delivered here, and received there; a refused one says why', async () => {
     const { a, b, dock } = await ready();
     await a.docking.handOff(dock, { task: 't1', assignee: 'bob' });
-    expect(a.triggers).toEqual([{ kind: 'docking', source: dock, name: 'beta', outcome: 'delivered', what: 'hand-off of t1: Task t1', agent: 'bob' }]);
-    expect(b.triggers).toEqual([{ kind: 'docking', source: expect.any(String) as string, name: 'alpha', outcome: 'delivered', what: 'from alpha: a task handed off to this station' }]);
+    const handoffs = (list: Array<Record<string, unknown>>) => list.filter((e) => !String(e.what).startsWith('link event'));
+    expect(handoffs(a.triggers)).toEqual([{ kind: 'docking', source: dock, name: 'beta', outcome: 'delivered', what: 'hand-off of t1: Task t1', agent: 'bob' }]);
+    expect(handoffs(b.triggers)).toEqual([{ kind: 'docking', source: expect.any(String) as string, name: 'alpha', outcome: 'delivered', what: 'from alpha: a task handed off to this station' }]);
     a.tasks.push(task('t4'));
     await expect(a.docking.handOff(dock, { task: 't4', assignee: 'nobody' })).rejects.toThrow();
     expect(a.triggers.at(-1)).toMatchObject({ kind: 'docking', name: 'beta', outcome: 'failed', what: 'hand-off of t4: Task t4' });
@@ -991,16 +1005,16 @@ describe('handing off a task', () => {
     await expect(a.docking.handOff(dock, { task: 't1', title: 'x' })).rejects.toMatchObject({ code: 'bad_request', field: 'title', message: 'unknown field "title"' });
     await expect(a.docking.handOff(dock, [] as never)).rejects.toMatchObject({ code: 'bad_request' });
     expect(b.created).toEqual([]);
-    expect(a.handedOff).toEqual([]);
+    expect(a.attached).toEqual([]);
   });
 
   it('a board that refuses it leaves the task as it was, and the reason reaches the Director', async () => {
     const { a, b, dock } = await ready();
     await expect(a.docking.handOff(dock, { task: 't1', assignee: 'nobody' })).rejects.toMatchObject({ code: 'bad_request', field: 'assignee', message: 'beta: assignee must be the name of an agent in the room, or null' });
-    expect(a.handedOff).toEqual([]);
+    expect(a.attached).toEqual([]);
     b.down = true;
     await expect(a.docking.handOff(dock, { task: 't1' })).rejects.toMatchObject({ code: 'unavailable', message: 'could not reach beta: ECONNREFUSED' });
-    expect(a.handedOff).toEqual([]);
+    expect(a.attached).toEqual([]);
   });
 
   it('a task that comes in with a title that is not text is refused by the board, which says why', async () => {
@@ -1015,5 +1029,218 @@ describe('handing off a task', () => {
     const headers: IncomingHttpHeaders = { 'x-gonogo-station': idA, 'x-gonogo-timestamp': String(T0), 'x-gonogo-nonce': nonce, 'x-gonogo-signature': signCall(secret, idA, 'POST', '/dock/task', String(T0), nonce, body) };
     await expect(b.docking.handle('task', 'POST', '/dock/task', headers, Buffer.from(body))).rejects.toMatchObject({ code: 'bad_request', field: 'title' });
     expect(idB).not.toBe(idA);
+  });
+});
+
+/* ------------------------------------------------------------------ Docking 2: the link, its events, the outbox (S1) */
+
+describe('links: the core', () => {
+  const stationId = (s: Station): string => (JSON.parse(readFileSync(join(s.dir, 'station.json'), 'utf8')) as { id: string }).id;
+  const secretOf = (s: Station): string => (JSON.parse(readFileSync(join(s.dir, 'docking.json'), 'utf8')) as { docks: Array<{ secret: string }> }).docks[0]?.secret ?? '';
+  let nonceN = 0;
+  /** A signed call made by `from` to `to`'s route, as the other gonogo would: for what a docking.handOff cannot say (a forged or a repeated event). */
+  const raw = async (from: Station, to: Station, route: string, payload: unknown, w: World): Promise<unknown> => {
+    const body = JSON.stringify(payload);
+    const timestamp = String(w.clock.now);
+    nonceN += 1;
+    const nonce = nonceN.toString(16).padStart(32, '0');
+    const urlPath = `/dock/${route}`;
+    return to.docking.handle(route, 'POST', urlPath, { 'x-gonogo-station': stationId(from), 'x-gonogo-timestamp': timestamp, 'x-gonogo-nonce': nonce, 'x-gonogo-signature': signCall(secretOf(from), stationId(from), 'POST', urlPath, timestamp, nonce, body) }, Buffer.from(body));
+  };
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+  async function linked(): Promise<{ w: World; a: Station; b: Station; dock: string; link: string; at: string }> {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    a.tasks = [task('t1', { detail: 'Fix the build.' })];
+    const handed = await a.docking.handOff(aSees, { task: 't1', assignee: 'bob', due: '2026-12-01', priority: 'high' });
+    return { w, a, b, dock: aSees, link: handed.links?.[0] ?? '', at: stationId(b) };
+  }
+  const agentActor = { kind: 'agent', name: 'bob', generation: 1 } as const;
+
+  it('a hand-off makes one link on each side, bound to a task on each, with the same trail: offer (theirs), accept (ours)', async () => {
+    const { a, b, link } = await linked();
+    expect(link).toMatch(/^dl_[0-9a-f]{16}$/);
+    const sender = a.docking.linkViews();
+    const receiver = b.docking.linkViews();
+    expect(sender).toEqual([expect.objectContaining({ id: link, role: 'sender', peerName: 'beta', mine: 't1', theirs: 't9', state: 'accepted', due: '2026-12-01', priority: 'high', onward: false, budget: null, title: 'Task t1' })]);
+    expect(receiver).toEqual([expect.objectContaining({ id: link, role: 'receiver', peerName: 'alpha', mine: 't9', state: 'accepted', due: '2026-12-01', priority: 'high' })]);
+    const trailA = a.docking.linkTrail(link)!;
+    const trailB = b.docking.linkTrail(link)!;
+    expect(trailA.map((e) => [e.from, e.seq, e.kind, e.by])).toEqual([['us', 1, 'offer', 'director@alpha'], ['them', 1, 'accept', 'station@beta']]);
+    expect(trailB.map((e) => [e.from, e.seq, e.kind, e.by])).toEqual([['them', 1, 'offer', 'director@alpha'], ['us', 1, 'accept', 'station@beta']]);
+    expect(b.attached[0]).toMatchObject({ id: 't9', link });
+    await settle();
+    expect(JSON.parse(readFileSync(join(a.dir, 'links.json'), 'utf8'))).toMatchObject({ version: 1, links: [{ id: link }] });
+    expect(statSync(join(a.dir, 'links.json')).mode & 0o777).toBe(0o600);
+  });
+
+  it('the offer is idempotent: the same link offered again is the same task, not a second one', async () => {
+    const { w, a, b, link } = await linked();
+    const again = (await raw(a, b, 'task', { id: 't1', title: 'Task t1', detail: 'Fix the build.', link }, w)) as { ok: boolean; id: string; accept?: { kind: string } };
+    expect(again).toMatchObject({ ok: true, id: 't9', accept: { kind: 'accept' } });
+    expect(b.created).toHaveLength(1);
+    // another dock cannot claim the link, and one that is not a link id is an old-style copy
+    const c = await w.make('gamma', 'http://c.test');
+    await pair(c, b);
+    await expect(raw(c, b, 'task', { id: 't1', title: 'x', link }, w)).rejects.toMatchObject({ code: 'conflict', field: 'link' });
+  });
+
+  it('a status or a note of a task that is bound to a link becomes an event on its own, with the author as agent@station; notes are cleaned and cut', async () => {
+    const { a, b, link } = await linked();
+    const before = b.tasks.find((t) => t.id === 't9')!;
+    b.docking.taskChanged(before, { ...before, status: 'doing' }, agentActor, 'on it‮​ now');
+    b.docking.taskChanged({ ...before, status: 'doing' }, { ...before, status: 'doing' }, agentActor, 'a note only');
+    await settle();
+    const trail = a.docking.linkTrail(link)!;
+    expect(trail.at(-2)).toMatchObject({ from: 'them', kind: 'status', status: 'doing', by: 'bob@beta', text: 'on it now' });
+    expect(trail.at(-1)).toMatchObject({ kind: 'note', text: 'a note only' });
+    expect(a.docking.linkViews()[0]).toMatchObject({ peerStatus: 'doing', waiting: 0 });
+    expect(b.docking.linkViews()[0]).toMatchObject({ peerStatus: 'doing', waiting: 0 });
+    // acked: nothing waits, and what left is on record exactly
+    expect(b.docking.outbound(stationId(a)).map((e) => [e.kind, e.text, e.ackedAt !== null])).toEqual([['status', 'on it now', true], ['note', 'a note only', true]]);
+  });
+
+  it('local notes: the status leaves without its text, and a note alone does not leave at all', async () => {
+    const { a, b, link } = await linked();
+    const before = { ...b.tasks.find((t) => t.id === 't9')!, localNotes: true };
+    b.docking.taskChanged(before, { ...before, status: 'blocked' }, agentActor, 'the password is hunter2');
+    b.docking.taskChanged({ ...before, status: 'blocked' }, { ...before, status: 'blocked' }, agentActor, 'also private');
+    await settle();
+    const trail = a.docking.linkTrail(link)!;
+    expect(trail.at(-1)).toMatchObject({ kind: 'status', status: 'blocked', text: '' });
+    expect(JSON.stringify(trail)).not.toContain('hunter2');
+    expect(JSON.stringify(b.docking.outbound(stationId(a)))).not.toContain('hunter2');
+    expect(trail.filter((e) => e.kind === 'note')).toEqual([]);
+  });
+
+  it('integrity: an event applied twice is a no-op; a known seq with other content is refused and logged; the peer cannot author as us, send a kind its side may not, or touch a link of another dock', async () => {
+    const { w, a, b, link, at } = await linked();
+    const ev = (over: Record<string, unknown>) => ({ link, author: at, seq: 2, at: w.clock.now, kind: 'status', by: 'bob@beta', text: 'one', status: 'doing', ...over });
+    expect(await raw(b, a, 'link', { events: [ev({})] }, w)).toEqual({ acked: { [link]: 2 } });
+    expect(await raw(b, a, 'link', { events: [ev({})] }, w)).toEqual({ acked: { [link]: 2 } }); // twice: nothing changes
+    expect(a.docking.linkTrail(link)!.filter((e) => e.kind === 'status')).toHaveLength(1);
+    // the same seq with other text: refused, the first stays
+    await raw(b, a, 'link', { events: [ev({ text: 'rewritten' })] }, w);
+    expect(a.docking.linkTrail(link)!.at(-1)).toMatchObject({ seq: 2, text: 'one' });
+    // an event that says it is authored here (our station id) is not taken
+    await raw(b, a, 'link', { events: [ev({ seq: 3, author: stationId(a) })] }, w);
+    // a kind the receiver may not send is not taken as an offer
+    await raw(b, a, 'link', { events: [ev({ seq: 3, kind: 'offer' }), ev({ seq: 3, kind: 'recall' })] }, w);
+    expect(a.docking.linkTrail(link)!.map((e) => e.kind)).toEqual(['offer', 'accept', 'status']);
+    // a station cannot appear as another name than agent@its own name
+    await raw(b, a, 'link', { events: [ev({ seq: 3, by: 'user@beta', text: 'two' })] }, w);
+    await raw(b, a, 'link', { events: [ev({ seq: 4, by: 'Not A Name@gamma', text: 'three' })] }, w);
+    const by = a.docking.linkTrail(link)!.slice(-2).map((e) => e.by);
+    expect(by).toEqual(['user@beta', 'station@beta']);
+    // the sender cannot send a status either: our link on b is a receiver link, so b cannot be told a status by a
+    const c = await w.make('gamma', 'http://c.test');
+    await pair(c, a);
+    expect(await raw(c, a, 'link', { events: [{ link, author: stationId(c), seq: 1, at: w.clock.now, kind: 'status', by: 'x@gamma', text: 'x', status: 'done' }] }, w)).toEqual({ acked: {} }); // a link of another dock: untouched
+    expect(a.docking.linkViews()[0]).toMatchObject({ state: 'accepted', peerStatus: 'doing' });
+  });
+
+  it('a gap is held and filled in order; the ack says how far it got', async () => {
+    const { w, a, b, link, at } = await linked();
+    const ev = (seq: number) => ({ link, author: at, seq, at: w.clock.now, kind: 'note', by: 'bob@beta', text: `n${seq}` });
+    expect(await raw(b, a, 'link', { events: [ev(4), ev(3)] }, w)).toEqual({ acked: { [link]: 1 } });
+    expect(a.docking.linkTrail(link)!.filter((e) => e.kind === 'note')).toEqual([]);
+    expect(await raw(b, a, 'link', { events: [ev(2)] }, w)).toEqual({ acked: { [link]: 4 } });
+    expect(a.docking.linkTrail(link)!.filter((e) => e.kind === 'note').map((e) => e.text)).toEqual(['n2', 'n3', 'n4']);
+  });
+
+  it('the outbox keeps events while the station is down, shows them as waiting, survives a restart and goes when it is back', async () => {
+    const { w, a, b, dock, link } = await linked();
+    a.down = true;
+    const before = b.tasks.find((t) => t.id === 't9')!;
+    b.docking.taskChanged(before, { ...before, status: 'doing' }, agentActor, 'working');
+    await settle();
+    expect(b.docking.linkViews()[0]).toMatchObject({ waiting: 1 });
+    expect(b.docking.view().docks[0]).toMatchObject({ waiting: 1 });
+    expect(JSON.parse(readFileSync(join(b.dir, 'dock-outbox.json'), 'utf8'))).toMatchObject({ version: 1 });
+    expect(statSync(join(b.dir, 'dock-outbox.json')).mode & 0o777).toBe(0o600);
+    // a restart of b: the file is read again
+    await b.docking.close();
+    w.stations.delete('http://b.test');
+    const b2 = await w.make('beta', 'http://b.test', { dir: b.dir });
+    expect(b2.docking.linkViews()[0]).toMatchObject({ id: link, waiting: 1 });
+    // not before the retry time; then it goes, and the ack empties the outbox
+    a.down = false;
+    await b2.docking.pull();
+    w.clock.now += 31_000;
+    await b2.docking.pull();
+    await settle();
+    expect(b2.docking.linkViews()[0]).toMatchObject({ waiting: 0 });
+    expect(a.docking.linkTrail(link)!.at(-1)).toMatchObject({ kind: 'status', status: 'doing', text: 'working' });
+    void dock;
+  });
+
+  it('the caps: 20 open tasks from a station, 30 an hour, and the sender is told why, in its trail; 10 an hour outgoing; a task with 10 links', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    a.tasks = Array.from({ length: 40 }, (_, i) => task(`t${i + 1}`));
+    for (let i = 1; i <= 10; i += 1) await a.docking.handOff(aSees, { task: `t${i}` });
+    await expect(a.docking.handOff(aSees, { task: 't11' })).rejects.toMatchObject({ code: 'rate_limited', message: 'at most 10 tasks an hour to one station' });
+    w.clock.now += 3600_001;
+    for (let i = 11; i <= 20; i += 1) await a.docking.handOff(aSees, { task: `t${i}` });
+    w.clock.now += 3600_001;
+    // the receiver already holds 20: the 21st is refused with its reason, in the trail of the link
+    await expect(a.docking.handOff(aSees, { task: 't21' })).rejects.toMatchObject({ code: 'conflict', message: 'beta did not take it: this station already holds 20 open tasks from alpha' });
+    const refused = a.docking.linkViews().find((l) => l.mine === 't21');
+    expect(refused).toMatchObject({ state: 'refused' });
+    expect(a.docking.linkTrail(refused?.id ?? '')!.at(-1)).toMatchObject({ kind: 'refuse', from: 'them', text: 'this station already holds 20 open tasks from alpha' });
+    // one task cannot have more than 10 links
+    const c = await w.make('gamma', 'http://c.test');
+    await pair(a, c);
+    const gammaDock = a.docking.view().docks.find((d) => d.name === 'gamma')!.id;
+    a.tasks = [task('t1', { links: Array.from({ length: 10 }, (_, i) => `dl_${String(i).padStart(16, '0')}`) })];
+    await expect(a.docking.handOff(gammaDock, { task: 't1' })).rejects.toMatchObject({ code: 'conflict', message: 'a task has at most 10 links to other stations' });
+  });
+
+  it('the offer fields are validated: due is a real date, priority one of three, onward true or false, budget a number of dollars', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    a.tasks = [task('t1')];
+    for (const [field, value] of [['due', '2026-13-01'], ['due', '2026-02-30'], ['due', 'tomorrow'], ['priority', 'urgent'], ['onward', 'yes'], ['budget', -1], ['budget', '5'], ['budget', 2_000_000]] as const) {
+      await expect(a.docking.handOff(aSees, { task: 't1', [field]: value }), `${field} ${String(value)}`).rejects.toMatchObject({ code: 'bad_request', field });
+    }
+    await a.docking.handOff(aSees, { task: 't1', due: '2026-12-31', priority: 'low', onward: true, budget: 12.345 });
+    expect(a.docking.linkViews()[0]).toMatchObject({ due: '2026-12-31', priority: 'low', onward: true, budget: 12.35 });
+    expect(b.created[0]?.input.detail).toContain('Due 2026-12-31. Priority low.');
+  });
+
+  it('what left is on record exactly, only for the Director, and a hostile links file gives fewer links, never a crash', async () => {
+    const { w, a, b, link } = await linked();
+    const before = b.tasks.find((t) => t.id === 't9')!;
+    b.docking.taskChanged(before, { ...before, status: 'review' }, agentActor, 'ready for a look');
+    await settle();
+    const left = b.docking.outbound(stationId(a));
+    expect(left).toEqual([expect.objectContaining({ link, seq: 2, kind: 'status', by: 'bob@beta', text: 'ready for a look', ackedAt: expect.any(Number) as number })]);
+    expect(JSON.stringify(a.docking.linkViews())).not.toContain('ready for a look'); // the list carries cleaned titles and states, never event text
+    await a.docking.close();
+    writeFileSync(join(a.dir, 'links.json'), JSON.stringify({ version: 1, links: [{ id: 'nope' }, { id: link, role: 'sender', peer: 'x', mine: 't1' }, 5, null, { id: link, role: 'x' }] }));
+    w.stations.delete('http://a.test');
+    const a2 = await w.make('alpha', 'http://a.test', { dir: a.dir });
+    expect(a2.docking.linkViews()).toEqual([]);
+    writeFileSync(join(a.dir, 'links.json'), 'not json');
+    w.stations.delete('http://a.test');
+    const a3 = await w.make('alpha', 'http://a.test', { dir: a.dir });
+    expect(a3.docking.linkViews()).toEqual([]);
+    expect(existsSync(join(a.dir, 'links.json.bad'))).toBe(true);
+  });
+
+  it('undock detaches the links, keeps their trail and drops the outbox', async () => {
+    const { a, b, dock, link } = await linked();
+    await a.docking.undock(dock);
+    expect(a.docking.linkViews()[0]).toMatchObject({ id: link, state: 'detached', waiting: 0 });
+    expect(a.docking.linkTrail(link)!.length).toBe(2);
+    expect(b.docking.linkViews()[0]).toMatchObject({ state: 'detached' });
   });
 });

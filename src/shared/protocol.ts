@@ -971,6 +971,8 @@ export interface DockedAgent {
 }
 /** One docked station as browsers get it: never the secret. */
 export interface DockView {
+  /** Docking 2: events of ours that wait for this station to ack them. */
+  waiting?: number;
   /** The station id of the other side. */
   id: string;
   /** What the other side calls itself: the part after the @ in "name@station". */
@@ -1049,6 +1051,64 @@ export interface Task {
   handedOff?: string;
   /** Missions: the one mission this task serves (ms1, ...). The mission's task list is derived from this field. */
   missionId?: string;
+  /** Docking 2: the one incoming link of this task (it was handed to this station), `dl_` and 16 hex. */
+  link?: string;
+  /** Docking 2: the links of this task to other stations (it was handed off), at most 10. */
+  links?: string[];
+  /** Docking 2: the notes of this task stay here: its status events leave without their text. */
+  localNotes?: boolean;
+}
+
+/* ---- Docking 2: links (docs/docking-collab-spec.md) ---- */
+export const LINK_STATES = ['offered', 'accepted', 'delivered', 'returned', 'recalled', 'done', 'detached', 'refused'] as const;
+export type LinkState = (typeof LINK_STATES)[number];
+export const LINK_PRIORITIES = ['low', 'normal', 'high'] as const;
+export type LinkPriority = (typeof LINK_PRIORITIES)[number];
+/** One entry of a trail: who, what, when. `by` is `<agent>@<station>`, never a bare name. */
+export interface LinkEventView {
+  link: string;
+  /** `us` or `them`: whose event it is. */
+  from: 'us' | 'them';
+  seq: number;
+  at: number;
+  kind: string;
+  by: string;
+  text: string;
+  status?: TaskStatus;
+}
+/** One link, for the cards and the board: counts, states and cleaned titles only. */
+export interface LinkView {
+  id: string;
+  role: 'sender' | 'receiver';
+  peer: string;
+  peerName: string;
+  /** The task on this station that the link is bound to. */
+  mine: string;
+  /** The task of the other station, or null before it said. */
+  theirs: string | null;
+  state: LinkState;
+  /** The last status the receiver reported (or that this station's task has, as receiver). */
+  peerStatus: TaskStatus | null;
+  title: string;
+  due: string | null;
+  priority: LinkPriority;
+  onward: boolean;
+  budget: number | null;
+  /** Events in the trail, and events of ours that wait to be acked. */
+  events: number;
+  waiting: number;
+  updatedAt: number;
+}
+/** What left for one station, exactly as it left (the Director's Outbound view). */
+export interface OutboundEntry {
+  at: number;
+  link: string;
+  seq: number;
+  kind: string;
+  by: string;
+  text: string;
+  /** When the other station acked it, or null. */
+  ackedAt: number | null;
 }
 
 /** Missions: a named goal with a status, a lead and a history; its tasks are the ones whose `missionId` is its id. One entry of missions.json. */
@@ -2118,7 +2178,13 @@ export interface InfoFrame {
   t: 'info';
   info: ServerInfo;
 }
+/** The links changed (a new one, an event, an ack): carries the whole list. Not in the snapshot: the page asks `GET /api/links`. */
+export interface LinksFrame {
+  t: 'links';
+  links: LinkView[];
+}
 export type ServerFrame =
+  | LinksFrame
   | InfoFrame
   | ModelsFrame
   | TabNameFrame
@@ -2146,7 +2212,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = InfoFrame | AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
+export type HubEvent = LinksFrame | InfoFrame | AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts

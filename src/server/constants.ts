@@ -410,6 +410,23 @@ export const UPLINK_RATE_WINDOW_MS = 60_000;
 export const UPLINK_NOTE_MAX_CHARS = 300;
 /** Docking (docs/docking-spec.md): the files, the station name variable, the lifetime of a docking code, how far a signed call's clock may be from ours, and the limits of /dock/*. */
 export const DOCKING_FILE = 'docking.json';
+/** Docking 2 (docs/docking-collab-spec.md): the links held by both stations, and the events that wait to be acked. */
+export const LINKS_FILE = 'links.json';
+export const DOCK_OUTBOX_FILE = 'dock-outbox.json';
+/** The caps of section 5 of the spec. */
+export const LINK_TRAIL_MAX = 200;
+export const LINK_BATCH_MAX = 20;
+export const LINK_GAP_HOLD_MAX = 50;
+export const LINKS_PER_TASK_MAX = 10;
+export const LINK_INCOMING_OPEN_MAX = 20;
+export const LINK_IN_PER_HOUR = 30;
+export const LINK_OUT_PER_HOUR = 10;
+export const OUTBOX_PER_DOCK_MAX = 200;
+export const OUTBOX_SENT_KEEP = 50;
+export const OUTBOX_RETRY_MIN_MS = 30_000;
+export const OUTBOX_RETRY_MAX_MS = 10 * 60_000;
+export const OUTBOX_EVENT_MAX_AGE_MS = 7 * 24 * 3600_000;
+export const LINK_TEXT_MAX_CHARS = 200;
 export const STATION_FILE = 'station.json';
 export const STATION_ENV = 'GONOGO_STATION';
 /** Tab name: the name of this room in the title of the browser tab. */

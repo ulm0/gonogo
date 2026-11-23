@@ -3820,6 +3820,9 @@ describe('web: REST', () => {
         docking: {
           view: () => view as never,
           hints: () => ({ addresses: [], container: false }),
+          linkViews: () => [],
+          linkTrail: () => null,
+          outbound: () => [],
           createCode: (input) => {
             calls.push(['code', input]);
             if ((input as { url?: unknown }).url === 'bad') throw new FakeHubError('bad_request', 'url must be a web address with no path', 'url');

@@ -5,6 +5,7 @@ import type {
   ActivityItem,
   AgentView,
   DockingView,
+  LinkView,
   DownlinkView,
   Envelope,
   GovernorView,
@@ -34,6 +35,8 @@ export interface ClientState {
   /** Consecutive failed reconnects; >= RECONNECT_SERVER_GONE_AFTER means "server gone". */
   failedAttempts: number;
   info: ServerInfo | null;
+  /** Docking 2: the links of this station, from `GET /api/links` and the `links` frame. */
+  links: LinkView[];
   /** By name. Built without a prototype: an agent may be called "constructor". */
   agents: Record<string, AgentView>;
   /** Names sorted by desk ascending; the same array while the order does not change. */
@@ -185,6 +188,7 @@ export function emptyState(): ClientState {
     connection: 'connecting',
     failedAttempts: 0,
     info: null,
+    links: [],
     agents: Object.create(null),
     order: [],
     activity: [],
@@ -512,6 +516,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, tabName: frame.tabName };
     case 'info':
       return { ...s, info: frame.info };
+    case 'links':
+      return { ...s, links: frame.links };
     case 'downlink':
       return { ...s, downlink: frame.downlink };
     case 'livery':
