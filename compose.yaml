@@ -44,8 +44,8 @@ services:
       GONOGO_LOG_LEVEL:
       GONOGO_STATION:
       GONOGO_UPDATE_CHECK:
-      GONOGO_HOME: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder: compose could not tell where it runs}/gonogo-data}/state
-      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder: compose could not tell where it runs}/gonogo-data}/claude
+      GONOGO_HOME: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/state
+      CLAUDE_CONFIG_DIR: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/claude
       # A Clean Room joins this container's network (self: found by its host name, so no fixed container name).
       GONOGO_CLEANROOM_NETWORK: container:self
       # What the ready line says to open: the port the host publishes (the server inside listens on 7777).
@@ -54,13 +54,13 @@ services:
     extra_hosts:
       - host.docker.internal:127.0.0.1
     # The boss's first working directory, where your projects go.
-    working_dir: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder: compose could not tell where it runs}/gonogo-data}/projects
+    working_dir: ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/projects
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder: compose could not tell where it runs}/gonogo-data}:${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder: compose could not tell where it runs}/gonogo-data}
+      - ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}:${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}
       # The whole HOME of the container (the image's /home/node holds only dotfiles): gh's login, ~/.gitconfig, ~/.aws and the rest survive a
       # new container (docker compose up after a pull, a self-update, which keeps this bind)
-      - ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder: compose could not tell where it runs}/gonogo-data}/home:/home/node
+      - ${GONOGO_DATA:-${PWD:?set GONOGO_DATA to the absolute path of the data folder (compose could not tell where it runs)}/gonogo-data}/home:/home/node
     # gonogo is a supervisor and one process per room: every room stops its own agents within 12 seconds (in parallel) and the
     # supervisor waits 17 for the slowest before it kills one, so Docker must wait longer than that.
     stop_grace_period: 60s
