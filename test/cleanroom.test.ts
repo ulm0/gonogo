@@ -531,6 +531,28 @@ describe('the launcher starts a Clean Room agent through docker', () => {
     expect(prepared.spec.env.IS_DEMO).toBe('1');
   });
 
+  describe('global MCP servers in a Clean Room', () => {
+    const SERVER_TOKEN = 'Bearer ghp_secret-of-a-global-server';
+    const mcpOf = async (cleanRoomOn: boolean, extra: Partial<AgentRecord> = {}): Promise<Record<string, unknown>> => {
+      await mkdir(join(tmp, 'claude'), { recursive: true });
+      await writeFile(join(tmp, 'claude', '.claude.json'), JSON.stringify({ mcpServers: { pulsar: { type: 'http', url: 'https://gamma.pulsar.codes/mcp', headers: { Authorization: SERVER_TOKEN } } } }));
+      const launcher = createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:7777', seed: false, env: { ...env, CLAUDE_CONFIG_DIR: join(tmp, 'claude') }, globalMcp: { enabled: (cleanRoom) => (cleanRoom ? cleanRoomOn : true) } });
+      await launcher.prepareStart(record(extra), { generation: 1, flag: null });
+      return (JSON.parse(await readFile(join(home, 'agents', 'ana', 'mcp.json'), 'utf8')) as { mcpServers: Record<string, unknown> }).mcpServers;
+    };
+
+    it('are not in a Clean Room\'s mcp.json unless the room says so: a global server can carry a header or a token into the container', async () => {
+      const off = await mcpOf(false);
+      expect(Object.keys(off)).toEqual(['gonogo']);
+      expect(JSON.stringify(off)).not.toContain(SERVER_TOKEN);
+    });
+
+    it('are, with the room\'s switch on, and the agent can still switch one off by name', async () => {
+      expect(Object.keys(await mcpOf(true))).toEqual(['pulsar', 'gonogo']);
+      expect(Object.keys(await mcpOf(true, { payloadOff: { mcpServers: ['pulsar'] } }))).toEqual(['gonogo']);
+    });
+  });
+
   describe('egress: the Anthropic key stays out of the container', () => {
     const SECRET_OAUTH = 'sk-ant-oat-the-oauth-secret';
     interface Calls {

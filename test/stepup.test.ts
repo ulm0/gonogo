@@ -31,6 +31,18 @@ describe('Clean Room egress', () => {
   });
 });
 
+describe('global MCP servers', () => {
+  it('turning them on for the agents asks, turning them off or a read does not', () => {
+    expect(stepUpReason('PUT', '/api/global-mcp', { host: true })).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/global-mcp', { cleanRoom: true })).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/global-mcp', null)).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/global-mcp', { host: false })).toBeNull();
+    expect(stepUpReason('PUT', '/api/global-mcp', { cleanRoom: false })).toBeNull();
+    expect(stepUpReason('GET', '/api/global-mcp', null)).toBeNull();
+    expect(bodyMatters('PUT', '/api/global-mcp')).toBe(true);
+  });
+});
+
 describe('an edit of an agent', () => {
   const edit = (body: Record<string, unknown> | null) => stepUpReason('PATCH', '/api/agents/ana', body);
 

@@ -20,6 +20,7 @@ export type PayloadField = 'payload' | 'payload.mcpServers' | 'payload.skills';
 export type PayloadCheck = { ok: true; payload: Payload | undefined } | { ok: false; field: PayloadField; error: string };
 
 const NAME_RE = new RegExp(PAYLOAD_SERVER_NAME_PATTERN);
+const GLOBAL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HEADER_NAME_RE = /^[A-Za-z0-9-]+$/;
 const SERVER_TYPES = ['stdio', 'http', 'sse'] as const;
@@ -141,7 +142,8 @@ function offOf(value: unknown): PayloadOff {
   for (const key of Object.keys(value)) if (key !== 'mcpServers' && key !== 'skills') throw new Fault('payload', `payloadOff has no field "${key}"`);
   const out: PayloadOff = {};
   for (const [key, max, ok] of [
-    ['mcpServers', PAYLOAD_MAX_SERVERS, (n: string) => NAME_RE.test(n)],
+    // a server of the person's own Claude Code config may have capitals or dots, and must be switchable off by that name
+    ['mcpServers', PAYLOAD_MAX_SERVERS, (n: string) => NAME_RE.test(n) || GLOBAL_NAME_RE.test(n)],
     ['skills', PAYLOAD_MAX_SKILLS, (n: string) => n.length <= 255 && !n.includes('/') && !n.includes('\u0000')],
   ] as const) {
     const list = value[key];
@@ -150,6 +152,16 @@ function offOf(value: unknown): PayloadOff {
     if (list.length > 0) out[key] = [...new Set(list as string[])];
   }
   return out;
+}
+
+/** One server of somebody else's config (the user-scope servers of Claude Code), by the reader that judges a Payload server. */
+export function parseServer(config: unknown): { ok: true; server: McpServer } | { ok: false; error: string } {
+  try {
+    return { ok: true, server: server('server', config) };
+  } catch (error) {
+    if (error instanceof Fault) return { ok: false, error: error.message };
+    throw error;
+  }
 }
 
 /** `undefined` and `null` are no payload; an empty `mcpServers` or `skills` is dropped, and a payload left empty is none. */

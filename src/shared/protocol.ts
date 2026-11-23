@@ -432,6 +432,25 @@ export interface CleanRoom {
   /** The Anthropic API key stays out of this container (docs/features/egress.md): true, false, or absent to follow the room's setting. */
   egress?: boolean;
 }
+/** One user-scope MCP server of Claude Code as the page may see it: never an argument, a header or an env value. */
+export interface GlobalMcpServer {
+  name: string;
+  type: 'stdio' | 'http' | 'sse';
+  /** The command of a stdio server, or the origin (scheme and host) of a remote one. */
+  target: string;
+  /** Set when a room default of the same name replaces it for the agents of this room. */
+  overriddenBy: 'room' | null;
+}
+/** The room's switches for the global servers: host agents (on by default) and Clean Room agents (off by default). */
+export interface GlobalMcp {
+  host: boolean;
+  cleanRoom: boolean;
+}
+/** What the page shows: the switches, the servers that are read from the user's own config, and where they come from. */
+export interface GlobalMcpView extends GlobalMcp {
+  source: string;
+  servers: GlobalMcpServer[];
+}
 /** The room's egress setting: a Clean Room agent holds no Anthropic API key, a proxy of gonogo's holds it. Off by default. */
 export interface EgressSettings {
   anthropic: boolean;
@@ -2398,6 +2417,8 @@ export interface LauncherOptions {
   payloadDefaults?: () => Payload | undefined;
   /** Co-author: the room's setting, read at each start. Default: on. */
   coauthor?: () => CoauthorSettings;
+  /** Global MCP servers (globalmcp.ts): whether the user-scope servers of Claude Code are added to an agent's mcp.json, by host or Clean Room. Absent: none are. */
+  globalMcp?: { enabled(cleanRoom: boolean): boolean };
   /** Egress (egress.ts): a Clean Room agent whose setting is on holds a placeholder, and this proxy holds the Anthropic key. Absent: no agent has it. */
   egress?: {
     /** The room's setting; an agent's own `cleanRoom.egress` wins. */

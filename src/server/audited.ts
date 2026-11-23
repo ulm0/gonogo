@@ -203,6 +203,10 @@ export const RULES_AUDIT: Table = {
 export const EGRESS_AUDIT: Table = {
   set: ['config', (_args, result) => (isRecord(result) && typeof result.anthropic === 'boolean' ? `Director set Clean Room egress for the Anthropic key ${result.anthropic ? 'on' : 'off'}` : null)],
 };
+/** Global MCP servers: the two switches, as on or off; never a server or a value. */
+export const GLOBAL_MCP_AUDIT: Table = {
+  set: ['config', (_args, result) => (isRecord(result) ? `Director set the global MCP servers: host agents ${result.host === true ? 'on' : 'off'}, Clean Room agents ${result.cleanRoom === true ? 'on' : 'off'}` : null)],
+};
 export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const AUTOUPDATE_AUDIT: Table = { set: ['config', 'Director changed auto-update'], skip: ['config', 'Director skipped a version for auto-update'] };

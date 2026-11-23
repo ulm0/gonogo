@@ -33,7 +33,7 @@ import {
   validate,
 } from './form.js';
 import type { EngineNote, Field, PayloadRow, Problems, Values } from './form.js';
-import type { PayloadDefaults } from '../shared/protocol.js';
+import type { GlobalMcpView, PayloadDefaults } from '../shared/protocol.js';
 import { legendOf } from './loop.js';
 import { store, useStore } from './store.js';
 import { copyText } from './uplink.js';
@@ -222,9 +222,11 @@ function Page({ title, count, children }: { title: string; count: number | null;
 
 function Staff({ form }: { form: Target }): ReactElement {
   const [roomDefaults, setRoomDefaults] = useState<PayloadDefaults | null>(null);
+  const [globalServers, setGlobalServers] = useState<GlobalMcpView | null>(null);
   useEffect(() => {
     let live = true;
     api.payloadDefaults().then((found) => live && setRoomDefaults(found), () => undefined);
+    api.globalMcp().then((found) => live && setGlobalServers(found), () => undefined);
     return () => {
       live = false;
     };
@@ -796,7 +798,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       )}
     </details>
   );
-  const rows = payloadRows(roomDefaults, values);
+  const rows = payloadRows(roomDefaults, values, globalServers);
   const toggle = (row: PayloadRow, on: boolean): void => {
     const key = row.kind === 'server' ? 'offServers' : 'offSkills';
     const rest = values[key].filter((name) => name !== row.name);
@@ -810,7 +812,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       <ul className="staff-room-list">
         {rows.map((row) => (
           <li key={`${row.from}-${row.kind}-${row.name}`}>
-            {row.from === 'room' ? (
+            {row.from !== 'agent' ? (
               <label>
                 <input type="checkbox" role="switch" className="switch" checked={row.on} disabled={!row.canSwitch} onChange={(event) => toggle(row, event.target.checked)} /> {row.name}
               </label>
@@ -818,7 +820,7 @@ function Staff({ form }: { form: Target }): ReactElement {
               <span>{row.name}</span>
             )}{' '}
             <span className="chip" data-tone="quiet">
-              {row.from === 'room' ? 'ROOM' : 'THIS CONSOLE'} · {row.kind}
+              {row.from === 'global' ? 'GLOBAL' : row.from === 'room' ? 'ROOM' : 'THIS CONSOLE'} · {row.kind}
             </span>
             {row.note !== '' && <span className="hint"> {row.note}</span>}
           </li>
