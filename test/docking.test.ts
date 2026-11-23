@@ -1076,6 +1076,7 @@ describe('links: the core', () => {
     const { aSees } = await pair(a, b);
     a.tasks = [task('t1', { detail: 'Fix the build.' })];
     const handed = await a.docking.handOff(aSees, { task: 't1', assignee: 'bob', due: '2026-12-01', priority: 'high' });
+    await settle();
     return { w, a, b, dock: aSees, link: handed.links?.[0] ?? '', at: stationId(b) };
   }
   const agentActor = { kind: 'agent', name: 'bob', generation: 1 } as const;
