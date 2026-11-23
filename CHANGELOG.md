@@ -4,6 +4,17 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.13.1 (2026-11-23)
+
+Docker updates check the image without a GitHub login, in one key and one confirmation. Docking takes a pasted code as it comes. Flight Rules gets its group index back on top, with the Launch Window controls inline. A stale working title no longer holds an idle agent's mail.
+
+Flight Rules has its index back at the top: a key for each of the seven groups (Room, Agents, Budget and limits, Automation and connections, Knowledge, Security, System and update), each opening its group and scrolling to it. The index stays in reach when the page scrolls, and on a phone it is one row that scrolls sideways.
+Flight Rules → Automation and connections holds the real controls, one row each with the row/Edit pattern: Schedules, Uplink webhooks, Relay, Docking (no more "Open Launch Window" key). The Launch Window view keeps the schedules and the history; Uplink, Relay and Docking are no longer under it.
+The Docker update asks less. One click on Update in the version key starts it (the strip comes up with the one confirmation: what stops and what brings it back; what the update runs is a fold in it), then the password if it is due. An image gonogo could not vouch for is said once, short, with "How to fix" and "Update without checking": the long note is no longer printed twice, and the sentence about how this was installed is under "About this install". Dismiss on the strip now hides a version after an update too, and the version key has UNDO for a dismissed update.
+- **Docker self-update checks the image's attestation without a GitHub login.** The attestation bundle is fetched from GitHub's public API and `gh attestation verify --bundle` checks it offline: same signer workflow, same release tag, same digest. A login or `GH_TOKEN` only raises the rate limit (60 an hour per address anonymously) and is the fallback; without either, only a refused anonymous request leaves the update at "could not check".
+- **Docking pairing is easier to get right.** A code is read with or without `gonogo-dock:`, with spaces or line breaks, quotes or a final full stop, and one that was cut short says so and how much arrived. A code made with an address that works only on one computer carries a warning, the Address box starts with a network address of the computer when the page was opened as localhost, and a station that refuses the address it was reached by (`forbidden host`) says to start with `--allow-host`.
+- **A stale "working" window title no longer holds mail for ever.** When the hooks have said an agent is idle for 10 seconds, its input box is on screen and no dialog is, a title that still says working and has not changed its text for 10 seconds (Claude Code left a spinner behind) is not believed; a title that is still changing is a live turn and keeps waiting: the pointer is typed. Mail for an agent whose hooks say working still waits.
+
 ## 0.13.0 (2026-11-22)
 
 The GONOGO_* settings can be set from Flight Rules, for one room or for all rooms. Before a downgrade, move any variable names added to Scrubbed variables in the UI into GONOGO_SCRUB_ENV: an older build ignores the UI's values, so those variables would reach agents again. A command set in the UI also goes back to GONOGO_AGENT_CMD or claude.
