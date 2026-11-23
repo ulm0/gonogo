@@ -219,3 +219,9 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* the folds of a dock row sit across the whole row (the Agents fold has its own grid area) */
+.dk-fold {
+  grid-column: 1 / -1;
+  min-width: 0;
+}

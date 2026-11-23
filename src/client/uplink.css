@@ -80,7 +80,8 @@
   min-width: 0;
 }
 
-.up-log summary {
+.up-log summary,
+.dk-fold summary {
   display: flex;
   align-items: center;
   min-height: 44px;
@@ -94,17 +95,20 @@
 }
 
 /* Safari keeps its own marker on a flex summary. */
-.up-log summary::-webkit-details-marker {
+.up-log summary::-webkit-details-marker,
+.dk-fold summary::-webkit-details-marker {
   display: none;
 }
 
 /* No native marker (the summary is a flex box): a plus and a minus say that it opens. The empty alternative keeps them out of the reading order. */
-.up-log summary::before {
+.up-log summary::before,
+.dk-fold summary::before {
   content: '+' / '';
   width: 18px;
 }
 
-.up-log[open] summary::before {
+.up-log[open] summary::before,
+.dk-fold[open] summary::before {
   content: '\2212' / '';
 }
 

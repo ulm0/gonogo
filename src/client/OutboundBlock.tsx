@@ -16,7 +16,7 @@ export function OutboundBlock({ dock }: { dock: DockView }): ReactElement {
     api.outbound(dock.id).then(setEvents, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   };
   return (
-    <details className="up-log dk-outbound" onToggle={(e) => load(e.currentTarget.open)}>
+    <details className="dk-fold dk-outbound" onToggle={(e) => load(e.currentTarget.open)}>
       <summary>What left for {dock.name}</summary>
       <p className="hint">The last 50 events sent to {dock.name}, as they left, and whether it answered.</p>
       {error !== null && (

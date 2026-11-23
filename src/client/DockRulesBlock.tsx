@@ -40,7 +40,7 @@ export function DockRulesBlock({ dock }: { dock: DockView }): ReactElement {
     if (problem === undefined) save({ staleHours: Number(stale) });
   };
   return (
-    <details className="up-log dk-rules">
+    <details className="dk-fold dk-rules">
       <summary>Rules for {dock.name}</summary>
       {loadError !== null && (
         <p className="error" role="alert">
