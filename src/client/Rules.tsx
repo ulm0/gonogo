@@ -20,6 +20,7 @@ import { RoomKeysBlock } from './RoomKeys.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AccountBlock } from './AccountBlock.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
+import { EgressBlock } from './EgressRules.js';
 import { AutoUpdateBlock } from './AutoUpdateRules.js';
 import { VersionCheckBlock } from './CheckNow.js';
 import { PushBlock } from './PushBlock.js';
@@ -210,6 +211,7 @@ export function FlightRules(): ReactElement {
   const payload = useValue(() => api.payloadDefaults().then((p) => `${p.mcpServers.length} servers, ${p.skills.length} skills`));
   const sub = useValue(() => api.subagentSettings().then((x) => (x.mode === 'limit' ? `at most ${x.limit}` : x.mode)));
   const coauthor = useValue(() => api.coauthorSettings().then((c) => (c.enabled ? 'co-author line on' : 'co-author line off') + (c.prFooter ? ', PR footer on' : '')));
+  const egress = useValue(() => api.egressSettings().then((e) => (e.anthropic ? 'kept out of containers' : 'in the container')));
   const auto = useValue(() => api.autoUpdate().then((a) => (a.enabled ? 'on' : 'off')));
   const version = useStore((s) => s.info?.version ?? '');
   const tabName = useStore((s) => s.tabName);
@@ -320,6 +322,7 @@ export function FlightRules(): ReactElement {
         <Row name="Skills registry" now="see Edit"><SkillsBlock /></Row>
         <Row name="Subagents" now={sub}><SubagentsBlock /></Row>
         <Row name="Co-author and PR footer" now={coauthor}><CoauthorBlock /></Row>
+        <Row name="Clean Room API key" now={egress}><EgressBlock /></Row>
       </Group>
       <Group id="budget" title="Budget and limits">
         {maxqOn && <Row name="Max Q: agents working at once" now={governor.limit === null ? 'no limit' : `at most ${governor.limit}`}><MaxQ /></Row>}

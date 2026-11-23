@@ -429,6 +429,12 @@ export interface CleanRoomFlavors {
 export interface CleanRoom {
   image?: string;
   flavor?: CleanRoomFlavor;
+  /** The Anthropic API key stays out of this container (docs/features/egress.md): true, false, or absent to follow the room's setting. */
+  egress?: boolean;
+}
+/** The room's egress setting: a Clean Room agent holds no Anthropic API key, a proxy of gonogo's holds it. Off by default. */
+export interface EgressSettings {
+  anthropic: boolean;
 }
 /** Worktree: the agent starts in its own git worktree and branch of the repository of `dir`, on the host. No fields yet (an object so one can come later without a migration). */
 export type Worktree = Record<string, never>;
@@ -2392,6 +2398,16 @@ export interface LauncherOptions {
   payloadDefaults?: () => Payload | undefined;
   /** Co-author: the room's setting, read at each start. Default: on. */
   coauthor?: () => CoauthorSettings;
+  /** Egress (egress.ts): a Clean Room agent whose setting is on holds a placeholder, and this proxy holds the Anthropic key. Absent: no agent has it. */
+  egress?: {
+    /** The room's setting; an agent's own `cleanRoom.egress` wins. */
+    enabled(): boolean;
+    /** A token for this start; `key` gives the real key at each request. */
+    issue(agent: string, key: () => string | undefined): string;
+    revoke(agent: string): void;
+    /** The path of the base URL for a token. */
+    basePath(token: string): string;
+  };
   /** Subagents: the room's setting, read at each start. Default: allowed. */
   subagents?: () => SubagentSettings;
   log?: Logger;

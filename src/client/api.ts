@@ -89,6 +89,7 @@ import type {
   AutoUpdateWindow,
   SubagentSettings,
   CoauthorSettings,
+  EgressSettings,
   RulesView,
   HoldAllResult,
   ResumeAllResult,
@@ -722,6 +723,19 @@ export async function roomsUpdate(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Egress: whether a Clean Room agent holds the Anthropic API key (docs/features/egress.md). A change asks for a step-up. */
+const egressOf = (value: unknown): EgressSettings => {
+  const record = asRecord(value);
+  if (record === null || typeof record.anthropic !== 'boolean') throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as EgressSettings;
+};
+export async function egressSettings(): Promise<EgressSettings> {
+  return egressOf(await call('GET', '/egress'));
+}
+export async function setEgressSettings(patch: EgressSettings): Promise<EgressSettings> {
+  return egressOf(await call('PUT', '/egress', patch));
 }
 
 /** Co-author line: the room's switch for the Co-Authored-By line an agent's commits carry. */

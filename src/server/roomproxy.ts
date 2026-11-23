@@ -22,6 +22,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Grant } from './authhttp.js';
 import { keyMayDo } from './auth.js';
+import { egressChange, weakensEgress } from './stepup.js';
 import { isIpLiteralHost } from './hosts.js';
 import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
@@ -100,7 +101,7 @@ function kindOf(rest: string): Kind {
   // decoded, because a room's router decodes it (/%68ook is /hook there); suspicious() has already made sure it decodes
   const first = decodeURIComponent(rest.split('/')[1] ?? '');
   // case-insensitive on purpose: a router that folds case must not find an agent's route through here
-  if (['hook', 'mcp'].includes(first.toLowerCase())) return 'closed';
+  if (['hook', 'mcp', 'egress'].includes(first.toLowerCase())) return 'closed';
   // the route the rooms of an install offer each other Telegram updates on (telegramroute.ts) is for the local socket and the other rooms, not for a browser or a tunnel
   const [, , second = '', third = ''] = rest.split('?')[0]!.split('/').map((s) => decodeURIComponent(s).toLowerCase());
   if (first.toLowerCase() === 'api' && second === 'telegram' && third !== '') return 'closed';
@@ -304,6 +305,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       // a message of the Director: the browser route of messages, with a login session (or the browser token of an install with no account yet). Not a key, not the local socket, not a terminal.
       let director = false;
       let actor: string | null = null;
+      /** A key making a change that could take the API key back into a Clean Room container: refused unless it only strengthens (stepup.ts weakensEgress). */
+      let keyEgress = false;
       if (target.kind === 'browser' && !((req.method === 'GET' || req.method === 'HEAD') && first !== 'api' && first !== 'ws')) {
         const grant = options.auth.grant(req, 'api');
         if (grant === null) {
@@ -319,6 +322,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           sendText(res, 403, 'this key may not do that');
           return true;
         }
+        if (grant.kind === 'key' && egressChange(req.method ?? 'GET', target.decoded)) keyEgress = true;
         if (grant.kind === 'session' || grant.kind === 'tui') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
         director = (grant.kind === 'session' || grant.kind === 'token') && req.method === 'POST' && target.decoded === '/api/messages';
         if (target.decoded.startsWith('/api/settings') || target.decoded === '/api/docking/addresses' || target.decoded === '/api/project-folder' || target.decoded === '/api/models/mode' || target.decoded === '/api/project-folder/check') actor = grant.kind === 'key' ? `key:${(grant.keyId ?? '').slice(0, 12)}` : grant.kind;
@@ -343,6 +347,22 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       if (buffered === null) req.pipe(upstream);
       else upstream.end(buffered);
       };
+      if (keyEgress) {
+        const method = req.method ?? 'GET';
+        void readBody(req, 64 * 1024).then((got) => {
+          if (!got.ok) return void sendText(res, got.reason === 'too_large' ? 413 : 400, 'the body could not be read');
+          let parsed: Record<string, unknown> | null = null;
+          try {
+            const value: unknown = JSON.parse(got.body.toString('utf8'));
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+          } catch {
+            // not JSON: the room answers 400, and a body nobody could read is the strictest case
+          }
+          if (weakensEgress(method, target.decoded, parsed)) return void sendText(res, 403, 'an API key may not turn off, or leave to the room, where a Clean Room keeps its API key: do it in the browser');
+          forward(got.body);
+        });
+        return true;
+      }
       if (stepUp === null) {
         forward(null);
         return true;

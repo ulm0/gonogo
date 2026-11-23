@@ -248,6 +248,11 @@ describe('rooms proxy: HTTP', () => {
     expect(main.seen).toHaveLength(0);
   });
 
+  it('the egress proxy is the agents\' route: closed to the browser side, at the root and under a room, in any case or encoding', async () => {
+    for (const path of ['/egress/x/anthropic/v1/messages', '/Egress/x', '/%65gress/x', '/EGRESS', '/r/main/egress/x/anthropic/v1/messages', '/r/a/%45gress/x']) expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
+    expect(main.seen).toHaveLength(0);
+  });
+
   it('S1: a reserved name cannot be reached or hidden by encoding, case, empty segments or dots: decoded once, same text for both checks', async () => {
     // refused (400) or the supervisor's own: never main
     for (const path of ['/%72ooms', '/%72ooms/health', '/%69nternal/busy', '/api/%72ooms', '//internal/busy', '/internal//busy', '/rooms//health', '/internal/../api/state', '/./internal', '/r%2Fmain/x', '/%2e%2e/rooms', '/a/%2e%2e/b', '/x%5cy', '/x%00y', '/%']) {
@@ -573,6 +578,41 @@ describe('rooms proxy: the login', () => {
     expect((await get('/api/permissions', { cookie: 'gonogo-session=s2' })).status).toBe(200);
     // and a key or the old token is not a session: the check is the session's
     expect((await send({ authorization: 'Bearer gnk_full', 'content-type': 'application/json' }, 'PUT', '/api/permissions', {})).status).toBe(200);
+  });
+
+  it('S3: an API key may not turn Clean Room egress off, or leave it to the room, by the room setting, a hire or an edit; it may turn it on, and a browser session is not held to this', async () => {
+    const key = { authorization: 'Bearer gnk_full', 'content-type': 'application/json' };
+    const send = (headers: Record<string, string>, method: string, path: string, body: unknown) => get(path, headers, method, JSON.stringify(body));
+    const before = main.seen.length;
+    for (const [method, path, body] of [
+      ['PUT', '/api/egress', { anthropic: false }],
+      ['PUT', '/api/egress', {}],
+      ['PUT', '/api/egress', { anthropic: 'yes' }],
+      ['POST', '/api/agents', { name: 'x', cleanRoom: { egress: false } }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: {} }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: { image: 'a/b' } }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: { egress: false } }],
+      ['PUT', '/api/agents/ana', { cleanRoom: { egress: false } }],
+      ['PUT', '/api/%65gress', { anthropic: false }],
+      ['PUT', '/r/a/api/egress', { anthropic: false }],
+    ] as const) {
+      expect((await send(key, method, path, body)).status, `${method} ${path} ${JSON.stringify(body)}`).toBe(403);
+    }
+    expect((await get('/api/egress', key, 'PUT', 'not json')).status).toBe(403);
+    expect(main.seen.length).toBe(before);
+    // what only strengthens, or is not about egress, goes through
+    for (const [method, path, body] of [
+      ['PUT', '/api/egress', { anthropic: true }],
+      ['POST', '/api/agents', { name: 'x', cleanRoom: {} }],
+      ['POST', '/api/agents', { name: 'x', cleanRoom: { egress: true } }],
+      ['POST', '/api/agents', { name: 'x', mode: 'default' }],
+      ['PATCH', '/api/agents/ana', { cleanRoom: { egress: true } }],
+      ['PATCH', '/api/agents/ana', { role: 'x' }],
+    ] as const) {
+      expect((await send(key, method, path, body)).status, `${method} ${path} ${JSON.stringify(body)}`).toBe(200);
+    }
+    // a session turns it off, as the page does (the step-up is the session's own)
+    expect((await send({ cookie: 'gonogo-session=s1', origin: base, 'content-type': 'application/json' }, 'PUT', '/api/egress', { anthropic: false })).status).toBe(200);
   });
 
   const openAs = (path: string, headers: Record<string, string>, protocols: string[] = [WS_SUBPROTOCOL]): Promise<WebSocket> =>

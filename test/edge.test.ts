@@ -4687,6 +4687,25 @@ describe('web: auth, Host and Origin', () => {
         expect((await postHook(port, '/hook/ana/Stop', { headers: { Host: host } })).status).toBe(200);
       });
 
+      it('reaches the egress proxy too, and only with the token of the path: no Authorization is looked at, an Origin is refused, a server without a proxy says 404', async () => {
+        const handled: string[] = [];
+        const { port } = await startWeb({ egress: { handle: async (req, res) => { handled.push(String(req.url)); res.writeHead(200, { 'content-type': 'text/plain' }); res.end('proxied'); } } });
+        const path = `/egress/${'a'.repeat(64)}/anthropic/v1/messages`;
+        const viaContainer = await send(port, { method: 'POST', path, headers: { ...container(port), 'Content-Type': 'application/json' }, body: '{}' });
+        expect([viaContainer.status, viaContainer.body]).toEqual([200, 'proxied']);
+        const local = await send(port, { method: 'POST', path, headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        expect(local.status).toBe(200);
+        expect(handled).toEqual([path, path]);
+        // a page cannot make this request: any Origin is refused, whatever the Host
+        const page = await send(port, { method: 'POST', path, headers: { ...container(port), Origin: `http://host.docker.internal:${port}`, 'Content-Type': 'application/json' }, body: '{}' });
+        expect([page.status, page.body]).toEqual([403, 'forbidden origin']);
+        expect(handled).toHaveLength(2);
+        // any other host is refused as for every route
+        expect((await send(port, { method: 'POST', path, headers: { Host: 'evil.example' }, body: '{}' })).status).toBe(403);
+        const none = await startWeb();
+        expect((await send(none.port, { method: 'POST', path, headers: { ...container(none.port) }, body: '{}' })).status).toBe(404);
+      });
+
       it('reaches nothing else: not the API, the page, the WebSocket path or a path that does not parse', async () => {
         const dir = tmpDir();
         writeFileSync(join(dir, 'index.html'), '<title>x</title>');

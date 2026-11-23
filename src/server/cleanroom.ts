@@ -40,12 +40,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 export function parseCleanRoom(value: unknown, provider: Provider | undefined): CleanRoomCheck {
   if (!isRecord(value)) return { ok: false, error: 'cleanRoom must be an object' };
   if ((provider ?? 'claude') !== 'claude') return { ok: false, error: 'a Clean Room runs Claude Code agents only' };
-  const unknown = Object.keys(value).find((key) => key !== 'image' && key !== 'flavor');
+  const unknown = Object.keys(value).find((key) => key !== 'image' && key !== 'flavor' && key !== 'egress');
   if (unknown !== undefined) return { ok: false, error: `cleanRoom has no field "${unknown}"` };
-  const { image, flavor } = value;
+  const { image, flavor, egress } = value;
   if (image !== undefined && (typeof image !== 'string' || !IMAGE_RE.test(image))) return { ok: false, error: 'the image must be a Docker image name or id (letters, digits and . _ / : @ -)' };
   if (flavor !== undefined && !(CLEAN_ROOM_FLAVORS as readonly unknown[]).includes(flavor)) return { ok: false, error: `the flavor must be one of: ${CLEAN_ROOM_FLAVORS.join(', ')}` };
-  return { ok: true, cleanRoom: { ...(image === undefined ? {} : { image }), ...(flavor === undefined ? {} : { flavor: flavor as CleanRoomFlavor }) } };
+  if (egress !== undefined && typeof egress !== 'boolean') return { ok: false, error: 'cleanRoom.egress must be true or false' };
+  return { ok: true, cleanRoom: { ...(image === undefined ? {} : { image }), ...(flavor === undefined ? {} : { flavor: flavor as CleanRoomFlavor }), ...(egress === undefined ? {} : { egress }) } };
 }
 
 /** The flavor an agent runs in: its own, else the room's default, else docker. */
