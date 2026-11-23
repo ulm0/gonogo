@@ -86,7 +86,7 @@ import type {
   TitleGlyph,
   TitleInfo,
 } from '../src/shared/protocol.js';
-import { DOING_MAX_CHARS, HISTORY_MAX, HISTORY_WINDOW_MS, HOLD_REASON } from '../src/shared/protocol.js';
+import { DOING_MAX_CHARS, HISTORY_MAX, HISTORY_WINDOW_MS, HOLD_REASON, isHoldReason } from '../src/shared/protocol.js';
 
 /* ------------------------------------------------------------------------------------------------------------
  * The fake world
@@ -5598,6 +5598,19 @@ describe('Redline', () => {
     loop(h, 'ana', REDLINE_REPEATS);
     h.prompt('ana', 'stop looping and run the tests once');
     expect(h.view('ana')).toMatchObject({ state: 'working', needsKind: null });
+  });
+
+  it('Hold with a reason (a link cap): the reason shows, it is still a hold (no Redline notice, the Director resumes it), and an agent that is already held keeps its own', async () => {
+    const h = await withAna();
+    h.work('ana');
+    expect(h.hub.hold('ana', 'task t9 reached the cap its link allows: spent $0.70 of $0.50')).toMatchObject({ state: 'needs_you', needsKind: 'redline', needsReason: `${HOLD_REASON}: task t9 reached the cap its link allows: spent $0.70 of $0.50` });
+    expect(isHoldReason(h.view('ana').needsReason)).toBe(true);
+    expect(h.notices).toEqual([]);
+    h.send('user', 'ana', 'later');
+    expect(h.msg('m1')).toMatchObject({ status: 'held' });
+    expectHubError(() => h.hub.hold('ana', 'again'), 'conflict', 'ana is already on hold');
+    h.setTitle('ana', 'idle');
+    expect(h.hub.resume('ana')).toMatchObject({ state: 'idle', needsKind: null });
   });
 
   it('Hold: the Director trips it by hand, with no Downlink notice; resume ends it and the mail goes', async () => {

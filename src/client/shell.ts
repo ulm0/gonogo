@@ -1,5 +1,5 @@
 import { DEFAULT_LIVERY } from '../shared/livery.js';
-import { HOLD_REASON } from '../shared/protocol.js';
+import { isHoldReason } from '../shared/protocol.js';
 import { CATALOGUE } from '../shared/layout.js';
 import type { BlockId } from '../shared/layout.js';
 import type { AgentView, LiveryView, PollView, PropellantView, RoomView } from '../shared/protocol.js';
@@ -118,7 +118,7 @@ export function commands({ agents, legends, poll, unread, livery, room, off = []
     out.push({ id: 'poll', label: 'Start a T-minus poll', group: 'Action', also: 'go no-go', act: { kind: 'poll' } });
   }
   if (agents.some((a) => a.state !== 'stopped')) out.push({ id: 'all-stop', label: 'ALL STOP: hold every console', group: 'Action', also: 'hold interrupt freeze', act: { kind: 'all-stop' } });
-  if (agents.some((a) => a.state === 'needs_you' && a.needsReason === HOLD_REASON)) out.push({ id: 'all-resume', label: 'ALL RESUME: resume every held console', group: 'Action', also: 'hold continue', act: { kind: 'all-resume' } });
+  if (agents.some((a) => a.state === 'needs_you' && isHoldReason(a.needsReason))) out.push({ id: 'all-resume', label: 'ALL RESUME: resume every held console', group: 'Action', also: 'hold continue', act: { kind: 'all-resume' } });
   if (unread > 0) out.push({ id: 'read', label: 'Mark the Downlink read', group: 'Action', also: 'inbox all', act: { kind: 'read' } });
   for (const l of livery.liveries) {
     if (l.slug !== livery.current) out.push({ id: `livery:${l.slug}`, label: `Apply livery ${l.name}`, group: 'Action', also: 'theme look', act: { kind: 'livery', slug: l.slug } });

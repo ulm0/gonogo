@@ -553,6 +553,8 @@ export interface RosterFile {
 
 /** Hold: the needsReason of an agent the Director put on hold (a Redline trip by hand, cleared by resume). */
 export const HOLD_REASON = 'on hold';
+/** A hold, with or without the reason it was put on ("on hold: task t9 reached the cap its link allows"). */
+export const isHoldReason = (reason: string | null | undefined): boolean => reason === HOLD_REASON || (typeof reason === 'string' && reason.startsWith(`${HOLD_REASON}: `));
 
 /** Telemetry: one tool call of an agent, from its PreToolUse and PostToolUse (or PostToolUseFailure) hooks. */
 export interface ToolCall {
@@ -1162,7 +1164,7 @@ export interface LinkView {
   /** What a station further on last reported through this link, "ops: doing". */
   via?: string;
   /** A mission link: what the other station says of the mission, as counts only (`at lab: 3 of 5`). */
-  progress?: { done: number; total: number; blocked: number; review: number };
+  progress?: { done: number; total: number; blocked: number; review: number; doing?: number };
   /** What the other station says the task cost there: an estimate at list prices, never a bill; `cap` is the budget it applied (null: it reports no cost). */
   cost?: { usd: number; estimate: true; cap?: number } | null;
   /** Events in the trail, and events of ours that wait to be acked. */
@@ -2862,7 +2864,7 @@ export interface Hub {
    * working with no transition (needs_you, held or tripped, starting, stopped), or when it has no hooks (custom, Codex and
    * the other output-only engines).
    */
-  hold(name: string): AgentView;
+  hold(name: string, reason?: string): AgentView;
   /** Clears a Redline trip; conflict when the agent is not tripped. */
   resume(name: string): AgentView;
 }

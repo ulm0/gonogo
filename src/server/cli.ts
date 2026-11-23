@@ -899,7 +899,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       if (over.scope === 'link') {
         for (const n of claude.filter((c) => workingOn(c).task === over.task)) {
           try {
-            hub.hold(n);
+            hub.hold(n, over.reason);
           } catch (e) {
             log.debug(`could not hold ${n}`, e);
           }

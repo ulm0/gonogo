@@ -83,7 +83,7 @@ export interface Link {
   /** The receiver's own: the last figure it sent, and when. */
   costSent?: { usd: number; at: number };
   /** A mission link: the counts the receiver last reported (sender side), or sent (receiver side). */
-  progress?: { done: number; total: number; blocked: number; review: number };
+  progress?: { done: number; total: number; blocked: number; review: number; doing?: number };
   trail: LinkEvent[];
   /** The last `seq` of ours, and the last of theirs that was applied in order. */
   outSeq: number;
@@ -299,8 +299,11 @@ export function createLinks(options: LinksOptions): Links {
     else if (event.kind === 'recall') link.state = 'recalled';
     if (event.kind === 'status' && event.status !== undefined) {
       link.peerStatus = event.status;
-      // the receiver says done: a delivery, waiting for the sender's acceptance
-      if (event.status === 'done' && (link.state === 'accepted' || link.state === 'delivered')) link.state = 'delivered';
+      // the receiver says done: a delivery, waiting for the sender's acceptance (while undocked it is the state the redock resumes)
+      if (event.status === 'done') {
+        if (link.state === 'accepted' || link.state === 'delivered') link.state = 'delivered';
+        else if (link.state === 'detached' && (link.resume === 'accepted' || link.resume === 'delivered')) link.resume = 'delivered';
+      }
     }
   };
 
@@ -402,8 +405,11 @@ export function createLinks(options: LinksOptions): Links {
         n += 1;
       }
       if (n > 0) {
+        // what waited while apart goes now, not after the backoff of the failed tries
+        retry.delete(dockId);
         save();
         options.changed();
+        sendNow(dockId);
       }
       return n;
     },
@@ -617,7 +623,7 @@ export function createLinks(options: LinksOptions): Links {
     const event: LinkEvent = { ...ev, by, text: cleanLine(ev.text), ...(ev.status !== undefined && (TASK_STATUSES as readonly string[]).includes(ev.status) ? { status: ev.status } : {}) };
     // deliverables ride on a status only
     if (event.kind !== 'status') delete event.attachments;
-    if (ev.kind === 'progress' && !/^\d{1,4}\/\d{1,4} \d{1,4} \d{1,4}$/.test(event.text)) throw new Error(`dock ${dock.name} sent a progress that is not counts`);
+    if (ev.kind === 'progress' && !/^\d{1,4}\/\d{1,4} \d{1,4} \d{1,4}(?: \d{1,4})?$/.test(event.text)) throw new Error(`dock ${dock.name} sent a progress that is not counts`);
     if (ev.kind === 'cost' && !/^\d{1,7}\.\d{2}$/.test(event.text)) throw new Error(`dock ${dock.name} sent a cost that is not dollars to the cent`);
     if (ev.kind === 'status' && event.status === undefined && event.via === undefined) throw new Error(`dock ${dock.name} sent a status with no status`);
     // only a status carries a station further on; a `first` is the business of a `lost` and nothing else
@@ -667,8 +673,8 @@ export function createLinks(options: LinksOptions): Links {
     // what the receiver reports: dollars to the cent and nothing else; the budget it applied comes with its accept
     if (event.kind === 'cost') link.cost = Number(event.text);
     if (event.kind === 'progress') {
-      const m = /^(\d{1,4})\/(\d{1,4}) (\d{1,4}) (\d{1,4})$/.exec(event.text);
-      if (m) link.progress = { done: Number(m[1]), total: Number(m[2]), blocked: Number(m[3]), review: Number(m[4]) };
+      const m = /^(\d{1,4})\/(\d{1,4}) (\d{1,4}) (\d{1,4})(?: (\d{1,4}))?$/.exec(event.text);
+      if (m) link.progress = { done: Number(m[1]), total: Number(m[2]), blocked: Number(m[3]), review: Number(m[4]), ...(m[5] === undefined ? {} : { doing: Number(m[5]) }) };
     }
     if (event.kind === 'accept' && link.role === 'sender') {
       const applied = /^budget (\d{1,7}\.\d{2})$/.exec(event.text);
@@ -717,7 +723,7 @@ export function createLinks(options: LinksOptions): Links {
       held: [],
       seen,
       ...(typeof raw.via === 'string' ? { via: cleanLine(raw.via, 80) } : {}),
-      ...(isRecord(raw.progress) && [raw.progress.done, raw.progress.total, raw.progress.blocked, raw.progress.review].every((n) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0) ? { progress: { done: raw.progress.done as number, total: raw.progress.total as number, blocked: raw.progress.blocked as number, review: raw.progress.review as number } } : {}),
+      ...(isRecord(raw.progress) && [raw.progress.done, raw.progress.total, raw.progress.blocked, raw.progress.review].every((n) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0) ? { progress: { done: raw.progress.done as number, total: raw.progress.total as number, blocked: raw.progress.blocked as number, review: raw.progress.review as number, ...(typeof raw.progress.doing === 'number' && Number.isSafeInteger(raw.progress.doing) && raw.progress.doing >= 0 ? { doing: raw.progress.doing } : {}) } } : {}),
       ...(typeof raw.cost === 'number' && Number.isFinite(raw.cost) && raw.cost >= 0 && raw.cost < 10_000_000 ? { cost: raw.cost } : {}),
       ...(isRecord(raw.costSent) && typeof raw.costSent.usd === 'number' && typeof raw.costSent.at === 'number' ? { costSent: { usd: raw.costSent.usd, at: raw.costSent.at } } : {}),
       ...((['offered', 'accepted', 'delivered', 'returned', 'recalled', 'done', 'refused'] as const).find((s) => s === raw.resume) === undefined ? {} : { resume: raw.resume as LinkState }),

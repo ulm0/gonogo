@@ -702,10 +702,10 @@ export function createDocking(options: DockingOptions): Docking {
       const link = view.kind === 'mission' && view.role === 'receiver' && view.state === 'accepted' ? links.find(view.id) : undefined;
       if (link === undefined) continue;
       const mine = tasks.filter((t) => t.missionId === link.mine);
-      const counts = { done: mine.filter((t) => t.status === 'done').length, total: mine.length, blocked: mine.filter((t) => t.status === 'blocked').length, review: mine.filter((t) => t.status === 'review').length };
+      const counts = { done: mine.filter((t) => t.status === 'done').length, total: mine.length, blocked: mine.filter((t) => t.status === 'blocked').length, review: mine.filter((t) => t.status === 'review').length, doing: mine.filter((t) => t.status === 'doing').length };
       if (link.progress === undefined || JSON.stringify(link.progress) !== JSON.stringify(counts)) {
         link.progress = counts;
-        links.record(link, 'progress', `station@${options.name}`, `${counts.done}/${counts.total} ${counts.blocked} ${counts.review}`);
+        links.record(link, 'progress', `station@${options.name}`, `${counts.done}/${counts.total} ${counts.blocked} ${counts.review} ${counts.doing}`);
       }
       if (options.missions.list().find((m) => m.id === link.mine)?.status === 'done') links.record(link, 'status', `station@${options.name}`, 'the mission is done', 'done');
     }
@@ -1194,7 +1194,8 @@ export function createDocking(options: DockingOptions): Docking {
 
     taskChanged(before, after, actor, note, attachments = []) {
       const link = after.link === undefined ? undefined : links.find(after.link);
-      if (link === undefined || link.role !== 'receiver' || link.state === 'detached' || link.state === 'recalled') return;
+      // an undocked station's task goes on being worked: its events are kept (trail and outbox) and the redock delivers them
+      if (link === undefined || link.role !== 'receiver' || link.state === 'recalled') return;
       const by = `${actor.kind === 'agent' ? actor.name : 'director'}@${options.name}`;
       const text = after.localNotes === true ? '' : (note ?? '');
       if (after.status !== before.status) {
