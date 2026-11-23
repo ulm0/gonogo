@@ -1,1 +1,0 @@
-- **Docs: a first-run audit.** `docs/first-run-audit.md` lists what a newcomer meets in the first ten minutes of the npm and Docker installs, worst first, each with a fix. No change for users.
