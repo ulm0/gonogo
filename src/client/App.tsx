@@ -168,6 +168,8 @@ function RolloutStrip(): ReactElement | null {
   const strip = useRef<HTMLElement | null>(null);
   // the version key asks for the update itself (detail.start), not only for the strip: one click there, then the one confirmation here
   const startRef = useRef<(() => void) | null>(null);
+  // set again by the render that shows the strip: a render that returns nothing leaves it empty, so a request that outlives the strip never starts an update by itself
+  startRef.current = null;
   const [wantStart, setWantStart] = useState(false);
   useEffect(() => {
     const show = (event?: Event): void => {
@@ -182,9 +184,9 @@ function RolloutStrip(): ReactElement | null {
     return () => window.removeEventListener(ROLLOUT_SHOW, show);
   }, []);
   useEffect(() => {
-    if (wantStart && startRef.current !== null) {
+    if (wantStart) {
       setWantStart(false);
-      startRef.current();
+      startRef.current?.();
     }
   }, [wantStart, dismissed, rollout]);
   const update = rollout?.update;

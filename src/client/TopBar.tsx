@@ -61,7 +61,10 @@ function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
   const canUpdate = useStore((s) => s.rollout?.canUpdate === true);
   const canUndo = useStore((s) => s.rollout?.update?.undo === true);
   const installing = useStore((s) => ['running', 'reloading', 'handed-off'].includes(s.rollout?.update?.state ?? ''));
+  const selfUpdate = useStore((s) => s.rollout?.selfUpdate === true);
   const [undoError, setUndoError] = useState<string | null>(null);
+  // one line of confirmation for what stops agents and is not asked elsewhere: UNDO, and an update that is not a container's (a container's is asked by the strip)
+  const [ask, setAsk] = useState<'update' | 'undo' | null>(null);
   // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
   setPublicOrigin(info?.publicUrl);
   if (info === null) return null;
@@ -83,7 +86,38 @@ function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
               {undoError}
             </p>
           )}
-          <div className="lay-pop-keys">
+          {ask !== null && (
+            <div className="lay-confirm" role="alertdialog" aria-label={ask === 'undo' ? 'UNDO the last update' : `Update to ${newer}`}>
+              <p>
+                {ask === 'undo'
+                  ? 'UNDO stops every agent and goes back to the version before this update.'
+                  : `Update to ${newer}? It installs the new version and reloads gonogo; the agents stop while it reloads unless gonogo runs with --pty-host.`}
+              </p>
+              <div className="lay-pop-keys">
+                <button
+                  type="button"
+                  className="btn"
+                  data-kind="primary"
+                  onClick={() => {
+                    setAsk(null);
+                    if (ask === 'update') {
+                      window.dispatchEvent(new CustomEvent(ROLLOUT_SHOW, { detail: { start: true } }));
+                      close();
+                    } else {
+                      setUndoError(null);
+                      api.undoUpdate().then(close, (e: unknown) => setUndoError(e instanceof Error ? e.message : String(e)));
+                    }
+                  }}
+                >
+                  {ask === 'undo' ? 'UNDO now' : 'Update now'}
+                </button>
+                <button type="button" className="btn" data-kind="quiet" onClick={() => setAsk(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="lay-pop-keys" hidden={ask !== null}>
             {newer !== null && stripHidden && (
               inMain ? (
                 <button
@@ -91,6 +125,10 @@ function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
                   className="btn"
                   data-kind="primary"
                   onClick={() => {
+                    if (canUpdate && !selfUpdate) {
+                      setAsk('update');
+                      return;
+                    }
                     window.dispatchEvent(new CustomEvent(ROLLOUT_SHOW, { detail: { start: canUpdate } }));
                     close();
                   }}
@@ -108,10 +146,7 @@ function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
                 type="button"
                 className="btn"
                 data-kind="quiet"
-                onClick={() => {
-                  setUndoError(null);
-                  api.undoUpdate().then(close, (e: unknown) => setUndoError(e instanceof Error ? e.message : String(e)));
-                }}
+                onClick={() => setAsk('undo')}
               >
                 UNDO the last update
               </button>

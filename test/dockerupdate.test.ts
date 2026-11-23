@@ -927,3 +927,22 @@ describe('Dismiss on the update strip', () => {
     expect(readFileSync('src/client/TopBar.tsx', 'utf8')).toContain('UNDO the last update');
   });
 });
+
+describe('what the version key asks before it stops agents', () => {
+  const bar = readFileSync('src/client/TopBar.tsx', 'utf8');
+  const app = readFileSync('src/client/App.tsx', 'utf8');
+
+  it('asks one line before UNDO, and before an update that is not a container\'s (a container\'s is asked by the strip)', () => {
+    expect(bar).toContain('UNDO stops every agent and goes back to the version before this update.');
+    expect(bar).toContain("onClick={() => setAsk('undo')}");
+    expect(bar).toMatch(/if \(canUpdate && !selfUpdate\) \{\s*setAsk\('update'\);\s*return;/);
+    expect(bar).toContain("api.undoUpdate().then(close");
+    // nothing calls undoUpdate before the confirmation
+    expect(bar.match(/api\.undoUpdate\(\)/g)).toHaveLength(1);
+  });
+
+  it('a request to start that outlives the strip never starts an update: the ref is emptied at every render', () => {
+    expect(app).toContain('startRef.current = null;');
+    expect(app).toMatch(/if \(wantStart\) \{\s*setWantStart\(false\);\s*startRef\.current\?\.\(\);/);
+  });
+});

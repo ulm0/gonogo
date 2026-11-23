@@ -2073,3 +2073,13 @@
 .rollout-fix[open] > summary::before {
   content: '▾';
 }
+
+.lay-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lay-confirm p {
+  margin: 0;
+}
