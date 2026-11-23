@@ -8,6 +8,7 @@ import type { FormEvent, ReactElement } from 'react';
 import type { Claim, ClaimResult, KnowledgeRepo, KnowledgeView, Proposal } from '../shared/protocol.js';
 import * as api from './api.js';
 import { useStore } from './store.js';
+import { ShareMarks } from './ShareMarks.js';
 import './knowledge.css';
 import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledgeModel.js';
 
@@ -154,6 +155,7 @@ function ClaimRow({ repo, claim, onSaved }: { repo: KnowledgeRepo; claim: Claim;
             ))}
           </ul>
         ))}
+      <ShareMarks kind="claim" id={`${repo.repoId}/${claim.id}`} label="Stations that may ask for this claim" />
       {mine ? (
         <div className="know-keys">
           <button type="button" className="btn" data-kind="quiet" aria-label={`Edit ${claim.id}`} aria-disabled={busy || undefined} onClick={() => setEditing(true)}>

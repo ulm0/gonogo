@@ -78,6 +78,7 @@ import {
   HISTORY_MAX,
   HISTORY_WINDOW_MS,
   HOLD_REASON,
+  isHoldReason,
   HOOK_EVENTS,
   MODEL_PATTERN,
   PERMISSION_MODES,
@@ -982,7 +983,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   }
 
   function redlineNote(rt: Rt): string {
-    return rt.redline === HOLD_REASON ? `held: ${rt.record.name} is on hold` : `held: redline on ${rt.record.name}`;
+    return isHoldReason(rt.redline) ? `held: ${rt.record.name} is on hold` : `held: redline on ${rt.record.name}`;
   }
 
   function holdNote(rt: Rt): string | null {
@@ -1206,10 +1207,10 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   }
 
   /** Trips the breaker: Escape interrupts a turn in progress, the state reads needs_you and the mail waits. A Hold is a trip the Director asked for. */
-  function tripRt(rt: Rt, reason: string, byHand = false): void {
+  function tripRt(rt: Rt, reason: string, byHand = false, detail?: string): void {
     if (rt.redline !== null || rt.removed || !hooked(rt) || rt.state === 'stopped' || rt.transition !== null) return;
     const wasWorking = rt.state === 'working';
-    rt.redline = byHand ? HOLD_REASON : `redline: ${reason}`;
+    rt.redline = byHand ? (detail === undefined ? HOLD_REASON : `${HOLD_REASON}: ${detail.replace(/\s+/g, ' ').slice(0, 200)}`) : `redline: ${reason}`;
     saveHolds();
     if (byHand) log.info(`${rt.record.name} is on hold`);
     else log.warn(`${rt.record.name} tripped the redline: ${reason}`);
@@ -1259,15 +1260,15 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     flush(rt);
   }
 
-  function hold(name: string): AgentView {
+  function hold(name: string, reason?: string): AgentView {
     assertOpen();
     const rt = lookup(name);
     const who = rt.record.name;
     if (!hooked(rt)) throw new HubError('conflict', `${who} reports no hooks, so gonogo cannot hold it`);
-    if (rt.redline !== null) throw new HubError('conflict', rt.redline === HOLD_REASON ? `${who} is already on hold` : `${who} has tripped the redline: resume or stop it`);
+    if (rt.redline !== null) throw new HubError('conflict', isHoldReason(rt.redline) ? `${who} is already on hold` : `${who} has tripped the redline: resume or stop it`);
     if (rt.state === 'needs_you' && rt.transition === null) throw new HubError('conflict', `${who} needs you: answer it first`);
     if ((rt.state !== 'idle' && rt.state !== 'working') || rt.transition !== null) throw new HubError('conflict', `${who} is not running`);
-    tripRt(rt, HOLD_REASON, true);
+    tripRt(rt, HOLD_REASON, true, reason);
     flush(rt);
     return buildView(rt);
   }
@@ -1294,7 +1295,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         out.held.push(rt.record.name);
       } catch {
         // stopped, already held, at a dialog or without hooks: left as it is
-        if (rt.state !== 'stopped' && rt.redline !== HOLD_REASON) out.skipped.push(rt.record.name);
+        if (rt.state !== 'stopped' && !isHoldReason(rt.redline)) out.skipped.push(rt.record.name);
       }
     }
     return out;
@@ -1304,7 +1305,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     assertOpen();
     const resumed: string[] = [];
     for (const rt of sortedAgents()) {
-      if (rt.redline !== HOLD_REASON) continue;
+      if (!isHoldReason(rt.redline)) continue;
       resume(rt.record.name);
       resumed.push(rt.record.name);
     }
@@ -3415,7 +3416,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       assertOpen();
       const rt = lookup(name);
       if (rt.state !== 'stopped' || rt.transition !== null) {
-        throw new HubError('conflict', rt.redline === HOLD_REASON ? `${rt.record.name} is on hold: the Director resumes it` : rt.redline !== null ? `${rt.record.name} has tripped the redline: the Director resumes or stops it` : `${rt.record.name} is already running`);
+        throw new HubError('conflict', isHoldReason(rt.redline) ? `${rt.record.name} is on hold: the Director resumes it` : rt.redline !== null ? `${rt.record.name} has tripped the redline: the Director resumes or stops it` : `${rt.record.name} is already running`);
       }
       // its process may still be alive in the pty host, held: only the Director's start or resume lets it go
       if (lostHolds.has(rt.record.name)) throw new HubError('conflict', `${rt.record.name} is on hold: the Director resumes it`);

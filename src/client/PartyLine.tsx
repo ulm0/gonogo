@@ -10,6 +10,9 @@ import { Reply } from './Activity.js';
 import { whenText } from './inbox.js';
 import { chipOf, legendOf, noteOf, routeText } from './loop.js';
 import { showRoom, useStore } from './store.js';
+import { linkLine } from './links.js';
+import type { LinkItem } from './links.js';
+import { useLinks } from './linksData.js';
 import { groupThreads, repliers, replyTarget } from './threads.js';
 import type { Thread } from './threads.js';
 import './loop.css';
@@ -90,7 +93,8 @@ export function PartyLine(): ReactElement {
   const agents = useStore((s) => s.agents);
   const [openId, setOpenId] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement | null>(null);
-  const threads = useMemo(() => groupThreads(items), [items]);
+  const links = useLinks();
+  const threads = useMemo(() => groupThreads(items, new Set(links.map((l) => l.id))), [items, links]);
   const rows = threads.slice(0, MAX_ROWS);
   const now = useMemo(() => Date.now(), [items]);
   // The page replaces the room: the keyboard starts at its title, not on a button that is gone.
@@ -124,6 +128,11 @@ export function PartyLine(): ReactElement {
                     <span className="loop-route">{thread.who.map((name) => legendOf(name, agents)).join(' · ')}</span>
                     <span className="pl-text">
                       <span className="loop-subject">{thread.title}</span>
+                      {thread.link !== undefined && links.some((l) => l.id === thread.link) && (
+                        <span className="chip" data-tone="quiet">
+                          LINK · {linkLine(links.find((l) => l.id === thread.link) as LinkItem)}
+                        </span>
+                      )}
                       <span className="loop-note">{countText(thread.items.length)}</span>
                     </span>
                     {chip.tone !== 'quiet' && (

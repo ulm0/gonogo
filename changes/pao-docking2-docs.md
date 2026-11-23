@@ -1,0 +1,1 @@
+- **Docking page rewritten for Docking 2.** What a task link is, what the other station can and cannot do, hand off, return, recall and accept, chains, missions, cost reports and link caps, knowledge on request, the board and the Outbound view, what leaves your station, and every per-dock rule with its default.

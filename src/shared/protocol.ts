@@ -164,7 +164,7 @@ export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 export const WORKTREE_DIR = 'worktrees';
 /** The online documentation: the one address every install surface (startup, --help, doctor, the page) links to. The site has one version only, so the link is not versioned. */
 export const DOCS_URL = 'https://gonogo.ulm0.com/';
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'knowledge_propose', 'knowledge_list', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'task_handoff', 'station_suggest', 'knowledge_ask', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'knowledge_propose', 'knowledge_list', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -594,6 +594,8 @@ export interface RosterFile {
 
 /** Hold: the needsReason of an agent the Director put on hold (a Redline trip by hand, cleared by resume). */
 export const HOLD_REASON = 'on hold';
+/** A hold, with or without the reason it was put on ("on hold: task t9 reached the cap its link allows"). */
+export const isHoldReason = (reason: string | null | undefined): boolean => reason === HOLD_REASON || (typeof reason === 'string' && reason.startsWith(`${HOLD_REASON}: `));
 
 /** Telemetry: one tool call of an agent, from its PreToolUse and PostToolUse (or PostToolUseFailure) hooks. */
 export interface ToolCall {
@@ -857,6 +859,8 @@ export interface CostView {
   /** By mission id and by task id, for the ones that spent or have a budget. Absent from an older server. */
   missions?: Record<string, SpendOf>;
   tasks?: Record<string, SpendOf>;
+  /** Docking: what the task of each linked task that has a cap has cost, by link id. */
+  links?: Record<string, SpendOf>;
   /** The last 14 local calendar days, oldest first. */
   days: DayCost[];
   /** Epoch ms of the oldest ledger line that carries a model, so it can be priced; null when none does. */
@@ -1016,6 +1020,10 @@ export interface DockedAgent {
 }
 /** One docked station as browsers get it: never the secret. */
 export interface DockView {
+  /** Docking 2: events of ours that wait for this station to ack them. */
+  waiting?: number;
+  /** Docking 2: what this station may do with that one. */
+  rules?: DockRules;
   /** The station id of the other side. */
   id: string;
   /** What the other side calls itself: the part after the @ in "name@station". */
@@ -1062,6 +1070,11 @@ export interface DockPairRequest {
 export interface DockHandoffRequest {
   task: string;
   assignee?: string | null;
+  /** The terms of the offer (docs/docking-collab-spec.md): when, how urgent, whether the other station may pass it on, and the most it may spend. */
+  due?: string;
+  priority?: LinkPriority;
+  onward?: boolean;
+  budget?: number;
 }
 /** What crosses a dock as a message: `from` is an agent name of the sending station, `to` an agent name or "boss" of the receiving one. */
 export interface StationMessage {
@@ -1094,6 +1107,124 @@ export interface Task {
   handedOff?: string;
   /** Missions: the one mission this task serves (ms1, ...). The mission's task list is derived from this field. */
   missionId?: string;
+  /** Docking 2: the one incoming link of this task (it was handed to this station), `dl_` and 16 hex. */
+  link?: string;
+  /** Docking 2: the links of this task to other stations (it was handed off), at most 10. */
+  links?: string[];
+  /** Docking 2: the notes of this task stay here: its status events leave without their text. */
+  localNotes?: boolean;
+  /** Docking 2: the other station gave this task back (it reopened here as todo), or this station gave it back (it is done here). */
+  returned?: boolean;
+}
+
+/* ---- Docking 2: links (docs/docking-collab-spec.md) ---- */
+export const LINK_STATES = ['offered', 'accepted', 'delivered', 'returned', 'recalled', 'done', 'detached', 'refused'] as const;
+export type LinkState = (typeof LINK_STATES)[number];
+export const LINK_PRIORITIES = ['low', 'normal', 'high'] as const;
+export type LinkPriority = (typeof LINK_PRIORITIES)[number];
+/** A deliverable: a link to where the work is, never its body. `ref` is checked by kind; a URL is never fetched. */
+export const DELIVERABLE_KINDS = ['pr', 'branch', 'commit', 'file', 'url'] as const;
+export interface Deliverable {
+  kind: (typeof DELIVERABLE_KINDS)[number];
+  ref: string;
+  label: string;
+}
+/** What a dock may do, per station (docs/docking-collab-spec.md, section 4): `handoff: ask` shows the Director the full text before it leaves. */
+export interface DockRules {
+  handoff: 'ask' | 'allow';
+  /** `off` refuses every task from this station; `auto` takes it. */
+  incoming: 'auto' | 'off';
+  /** A delivery closes the sender's task at once. */
+  autoAccept: boolean;
+  /** Hours of silence on an accepted link before this station's boss is told; 0 is never. */
+  staleHours: number;
+  /** The boss of this station may ask this dock for knowledge with the `knowledge_ask` tool (an agent-started request that leaves for another station). Default off; the Director's own ask on the page needs no rule. */
+  ask: boolean;
+  /** This station answers this dock's knowledge requests, from the entries and claims the Director marked shareable for it only. Default off. */
+  serve: boolean;
+  /** This station tells the other what a task it holds for it has cost (dollars to the cent, an estimate, nothing else). Default off. */
+  reportCost: boolean;
+}
+/** A hand-off that waits for the Director's answer: exactly what would leave. */
+export interface HandoffAsk {
+  id: string;
+  dock: string;
+  dockName: string;
+  task: string;
+  assignee: string | null;
+  title: string;
+  detail: string;
+  due: string | null;
+  priority: LinkPriority;
+  onward: boolean;
+  budget: number | null;
+  at: number;
+}
+/** One entry of a trail: who, what, when. `by` is `<agent>@<station>`, never a bare name. */
+export interface LinkEventView {
+  link: string;
+  /** `us` or `them`: whose event it is. */
+  from: 'us' | 'them';
+  seq: number;
+  at: number;
+  kind: string;
+  by: string;
+  text: string;
+  status?: TaskStatus;
+  attachments?: Deliverable[];
+  /** A status that a station further on reported through this one: its name (display text only). */
+  via?: string;
+  /** On a `lost` event: the first `seq` it stands for (it covers `from` to `seq`). */
+  first?: number;
+}
+/** One hop of a chain of hand-offs: display text, never an address. */
+export interface ChainHop {
+  station: string;
+  task: string;
+}
+/** One link, for the cards and the board: counts, states and cleaned titles only. */
+export interface LinkView {
+  id: string;
+  /** `task` (default) or `mission`: a mission is offered like a task and the receiver reports counts, never titles. */
+  kind?: 'task' | 'mission';
+  role: 'sender' | 'receiver';
+  peer: string;
+  peerName: string;
+  /** The task on this station that the link is bound to. */
+  mine: string;
+  /** The task of the other station, or null before it said. */
+  theirs: string | null;
+  state: LinkState;
+  /** The last status the receiver reported (or that this station's task has, as receiver). */
+  peerStatus: TaskStatus | null;
+  title: string;
+  due: string | null;
+  priority: LinkPriority;
+  onward: boolean;
+  budget: number | null;
+  /** The stations above this one, from the first sender: `A/t4 → B/t9` (this station is the last). Display text, checked, never acted on. */
+  chain?: ChainHop[];
+  /** What a station further on last reported through this link, "ops: doing". */
+  via?: string;
+  /** A mission link: what the other station says of the mission, as counts only (`at lab: 3 of 5`). */
+  progress?: { done: number; total: number; blocked: number; review: number; doing?: number };
+  /** What the other station says the task cost there: an estimate at list prices, never a bill; `cap` is the budget it applied (null: it reports no cost). */
+  cost?: { usd: number; estimate: true; cap?: number } | null;
+  /** Events in the trail, and events of ours that wait to be acked. */
+  events: number;
+  waiting: number;
+  updatedAt: number;
+}
+/** What left for one station, exactly as it left (the Director's Outbound view). */
+export interface OutboundEntry {
+  at: number;
+  link: string;
+  seq: number;
+  kind: string;
+  by: string;
+  text: string;
+  /** When the other station acked it, or null. */
+  ackedAt: number | null;
 }
 
 /** Missions: a named goal with a status, a lead and a history; its tasks are the ones whose `missionId` is its id. One entry of missions.json. */
@@ -1672,7 +1803,7 @@ export interface PropellantRequest {
   room?: FuelLimits;
   agents?: Record<string, FuelLimits>;
   /** Dollar budgets; same rules as the limits. */
-  budget?: { room?: Budget; agents?: Record<string, Budget>; /** Mission id to dollars in all, or null to clear. */ missions?: Record<string, number | null> };
+  budget?: { room?: Budget; agents?: Record<string, Budget>; /** Mission id to dollars in all, or null to clear. */ missions?: Record<string, number | null>; /** Docking link id to dollars on that one linked task, or null to clear: held at the cap, never a Redline of the room or an agent. */ links?: Record<string, number | null> };
 }
 /** POST /api/schedules. */
 export interface ScheduleRequest {
@@ -2168,7 +2299,13 @@ export interface InfoFrame {
   t: 'info';
   info: ServerInfo;
 }
+/** The links changed (a new one, an event, an ack): carries the whole list. Not in the snapshot: the page asks `GET /api/links`. */
+export interface LinksFrame {
+  t: 'links';
+  links: LinkView[];
+}
 export type ServerFrame =
+  | LinksFrame
   | InfoFrame
   | ModelsFrame
   | TabNameFrame
@@ -2196,7 +2333,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = InfoFrame | AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
+export type HubEvent = LinksFrame | InfoFrame | AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
@@ -2787,7 +2924,7 @@ export interface Hub {
    * working with no transition (needs_you, held or tripped, starting, stopped), or when it has no hooks (custom, Codex and
    * the other output-only engines).
    */
-  hold(name: string): AgentView;
+  hold(name: string, reason?: string): AgentView;
   /** Clears a Redline trip; conflict when the agent is not tripped. */
   resume(name: string): AgentView;
 }

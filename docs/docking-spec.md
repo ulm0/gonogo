@@ -160,3 +160,5 @@ server in the middle.
   window) against two real servers: the module, Pair, a hand-off that moved the card to DONE with its chip. Never run between two
   machines, behind a real reverse proxy or over HTTPS, with a real `claude` reading a message from another station, in Firefox or
   Safari, with a screen reader, or with the Copy keys (the field is selected so that copying by hand works).
+
+User page, from Docking 2 on: [docs/features/docking.md](features/docking.md): what a link is, what the other station can and cannot do, what leaves and every per-dock rule. The design is in [docking-collab-spec.md](docking-collab-spec.md).

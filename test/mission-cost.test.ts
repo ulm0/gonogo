@@ -23,10 +23,12 @@ let transcript: string;
 let events: [DownlinkEventKind, string][];
 /** What the Flight Plan says each agent is doing now. */
 let on: Record<string, { mission?: string; task?: string }>;
+/** The task each docking link is bound to here. */
+let linkTasks: Record<string, string>;
 
 const make = async (): Promise<Propellant> => {
   const projects = join(root, 'claude', 'projects');
-  const p = createPropellant({ dir: home, projectsRoot: projects, now: () => NOW, log: quiet, notify: (k, t) => events.push([k, t]), attribute: (agent) => on[agent] ?? {} });
+  const p = createPropellant({ dir: home, projectsRoot: projects, now: () => NOW, log: quiet, notify: (k, t) => events.push([k, t]), attribute: (agent) => on[agent] ?? {}, linkTask: (id) => linkTasks[id] });
   await p.load();
   return p;
 };
@@ -44,9 +46,50 @@ beforeEach(async () => {
   transcript = join(root, 'claude', 'projects', '-work-ana', 'session.jsonl');
   events = [];
   on = {};
+  linkTasks = {};
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
+});
+
+describe('a docking link budget (the cap a peer offers)', () => {
+  const LINK = 'dl_0123456789abcdef';
+
+  it('holds only the one linked task: the agent on it is over, the others and the room are not, and it is never an agent or room scope', async () => {
+    const p = await make();
+    linkTasks = { [LINK]: 't4' };
+    await p.setBudget({ links: { [LINK]: 0.5 } });
+    on = { ana: { task: 't4' }, ben: { task: 't5' } };
+    await spend(p, 'a', 40_000, 'ana'); // $0.20
+    expect(p.over('ana')).toBeNull();
+    await spend(p, 'b', 100_000, 'ana'); // $0.50 in all with the first
+    await spend(p, 'c', 400_000, 'ben'); // $2 on another task
+    expect(p.over('ana')).toMatchObject({ scope: 'link', link: LINK, task: 't4' });
+    expect(p.over('ana')?.reason).toMatch(/task t4 reached the cap its link allows: spent \$0\.70 of \$0\.50/);
+    expect(p.over('ben')).toBeNull();
+    expect(p.over('cat')).toBeNull();
+  });
+
+  it('a $0.01 budget is valid, is saved and read back, raised or cleared locally (null) and then holds nothing; the view says what the task spent against it', async () => {
+    const p = await make();
+    linkTasks = { [LINK]: 't4' };
+    on = { ana: { task: 't4' } };
+    await p.setBudget({ links: { [LINK]: 0.01 } });
+    await spend(p, 'a', 40_000);
+    expect(p.over('ana')).toMatchObject({ scope: 'link' });
+    expect(p.view().cost.links).toEqual({ [LINK]: { usd: 0.2, unpriced: 0, budget: 0.01 } });
+    const again = await make();
+    expect(again.view().cost.links?.[LINK]?.budget).toBe(0.01);
+    await p.setBudget({ links: { [LINK]: 5 } });
+    expect(p.over('ana')).toBeNull();
+    await p.setBudget({ links: { [LINK]: null } });
+    expect(p.view().cost.links).toEqual({});
+  });
+
+  it('is read from a request in whole cents with a link id, or null; anything else is refused', () => {
+    expect(parsePropellantRequest({ budget: { links: { [LINK]: 0.5, dl_fedcba9876543210: null } } })).toEqual({ ok: true, value: { budget: { links: { [LINK]: 0.5, dl_fedcba9876543210: null } } } });
+    for (const links of [{ nope: 1 }, { [LINK]: 'x' }, { [LINK]: 0 }, { [LINK]: 1.005 }, 3]) expect(parsePropellantRequest({ budget: { links } }), JSON.stringify(links)).toMatchObject({ ok: false, field: 'budget' });
+  });
 });
 
 describe('attribution', () => {

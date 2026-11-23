@@ -10,7 +10,13 @@ import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { DOCKS_MAX } from '../shared/protocol.js';
 import type { DockCode, DockView, Task, TaskStatus } from '../shared/protocol.js';
 import * as api from './api.js';
-import { addressProblem, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, suggestedAddress, toneOf, undockedText, wordOf } from './docking.js';
+import { DockRulesBlock } from './DockRulesBlock.js';
+import { KnowledgeAsk } from './KnowledgeAsk.js';
+import { LinkBoard } from './LinkBoard.js';
+import { OutboundBlock } from './OutboundBlock.js';
+import { addressProblem, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, NO_TERMS, offerProblems, statusText, suggestedAddress, toneOf, undockedText, wordOf } from './docking.js';
+import type { OfferTerms } from './docking.js';
+import { OfferTermsFields } from './OfferTermsFields.js';
 import { useNow, useStore } from './store.js';
 import { copyText } from './uplink.js';
 import { useRun } from './WallView.js';
@@ -232,6 +238,9 @@ function Row({ dock, now, onNotice }: { dock: DockView; now: number; onNotice(te
           </ul>
         )}
       </details>
+      <DockRulesBlock dock={dock} />
+      <OutboundBlock dock={dock} />
+      <KnowledgeAsk dock={dock} />
       <div className="win-buttons">
         <button type="button" ref={key} className="btn" data-kind="danger" aria-label={`Undock ${dock.name}`} aria-disabled={busy || undefined} onClick={() => setConfirming(true)}>
           Undock
@@ -314,6 +323,7 @@ export function DockingPanel(): ReactElement {
           </ul>
         )}
       </div>
+      <LinkBoard />
       <p className="hint up-notice" role="status">
         {notice}
       </p>
@@ -331,6 +341,8 @@ export function HandOff({ task, willMove, onNotice, onClose }: { task: Task; wil
   const docks = useStore((s) => s.docking.docks);
   const [dockId, setDockId] = useState(docks[0]?.id ?? '');
   const [assignee, setAssignee] = useState('');
+  const [terms, setTerms] = useState<OfferTerms>(NO_TERMS);
+  const problems = offerProblems(terms);
   const { busy, error, run } = useRun();
   const first = useRef<HTMLSelectElement | null>(null);
   useEffect(() => first.current?.focus(), []);
@@ -350,10 +362,11 @@ export function HandOff({ task, willMove, onNotice, onClose }: { task: Task; wil
   }
   const submit = (event: FormEvent): void => {
     event.preventDefault();
+    if (problems.due !== undefined || problems.budget !== undefined) return;
     run(async () => {
       willMove({ id: task.id, status: 'done' });
       try {
-        await api.handOffTask(dock.id, handoffRequest(task, assignee));
+        await api.handOffTask(dock.id, handoffRequest(task, assignee, terms));
         onNotice(`${task.id} handed off to ${assignee === '' ? '' : `${assignee}@`}${dock.name}`);
       } catch (e) {
         willMove(null);
@@ -394,6 +407,7 @@ export function HandOff({ task, willMove, onNotice, onClose }: { task: Task; wil
           ))}
         </select>
       </div>
+      <OfferTermsFields id={id} station={dock.name} terms={terms} problems={problems} onChange={setTerms} />
       <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || undefined}>
         {busy ? 'Handing off…' : 'Hand off'}
       </button>

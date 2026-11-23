@@ -11,6 +11,10 @@ import * as api from './api.js';
 import { HandOff } from './DockingPanel.js';
 import { missionOptions, nameOf } from './missionsModel.js';
 import { canHandOff } from './docking.js';
+import { LinkLines } from './LinkLines.js';
+import { incoming, outgoing } from './links.js';
+import type { LinkItem } from './links.js';
+import { useLinks } from './linksData.js';
 import { assigneeText, assignees, cardId, columnsOf, COLUMNS, emptyValues, FIELDS, labelOf, ledKindOf, requestOf, validate } from './plan.js';
 import type { Field, Problems, Values } from './plan.js';
 import { useAgentList } from './RoomView.js';
@@ -171,6 +175,8 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
   const agents = useStore((s) => s.agents);
   const { busy, error, run } = useRun();
   const docks = useStore((s) => s.docking.docks);
+  const allLinks = useLinks();
+  const taskLinks = [...outgoing(allLinks, 'task', task.id), ...(incoming(allLinks, 'task', task.id) === undefined ? [] : [incoming(allLinks, 'task', task.id) as LinkItem])];
   const [confirming, setConfirming] = useState(false);
   const [handing, setHanding] = useState(false);
   const keep = useRef<HTMLButtonElement | null>(null);
@@ -225,11 +231,12 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
             {nameOf(missions, task.missionId)}
           </button>
         )}
-        {task.handedOff !== undefined && (
+        {task.handedOff !== undefined && taskLinks.length === 0 && (
           <span className="chip dk-handed" data-tone="quiet">
             HANDED OFF · {task.handedOff}
           </span>
         )}
+        <LinkLines links={taskLinks} />
         <details className="plan-more">
           <summary>
             Detail and history <span className="plan-count">{task.notes.length}</span>

@@ -17,6 +17,7 @@ import type { Field, Problems, Values } from './log.js';
 import { Chart, Links } from './StarChart.js';
 import { showRoom, useFeature, useStore } from './store.js';
 import { useRun } from './WallView.js';
+import { ShareMarks } from './ShareMarks.js';
 import './loop.css';
 import './log.css';
 
@@ -212,6 +213,7 @@ export function Reader({ entry, onEdit, onClose, onRemoved, onChanged }: { entry
         <AnchorChip state={entry.anchorState} />
       </p>
       <pre className="log-body">{entry.body}</pre>
+      <ShareMarks kind="log" id={entry.id} label="Stations that may ask for this entry" />
       <div className="log-actions">
         <button type="button" className="btn" onClick={onEdit}>
           Edit

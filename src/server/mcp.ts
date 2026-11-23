@@ -45,6 +45,7 @@ import type { MissionLog } from './missionlog.js';
 import type { Relief } from './relief.js';
 import type { Knowledge } from './knowledge.js';
 import type { Tasks } from './tasks.js';
+import type { Docking } from './docking.js';
 import type { Missions } from './missions.js';
 import type { Review } from './review.js';
 
@@ -53,6 +54,8 @@ export interface McpDeps {
   hub: Pick<Hub, 'sendFromAgent' | 'readMessages' | 'rosterFor' | 'vote' | 'startAgent'>;
   /** The Flight Plan; absent in tests that do not need it (the three task tools then answer that it is not available). */
   tasks?: Pick<Tasks, 'list' | 'create' | 'update'>;
+  /** Docking 2: the hand-off tool; absent in tests that do not need it. */
+  docking?: Pick<Docking, 'requestHandoff' | 'askKnowledge' | 'suggest'>;
   /** The Mission Log; absent in tests that do not need it (the three log tools then answer that it is not available). */
   /** Missions; absent in tests that do not need it (the three mission tools then answer that it is not available). */
   missions?: Pick<Missions, 'list' | 'create' | 'update'>;
@@ -211,9 +214,48 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           assignee: z.string().min(1).max(64).nullable().optional(),
           note: z.string().max(TASK_NOTE_MAX_CHARS).optional(),
           missionId: z.string().min(1).max(16).nullable().optional(),
+          localNotes: z.boolean().optional(),
+          attachments: z.array(z.object({ kind: z.enum(['pr', 'branch', 'commit', 'file', 'url']), ref: z.string().min(1).max(300), label: z.string().max(80).optional() })).max(5).optional(),
         },
       },
       ({ id, ...patch }) => guarded('task_update', async () => (tasks ? toolResult({ ok: true, task: await tasks.update(actor, id, patch) }, false) : noBoard())),
+    );
+
+    server.registerTool(
+      'task_handoff',
+      {
+        description: MCP_DESCRIPTIONS.task_handoff,
+        inputSchema: { task: z.string().min(1).max(16), station: z.string().min(1).max(31), assignee: z.string().min(1).max(64).optional(), due: z.string().max(10).optional(), priority: z.enum(['low', 'normal', 'high']).optional(), onward: z.boolean().optional(), budget: z.number().min(0).max(1_000_000).optional() },
+      },
+      (args) =>
+        guarded('task_handoff', async () => {
+          if (!deps.docking) return toolResult({ ok: false, error: 'Docking is not available' }, true);
+          if (hub.rosterFor(agent, generation).boss !== agent) return toolResult({ ok: false, error: 'only the boss may send a task to another station' }, true);
+          return toolResult({ ok: true, ...(await deps.docking.requestHandoff(args)) }, false);
+        }),
+    );
+
+    server.registerTool(
+      'station_suggest',
+      { description: MCP_DESCRIPTIONS.station_suggest, inputSchema: { task: z.string().min(1).max(16) } },
+      (args) =>
+        guarded('station_suggest', async () => {
+          if (!deps.docking) return toolResult({ ok: false, error: 'Docking is not available' }, true);
+          if (hub.rosterFor(agent, generation).boss !== agent) return toolResult({ ok: false, error: 'only the boss may ask for a suggestion' }, true);
+          const found = deps.docking.suggest(args.task);
+          return toolResult({ ok: true, ...found }, false);
+        }),
+    );
+
+    server.registerTool(
+      'knowledge_ask',
+      { description: MCP_DESCRIPTIONS.knowledge_ask, inputSchema: { station: z.string().min(1).max(31), query: z.string().min(1).max(200) } },
+      (args) =>
+        guarded('knowledge_ask', async () => {
+          if (!deps.docking) return toolResult({ ok: false, error: 'Docking is not available' }, true);
+          if (hub.rosterFor(agent, generation).boss !== agent) return toolResult({ ok: false, error: 'only the boss may ask another station for knowledge' }, true);
+          return toolResult({ ok: true, ...(await deps.docking.askKnowledge(args.station, args.query, 'agent')) }, false);
+        }),
     );
 
     const { missions } = deps;

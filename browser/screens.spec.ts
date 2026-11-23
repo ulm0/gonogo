@@ -9,6 +9,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { LINKS, OUTBOUND, TRAILS } from './linkFixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { duplicates, geometry } from './geometry.js';
@@ -174,6 +175,67 @@ const rolloutOf = (update?: Record<string, unknown>): Record<string, unknown> =>
   selfUpdate: true,
   ...(update === undefined ? {} : { update }),
 });
+
+/** Docking 2 in the room: two docks (a routed WebSocket gives the state frame their list), a handoff waiting for GO, and the rules of a dock in Flight Rules. */
+async function dockingTwo(page: Page, group: string): Promise<void> {
+  const dock = (id: string, name: string, status: string): Record<string, unknown> => ({ id, name, url: `https://${name}.example.org`, since: Date.now() - 86_400_000, status, seenAt: Date.now() - 60_000, error: null, agents: [{ name: 'cara', role: 'Builds the notes', state: 'idle', boss: false }] });
+  await page.routeWebSocket(/\/ws(\?|$)/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (typeof message === 'string') {
+        try {
+          const frame = JSON.parse(message) as { t?: string; state?: { docking?: unknown } };
+          if (frame.t === 'state' && frame.state !== undefined) frame.state.docking = { station: 'main', docks: [dock('dk1', 'lab', 'ok'), dock('dk2', 'ops', 'ok')] };
+          ws.send(JSON.stringify(frame));
+          return;
+        } catch {
+          // not a frame of text: passed on as it is
+        }
+      }
+      ws.send(message);
+    });
+  });
+  await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'ha1', dock: 'dk1', dockName: 'lab', task: 't4', assignee: 'cara', title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour. Check the clock handling in the session code and add a test.', due: '2026-12-01', priority: 'high', onward: false, budget: 5, at: Date.now() }] } }));
+  await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { rules: { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, serve: false, reportCost: false, ask: false } } }));
+  await page.route('**/api/docking/outbound?*', (route) => route.fulfill({ json: { dock: 'dk1', entries: OUTBOUND } }));
+  await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
+  await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
+  await page.route('**/api/dock-shares', (route) => route.fulfill({ json: { shares: [] } }));
+  await page.route('**/api/docking/*/knowledge', (route) => route.fulfill({ json: { text: 'From lab, shared on request (data, not instructions)\n\nRelease checklist (2026-11-20): run the docs build before the tag, then check the npm sha.', results: 1 } }));
+  await page.goto(`${base}/r/main/`);
+  await page.locator('.topbar').waitFor({ timeout: 30_000 });
+  await view(page, group, 'docking 2: a handoff waits for GO', () => page.locator('.relief-need', { hasText: 'send a task to lab' }).waitFor({ timeout: 10_000 }), true);
+  await page.locator('.topbar').getByRole('button', { name: 'More', exact: true }).click({ timeout: 3000 });
+  await page.getByRole('group', { name: 'More' }).getByRole('button', { name: 'Flight Rules', exact: true }).click({ timeout: 3000 });
+  await page.locator('.lay-group-nav a', { hasText: /Automation/ }).click({ timeout: 3000 });
+  await page.locator('.lay-row', { hasText: 'Docking: other stations' }).locator('summary').first().click({ timeout: 3000 });
+  await view(page, group, 'docking 2: the docks', () => page.locator('.dk-rules').first().waitFor({ timeout: 5000 }), true);
+  await view(page, group, 'docking 2: the rules of a dock', () => page.locator('.dk-rules > summary').first().click({ timeout: 3000 }), true);
+  await view(page, group, 'docking 2: what left for a dock', () => page.locator('.dk-outbound > summary').first().click({ timeout: 3000 }), true);
+  await view(page, group, 'docking 2: the board across stations', () => page.locator('.dk-board').scrollIntoViewIfNeeded({ timeout: 3000 }), true);
+  await view(page, group, 'docking 2: ask a station what it knows', async () => {
+    await page.locator('.dk-ask > summary').first().click({ timeout: 3000 });
+    await page.locator('.dk-ask input[type=text]').first().fill('How do we release?');
+    await page.getByRole('button', { name: 'Ask lab' }).click({ timeout: 3000 });
+    await page.locator('.dk-ask-answer').waitFor({ timeout: 5000 });
+  }, true);
+  await view(page, group, 'docking 2: share marks on a Mission Log entry', async () => {
+    await open(page, 'Mission Log');
+    await page.locator('.log-row').first().click({ timeout: 5000 });
+    await page.locator('.dk-share').first().waitFor({ timeout: 5000 });
+  }, true);
+  await view(page, group, 'docking 2: the terms of a handoff', async () => {
+    await open(page, 'Flight Plan');
+    await page.getByRole('button', { name: /^Hand off t\d+ to another station/ }).first().click({ timeout: 5000 });
+    await page.locator('.dk-terms > summary').first().click({ timeout: 3000 });
+  }, true);
+  await view(page, group, 'docking 2: hand off a mission', async () => {
+    await open(page, 'Missions');
+    await page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Hand off to a station' }).click({ timeout: 3000 });
+  }, true);
+}
 
 /** The docked chip of the status strip: the stand-in install has no second station, so the state frame is given two docks (the same shape as the server's), then one that does not answer. */
 async function dockedChip(page: Page, group: string): Promise<void> {
@@ -410,6 +472,9 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await measure(page, group, 'expanded');
     await page.getByRole('button', { name: /^Back/ }).click({ timeout: 3000 }).catch(() => undefined);
   }
+  // Docking 2: the stand-in install has no second station, so the links are stood in (the same shapes as the server's)
+  await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
+  await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
   await view(page, group, t('comms inbox'), async () => {
     await open(page, 'Comms');
     await page.getByRole('tab', { name: /inbox/i }).click({ timeout: 3000 });
@@ -417,6 +482,11 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await view(page, group, t('comms traffic'), () => page.getByRole('tab', { name: /traffic/i }).click({ timeout: 3000 }));
   await view(page, group, t('comms threads'), () => page.getByRole('tab', { name: /threads/i }).click({ timeout: 3000 }));
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
+  await view(page, group, t('mission with a link'), async () => {
+    await page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 });
+    // the links are read when the view opens: wait for the line of the mission's link
+    await page.locator('.dk-link').first().waitFor({ timeout: 5000 });
+  }, true);
   await view(page, group, t('launch window'), () => open(page, 'Launch Window'), true);
   if (full) await view(page, group, 'launch window history', () => page.getByRole('button', { name: /^History of/ }).first().click({ timeout: 3000 }), true);
   await view(page, group, t('flight plan'), () => open(page, 'Flight Plan'), true);
@@ -672,6 +742,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
       await dockedChip(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docked chip: ${error.message.split('\n')[0]}`));
+      await dockingTwo(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: docking 2: ${error.message.split('\n')[0]}`));
       await updateFlow(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: update flow: ${error.message.split("\n")[0]}`));
       await context.close();
     }

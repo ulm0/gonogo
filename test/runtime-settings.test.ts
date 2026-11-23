@@ -267,6 +267,15 @@ describe('the route of a room', () => {
     for (const address of mine.json.addresses as string[]) expect(state).not.toContain(address);
   });
 
+  it('what left for a station (the Outbound view) is for the Director\'s own login; the list of links is open to any grant', async () => {
+    const dock = 'a'.repeat(32);
+    for (const actor of [undefined, 'key:abc', 'tui', 'socket']) expect((await call('GET', `/api/docking/outbound?dock=${dock}`, undefined, actor)).status, String(actor)).toBe(403);
+    expect((await call('GET', `/api/docking/outbound?dock=${dock}`, undefined, 'session')).json).toEqual({ dock, entries: [] });
+    expect((await call('GET', '/api/docking/outbound?dock=nope', undefined, 'token')).json).toEqual({ dock: 'nope', entries: [] });
+    expect((await call('GET', '/api/links')).json).toEqual({ links: [] });
+    expect((await call('GET', '/api/links/dl_0123456789abcdef')).status).toBe(404);
+  });
+
   it('applies what can be applied now: Max Q on the hub, the log level of the process; the Max Q control keeps its value in the room file', async () => {
     expect((await call('PUT', '/api/settings/maxWorking', { scope: 'room', value: '2' }, 'session')).status).toBe(200);
     expect((await call('GET', '/api/state')).json.governor).toMatchObject({ limit: 2 });

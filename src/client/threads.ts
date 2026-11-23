@@ -23,34 +23,49 @@ export interface Thread {
   items: ActivityItem[];
   /** The newest message. */
   last: ActivityItem;
+  /** Docking 2: the link this conversation is about (its subject starts with [dl_...]); every message of a link is one conversation, whoever writes. */
+  link?: string;
 }
+
+/** The link id a message subject names: "[dl_0123456789abcdef] Fix the login", also after any Re:. */
+export const linkOfSubject = (subject: string): string | null => /^(?:\s*(?:re|fwd?)\s*:)*\s*\[(dl_[0-9a-f]{16})\]/i.exec(subject)?.[1]?.toLowerCase() ?? null;
+
+/** A subject without its [dl_...] tag: the title of a conversation says what it is about, the chip says which link. */
+export const withoutLinkTag = (subject: string): string => subject.replace(/^(\s*(?:(?:re|fwd?)\s*:\s*)*)\[dl_[0-9a-f]{16}\]\s*/i, '$1').trim();
 
 const REPLY_PREFIXES = /^(?:\s*(?:re|fwd?)\s*:)*/i;
 
 /** The subject without its leading "Re:" and "Fwd:" (any number of them). One pass over the text, anchored: no backtracking beyond one scan. */
 export const stripReplyPrefix = (subject: string): string => subject.replace(REPLY_PREFIXES, '').trim();
 
-const keyOf = (item: ActivityItem): string => JSON.stringify([item.from, item.to].sort().concat(stripReplyPrefix(item.subject).replace(/\s+/g, ' ').toLowerCase()));
+const keyOf = (item: ActivityItem, known: ReadonlySet<string>): string => {
+  const link = linkOfSubject(item.subject);
+  return link !== null && known.has(link) ? JSON.stringify(['link', link]) : plainKey(item);
+};
+const plainKey = (item: ActivityItem): string => JSON.stringify([item.from, item.to].sort().concat(stripReplyPrefix(item.subject).replace(/\s+/g, ' ').toLowerCase()));
 
 /**
  * The conversations of a list of messages, the one with the newest message first. `items` is newest first, as the store keeps
  * them. Only the messages in the list are known: a conversation whose start has left the list begins at its oldest message
- * still there.
+ * still there. `links`: the link ids this station holds; a message whose subject names one is in that link's conversation, whoever wrote it.
  */
-export function groupThreads(items: readonly ActivityItem[]): Thread[] {
+export function groupThreads(items: readonly ActivityItem[], links: ReadonlySet<string> = new Set()): Thread[] {
   const ofMessage = new Map<string, Thread>();
   const byId = new Map<string, ActivityItem>();
   const ofKey = new Map<string, Thread>();
   // a Set keeps the order of insertion: a thread that gets a message is taken out and put back, so the newest comes last
   const order = new Set<Thread>();
   for (const item of [...items].reverse()) {
-    const key = keyOf(item);
+    const key = keyOf(item, links);
     const target = item.inReplyTo === null ? undefined : byId.get(item.inReplyTo);
     const chained = target !== undefined && (item.from === 'user' || item.from === target.from || item.from === target.to);
     let thread = (chained ? ofMessage.get(target.id) : undefined) ?? ofKey.get(key);
     if (thread === undefined) {
+      const found = linkOfSubject(item.subject);
+      // only a link this station holds groups messages by itself: a subject that merely says [dl_...] is a subject
+      const linked = found !== null && links.has(found) ? found : null;
       const subject = stripReplyPrefix(item.subject);
-      thread = { id: item.id, subject, title: subject === '' ? subjectOf(item) : subject, who: [], items: [], last: item };
+      thread = { id: item.id, subject, title: subject === '' ? subjectOf(item) : linked === null ? subject : withoutLinkTag(subject), who: [], items: [], last: item, ...(linked === null ? {} : { link: linked }) };
     }
     thread.items.push(item);
     thread.last = item;

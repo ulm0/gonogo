@@ -77,6 +77,12 @@ import type {
   PayloadDefaults,
   ProjectFolderCheck,
   ProjectFolderView,
+  LinkView,
+  DockRules,
+  OutboundEntry,
+  HandoffAsk,
+  LinkPriority,
+  LinkEventView,
   ExposureFindingView,
   RoomKeysView,
   RuntimeSettingKey,
@@ -1038,6 +1044,71 @@ export async function undock(id: string): Promise<boolean> {
 /** Copies a task of this board to the board of a docked station; the answer is the task as it is here now. */
 export async function handOffTask(dockId: string, request: DockHandoffRequest): Promise<Task> {
   return toTask(await call('POST', `/docking/${encodeURIComponent(dockId)}/handoff`, request));
+}
+
+/* ---- Docking 2: links (docs/docking-collab-spec.md) ---- */
+
+/** Every link this station holds, with its trail. A server without Docking 2 has no route: then there are none. */
+export async function links(): Promise<LinkView[]> {
+  try {
+    const list = asRecord(await call('GET', '/links'))?.links;
+    return Array.isArray(list) ? (list as LinkView[]) : [];
+  } catch (e) {
+    if ((e as ApiFailure).status === 404) return [];
+    throw e;
+  }
+}
+const linkPath = (id: string, action: string): string => `/links/${encodeURIComponent(id)}/${action}`;
+/** The sender takes a delivery: its task is done. */
+export const acceptLink = (id: string): Promise<unknown> => call('POST', linkPath(id, 'accept'));
+/** Gives a task back (the receiver) or sends a delivery back (the sender): the reason is up to 200 characters. */
+export const returnLink = (id: string, reason: string): Promise<unknown> => call('POST', linkPath(id, 'return'), { reason });
+/** The sender withdraws what is not done yet. */
+export const recallLink = (id: string, reason = ''): Promise<unknown> => call('POST', linkPath(id, 'recall'), { reason });
+export const dockRules = async (dock: string): Promise<DockRules> => (asRecord(await call('GET', `/docking/${encodeURIComponent(dock)}/rules`))?.rules ?? {}) as DockRules;
+export const setDockRules = async (dock: string, patch: Partial<DockRules>): Promise<DockRules> => (asRecord(await call('PATCH', `/docking/${encodeURIComponent(dock)}/rules`, patch))?.rules ?? {}) as DockRules;
+/** The events that left for a dock, in full (only the Director's session may read them). */
+export async function outbound(dock: string): Promise<OutboundEntry[]> {
+  const list = asRecord(await call('GET', `/docking/outbound?dock=${encodeURIComponent(dock)}`))?.entries;
+  return Array.isArray(list) ? (list as OutboundEntry[]) : [];
+}
+/** The trail of one link, oldest first. */
+export async function linkTrail(id: string): Promise<LinkEventView[]> {
+  const list = asRecord(await call('GET', `/links/${encodeURIComponent(id)}`))?.trail;
+  return Array.isArray(list) ? (list as LinkEventView[]) : [];
+}
+/** Handoffs FLIGHT asks to send while a dock's rule is ask: the whole text, for the Director's GO. */
+export async function handoffAsks(): Promise<HandoffAsk[]> {
+  try {
+    const list = asRecord(await call('GET', '/handoff-requests'))?.requests;
+    return Array.isArray(list) ? (list as HandoffAsk[]) : [];
+  } catch (e) {
+    if ((e as ApiFailure).status === 404) return [];
+    throw e;
+  }
+}
+/** GO or NO-GO on a handoff; `always` turns the dock's rule to Allow (the password is asked again). The answer says whether it was sent. */
+export const answerHandoff = async (id: string, go: boolean, always = false): Promise<'sent' | 'refused'> => (asRecord(await call('POST', `/handoff-requests/${encodeURIComponent(id)}/answer`, { go, always }))?.state === 'sent' ? 'sent' : 'refused');
+
+/** What the Director marked as shareable, and with which docks: Mission Log entries ('log', by id) and claims ('claim', by <repository id>/<claim id>). */
+export interface DockShare {
+  kind: 'log' | 'claim';
+  key: string;
+  docks: string[];
+}
+export async function dockShares(): Promise<DockShare[]> {
+  const list = asRecord(await call('GET', '/dock-shares'))?.shares;
+  return Array.isArray(list) ? (list as DockShare[]) : [];
+}
+/** Marks one entry or claim shareable for exactly these docks (none clears it). */
+export const setDockShare = async (kind: DockShare['kind'], id: string, docks: string[]): Promise<DockShare> => (await call('PUT', '/dock-shares', { kind, id, docks })) as DockShare;
+/** The Director asks a docked station's shared knowledge: the answer is data, with its first line fixed by the server, and is not stored. */
+export async function askDockKnowledge(dock: string, query: string): Promise<{ text: string; results: number }> {
+  return (await call('POST', '/docking/' + encodeURIComponent(dock) + '/knowledge', { query })) as { text: string; results: number };
+}
+/** Offers a mission to a station like a task: the other station makes its own mission and tells counts only. */
+export async function handOffMission(dock: string, offer: { mission: string; due?: string; priority?: LinkPriority }): Promise<LinkView> {
+  return asRecord(await call('POST', '/docking/' + encodeURIComponent(dock) + '/handoff', offer)) as unknown as LinkView;
 }
 
 /** Livery: choose, delete, ask an agent for a new one. The list comes in the state and in `livery` frames; each call answers with it as it is now. */

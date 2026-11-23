@@ -86,3 +86,172 @@
   flex-basis: 100%;
   margin: 0;
 }
+
+/* ---- Docking 2: the lines of a card for its links, the trail, the deliverables ---- */
+.dk-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dk-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--well);
+}
+
+.dk-link p {
+  margin: 0;
+}
+
+.dk-link [data-over] {
+  color: var(--nogo-text);
+}
+
+.dk-deliver {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.dk-trail ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.dk-link-keys,
+.dk-return {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.dk-return .field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.dk-rules-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.dk-rules-body .hint {
+  margin: 4px 0 0;
+}
+
+.dk-ask-text {
+  white-space: pre-wrap;
+}
+
+.dk-always {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+
+.dk-always input {
+  margin-top: 3px;
+}
+
+.dk-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.dk-board-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
+.dk-board-dir {
+  display: flex;
+  gap: 8px;
+}
+
+.dk-board-bar .field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.dk-board-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dk-board-title {
+  margin: 0 0 4px;
+}
+
+.dk-outbound-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dk-outbound-head,
+.dk-outbound-text {
+  margin: 0;
+}
+
+.dk-outbound-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* the folds of a dock row sit across the whole row (the Agents fold has its own grid area) */
+.dk-fold {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.dk-share {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.dk-share .hint {
+  margin: 0;
+}
+
+.dk-terms {
+  flex-basis: 100%;
+}
+
+.dk-terms summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.dk-ask-answer {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

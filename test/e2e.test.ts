@@ -2251,11 +2251,11 @@ describe('end to end with the stand-in agent', () => {
     await waitFor(async () => (await getState(a)).activity.find((item) => item.to === 'nobody@beta' && item.status === 'undelivered'), 15_000, 'the refusal');
     expect((await getState(a)).activity.find((item) => item.to === 'nobody@beta')?.note).toMatch(/^beta refused: unknown recipient "nobody"/);
 
-    // a task is copied to the other board, assigned there, and done here with a mark
+    // a task is copied to the other board, assigned there, and bound to a link here (it stays open: the other station reports back on the link)
     const made1 = await api<Task>(a, 'POST', '/api/tasks', { title: 'Fix the build', detail: 'The CI is red.' });
     const handed = await api<Task>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: made1.body.id, assignee: 'bob' });
-    expect(handed).toMatchObject({ status: 200, body: { id: made1.body.id, status: 'done', handedOff: 'beta' } });
-    expect(handed.body.notes.at(-1)).toMatch(/Director: handed off to bob@beta$/);
+    expect(handed).toMatchObject({ status: 200, body: { id: made1.body.id, status: 'todo', links: [expect.stringMatching(/^dl_[0-9a-f]{16}$/) as string] } });
+    expect(handed.body.notes.at(-1)).toMatch(/Director: handed off to bob@beta on link dl_[0-9a-f]{16}$/);
     const there = (await api<Task[]>(b, 'GET', '/api/tasks')).body;
     expect(there).toHaveLength(1);
     expect(there[0]).toMatchObject({ title: 'Fix the build', assignee: 'bob', status: 'todo', detail: `Handed off from alpha (its task ${made1.body.id}).\n\nThe CI is red.` });
@@ -2263,10 +2263,15 @@ describe('end to end with the stand-in agent', () => {
     const assigned = await waitFor(async () => (await getState(b)).activity.find((item) => item.from === 'director@alpha'), 15_000, 'the assignment at beta');
     expect(assigned).toMatchObject({ to: 'bob' });
     expect(assigned.subject).toContain('assigned to you: Fix the build');
-    expect(await api<ApiError>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: made1.body.id })).toMatchObject({ status: 409, body: { field: 'task' } });
+    // both stations hold the link, and it is on the page's route
+    const linkId = handed.body.links?.[0] ?? '';
+    expect((await api<{ links: Array<{ id: string; state: string; theirs: string | null }> }>(a, 'GET', '/api/links')).body.links).toEqual([expect.objectContaining({ id: linkId, state: 'accepted', theirs: there[0]?.id })]);
+    expect((await api<{ links: Array<{ id: string; role: string }> }>(b, 'GET', '/api/links')).body.links).toEqual([expect.objectContaining({ id: linkId, role: 'receiver' })]);
+    expect((await api<{ trail: Array<{ kind: string }> }>(a, 'GET', `/api/links/${linkId}`)).body.trail.map((e) => e.kind)).toEqual(['offer', 'accept']);
+    expect(await api<ApiError>(a, 'GET', '/api/links/dl_0000000000000000')).toMatchObject({ status: 404 });
     expect(await api<ApiError>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: 'nope' })).toMatchObject({ status: 404, body: { field: 'task' } });
     const second = await api<Task>(a, 'POST', '/api/tasks', { title: 'Second' });
-    expect(await api<ApiError>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: second.body.id, assignee: 'nobody' })).toMatchObject({ status: 400, body: { code: 'bad_request', field: 'assignee' } });
+    expect(await api<ApiError>(a, 'POST', `/api/docking/${dockOfB.id}/handoff`, { task: second.body.id, assignee: 'not a name!' })).toMatchObject({ status: 400, body: { code: 'bad_request', field: 'assignee' } });
     expect((await api<Task[]>(a, 'GET', '/api/tasks')).body.find((t) => t.id === second.body.id)).toMatchObject({ status: 'todo' });
 
     // what crosses the wire is signed: a call from beta's side, by hand
