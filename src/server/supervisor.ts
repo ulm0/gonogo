@@ -891,7 +891,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
           const reason = authHttp.stepUpNeeded(grant, 'POST', '/api/rooms', body);
           if (reason !== null) return authHttp.stepUpDenied(req, res, reason, false);
           try {
-            folder = checkFolder(body.dir, [options.home]);
+            folder = checkFolder(body.dir, [options.home], options.env);
           } catch (error) {
             if (error instanceof FolderError) throw new RoomsError(error.message);
             throw error;

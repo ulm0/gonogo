@@ -42,14 +42,14 @@ describe('checkFolder', () => {
     refuse(`${project}\u0000/x`, /NUL/);
   });
 
-  it('refuses gonogo\'s own folder and anything inside it, through a link too, but not a folder that holds it', () => {
+  it('refuses gonogo\'s own folder and anything inside it, through a link too, and a folder that holds it', () => {
     const inside = join(state, 'rooms', 'a');
     mkdirSync(inside, { recursive: true });
     for (const own of [state, inside, `${state}/`, `${state}/../state`]) expect(() => checkFolder(own, [state]), own).toThrow(/gonogo's own folder/);
     const link = join(dir, 'to-state');
     symlinkSync(state, link);
     expect(() => checkFolder(link, [state])).toThrow(/gonogo's own folder/);
-    expect(checkFolder(dir, [state])).toBe(dir); // the folder that holds gonogo's home is allowed
+    expect(() => checkFolder(dir, [state])).toThrow(/too broad: it holds gonogo's home directory/); // Claude's trust of it would cover the home of gonogo
     expect(checkFolder(project, [join(dir, 'not-made-yet')])).toBe(project);
     expect(checkFolder(project, [])).toBe(project); // no folder of gonogo's named: nothing to refuse
   });
@@ -67,25 +67,67 @@ describe('checkFolder', () => {
   });
 });
 
+describe('folders that are too broad (the rule of the launcher)', () => {
+  it('refuses the root, the home directory of the user, a folder that holds it, and Claude\'s configuration folder, with the launcher\'s words', () => {
+    const fakeHome = join(dir, 'fake-home');
+    const config = join(fakeHome, '.claude');
+    mkdirSync(config, { recursive: true });
+    const before = process.env.HOME;
+    process.env.HOME = fakeHome;
+    try {
+      const env = { CLAUDE_CONFIG_DIR: join(dir, 'claude-config') };
+      mkdirSync(env.CLAUDE_CONFIG_DIR);
+      expect(() => checkFolder('/', [state], env)).toThrow(/root of the file system/);
+      expect(() => checkFolder(fakeHome, [state], env)).toThrow(/it is your home directory/);
+      expect(() => checkFolder(dir, [state], env)).toThrow(/holds your home directory/);
+      expect(() => checkFolder(env.CLAUDE_CONFIG_DIR, [state], env)).toThrow(/it is Claude Code's configuration folder/);
+      mkdirSync(join(fakeHome, 'work'));
+      expect(checkFolder(join(fakeHome, 'work'), [state], env)).toBe(join(fakeHome, 'work')); // a folder inside the home directory is what a project is
+    } finally {
+      if (before === undefined) delete process.env.HOME;
+      else process.env.HOME = before;
+    }
+  });
+});
+
 describe('the file and the store', () => {
   it('is 0600, atomic, and holds only the folder; no file is the default; a folder that is gone falls back and says so once', () => {
+    const started = join(dir, 'started');
+    mkdirSync(started);
     const warnings: string[] = [];
     const log = { ...nullLogger, warn: (m: string) => void warnings.push(m), child: () => log };
-    const store = createProjectFolder({ roomHome: state, fallback: dir, forbidden: [state], log });
-    expect(store.get()).toEqual({ dir, source: 'default', default: dir });
-    expect(store.set(project)).toEqual({ before: dir, after: project });
-    expect(store.get()).toEqual({ dir: project, source: 'set', default: dir });
+    const store = createProjectFolder({ roomHome: state, fallback: started, forbidden: [state], log });
+    expect(store.get()).toEqual({ dir: started, source: 'default', default: started, needsFolder: false });
+    expect(store.set(project)).toEqual({ before: started, after: project });
+    expect(store.get()).toEqual({ dir: project, source: 'set', default: started, needsFolder: false });
     expect(statSync(join(state, PROJECT_FOLDER_FILE)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(join(state, PROJECT_FOLDER_FILE), 'utf8'))).toEqual({ version: 1, dir: project });
     expect(readdirSync(state)).toEqual([PROJECT_FOLDER_FILE]);
     expect(() => store.set(state)).toThrow(FolderError);
     expect(store.get().dir).toBe(project); // a refusal changes nothing
     rmSync(project, { recursive: true });
-    expect(store.get()).toEqual({ dir, source: 'default', default: dir });
+    expect(store.get()).toEqual({ dir: started, source: 'default', default: started, needsFolder: false });
     store.get();
     expect(warnings).toHaveLength(1);
-    expect(store.set(null)).toEqual({ before: dir, after: dir });
+    expect(store.set(null)).toEqual({ before: started, after: started });
     expect(readFolder(state)).toBeNull();
+  });
+
+  it('does not trust a stored folder: a planted file naming gonogo\'s home, a broad folder or a folder that holds the home gives the default, with one warning; a default that is too broad is flagged', () => {
+    const started = join(dir, 'started');
+    mkdirSync(started);
+    const warnings: string[] = [];
+    const log = { ...nullLogger, warn: (m: string) => void warnings.push(m), child: () => log };
+    const store = createProjectFolder({ roomHome: state, fallback: started, forbidden: [state], log });
+    for (const planted of [state, join(state, 'rooms'), dir, '/']) {
+      writeFileSync(join(state, PROJECT_FOLDER_FILE), JSON.stringify({ version: 1, dir: planted }));
+      expect(store.get(), planted).toEqual({ dir: started, source: 'default', default: started, needsFolder: false });
+    }
+    expect(warnings.length).toBeGreaterThanOrEqual(4);
+    const broad = createProjectFolder({ roomHome: join(dir, 'other'), fallback: '/', forbidden: [state], log });
+    expect(broad.get()).toMatchObject({ dir: '/', source: 'default', needsFolder: true });
+    expect(broad.set(project).after).toBe(project);
+    expect(broad.get()).toMatchObject({ dir: project, source: 'set', needsFolder: false });
   });
 
   it('reads a damaged or hostile file as no folder', () => {
@@ -173,5 +215,32 @@ describe('the route of a room', () => {
     expect((await put({ dir: 5 })).status).toBe(400);
     expect((await put({})).status).toBe(400);
     expect((await call('GET', '/api/project-folder')).json).toMatchObject({ source: 'default' });
+  });
+});
+
+describe('a room started in a folder that is too broad (the service\'s home directory)', () => {
+  it('says it needs a folder: no default Working directory for the hire form until one is set; the boss still starts where gonogo was started', async () => {
+    const home = join(dir, 'home2');
+    mkdirSync(home, { recursive: true });
+    const broad = process.env.HOME ?? '/';
+    const run = await startGonogo({ port: 0, host: '127.0.0.1', home, cwd: broad, seed: false, allowedHosts: [], agentCmd: [process.execPath, '-e', ''], roomChild: true, env: { ...process.env }, log: nullLogger });
+    try {
+      const get = (method: string, path: string, body?: unknown, actor?: string): Promise<Record<string, unknown>> =>
+        new Promise((resolve, reject) => {
+          const req = http.request({ socketPath: join(home, 'run', 'room.sock'), method, path, headers: { host: '127.0.0.1', 'content-type': 'application/json', ...(actor === undefined ? {} : { 'x-gonogo-actor': actor }) } }, (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (c: Buffer) => chunks.push(c));
+            res.on('end', () => resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown>));
+          });
+          req.on('error', reject);
+          req.end(body === undefined ? undefined : JSON.stringify(body));
+        });
+      expect(await get('GET', '/api/project-folder')).toMatchObject({ dir: broad, source: 'default', needsFolder: true });
+      expect(((await get('GET', '/api/state')).info as { cwd: string }).cwd).toBe('');
+      await get('PUT', '/api/project-folder', { dir: project }, 'session');
+      expect(((await get('GET', '/api/state')).info as { cwd: string }).cwd).toBe(project);
+    } finally {
+      await run.stop();
+    }
   });
 });
