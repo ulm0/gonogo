@@ -127,7 +127,7 @@ interface Dock {
   rules?: DockRules;
 }
 
-const DEFAULT_RULES: DockRules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24 };
+const DEFAULT_RULES: DockRules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false };
 
 /** Rules from a file or a request, field by field: what is not valid keeps its default. */
 function readRules(raw: unknown, base: DockRules = DEFAULT_RULES): DockRules {
@@ -137,6 +137,7 @@ function readRules(raw: unknown, base: DockRules = DEFAULT_RULES): DockRules {
     incoming: r.incoming === 'off' || r.incoming === 'auto' ? r.incoming : base.incoming,
     autoAccept: typeof r.autoAccept === 'boolean' ? r.autoAccept : base.autoAccept,
     staleHours: typeof r.staleHours === 'number' && Number.isInteger(r.staleHours) && r.staleHours >= 0 && r.staleHours <= 24 * 30 ? r.staleHours : base.staleHours,
+    reportCost: typeof r.reportCost === 'boolean' ? r.reportCost : base.reportCost,
   };
 }
 
@@ -171,6 +172,12 @@ export interface DockingOptions {
   tasks: Pick<Tasks, 'list' | 'create' | 'handOff' | 'attach' | 'system'>;
   /** Docking 2: the links changed; carries the whole list. */
   emitLinks?(links: LinkView[]): void;
+  /** Docking budgets: the cap of a linked task goes into this station's Propellant (links scope); null clears it. */
+  setLinkBudget?(linkId: string, usd: number | null): void;
+  /** What a task has cost here: dollars (an estimate) of the ledger lines that carry it, or undefined when nothing is known. */
+  spentOnTask?(taskId: string): number | undefined;
+  /** The most this station's own room budget allows, when it has one (a cap from a peer is cut to it). */
+  roomBudgetCap?(): number | undefined;
   /** One line for the Director's Downlink (return, refusal, delivery, recall, an incoming task, a digest). */
   notify?(text: string): void;
   /** A message to this station's boss, labelled as from the docked station and not from the Director. */
@@ -201,6 +208,8 @@ export interface Docking extends DockLink {
   /** Docking 2: a task that is bound to a link changed: its status and note become events of the link. */
   taskChanged(before: Task, after: Task, actor: Actor, note: string | undefined, attachments?: Deliverable[]): void;
   linkViews(): LinkView[];
+  /** The task a link is bound to on this station when it holds that task for another (the one a link cap holds). */
+  linkTask(linkId: string): string | undefined;
   /** The rules of a dock, changed field by field (the Director's own login). */
   rules(dockId: string): DockRules;
   setRules(dockId: string, input: unknown): DockRules;
@@ -525,6 +534,7 @@ export function createDocking(options: DockingOptions): Docking {
     // the retries of the outbox ride on the same clock
     void links.flush();
     checkStale();
+    reportCosts();
   }
 
   /* ---------------------------------------------------------------- the calls we get */
@@ -654,6 +664,23 @@ export function createDocking(options: DockingOptions): Docking {
     else if (recent.length === 4) options.notify?.(`${dock.name} is handing over several tasks: more than 3 in 10 minutes (see the Docking module)`);
   }
 
+  /** The receiver's cost report: per dock with `reportCost` on, at most one an hour per link, and one when the task is delivered. Dollars to the cent, an estimate, and nothing else leaves. */
+  function reportCosts(force?: Link): void {
+    for (const view of links.views()) {
+      const link = links.find(view.id);
+      const dock = link === undefined ? undefined : docks.find((d) => d.id === link.peer);
+      if (link === undefined || dock === undefined || link.role !== 'receiver' || !rulesOf(dock).reportCost) continue;
+      if (link.state !== 'accepted' && link.state !== 'delivered') continue;
+      if (force !== undefined && force !== link) continue;
+      const spent = options.spentOnTask?.(link.mine);
+      if (spent === undefined) continue;
+      const usd = Math.round(spent * 100) / 100;
+      if (link.costSent !== undefined && (link.costSent.usd === usd || (force === undefined && now() - link.costSent.at < 3600_000))) continue;
+      link.costSent = { usd, at: now() };
+      links.record(link, 'cost', `station@${options.name}`, usd.toFixed(2));
+    }
+  }
+
   /** A link that is accepted and quiet for `staleHours` tells this station's own boss, once per period, and nothing crosses the dock. */
   function checkStale(): void {
     for (const view of links.views()) {
@@ -738,12 +765,19 @@ export function createDocking(options: DockingOptions): Docking {
     if (linkId === null || offer === null) return { ok: true, id: task.id };
     await options.tasks.attach(task.id, { link: linkId, note: `handed off from ${dock.name}${theirs} on link ${linkId}` });
     const link = links.incoming(dock, linkId, task.id, offer, task.title, `director@${dock.name}`);
+    // the cap a peer offers is clamped: at least $0.50, at most this station's own room budget; it holds that one task in this station's Propellant, and the sender is told the value applied
+    let applied: number | null = null;
+    if (offer.budget !== null) {
+      applied = Math.max(0.5, Math.min(offer.budget, options.roomBudgetCap?.() ?? Number.POSITIVE_INFINITY));
+      link.budget = applied;
+      options.setLinkBudget?.(linkId, applied);
+    }
     // the stations above this one, for the card: the sender's own chain and the sender (display text, never an address); the sender's task id, for the card
     if (typeof body.id === 'string' && TASK_ID_RE.test(body.id)) {
       link.theirs = body.id;
       link.chain = [...offer.chain, { station: dock.name, task: body.id }];
     }
-    const accept = links.record(link, 'accept', `station@${options.name}`, '', undefined, { queue: false });
+    const accept = links.record(link, 'accept', `station@${options.name}`, applied === null ? '' : `budget ${applied.toFixed(2)}`, undefined, { queue: false });
     tellIncoming(dock, task.title);
     // no agent of that name here: the station's boss gets the task and a message that says whose words they are (not the Director's)
     if (task.assignee === null) {
@@ -978,20 +1012,29 @@ export function createDocking(options: DockingOptions): Docking {
       if (link === undefined || link.role !== 'receiver' || link.state === 'detached' || link.state === 'recalled') return;
       const by = `${actor.kind === 'agent' ? actor.name : 'director'}@${options.name}`;
       const text = after.localNotes === true ? '' : (note ?? '');
-      if (after.status !== before.status) links.record(link, 'status', by, text, after.status, attachments.length === 0 ? {} : { attachments });
+      if (after.status !== before.status) {
+        links.record(link, 'status', by, text, after.status, attachments.length === 0 ? {} : { attachments });
+        // the cost at delivery goes with the delivery, outside the hour
+        if (after.status === 'done') reportCosts(link);
+      }
       else if (note !== undefined && after.localNotes !== true) links.record(link, 'note', by, text);
     },
     linkViews: () => links.views(),
+    linkTask: (linkId) => {
+      const link = links.find(linkId);
+      return link !== undefined && link.role === 'receiver' ? link.mine : undefined;
+    },
 
     rules: (dockId) => rulesOf(find(dockId)),
 
     setRules(dockId, input) {
       const dock = find(dockId);
       if (!isRecord(input)) throw bad('request body must be a JSON object');
-      for (const key of Object.keys(input)) if (!['handoff', 'incoming', 'autoAccept', 'staleHours'].includes(key)) throw bad(`unknown field "${key}"`, key);
+      for (const key of Object.keys(input)) if (!['handoff', 'incoming', 'autoAccept', 'staleHours', 'reportCost'].includes(key)) throw bad(`unknown field "${key}"`, key);
       if (input.handoff !== undefined && input.handoff !== 'ask' && input.handoff !== 'allow') throw bad('handoff is ask or allow', 'handoff');
       if (input.incoming !== undefined && input.incoming !== 'auto' && input.incoming !== 'off') throw bad('incoming is auto or off', 'incoming');
       if (input.autoAccept !== undefined && typeof input.autoAccept !== 'boolean') throw bad('autoAccept is true or false', 'autoAccept');
+      if (input.reportCost !== undefined && typeof input.reportCost !== 'boolean') throw bad('reportCost is true or false', 'reportCost');
       if (input.staleHours !== undefined && (typeof input.staleHours !== 'number' || !Number.isInteger(input.staleHours) || input.staleHours < 0 || input.staleHours > 720)) throw bad('staleHours is a whole number of hours from 0 to 720', 'staleHours');
       dock.rules = readRules(input, rulesOf(dock));
       void save();

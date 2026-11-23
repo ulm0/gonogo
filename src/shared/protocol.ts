@@ -816,6 +816,8 @@ export interface CostView {
   /** By mission id and by task id, for the ones that spent or have a budget. Absent from an older server. */
   missions?: Record<string, SpendOf>;
   tasks?: Record<string, SpendOf>;
+  /** Docking: what the task of each linked task that has a cap has cost, by link id. */
+  links?: Record<string, SpendOf>;
   /** The last 14 local calendar days, oldest first. */
   days: DayCost[];
   /** Epoch ms of the oldest ledger line that carries a model, so it can be priced; null when none does. */
@@ -1086,6 +1088,8 @@ export interface DockRules {
   autoAccept: boolean;
   /** Hours of silence on an accepted link before this station's boss is told; 0 is never. */
   staleHours: number;
+  /** This station tells the other what a task it holds for it has cost (dollars to the cent, an estimate, nothing else). Default off. */
+  reportCost: boolean;
 }
 /** A hand-off that waits for the Director's answer: exactly what would leave. */
 export interface HandoffAsk {
@@ -1146,6 +1150,8 @@ export interface LinkView {
   chain?: ChainHop[];
   /** What a station further on last reported through this link, "ops: doing". */
   via?: string;
+  /** What the other station says the task cost there: an estimate at list prices, never a bill; `cap` is the budget it applied (null: it reports no cost). */
+  cost?: { usd: number; estimate: true; cap?: number } | null;
   /** Events in the trail, and events of ours that wait to be acked. */
   events: number;
   waiting: number;
@@ -1736,7 +1742,7 @@ export interface PropellantRequest {
   room?: FuelLimits;
   agents?: Record<string, FuelLimits>;
   /** Dollar budgets; same rules as the limits. */
-  budget?: { room?: Budget; agents?: Record<string, Budget>; /** Mission id to dollars in all, or null to clear. */ missions?: Record<string, number | null> };
+  budget?: { room?: Budget; agents?: Record<string, Budget>; /** Mission id to dollars in all, or null to clear. */ missions?: Record<string, number | null>; /** Docking link id to dollars on that one linked task, or null to clear: held at the cap, never a Redline of the room or an agent. */ links?: Record<string, number | null> };
 }
 /** POST /api/schedules. */
 export interface ScheduleRequest {

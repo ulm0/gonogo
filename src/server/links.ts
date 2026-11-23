@@ -34,7 +34,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** What each side may author on a link, by its role. The sender owns intent; the receiver owns execution. */
 /** `accept` is the receiver's at the offer ("this task is held here") and the sender's after a delivery ("accepted"). */
 export const SENDER_KINDS = ['offer', 'recall', 'accept', 'note', 'ask', 'reply', 'lost'] as const;
-export const RECEIVER_KINDS = ['accept', 'status', 'note', 'ask', 'reply', 'return', 'refuse', 'lost'] as const;
+export const RECEIVER_KINDS = ['accept', 'status', 'note', 'ask', 'reply', 'return', 'refuse', 'lost', 'cost'] as const;
 
 export interface LinkEvent {
   link: string;
@@ -75,6 +75,10 @@ export interface Link {
   via?: string;
   /** The state before an undock: a redock resumes it. */
   resume?: LinkState;
+  /** What the other station reported the task cost there (dollars, an estimate), or undefined: not reported. */
+  cost?: number;
+  /** The receiver's own: the last figure it sent, and when. */
+  costSent?: { usd: number; at: number };
   trail: LinkEvent[];
   /** The last `seq` of ours, and the last of theirs that was applied in order. */
   outSeq: number;
@@ -561,6 +565,7 @@ export function createLinks(options: LinksOptions): Links {
         budget: l.budget,
         ...(l.chain.length === 0 ? {} : { chain: l.chain.map((h) => ({ ...h })) }),
         ...(l.via === undefined ? {} : { via: l.via }),
+        ...(l.role === 'sender' ? { cost: l.cost === undefined ? null : { usd: l.cost, estimate: true as const, ...(l.budget === null ? {} : { cap: l.budget }) } } : {}),
         events: l.trail.length,
         waiting: (outboxes.get(l.peer)?.events ?? []).filter((e) => e.link === l.id).length,
         updatedAt: l.updatedAt,
@@ -604,6 +609,7 @@ export function createLinks(options: LinksOptions): Links {
     const event: LinkEvent = { ...ev, by, text: cleanLine(ev.text), ...(ev.status !== undefined && (TASK_STATUSES as readonly string[]).includes(ev.status) ? { status: ev.status } : {}) };
     // deliverables ride on a status only
     if (event.kind !== 'status') delete event.attachments;
+    if (ev.kind === 'cost' && !/^\d{1,7}\.\d{2}$/.test(event.text)) throw new Error(`dock ${dock.name} sent a cost that is not dollars to the cent`);
     if (ev.kind === 'status' && event.status === undefined && event.via === undefined) throw new Error(`dock ${dock.name} sent a status with no status`);
     // only a status carries a station further on; a `first` is the business of a `lost` and nothing else
     if (event.kind !== 'status') delete event.via;
@@ -649,6 +655,12 @@ export function createLinks(options: LinksOptions): Links {
     clipTrail(link);
     stateAfter(link, event, false);
     if (event.via !== undefined) link.via = `${event.via}: ${event.text}`.slice(0, 80);
+    // what the receiver reports: dollars to the cent and nothing else; the budget it applied comes with its accept
+    if (event.kind === 'cost') link.cost = Number(event.text);
+    if (event.kind === 'accept' && link.role === 'sender') {
+      const applied = /^budget (\d{1,7}\.\d{2})$/.exec(event.text);
+      if (applied) link.budget = Number(applied[1]);
+    }
     touch(link);
     options.trace(link.peer, `link event ${event.kind} on ${link.id}`);
     options.applied?.(link, event, false);
@@ -691,6 +703,8 @@ export function createLinks(options: LinksOptions): Links {
       held: [],
       seen,
       ...(typeof raw.via === 'string' ? { via: cleanLine(raw.via, 80) } : {}),
+      ...(typeof raw.cost === 'number' && Number.isFinite(raw.cost) && raw.cost >= 0 && raw.cost < 10_000_000 ? { cost: raw.cost } : {}),
+      ...(isRecord(raw.costSent) && typeof raw.costSent.usd === 'number' && typeof raw.costSent.at === 'number' ? { costSent: { usd: raw.costSent.usd, at: raw.costSent.at } } : {}),
       ...((['offered', 'accepted', 'delivered', 'returned', 'recalled', 'done', 'refused'] as const).find((s) => s === raw.resume) === undefined ? {} : { resume: raw.resume as LinkState }),
     };
   }

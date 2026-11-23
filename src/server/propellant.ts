@@ -60,6 +60,7 @@ export interface FuelEntry {
   task?: string;
 }
 const MISSION_ID_RE = /^ms[1-9]\d{0,5}$/;
+const LINK_ID_RE = /^dl_[0-9a-f]{16}$/;
 const TASK_ID_RE = /^t[1-9]\d{0,5}$/;
 
 /** Dollar budgets per window, and the share of a budget at which Downlink is told. */
@@ -71,7 +72,7 @@ const WINDOW_NAME: Record<FuelWindow, string> = { '5h': '5-hour', day: 'day', we
 interface Saved {
   room: FuelLimits;
   agents: Record<string, FuelLimits>;
-  budget: { room: Budget; agents: Record<string, Budget>; /** Mission id to dollars in all. */ missions: Record<string, number> };
+  budget: { room: Budget; agents: Record<string, Budget>; /** Mission id to dollars in all. */ missions: Record<string, number>; /** Docking link id to dollars on its one linked task. */ links: Record<string, number> };
   /** Transcript path to the byte offset already counted, so a restart of gonogo does not count a turn twice. */
   cursors: Record<string, number>;
 }
@@ -163,7 +164,7 @@ export function parsePropellantRequest(body: Record<string, unknown>): { ok: tru
   if (body.budget !== undefined) {
     if (!isRecord(body.budget)) return { ok: false, error: 'budget must be an object with room and agents', field: 'budget' };
     for (const key of Object.keys(body.budget)) {
-      if (key !== 'room' && key !== 'agents' && key !== 'missions') return { ok: false, error: `budget: unknown field "${key}"`, field: 'budget' };
+      if (key !== 'room' && key !== 'agents' && key !== 'missions' && key !== 'links') return { ok: false, error: `budget: unknown field "${key}"`, field: 'budget' };
     }
     const budget: NonNullable<PropellantRequest['budget']> = {};
     if (body.budget.room !== undefined) {
@@ -194,6 +195,19 @@ export function parsePropellantRequest(body: Record<string, unknown>): { ok: tru
         }
       }
     }
+    if (body.budget.links !== undefined) {
+      if (!isRecord(body.budget.links)) return { ok: false, error: 'budget.links must be an object of link ids', field: 'budget' };
+      budget.links = {};
+      for (const [id, raw] of Object.entries(body.budget.links)) {
+        if (!LINK_ID_RE.test(id)) return { ok: false, error: `budget.links: invalid link id "${id}"`, field: 'budget' };
+        if (raw === null) budget.links[id] = null;
+        else {
+          const usd = parseMissionBudget(raw, `budget.links.${id}`);
+          if (typeof usd === 'string') return { ok: false, error: usd, field: 'budget' };
+          budget.links[id] = usd;
+        }
+      }
+    }
     value.budget = budget;
   }
   return { ok: true, value };
@@ -216,6 +230,8 @@ export interface PropellantOptions {
   reported?: Pick<Reported, 'window'>;
   /** The mission and task an agent is on now (its `doing` task). Read when its replies are counted and when a mission budget is checked. */
   attribute?: (agent: string) => { mission?: string; task?: string };
+  /** The task a docking link is bound to here (a link budget caps that task only). */
+  linkTask?: (linkId: string) => string | undefined;
 }
 
 export interface Propellant {
@@ -231,7 +247,7 @@ export interface Propellant {
   /** Replaces the dollar budget of each scope given ({} clears it); posts the 80 % warning when a new budget is already past it. */
   setBudget(budget: NonNullable<PropellantRequest['budget']>): Promise<PropellantView>;
   /** Why this agent must stop, or null: its own limit first, then the room's. */
-  over(agent: string): { scope: 'agent' | 'room' | 'mission'; reason: string; /** For scope 'mission': its id. */ mission?: string } | null;
+  over(agent: string): { scope: 'agent' | 'room' | 'mission' | 'link'; reason: string; /** For scope 'mission': its id. */ mission?: string; /** For scope 'link': the link, and the one task it caps. */ link?: string; task?: string } | null;
   close(): Promise<void>;
 }
 
@@ -242,7 +258,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
   const ledgerPath = join(dir, LEDGER_FILE);
   const limitsPath = join(dir, LIMITS_FILE);
   let entries: FuelEntry[] = [];
-  const saved: Saved = { room: {}, agents: {}, budget: { room: {}, agents: {}, missions: {} }, cursors: {} };
+  const saved: Saved = { room: {}, agents: {}, budget: { room: {}, agents: {}, missions: {}, links: {} }, cursors: {} };
   const priceTable = options.prices ?? ((): Record<string, ModelPrice> => mergePrices());
   /** Scopes (agent or room, and window) that already told Downlink they are at 80 %; cleared when the window drops below it. */
   const warned = new Set<string>();
@@ -360,11 +376,17 @@ export function createPropellant(options: PropellantOptions): Propellant {
       missions[id] = { ...spentOn('mission', id, table), ...(budget === undefined ? {} : { budget }) };
     }
     for (const id of new Set(entries.flatMap((e) => (e.task === undefined ? [] : [e.task])))) tasks[id] = spentOn('task', id, table);
+    const links: Record<string, SpendOf> = {};
+    for (const [id, budget] of Object.entries(saved.budget.links)) {
+      const task = options.linkTask?.(id);
+      links[id] = { ...(task === undefined ? { usd: 0, unpriced: 0 } : spentOn('task', task, table)), budget };
+    }
     return {
       room: costGauge(null, saved.budget.room, table),
       agents,
       missions,
       tasks,
+      links,
       days: days(table),
       pricedSince: modelled.length === 0 ? null : Math.min(...modelled),
     };
@@ -616,6 +638,12 @@ export function createPropellant(options: PropellantOptions): Propellant {
                 if (NAME_RE.test(name) && typeof b !== 'string') saved.budget.agents[name] = b;
               }
             }
+            if (isRecord(data.budget.links)) {
+              for (const [id, raw] of Object.entries(data.budget.links)) {
+                const usd = parseMissionBudget(raw, id);
+                if (LINK_ID_RE.test(id) && typeof usd === 'number') saved.budget.links[id] = usd;
+              }
+            }
             if (isRecord(data.budget.missions)) {
               for (const [id, raw] of Object.entries(data.budget.missions)) {
                 const usd = parseMissionBudget(raw, id);
@@ -716,6 +744,10 @@ export function createPropellant(options: PropellantOptions): Propellant {
         if (usd === null) delete saved.budget.missions[id];
         else saved.budget.missions[id] = usd;
       }
+      for (const [id, usd] of Object.entries(budget.links ?? {})) {
+        if (usd === null) delete saved.budget.links[id];
+        else saved.budget.links[id] = usd;
+      }
       await saveLimits();
       warn(false);
       return view();
@@ -732,6 +764,15 @@ export function createPropellant(options: PropellantOptions): Propellant {
       const ownCost = budgetOver(costGauge(agent, saved.budget.agents[agent] ?? {}, table));
       if (ownCost !== null) {
         return { scope: 'agent', reason: `out of propellant: ${agent} spent ${moneyText(ownCost.spent)} of ${moneyText(ownCost.limit)} in ${WINDOW_LABEL[ownCost.window]}` };
+      }
+      // a docking link's cap holds the one task it names, and nothing else: no room or agent scope
+      const doing = options.attribute?.(agent).task;
+      if (doing !== undefined) {
+        for (const [linkId, limit] of Object.entries(saved.budget.links)) {
+          if (options.linkTask?.(linkId) !== doing) continue;
+          const spent = spentOn('task', doing, table).usd;
+          if (spent >= limit) return { scope: 'link', link: linkId, task: doing, reason: `task ${doing} reached the cap its link allows: spent ${moneyText(spent)} of ${moneyText(limit)}` };
+        }
       }
       const on = options.attribute?.(agent).mission;
       const missionLimit = on === undefined ? undefined : saved.budget.missions[on];

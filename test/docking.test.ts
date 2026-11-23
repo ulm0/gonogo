@@ -38,6 +38,10 @@ interface Station {
   systemed: Array<{ id: string; status?: string; note: string; returned?: boolean }>;
   told: string[];
   bossTold: Array<{ station: string; subject: string; body: string }>;
+  /** What the station's Propellant was told: link caps, what a task has spent, and the room budget. */
+  linkBudgets: Record<string, number | null>;
+  spent: Record<string, number>;
+  roomCap?: number;
   /** What this station told the history of triggers. */
   triggers: Array<Record<string, unknown>>;
   tasks: Task[];
@@ -95,6 +99,8 @@ function world(): World {
         systemed: [],
         told: [],
         bossTold: [],
+        linkBudgets: {},
+        spent: {},
         triggers: [],
         tasks: [],
         views: [],
@@ -149,6 +155,9 @@ function world(): World {
         emit: (view) => station.views.push(view),
         notify: (text) => void station.told.push(text),
         tellBoss: (st, subject, body) => void station.bossTold.push({ station: st, subject, body }),
+        setLinkBudget: (linkId, usd) => void (station.linkBudgets[linkId] = usd),
+        spentOnTask: (taskId) => station.spent[taskId],
+        roomBudgetCap: () => station.roomCap,
         log: nullLogger,
       });
       await station.docking.load();
@@ -1390,8 +1399,8 @@ describe('links: the flow', () => {
 
   it('the rules: defaults, changed field by field and checked, kept in docking.json, and shown in the dock', async () => {
     const { a, dock } = await linked();
-    expect(a.docking.view().docks[0]?.rules).toEqual({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24 });
-    expect(a.docking.setRules(dock, { staleHours: 6, handoff: 'allow' })).toEqual({ handoff: 'allow', incoming: 'auto', autoAccept: false, staleHours: 6 });
+    expect(a.docking.view().docks[0]?.rules).toEqual({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false });
+    expect(a.docking.setRules(dock, { staleHours: 6, handoff: 'allow' })).toEqual({ handoff: 'allow', incoming: 'auto', autoAccept: false, staleHours: 6, reportCost: false });
     for (const bad of [{ handoff: 'sometimes' }, { incoming: 'ask' }, { autoAccept: 'yes' }, { staleHours: -1 }, { staleHours: 1.5 }, { staleHours: 721 }, { nope: 1 }]) expect(() => a.docking.setRules(dock, bad), JSON.stringify(bad)).toThrow();
     await settle();
     expect(JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')).docks[0].rules).toMatchObject({ handoff: 'allow', staleHours: 6 });
@@ -1566,6 +1575,73 @@ describe('links: reach', () => {
     await b2.docking.pull();
     await settle();
     expect((a.docking.linkTrail(link) ?? []).filter((e) => e.kind === 'note')).toHaveLength(2);
+  });
+
+  describe('cost and the cap of a link', () => {
+    const offered = async (budget: number | null, roomCap?: number): Promise<{ w: World; a: Station; b: Station; dock: string; bDock: string; link: string }> => {
+      const w = world();
+      const a = await w.make('alpha', 'http://a.test');
+      const b = await w.make('beta', 'http://b.test');
+      if (roomCap !== undefined) b.roomCap = roomCap;
+      const { aSees, bSees } = await pair(a, b);
+      a.tasks = [task('t1')];
+      const handed = await a.docking.handOff(aSees, { task: 't1', ...(budget === null ? {} : { budget }) });
+      await settle();
+      return { w, a, b, dock: aSees, bDock: bSees, link: handed.links?.[0] ?? '' };
+    };
+
+    it('the cap a peer offers is clamped: a $0.01 offer is raised to $0.50, a big one is cut to the room\'s own budget, a sensible one stays; both cards show the value applied', async () => {
+      const small = await offered(0.01);
+      expect(small.b.linkBudgets[small.link]).toBe(0.5);
+      expect(small.b.docking.linkViews()[0]?.budget).toBe(0.5);
+      expect(small.a.docking.linkViews()[0]?.budget).toBe(0.5);
+      const big = await offered(500, 20);
+      expect(big.b.linkBudgets[big.link]).toBe(20);
+      expect(big.a.docking.linkViews()[0]?.budget).toBe(20);
+      const fine = await offered(5, 20);
+      expect(fine.b.linkBudgets[fine.link]).toBe(5);
+      const none = await offered(null);
+      expect(none.b.linkBudgets).toEqual({});
+    });
+
+    it('cost leaves only when reportCost is on: off says nothing; on, one report an hour and one at delivery, dollars to the cent and an estimate flag, nothing else', async () => {
+      const { w, a, b, bDock, link } = await offered(5);
+      b.spent = { t9: 3.1049 };
+      await b.docking.pull();
+      await settle();
+      expect(a.docking.linkViews()[0]?.cost).toBeNull(); // not reported
+      expect(trailKinds(a, link)).not.toContain('cost');
+      b.docking.setRules(bDock, { reportCost: true });
+      await b.docking.pull();
+      await settle();
+      expect(a.docking.linkViews()[0]?.cost).toEqual({ usd: 3.1, estimate: true, cap: 5 });
+      expect((a.docking.linkTrail(link) ?? []).filter((e) => e.kind === 'cost').map((e) => e.text)).toEqual(['3.10']);
+      // the same figure again, or a new one within the hour: nothing
+      b.spent = { t9: 3.5 };
+      await b.docking.pull();
+      await settle();
+      expect((a.docking.linkTrail(link) ?? []).filter((e) => e.kind === 'cost')).toHaveLength(1);
+      w.clock.now += 61 * 60_000;
+      await b.docking.pull();
+      await settle();
+      expect(a.docking.linkViews()[0]?.cost).toMatchObject({ usd: 3.5 });
+      // at delivery, at once
+      b.spent = { t9: 4.2 };
+      const before = b.tasks.find((t) => t.id === 't9')!;
+      b.docking.taskChanged(before, { ...before, status: 'done' }, bob, 'finished');
+      await settle();
+      expect(a.docking.linkViews()[0]).toMatchObject({ state: 'delivered', cost: { usd: 4.2, estimate: true } });
+      // what the cost event carries: the figure and nothing else
+      const sent = (b.docking.linkTrail(link) ?? []).filter((e) => e.kind === 'cost').at(-1);
+      expect(Object.keys(sent ?? {}).sort()).toEqual(['at', 'by', 'from', 'kind', 'link', 'seq', 'text']);
+      expect(JSON.stringify(sent)).not.toMatch(/token|model|price|agent/i);
+    });
+
+    it('reportCost is a yes or a no, and is off by default', async () => {
+      const { b, bDock } = await offered(5);
+      expect(b.docking.rules(bDock).reportCost).toBe(false);
+      expect(() => b.docking.setRules(bDock, { reportCost: 'yes' })).toThrow();
+    });
   });
 
   describe('chains and splits', () => {
