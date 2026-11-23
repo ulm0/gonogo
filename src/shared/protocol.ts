@@ -1528,6 +1528,8 @@ export interface ReliefRequest {
   dir: string;
   provider: Provider;
   mode: PermissionMode;
+  /** The request named no mode: this one is the room's default, and the card and the Downlink line say so. */
+  modeFromRoom?: boolean;
   /** The boss is a Clean Room agent: the new agent is one too. */
   cleanRoom: CleanRoom | null;
   /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */

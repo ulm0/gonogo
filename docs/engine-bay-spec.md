@@ -50,7 +50,11 @@ those four, and lets the owner pick the CLI in the hire form.
   keeps `default`; Edit never changes an existing agent's mode), and is the mode of a Relief or `hire_agent` request
   that names none. `bypassPermissions` as the room default needs `confirmBypass: true` (400, field `confirmBypass`),
   and is never given to a hire that names no mode: Relief falls back to `default`, and the form still asks for its
-  own confirmation. Old files without `mode` load as before.
+  own confirmation. Old files without `mode` load as before. `auto` and `bypassPermissions` are set only from the
+  Director's own login (a key or a terminal gets 403) and ask for the password again when the last check is old;
+  clearing or a milder mode is free. A models.json that names `bypassPermissions` is read back only with the
+  `bypassConfirmedAt` stamp that setting it writes. A Relief request that takes the room's mode shows it on its card
+  and Downlink line as "auto (the room's default)"; Security findings list a room whose default is auto or bypass.
 - **Propellant** reads Claude transcripts only (the shim does not forward `transcript_path`); a room limit trips
   Claude agents only. **Max Q** counts agents with hooks (Claude Code, Gemini CLI).
 - **Antigravity CLI (`agy`)** replaces Gemini CLI for the individual Google tiers (Gemini CLI stays, marked legacy). Started with `--mode accept-edits|auto` or `--dangerously-skip-permissions`, `--model`, `-i <role>`. It reads `hooks.json` and `mcp_config.json` only from the project's `.agents/`, `~/.gemini/config/` and plugins, so until a per-agent location is verified it is an output-activity engine without hooks or tools (like pi). The hook shim and `hooks.json` builder exist and are tested; `docs/facts/antigravity.md` says what was and was not checked. `agy --mode auto` needs its terminal sandbox.

@@ -45,7 +45,7 @@ export function reliefRows(request: ReliefRequest, now: number): ReliefRow[] {
     { label: 'Position', value: position === null ? 'none: a role of its own' : `${position.callSign} · ${position.title}` },
     { label: 'Engine', value: providerInfo(request.provider).label },
     // an engine without permission modes runs on its own rules whatever the hub passes: 'ASK' would promise what it does not do
-    { label: 'Mode', value: providerInfo(request.provider).modes ? MODE_TEXT[request.mode] : 'none: this engine has no permission modes in gonogo, its own rules apply' },
+    { label: 'Mode', value: providerInfo(request.provider).modes ? `${MODE_TEXT[request.mode]}${request.modeFromRoom === true ? " (the room's default)" : ''}` : 'none: this engine has no permission modes in gonogo, its own rules apply' },
     { label: 'Folder', value: request.dir },
   ];
   if (request.cleanRoom !== null) rows.push({ label: 'Clean Room', value: request.cleanRoom.image === undefined ? 'yes: its own container and branch' : `yes: its own container and branch, image ${request.cleanRoom.image}` });

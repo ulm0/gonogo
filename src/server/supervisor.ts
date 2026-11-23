@@ -690,9 +690,16 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     const proxied = (options.trustedProxies ?? []).includes(peer) && String(req.headers['x-forwarded-proto'] ?? '').toLowerCase() === 'https';
     // the agents of the rooms that run, by name and mode: asked like the list page asks (a room that does not answer in 1.5 s adds nothing)
     const agents: Array<{ room: string; name: string; mode: string; cleanRoom: boolean }> = [];
+    const roomModes: Array<{ room: string; mode: string }> = [];
     await Promise.all(
       [...children.values()].map(async (child) => {
         if (child.port === null) return;
+        try {
+          const defaults = (await askRoom(child, '/api/models', 1500)) as { mode?: unknown };
+          if (typeof defaults.mode === 'string') roomModes.push({ room: child.entry.id, mode: defaults.mode });
+        } catch {
+          // no answer: no finding from this room
+        }
         try {
           const body = (await askRoom(child, '/api/state', 1500)) as { agents?: Array<{ name?: unknown; mode?: unknown; cleanRoom?: unknown }> };
           for (const a of Array.isArray(body.agents) ? body.agents : []) if (typeof a.name === 'string' && typeof a.mode === 'string') agents.push({ room: child.entry.id, name: a.name, mode: a.mode, cleanRoom: a.cleanRoom !== null && a.cleanRoom !== undefined });
@@ -729,6 +736,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       keys: auth.keys().map((k) => ({ id: k.id, name: k.name, scope: k.scope, remote: k.remote, created: k.created, expires: k.expires })),
       now: (options.now ?? Date.now)(),
       agents,
+      roomModes,
       folders,
       updateChecksOff: off,
       behind: !off && newer !== null && options.version !== undefined ? { running: options.version, latest: newer.latest } : null,
