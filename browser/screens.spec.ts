@@ -443,6 +443,21 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await measure(page, group, label, '.lay-rules');
     await measureDuplicates(page, group, label, '.lay-rules');
   }
+  // Engine Bay: the room's default permission mode, and the confirmation that bypass asks for
+  await view(page, group, 'engine bay: permission mode', async () => {
+    await page.locator('.lay-group-nav a', { hasText: 'Agents' }).first().click({ timeout: 3000 });
+    await page.locator('.lay-row', { hasText: 'Engine, model and effort' }).locator('summary').first().click({ timeout: 3000 });
+    await page.locator('.rules-models').scrollIntoViewIfNeeded({ timeout: 3000 });
+  }, true);
+  await view(page, group, 'engine bay: bypass asks to confirm', async () => {
+    // the choice alone saves nothing: bypass is asked to be confirmed first
+    await page.getByLabel('Permission mode').selectOption('bypassPermissions');
+    await page.getByRole('group', { name: 'Confirm bypass' }).waitFor({ timeout: 3000 });
+  }, true);
+  await measure(page, group, 'engine bay: bypass asks to confirm', '.rules-models');
+  // back to the System and update group with every row open, where the runtime settings views that follow expect to be
+  await page.locator('.lay-group-nav a', { hasText: 'System and update' }).first().click({ timeout: 3000 });
+  await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
   // Runtime settings (the System and update group is the one open now, with every row open): an editor, a refused value, the warning of a sensitive setting, a setting for all rooms only
   await view(page, group, 'runtime settings: change a setting', () => page.getByRole('button', { name: 'Change Message hops' }).click({ timeout: 3000 }), true);
   await measure(page, group, 'runtime settings: change a setting', '.lay-rules');

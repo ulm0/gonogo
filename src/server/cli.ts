@@ -1197,6 +1197,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const relief = createRelief({
       hub: hubInstance,
       defaultEngine: () => modelDefaults.engine(),
+      defaultMode: () => modelDefaults.mode(),
       checkDirectory: io.checkDirectory,
       checkWorktree: (dir) => checkWorktree(dir, env),
       now: io.now,

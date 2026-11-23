@@ -4,7 +4,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { Effort, ModelDefaults, Provider } from '../shared/protocol.js';
+import type { Effort, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
 import { POSITIONS } from '../shared/positions.js';
 import { EFFORTS, MODEL_PATTERN, PROVIDERS, providerInfo } from '../shared/protocol.js';
 import * as api from './api.js';
@@ -93,6 +93,53 @@ function Pick({ label, saved, options, empty, set, onSaved }: { label: string; s
   );
 }
 
+/** The room's default permission mode. Bypass is not saved by a click on the select: it asks for the same confirmation a hire does. */
+function ModePick({ saved, onSaved }: { saved: PermissionMode | undefined; onSaved(next: ModelDefaults): void }): ReactElement {
+  const id = useId();
+  const { busy, error, run } = useRun();
+  const [asking, setAsking] = useState(false);
+  const [ok, setOk] = useState(false);
+  return (
+    <li className="rules-model">
+      <label htmlFor={id} className="rules-call">
+        Permission mode
+      </label>
+      <select
+        id={id}
+        className="input"
+        data-fit
+        value={asking ? 'bypassPermissions' : (saved ?? '')}
+        disabled={busy}
+        onChange={(event) => {
+          const value = event.target.value;
+          setOk(false);
+          setAsking(value === 'bypassPermissions' && saved !== 'bypassPermissions');
+          if (value !== 'bypassPermissions') run(async () => onSaved(await api.setDefaultMode(value === '' ? null : (value as PermissionMode))));
+        }}
+      >
+        <option value="">Ask (default)</option>
+        <option value="acceptEdits">Accept edits</option>
+        <option value="auto">Auto</option>
+        <option value="bypassPermissions">Bypass</option>
+      </select>
+      {asking && (
+        <div className="staff-check" role="group" aria-label="Confirm bypass">
+          <input id={`${id}-ok`} type="checkbox" className="check" checked={ok} onChange={(event) => setOk(event.target.checked)} />
+          <label htmlFor={`${id}-ok`}>Hires from the form start in bypass: every tool runs without asking. Agents that hire (hire_agent, Relief) never get bypass from this.</label>
+          <button type="button" className="btn" aria-disabled={!ok || busy || undefined} onClick={() => ok && !busy && run(async () => { onSaved(await api.setDefaultMode('bypassPermissions', true)); setAsking(false); })}>
+            Set
+          </button>
+        </div>
+      )}
+      {error !== null && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
 export function ModelDefaultsBlock(): ReactElement {
   const titleId = useId();
   const [defaults, setDefaults] = useState<ModelDefaults | null>(null);
@@ -129,6 +176,7 @@ export function ModelDefaultsBlock(): ReactElement {
           <h3 className="label">ENGINE AND EFFORT</h3>
           <ul className="rules-model-list">
             <Pick label="Default engine" saved={defaults.engine ?? ''} empty="Claude Code" options={PROVIDERS.filter((p) => p !== 'custom' && p !== 'claude').map((p) => ({ value: p, text: providerInfo(p).label }))} set={(engine) => api.setDefaultEngine(engine as Provider | null)} onSaved={saved} />
+            <ModePick saved={defaults.mode} onSaved={saved} />
             <Pick label="Claude Code effort" saved={defaults.effort ?? ''} empty="its own" options={EFFORTS.map((e) => ({ value: e, text: e }))} set={(effort) => api.setDefaultEffort(effort as Effort | null)} onSaved={saved} />
           </ul>
           {defaults.engine !== undefined && (!providerInfo(defaults.engine).hooks || !providerInfo(defaults.engine).mcp) && (

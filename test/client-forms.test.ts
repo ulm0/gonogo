@@ -6,6 +6,7 @@ import {
   callOf,
   chooseCustom,
   chooseEngine,
+  withRoomDefaults,
   choosePosition,
   CUSTOM_ROLE,
   editRequest,
@@ -101,6 +102,15 @@ describe('staffing a seat, no position or a custom command', () => {
     expect(open({ mode: 'hire', custom: true })).toMatchObject({ provider: 'custom', role: CUSTOM_ROLE });
     expect(open({ mode: 'hire', position: 'flight' })).toMatchObject({ position: '', name: '' });
     expect(open({ mode: 'hire' })).toMatchObject({ provider: 'claude', position: '' });
+  });
+
+  it('opens with the room\'s default mode (an engine without modes keeps ask; bypass is chosen but not confirmed), and leaves a form that was touched alone', () => {
+    expect(withRoomDefaults(EMPTY, { mode: 'acceptEdits' })).toMatchObject({ mode: 'acceptEdits', confirm: false });
+    expect(withRoomDefaults(EMPTY, { mode: 'bypassPermissions' })).toMatchObject({ mode: 'bypassPermissions', confirm: false });
+    expect(withRoomDefaults(EMPTY, { engine: 'opencode', mode: 'auto' })).toMatchObject({ provider: 'opencode', mode: 'default' });
+    expect(withRoomDefaults(EMPTY, {})).toEqual(EMPTY);
+    const touched = { ...EMPTY, name: 'ana' };
+    expect(withRoomDefaults(touched, { mode: 'auto' })).toBe(touched);
   });
 
   it('opens an edit with the values of the agent', () => {

@@ -185,6 +185,19 @@ describe('the route of a room', () => {
       .map((f) => readFileSync(join(home, 'black-box', f), 'utf8'))
       .join('\n');
 
+  it('the room default mode: auto and bypass are set by the Director\'s login, never by a key, a terminal or an unmarked caller; a milder mode or clearing is open', async () => {
+    for (const actor of [undefined, 'key:abc123', 'tui', 'session; x']) {
+      for (const body of [{ mode: 'auto' }, { mode: 'bypassPermissions', confirmBypass: true }]) expect((await call('PUT', '/api/models/mode', body, actor)).status, `${String(actor)} ${JSON.stringify(body)}`).toBe(403);
+      expect((await call('PUT', '/api/models/mode', { mode: 'acceptEdits' }, actor)).status).toBe(200);
+      expect((await call('PUT', '/api/models/mode', { mode: null }, actor)).status).toBe(200);
+    }
+    for (const actor of ['session', 'token', 'socket']) {
+      expect((await call('PUT', '/api/models/mode', { mode: 'auto' }, actor)).json, actor).toMatchObject({ mode: 'auto' });
+      expect((await call('PUT', '/api/models/mode', { mode: 'bypassPermissions' }, actor)).status).toBe(400);
+      expect((await call('PUT', '/api/models/mode', { mode: 'bypassPermissions', confirmBypass: true }, actor)).json, actor).toMatchObject({ mode: 'bypassPermissions' });
+    }
+  });
+
   it('lists the eight keys with their source, takes a value from a session, and says where it came from after', async () => {
     const list = await call('GET', '/api/settings');
     expect(list.status).toBe(200);

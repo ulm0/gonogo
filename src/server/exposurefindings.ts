@@ -47,6 +47,8 @@ export interface FindingsInput {
   now: number;
   /** The agents of the running rooms. */
   agents: ReadonlyArray<{ room: string; name: string; mode: string; cleanRoom: boolean }>;
+  /** The rooms whose default permission mode for new agents is set (models.json). */
+  roomModes: ReadonlyArray<{ room: string; mode: string }>;
   /** Rooms whose project folder is or holds gonogo's home. */
   folders: ReadonlyArray<{ room: string }>;
   updateChecksOff: boolean;
@@ -86,6 +88,9 @@ export function findingsOf(input: FindingsInput): Finding[] {
   }
   for (const agent of input.agents.filter((a) => UNATTENDED_MODES.has(a.mode) && !a.cleanRoom)) {
     add('agent-unattended', 'medium', `${agent.name} (room ${agent.room}) works without asking (${agent.mode}) outside a Clean Room: it can change anything its user can.`, `Put ${agent.name} in a Clean Room, or set its mode to ask first.`, `${agent.room}/${agent.name}`);
+  }
+  for (const room of input.roomModes.filter((r) => UNATTENDED_MODES.has(r.mode))) {
+    add('room-mode-unattended', 'medium', `The default for new agents in room ${room.room} is ${room.mode}: every hire from the form starts working without asking.`, 'Set the default permission mode back to ask in Flight Rules, DEFAULTS, or give each hire its own mode.', room.room);
   }
   for (const folder of input.folders) {
     add('folder-holds-home', 'medium', `The project folder of room ${folder.room} is or holds gonogo's own folder: its agents can read and change gonogo's settings and keys without asking.`, 'Choose your project folder in Flight Rules, Room, Project folder.', folder.room);

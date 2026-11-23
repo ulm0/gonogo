@@ -15,6 +15,7 @@ import {
   callOf,
   chooseCustom,
   chooseEngine,
+  withRoomDefaults,
   choosePosition,
   editRequest,
   engineHint,
@@ -252,8 +253,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   useEffect(() => {
     if (preselected.current || form.mode !== 'hire' || roomModels === null) return;
     preselected.current = true;
-    const engine = roomModels.engine;
-    if (engine !== undefined) setValues((v) => (v.provider === 'claude' && v.name === '' && v.role === '' ? chooseEngine(v, engine) : v));
+    setValues((v) => withRoomDefaults(v, roomModels));
   }, [roomModels, form.mode]);
   const formRef = useRef<HTMLFormElement | null>(null);
   const bypassTile = useRef<HTMLButtonElement | null>(null);

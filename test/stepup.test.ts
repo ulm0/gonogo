@@ -77,6 +77,17 @@ describe('a hire', () => {
   });
 });
 
+describe('the room default permission mode', () => {
+  it('auto and bypassPermissions ask for the password again; clearing it, ask or accept edits do not; the body decides', () => {
+    expect(bodyMatters('PUT', '/api/models/mode')).toBe(true);
+    expect(bodyMatters('PUT', '/api/models/effort')).toBe(false);
+    for (const mode of ['auto', 'bypassPermissions']) expect(stepUpReason('PUT', '/api/models/mode', { mode, confirmBypass: true })).toBe('setting the room to work without asking');
+    expect(stepUpReason('PUT', '/api/models/mode', null)).toBe('setting the room to work without asking');
+    for (const mode of ['acceptEdits', 'default', null]) expect(stepUpReason('PUT', '/api/models/mode', { mode })).toBeNull();
+    expect(stepUpReason('GET', '/api/models', null)).toBeNull();
+  });
+});
+
 describe('the rest of the list, and what is not on it', () => {
   it('knows which requests have a body that decides', () => {
     expect(bodyMatters('POST', '/api/agents')).toBe(true);

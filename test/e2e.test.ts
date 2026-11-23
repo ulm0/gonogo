@@ -720,6 +720,9 @@ describe('end to end with the stand-in agent', () => {
     expect((await api(h, 'PUT', '/api/models/effort', { effort: 'high' })).status).toBe(200);
     const frame = await page.waitFrame((f) => f.t === 'models', 5000, 'the models frame', from);
     expect(frame).toEqual({ t: 'models', models: { models: {}, positions: {}, effort: 'high' } });
+    expect(await api(h, 'PUT', '/api/models/mode', { mode: 'bypassPermissions', confirmBypass: true })).toMatchObject({ status: 403 }); // no Director login marker on this socket
+    expect((await api(h, 'PUT', '/api/models/mode', { mode: 'acceptEdits' })).status).toBe(200);
+    expect((await api(h, 'GET', '/api/models')).body).toMatchObject({ mode: 'acceptEdits', effort: 'high' });
   });
 
   it('2. terminal: snapshot, binary frames, input, resize, size ownership', async () => {
