@@ -2124,3 +2124,73 @@
 .commission-note[open] > summary::before {
   content: '▾';
 }
+
+/* the banner of an insecure setup: rows of severity, text with its fix, Dismiss; on a phone the key goes under the words */
+.exposure-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 24px 0;
+  padding: 10px 14px;
+}
+
+.exposure-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.exposure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exposure-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+
+.exposure-text {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.exposure-text p {
+  margin: 0;
+}
+
+.exposure-more > summary {
+  list-style: none;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.exposure-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.exposure-more > summary::before {
+  content: '▸ ';
+}
+
+.exposure-more[open] > summary::before {
+  content: '▾ ';
+}
+
+.exposure-more .exposure-list {
+  margin-top: 8px;
+}
+
+@media (max-width: 700px) {
+  .exposure-banner {
+    margin: 8px 12px 0;
+  }
+}

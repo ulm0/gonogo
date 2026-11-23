@@ -461,6 +461,21 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.locator('.patch-input').waitFor({ timeout: 3000 });
   });
   await page.keyboard.press('Escape');
+  // the banner of an insecure setup: the stand-in install has nothing open, so the list is stood in (the texts are the server's own kind: plain words, names and counts)
+  const findings = [
+    { id: 'plain-http', severity: 'high', text: 'This page is reached over plain http from another computer: the login and the keys travel in the clear.', fix: 'Put gonogo behind https (a reverse proxy or a tunnel), or reach it only from this computer.' },
+    { id: 'public-name-no-mfa', severity: 'medium', text: 'gonogo.example.org reaches this install from the internet and the login has no second factor.', fix: 'Turn on a second factor in Flight Rules, Security.' },
+    { id: 'agent-unattended-aaaaaaaaaaaa', severity: 'medium', text: 'ana runs without asking before each tool.', fix: 'Set its permissions to Ask in its edit form.' },
+    { id: 'update-checks-off', severity: 'info', text: 'The check for a newer gonogo is off.', fix: 'Turn it on in Flight Rules, System and update.' },
+    { id: 'docker-socket', severity: 'info', text: 'The Docker socket is mounted in this container.', fix: 'Remove the mount if you do not use Update here.' },
+  ];
+  await page.route('**/api/exposure/findings', (route) => route.fulfill({ json: { findings } }));
+  await view(page, group, 'insecure-setup banner', async () => {
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.exposure-banner').waitFor({ timeout: 10_000 });
+  });
+  await view(page, group, 'insecure-setup banner: the rest open', () => page.locator('.exposure-more > summary').click({ timeout: 3000 }), true);
+  await page.unroute('**/api/exposure/findings');
   await view(page, group, 'hire form', async () => {
     // the key is in the room view now (it was in the top bar): go back to the room first
     await page.goto(`${base}/r/main/`);

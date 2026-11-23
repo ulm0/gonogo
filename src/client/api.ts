@@ -74,6 +74,7 @@ import type {
   PayloadDefaults,
   ProjectFolderCheck,
   ProjectFolderView,
+  ExposureFindingView,
   RoomKeysView,
   RuntimeSettingKey,
   RuntimeSettingRow,
@@ -104,6 +105,7 @@ import type {
   SemanticView,
 } from '../shared/protocol.js';
 import { withBase } from './base.js';
+import { EXPOSURE_REFRESH } from './exposureModel.js';
 import {
   API_PREFIX,
   RECONNECT_DELAYS_MS,
@@ -218,6 +220,8 @@ async function callOnce(method: string, path: string, body?: unknown): Promise<u
       diagnostics === undefined ? {} : { diagnostics },
     );
   }
+  // a write may open or close something the banner of the insecure setup lists
+  if (method !== 'GET' && typeof window !== 'undefined') window.dispatchEvent(new Event(EXPOSURE_REFRESH));
   return parsed;
 }
 
@@ -1535,10 +1539,10 @@ export interface AccountView {
 /** One call to `/api/auth/...`: the supervisor's own route (a room has none), so the path is absolute and the session cookie is the credential. */
 const authCall = (method: string, path: string, body?: unknown): Promise<unknown> => viaStepUp(() => authCallOnce(method, path, body));
 
-async function authCallOnce(method: string, path: string, body?: unknown): Promise<unknown> {
+async function authCallOnce(method: string, path: string, body?: unknown, base = '/api/auth'): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(`/api/auth${path}`, {
+    response = await fetch(`${base}${path}`, {
       method,
       headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -1648,4 +1652,23 @@ function toAutoUpdate(value: unknown): AutoUpdateView {
   const record = asRecord(value);
   if (record === null || typeof record.enabled !== 'boolean' || !Array.isArray(record.windows) || !Array.isArray(record.skipped)) throw failure('The server sent an answer gonogo does not understand.');
   return value as AutoUpdateView;
+}
+
+/** The banner's list. null when this login may not read it (a key, a terminal login: 403) or it cannot be read: the banner then shows nothing. */
+export async function exposureFindings(): Promise<ExposureFindingView[] | null> {
+  try {
+    const list = asRecord(await authCallOnce('GET', '/findings', undefined, '/api/exposure'))?.findings;
+    return Array.isArray(list) ? (list as ExposureFindingView[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Dismisses one finding for good. A 400 is not an error: it was not a current finding (it has gone), and the list is read again. */
+export async function dismissExposure(id: string): Promise<void> {
+  try {
+    await authCallOnce('POST', '/dismiss', { id }, '/api/exposure');
+  } catch (e) {
+    if ((e as ApiFailure).status !== 400) throw e;
+  }
 }

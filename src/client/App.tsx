@@ -30,6 +30,7 @@ import { MAIN_PATH } from './base.js';
 import { copyText } from './uplink.js';
 import { SERVER_GONE_TEXT } from './wording.js';
 import { inMain, ROLLOUT_DISMISSED_KEY, ROLLOUT_SHOW, useNewer } from './newer.js';
+import { ExposureBanner } from './ExposureBanner.js';
 import { SetupStrip } from './SetupStrip.js';
 import { PhoneBar, TopBar } from './TopBar.js';
 import './shell.css';
@@ -419,6 +420,7 @@ function Office(): ReactElement {
     <>
       <TopBar phone={phone} onPanel={() => setPanel(true)} />
       <SetupStrip />
+      <ExposureBanner />
       <GoneStrip />
       <RolloutStrip />
       <OtherRoomStrip />

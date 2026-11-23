@@ -2915,3 +2915,11 @@ export interface RecorderCommitRequest {
   message: string;
   scope: RecorderScope;
 }
+
+/** One thing about how this install is set up that the Director should know (GET /api/exposure/findings, the banner under the top bar). Plain words; names, hosts and counts only. */
+export interface ExposureFindingView {
+  id: string;
+  severity: 'high' | 'medium' | 'info';
+  text: string;
+  fix: string;
+}
