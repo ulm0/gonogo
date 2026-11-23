@@ -87,17 +87,17 @@ The version label can be written by anyone who can push the tag, so it proves no
 |---|---|---|
 | Verified | signed by this repository's image workflow for this release's tag (`--source-ref refs/tags/v<version>`) | update goes on |
 | No attestation, none owed | image from before 0.8.0, or not `ghcr.io/ulm0/gonogo` (own build, mirror) | refused with reason; key **Update anyway (no attestation)**; Downlink notes it. Auto-update never takes it |
-| Could not check | `gh` has no GitHub login (the common case in a container) | key **Update anyway (could not check)**. Auto-update never takes it |
+| Could not check | GitHub's public API would not give the bundle (rate limit of 60 an hour per address, no network) AND `gh` has no GitHub login | key **Update anyway (could not check)**. Auto-update never takes it |
 | Failed | attestation does not verify, other signer or tag, GitHub unreachable, `gh` missing, or no attestation for a release from 0.8.0 on | refused, no override; Downlink says why; nothing changed |
 
-`gh attestation verify` refuses to run without a GitHub login, even for a public repo ("To get started with GitHub CLI, please run: gh auth login"; `--bundle-from-oci` does not avoid it). Provide one:
+gonogo fetches the attestation bundles of the image's digest from GitHub's public API (`GET /repos/ulm0/gonogo/attestations/<digest>`) with **no login**, hands them to `gh attestation verify --bundle` and `gh` checks them offline: the signature chain, this repository's image workflow as signer, this release's tag, and that the bundle is about this very digest. Nothing in the bundle is trusted before `gh` has checked it. The anonymous API allows 60 requests an hour per address; one update uses one request per digest. A login lifts the limit and is the fallback when the anonymous request is refused:
 
 - `gh auth login` once from a console of room main (gonogo looks in `<home>/gh`, else `~/.config/gh`), or
-- `GH_TOKEN` in the container environment; a token with **no permissions** is enough.
+- `GH_TOKEN` in the container environment (a token with **no permissions** is enough); gonogo then sends the request signed in.
 
-**A `GH_TOKEN` or `GITHUB_TOKEN` in the container environment also reaches every agent not in a Clean Room.** Prefer the console login, or a fine-grained token with no permissions, never one with repository access.
+**A `GH_TOKEN` or `GITHUB_TOKEN` in the container environment also reaches every agent not in a Clean Room.** The default needs none: prefer no token, or a fine-grained one with no permissions, never one with repository access.
 
-Without a login every update is "no way to check": the click offers **Update anyway** and **auto-update never runs** (Flight Rules says why). `gh` runs with a small environment (its login, `PATH`, a proxy), no shell, a time limit, and needs `api.github.com` and the sigstore trust root. **UNDO is not verified** (the previous image already ran here). It proves the image came from that repository's workflow, not that the code is good, and cannot protect a compromised repository or account.
+Only when the anonymous request is refused (rate limit, no network) and there is no login either is an update "no way to check": the click offers **Update anyway** and **auto-update never runs** (Flight Rules says why). `gh` runs with a small environment (its login if any, `PATH`, a proxy), no shell, a time limit, and needs `api.github.com` and the sigstore trust root. **UNDO is not verified** (the previous image already ran here). It proves the image came from that repository's workflow, not that the code is good, and cannot protect a compromised repository or account.
 
 ## Auto-update (Docker, off unless you turn it on)
 

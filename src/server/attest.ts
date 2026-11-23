@@ -14,6 +14,10 @@
  * a command line.
  */
 import { execFile } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readCapped } from './rollout.js';
 
 export const OFFICIAL_IMAGE = 'ghcr.io/ulm0/gonogo';
 export const SOURCE_REPO = 'ulm0/gonogo';
@@ -77,8 +81,39 @@ export function ghEnv(from: NodeJS.ProcessEnv, configDir?: string): Record<strin
   return out;
 }
 
+const BUNDLES_MAX_BYTES = 5 * 1024 * 1024;
+const BUNDLES_MAX = 30;
+const BUNDLES_MS = 15_000;
+
+/**
+ * The attestation bundles of a digest from GitHub's public API, with no login (60 requests an hour per address; a token in `token` buys the higher rate).
+ * `gh attestation verify --bundle` needs no login: the login is only for FETCHING the bundle. Nothing in a bundle is trusted here: gh checks its signature
+ * chain, the signer, the source ref, the repository and that it is about this very digest. null: none could be fetched (the reason is for the logs).
+ */
+async function fetchBundles(digest: string, doFetch: typeof fetch, token: string | null): Promise<{ bundles: string[] } | { none: 'missing' | 'unavailable'; why: string }> {
+  try {
+    const res = await doFetch(`https://api.github.com/repos/${SOURCE_REPO}/attestations/${digest}`, {
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'gonogo-attest', 'x-github-api-version': '2022-11-28', ...(token === null ? {} : { authorization: `Bearer ${token}` }) },
+      signal: AbortSignal.timeout(BUNDLES_MS),
+      // a redirect is somebody else's answer: it is not followed
+      redirect: 'error',
+    });
+    if (res.status === 404) return { none: 'missing', why: 'HTTP 404' };
+    if (res.status !== 200) return { none: 'unavailable', why: `GitHub answered ${res.status}${res.status === 403 || res.status === 429 ? ' (rate limit: set GH_TOKEN or log in for a higher one)' : ''}` };
+    // read with the cap, not after it: a body that never ends is cut at 5 MiB
+    const text = await readCapped(res, BUNDLES_MAX_BYTES);
+    if (text === null) return { none: 'unavailable', why: 'GitHub answered with more than 5 MiB' };
+    const list = (JSON.parse(text) as { attestations?: unknown }).attestations;
+    if (!Array.isArray(list)) return { none: 'unavailable', why: 'GitHub answered with no list of attestations' };
+    const bundles = list.slice(0, BUNDLES_MAX).map((item) => (typeof item === 'object' && item !== null ? (item as { bundle?: unknown }).bundle : undefined)).filter((b): b is object => typeof b === 'object' && b !== null).map((b) => JSON.stringify(b));
+    return bundles.length === 0 ? { none: 'missing', why: 'no attestations found' } : { bundles };
+  } catch (error) {
+    return { none: 'unavailable', why: error instanceof Error ? error.message : 'GitHub could not be reached' };
+  }
+}
+
 /** `digests` are the registry digests the pulled image carries for `repo` (RepoDigests). One that verifies is enough. */
-export async function verifyImage(repo: string, digests: readonly string[], options: { run?: Run; env?: NodeJS.ProcessEnv; configDir?: string; /** The version being installed (x.y.z): its release tag is demanded of the attestation, and from FIRST_ATTESTED on a missing attestation is a failure. */ version?: string } = {}): Promise<Attestation> {
+export async function verifyImage(repo: string, digests: readonly string[], options: { run?: Run; env?: NodeJS.ProcessEnv; configDir?: string; /** Fetches the bundles with no login (fetch of the process in production; a test hands its own; absent: only gh's own fetch, with its login). */ fetch?: typeof fetch; /** The version being installed (x.y.z): its release tag is demanded of the attestation, and from FIRST_ATTESTED on a missing attestation is a failure. */ version?: string } = {}): Promise<Attestation> {
   // a version that is given and is not x.y.z is a failure, never a reason to check less (no tag to demand, nothing "owed")
   if (options.version !== undefined && !/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(options.version)) return { kind: 'failed', why: 'the version to verify is not a release number' };
   if (repo !== OFFICIAL_IMAGE) return { kind: 'unattested', why: `only ${OFFICIAL_IMAGE} can be checked; this container runs ${repo}` };
@@ -92,12 +127,40 @@ export async function verifyImage(repo: string, digests: readonly string[], opti
   const ref = version === null ? [] : ['--source-ref', `refs/tags/v${version}`];
   let unattested: string | null = null;
   let failed: string | null = null;
+  const token = (options.env ?? process.env).GH_TOKEN?.trim() || (options.env ?? process.env).GITHUB_TOKEN?.trim() || null;
   for (const digest of valid) {
-    const result = await run('gh', ['attestation', 'verify', `oci://${OFFICIAL_IMAGE}@${digest}`, '--repo', SOURCE_REPO, '--signer-workflow', SIGNER_WORKFLOW, ...ref], env);
+    // with no login: the bundles are fetched from the public API and gh verifies them offline; when that cannot be done gh fetches them itself, as it always did
+    let dir: string | null = null;
+    let bundleArgs: string[] = [];
+    if (options.fetch !== undefined) {
+      const got = await fetchBundles(digest, options.fetch, token);
+      if ('bundles' in got) {
+        // no room for the file (a full disk, no temp folder): gh fetches the bundles itself, as before, and nothing is left behind
+        try {
+          dir = await mkdtemp(join(tmpdir(), 'gonogo-attest-'));
+          const file = join(dir, 'bundles.jsonl');
+          await writeFile(file, `${got.bundles.join('\n')}\n`, { mode: 0o600 });
+          bundleArgs = ['--bundle', file];
+        } catch {
+          if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+          dir = null;
+        }
+      } else if (got.none === 'missing') {
+        if (owed) failed = `${digest.slice(0, 19)} has no attestation, and every image since ${FIRST_ATTESTED} has one`;
+        else unattested = `${digest.slice(0, 19)} has no attestation: it was published before they were made`;
+        continue;
+      }
+    }
+    let result: RunResult;
+    try {
+      result = await run('gh', ['attestation', 'verify', `oci://${OFFICIAL_IMAGE}@${digest}`, ...bundleArgs, '--repo', SOURCE_REPO, '--signer-workflow', SIGNER_WORKFLOW, ...ref], env);
+    } finally {
+      if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
     if (result.code === 0) return { kind: 'verified', digest };
     if (result.missing === true) return { kind: 'failed', why: 'gh is not installed in this image, so the image cannot be checked' };
     // no login at all: not a bad image, a gonogo that cannot check (gh itself says so before it asks GitHub anything)
-    if (/gh auth login|GH_TOKEN environment variable/i.test(result.out)) return { kind: 'unchecked', why: 'gh has no GitHub login in this container, so attestations cannot be fetched: log in from a console of room main (`gh auth login`; the login stays in that room folder) or set GH_TOKEN in the container (a token with no permissions is enough)' };
+    if (/gh auth login|GH_TOKEN environment variable/i.test(result.out)) return { kind: 'unchecked', why: options.fetch === undefined ? 'gh has no GitHub login here: gh auth login, or set GH_TOKEN' : 'GitHub refused the anonymous check (rate limit or no network) and gh has no login: gh auth login, or set GH_TOKEN' };
     // gh answers HTTP 404 for a digest that has no attestation at all (an image from before they were made): the one case a Director may confirm
     if (/HTTP 404|no attestations? found/i.test(result.out) && !/verification failed/i.test(result.out)) {
       if (owed) failed = `${digest.slice(0, 19)} has no attestation, and every image since ${FIRST_ATTESTED} has one`;

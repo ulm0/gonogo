@@ -123,7 +123,7 @@ export function cachedLatest(home: string): string | null {
 }
 
 /** The body of an answer, or null when it is longer than `max` bytes. */
-async function readCapped(res: Response, max: number): Promise<string | null> {
+export async function readCapped(res: Response, max: number): Promise<string | null> {
   const reader = res.body?.getReader();
   if (reader === undefined) return null;
   const chunks: Uint8Array[] = [];
