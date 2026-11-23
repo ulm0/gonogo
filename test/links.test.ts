@@ -1,7 +1,8 @@
 // Docking 2 link views: the words of the card line, the board and the attachments.
 import { describe, expect, it } from 'vitest';
 import { attachmentHref, boardRows, canRecall, canReturn, costLine, dueLine, incoming, linkLine, outgoing, overCap, progressLine, reviewCount, trailLine, waitingLine } from '../src/client/links.js';
-import type { DockView, LinkView } from '../src/shared/protocol.js';
+import { groupThreads, linkOfSubject } from '../src/client/threads.js';
+import type { ActivityItem, DockView, LinkView } from '../src/shared/protocol.js';
 
 const link = (patch: Partial<LinkView> = {}): LinkView => ({ id: 'dl_1', kind: 'task', role: 'sender', peer: 'd1', peerName: 'lab', mine: 't4', theirs: 't9', title: 'Fix the login', state: 'accepted', theirStatus: 'doing', stale: false, waiting: 0, updatedAt: 100, onward: false, trail: [], ...patch });
 
@@ -117,5 +118,47 @@ describe('the line of a link on a card (rendered)', () => {
     expect(await render(link({ cost: { usd: 5.2, cap: 5 } }))).toContain('past the cap');
     expect(await render(link({ cost: null }))).toContain('cost not reported');
     expect(await render(link({ role: 'receiver' }))).not.toContain('cost');
+  });
+});
+
+describe('conversations by link', () => {
+  const msg = (id: string, from: string, to: string, subject: string, inReplyTo: string | null = null): ActivityItem => ({ id, from, to, subject, body: 'b', at: Number(id.slice(1)), inReplyTo, truncated: false, kind: 'message', status: 'delivered' }) as unknown as ActivityItem;
+  const ID = 'dl_0123456789abcdef';
+  const items = [msg('m3', 'cara@lab', 'flight', `Re: [${ID}] Fix the login`), msg('m2', 'flight', 'ana', `[${ID}] Fix the login`), msg('m1', 'user', 'flight', 'Something else')];
+  it('puts every message of a known link in one conversation, whoever writes, titled without the tag', () => {
+    const threads = groupThreads(items, new Set([ID]));
+    expect(threads).toHaveLength(2);
+    const linked = threads.find((t) => t.link === ID);
+    expect(linked?.items.map((i) => i.id)).toEqual(['m2', 'm3']);
+    expect(linked?.title).toBe('Fix the login');
+    expect(linked?.subject).toContain(ID); // a reply keeps the tag, so it joins the conversation
+  });
+  it('does not group on a tag this station does not hold: an agent cannot write itself into a link', () => {
+    const threads = groupThreads(items, new Set());
+    expect(threads.every((t) => t.link === undefined)).toBe(true);
+    expect(threads).toHaveLength(3);
+  });
+  it('reads the id after any Re:, and only a well-formed one', () => {
+    expect(linkOfSubject(`Re: Re: [${ID}] x`)).toBe(ID);
+    expect(linkOfSubject('[dl_xyz] x')).toBeNull();
+    expect(linkOfSubject(`x [${ID}]`)).toBeNull();
+  });
+});
+
+describe('the board (rendered)', () => {
+  it('shows the sent ones to review first with their count, and the held ones under Held', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { createElement } = await import('react');
+    const { LinkBoard } = await import('../src/client/LinkBoard.js');
+    const { setLinks } = await import('../src/client/linksData.js');
+    setLinks([link({ id: 'dl_1', title: 'Open one' }), link({ id: 'dl_2', title: 'Delivered one', state: 'delivered', updatedAt: 1 }), link({ id: 'dl_3', role: 'receiver', title: 'Held one' })]);
+    const html = renderToString(createElement(LinkBoard));
+    expect(html).toMatch(/1[^0-9]*to review/);
+    expect(html.indexOf('Delivered one')).toBeLessThan(html.indexOf('Open one'));
+    expect(html).not.toContain('Held one');
+    expect(html).toMatch(/Sent[^0-9]*2/);
+    expect(html).toMatch(/Held[^0-9]*1/);
+    setLinks([]);
+    expect(renderToString(createElement(LinkBoard))).toBe('');
   });
 });

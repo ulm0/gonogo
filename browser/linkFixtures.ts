@@ -25,3 +25,8 @@ export const LINKS = [
     trail: [{ author: 'dk2', seq: 1, at: min(15), kind: 'offer', by: 'boss@ops', text: 'Check the install on arm64' }],
   },
 ];
+
+export const OUTBOUND = [
+  { link: 'dl_aaaaaaaaaaaaaaaa', dock: 'dk1', kind: 'offer', at: min(300), text: 'Write the release notes\n\nOne page, for 0.15. Keep it to what changed for the person who uses gonogo.', ackedAt: min(299) },
+  { link: 'dl_aaaaaaaaaaaaaaaa', dock: 'dk1', kind: 'accept', at: min(5), text: 'accepted: thank you', ackedAt: null },
+];

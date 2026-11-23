@@ -9,7 +9,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { LINKS } from './linkFixtures.js';
+import { LINKS, OUTBOUND } from './linkFixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { duplicates, geometry } from './geometry.js';
@@ -193,6 +193,7 @@ async function dockingTwo(page: Page, group: string): Promise<void> {
   });
   await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'h1', dock: 'dk1', station: 'lab', from: 'flight', at: Date.now(), task: { title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour. Check the clock handling in the session code and add a test.' } }] } }));
   await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { handoff: 'ask', incoming: 'auto', autoAccept: 'off', reportCost: 'off', serve: 'off', staleHours: 24 } }));
+  await page.route('**/api/docking/*/outbound', (route) => route.fulfill({ json: { events: OUTBOUND } }));
   await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
   await page.goto(`${base}/r/main/`);
   await page.locator('.topbar').waitFor({ timeout: 30_000 });
@@ -203,6 +204,8 @@ async function dockingTwo(page: Page, group: string): Promise<void> {
   await page.locator('.lay-row', { hasText: 'Docking: other stations' }).locator('summary').first().click({ timeout: 3000 });
   await view(page, group, 'docking 2: the docks', () => page.locator('.dk-rules').first().waitFor({ timeout: 5000 }), true);
   await view(page, group, 'docking 2: the rules of a dock', () => page.locator('.dk-rules > summary').first().click({ timeout: 3000 }), true);
+  await view(page, group, 'docking 2: what left for a dock', () => page.locator('.dk-outbound > summary').first().click({ timeout: 3000 }), true);
+  await view(page, group, 'docking 2: the board across stations', () => page.locator('.dk-board').scrollIntoViewIfNeeded({ timeout: 3000 }), true);
 }
 
 async function updateFlow(page: Page, group: string): Promise<void> {

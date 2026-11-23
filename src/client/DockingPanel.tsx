@@ -11,6 +11,8 @@ import { DOCKS_MAX } from '../shared/protocol.js';
 import type { DockCode, DockView, Task, TaskStatus } from '../shared/protocol.js';
 import * as api from './api.js';
 import { DockRulesBlock } from './DockRulesBlock.js';
+import { LinkBoard } from './LinkBoard.js';
+import { OutboundBlock } from './OutboundBlock.js';
 import { addressProblem, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, suggestedAddress, toneOf, undockedText, wordOf } from './docking.js';
 import { useNow, useStore } from './store.js';
 import { copyText } from './uplink.js';
@@ -234,6 +236,7 @@ function Row({ dock, now, onNotice }: { dock: DockView; now: number; onNotice(te
         )}
       </details>
       <DockRulesBlock dock={dock} />
+      <OutboundBlock dock={dock} />
       <div className="win-buttons">
         <button type="button" ref={key} className="btn" data-kind="danger" aria-label={`Undock ${dock.name}`} aria-disabled={busy || undefined} onClick={() => setConfirming(true)}>
           Undock
@@ -316,6 +319,7 @@ export function DockingPanel(): ReactElement {
           </ul>
         )}
       </div>
+      <LinkBoard />
       <p className="hint up-notice" role="status">
         {notice}
       </p>

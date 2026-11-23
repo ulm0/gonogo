@@ -163,3 +163,59 @@
 .dk-always input {
   margin-top: 3px;
 }
+
+.dk-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.dk-board-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
+.dk-board-dir {
+  display: flex;
+  gap: 8px;
+}
+
+.dk-board-bar .field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.dk-board-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dk-board-title {
+  margin: 0 0 4px;
+}
+
+.dk-outbound-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dk-outbound-head,
+.dk-outbound-text {
+  margin: 0;
+}
+
+.dk-outbound-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
