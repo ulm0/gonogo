@@ -57,7 +57,7 @@ export const ROOM_STATE_FILES: readonly string[] = [
   'tasks.json', 'telegram-poll.json', 'telemetry.jsonl', 'triggers.1.jsonl', 'triggers.jsonl', 'uplinks.json', 'worktrees',
 ];
 /** The supervisor's own files and folders: they stay at the root whatever the layout, and never say where main is. */
-export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'runtime-settings-global.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run', 'main-migration.json', 'knowledge'];
+export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'exposure-dismissed.json', 'runtime-settings-global.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run', 'main-migration.json', 'knowledge'];
 /** Names that only exist inside another folder (an agent's, or `run/`): never at a home's root, so they say nothing about the layout. */
 export const NESTED_FILES: readonly string[] = ['.seq', 'agy-hooks.json', 'gemini-settings.json', 'inbox-files', 'mcp.json', 'memory.md', 'ptyhost.key', 'ptyhost.log', 'ptyhost.sock', 'settings.json', 'tokens.json', 'update.json'];
 /** Where a room that is running has put something besides those: its socket and token. */
