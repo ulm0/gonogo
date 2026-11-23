@@ -40,3 +40,11 @@ describe('the strip', () => {
     expect(html()).toContain('lab down');
   });
 });
+
+describe('the name of the chip', () => {
+  it('starts with the words on the key (WCAG label in name)', () => {
+    store.setState((s) => ({ ...s, docking: { station: 'main', docks: [dock('lab'), dock('ops')] } }) as never);
+    const html = renderToString(createElement(StatusStrip, { phone: false }));
+    expect(html).toContain('aria-label="Docked: lab, ops. Docked with lab, answering; ops, answering.');
+  });
+});
