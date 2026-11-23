@@ -28,7 +28,7 @@ printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /va
 docker compose up -d && docker compose logs gonogo
 ```
 
-It prints a `gonogo ready:` address and a `gonogo setup:` line (Docker: the logs): open `/setup`, give the setup token, make your account. The token and the setup token are passwords: the server runs shells as you. State is in `~/.gonogo` (`/state/gonogo` in Docker). The port stays on `127.0.0.1`; from another machine use `ssh -L 7777:127.0.0.1:7777 you@host`, and for webhooks see [`docs/https.md`](docs/https.md). New words: [Getting started](https://gonogo.ulm0.com/guide/getting-started#words-you-will-meet).
+It prints a `gonogo ready:` address and a `gonogo setup:` line (Docker: the logs): open `/setup`, give the setup token, make your account. The token and the setup token are passwords: the server runs shells as you. State is in `~/.gonogo` (`/state/gonogo` in Docker). The port stays on `127.0.0.1`; from another machine use `ssh -L 7777:127.0.0.1:7777 you@host`, and for webhooks see [`docs/https.md`](docs/https.md). New words: [Getting started](https://gonogo.ulm0.com/guide/glossary).
 
 [`compose.yaml`](compose.yaml) mounts the host's Docker socket, **which gives the container and every agent in it root over the host** ([Clean Room in the container](docs/guide/docker.md#clean-room-in-the-container)); a plain `docker run` without it is in [Docker](docs/guide/docker.md).
 

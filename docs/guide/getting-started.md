@@ -69,22 +69,8 @@ Open `/setup`, give the setup token, a name and a password of 12+ characters: yo
 
 ## Staff your first console
 
-`+ STAFF A CONSOLE` (or an open cell): pick an engine (Claude Code by default), a name (lowercase letters, digits, hyphens, at most 32), a role, an absolute working directory that exists on the gonogo machine (`~` is not expanded; the form starts with the folder gonogo was started in) and a permission mode ([Permissions](../features/permissions.md); `bypassPermissions` needs a ticked box). At most 24 agents; edits apply at the next restart. Folds: [Payload](../features/payload.md), [Clean Room](../features/clean-room.md), MODEL and CLEARANCE ([Engine Bay](../features/engine-bay.md#model)). `gonogo doctor` lists the agent CLIs found; [Rollout](../features/rollout.md) tells you about a newer gonogo. Docs: <https://gonogo.ulm0.com/>.
+`+ STAFF A CONSOLE` (or an open cell): pick an engine (Claude Code by default), a name (lowercase letters, digits, hyphens, at most 32), a role, an absolute working directory that exists on the gonogo machine (`~` is not expanded; the form starts with the folder gonogo was started in) and a permission mode ([Permissions](../features/permissions.md); `bypassPermissions` needs a ticked box). At most 24 agents; edits apply at the next restart. Folds: [Payload](../features/payload.md), [Clean Room](../features/clean-room.md), MODEL and CLEARANCE ([Engine Bay](../features/engine-bay.md#model)). `gonogo doctor` lists the agent CLIs found; [Rollout](../features/rollout.md) tells you about a newer gonogo. New words? [Glossary](./glossary.md). Docs: <https://gonogo.ulm0.com/>.
 
 **Your first brief.** Type it in the box under the room (it goes to FLIGHT). The answer shows in FLIGHT's console; an agent that messages you shows in the Downlink (the unread count on COMMS).
 
 </div>
-
-## Words you will meet
-
-| Word | Meaning |
-|---|---|
-| **Room** | One gonogo with its own agents, mail, task board and settings. `main` is the first; the page at `/` lists them. |
-| **Console** | One agent: its terminal, its tile in the room, its state. "Staff" a console means hire an agent. |
-| **FLIGHT** | The boss agent, made at the first start. It takes your brief and hands out work. You are the **Director**. |
-| **Brief** | A message you type in the box under the room; it goes to FLIGHT. |
-| **Downlink** | Your inbox: what agents send you and what needs a go or no-go. **COMMS** (INBOX, TRAFFIC, THREADS) shows it and all other mail. |
-| **Flight Rules** | The settings screen (round key with three sliders). **Patch Panel** (Cmd+K or Ctrl+K) jumps to any view or action. |
-| **Propellant** | Token budgets that stop an agent or the room when used up; **Redline** stops loops and error storms. |
-
-More: [The room](./the-room.md).

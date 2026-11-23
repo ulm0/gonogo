@@ -76,6 +76,7 @@ export default defineConfig({
         items: [
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'The room', link: '/guide/the-room' },
+          { text: 'Glossary', link: '/guide/glossary' },
           { text: 'Running in Docker', link: '/guide/docker' },
           { text: 'Exposing it safely (HTTPS)', link: '/https' },
           { text: 'Expose: print the config, then check', link: '/features/expose' },
