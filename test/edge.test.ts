@@ -1760,7 +1760,7 @@ describe('hooks', () => {
       const res = await postHook(port, '/hook/ana/Stop', { headers: { Origin: origin } });
       expect(res.status).toBe(403);
       expect(res.body).toBe('forbidden origin');
-      expect(res.headers['content-type']).toBe('text/plain');
+      expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
     }
     expect(onHookCalls(hubCalls)).toEqual([]);
   });
@@ -4645,7 +4645,7 @@ describe('web: auth, Host and Origin', () => {
       expect(res.status).toBe(allowed ? 200 : 403);
       if (!allowed) {
         expect(res.body).toBe('forbidden host');
-        expect(res.headers['content-type']).toBe('text/plain');
+        expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
       }
     });
 
@@ -4761,7 +4761,7 @@ describe('web: auth, Host and Origin', () => {
       const res = await send(port, { path: '/api/state', headers: { ...bearer(TOKEN), Origin: value } });
       expect(res.status).toBe(403);
       expect(res.body).toBe('forbidden origin');
-      expect(res.headers['content-type']).toBe('text/plain');
+      expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
       expect(res.headers['cache-control']).toBe('no-store');
     });
 
@@ -5037,7 +5037,7 @@ describe('web: static files', () => {
     for (const path of ['/missing.js', '/assets/missing.js', '/.well-known/security.txt']) {
       const res = await send(port, { path });
       expect(res.status, path).toBe(404);
-      expect(res.headers['content-type']).toBe('text/plain');
+      expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
       expect(res.body).toBe('not found');
     }
   });

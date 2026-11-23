@@ -38,6 +38,7 @@ import { addRoom, updateRoom, loadRooms, recordMainHome, roomText, MAIN_ROOM, re
 import type { RoomEntry } from './rooms.js';
 import { exposureProblem, parsePublicUrl } from './exposure.js';
 import { splitAllowed } from './hosts.js';
+import { forbiddenHostText } from './forbiddenhost.js';
 import { hostName } from './web.js';
 
 const DIRECTOR_TOKEN_FILE = 'token';
@@ -935,7 +936,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     // the login pages and /api/auth are the supervisor's own
     if (authHttp.handle(req, res)) return;
     if (proxy.handle(req, res)) return;
-    if (!hostOk(req.headers.host)) return sendText(res, 403, 'forbidden host');
+    if (!hostOk(req.headers.host)) return sendText(res, 403, forbiddenHostText(req.headers.host, req.headers.accept));
     const path = (req.url ?? '').split('?')[0] ?? '';
     const get = req.method === 'GET' || req.method === 'HEAD';
     // the Docker healthcheck: no token, never proxied; 503 until main has been ready once, then 200 for as long as this process runs

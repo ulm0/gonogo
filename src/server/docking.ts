@@ -369,7 +369,7 @@ export function createDocking(options: DockingOptions): Docking {
       // not JSON: an error below
     }
     // a station answers a Host name it was not started for with these two words, and nothing else: say what to do about it
-    if (status === 403 && text.trim() === 'forbidden host') {
+    if (status === 403 && text.trim().split('\n')[0] === 'forbidden host') {
       const host = new URL(url).hostname;
       throw new HubError('unavailable', `${label} does not accept the address ${host}: on that station start gonogo with --allow-host ${host} (or set GONOGO_ALLOWED_HOSTS=${host}); --allow-host ${host}:hooks opens only docking and webhooks to that name`);
     }
