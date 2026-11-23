@@ -50,6 +50,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
     if (typeof flavor === 'string' && FLAVOR_RANK.indexOf(flavor) < FLAVOR_RANK.indexOf(context.roomSandbox ?? 'docker')) return "hiring below the room's sandbox";
     // outside a Clean Room, with a remote control or with keys of its own: more than a plain hire
     if (body.cleanRoom === false) return 'hiring an agent outside a Clean Room';
+    // a Clean Room that keeps its API key inside its container, against the room's setting
+    if (typeof body.cleanRoom === 'object' && body.cleanRoom !== null && (body.cleanRoom as Record<string, unknown>).egress === false) return 'hiring a Clean Room agent that holds its own API key';
     if (given(body.remoteControl)) return 'hiring an agent with remote control';
     if (given(body.keys)) return 'hiring an agent with keys of its own';
     if (given(body.payload) || given(body.permissions)) return 'hiring an agent with a payload or permissions of its own';
@@ -73,6 +75,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   // a default server is a program every agent of the room starts, with the keys in its env
   if (/^\/api\/payload-defaults(\/|$)/.test(path)) return 'the Payload defaults of the room';
   if (/^\/api\/features(\/|$)/.test(path)) return 'the feature switches';
+  // where a Clean Room's API key is held: turning it off puts the key back in the container
+  if (/^\/api\/egress(\/|$)/.test(path)) return 'where a Clean Room keeps its API key';
   // the rules of the room reach every agent at the authority of a system prompt
   if (/^\/api\/rules(\/|$)/.test(path)) return 'the rules of the room';
   if (/^\/api\/(uplinks|relay|docking)(\/|$)/.test(path)) return 'a secret of Uplink, Relay or Docking';

@@ -100,7 +100,7 @@ function kindOf(rest: string): Kind {
   // decoded, because a room's router decodes it (/%68ook is /hook there); suspicious() has already made sure it decodes
   const first = decodeURIComponent(rest.split('/')[1] ?? '');
   // case-insensitive on purpose: a router that folds case must not find an agent's route through here
-  if (['hook', 'mcp'].includes(first.toLowerCase())) return 'closed';
+  if (['hook', 'mcp', 'egress'].includes(first.toLowerCase())) return 'closed';
   // the route the rooms of an install offer each other Telegram updates on (telegramroute.ts) is for the local socket and the other rooms, not for a browser or a tunnel
   const [, , second = '', third = ''] = rest.split('?')[0]!.split('/').map((s) => decodeURIComponent(s).toLowerCase());
   if (first.toLowerCase() === 'api' && second === 'telegram' && third !== '') return 'closed';

@@ -248,6 +248,11 @@ describe('rooms proxy: HTTP', () => {
     expect(main.seen).toHaveLength(0);
   });
 
+  it('the egress proxy is the agents\' route: closed to the browser side, at the root and under a room, in any case or encoding', async () => {
+    for (const path of ['/egress/x/anthropic/v1/messages', '/Egress/x', '/%65gress/x', '/EGRESS', '/r/main/egress/x/anthropic/v1/messages', '/r/a/%45gress/x']) expect((await get(path, director, 'POST', '{}')).status, path).toBe(404);
+    expect(main.seen).toHaveLength(0);
+  });
+
   it('S1: a reserved name cannot be reached or hidden by encoding, case, empty segments or dots: decoded once, same text for both checks', async () => {
     // refused (400) or the supervisor's own: never main
     for (const path of ['/%72ooms', '/%72ooms/health', '/%69nternal/busy', '/api/%72ooms', '//internal/busy', '/internal//busy', '/rooms//health', '/internal/../api/state', '/./internal', '/r%2Fmain/x', '/%2e%2e/rooms', '/a/%2e%2e/b', '/x%5cy', '/x%00y', '/%']) {

@@ -30,6 +30,8 @@ export const RUN_STATE_MAX_AGE_MS = 7 * 24 * 3_600_000;
 export const RUN_STATE_FILE = 'run-state.json';
 export const STARTUP_FILE = 'startup.json';
 export const COAUTHOR_FILE = 'coauthor.json';
+/** The room's egress setting (docs/features/egress.md): whether a Clean Room agent holds no Anthropic key. */
+export const EGRESS_FILE = 'egress.json';
 /** The rules of the room (docs/features/door.md): one text file in the room's home, at most this many bytes. */
 export const RULES_FILE = 'rules.md';
 export const RULES_MAX_BYTES = 8 * 1024;

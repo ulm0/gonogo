@@ -522,6 +522,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
     byToken.delete(current.hash);
     byAgent.delete(name);
     saveTokens();
+    // the proxy's token goes with the agent's: a stopped agent's base URL is worth nothing
+    options.egress?.revoke(name);
     if (current.container !== undefined) removals.set(name, removeContainer(current.container, options.env ?? process.env));
     try {
       unlinkSync(join(agentDir(name), AGENT_TOKEN_FILE));
@@ -716,6 +718,23 @@ export function createLauncher(options: LauncherOptions): Launcher {
       }
       const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const childEnv = buildChildEnv({ base: env, token, seed, keys, gh: await ensureGh() });
+      // Egress (egress.ts): the container holds a placeholder and a base URL, never the Anthropic API key (API-key mode: a subscription token is not swapped)
+      let egressOn = false;
+      if (clean !== null && options.egress !== undefined && (agent.cleanRoom?.egress ?? options.egress.enabled())) {
+        if (moveApiKey) {
+          const proxyToken = options.egress.issue(name, () => {
+            const real = keysOf(agent).ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY;
+            return hasText(real) ? real : undefined;
+          });
+          egressOn = true;
+          childEnv.GONOGO_API_KEY = `gnp_${randomBytes(16).toString('hex')}`;
+          childEnv.ANTHROPIC_BASE_URL = `${agentUrl}${options.egress.basePath(proxyToken)}`;
+          delete childEnv.ANTHROPIC_API_KEY;
+          delete childEnv.CLAUDE_CODE_OAUTH_TOKEN;
+        } else {
+          log.warn(`egress is on for ${name} but it has no Anthropic API key to keep out of its container: nothing changes (a subscription token is not covered)`);
+        }
+      }
       // a Clean Room has no git of the Director's inside: nothing to mark there
       if (clean === null) Object.assign(childEnv, await withCoauthor(agent, childEnv, startDir, base, true));
       if (subagentSetting.mode === 'limit') childEnv[SUBAGENT_LIMIT_ENV] = String(subagentSetting.limit);
@@ -728,7 +747,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
         if (uid === undefined || gid === undefined) throw new Error('Clean Room needs a user id: it runs on macOS and Linux only');
         // by name: docker reads the values from its own environment, so no secret is on the command line
         // The agent's own keys go the same way: the container gets their names, and nothing else of the host's environment.
-        const names = [...new Set([...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS, ...Object.keys(keys)])].filter((variable) => hasText(childEnv[variable]));
+        // with egress on, the real Anthropic key (by any of its names) is not passed at all: the container gets the placeholder and the base URL
+        const kept = (variable: string): boolean => !egressOn || (variable !== 'ANTHROPIC_API_KEY' && variable !== 'CLAUDE_CODE_OAUTH_TOKEN');
+        const names = [...new Set([...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS, ...(egressOn ? ['ANTHROPIC_BASE_URL'] : []), ...Object.keys(keys)])].filter((variable) => kept(variable) && hasText(childEnv[variable]));
         const command: [string, ...string[]] = [file, ...leading, ...claudeArgs];
         const flavor = cleanRoomFlavor(agent.cleanRoom ?? {}, options.defaultSandbox?.());
         const runArgs = buildDockerArgs({ image: cleanRoomImage(agent.cleanRoom ?? {}, env), flavor, uid, gid, place: clean, agentDir: base, names, command });
@@ -775,6 +796,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
         if (live.some((l) => l.name === name && l.generation === v.generation)) continue;
         byToken.delete(v.hash);
         byAgent.delete(name);
+        options.egress?.revoke(name);
       }
       saveTokens();
     },

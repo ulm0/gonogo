@@ -17,6 +17,20 @@ describe('auto-update (it runs code of the publisher unattended)', () => {
   });
 });
 
+describe('Clean Room egress', () => {
+  it('the room setting asks, a read does not; hiring a Clean Room that holds its own key asks, one that follows the room or turns egress on does not', () => {
+    expect(stepUpReason('PUT', '/api/egress', { anthropic: false })).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/egress', { anthropic: true })).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/egress', null)).not.toBeNull();
+    expect(stepUpReason('GET', '/api/egress', null)).toBeNull();
+    expect(stepUpReason('POST', '/api/agents', { name: 'x', cleanRoom: { egress: false } })).not.toBeNull();
+    expect(stepUpReason('POST', '/api/agents', { name: 'x', cleanRoom: { egress: true } })).toBeNull();
+    expect(stepUpReason('POST', '/api/agents', { name: 'x', cleanRoom: {} })).toBeNull();
+    // an edit of the Clean Room setting is an edit of what an agent may do
+    expect(stepUpReason('PATCH', '/api/agents/ana', { cleanRoom: { egress: false } })).not.toBeNull();
+  });
+});
+
 describe('an edit of an agent', () => {
   const edit = (body: Record<string, unknown> | null) => stepUpReason('PATCH', '/api/agents/ana', body);
 

@@ -80,6 +80,12 @@ describe('parseCleanRoom', () => {
     }
   });
 
+  it('takes egress as a boolean beside the image, and nothing else for it', () => {
+    expect(parseCleanRoom({ egress: true }, 'claude')).toEqual({ ok: true, cleanRoom: { egress: true } });
+    expect(parseCleanRoom({ egress: false, image: 'gonogo' }, 'claude')).toEqual({ ok: true, cleanRoom: { image: 'gonogo', egress: false } });
+    for (const egress of ['yes', 1, null, {}]) expect(parseCleanRoom({ egress }, 'claude'), String(egress)).toEqual({ ok: false, error: 'cleanRoom.egress must be true or false' });
+  });
+
   it('refuses what is not a setting, a field it does not know, an image docker would read as an option, and another engine', () => {
     const refused = (value: unknown, provider?: Parameters<typeof parseCleanRoom>[1]): string => {
       const checked = parseCleanRoom(value, provider);
@@ -523,6 +529,93 @@ describe('the launcher starts a Clean Room agent through docker', () => {
     const trust = JSON.parse(await readFile(join(base, 'cleanroom-home', '.claude.json'), 'utf8')) as { projects: Record<string, { hasTrustDialogAccepted: boolean }> };
     expect(trust.projects[join(home, 'cleanroom', 'ana', 'sub')]).toEqual({ hasTrustDialogAccepted: true });
     expect(prepared.spec.env.IS_DEMO).toBe('1');
+  });
+
+  describe('egress: the Anthropic key stays out of the container', () => {
+    const SECRET_OAUTH = 'sk-ant-oat-the-oauth-secret';
+    interface Calls {
+      issued: Array<{ agent: string; key: string | undefined }>;
+      revoked: string[];
+    }
+    const withEgress = async (agent: AgentRecord, room: boolean, extra: Record<string, string> = {}, keys?: Record<string, string>) => {
+      const calls: Calls = { issued: [], revoked: [] };
+      const launcher = createLauncher({
+        homeDir: home,
+        hubUrl: () => 'http://127.0.0.1:7777',
+        seed: false,
+        env: { ...env, ...extra },
+        ...(keys === undefined ? {} : { keys: () => keys }),
+        egress: {
+          enabled: () => room,
+          issue: (name, key) => (calls.issued.push({ agent: name, key: key() }), 'f'.repeat(64)),
+          revoke: (name) => void calls.revoked.push(name),
+          basePath: (token) => `/egress/${token}/anthropic`,
+        },
+      });
+      return { launcher, calls, prepared: await launcher.prepareStart(agent, { generation: 1, flag: null }) };
+    };
+    const named = (args: string[]): string[] => args.flatMap((arg, i) => (args[i - 1] === '-e' && !arg.includes('=') ? [arg] : [])).sort();
+
+    it('on for the room: no real key by any name, in the container, the command line or the docker process; a placeholder and the base URL instead', async () => {
+      const { prepared, calls } = await withEgress(record(), true, { ANTHROPIC_API_KEY: KEY, CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH, AWS_SECRET_ACCESS_KEY: 'not-for-the-container' });
+      const { args, env: childEnv } = prepared.spec;
+      expect(named(args)).toEqual(['ANTHROPIC_BASE_URL', 'COLORTERM', 'GONOGO_API_KEY', 'GONOGO_TOKEN', 'IS_DEMO', 'TERM']);
+      expect(childEnv.ANTHROPIC_BASE_URL).toBe(`http://host.docker.internal:7777/egress/${'f'.repeat(64)}/anthropic`);
+      expect(childEnv.GONOGO_API_KEY).toMatch(/^gnp_[0-9a-f]{32}$/);
+      expect(childEnv.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(childEnv.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+      // nowhere in what the launcher hands to docker: the real key is only in the proxy's closure
+      for (const secret of [KEY, SECRET_OAUTH]) expect(JSON.stringify(prepared.spec), secret).not.toContain(secret);
+      expect(calls.issued).toEqual([{ agent: 'ana', key: KEY }]);
+    });
+
+    it('the proxy gets the key at request time, from the agent\'s Clearance first, else gonogo\'s own environment', async () => {
+      const own = await withEgress(record(), true, { ANTHROPIC_API_KEY: KEY }, { ANTHROPIC_API_KEY: 'sk-ant-from-clearance' });
+      expect(own.calls.issued[0]?.key).toBe('sk-ant-from-clearance');
+      expect(JSON.stringify(own.prepared.spec)).not.toContain('sk-ant-from-clearance');
+      expect(named(own.prepared.spec.args)).not.toContain('ANTHROPIC_API_KEY');
+    });
+
+    it('the agent\'s own setting wins over the room\'s, either way, and with nothing set the room decides', async () => {
+      const off = await withEgress(record({ cleanRoom: { egress: false } }), true, { ANTHROPIC_API_KEY: KEY });
+      expect(off.calls.issued).toEqual([]);
+      expect(off.prepared.spec.env.GONOGO_API_KEY).toBe(KEY);
+      const on = await withEgress(record({ cleanRoom: { egress: true } }), false, { ANTHROPIC_API_KEY: KEY });
+      expect(on.calls.issued).toHaveLength(1);
+      expect(on.prepared.spec.env.GONOGO_API_KEY).not.toBe(KEY);
+      const inherit = await withEgress(record({ cleanRoom: {} }), false, { ANTHROPIC_API_KEY: KEY });
+      expect(inherit.calls.issued).toEqual([]);
+    });
+
+    it('off (the default): the start is exactly what it was, credentials and all', async () => {
+      const plain = await start(record(), { CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH, ANTHROPIC_API_KEY: KEY });
+      const { prepared, calls } = await withEgress(record(), false, { CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH, ANTHROPIC_API_KEY: KEY });
+      expect(calls.issued).toEqual([]);
+      expect(named(prepared.spec.args)).toEqual(named(plain.prepared.spec.args));
+      expect(prepared.spec.env.GONOGO_API_KEY).toBe(KEY);
+      expect(prepared.spec.env.CLAUDE_CODE_OAUTH_TOKEN).toBe(SECRET_OAUTH);
+      expect(prepared.spec.env.ANTHROPIC_BASE_URL).toBeUndefined();
+    });
+
+    it('on with no API key (a subscription token only) changes nothing and says so; the token stays as it was', async () => {
+      const { prepared, calls } = await withEgress(record(), true, { CLAUDE_CODE_OAUTH_TOKEN: SECRET_OAUTH });
+      expect(calls.issued).toEqual([]);
+      expect(named(prepared.spec.args)).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+      expect(prepared.spec.env.ANTHROPIC_BASE_URL).toBeUndefined();
+    });
+
+    it('the proxy token goes when the agent\'s does: at the stop, and when the start fails', async () => {
+      const { launcher, calls } = await withEgress(record(), true, { ANTHROPIC_API_KEY: KEY });
+      launcher.revoke('ana', 1);
+      expect(calls.revoked).toEqual(['ana']);
+      // a revoke of another generation is not this start's
+      launcher.revoke('ana', 7);
+      expect(calls.revoked).toEqual(['ana']);
+      const again = await launcher.prepareStart(record(), { generation: 2, flag: null });
+      expect(again.spec.env.ANTHROPIC_BASE_URL).toContain('/egress/');
+      launcher.keepTokens([]);
+      expect(calls.revoked).toEqual(['ana', 'ana']);
+    });
   });
 
   it('a restart resumes the session that the container\'s own home holds', async () => {

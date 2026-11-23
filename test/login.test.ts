@@ -724,6 +724,17 @@ describe('the second factor and step-up through the supervisor (PR 2)', () => {
     ws.close();
   });
 
+  it('step-up: where a Clean Room keeps its API key is refused with stepUp:true when the check is old; reading it is not', async () => {
+    const { cookies } = await withTotp();
+    const [h, b] = json(cookieHeader(cookies), { anthropic: true });
+    expect((await call('PUT', '/api/egress', h, b)).status).not.toBe(403);
+    clock += 6 * 60_000;
+    const refused = await call('PUT', '/api/egress', h, b);
+    expect(refused.status).toBe(403);
+    expect(JSON.parse(refused.text)).toMatchObject({ stepUp: true });
+    expect((await call('GET', '/api/egress', h, b)).status).not.toBe(403);
+  });
+
   it('step-up: the rules of the room (the system prompt of every agent) are refused with stepUp:true when the check is old; reading them is not; a terminal and a key never write them', async () => {
     const { cookies } = await withTotp();
     const [h, b] = json(cookieHeader(cookies), { text: 'Never push to main.' });

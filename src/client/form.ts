@@ -39,6 +39,8 @@ export interface Values {
   cleanRoom: boolean;
   /** Clean Room sandbox flavor of this agent; '' is the room's default. */
   sandbox: '' | CleanRoomFlavor;
+  /** Clean Room: where the Anthropic API key is (docs/features/egress.md): '' follows the room, 'on' keeps it out of the container (a proxy of gonogo's holds it), 'off' leaves it in the container. */
+  egress: '' | 'on' | 'off';
   /** Worktree: the agent starts in its own git worktree on the host. Any engine; not with a Clean Room, which has one. */
   worktree: boolean;
   /** Remote Control: start the agent with --remote-control, to approve in the Claude app. Claude Code only, not with a Clean Room. */
@@ -191,6 +193,7 @@ export function initialValues(
     offSkills: current?.payloadOff?.skills ?? [],
     cleanRoom: Boolean(current?.cleanRoom),
     sandbox: current?.cleanRoom?.flavor ?? '',
+    egress: current?.cleanRoom?.egress === undefined ? '' : current.cleanRoom.egress ? 'on' : 'off',
     worktree: Boolean(current?.worktree),
     remoteControl: Boolean(current?.remoteControl),
     rules: rulesToText(current?.permissions),
@@ -349,8 +352,9 @@ export function payloadRows(defaults: PayloadDefaults | null, values: Values): P
 /** The Clean Room the form describes: only for Claude Code, and a setting made through the API (an image) stays when the box stays ticked; the flavor is the form's (empty: the room's default). */
 export function cleanRoomOf(values: Values, original: AgentView | null): CleanRoom | null {
   if (values.provider !== 'claude' || !values.cleanRoom) return null;
-  const { flavor: _flavor, ...kept } = original?.cleanRoom ?? {};
-  return { ...kept, ...(values.sandbox === '' ? {} : { flavor: values.sandbox }) };
+  const { flavor: _flavor, egress: _egress, ...kept } = original?.cleanRoom ?? {};
+  // what the page does not edit (an image set through the API) stays; the sandbox and the key's place are the form's own
+  return { ...kept, ...(values.sandbox === '' ? {} : { flavor: values.sandbox }), ...(values.egress === '' ? {} : { egress: values.egress === 'on' }) };
 }
 
 /** The Remote Control the form describes: Claude Code only, and a Clean Room has no claude.ai login. */

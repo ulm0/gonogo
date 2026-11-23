@@ -110,6 +110,8 @@ import type { FeatureStore } from './features.js';
 import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
+import type { Egress } from './egress.js';
+import type { EgressSettingsStore } from './egresssettings.js';
 import type { RulesStore } from './rules.js';
 import { ROUTE_BODY_MAX_BYTES, ROUTE_KEY_HEADER, sameKey } from './telegramroute.js';
 import type { Rollout } from './rollout.js';
@@ -236,6 +238,10 @@ export interface WebOptions {
   ritualTemplate?: RitualTemplateStore;
   /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
   coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
+  /** Egress (egress.ts): the proxy a Clean Room agent's Anthropic requests go through; absent in tests that do not need it (the route answers 404). */
+  egress?: Pick<Egress, 'handle'>;
+  /** The room's egress setting (egresssettings.ts); absent in tests that do not need it (the routes answer 404). Writing it needs a step-up. */
+  egressSettings?: Pick<EgressSettingsStore, 'view' | 'set'>;
   /** Telegram and several rooms: the key of this install and what to do with an update another room offers (telegramroute.ts). Absent outside a supervisor: the route answers 404. */
   telegramRoute?: { key: string; take(body: Record<string, unknown>): { claimed: boolean } };
   /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */
@@ -319,7 +325,7 @@ interface Client {
   closed: boolean;
 }
 
-type RouteKind = 'api' | 'hook' | 'mcp' | 'uplink' | 'dock' | 'ws' | 'static';
+type RouteKind = 'api' | 'hook' | 'mcp' | 'egress' | 'uplink' | 'dock' | 'ws' | 'static';
 
 interface ApiRoute {
   allow: readonly string[];
@@ -384,6 +390,8 @@ function classify(segments: string[]): RouteKind {
       return 'hook';
     case 'mcp':
       return 'mcp';
+    case 'egress':
+      return 'egress';
     case 'uplink':
       return 'uplink';
     case 'dock':
@@ -399,6 +407,7 @@ const ALLOW_BY_KIND: Record<RouteKind, string> = {
   api: 'GET, POST, PATCH, DELETE',
   hook: 'POST',
   mcp: 'POST',
+  egress: 'GET, HEAD, POST, DELETE',
   uplink: 'POST',
   dock: 'GET, POST',
   ws: 'GET',
@@ -705,7 +714,7 @@ export function createWebServer(options: WebOptions): WebServer {
   const originAllowed = (req: IncomingMessage, kind: RouteKind): boolean => {
     const origin = req.headers.origin;
     if (origin === undefined) return true;
-    if (kind === 'hook' || kind === 'mcp' || kind === 'uplink' || kind === 'dock') return false;
+    if (kind === 'hook' || kind === 'mcp' || kind === 'egress' || kind === 'uplink' || kind === 'dock') return false;
     let url: URL;
     try {
       url = new URL(origin);
@@ -1746,6 +1755,18 @@ export function createWebServer(options: WebOptions): WebServer {
         },
       };
     }
+    if (s[1] === 'egress' && s.length === 2) {
+      const egress = options.egressSettings;
+      if (!egress) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, egress.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await egress.set(body));
+        },
+      };
+    }
     if (s[1] === 'coauthor' && s.length === 2) {
       const coauthor = options.coauthor;
       if (!coauthor) return null;
@@ -2178,7 +2199,7 @@ export function createWebServer(options: WebOptions): WebServer {
     }
     const segments = parseTarget(req.url);
     const kind = segments === null ? null : classify(segments);
-    if (viaContainer && kind !== 'hook' && kind !== 'mcp') {
+    if (viaContainer && kind !== 'hook' && kind !== 'mcp' && kind !== 'egress') {
       sendText(res, 403, 'forbidden host');
       return;
     }
@@ -2206,6 +2227,11 @@ export function createWebServer(options: WebOptions): WebServer {
         return;
       case 'mcp':
         if (segments.length === 1) await mcpHandler(req, res);
+        else sendNotFound(res);
+        return;
+      case 'egress':
+        // the token in the path is the whole credential (egress.ts); nothing else of the request is looked at here
+        if (options.egress) await options.egress.handle(req, res);
         else sendNotFound(res);
         return;
       case 'ws':

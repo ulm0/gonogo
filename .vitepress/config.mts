@@ -98,6 +98,7 @@ export default defineConfig({
           { text: 'Knowledge', link: '/features/knowledge' },
           { text: 'Search by meaning', link: '/features/semantic-search' },
           { text: 'Clean Room', link: '/features/clean-room' },
+          { text: 'Clean Room API key', link: '/features/egress' },
           { text: 'Worktrees', link: '/features/worktrees' },
           { text: 'Feature toggles', link: '/features/features' },
           { text: 'Subagents', link: '/features/subagents' },

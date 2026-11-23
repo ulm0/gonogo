@@ -698,6 +698,16 @@ function Staff({ form }: { form: Target }): ReactElement {
           {cleanError}
         </p>
       )}
+      {values.cleanRoom && (
+        <div className="field">
+          <label htmlFor={`${id}-clean-egress`}>Anthropic API key</label>
+          <select id={`${id}-clean-egress`} className="input" value={values.egress} onChange={(event) => change({ egress: event.target.value as Values['egress'] }, 'cleanRoom')}>
+            <option value="">Follow the room's setting</option>
+            <option value="on">Keep it out of the container (a proxy holds it)</option>
+            <option value="off">Leave it in the container</option>
+          </select>
+        </div>
+      )}
       <p className="hint" id={`${id}-clean-hint`}>
         Runs in a Docker container that holds only a copy of the project (a git worktree on the branch gonogo/{values.name === '' ? 'name' : values.name}) and this console's own files. Docker must be running and the folder must be inside a git repository. To
         take the work back, commit in the worktree and merge the branch.
