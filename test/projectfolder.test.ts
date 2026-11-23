@@ -158,9 +158,10 @@ describe('the route of a room', () => {
     expect(back.json).toMatchObject({ dir: started, source: 'default' });
   });
 
-  it('only the Director\'s own session may change it: a key, a terminal, a token, the socket and a request that says nothing get 403, and nothing changes', async () => {
-    for (const actor of [undefined, 'key:abc', 'tui', 'token', 'socket', 'session; x']) expect((await call('PUT', '/api/project-folder', { dir: project }, actor)).status, String(actor)).toBe(403);
+  it('only the Director may change it (his login session, or the browser token of an install with no account): a key, a terminal, the socket and a request that says nothing get 403, and nothing changes', async () => {
+    for (const actor of [undefined, 'key:abc', 'tui', 'socket', 'session; x']) expect((await call('PUT', '/api/project-folder', { dir: project }, actor)).status, String(actor)).toBe(403);
     expect((await call('GET', '/api/project-folder')).json).toMatchObject({ source: 'default' });
+    expect((await call('PUT', '/api/project-folder', { dir: project }, 'token')).status).toBe(200);
   });
 
   it('refuses a bad folder with the reason, and the folder of gonogo itself', async () => {
