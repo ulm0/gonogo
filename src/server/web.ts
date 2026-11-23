@@ -9,8 +9,10 @@ import type { Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
-import { PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, CLEAN_ROOM_RUNTIMES, PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
+  CleanRoomFlavor,
+  CleanRoomFlavors,
   AuditRecord,
   UpdateView,
   AutoUpdateView,
@@ -206,7 +208,9 @@ export interface WebOptions {
   projectFolder?: { store: ProjectFolder; audit: AuditRecord; boss(): { name: string; dir: string } | null; /** The folder in force changed: tell the open pages (the hire form's default). */ changed?(): void };
   settings?: { store: Settings; apply(): void; audit: AuditRecord; announce(): void };
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
-  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort' | 'setMode'>;
+  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort' | 'setMode' | 'setSandbox' | 'sandbox'>;
+  /** Clean Room: which sandbox flavors this Docker has a runtime for. */
+  cleanRoomFlavors?: () => Promise<CleanRoomFlavors>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
@@ -878,6 +882,11 @@ export function createWebServer(options: WebOptions): WebServer {
     if (s.length === 2 && s[1] === 'state') {
       return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, snapshot()) };
     }
+    if (s.length === 3 && s[1] === 'cleanroom' && s[2] === 'flavors') {
+      const flavors = options.cleanRoomFlavors;
+      if (!flavors) return null;
+      return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, await flavors()) };
+    }
     if (s.length === 2 && s[1] === 'engines') {
       const engines = options.engines;
       if (!engines) return null;
@@ -1514,6 +1523,23 @@ export function createWebServer(options: WebOptions): WebServer {
           run: async (req, res) => {
             const body = await jsonObject(req, res);
             if (body) sendJson(res, 200, await changed(key === 'engine' ? models.setEngine(body.engine) : models.setEffort(body.effort)));
+          },
+        };
+      }
+      // PUT /api/models/sandbox: the room's default Clean Room flavor; a flavor whose runtime Docker does not list is refused
+      if (s.length === 3 && s[2] === 'sandbox') {
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            const flavor = body.sandbox;
+            const probe = options.cleanRoomFlavors;
+            if (typeof flavor === 'string' && flavor !== 'docker' && probe) {
+              const have = await probe();
+              if ((CLEAN_ROOM_FLAVORS as readonly string[]).includes(flavor) && !have.available[flavor as CleanRoomFlavor]) return sendApiError(res, 400, `the ${flavor} Clean Room needs the Docker runtime ${String(CLEAN_ROOM_RUNTIMES[flavor as CleanRoomFlavor])}, and Docker does not list it: not installed`, 'bad_request', 'sandbox');
+            }
+            sendJson(res, 200, await changed(models.setSandbox(flavor)));
           },
         };
       }

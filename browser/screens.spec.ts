@@ -455,6 +455,11 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.getByRole('group', { name: 'Confirm bypass' }).waitFor({ timeout: 3000 });
   }, true);
   await measure(page, group, 'engine bay: bypass asks to confirm', '.rules-models');
+  // the Bypass pick was never saved: put the select back to the room's own value, so that the shots after it do not show it
+  await page.getByLabel('Permission mode').selectOption('');
+  // Engine Bay: the room's default sandbox of the Clean Room (a flavor whose runtime Docker does not list is shown as not installed and cannot be picked)
+  await view(page, group, 'engine bay: clean room sandbox', () => page.getByLabel('Clean Room sandbox').scrollIntoViewIfNeeded({ timeout: 3000 }), true);
+  await measure(page, group, 'engine bay: clean room sandbox', '.rules-models');
   // back to the System and update group with every row open, where the runtime settings views that follow expect to be
   await page.locator('.lay-group-nav a', { hasText: 'System and update' }).first().click({ timeout: 3000 });
   await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
@@ -538,6 +543,11 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   });
   await view(page, group, 'hire form: a position picked, the rest folded', () => page.getByRole('button', { name: /^FAO/ }).first().click({ timeout: 3000 }), true);
   await view(page, group, 'hire form: more settings open', () => page.locator('summary', { hasText: 'MORE SETTINGS' }).click({ timeout: 3000 }), true);
+  // the Sandbox select appears with Clean Room (the labels say which flavors are not installed on this machine)
+  await view(page, group, 'hire form: a Clean Room console picks its sandbox', async () => {
+    await page.getByLabel('Clean Room', { exact: true }).check({ timeout: 3000 });
+    await page.getByLabel('Sandbox').waitFor({ timeout: 3000 });
+  }, true);
   await page.keyboard.press('Escape');
   // a fresh room page for what follows: the form must not be open when the Patch Panel is asked for
   await page.goto(`${base}/r/main/`);

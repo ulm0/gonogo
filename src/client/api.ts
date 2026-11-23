@@ -69,6 +69,8 @@ import type {
   Effort,
   ModelDefaults,
   PermissionMode,
+  CleanRoomFlavor,
+  CleanRoomFlavors,
   Claim,
   KnowledgeRepo,
   KnowledgeView,
@@ -613,6 +615,19 @@ export async function removeDefaultSkill(name: string): Promise<PayloadDefaults>
 /** The room's default effort for Claude Code consoles with none of their own; null clears it. */
 export async function setDefaultEffort(effort: Effort | null): Promise<ModelDefaults> {
   return toModelDefaults(await call('PUT', '/models/effort', { effort }));
+}
+
+/** Which Clean Room sandbox flavors this Docker has a runtime for, and the room's default. */
+export async function cleanRoomFlavors(): Promise<CleanRoomFlavors> {
+  const value = asRecord(await call('GET', '/cleanroom/flavors'));
+  const available = asRecord(value?.available);
+  if (value === null || available === null) throw failure('The server sent an answer gonogo does not understand.');
+  return value as unknown as CleanRoomFlavors;
+}
+
+/** The room's default Clean Room sandbox flavor; null goes back to docker. A flavor whose runtime Docker does not list is refused. */
+export async function setDefaultSandbox(sandbox: CleanRoomFlavor | null): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', '/models/sandbox', { sandbox }));
 }
 
 /** The room's default permission mode for hires that name none; null goes back to ask. bypassPermissions is refused without `confirmBypass`. */

@@ -50,7 +50,8 @@ export interface ProxyAuth {
   alive(sessionId: string): boolean;
   touchSession(sessionId: string): void;
   stepUpBody(method: string, path: string): boolean;
-  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null): string | null;
+  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null, context?: { roomSandbox?: string }): string | null;
+  stepUpWantsRoom(method: string, path: string, body: Record<string, unknown> | null): boolean;
   stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string, tui?: boolean): void;
 }
 
@@ -363,9 +364,28 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         } catch {
           // not JSON: the room answers 400; the strictest reading of a body nobody could read is that it needs the check
         }
-        const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed);
-        if (reason !== null) options.auth.stepUpDenied(req, res, reason, asked.grant.kind === 'tui');
-        else forward(got.body);
+        const decide = (roomSandbox: string | undefined): void => {
+          const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed, roomSandbox === undefined ? {} : { roomSandbox });
+          if (reason !== null) options.auth.stepUpDenied(req, res, reason, asked.grant.kind === 'tui');
+          else forward(got.body);
+        };
+        // a hire that names a Clean Room flavor is judged against the room's own default, which only the room knows: asked on its socket (a room that does not answer is read as the strongest wall, so the hire asks for the password)
+        if (!options.auth.stepUpWantsRoom(asked.method, asked.path, parsed)) return decide(undefined);
+        const ask = http.request({ socketPath: target.room.socket, method: 'GET', path: '/api/models', headers: { host: '127.0.0.1', accept: 'application/json' }, timeout: 1500 }, (answer) => {
+          const chunks: Buffer[] = [];
+          answer.on('data', (c: Buffer) => chunks.push(c));
+          answer.on('end', () => {
+            try {
+              const value = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sandbox?: unknown }).sandbox;
+              decide(typeof value === 'string' ? value : 'docker');
+            } catch {
+              decide('microvm');
+            }
+          });
+        });
+        ask.on('timeout', () => ask.destroy());
+        ask.on('error', () => decide('microvm'));
+        ask.end();
       });
       return true;
     },

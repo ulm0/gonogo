@@ -18,6 +18,9 @@ const UNATTENDED = new Set(['auto', 'bypassPermissions']);
 const given = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && value !== false && !(typeof value === 'object' && Object.keys(value as object).length === 0);
 
 /** The body decides these two (hire; edit of an agent), so the proxy reads it first. */
+/** The hire is where the room's default sandbox matters: the proxy asks the room for it before it decides. */
+export const needsRoomSandbox = (method: string, path: string, body: Record<string, unknown> | null): boolean => method === 'POST' && path === '/api/agents' && typeof body?.cleanRoom === 'object' && body.cleanRoom !== null && typeof (body.cleanRoom as Record<string, unknown>).flavor === 'string';
+
 export function bodyMatters(method: string, path: string): boolean {
   if (method === 'PUT' && path === '/api/autoupdate') return true;
   if (method === 'POST' && path === '/api/rooms/main/migrate') return true;
@@ -27,13 +30,24 @@ export function bodyMatters(method: string, path: string): boolean {
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
+/** The walls of the Clean Room, weakest first: a hire below the room's own sandbox is a weaker one than the Director set. */
+const FLAVOR_RANK = ['docker', 'gvisor', 'microvm'];
+
+/** What the proxy knows of the room for the rule: its default sandbox flavor (`docker` when none). */
+export interface StepUpContext {
+  roomSandbox?: string;
+}
+
 /** Why this change needs a fresh check, or null when it does not. `body` is the parsed JSON object, or null when there is none or it is not one. */
-export function stepUpReason(method: string, path: string, body: Record<string, unknown> | null): string | null {
+export function stepUpReason(method: string, path: string, body: Record<string, unknown> | null, context: StepUpContext = {}): string | null {
   if (!CHANGES.has(method)) return null;
   if (method === 'POST' && path === '/api/agents') {
     if (body === null) return 'hiring an agent';
     if (body.command !== undefined && body.command !== null) return 'hiring an agent with a command of your own';
     if (typeof body.mode === 'string' && UNATTENDED.has(body.mode)) return 'hiring an agent that works without asking';
+    // a Clean Room with a wall below the room's own default: a session that has not stepped up cannot undercut what the Director stepped up to set
+    const flavor = typeof body.cleanRoom === 'object' && body.cleanRoom !== null ? (body.cleanRoom as Record<string, unknown>).flavor : undefined;
+    if (typeof flavor === 'string' && FLAVOR_RANK.indexOf(flavor) < FLAVOR_RANK.indexOf(context.roomSandbox ?? 'docker')) return "hiring below the room's sandbox";
     // outside a Clean Room, with a remote control or with keys of its own: more than a plain hire
     if (body.cleanRoom === false) return 'hiring an agent outside a Clean Room';
     if (given(body.remoteControl)) return 'hiring an agent with remote control';
@@ -47,6 +61,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   }
   // the room's default mode: auto or bypass makes every hire from the form start without asking; clearing it or a milder mode stays free
   if (method === 'PUT' && path === '/api/models/mode') return body !== null && typeof body.mode === 'string' && UNATTENDED.has(body.mode) ? 'setting the room to work without asking' : body === null ? 'setting the room to work without asking' : null;
+  // the room's default sandbox: a weaker wall for the Clean Room agents of the room (toward docker), or a stronger one the Director may not have asked for; the password again either way
+  if (method === 'PUT' && path === '/api/models/sandbox') return 'changing the sandbox of the room\'s Clean Room agents';
   // Hangar writes and Recorder commits, per agent
   if (/^\/api\/agents\/[^/]+\/file$/.test(path)) return 'writing a file in an agent\'s folder';
   if (/^\/api\/agents\/[^/]+\/git\/commit$/.test(path)) return 'making a commit';

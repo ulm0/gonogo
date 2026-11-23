@@ -2317,7 +2317,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (!checked.ok) throw new HubError('bad_request', checked.error, 'cleanRoom');
     let problem: string | null;
     try {
-      problem = (await io.checkCleanRoom?.(dir)) ?? null;
+      problem = (await io.checkCleanRoom?.(dir, checked.cleanRoom.flavor)) ?? null;
     } catch (error) {
       log.error('clean room check failed', error);
       problem = errorMessage(error);

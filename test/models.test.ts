@@ -62,6 +62,37 @@ describe('the store', () => {
   });
 });
 
+describe('the default sandbox flavor', () => {
+  it('starts as docker (none), is kept across a reload, goes back with null or docker, and an old file still loads', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    expect(store.sandbox()).toBeUndefined();
+    expect(await store.setSandbox('gvisor')).toEqual({ models: {}, positions: {}, sandbox: 'gvisor' });
+    const again = createModelDefaults({ dir: tmp });
+    await again.load();
+    expect(again.sandbox()).toBe('gvisor');
+    expect(JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'))).toMatchObject({ version: 1, sandbox: 'gvisor' });
+    expect(await again.setSandbox('docker')).toEqual({ models: {}, positions: {} });
+    expect(await again.setSandbox('microvm')).toMatchObject({ sandbox: 'microvm' });
+    expect(await again.setSandbox(null)).toEqual({ models: {}, positions: {} });
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: {} }));
+    const old = createModelDefaults({ dir: tmp });
+    await old.load();
+    expect(old.sandbox()).toBeUndefined();
+  });
+
+  it('refuses a flavor that is not one and writes nothing; a file with a bad one drops it', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    for (const bad of ['runc', 'kata', 3, '']) await expect(store.setSandbox(bad), String(bad)).rejects.toMatchObject({ code: 'bad_request', field: 'sandbox' });
+    expect(store.view()).toEqual({ models: {}, positions: {} });
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: {}, sandbox: 'warp' }));
+    const file = createModelDefaults({ dir: tmp });
+    await file.load();
+    expect(file.sandbox()).toBeUndefined();
+  });
+});
+
 describe('the default permission mode', () => {
   it('starts as none (ask), is kept across a reload, and goes back with null or default', async () => {
     const store = createModelDefaults({ dir: tmp });

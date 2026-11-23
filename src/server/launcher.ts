@@ -9,7 +9,7 @@ import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, sym
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import type { Payload, Provider, SubagentSettings } from '../shared/protocol.js';
-import { cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO } from '../shared/protocol.js';
+import { CLEAN_ROOM_RUNTIMES, cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO } from '../shared/protocol.js';
 import type {
   AgentIdentity,
   AgentRecord,
@@ -61,7 +61,7 @@ import { coauthorEnv, ensureHooksDir, realHookNames } from './coauthor.js';
 import { remoteControlName } from './remotecontrol.js';
 import { effectiveRules } from './permissions.js';
 import { mergePayload } from './payload.js';
-import { buildDockerArgs, cleanRoomImage, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
+import { buildDockerArgs, cleanRoomFlavor, cleanRoomImage, createVerified, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { isRecord } from './hooks.js';
 import { doorText, projectFile } from './door.js';
@@ -659,7 +659,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       if (provider !== 'claude') return await prepareOther(agent, provider, base, hubUrl, memoryPath, token);
       // Clean Room: a container has the worktree and the agent's own folder only, so it gets a home of its own under the agent's folder.
       if (agent.cleanRoom !== undefined) await removals.get(name);
-      const clean = agent.cleanRoom === undefined ? null : await prepareCleanRoom(agent, homeDir, base, env);
+      const clean = agent.cleanRoom === undefined ? null : await prepareCleanRoom(agent, homeDir, base, env, options.defaultSandbox?.());
       // A fresh container home has no folder trust and no login, so its dialogs are skipped as in seed mode.
       const plain = await plainWorktree(agent, env);
       const seed = options.seed || clean !== null;
@@ -730,7 +730,11 @@ export function createLauncher(options: LauncherOptions): Launcher {
         // The agent's own keys go the same way: the container gets their names, and nothing else of the host's environment.
         const names = [...new Set([...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS, ...Object.keys(keys)])].filter((variable) => hasText(childEnv[variable]));
         const command: [string, ...string[]] = [file, ...leading, ...claudeArgs];
-        const args = buildDockerArgs({ image: cleanRoomImage(agent.cleanRoom ?? {}, env), uid, gid, place: clean, agentDir: base, names, command });
+        const flavor = cleanRoomFlavor(agent.cleanRoom ?? {}, options.defaultSandbox?.());
+        const runArgs = buildDockerArgs({ image: cleanRoomImage(agent.cleanRoom ?? {}, env), flavor, uid, gid, place: clean, agentDir: base, names, command });
+        // a runtime of its own is verified before the agent's process starts; docker (runc) runs as it always did
+        const runtime = CLEAN_ROOM_RUNTIMES[flavor];
+        const args = runtime === null ? runArgs : await createVerified(runArgs, runtime, clean.container, childEnv);
         spec = { file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree };
         const started = byAgent.get(name);
         if (started?.generation === opts.generation) started.container = clean.container;

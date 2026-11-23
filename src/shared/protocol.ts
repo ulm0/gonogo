@@ -412,9 +412,23 @@ export interface PayloadDefaults {
   mcpServers: PayloadDefaultServer[];
   skills: PayloadDefaultSkill[];
 }
-/** Clean Room: the agent runs in a container on its own git worktree. `image` replaces GONOGO_CLEANROOM_IMAGE for this agent. */
+/** The sandbox flavors of the Clean Room, and the Docker runtime each one asks for (null: Docker's own, runc, no --runtime flag). The one table: the server, the checks and the page read it. */
+export const CLEAN_ROOM_FLAVORS = ['docker', 'gvisor', 'microvm'] as const;
+export type CleanRoomFlavor = (typeof CLEAN_ROOM_FLAVORS)[number];
+export const CLEAN_ROOM_RUNTIMES: Readonly<Record<CleanRoomFlavor, string | null>> = { docker: null, gvisor: 'runsc', microvm: 'io.containerd.kata.v2' };
+/** Which flavors this Docker has a runtime for (`docker info`, Runtimes): the page shows the others as not installed, and the server refuses them. */
+export interface CleanRoomFlavors {
+  /** `docker` is always there; a flavor whose runtime Docker does not list is false. */
+  available: Record<CleanRoomFlavor, boolean>;
+  /** The room's default flavor. */
+  default: CleanRoomFlavor;
+  /** Why the list could not be read (Docker down): every flavor but `docker` is then unavailable. */
+  note?: string;
+}
+/** Clean Room: the agent runs in a container on its own git worktree. `image` replaces GONOGO_CLEANROOM_IMAGE for this agent; `flavor` replaces the room's default sandbox flavor (absent: the room's). */
 export interface CleanRoom {
   image?: string;
+  flavor?: CleanRoomFlavor;
 }
 /** Worktree: the agent starts in its own git worktree and branch of the repository of `dir`, on the host. No fields yet (an object so one can come later without a migration). */
 export type Worktree = Record<string, never>;
@@ -933,6 +947,8 @@ export interface ModelDefaults {
   effort?: Effort;
   /** The room's default permission mode: preselects the hire form, and is what a hire without a mode gets (bypassPermissions never: it falls back to default there). Absent means default. Ignored by an engine without permission modes. */
   mode?: PermissionMode;
+  /** The room's default sandbox flavor of the Clean Room, for an agent with none of its own. Absent means docker. */
+  sandbox?: CleanRoomFlavor;
 }
 
 /** Telegram inbound (docs/features/relay.md): by long polling, by a webhook (uplink or one set on the bot), or off. `note` never holds a token. */
@@ -1532,6 +1548,9 @@ export interface ReliefRequest {
   modeFromRoom?: boolean;
   /** The boss is a Clean Room agent: the new agent is one too. */
   cleanRoom: CleanRoom | null;
+  /** The sandbox flavor the new Clean Room agent will run in (the boss's own, else the room's default), and whether that is a weaker wall than the room's default: the card says both. */
+  flavor?: CleanRoomFlavor;
+  flavorBelowRoom?: boolean;
   /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */
   worktree?: Worktree | null;
 }
@@ -2365,6 +2384,8 @@ export interface LauncherOptions {
   knowledge?: (name: string) => Promise<string>;
   /** The room's default effort for a Claude Code console with none of its own. */
   defaultEffort?: () => Effort | undefined;
+  /** The room's default sandbox flavor of the Clean Room. */
+  defaultSandbox?: () => CleanRoomFlavor | undefined;
   /** Tool permissions: the room's rules for a Claude Code agent that has none of its own. Default none. */
   defaultPermissions?: () => PermissionRules | undefined;
   /** Payload defaults: the room's MCP servers and skills for an agent outside a Clean Room, merged under the agent's own at each start (the agent wins). Default none. */
@@ -2473,7 +2494,7 @@ export interface HubIo {
   /** path must be absolute; ok:true carries the normalised path. */
   checkDirectory(path: string): Promise<DirCheck>;
   /** Clean Room: null when Docker answers and `dir` is inside a git repository, else the reason (one line). Optional for fakes. */
-  checkCleanRoom?(dir: string): Promise<string | null>;
+  checkCleanRoom?(dir: string, flavor?: CleanRoomFlavor): Promise<string | null>;
   /** Worktree: null when `dir` is inside a git repository, else the reason (one line). Optional for fakes. */
   checkWorktree?(dir: string): Promise<string | null>;
   /** Autostart: the room's startup settings, read at each server start. Absent: the boss only, with no carry-on. */
