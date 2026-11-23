@@ -77,7 +77,8 @@ import type {
   LinkView,
   DockRules,
   HandoffAsk,
-  OutboundEvent,
+  OutboundEntry,
+  LinkEventView,
   RoomKeysView,
   RuntimeSettingKey,
   RuntimeSettingRow,
@@ -1013,9 +1014,14 @@ export const recallLink = (id: string): Promise<unknown> => call('POST', linkPat
 export const dockRules = async (dock: string): Promise<DockRules> => (await call('GET', `/docking/${encodeURIComponent(dock)}/rules`)) as DockRules;
 export const setDockRules = async (dock: string, patch: Partial<DockRules>): Promise<DockRules> => (await call('PATCH', `/docking/${encodeURIComponent(dock)}/rules`, patch)) as DockRules;
 /** The events that left for a dock, in full (only the Director's session may read them). */
-export async function outbound(dock: string): Promise<OutboundEvent[]> {
-  const list = asRecord(await call('GET', `/docking/${encodeURIComponent(dock)}/outbound`))?.events;
-  return Array.isArray(list) ? (list as OutboundEvent[]) : [];
+export async function outbound(dock: string): Promise<OutboundEntry[]> {
+  const list = asRecord(await call('GET', `/docking/outbound?dock=${encodeURIComponent(dock)}`))?.entries;
+  return Array.isArray(list) ? (list as OutboundEntry[]) : [];
+}
+/** The trail of one link, oldest first. */
+export async function linkTrail(id: string): Promise<LinkEventView[]> {
+  const list = asRecord(await call('GET', `/links/${encodeURIComponent(id)}`))?.trail;
+  return Array.isArray(list) ? (list as LinkEventView[]) : [];
 }
 /** Handoffs FLIGHT asks to send while a dock's rule is ask: the whole text, for the Director's GO. */
 export async function handoffAsks(): Promise<HandoffAsk[]> {

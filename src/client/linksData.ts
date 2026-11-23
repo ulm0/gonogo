@@ -1,48 +1,37 @@
 /** The links of this station, one copy for every card, the board and the rules (a page of one tab). Read on first use, every 30 s, when the tab comes back and after each action. */
 import { useEffect, useSyncExternalStore } from 'react';
-import type { HandoffAsk, LinkView } from '../shared/protocol.js';
+import type { HandoffAsk } from '../shared/protocol.js';
 import * as api from './api.js';
+import type { LinkItem } from './links.js';
+import { store, useStore } from './store.js';
 
-let current: LinkView[] = [];
 let loaded = false;
-const watchers = new Set<() => void>();
 
+/** The list is in the store (the `links` frame keeps it); it is read once with GET /api/links, since the snapshot has none, and again when the tab comes back. */
 export async function refreshLinks(): Promise<void> {
   try {
-    current = await api.links();
+    const list = await api.links();
     loaded = true;
-    for (const w of watchers) w();
+    store.setState((s) => ({ ...s, links: list }));
   } catch {
     // a list that cannot be read keeps what was shown; the next try asks again
   }
 }
 
 /** For a test or a capture that has the list already. */
-export function setLinks(list: LinkView[]): void {
-  current = list;
+export function setLinks(list: LinkItem[]): void {
   loaded = true;
-  for (const w of watchers) w();
+  store.setState((s) => ({ ...s, links: list }));
 }
 
-export function useLinks(): LinkView[] {
+export function useLinks(): LinkItem[] {
   useEffect(() => {
     if (!loaded) void refreshLinks();
-    const timer = setInterval(() => void refreshLinks(), 30_000);
     const back = (): void => void refreshLinks();
     window.addEventListener('focus', back);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', back);
-    };
+    return () => window.removeEventListener('focus', back);
   }, []);
-  return useSyncExternalStore(
-    (w) => {
-      watchers.add(w);
-      return () => void watchers.delete(w);
-    },
-    () => current,
-    () => current,
-  );
+  return useStore((s) => s.links) as LinkItem[];
 }
 
 let asks: HandoffAsk[] = [];

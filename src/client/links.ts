@@ -2,10 +2,28 @@
 import type { DockView, LinkAttachment, LinkEventView, LinkState, LinkView, TaskStatus } from '../shared/protocol.js';
 import { atText } from './uplink.js';
 
+/** What the server's link view does not carry yet (docs/docking-collab-spec.md: missions, chains, cost, stale, notes): the page reads these when they are there and says nothing when they are not. */
+export interface LinkExtras {
+  kind?: 'task' | 'mission';
+  note?: string;
+  chain?: Array<{ station: string; task: string }>;
+  via?: string;
+  progress?: { done: number; total: number };
+  /** Reported cost in dollars (an estimate), null when the other side reports none. The sender's cap is `budget` of the view. */
+  cost?: { usd: number } | null;
+  stale?: boolean;
+}
+export type LinkItem = LinkView & LinkExtras;
+/** An event of a trail as the page shows it: the server's, plus the deliverables when it carries them. */
+export interface TrailItem extends LinkEventView {
+  via?: string;
+  attachments?: LinkAttachment[];
+}
+
 const STATUS_WORDS: Record<TaskStatus, string> = { todo: 'to do', doing: 'doing', blocked: 'blocked', review: 'in review', done: 'done' };
 
 /** The one line of a card for a link, plain words, never colour only: "at lab: doing · "waiting on a key"", "at lab → at ops: doing". */
-export function linkLine(link: LinkView): string {
+export function linkLine(link: LinkItem): string {
   const peer = link.peerName;
   if (link.role === 'receiver') {
     const from = `from ${peer}`;
@@ -25,43 +43,43 @@ export function linkLine(link: LinkView): string {
     case 'recalled': return `you withdrew it from ${peer}`;
     case 'done': return `accepted from ${peer}`;
     case 'refused': return `${peer} refused it`;
-    case 'detached': return `undocked from ${peer}${link.theirStatus === undefined ? '' : ` (last known: ${STATUS_WORDS[link.theirStatus]})`}`;
+    case 'detached': return `undocked from ${peer}${link.peerStatus === null ? '' : ` (last known: ${STATUS_WORDS[link.peerStatus as TaskStatus]})`}`;
     default: {
       const where = link.chain === undefined || link.via === undefined ? `at ${peer}` : `at ${peer} → at ${link.via}`;
-      const status = link.theirStatus === undefined ? 'taken' : STATUS_WORDS[link.theirStatus];
+      const status = link.peerStatus === null ? 'taken' : STATUS_WORDS[link.peerStatus as TaskStatus];
       return `${where}: ${status}${link.note === undefined || link.note === '' ? '' : ` · “${link.note}”`}`;
     }
   }
 }
 
 /** Said when the other station does not answer and events are waiting for it. Null when there is nothing to say. */
-export const waitingLine = (link: LinkView, dock: DockView | undefined): string | null =>
+export const waitingLine = (link: LinkItem, dock: DockView | undefined): string | null =>
   link.waiting > 0 && dock?.status === 'down' ? `${link.peerName}: not reachable, ${link.waiting} ${link.waiting === 1 ? 'event' : 'events'} waiting` : null;
 
 /** "2 of 3 delivered" for a split, "at lab: 3 of 5" for a mission. */
-export function progressLine(link: LinkView): string | null {
+export function progressLine(link: LinkItem): string | null {
   if (link.progress === undefined) return null;
   const { done, total } = link.progress;
   return link.kind === 'mission' ? `at ${link.peerName}: ${done} of ${total}` : `${done} of ${total} delivered`;
 }
 
 /** "lab: $3.10 of $5.00 (estimate)", or that no cost is reported. An estimate at list prices, never a bill. */
-export function costLine(link: LinkView): string {
+export function costLine(link: LinkItem): string {
   if (link.cost === undefined || link.cost === null) return 'cost not reported';
-  const usd = (n: number): string => `$${n.toFixed(2)}`;
-  return `${link.peerName}: ${usd(link.cost.usd)}${link.cost.cap === undefined ? '' : ` of ${usd(link.cost.cap)}`} (estimate)`;
+  const usd = (n: number): string => '$' + n.toFixed(2);
+  return `${link.peerName}: ${usd(link.cost.usd)}${link.budget === null ? '' : ` of ${usd(link.budget)}`} (estimate)`;
 }
 
-export const overCap = (link: LinkView): boolean => link.cost !== undefined && link.cost !== null && link.cost.cap !== undefined && link.cost.usd >= link.cost.cap;
+export const overCap = (link: LinkItem): boolean => link.cost !== undefined && link.cost !== null && link.budget !== null && link.cost.usd >= link.budget;
 
 /** Due and priority, for both cards. */
-export function dueLine(link: LinkView): string | null {
-  const parts = [link.due === undefined ? '' : `due ${link.due}`, link.priority === undefined || link.priority === 'normal' ? '' : `${link.priority} priority`].filter((p) => p !== '');
+export function dueLine(link: LinkItem): string | null {
+  const parts = [link.due === null ? '' : `due ${link.due}`, link.priority === 'normal' ? '' : `${link.priority} priority`].filter((p) => p !== '');
   return parts.length === 0 ? null : parts.join(' · ');
 }
 
 /** The one line of a trail event: "14:03 ana@lab: status doing". `lost` has no author line. */
-export function trailLine(event: LinkEventView, now: number): string {
+export function trailLine(event: TrailItem, now: number): string {
   const when = atText(event.at, now);
   if (event.kind === 'lost') return `${when} ${event.text}`;
   const kind = event.kind === 'status' ? 'status' : event.kind;
@@ -82,14 +100,14 @@ export function attachmentHref(a: LinkAttachment): string | null {
 export const KIND_WORDS: Record<LinkAttachment['kind'], string> = { pr: 'Pull request', branch: 'Branch', commit: 'Commit', file: 'File', url: 'Link' };
 
 /** The outgoing links of a task or mission (the card shows them), the incoming one (a task has at most one). */
-export const outgoing = (links: readonly LinkView[], kind: LinkView['kind'], mine: string): LinkView[] => links.filter((l) => l.role === 'sender' && l.kind === kind && l.mine === mine);
-export const incoming = (links: readonly LinkView[], kind: LinkView['kind'], mine: string): LinkView | undefined => links.find((l) => l.role === 'receiver' && l.kind === kind && l.mine === mine);
+export const outgoing = (links: readonly LinkItem[], kind: LinkItem['kind'], mine: string): LinkItem[] => links.filter((l) => l.role === 'sender' && (l.kind ?? 'task') === kind && l.mine === mine);
+export const incoming = (links: readonly LinkItem[], kind: LinkItem['kind'], mine: string): LinkItem | undefined => links.find((l) => l.role === 'receiver' && (l.kind ?? 'task') === kind && l.mine === mine);
 
 /** States in which the sender has something to do: a delivery to accept or return. */
-export const needsReview = (link: LinkView): boolean => link.role === 'sender' && link.state === 'delivered';
+export const needsReview = (link: LinkItem): boolean => link.role === 'sender' && link.state === 'delivered';
 /** A task given back or delivered: the receiver may still give it back, the sender may recall only what is not done. */
-export const canReturn = (link: LinkView): boolean => link.role === 'receiver' && (link.state === 'accepted' || link.state === 'offered');
-export const canRecall = (link: LinkView): boolean => link.role === 'sender' && (link.state === 'offered' || link.state === 'accepted');
+export const canReturn = (link: LinkItem): boolean => link.role === 'receiver' && (link.state === 'accepted' || link.state === 'offered');
+export const canRecall = (link: LinkItem): boolean => link.role === 'sender' && (link.state === 'offered' || link.state === 'accepted');
 
 export const STATE_FILTERS: ReadonlyArray<{ id: 'all' | 'open' | 'review' | 'closed'; label: string }> = [
   { id: 'all', label: 'All' },
@@ -100,11 +118,11 @@ export const STATE_FILTERS: ReadonlyArray<{ id: 'all' | 'open' | 'review' | 'clo
 const CLOSED: readonly LinkState[] = ['done', 'recalled', 'refused', 'detached', 'returned'];
 
 /** The board: one direction (OUT sent, IN held), filtered by station and by state group; the ones to review and the stale ones first. */
-export function boardRows(links: readonly LinkView[], direction: 'out' | 'in', station: string, filter: 'all' | 'open' | 'review' | 'closed'): LinkView[] {
+export function boardRows(links: readonly LinkItem[], direction: 'out' | 'in', station: string, filter: 'all' | 'open' | 'review' | 'closed'): LinkItem[] {
   const wanted = links.filter((l) => (direction === 'out' ? l.role === 'sender' : l.role === 'receiver') && (station === '' || l.peer === station));
   const shown = wanted.filter((l) => (filter === 'all' ? true : filter === 'closed' ? CLOSED.includes(l.state) : filter === 'review' ? needsReview(l) : !CLOSED.includes(l.state)));
-  return shown.map((l, i) => ({ l, i })).sort((a, b) => Number(needsReview(b.l)) - Number(needsReview(a.l)) || Number(b.l.stale) - Number(a.l.stale) || b.l.updatedAt - a.l.updatedAt || a.i - b.i).map(({ l }) => l);
+  return shown.map((l, i) => ({ l, i })).sort((a, b) => Number(needsReview(b.l)) - Number(needsReview(a.l)) || Number(b.l.stale === true) - Number(a.l.stale === true) || b.l.updatedAt - a.l.updatedAt || a.i - b.i).map(({ l }) => l);
 }
 
 /** The count a Docking row shows: what waits for the Director (a delivery to review). */
-export const reviewCount = (links: readonly LinkView[]): number => links.filter(needsReview).length;
+export const reviewCount = (links: readonly LinkItem[]): number => links.filter(needsReview).length;

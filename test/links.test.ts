@@ -2,9 +2,10 @@
 import { describe, expect, it } from 'vitest';
 import { attachmentHref, boardRows, canRecall, canReturn, costLine, dueLine, incoming, linkLine, outgoing, overCap, progressLine, reviewCount, trailLine, waitingLine } from '../src/client/links.js';
 import { groupThreads, linkOfSubject } from '../src/client/threads.js';
-import type { ActivityItem, DockView, LinkView } from '../src/shared/protocol.js';
+import type { LinkItem } from '../src/client/links.js';
+import type { ActivityItem, DockView } from '../src/shared/protocol.js';
 
-const link = (patch: Partial<LinkView> = {}): LinkView => ({ id: 'dl_1', kind: 'task', role: 'sender', peer: 'd1', peerName: 'lab', mine: 't4', theirs: 't9', title: 'Fix the login', state: 'accepted', theirStatus: 'doing', stale: false, waiting: 0, updatedAt: 100, onward: false, trail: [], ...patch });
+const link = (patch: Partial<LinkItem> = {}): LinkItem => ({ id: 'dl_1', role: 'sender', peer: 'd1', peerName: 'lab', mine: 't4', theirs: 't9', title: 'Fix the login', state: 'accepted', peerStatus: 'doing', due: null, priority: 'normal', onward: false, budget: null, events: 0, waiting: 0, updatedAt: 100, ...patch });
 
 describe('the line of a card', () => {
   it('says where it is and what it is doing, with the last note', () => {
@@ -15,7 +16,7 @@ describe('the line of a card', () => {
     expect(linkLine(link({ chain: [{ station: 'ops', task: 't2' }], via: 'ops' }))).toBe('at lab → at ops: doing');
   });
   it('says every state in words', () => {
-    expect(linkLine(link({ state: 'offered', theirStatus: undefined }))).toBe('offered to lab, not taken yet');
+    expect(linkLine(link({ state: 'offered', peerStatus: null }))).toBe('offered to lab, not taken yet');
     expect(linkLine(link({ state: 'delivered' }))).toContain('ready for you to accept');
     expect(linkLine(link({ state: 'returned' }))).toBe('returned by lab');
     expect(linkLine(link({ state: 'detached' }))).toBe('undocked from lab (last known: doing)');
@@ -37,24 +38,24 @@ describe('progress, cost, due', () => {
     expect(progressLine(link())).toBeNull();
   });
   it('words the cost as an estimate, against the cap, or as not reported', () => {
-    expect(costLine(link({ cost: { usd: 3.1, cap: 5 } }))).toBe('lab: $3.10 of $5.00 (estimate)');
+    expect(costLine(link({ cost: { usd: 3.1 }, budget: 5 }))).toBe('lab: $3.10 of $5.00 (estimate)');
     expect(costLine(link({ cost: { usd: 3.1 } }))).toBe('lab: $3.10 (estimate)');
     expect(costLine(link({ cost: null }))).toBe('cost not reported');
     expect(costLine(link())).toBe('cost not reported');
-    expect(overCap(link({ cost: { usd: 5, cap: 5 } }))).toBe(true);
-    expect(overCap(link({ cost: { usd: 1, cap: 5 } }))).toBe(false);
+    expect(overCap(link({ cost: { usd: 5 }, budget: 5 }))).toBe(true);
+    expect(overCap(link({ cost: { usd: 1 }, budget: 5 }))).toBe(false);
   });
   it('says due and a priority that is not normal', () => {
     expect(dueLine(link({ due: '2026-12-01', priority: 'high' }))).toBe('due 2026-12-01 · high priority');
-    expect(dueLine(link({ priority: 'normal' }))).toBeNull();
+    expect(dueLine(link())).toBeNull();
   });
 });
 
 describe('the trail and the deliverables', () => {
   it('writes one line for an event and one for a loss', () => {
     const at = new Date(2026, 10, 23, 14, 3).getTime();
-    expect(trailLine({ author: 'd1', seq: 1, at, kind: 'status', by: 'ana@lab', text: 'doing' }, at)).toBe('14:03 ana@lab: status doing');
-    expect(trailLine({ author: 'd1', seq: 2, at, kind: 'lost', by: 'lab', text: '3 status events were not delivered' }, at)).toBe('14:03 3 status events were not delivered');
+    expect(trailLine({ link: 'dl_1', from: 'them', seq: 1, at, kind: 'status', by: 'ana@lab', text: 'doing' }, at)).toBe('14:03 ana@lab: status doing');
+    expect(trailLine({ link: 'dl_1', from: 'them', seq: 2, at, kind: 'lost', by: 'lab', text: '3 status events were not delivered' }, at)).toBe('14:03 3 status events were not delivered');
   });
   it('opens only an https address of a PR or a link; the rest is text', () => {
     expect(attachmentHref({ kind: 'pr', ref: 'https://github.com/o/r/pull/1', label: 'PR' })).toBe('https://github.com/o/r/pull/1');
@@ -92,20 +93,27 @@ describe('what a card and the board take from the list', () => {
 });
 
 describe('the line of a link on a card (rendered)', () => {
-  const render = async (l: LinkView): Promise<string> => {
+  const render = async (l: LinkItem): Promise<string> => {
     const { renderToString } = await import('react-dom/server');
     const { createElement } = await import('react');
     const { LinkLines } = await import('../src/client/LinkLines.js');
     return renderToString(createElement(LinkLines, { links: [l] }));
   };
-  it('offers Accept and Send back for a delivery, with the deliverable as a safe link', async () => {
-    const html = await render(link({ state: 'delivered', theirStatus: 'review', trail: [{ author: 'd1', seq: 1, at: 1, kind: 'status', by: 'cara@lab', text: 'done', attachments: [{ kind: 'pr', ref: 'https://github.com/o/r/pull/1', label: 'PR 1' }, { kind: 'file', ref: 'docs/x.md', label: 'Notes' }] }] }));
+  it('offers Accept and Send back for a delivery', async () => {
+    const html = await render(link({ state: 'delivered', peerStatus: 'review' }));
     expect(html).toContain('Accept t4 from lab');
     expect(html).toContain('Send t4 back to lab');
+    expect(html).toContain('ready for you to accept');
+  });
+  it('shows a deliverable as a safe link when it is an https address, and the rest as text', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { createElement } = await import('react');
+    const { Deliverables } = await import('../src/client/LinkLines.js');
+    const html = renderToString(createElement(Deliverables, { trail: [{ link: 'dl_1', from: 'them', seq: 1, at: 1, kind: 'status', by: 'cara@lab', text: 'done', attachments: [{ kind: 'pr', ref: 'https://github.com/o/r/pull/1', label: 'PR 1' }, { kind: 'file', ref: 'docs/x.md', label: 'Notes' }] }] }));
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toContain('href="https://github.com/o/r/pull/1"');
     expect(html).not.toContain('href="docs/x.md"');
-    expect(html).toContain('ready for you to accept');
+    expect(html).toContain('docs/x.md');
   });
   it('offers Withdraw while it is open, nothing once it is done, Give back to the receiver', async () => {
     expect(await render(link())).toContain('Withdraw t4 from lab');
@@ -115,7 +123,7 @@ describe('the line of a link on a card (rendered)', () => {
     expect(await render(link({ role: 'receiver' }))).toContain('Give t4 back to lab');
   });
   it('says the cap is passed and that nothing is reported', async () => {
-    expect(await render(link({ cost: { usd: 5.2, cap: 5 } }))).toContain('past the cap');
+    expect(await render(link({ cost: { usd: 5.2 }, budget: 5 }))).toContain('past the cap');
     expect(await render(link({ cost: null }))).toContain('cost not reported');
     expect(await render(link({ role: 'receiver' }))).not.toContain('cost');
   });

@@ -3,10 +3,11 @@
  * deliverables, the trail, and the keys that exist for its state: Accept or Return a delivery, Give back, Withdraw. Nothing here edits the other station's task: the
  * keys send an event over the link, and the line changes when the other side answers.
  */
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
-import type { DockView, LinkEventView, LinkView } from '../shared/protocol.js';
+import type { DockView } from '../shared/protocol.js';
 import * as api from './api.js';
+import type { LinkItem, TrailItem } from './links.js';
 import { attachmentHref, canRecall, canReturn, costLine, dueLine, KIND_WORDS, linkLine, needsReview, overCap, progressLine, trailLine, waitingLine } from './links.js';
 import { refreshLinks } from './linksData.js';
 import { useNow, useStore } from './store.js';
@@ -15,7 +16,7 @@ import './docking.css';
 
 const REASON_MAX = 200;
 
-function Deliverables({ trail }: { trail: readonly LinkEventView[] }): ReactElement | null {
+export function Deliverables({ trail }: { trail: readonly TrailItem[] }): ReactElement | null {
   const items = trail.flatMap((e) => e.attachments ?? []);
   if (items.length === 0) return null;
   return (
@@ -41,24 +42,28 @@ function Deliverables({ trail }: { trail: readonly LinkEventView[] }): ReactElem
   );
 }
 
-function Trail({ link }: { link: LinkView }): ReactElement {
+function Trail({ link, trail, onOpen }: { link: LinkItem; trail: readonly TrailItem[] | null; onOpen(): void }): ReactElement {
   const now = useNow();
   return (
-    <details className="dk-trail">
+    <details className="dk-trail" onToggle={(e) => e.currentTarget.open && onOpen()}>
       <summary>
-        Trail <span className="plan-count">{link.trail.length}</span>
+        Trail <span className="plan-count">{link.events}</span>
       </summary>
-      <ol>
-        {link.trail.map((e) => (
-          <li key={`${e.author}:${e.seq}`}>{trailLine(e, now)}</li>
-        ))}
-      </ol>
+      {trail === null ? (
+        <p className="hint">Reading the trail…</p>
+      ) : (
+        <ol>
+          {trail.map((e) => (
+            <li key={`${e.from}:${e.seq}`}>{trailLine(e, now)}</li>
+          ))}
+        </ol>
+      )}
     </details>
   );
 }
 
 /** The reason box of a Return: one line of up to 200 characters, then the key. */
-function Return({ link, label, onDone }: { link: LinkView; label: string; onDone(): void }): ReactElement {
+function Return({ link, label, onDone }: { link: LinkItem; label: string; onDone(): void }): ReactElement {
   const id = useId();
   const [reason, setReason] = useState('');
   const { busy, error, run } = useRun();
@@ -91,9 +96,15 @@ function Return({ link, label, onDone }: { link: LinkView; label: string; onDone
   );
 }
 
-export function LinkLine({ link, dock }: { link: LinkView; dock: DockView | undefined }): ReactElement {
+export function LinkLine({ link, dock }: { link: LinkItem; dock: DockView | undefined }): ReactElement {
   const { busy, error, run } = useRun();
   const [returning, setReturning] = useState(false);
+  const [trail, setTrail] = useState<TrailItem[] | null>(null);
+  const loadTrail = (): void => void api.linkTrail(link.id).then((t) => setTrail(t as TrailItem[]), () => undefined);
+  // a delivery waits for the Director's review: its deliverables are read at once, the rest of the trail when it is opened
+  useEffect(() => {
+    if (needsReview(link)) loadTrail();
+  }, [link.id, link.state, link.events]);
   const waiting = waitingLine(link, dock);
   const due = dueLine(link);
   const progress = progressLine(link);
@@ -126,8 +137,8 @@ export function LinkLine({ link, dock }: { link: LinkView; dock: DockView | unde
           {waiting}
         </p>
       )}
-      <Deliverables trail={link.trail} />
-      <Trail link={link} />
+      <Deliverables trail={trail ?? []} />
+      <Trail link={link} trail={trail} onOpen={loadTrail} />
       {!returning && (
         <div className="dk-link-keys">
           {needsReview(link) && (
@@ -163,7 +174,7 @@ export function LinkLine({ link, dock }: { link: LinkView; dock: DockView | unde
 }
 
 /** The links of one task or mission, for its card. Nothing when it has none. */
-export function LinkLines({ links }: { links: readonly LinkView[] }): ReactElement | null {
+export function LinkLines({ links }: { links: readonly LinkItem[] }): ReactElement | null {
   const docks = useStore((s) => s.docking.docks);
   if (links.length === 0) return null;
   return (

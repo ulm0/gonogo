@@ -5,12 +5,13 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ActivityItem, AgentView, LinkView } from '../shared/protocol.js';
+import type { ActivityItem, AgentView } from '../shared/protocol.js';
 import { Reply } from './Activity.js';
 import { whenText } from './inbox.js';
 import { chipOf, legendOf, noteOf, routeText } from './loop.js';
 import { showRoom, useStore } from './store.js';
 import { linkLine } from './links.js';
+import type { LinkItem } from './links.js';
 import { useLinks } from './linksData.js';
 import { groupThreads, repliers, replyTarget } from './threads.js';
 import type { Thread } from './threads.js';
@@ -129,7 +130,7 @@ export function PartyLine(): ReactElement {
                       <span className="loop-subject">{thread.title}</span>
                       {thread.link !== undefined && links.some((l) => l.id === thread.link) && (
                         <span className="chip" data-tone="quiet">
-                          LINK · {linkLine(links.find((l) => l.id === thread.link) as LinkView)}
+                          LINK · {linkLine(links.find((l) => l.id === thread.link) as LinkItem)}
                         </span>
                       )}
                       <span className="loop-note">{countText(thread.items.length)}</span>

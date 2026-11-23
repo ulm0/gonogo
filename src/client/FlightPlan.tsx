@@ -6,13 +6,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import { TASK_DETAIL_MAX_CHARS, TASK_TITLE_MAX_CHARS, TASKS_OPEN_MAX } from '../shared/protocol.js';
-import type { LinkView, Task, TaskStatus } from '../shared/protocol.js';
+import type { Task, TaskStatus } from '../shared/protocol.js';
 import * as api from './api.js';
 import { HandOff } from './DockingPanel.js';
 import { missionOptions, nameOf } from './missionsModel.js';
 import { canHandOff } from './docking.js';
 import { LinkLines } from './LinkLines.js';
 import { incoming, outgoing } from './links.js';
+import type { LinkItem } from './links.js';
 import { useLinks } from './linksData.js';
 import { assigneeText, assignees, cardId, columnsOf, COLUMNS, emptyValues, FIELDS, labelOf, ledKindOf, requestOf, validate } from './plan.js';
 import type { Field, Problems, Values } from './plan.js';
@@ -175,7 +176,7 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
   const { busy, error, run } = useRun();
   const docks = useStore((s) => s.docking.docks);
   const allLinks = useLinks();
-  const taskLinks = [...outgoing(allLinks, 'task', task.id), ...(incoming(allLinks, 'task', task.id) === undefined ? [] : [incoming(allLinks, 'task', task.id) as LinkView])];
+  const taskLinks = [...outgoing(allLinks, 'task', task.id), ...(incoming(allLinks, 'task', task.id) === undefined ? [] : [incoming(allLinks, 'task', task.id) as LinkItem])];
   const [confirming, setConfirming] = useState(false);
   const [handing, setHanding] = useState(false);
   const keep = useRef<HTMLButtonElement | null>(null);

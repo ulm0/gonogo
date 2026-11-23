@@ -9,7 +9,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { LINKS, OUTBOUND } from './linkFixtures.js';
+import { LINKS, OUTBOUND, TRAILS } from './linkFixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { duplicates, geometry } from './geometry.js';
@@ -193,8 +193,9 @@ async function dockingTwo(page: Page, group: string): Promise<void> {
   });
   await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'h1', dock: 'dk1', station: 'lab', from: 'flight', at: Date.now(), task: { title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour. Check the clock handling in the session code and add a test.' } }] } }));
   await page.route('**/api/docking/*/rules', (route) => route.fulfill({ json: { handoff: 'ask', incoming: 'auto', autoAccept: 'off', reportCost: 'off', serve: 'off', staleHours: 24 } }));
-  await page.route('**/api/docking/*/outbound', (route) => route.fulfill({ json: { events: OUTBOUND } }));
+  await page.route('**/api/docking/outbound?*', (route) => route.fulfill({ json: { dock: 'dk1', entries: OUTBOUND } }));
   await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
+  await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
   await page.goto(`${base}/r/main/`);
   await page.locator('.topbar').waitFor({ timeout: 30_000 });
   await view(page, group, 'docking 2: a handoff waits for GO', () => page.locator('.relief-need', { hasText: 'send a task to lab' }).waitFor({ timeout: 10_000 }), true);
@@ -417,6 +418,7 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await view(page, group, t('comms threads'), () => page.getByRole('tab', { name: /threads/i }).click({ timeout: 3000 }));
   // Docking 2: the stand-in install has no second station, so the links are stood in (the same shapes as the server's)
   await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
+  await page.route('**/api/links/*', (route) => route.fulfill({ json: { trail: TRAILS[route.request().url().split('/').pop() ?? ''] ?? [] } }));
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
   await view(page, group, t('mission with a link'), () => page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 }), true);
   await view(page, group, t('launch window'), () => open(page, 'Launch Window'), true);
