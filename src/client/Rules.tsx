@@ -206,6 +206,8 @@ export function FlightRules(): ReactElement {
   const startup = useValue(() => api.startupSettings().then((x) => `after a restart: ${x.policy}`));
   const know = useValue(() => api.knowledge().then((k) => (k.enabled ? `on, ${k.repos.length} repositories` : 'off')));
   const folder = useValue(() => api.projectFolder().then(folderRowText));
+  // the line of the row follows a change made in it (the value above was asked once, when the page opened)
+  const [folderNow, setFolderNow] = useState<string | null>(null);
   const runtime = useValue(() => api.runtimeSettings().then(runtimeSummary));
   const keys = useValue(() => api.roomKeys().then((k) => `${k.keys.length} keys`));
   const off = useStore((s) => s.features);
@@ -288,7 +290,7 @@ export function FlightRules(): ReactElement {
       </nav>
       <Group id="room" title="Room">
         <Row name="Livery" now={currentEntry(livery).name}>{liveryBlock}</Row>
-        <Row name="Project folder" now={folder}><ProjectFolderBlock /></Row>
+        <Row name="Project folder" now={folderNow ?? folder}><ProjectFolderBlock onChanged={(next) => setFolderNow(folderRowText(next))} /></Row>
         <Row name="Tab name" now={tabName.name ?? tabName.fallback ?? 'not set'}><TabNameBlock /></Row>
         <Row name="Room rules" now={rules}><RoomRulesBlock /></Row>
         <Row name="Closing checklist template" now={template}><RitualTemplateBlock /></Row>

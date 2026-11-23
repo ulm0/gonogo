@@ -27,6 +27,9 @@ describe('the project folder row', () => {
     expect(block).toContain('aria-label="Set the project folder"');
     expect(block).toContain('aria-label="Reset the project folder"');
     expect(block).toContain('Restart the boss now');
+    // the line of the row follows a change made in the block
+    expect(rules).toContain('setFolderNow(folderRowText(next))');
+    expect(block).toContain('onChanged?.(next);');
     // the server's warning about the folder (gonogo's own, or a broad one) is shown in the warning tone, next to the value, and never blocks the Set key
     expect(block).toMatch(/view\.warning === 'string' && view\.warning !== ''/);
     expect(block).toMatch(/className="flood pf-warning" data-tone="amber" role="note"/);

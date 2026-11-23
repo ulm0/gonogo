@@ -11,7 +11,7 @@ import { bossNeedsRestart, sourceText } from './projectFolderModel.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-export function ProjectFolderBlock(): ReactElement {
+export function ProjectFolderBlock({ onChanged }: { onChanged?: (view: ProjectFolderView) => void } = {}): ReactElement {
   const id = useId();
   const [view, setView] = useState<ProjectFolderView | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -60,6 +60,7 @@ export function ProjectFolderBlock(): ReactElement {
       .then((next) => {
         setView(next);
         setEditing(false);
+        onChanged?.(next);
       })
       .catch((e: unknown) => setError(messageOf(e)))
       .finally(() => setBusy(false));
