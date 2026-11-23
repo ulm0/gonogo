@@ -219,7 +219,7 @@ function RolloutStrip(): ReactElement | null {
         </span>
       )}
       {rollout.canUpdate !== true && <code ref={code}>{command}</code>}
-      {rollout.canUpdate === true && rollout.newer && failedVerify === null && (
+      {rollout.canUpdate === true && rollout.newer && failedVerify === null && !confirming && (
         <button type="button" className="btn" aria-disabled={busy || undefined} onClick={press}>
           Update to {latest}
         </button>
@@ -228,7 +228,9 @@ function RolloutStrip(): ReactElement | null {
         <div className="rollout-confirm" role="alertdialog" aria-label={`Update to ${latest}`}>
           <p>{updateDialogText(latest, agentCounts(Object.values(agents).map((a) => a.state)), policy)}</p>
           <details className="rollout-fold">
-            <summary>What this runs</summary>
+            <summary className="btn" data-kind="quiet">
+              What this runs
+            </summary>
             <p>{UPDATE_TRUST_TEXT}</p>
           </details>
           <button
@@ -297,7 +299,9 @@ function RolloutStrip(): ReactElement | null {
       </button>
       {rollout.installNote !== undefined && rollout.installNote !== '' && (
         <details className="rollout-fold rollout-note">
-          <summary>About this install</summary>
+          <summary className="btn" data-kind="quiet">
+            About this install
+          </summary>
           <p>{rollout.installNote}</p>
         </details>
       )}

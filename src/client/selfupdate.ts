@@ -29,8 +29,8 @@ export const UPDATE_TRUST_TEXT = 'The update runs the image publisher\u2019s cod
 export function verifyPanel(verify: 'unattested' | 'unchecked'): { problem: string; fix: string | null; button: string } {
   return verify === 'unchecked'
     ? {
-        problem: 'Can\u2019t verify this image\u2019s signature right now: GitHub refused the check.',
-        fix: 'GitHub answers a check without a login only so many times an hour, or the network is down. Try again in a while, or log in once from a console of room main with `gh auth login` (or set GH_TOKEN in the container).',
+        problem: 'Can\u2019t verify this image\u2019s signature right now.',
+        fix: 'GitHub may have refused the check without a login (it answers only so many an hour), the network may be down, or gh has no login. Try again in a while, or log in once from a console of room main with `gh auth login` (or set GH_TOKEN in the container).',
         button: 'Update without checking',
       }
     : { problem: 'This image has no signature to check: it was published before they were made.', fix: null, button: 'Update without checking' };

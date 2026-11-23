@@ -111,7 +111,7 @@
   align-items: center;
   gap: 4px 12px;
   margin: 12px 24px 0;
-  padding: 2px 8px 2px 14px;
+  padding: 8px 8px 8px 14px;
   border: 1px solid var(--edge);
   border-radius: var(--radius-key);
   background: var(--well);
@@ -2049,4 +2049,27 @@
   .rollout-fix > summary {
     min-height: 44px;
   }
+}
+
+/* a fold of the update strip is a key with an arrow: closed ▸, open ▾ */
+.rollout-fold > summary,
+.rollout-fix > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.rollout-fold > summary::-webkit-details-marker,
+.rollout-fix > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rollout-fold > summary::before,
+.rollout-fix > summary::before {
+  content: '▸';
+  margin-right: 6px;
+}
+
+.rollout-fold[open] > summary::before,
+.rollout-fix[open] > summary::before {
+  content: '▾';
 }

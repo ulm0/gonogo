@@ -884,7 +884,7 @@ describe('the dialog words', () => {
 describe('an image that cannot be checked', () => {
   it('says it once and short, with how to fix it and a key that goes on, and gives no key for a failed check', () => {
     const none = verifyPanel('unchecked');
-    expect(none.problem).toBe('Can\u2019t verify this image\u2019s signature right now: GitHub refused the check.');
+    expect(none.problem).toBe('Can\u2019t verify this image\u2019s signature right now.');
     expect(none.problem.length).toBeLessThan(80);
     expect(none.fix).toContain('Try again in a while');
     expect(none.fix).toContain('gh auth login');
@@ -898,7 +898,9 @@ describe('an image that cannot be checked', () => {
     const app = readFileSync('src/client/App.tsx', 'utf8');
     expect(app.match(/\{update\.note\}/g)).toHaveLength(1);
     expect(app).not.toMatch(/Update anyway/);
-    expect(app).toMatch(/<details className="rollout-fold rollout-note">\s*<summary>About this install<\/summary>/);
+    expect(app).toMatch(/<details className="rollout-fold rollout-note">\s*<summary[^>]*>\s*About this install\s*<\/summary>/);
+    // while the confirmation is open the Update key of the strip is not (it would be a second key for the same thing)
+    expect(app).toMatch(/failedVerify === null && !confirming && \(/);
   });
 
   it('one click on Update in the version key asks the strip to start, and the strip then asks once', () => {

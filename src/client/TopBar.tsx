@@ -55,7 +55,7 @@ function UnreadCount(): ReactElement | null {
 const commsName = (unread: number): string => (unread === 0 ? 'Comms' : `Comms, ${unreadText(unread)}`);
 
 /** The version, as a key: whether this install is current, CHECK NOW, and what is out. In another room Update is main's, so it links there. */
-function VersionButton(): ReactElement | null {
+function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
   const info = useStore((s) => s.info);
   const newer = useNewer();
   const canUpdate = useStore((s) => s.rollout?.canUpdate === true);
@@ -65,7 +65,7 @@ function VersionButton(): ReactElement | null {
   // the webhook addresses the page shows use the public address when the Director gave one (docs/expose-spec.md)
   setPublicOrigin(info?.publicUrl);
   if (info === null) return null;
-  const label = versionLabel(info.version, newer);
+  const label = versionLabel(info.version, newer, phone);
   return (
     <Pop className="lay-version" name={label.name} label={label.text}>
       {(close) => {
@@ -193,7 +193,7 @@ export function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }):
       <h1 className="mark" aria-label="gonogo">
         <img className="mark-name" src={logo} alt="" aria-hidden="true" />
       </h1>
-      <VersionButton />
+      <VersionButton phone={phone} />
       <span className="topbar-grow" />
       <LinkLamp />
       {/* a round key on a phone: the bar has no room for the word beside the logo, the version, the lamp and Jump */}
