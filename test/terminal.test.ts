@@ -231,7 +231,7 @@ describe('analyzeScreen', () => {
       expect(analyzeScreen([...box(''), line], 60).signedOut, line).toBe(true);
     }
     expect(analyzeScreen([...box(''), '  ? for shortcuts'], 60).signedOut).toBe(false);
-    for (const line of ['  Remote managed settings failed to load (authentication rejected (401))', '  API Error: 401 authentication_error', '  OAuth token has expired']) {
+    for (const line of ['  Remote managed settings failed to load (authentication rejected (401))', '  API Error: 401 authentication_error', '  OAuth token has expired', '  Invalid API key · Please run /login']) {
       expect(analyzeScreen([...box(''), line], 70), line).toMatchObject({ authRejected: true });
     }
     expect(analyzeScreen(['● It said "authentication rejected"', ...box('')], 80).authRejected).toBe(false);
