@@ -30,6 +30,12 @@ services:
       # No value: forwarded from your shell, so the secret is not written here.
       CLAUDE_CODE_OAUTH_TOKEN:
       ANTHROPIC_API_KEY:
+      # Forwarded the same way: a name you reach gonogo by (a reverse proxy, a LAN name), the address it is published at, and the proxy in front.
+      # Without GONOGO_ALLOWED_HOSTS only 127.0.0.1 and localhost are answered. Set them in the .env next to this file; an unset one stays unset.
+      GONOGO_ALLOWED_HOSTS:
+      GONOGO_PUBLIC_URL:
+      GONOGO_TRUSTED_PROXY:
+      GONOGO_CLIENT_IP_HEADER:
       GONOGO_HOME: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/state
       CLAUDE_CONFIG_DIR: ${GONOGO_DATA:?set GONOGO_DATA to the absolute path of the data folder}/claude
       # A Clean Room joins this container's network (self: found by its host name, so no fixed container name).

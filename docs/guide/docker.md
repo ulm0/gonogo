@@ -33,6 +33,7 @@ Set one credential: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `AN
 | Seed mode, who runs as whom, `docker exec` | [Security](../reference/security.md#the-docker-image). Use `docker exec -u node ...` for `gh auth login` |
 | Update | With the socket mounted (compose does) and a moving tag, Update pulls and recreates the container with a health check, rollback and UNDO; otherwise the page shows `docker compose pull && docker compose up -d`, or calls `GONOGO_UPDATE_HOOK` ([Update](../features/update.md#in-a-container-update-recreates-gonogo-itself)) |
 | Rooms | One front port, one process per room ([Rooms](../features/rooms.md)); `docker compose exec gonogo gonogo rooms add <id>`. `gonogo reload` is refused in Docker |
+| Reaching it by a name | gonogo answers only `127.0.0.1` and `localhost` until you allow a name: **"forbidden host"** in the browser means that. With `compose.yaml`, put `GONOGO_ALLOWED_HOSTS=<name>[,<name>]` in the `.env` next to it and run `docker compose up -d` (it forwards that, `GONOGO_PUBLIC_URL`, `GONOGO_TRUSTED_PROXY` and `GONOGO_CLIENT_IP_HEADER` from your shell or `.env`; one you do not set stays unset). With `docker run`: `-e GONOGO_ALLOWED_HOSTS=<name>`. A page that is reachable beyond this machine wants the login account first ([Exposing it safely](../https.md)) |
 
 ## Volumes
 

@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { resolveSettings } from '../src/server/cli.js';
 import { exposePlan } from '../src/server/exposecli.js';
 import type { ExposeProvider } from '../src/server/exposecli.js';
 
@@ -132,5 +133,21 @@ describe('gonogo expose points at the overlay of its provider', () => {
       expect(file, provider).toBeDefined();
       expect(read(file as string), provider).toContain('GONOGO_TRUSTED_PROXY');
     }
+  });
+});
+
+describe('compose.yaml forwards the names the page is reached by', () => {
+  const base = read('compose.yaml');
+
+  it('forwards GONOGO_ALLOWED_HOSTS, PUBLIC_URL, TRUSTED_PROXY and CLIENT_IP_HEADER with no value, so an unset one stays unset', () => {
+    for (const key of ['GONOGO_ALLOWED_HOSTS', 'GONOGO_PUBLIC_URL', 'GONOGO_TRUSTED_PROXY', 'GONOGO_CLIENT_IP_HEADER']) expect(base, key).toMatch(new RegExp(`^ {6}${key}:\\s*$`, 'm'));
+  });
+
+  it('an empty forwarded value is no host name, no proxy and no public address', () => {
+    const settings = resolveSettings({ home: '/tmp/gonogo-empty-env', env: { GONOGO_ALLOWED_HOSTS: '', GONOGO_TRUSTED_PROXY: ' , ', GONOGO_PUBLIC_URL: '', GONOGO_CLIENT_IP_HEADER: '' }, checkClaude: false });
+    expect(settings.allowedHosts).toEqual([]);
+    expect(settings.trustedProxies).toEqual([]);
+    expect(settings.publicUrl).toBeNull();
+    expect(settings.clientIpHeader).toBe('x-forwarded-for');
   });
 });
