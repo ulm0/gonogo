@@ -344,7 +344,7 @@ describe('budget', () => {
     await p.close();
     const saved = JSON.parse(await readFile(join(home, 'propellant.json'), 'utf8')) as { version: number; budget: unknown };
     expect(saved.version).toBe(1);
-    expect(saved.budget).toEqual({ room: { month: 50 }, agents: { ben: { day: 3 } }, missions: {} });
+    expect(saved.budget).toEqual({ room: { month: 50 }, agents: { ben: { day: 3 } }, missions: {}, links: {} });
     const again = await make();
     expect(again.view().cost.room.budget).toEqual({ month: 50 });
     expect(again.view().cost.agents.ben?.budget).toEqual({ day: 3 });
