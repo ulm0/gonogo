@@ -450,6 +450,9 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.getByRole('group', { name: 'Confirm bypass' }).waitFor({ timeout: 3000 });
   }, true);
   await measure(page, group, 'engine bay: bypass asks to confirm', '.rules-models');
+  // back to the System and update group with every row open, where the runtime settings views that follow expect to be
+  await page.locator('.lay-group-nav a', { hasText: 'System and update' }).first().click({ timeout: 3000 });
+  await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));
   // Runtime settings (the System and update group is the one open now, with every row open): an editor, a refused value, the warning of a sensitive setting, a setting for all rooms only
   await view(page, group, 'runtime settings: change a setting', () => page.getByRole('button', { name: 'Change Message hops' }).click({ timeout: 3000 }), true);
   await measure(page, group, 'runtime settings: change a setting', '.lay-rules');
