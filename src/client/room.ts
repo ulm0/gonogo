@@ -1,5 +1,5 @@
 import type { AgentState, AgentView, PollView } from '../shared/protocol.js';
-import { CLEAN_ROOM_DIR, cleanRoomBranch, WORKTREE_DIR, HOLD_REASON, MAX_AGENTS, providerInfo, STATE_LABELS } from '../shared/protocol.js';
+import { CLEAN_ROOM_DIR, cleanRoomBranch, WORKTREE_DIR, isHoldReason, MAX_AGENTS, providerInfo, STATE_LABELS } from '../shared/protocol.js';
 import type { DeskOrder } from '../shared/layout.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -195,7 +195,7 @@ export const asksForGo = (agent: AgentView): boolean => agent.state === 'needs_y
 export const tripped = (agent: AgentView): boolean => agent.state === 'needs_you' && agent.needsKind === 'redline' && agent.transition === null;
 
 /** Hold: the Director put this agent on hold (a Redline trip by hand); RESUME ends it. */
-export const onHold = (agent: AgentView): boolean => tripped(agent) && agent.needsReason === HOLD_REASON;
+export const onHold = (agent: AgentView): boolean => tripped(agent) && isHoldReason(agent.needsReason);
 
 /** Hold is offered while an agent with hooks runs and is not already held or tripped. */
 export const holdable = (agent: AgentView): boolean =>

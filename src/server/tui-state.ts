@@ -6,7 +6,7 @@
  * Every text that came from the server is untrusted: an agent wrote it. `clean` takes out what a terminal would act on (escape
  * sequences, control and bidi characters) before it is drawn.
  */
-import { HOLD_REASON } from '../shared/protocol.js';
+import { isHoldReason } from '../shared/protocol.js';
 import type { AgentView, DownlinkItem, DownlinkView, ModelDefaults, PollView, ReliefRequest, ServerFrame, ServerInfo, TabNameView } from '../shared/protocol.js';
 
 export type Link = 'connecting' | 'open' | 'reconnecting' | 'unauthorized';
@@ -71,7 +71,7 @@ export function applyFrame(s: TuiState, frame: ServerFrame): TuiState {
 }
 
 /** The Director's own hold: a Redline trip with the reason of a hold. */
-export const isOnHold = (a: AgentView): boolean => a.state === 'needs_you' && a.needsKind === 'redline' && a.transition === null && a.needsReason === HOLD_REASON;
+export const isOnHold = (a: AgentView): boolean => a.state === 'needs_you' && a.needsKind === 'redline' && a.transition === null && isHoldReason(a.needsReason);
 
 /** What waits for a go or a no-go: a permission dialog of an agent, or a Relief request. */
 export type Need =

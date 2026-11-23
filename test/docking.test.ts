@@ -1743,13 +1743,18 @@ describe('links: reach', () => {
       b.tasks = [task('t20', { missionId: 'ms1' as never, status: 'done' }), task('t21', { missionId: 'ms1' as never, status: 'doing' }), task('t22', { missionId: 'ms1' as never, status: 'blocked' }), task('t23', { missionId: 'ms1' as never, status: 'review' }), task('t24')];
       await b.docking.pull();
       await settle();
-      expect(a.docking.linkViews()[0]?.progress).toEqual({ done: 1, total: 4, blocked: 1, review: 1 });
+      expect(a.docking.linkViews()[0]?.progress).toEqual({ done: 1, total: 4, blocked: 1, review: 1, doing: 1 });
       const events = (a.docking.linkTrail(a.docking.linkViews()[0]!.id) ?? []).filter((e) => e.kind === 'progress');
-      expect(events.map((e) => e.text)).toEqual(['1/4 1 1']);
+      expect(events.map((e) => e.text)).toEqual(['1/4 1 1 1']);
       expect(JSON.stringify(events)).not.toMatch(/Task t2/);
+      // a task going from todo to doing is a change too
+      b.tasks = b.tasks.map((t) => (t.id === 't24' ? { ...t, missionId: 'ms1' as never, status: 'doing' as const } : t));
+      await b.docking.pull();
+      await settle();
+      expect(a.docking.linkViews()[0]?.progress).toEqual({ done: 1, total: 5, blocked: 1, review: 1, doing: 2 });
       await b.docking.pull(); // nothing changed: nothing sent
       await settle();
-      expect((a.docking.linkTrail(a.docking.linkViews()[0]!.id) ?? []).filter((e) => e.kind === 'progress')).toHaveLength(1);
+      expect((a.docking.linkTrail(a.docking.linkViews()[0]!.id) ?? []).filter((e) => e.kind === 'progress')).toHaveLength(2);
       // a task of the mission, handed over, lands inside the other station's mission
       a.tasks = [task('t5', { missionId: 'ms1' as never })];
       await a.docking.handOff(dock, { task: 't5' });
