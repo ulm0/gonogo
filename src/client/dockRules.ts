@@ -2,7 +2,7 @@
 import type { DockRules, HandoffAsk } from '../shared/protocol.js';
 
 export interface RuleField {
-  key: 'handoff' | 'incoming' | 'autoAccept' | 'reportCost' | 'serve';
+  key: 'handoff' | 'incoming' | 'autoAccept' | 'reportCost' | 'serve' | 'ask';
   label: string;
   /** One plain line: what it does. */
   help: (station: string) => string;
@@ -35,6 +35,12 @@ export const RULE_FIELDS: readonly RuleField[] = [
     options: [{ value: 'false', label: 'Do not report' }, { value: 'true', label: 'Report' }],
   },
   {
+    key: 'ask',
+    label: 'FLIGHT asks this station what it knows',
+    help: (s) => `Off: only you can ask ${s} (the Ask key of its row). On: your boss can ask it with its own tool; the question leaves for ${s}, and you can read it under What left.`,
+    options: [{ value: 'false', label: 'Only me' }, { value: 'true', label: 'My boss too' }],
+  },
+  {
     key: 'serve',
     label: 'Answer knowledge questions from this station',
     help: (s) => `Only for Mission Log entries and claims you marked as shareable with ${s}. Off: it gets nothing.`,
@@ -42,7 +48,7 @@ export const RULE_FIELDS: readonly RuleField[] = [
   },
 ];
 
-const BOOLEAN_KEYS: ReadonlyArray<RuleField['key']> = ['autoAccept', 'reportCost', 'serve'];
+const BOOLEAN_KEYS: ReadonlyArray<RuleField['key']> = ['autoAccept', 'reportCost', 'serve', 'ask'];
 
 /** The value a select shows (the on/off rules are 'true'/'false'), and the patch a choice makes. */
 export const valueOf = (rules: DockRules, key: RuleField['key']): string => String(rules[key]);

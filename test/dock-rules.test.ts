@@ -9,16 +9,17 @@ import type { HandoffAsk } from '../src/shared/protocol.js';
 const ask: HandoffAsk = { id: 'ha1', dock: 'dk1', dockName: 'lab', task: 't4', assignee: null, title: 'Fix the login', detail: 'The token expires too early.\nSee the log.', due: null, priority: 'normal', onward: false, budget: null, at: 1 };
 
 describe('the rules', () => {
-  it('cover the five settings of the server, each with a plain line that names the station', () => {
-    expect(RULE_FIELDS.map((f) => f.key)).toEqual(['handoff', 'incoming', 'autoAccept', 'reportCost', 'serve']);
+  it('cover the six settings of the server, each with a plain line that names the station', () => {
+    expect(RULE_FIELDS.map((f) => f.key)).toEqual(['handoff', 'incoming', 'autoAccept', 'reportCost', 'ask', 'serve']);
     for (const f of RULE_FIELDS) expect(f.help('lab')).toContain('lab');
     expect(RULE_FIELDS.find((f) => f.key === 'incoming')?.options.map((o) => o.value)).toEqual(['auto', 'off']);
   });
   it('show a boolean as a choice and patch it back as a boolean', () => {
-    expect(valueOf({ handoff: 'ask', incoming: 'auto', autoAccept: true, staleHours: 24, serve: false, reportCost: false }, 'autoAccept')).toBe('true');
+    expect(valueOf({ handoff: 'ask', incoming: 'auto', autoAccept: true, staleHours: 24, serve: false, reportCost: false, ask: false }, 'autoAccept')).toBe('true');
     expect(patchOf('autoAccept', 'false')).toEqual({ autoAccept: false });
     expect(patchOf('handoff', 'allow')).toEqual({ handoff: 'allow' });
     expect(patchOf('serve', 'true')).toEqual({ serve: true });
+    expect(patchOf('ask', 'true')).toEqual({ ask: true });
     expect(patchOf('reportCost', 'false')).toEqual({ reportCost: false });
   });
   it('take hours from 0 to 30 days', () => {
