@@ -210,7 +210,7 @@ export interface WebOptions {
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
-  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'linkViews' | 'linkTrail' | 'outbound' | 'rules' | 'setRules' | 'returnTask' | 'recallTask' | 'acceptDelivery' | 'asks' | 'answerAsk' | 'requestHandoff'>;
+  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'handOffMission' | 'linkViews' | 'linkTrail' | 'outbound' | 'rules' | 'setRules' | 'returnTask' | 'recallTask' | 'acceptDelivery' | 'asks' | 'answerAsk' | 'requestHandoff'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
   /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
@@ -1264,7 +1264,7 @@ export function createWebServer(options: WebOptions): WebServer {
         allow: ['POST'],
         run: async (req, res) => {
           const body = await jsonObject(req, res);
-          if (body) sendJson(res, 200, await docking.handOff(id, body));
+          if (body) sendJson(res, 200, typeof body.mission === 'string' ? { link: await docking.handOffMission(id, body) } : await docking.handOff(id, body));
         },
       };
     }

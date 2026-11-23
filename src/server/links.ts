@@ -34,7 +34,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** What each side may author on a link, by its role. The sender owns intent; the receiver owns execution. */
 /** `accept` is the receiver's at the offer ("this task is held here") and the sender's after a delivery ("accepted"). */
 export const SENDER_KINDS = ['offer', 'recall', 'accept', 'note', 'ask', 'reply', 'lost'] as const;
-export const RECEIVER_KINDS = ['accept', 'status', 'note', 'ask', 'reply', 'return', 'refuse', 'lost', 'cost'] as const;
+export const RECEIVER_KINDS = ['accept', 'status', 'note', 'ask', 'reply', 'return', 'refuse', 'lost', 'cost', 'progress'] as const;
 
 export interface LinkEvent {
   link: string;
@@ -57,6 +57,8 @@ export interface LinkEvent {
 
 export interface Link {
   id: string;
+  /** A task or a mission. */
+  kind: 'task' | 'mission';
   role: 'sender' | 'receiver';
   /** The dock id of the other station. */
   peer: string;
@@ -79,6 +81,8 @@ export interface Link {
   cost?: number;
   /** The receiver's own: the last figure it sent, and when. */
   costSent?: { usd: number; at: number };
+  /** A mission link: the counts the receiver last reported (sender side), or sent (receiver side). */
+  progress?: { done: number; total: number; blocked: number; review: number };
   trail: LinkEvent[];
   /** The last `seq` of ours, and the last of theirs that was applied in order. */
   outSeq: number;
@@ -120,14 +124,14 @@ export interface LinksOptions {
 export interface Links {
   load(): Promise<void>;
   /** An outgoing link for `task` to `dock` for an offer: an `offered` one is reused (a retry after an answer that was lost). */
-  outgoing(dock: { id: string; name: string }, task: Task, offer: OfferFields): Link;
+  outgoing(dock: { id: string; name: string }, task: Pick<Task, 'id' | 'title'>, offer: OfferFields, kind?: 'task' | 'mission'): Link;
   /** Counts for the caps. */
   openIncoming(dockId: string): number;
   incomingThisHour(dockId: string): number;
   outgoingThisHour(dockId: string): number;
   noteOutgoing(dockId: string): void;
   /** The receiver side of an offer: the link of a task that was made here. */
-  incoming(dock: { id: string; name: string }, linkId: string, taskId: string, offer: OfferFields, title: string, by: string): Link;
+  incoming(dock: { id: string; name: string }, linkId: string, taskId: string, offer: OfferFields, title: string, by: string, kind?: 'task' | 'mission'): Link;
   find(id: string): Link | undefined;
   /** A link of this dock, or undefined: another dock's link is never handed out. */
   of(dockId: string, id: string): Link | undefined;
@@ -338,13 +342,13 @@ export function createLinks(options: LinksOptions): Links {
       }
     },
 
-    outgoing(dock, task, offer) {
+    outgoing(dock, task, offer, kind = 'task') {
       const again = [...links.values()].find((l) => l.role === 'sender' && l.peer === dock.id && l.mine === task.id && l.state === 'offered');
       if (again) {
         Object.assign(again, { ...offer });
         return again;
       }
-      const link: Link = { id: newId(), role: 'sender', peer: dock.id, peerName: dock.name, mine: task.id, theirs: null, state: 'offered', peerStatus: null, title: cleanLine(task.title, 120), ...offer, trail: [], outSeq: 0, inSeq: 0, updatedAt: now(), held: [], seen: {} };
+      const link: Link = { kind, id: newId(), role: 'sender', peer: dock.id, peerName: dock.name, mine: task.id, theirs: null, state: 'offered', peerStatus: null, title: cleanLine(task.title, 120), ...offer, trail: [], outSeq: 0, inSeq: 0, updatedAt: now(), held: [], seen: {} };
       links.set(link.id, link);
       return link;
     },
@@ -366,8 +370,8 @@ export function createLinks(options: LinksOptions): Links {
       outgoingTimes.set(dockId, [...(outgoingTimes.get(dockId) ?? []).filter((t) => now() - t < HOUR), now()]);
     },
 
-    incoming(dock, linkId, taskId, offer, title, by) {
-      const link: Link = { id: linkId, role: 'receiver', peer: dock.id, peerName: dock.name, mine: taskId, theirs: null, state: 'accepted', peerStatus: null, title: cleanLine(title, 120), ...offer, trail: [], outSeq: 0, inSeq: 0, updatedAt: now(), held: [], seen: {} };
+    incoming(dock, linkId, taskId, offer, title, by, kind = 'task') {
+      const link: Link = { kind, id: linkId, role: 'receiver', peer: dock.id, peerName: dock.name, mine: taskId, theirs: null, state: 'accepted', peerStatus: null, title: cleanLine(title, 120), ...offer, trail: [], outSeq: 0, inSeq: 0, updatedAt: now(), held: [], seen: {} };
       handoffs.set(dock.id, [...(handoffs.get(dock.id) ?? []).filter((t) => now() - t < HOUR), now()]);
       links.set(link.id, link);
       // the offer is the sender's first event (seq 1), applied as one so that both trails agree; the accept is ours
@@ -564,6 +568,8 @@ export function createLinks(options: LinksOptions): Links {
         onward: l.onward,
         budget: l.budget,
         ...(l.chain.length === 0 ? {} : { chain: l.chain.map((h) => ({ ...h })) }),
+        ...(l.kind === 'mission' ? { kind: 'mission' as const } : {}),
+        ...(l.progress === undefined ? {} : { progress: { ...l.progress } }),
         ...(l.via === undefined ? {} : { via: l.via }),
         ...(l.role === 'sender' ? { cost: l.cost === undefined ? null : { usd: l.cost, estimate: true as const, ...(l.budget === null ? {} : { cap: l.budget }) } } : {}),
         events: l.trail.length,
@@ -609,6 +615,7 @@ export function createLinks(options: LinksOptions): Links {
     const event: LinkEvent = { ...ev, by, text: cleanLine(ev.text), ...(ev.status !== undefined && (TASK_STATUSES as readonly string[]).includes(ev.status) ? { status: ev.status } : {}) };
     // deliverables ride on a status only
     if (event.kind !== 'status') delete event.attachments;
+    if (ev.kind === 'progress' && !/^\d{1,4}\/\d{1,4} \d{1,4} \d{1,4}$/.test(event.text)) throw new Error(`dock ${dock.name} sent a progress that is not counts`);
     if (ev.kind === 'cost' && !/^\d{1,7}\.\d{2}$/.test(event.text)) throw new Error(`dock ${dock.name} sent a cost that is not dollars to the cent`);
     if (ev.kind === 'status' && event.status === undefined && event.via === undefined) throw new Error(`dock ${dock.name} sent a status with no status`);
     // only a status carries a station further on; a `first` is the business of a `lost` and nothing else
@@ -657,6 +664,10 @@ export function createLinks(options: LinksOptions): Links {
     if (event.via !== undefined) link.via = `${event.via}: ${event.text}`.slice(0, 80);
     // what the receiver reports: dollars to the cent and nothing else; the budget it applied comes with its accept
     if (event.kind === 'cost') link.cost = Number(event.text);
+    if (event.kind === 'progress') {
+      const m = /^(\d{1,4})\/(\d{1,4}) (\d{1,4}) (\d{1,4})$/.exec(event.text);
+      if (m) link.progress = { done: Number(m[1]), total: Number(m[2]), blocked: Number(m[3]), review: Number(m[4]) };
+    }
     if (event.kind === 'accept' && link.role === 'sender') {
       const applied = /^budget (\d{1,7}\.\d{2})$/.exec(event.text);
       if (applied) link.budget = Number(applied[1]);
@@ -675,7 +686,7 @@ export function createLinks(options: LinksOptions): Links {
   /** What a file holds for a link, or null. A hostile file gives fewer links, never a crash. */
   function readLink(raw: unknown): Link | null {
     if (!isRecord(raw) || typeof raw.id !== 'string' || !LINK_ID_RE.test(raw.id) || (raw.role !== 'sender' && raw.role !== 'receiver')) return null;
-    if (typeof raw.peer !== 'string' || !/^[0-9a-f]{32}$/.test(raw.peer) || typeof raw.mine !== 'string' || !/^t[1-9]\d{0,5}$/.test(raw.mine)) return null;
+    if (typeof raw.peer !== 'string' || !/^[0-9a-f]{32}$/.test(raw.peer) || typeof raw.mine !== 'string' || !/^(?:t|ms)[1-9]\d{0,5}$/.test(raw.mine)) return null;
     let offer: OfferFields;
     try {
       offer = readOffer(raw);
@@ -686,6 +697,7 @@ export function createLinks(options: LinksOptions): Links {
     const seen: Record<string, string> = {};
     if (isRecord(raw.seen)) for (const [k, v] of Object.entries(raw.seen)) if (/^\d{1,9}$/.test(k) && typeof v === 'string' && /^[0-9a-f]{16}$/.test(v)) seen[k] = v;
     return {
+      kind: raw.kind === 'mission' ? 'mission' : 'task',
       id: raw.id,
       role: raw.role,
       peer: raw.peer,
@@ -703,6 +715,7 @@ export function createLinks(options: LinksOptions): Links {
       held: [],
       seen,
       ...(typeof raw.via === 'string' ? { via: cleanLine(raw.via, 80) } : {}),
+      ...(isRecord(raw.progress) && [raw.progress.done, raw.progress.total, raw.progress.blocked, raw.progress.review].every((n) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0) ? { progress: { done: raw.progress.done as number, total: raw.progress.total as number, blocked: raw.progress.blocked as number, review: raw.progress.review as number } } : {}),
       ...(typeof raw.cost === 'number' && Number.isFinite(raw.cost) && raw.cost >= 0 && raw.cost < 10_000_000 ? { cost: raw.cost } : {}),
       ...(isRecord(raw.costSent) && typeof raw.costSent.usd === 'number' && typeof raw.costSent.at === 'number' ? { costSent: { usd: raw.costSent.usd, at: raw.costSent.at } } : {}),
       ...((['offered', 'accepted', 'delivered', 'returned', 'recalled', 'done', 'refused'] as const).find((s) => s === raw.resume) === undefined ? {} : { resume: raw.resume as LinkState }),

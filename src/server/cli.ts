@@ -1133,6 +1133,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       tasks,
       emit: (view) => web?.broadcast({ t: 'docking', docking: view }),
       emitLinks: (links) => web?.broadcast({ t: 'links', links }),
+      missions,
       setLinkBudget: (linkId, usd) => void propellant.setBudget({ links: { [linkId]: usd } }).catch((error: unknown) => log.warn('a link budget could not be saved', error)),
       spentOnTask: (taskId) => propellant.view().cost.tasks?.[taskId]?.usd,
       roomBudgetCap: () => {

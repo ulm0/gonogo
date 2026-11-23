@@ -1131,6 +1131,8 @@ export interface ChainHop {
 /** One link, for the cards and the board: counts, states and cleaned titles only. */
 export interface LinkView {
   id: string;
+  /** `task` (default) or `mission`: a mission is offered like a task and the receiver reports counts, never titles. */
+  kind?: 'task' | 'mission';
   role: 'sender' | 'receiver';
   peer: string;
   peerName: string;
@@ -1150,6 +1152,8 @@ export interface LinkView {
   chain?: ChainHop[];
   /** What a station further on last reported through this link, "ops: doing". */
   via?: string;
+  /** A mission link: what the other station says of the mission, as counts only (`at lab: 3 of 5`). */
+  progress?: { done: number; total: number; blocked: number; review: number };
   /** What the other station says the task cost there: an estimate at list prices, never a bill; `cap` is the budget it applied (null: it reports no cost). */
   cost?: { usd: number; estimate: true; cap?: number } | null;
   /** Events in the trail, and events of ours that wait to be acked. */

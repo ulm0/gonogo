@@ -420,6 +420,8 @@ export const LINK_BATCH_MAX = 20;
 export const LINK_GAP_HOLD_MAX = 50;
 export const LINKS_PER_TASK_MAX = 10;
 export const LINK_INCOMING_OPEN_MAX = 20;
+/** Open missions that one docked station may have handed to this one. */
+export const LINK_MISSIONS_OPEN_MAX = 5;
 export const LINK_IN_PER_HOUR = 30;
 export const LINK_OUT_PER_HOUR = 10;
 export const OUTBOX_PER_DOCK_MAX = 200;

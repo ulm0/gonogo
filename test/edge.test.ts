@@ -3826,6 +3826,7 @@ describe('web: REST', () => {
           rules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false }),
           setRules: () => ({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false }),
           returnTask: async () => ({}) as never,
+          handOffMission: async () => ({}) as never,
           recallTask: async () => ({}) as never,
           acceptDelivery: async () => ({}) as never,
           asks: () => [],

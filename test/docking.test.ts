@@ -39,6 +39,7 @@ interface Station {
   told: string[];
   bossTold: Array<{ station: string; subject: string; body: string }>;
   /** What the station's Propellant was told: link caps, what a task has spent, and the room budget. */
+  missionList: Array<{ id: string; name: string; goal: string; status: string }>;
   linkBudgets: Record<string, number | null>;
   spent: Record<string, number>;
   roomCap?: number;
@@ -99,6 +100,7 @@ function world(): World {
         systemed: [],
         told: [],
         bossTold: [],
+        missionList: [],
         linkBudgets: {},
         spent: {},
         triggers: [],
@@ -155,6 +157,14 @@ function world(): World {
         emit: (view) => station.views.push(view),
         notify: (text) => void station.told.push(text),
         tellBoss: (st, subject, body) => void station.bossTold.push({ station: st, subject, body }),
+        missions: {
+          list: () => station.missionList as never,
+          create: async (_actor, input) => {
+            const made = { id: `ms${station.missionList.length + 1}`, name: String((input as { name: string }).name), goal: String((input as { goal: string }).goal), status: 'planned' };
+            station.missionList.push(made);
+            return made as never;
+          },
+        },
         setLinkBudget: (linkId, usd) => void (station.linkBudgets[linkId] = usd),
         spentOnTask: (taskId) => station.spent[taskId],
         roomBudgetCap: () => station.roomCap,
@@ -1575,6 +1585,65 @@ describe('links: reach', () => {
     await b2.docking.pull();
     await settle();
     expect((a.docking.linkTrail(link) ?? []).filter((e) => e.kind === 'note')).toHaveLength(2);
+  });
+
+  describe('mission links', () => {
+    const setup = async (): Promise<{ w: World; a: Station; b: Station; dock: string; link: string }> => {
+      const w = world();
+      const a = await w.make('alpha', 'http://a.test');
+      const b = await w.make('beta', 'http://b.test');
+      const { aSees } = await pair(a, b);
+      a.missionList.push({ id: 'ms1', name: 'Ship the thing', goal: 'Everything in it, done.', status: 'active' });
+      const view = await a.docking.handOffMission(aSees, { mission: 'ms1', due: '2026-12-24', priority: 'high' });
+      await settle();
+      return { w, a, b, dock: aSees, link: view.id };
+    };
+
+    it('a mission is offered like a task: the receiver makes its own planned mission labelled with where it came from, the boss is told, and both sides have a mission link', async () => {
+      const { a, b, link } = await setup();
+      expect(b.missionList).toEqual([{ id: 'ms1', name: 'from alpha: Ship the thing', goal: 'Everything in it, done.', status: 'planned' }]);
+      expect(a.docking.linkViews()[0]).toMatchObject({ id: link, kind: 'mission', role: 'sender', mine: 'ms1', state: 'accepted', due: '2026-12-24', priority: 'high', onward: false });
+      expect(b.docking.linkViews()[0]).toMatchObject({ id: link, kind: 'mission', role: 'receiver', mine: 'ms1', theirs: 'ms1' });
+      expect(b.bossTold[0]?.subject).toBe('mission from alpha (not your Director): Ship the thing');
+      expect(b.told.at(-1)).toContain('alpha handed over a mission');
+      expect(a.systemed).toEqual([]); // no task was touched
+    });
+
+    it('the receiver reports counts only, when they change: "3 of 5" with no titles, and tasks handed over inside the mission land inside it', async () => {
+      const { a, b, dock } = await setup();
+      b.tasks = [task('t20', { missionId: 'ms1' as never, status: 'done' }), task('t21', { missionId: 'ms1' as never, status: 'doing' }), task('t22', { missionId: 'ms1' as never, status: 'blocked' }), task('t23', { missionId: 'ms1' as never, status: 'review' }), task('t24')];
+      await b.docking.pull();
+      await settle();
+      expect(a.docking.linkViews()[0]?.progress).toEqual({ done: 1, total: 4, blocked: 1, review: 1 });
+      const events = (a.docking.linkTrail(a.docking.linkViews()[0]!.id) ?? []).filter((e) => e.kind === 'progress');
+      expect(events.map((e) => e.text)).toEqual(['1/4 1 1']);
+      expect(JSON.stringify(events)).not.toMatch(/Task t2/);
+      await b.docking.pull(); // nothing changed: nothing sent
+      await settle();
+      expect((a.docking.linkTrail(a.docking.linkViews()[0]!.id) ?? []).filter((e) => e.kind === 'progress')).toHaveLength(1);
+      // a task of the mission, handed over, lands inside the other station's mission
+      a.tasks = [task('t5', { missionId: 'ms1' as never })];
+      await a.docking.handOff(dock, { task: 't5' });
+      await settle();
+      expect(b.created.at(-1)?.input).toMatchObject({ missionId: 'ms1' });
+    });
+
+    it('the receiver\'s mission being done is a delivery of the link and closes nothing on the sender\'s side; at most 5 open missions per dock', async () => {
+      const { w, a, b, dock } = await setup();
+      b.missionList[0]!.status = 'done';
+      await b.docking.pull();
+      await settle();
+      expect(a.docking.linkViews()[0]).toMatchObject({ state: 'delivered' });
+      expect(a.missionList[0]?.status).toBe('active');
+      expect(a.systemed).toEqual([]);
+      for (let i = 2; i <= 6; i += 1) {
+        a.missionList.push({ id: `ms${i}`, name: `m${i}`, goal: '', status: 'planned' });
+        await a.docking.handOffMission(dock, { mission: `ms${i}` });
+      }
+      a.missionList.push({ id: 'ms7', name: 'm7', goal: '', status: 'planned' });
+      await expect(a.docking.handOffMission(dock, { mission: 'ms7' })).rejects.toMatchObject({ code: 'conflict', message: expect.stringContaining('already holds 5 open missions') as string });
+      void w;
+    });
   });
 
   describe('cost and the cap of a link', () => {

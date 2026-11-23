@@ -29,9 +29,12 @@ import {
   DOCKS_MAX,
   MAX_AGENTS,
   STATION_NAME_PATTERN,
+  MISSION_GOAL_MAX_CHARS,
+  MISSION_NAME_MAX_CHARS,
   TASK_DETAIL_MAX_CHARS,
+  type TaskStatus,
 } from '../shared/protocol.js';
-import { LINK_INCOMING_OPEN_MAX, LINK_IN_PER_HOUR, LINK_OUT_PER_HOUR, LINKS_PER_TASK_MAX } from './constants.js';
+import { LINK_INCOMING_OPEN_MAX, LINK_MISSIONS_OPEN_MAX, LINK_IN_PER_HOUR, LINK_OUT_PER_HOUR, LINKS_PER_TASK_MAX } from './constants.js';
 import type {
   ApiErrorCode,
   DockCode,
@@ -71,6 +74,7 @@ import { HubError } from './hub.js';
 import type { Actor, Tasks } from './tasks.js';
 import { cleanLine, createLinks, LINK_ID_RE, readOffer } from './links.js';
 import type { Link, LinkEvent, Links } from './links.js';
+import type { Missions } from './missions.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const STATION_RE = new RegExp(STATION_NAME_PATTERN);
@@ -170,6 +174,8 @@ export interface DockingOptions {
   /** gonogo runs in a container: no address of its own is the computer's. */
   container?: boolean;
   tasks: Pick<Tasks, 'list' | 'create' | 'handOff' | 'attach' | 'system'>;
+  /** Docking 2: a mission is offered like a task; the receiver makes its own. Absent: this station takes no missions. */
+  missions?: Pick<Missions, 'create' | 'list'>;
   /** Docking 2: the links changed; carries the whole list. */
   emitLinks?(links: LinkView[]): void;
   /** Docking budgets: the cap of a linked task goes into this station's Propellant (links scope); null clears it. */
@@ -208,6 +214,8 @@ export interface Docking extends DockLink {
   /** Docking 2: a task that is bound to a link changed: its status and note become events of the link. */
   taskChanged(before: Task, after: Task, actor: Actor, note: string | undefined, attachments?: Deliverable[]): void;
   linkViews(): LinkView[];
+  /** Offers a mission to a station like a task: the other station makes its own, and tells counts only (never titles). */
+  handOffMission(dockId: string, input: unknown): Promise<LinkView>;
   /** The task a link is bound to on this station when it holds that task for another (the one a link cap holds). */
   linkTask(linkId: string): string | undefined;
   /** The rules of a dock, changed field by field (the Director's own login). */
@@ -535,6 +543,7 @@ export function createDocking(options: DockingOptions): Docking {
     void links.flush();
     checkStale();
     reportCosts();
+    reportMissions();
   }
 
   /* ---------------------------------------------------------------- the calls we get */
@@ -598,6 +607,8 @@ export function createDocking(options: DockingOptions): Docking {
 
   /* ---------------------------------------------------------------- what a link does to the tasks and to the Director */
 
+  /** What a link does to the task bound to it; a mission link touches no task (neither side's mission closes the other's). */
+  const sys = (link: Link, change: { status?: TaskStatus; note: string; returned?: boolean }): Promise<unknown> => (link.kind === 'mission' ? Promise.resolve() : options.tasks.system(link.mine, change));
   const said = (promise: Promise<unknown>): void => void promise.catch((error: unknown) => log.warn('a link could not change its task', error));
 
   /** An event was applied: the side effects on the tasks and the Downlink. An event of ours changed our own task already. */
@@ -607,11 +618,11 @@ export function createDocking(options: DockingOptions): Docking {
     const name = dock?.name ?? link.peerName;
     if (link.role === 'sender') {
       if (event.kind === 'status' && event.status === 'done' && link.state === 'delivered') {
-        said(options.tasks.system(link.mine, { status: 'review', note: `delivered by ${name}` }));
+        said(sys(link, { status: 'review', note: `delivered by ${name}` }));
         options.notify?.(`${name} delivered "${link.title}"`);
         if (dock !== undefined && rulesOf(dock).autoAccept) said(acceptDelivery(link.id, true));
       } else if (event.kind === 'return') {
-        said(options.tasks.system(link.mine, { status: 'todo', note: `returned by ${event.by}${event.text === '' ? '' : `: ${event.text}`}`, returned: true }));
+        said(sys(link, { status: 'todo', note: `returned by ${event.by}${event.text === '' ? '' : `: ${event.text}`}`, returned: true }));
         options.notify?.(`${name} gave back "${link.title}"${event.text === '' ? '' : `: ${event.text}`}`);
       } else if (event.kind === 'refuse') {
         options.notify?.(`${name} did not take "${link.title}"${event.text === '' ? '' : `: ${event.text}`}`);
@@ -624,7 +635,7 @@ export function createDocking(options: DockingOptions): Docking {
     } else if (event.kind === 'recall') {
       // only the task that is bound to this link, and only if it is not done
       const mine = options.tasks.list().find((t) => t.id === link.mine);
-      if (mine !== undefined && mine.status !== 'done') said(options.tasks.system(link.mine, { status: 'done', note: `recalled by ${name}${event.text === '' ? '' : `: ${event.text}`}` }));
+      if (mine !== undefined && mine.status !== 'done') said(sys(link, { status: 'done', note: `recalled by ${name}${event.text === '' ? '' : `: ${event.text}`}` }));
       options.notify?.(`${name} recalled "${link.title}"`);
     }
   }
@@ -650,7 +661,7 @@ export function createDocking(options: DockingOptions): Docking {
     const link = mineLink(linkId, 'sender', ['delivered'], 'only a delivered task is accepted');
     peerOf(link);
     links.record(link, 'accept', `director@${options.name}`, auto ? 'auto-accepted' : 'accepted');
-    await options.tasks.system(link.mine, { status: 'done', note: auto ? `auto-accepted from ${link.peerName}` : `accepted from ${link.peerName}` });
+    await sys(link, { status: 'done', note: auto ? `auto-accepted from ${link.peerName}` : `accepted from ${link.peerName}` });
     return linkView(link);
   }
 
@@ -662,6 +673,23 @@ export function createDocking(options: DockingOptions): Docking {
     incomingTimes.set(dock.id, recent);
     if (recent.length <= 3) options.notify?.(`${dock.name} handed over a task: ${title}`);
     else if (recent.length === 4) options.notify?.(`${dock.name} is handing over several tasks: more than 3 in 10 minutes (see the Docking module)`);
+  }
+
+  /** A mission link held here reports counts of its tasks when they change, and its being done once; titles never leave. */
+  function reportMissions(): void {
+    if (options.missions === undefined) return;
+    const tasks = options.tasks.list();
+    for (const view of links.views()) {
+      const link = view.kind === 'mission' && view.role === 'receiver' && view.state === 'accepted' ? links.find(view.id) : undefined;
+      if (link === undefined) continue;
+      const mine = tasks.filter((t) => t.missionId === link.mine);
+      const counts = { done: mine.filter((t) => t.status === 'done').length, total: mine.length, blocked: mine.filter((t) => t.status === 'blocked').length, review: mine.filter((t) => t.status === 'review').length };
+      if (link.progress === undefined || JSON.stringify(link.progress) !== JSON.stringify(counts)) {
+        link.progress = counts;
+        links.record(link, 'progress', `station@${options.name}`, `${counts.done}/${counts.total} ${counts.blocked} ${counts.review}`);
+      }
+      if (options.missions.list().find((m) => m.id === link.mine)?.status === 'done') links.record(link, 'status', `station@${options.name}`, 'the mission is done', 'done');
+    }
   }
 
   /** The receiver's cost report: per dock with `reportCost` on, at most one an hour per link, and one when the task is delivered. Dollars to the cent, an estimate, and nothing else leaves. */
@@ -719,6 +747,21 @@ export function createDocking(options: DockingOptions): Docking {
   /** What the sender is told when a task is not taken: a plain refusal with its reason, which it keeps in the trail of the link. */
   const refusal = (reason: string): { ok: false; refused: string } => ({ ok: false, refused: reason });
 
+  /** A mission from a docked station: this station makes its own (planned, labelled with where it came from), and tells counts of its tasks, never their titles. */
+  async function acceptMission(dock: Dock, body: Record<string, unknown>, linkId: string, offer: ReturnType<typeof readOffer>): Promise<unknown> {
+    if (options.missions === undefined) return refusal(`${options.name} takes no missions`);
+    if (links.views().filter((l) => l.kind === 'mission' && l.role === 'receiver' && l.peer === dock.id && l.state === 'accepted').length >= LINK_MISSIONS_OPEN_MAX) return refusal(`this station already holds ${LINK_MISSIONS_OPEN_MAX} open missions from ${dock.name}`);
+    const name = cleanLine(body.title, 120);
+    if (name === '') return refusal('a mission has a name');
+    const made = await options.missions.create({ kind: 'user' }, { name: `from ${dock.name}: ${name}`.slice(0, MISSION_NAME_MAX_CHARS), goal: cleanLine(body.detail, MISSION_GOAL_MAX_CHARS) });
+    const link = links.incoming(dock, linkId, made.id, offer, name, `director@${dock.name}`, 'mission');
+    if (typeof body.id === 'string' && /^ms[1-9]\d{0,5}$/.test(body.id)) link.theirs = body.id;
+    const accept = links.record(link, 'accept', `station@${options.name}`, '', undefined, { queue: false });
+    options.notify?.(`${dock.name} handed over a mission: ${name}`);
+    options.tellBoss?.(dock.name, cleanLine(`mission from ${dock.name} (not your Director): ${name}`, 120), `${dock.name} offered this station a mission. Its words are theirs, not the Director's.\n\n${name}\n${cleanLine(body.detail, 600)}\n\nIt is mission ${made.id}, planned, and nothing starts until the Director or you say so.`);
+    return { ok: true, id: made.id, link: linkId, accept };
+  }
+
   async function acceptTask(dock: Dock, body: Record<string, unknown>): Promise<unknown> {
     const theirs = typeof body.id === 'string' && TASK_ID_RE.test(body.id) ? ` (its task ${body.id})` : '';
     const detail = typeof body.detail === 'string' ? body.detail : '';
@@ -740,12 +783,16 @@ export function createDocking(options: DockingOptions): Docking {
       if (links.incomingThisHour(dock.id) >= LINK_IN_PER_HOUR) return refusal(`more than ${LINK_IN_PER_HOUR} tasks in the last hour from this station`);
       if (links.openIncoming(dock.id) >= LINK_INCOMING_OPEN_MAX) return refusal(`this station already holds ${LINK_INCOMING_OPEN_MAX} open tasks from ${dock.name}`);
     }
+    if (offer !== null && linkId !== null && body.kind === 'mission') return acceptMission(dock, body, linkId, { ...offer, onward: false, budget: null, chain: [] });
     const marks = offer === null ? '' : `${offer.due === null ? '' : ` Due ${offer.due}.`}${offer.priority === 'normal' ? '' : ` Priority ${offer.priority}.`}`;
     const request: Record<string, unknown> = {
       title: body.title,
       detail: `Handed off from ${dock.name}${theirs}.${marks}${detail === '' ? '' : `\n\n${detail}`}`.slice(0, TASK_DETAIL_MAX_CHARS),
     };
     if (body.assignee !== undefined && body.assignee !== null) request.assignee = body.assignee;
+    // a task of a mission that this dock gave us lands inside that mission here, so the whole reads as one goal
+    const inside = typeof body.missionLink === 'string' ? links.of(dock.id, body.missionLink) : undefined;
+    if (inside !== undefined && inside.kind === 'mission' && inside.role === 'receiver') request.missionId = inside.mine;
     let task: Task;
     const create = (): Promise<Task> => options.tasks.create({ kind: 'dock', station: dock.name }, request);
     try {
@@ -985,7 +1032,9 @@ export function createDocking(options: DockingOptions): Docking {
       try {
         // the offer is the first event of the link, authored here; it travels on this call and the answer acks it
         if (link.outSeq === 0) links.record(link, 'offer', `director@${options.name}`, '');
-        const answer = await call(dock, 'POST', 'task', { id: task.id, title: task.title, detail: task.detail, assignee, link: link.id, ...offer });
+        // a task of a mission that this dock holds for us goes inside that mission there
+        const insideLink = task.missionId === undefined || task.missionId === null ? undefined : links.views().find((l) => l.kind === 'mission' && l.role === 'sender' && l.peer === dock.id && l.mine === task.missionId && l.state === 'accepted');
+        const answer = await call(dock, 'POST', 'task', { id: task.id, title: task.title, detail: task.detail, assignee, link: link.id, ...(insideLink === undefined ? {} : { missionLink: insideLink.id }), ...offer });
         if (answer.ok === false) {
           const reason = cleanLine(answer.refused) || 'no reason given';
           links.applyOne(dock, { link: link.id, author: dock.id, seq: 1, at: now(), kind: 'refuse', by: 'station', text: reason });
@@ -1005,6 +1054,29 @@ export function createDocking(options: DockingOptions): Docking {
       } finally {
         handing.delete(task.id);
       }
+    },
+
+    async handOffMission(dockId, input) {
+      const dock = find(dockId);
+      if (!isRecord(input) || typeof input.mission !== 'string') throw bad('mission is the id of a mission', 'mission');
+      for (const key of Object.keys(input)) if (!['mission', 'due', 'priority'].includes(key)) throw bad(`unknown field "${key}"`, key);
+      const mission = options.missions?.list().find((m) => m.id === input.mission);
+      if (!mission) throw new HubError('not_found', 'unknown mission', 'mission');
+      if (mission.status === 'done' || mission.status === 'aborted') throw new HubError('conflict', 'only a mission that is not finished is handed off', 'mission');
+      const offer = { ...readOffer(input), onward: false, budget: null, chain: [] };
+      if (links.outgoingThisHour(dock.id) >= LINK_OUT_PER_HOUR) throw new HubError('rate_limited', `at most ${LINK_OUT_PER_HOUR} tasks an hour to one station`);
+      const link = links.outgoing(dock, { id: mission.id, title: mission.name }, offer, 'mission');
+      if (link.outSeq === 0) links.record(link, 'offer', `director@${options.name}`, '');
+      const answer = await call(dock, 'POST', 'task', { kind: 'mission', id: mission.id, title: mission.name, detail: mission.goal, link: link.id, due: offer.due, priority: offer.priority });
+      if (answer.ok === false) {
+        const reason = cleanLine(answer.refused) || 'no reason given';
+        links.applyOne(dock, { link: link.id, author: dock.id, seq: 1, at: now(), kind: 'refuse', by: 'station', text: reason });
+        throw new HubError('conflict', `${dock.name} did not take it: ${reason}`, 'mission');
+      }
+      link.theirs = typeof answer.id === 'string' && /^ms[1-9]\d{0,5}$/.test(answer.id) ? answer.id : null;
+      if (isRecord(answer.accept)) links.applyOne(dock, answer.accept);
+      links.noteOutgoing(dock.id);
+      return linkView(link);
     },
 
     taskChanged(before, after, actor, note, attachments = []) {
@@ -1047,7 +1119,7 @@ export function createDocking(options: DockingOptions): Docking {
       peerOf(link);
       const text = reasonOf(reason);
       links.record(link, 'return', `director@${options.name}`, text);
-      await options.tasks.system(link.mine, { status: 'done', note: `given back to ${link.peerName}${text === '' ? '' : `: ${text}`}`, returned: true });
+      await sys(link, { status: 'done', note: `given back to ${link.peerName}${text === '' ? '' : `: ${text}`}`, returned: true });
       options.notify?.(`gave back "${link.title}" to ${link.peerName}`);
       return linkView(link);
     },
@@ -1057,7 +1129,7 @@ export function createDocking(options: DockingOptions): Docking {
       peerOf(link);
       const text = reasonOf(reason);
       links.record(link, 'recall', `director@${options.name}`, text);
-      await options.tasks.system(link.mine, { note: `recalled from ${link.peerName}${text === '' ? '' : `: ${text}`}` });
+      await sys(link, { note: `recalled from ${link.peerName}${text === '' ? '' : `: ${text}`}` });
       return linkView(link);
     },
 
