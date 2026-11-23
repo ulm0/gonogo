@@ -1,6 +1,7 @@
 /** The project folder of a room (docs/features/rooms.md, "Folders"): the checks, the file, the route of a room, and what it reaches. */
 import http from 'node:http';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { WebSocket } from 'ws';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -144,6 +145,21 @@ describe('the file and the store', () => {
   });
 });
 
+describe('the dry run', () => {
+  it('says what a PUT would find and writes nothing: the real path and the warning, or why not', () => {
+    const store = createProjectFolder({ roomHome: state, fallback: project, own: [state] });
+    const link = join(dir, 'link');
+    symlinkSync(project, link);
+    expect(store.check(link)).toEqual({ ok: true, dir: project, warning: null });
+    expect(store.check(state)).toMatchObject({ ok: true, dir: state, warning: expect.stringMatching(/gonogo's own settings and keys/) as string });
+    expect(store.check(join(dir, 'missing'))).toMatchObject({ ok: false, reason: expect.stringMatching(/does not exist/) as string, warning: null });
+    expect(store.check('relative')).toMatchObject({ ok: false, reason: expect.stringMatching(/whole path/) as string });
+    expect(store.check('')).toMatchObject({ ok: false });
+    expect(store.check(undefined)).toMatchObject({ ok: false });
+    expect(readdirSync(state)).toEqual([]); // nothing written
+  });
+});
+
 describe('the step-up', () => {
   it('asks for the password to change the folder of a room, and to add a room that has one; a plain room does not', () => {
     expect(stepUpReason('PUT', '/api/project-folder', null)).toMatch(/project folder/);
@@ -208,6 +224,34 @@ describe('the route of a room', () => {
     for (const actor of [undefined, 'key:abc', 'tui', 'socket', 'session; x']) expect((await call('PUT', '/api/project-folder', { dir: project }, actor)).status, String(actor)).toBe(403);
     expect((await call('GET', '/api/project-folder')).json).toMatchObject({ source: 'default' });
     expect((await call('PUT', '/api/project-folder', { dir: project }, 'token')).status).toBe(200);
+  });
+
+  it('answers the dry run to anybody who asks, before anything is saved, and writes nothing', async () => {
+    const ask = (value: string) => call('GET', `/api/project-folder/check?dir=${encodeURIComponent(value)}`);
+    expect((await ask(project)).json).toEqual({ ok: true, dir: project, warning: null });
+    expect((await ask(home)).json).toMatchObject({ ok: true, warning: expect.stringMatching(/gonogo's own settings and keys/) as string });
+    expect((await ask(join(dir, 'missing'))).json).toMatchObject({ ok: false, reason: expect.stringMatching(/does not exist/) as string });
+    expect((await call('GET', '/api/project-folder/check')).json).toMatchObject({ ok: false });
+    expect((await call('GET', '/api/project-folder')).json).toMatchObject({ source: 'default' });
+    expect(existsSync(join(home, 'project-folder.json'))).toBe(false);
+  });
+
+  it('tells an open page when the folder changes (the hire form\'s default), with the whole info', async () => {
+    const ws = new WebSocket(`ws+unix://${join(home, 'run', 'room.sock')}:/ws`, ['gonogo.v1'], { headers: { host: '127.0.0.1', origin: 'http://127.0.0.1' } });
+    const frames: Array<{ t?: string; info?: { cwd?: string } }> = [];
+    ws.on('message', (data, binary) => {
+      if (!binary) frames.push(JSON.parse(String(data)) as { t?: string; info?: { cwd?: string } });
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    try {
+      expect((await call('PUT', '/api/project-folder', { dir: project }, 'session')).status).toBe(200);
+      await expect.poll(() => frames.find((f) => f.t === 'info')?.info?.cwd).toBe(project);
+    } finally {
+      ws.close();
+    }
   });
 
   it('refuses a folder that has not the shape of one, and takes gonogo\'s own with a warning', async () => {

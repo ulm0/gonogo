@@ -1130,6 +1130,13 @@ describe('a room with a project folder (t113)', () => {
         expect(loadRooms(home).map((r) => r.id)).toEqual(['main', 'docs']);
         expect(existsSync(join(home, 'rooms', 'other'))).toBe(false);
       }
+      expect(loadRooms(home).find((x) => x.id === 'docs')?.autostart).toBe(true); // made not to start, set to start once its folder was in place
+      // the dry run of the form: the same answer as a room's own, a bad id is reserved
+      const dry = async (value: string) => (await api(s, `/api/rooms/check-folder?dir=${encodeURIComponent(value)}`)).json() as Promise<Record<string, unknown>>;
+      expect(await dry(folder)).toEqual({ ok: true, dir: folder, warning: null });
+      expect(await dry(home)).toMatchObject({ ok: true, warning: expect.stringMatching(/gonogo's own settings and keys/) as string });
+      expect(await dry(join(folder, 'nope'))).toMatchObject({ ok: false });
+      expect((await post(s, { id: 'check-folder' })).status).toBe(400);
       // no folder, or null: a room like before
       expect((await post(s, { id: 'plain' })).status).toBe(201);
       expect((await post(s, { id: 'plain2', dir: null })).status).toBe(201);

@@ -88,12 +88,25 @@ export function writeFolder(roomHome: string, dir: string | null): void {
   renameSync(temp, path);
 }
 
+/** The dry run of a PUT or of a new room: the shape check and the warning, nothing written. */
+export function checkWithWarning(input: unknown, own: readonly string[], env: Record<string, string | undefined> = process.env): { ok: true; dir: string; warning: string | null } | { ok: false; reason: string; warning: null } {
+  try {
+    const dir = checkFolder(input);
+    return { ok: true, dir, warning: folderWarning(dir, own, env) };
+  } catch (error) {
+    if (error instanceof FolderError) return { ok: false, reason: error.message, warning: null };
+    throw error;
+  }
+}
+
 export interface ProjectFolder {
   /**
    * The folder in force: the stored one when it still has the shape of a folder (a file somebody planted, or a folder that is gone, does not), else the one
    * gonogo was started in. `warning`: what the Director should know about that folder, or null.
    */
   get(): { dir: string; source: 'set' | 'default'; default: string; warning: string | null };
+  /** What a PUT of `input` would find, writing nothing: the real path and the warning, or why not. */
+  check(input: unknown): { ok: true; dir: string; warning: string | null } | { ok: false; reason: string; warning: null };
   /** Checks the shape and stores (null: back to the default). Throws a FolderError. */
   set(input: string | null): { before: string; after: string; warning: string | null };
 }
@@ -119,6 +132,9 @@ export function createProjectFolder(options: { roomHome: string; fallback: strin
   };
   return {
     get,
+    check(input) {
+      return checkWithWarning(input, options.own, env);
+    },
     set(input) {
       const before = get().dir;
       writeFolder(options.roomHome, input === null ? null : checkFolder(input));

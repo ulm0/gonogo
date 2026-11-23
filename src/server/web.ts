@@ -203,7 +203,7 @@ export interface WebOptions {
   roomKeys?: Pick<RoomKeys, 'view' | 'set' | 'remove'>;
   /** Runtime settings (docs/runtime-settings-spec.md): absent in tests that do not need it (the routes answer 404). */
   /** The room's project folder (docs/features/rooms.md): absent in tests that do not need it (the routes answer 404). */
-  projectFolder?: { store: ProjectFolder; audit: AuditRecord; boss(): { name: string; dir: string } | null };
+  projectFolder?: { store: ProjectFolder; audit: AuditRecord; boss(): { name: string; dir: string } | null; /** The folder in force changed: tell the open pages (the hire form's default). */ changed?(): void };
   settings?: { store: Settings; apply(): void; audit: AuditRecord; announce(): void };
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
   models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
@@ -1615,6 +1615,12 @@ export function createWebServer(options: WebOptions): WebServer {
       };
     }
     // GET /api/project-folder; PUT /api/project-folder ({ dir: string | null }): only the Director's own login session may change it, who asked comes from the supervisor over the local socket
+    if (s[1] === 'project-folder' && s.length === 3 && s[2] === 'check') {
+      // a dry run of the PUT for the field of the page, before anything is saved: reveals only what the shape check and the warning say about a path
+      const folder = options.projectFolder;
+      if (!folder) return null;
+      return { allow: ['GET'], run: (req, res) => sendJson(res, 200, folder.store.check(new URL(req.url ?? '/', 'http://x').searchParams.get('dir') ?? '')) };
+    }
     if (s[1] === 'project-folder' && s.length === 2) {
       const folder = options.projectFolder;
       if (!folder) return null;
@@ -1633,6 +1639,7 @@ export function createWebServer(options: WebOptions): WebServer {
           try {
             const done = folder.store.set(body.dir);
             folder.audit('config', `project folder by ${actor}: ${JSON.stringify(done.before)} -> ${JSON.stringify(done.after)}${done.warning === null ? '' : ` (${done.warning})`}`);
+            folder.changed?.();
             sendJson(res, 200, { ...view(), note: 'The agents that run keep their folder; a new or restarted agent starts in this one.' });
           } catch (error) {
             if (error instanceof FolderError) return sendApiError(res, 400, error.message, 'bad_request', 'dir');

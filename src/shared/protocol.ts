@@ -2113,7 +2113,13 @@ export interface ModelsFrame {
   t: 'models';
   models: ModelDefaults;
 }
+/** The server's own answer changed (the project folder, so the hire form's default): carries the whole info. Also inside StateSnapshot. */
+export interface InfoFrame {
+  t: 'info';
+  info: ServerInfo;
+}
 export type ServerFrame =
+  | InfoFrame
   | ModelsFrame
   | TabNameFrame
   | RoomFrame
@@ -2140,7 +2146,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
+export type HubEvent = InfoFrame | AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts

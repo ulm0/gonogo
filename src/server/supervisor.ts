@@ -22,7 +22,7 @@ import { createAuthHttp } from './authhttp.js';
 import { createDevices } from './devicelogin.js';
 import { createPasskeys } from './passkeys.js';
 import { GLOBAL_SETTINGS_FILE, globalSetting } from './settings.js';
-import { checkFolder, FolderError, writeFolder } from './projectfolder.js';
+import { checkFolder, checkWithWarning, FolderError, writeFolder } from './projectfolder.js';
 import { KNOWLEDGE_DIR, nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
@@ -897,7 +897,8 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
             throw error;
           }
         }
-        const entry = addRoom(options.home, body.id, typeof body.name === 'string' ? body.name : undefined);
+        // with a folder the room is first made not to start with gonogo, and set to start only once its folder is in place: the 2 s poll of the supervisor can never launch it without
+        const entry = addRoom(options.home, body.id, typeof body.name === 'string' ? body.name : undefined, folder === null);
         if (folder !== null) {
           try {
             writeFolder(homeOfRoom(entry.id), folder);
@@ -905,6 +906,7 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
             removeRoom(options.home, entry.id);
             throw error;
           }
+          updateRoom(options.home, entry.id, { autostart: true });
           log.info(`room ${entry.id}: project folder ${folder}`);
         }
         reconcile();
@@ -985,7 +987,10 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
       if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
       if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
-      if (rooms[2] === 'migrate') void (rooms[1] === 'main' ? migrateApi(req, res, grant) : sendApiError(res, 404, 'not found', 'not_found'));
+      if (rooms[1] === 'check-folder' && rooms[2] === undefined && req.method === 'GET') {
+        // the dry run of a folder for the new-room form: the same answer as the room's own check, nothing written
+        sendJson(res, 200, checkWithWarning(new URL(req.url ?? '/', 'http://x').searchParams.get('dir') ?? '', [options.home], options.env));
+      } else if (rooms[2] === 'migrate') void (rooms[1] === 'main' ? migrateApi(req, res, grant) : sendApiError(res, 404, 'not found', 'not_found'));
       else if (rooms[2] === 'stop' || rooms[2] === 'start' || rooms[1] === 'stop-all' || rooms[1] === 'start-all') void powerApi(req, res, grant, rooms[2] ?? (rooms[1] as string), rooms[2] === undefined ? undefined : rooms[1]);
       else void roomsApi(req, res, grant, rooms[1]);
       return;

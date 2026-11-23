@@ -510,6 +510,8 @@ export function applyServerFrame(s: ClientState, frame: ServerFrame, now: number
       return { ...s, room: frame.room };
     case 'tabname':
       return { ...s, tabName: frame.tabName };
+    case 'info':
+      return { ...s, info: frame.info };
     case 'downlink':
       return { ...s, downlink: frame.downlink };
     case 'livery':

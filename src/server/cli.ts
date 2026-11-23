@@ -109,7 +109,7 @@ import { createAutoUpdater, createAutoUpdateStore } from './autoupdate.js';
 import type { AutoUpdater } from './autoupdate.js';
 import { createUpdater } from './updater.js';
 import { migrate, planMigration } from './mainmigrate.js';
-import { addRoom, loadRooms, mainLayout, MAIN_ROOM, recordedMainHome, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
+import { addRoom, updateRoom, loadRooms, mainLayout, MAIN_ROOM, recordedMainHome, NO_SUPERVISOR_HINT, removeRoom, roomHome, supervisorRunning } from './rooms.js';
 import { authCommand } from './authcli.js';
 import { exposeCommand } from './exposecli.js';
 import { startSupervisor } from './supervisor.js';
@@ -1360,7 +1360,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       models: modelDefaults,
       features: audited(features, audit, FEATURES_AUDIT),
       roomKeys: audited(roomKeys, blackBox.record, ROOM_KEYS_AUDIT),
-      projectFolder: { store: projectFolder, audit: blackBox.record, boss: () => ((boss) => (boss === undefined ? null : { name: boss.name, dir: boss.dir }))(hubInstance.views().find((v) => v.boss)) },
+      projectFolder: { store: projectFolder, audit: blackBox.record, changed: () => web?.broadcast({ t: 'info', info: info() }), boss: () => ((boss) => (boss === undefined ? null : { name: boss.name, dir: boss.dir }))(hubInstance.views().find((v) => v.boss)) },
       settings: {
         store: runtime,
         apply: applyRuntime,
@@ -1642,10 +1642,12 @@ async function runRoomsCommand(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, e
         return;
       }
     }
-    const room = addRoom(root, parsed.id, parsed.name);
+    // with a folder: the room is listed as not starting, gets its folder, and only then starts with gonogo, so that the poll of a running supervisor cannot launch it without
+    const room = addRoom(root, parsed.id, parsed.name, folder === null);
     if (folder !== null) {
       try {
         writeFolder(roomHome(root, room.id), folder);
+        updateRoom(root, room.id, { autostart: true });
       } catch (error) {
         removeRoom(root, room.id);
         throw error;

@@ -14,7 +14,7 @@ export const MAIN_ROOM = 'main';
 /** Names the front port answers itself at its root: not offered as ids for new rooms (rooms already so named keep working under /r/<id>/). */
 export const RESERVED_ROOT_NAMES = ['r', 'ws', 'internal', 'api', 'assets', 'rooms'] as const;
 /** The last parts of `/api/rooms/<x>` that are actions on all the rooms: not room ids. */
-export const ROOM_ACTION_NAMES = ['stop-all', 'start-all'] as const;
+export const ROOM_ACTION_NAMES = ['stop-all', 'start-all', 'check-folder'] as const;
 export const ROOMS_FILE = 'rooms.json';
 export const ROOMS_DIR = 'rooms';
 export const ROOMS_MAX = 12;
@@ -180,7 +180,7 @@ function saveRooms(root: string, rooms: RoomEntry[], layout?: MainHome): void {
 }
 
 /** Adds a room (its folder is made when the room first starts). Throws RoomsError with the reason. */
-export function addRoom(root: string, id: unknown, name?: string): RoomEntry {
+export function addRoom(root: string, id: unknown, name?: string, autostart = true): RoomEntry {
   if (!validRoomId(id)) throw new RoomsError('a room id is a lower-case letter, then up to 23 lower-case letters, digits or dashes');
   if (id === MAIN_ROOM) throw new RoomsError('main is the home itself: pick another id');
   if ((ROOM_ACTION_NAMES as readonly string[]).includes(id)) throw new RoomsError(`"${id}" is an action on all the rooms: pick another id`);
@@ -188,7 +188,7 @@ export function addRoom(root: string, id: unknown, name?: string): RoomEntry {
   const rooms = loadRooms(root);
   if (rooms.some((r) => r.id === id)) throw new RoomsError(`there is already a room "${id}"`, 'conflict');
   if (rooms.length >= ROOMS_MAX) throw new RoomsError(`at most ${ROOMS_MAX} rooms: every room is a gonogo process of its own`, 'conflict');
-  const entry: RoomEntry = { id, name: name === undefined || cleanName(name) === '' ? id : cleanName(name).slice(0, NAME_MAX), autostart: true };
+  const entry: RoomEntry = { id, name: name === undefined || cleanName(name) === '' ? id : cleanName(name).slice(0, NAME_MAX), autostart };
   saveRooms(root, [...rooms.filter((r) => r.id !== MAIN_ROOM), entry]);
   return entry;
 }
