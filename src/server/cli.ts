@@ -790,7 +790,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         enabled: (cleanRoom) => globalMcp.enabled(cleanRoom),
         saw: (servers) =>
           void globalMcp.observe(servers).then((fresh) => {
-            for (const s of fresh) downlink.post('startup', `A new user-scope MCP server ${s.name} → ${s.target === '' ? 'no address' : s.target} was added; it now starts with every agent.`);
+            for (const s of fresh) downlink.post('startup', s.was === undefined ? `A new user-scope MCP server ${s.name} → ${s.target === '' ? 'no address' : s.target} was added; it now starts with every agent.` : `The user-scope MCP server ${s.name} now points to ${s.target === '' ? 'no address' : s.target} (was ${s.was === '' ? 'no address' : s.was}).`);
           }),
       },
       egress: { enabled: () => egressSettings.view().anthropic, issue: (agent, key) => egress.issue(agent, key), revoke: (agent) => egress.revoke(agent), basePath: (token) => egress.basePath(token) },

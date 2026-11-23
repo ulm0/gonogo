@@ -451,7 +451,7 @@ export interface GlobalMcpView extends GlobalMcp {
   source: string;
   servers: GlobalMcpServer[];
   /** Names added since the last start that looked, with their targets: still in the config, for the banner. */
-  added?: Array<{ name: string; target: string }>;
+  added?: Array<{ name: string; target: string; was?: string }>;
 }
 /** The room's egress setting: a Clean Room agent holds no Anthropic API key, a proxy of gonogo's holds it. Off by default. */
 export interface EgressSettings {

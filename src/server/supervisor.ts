@@ -709,15 +709,15 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }),
     );
     // the user-scope MCP servers that appeared (names and targets only; the id is a hash of both, so the same one in two rooms is one finding)
-    const globalMcpAdded: Array<{ room: string; name: string; target: string }> = [];
+    const globalMcpAdded: Array<{ room: string; name: string; target: string; was?: string }> = [];
     await Promise.all(
       [...children.values()].map(async (child) => {
         if (child.port === null) return;
         try {
           const body = (await askRoom(child, '/api/global-mcp', 1500)) as { added?: unknown };
           for (const a of Array.isArray(body.added) ? body.added : []) {
-            const { name, target } = a as { name?: unknown; target?: unknown };
-            if (typeof name === 'string' && typeof target === 'string' && !globalMcpAdded.some((x) => x.name === name && x.target === target)) globalMcpAdded.push({ room: child.entry.id, name, target });
+            const { name, target, was } = a as { name?: unknown; target?: unknown; was?: unknown };
+            if (typeof name === 'string' && typeof target === 'string' && !globalMcpAdded.some((x) => x.name === name && x.target === target)) globalMcpAdded.push({ room: child.entry.id, name, target, ...(typeof was === 'string' ? { was } : {}) });
           }
         } catch {
           // no answer: no finding from this room

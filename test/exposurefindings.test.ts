@@ -208,4 +208,8 @@ describe('a new user-scope MCP server', () => {
     expect(found[0]?.id).not.toBe(findingId('global-mcp-added', 'pulsar\0https://other.test'));
     expect(ids({})).toEqual([]);
   });
+  it('a changed target says where it pointed before', () => {
+    const f = findingsOf({ ...base, globalMcpAdded: [{ room: 'main', name: 'gamma', target: 'https://evil.test', was: 'https://gamma.pulsar.codes' }] }).find((x) => x.kind === 'global-mcp-added');
+    expect(f?.text).toBe('The user-scope MCP server gamma now points to https://evil.test (was https://gamma.pulsar.codes) (room main).');
+  });
 });

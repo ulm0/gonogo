@@ -97,12 +97,19 @@ export function mergeGlobal(globals: Record<string, McpServer>, off: readonly st
   return { ...kept, ...payload };
 }
 
+/** A name that is new at a start, or one whose target changed (`was` is the old one). */
+export interface GlobalMcpChange {
+  name: string;
+  target: string;
+  was?: string;
+}
+
 export interface GlobalMcpStore {
   load(): Promise<void>;
   /** At a start: the servers just read. Returns the ones whose NAME was not there at the last start (none the very first time: that only records what is there). */
-  observe(servers: GlobalMcpServer[]): Promise<GlobalMcpServer[]>;
+  observe(servers: GlobalMcpServer[]): Promise<GlobalMcpChange[]>;
   /** The servers added since the Director last looked, by name and target, for the findings of the banner. */
-  added(): Array<{ name: string; target: string }>;
+  added(): GlobalMcpChange[];
   view(): GlobalMcp;
   /** Whether the globals go into the mcp.json of an agent: `cleanRoom` is whether it is one. */
   enabled(cleanRoom: boolean): boolean;
@@ -118,8 +125,8 @@ export function createGlobalMcpStore(options: { dir: string; log?: Logger }): Gl
   let host = true;
   let cleanRoom = false;
   /** The names at the last start (null: never recorded), and the new ones since, with their targets. */
-  let seen: string[] | null = null;
-  let added: Array<{ name: string; target: string }> = [];
+  let seen: Record<string, string | null> | null = null;
+  let added: GlobalMcpChange[] = [];
   let chain: Promise<unknown> = Promise.resolve();
   const save = async (): Promise<void> => {
     const temp = `${path}.${randomBytes(4).toString('hex')}.tmp`;
@@ -138,8 +145,10 @@ export function createGlobalMcpStore(options: { dir: string; log?: Logger }): Gl
         if (!isRecord(saved) || saved.version !== 1) throw new Error('not a version 1 file');
         if (typeof saved.host === 'boolean') host = saved.host;
         if (typeof saved.cleanRoom === 'boolean') cleanRoom = saved.cleanRoom;
-        if (Array.isArray(saved.seen)) seen = saved.seen.filter((n): n is string => typeof n === 'string').slice(0, 200);
-        if (Array.isArray(saved.added)) added = saved.added.filter((a): a is { name: string; target: string } => isRecord(a) && typeof a.name === 'string' && typeof a.target === 'string').slice(0, 50);
+        // an older file kept names only: their targets are unknown, and the next start adopts them without a notice
+        if (Array.isArray(saved.seen)) seen = Object.fromEntries(saved.seen.filter((n): n is string => typeof n === 'string').slice(0, 200).map((n) => [n, null]));
+        else if (isRecord(saved.seen)) seen = Object.fromEntries(Object.entries(saved.seen).filter((e): e is [string, string | null] => e[1] === null || typeof e[1] === 'string').slice(0, 200));
+        if (Array.isArray(saved.added)) added = saved.added.filter((a): a is GlobalMcpChange => isRecord(a) && typeof a.name === 'string' && typeof a.target === 'string' && (a.was === undefined || typeof a.was === 'string')).slice(0, 50);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
         // the defaults: host agents on, Clean Room off
@@ -149,11 +158,12 @@ export function createGlobalMcpStore(options: { dir: string; log?: Logger }): Gl
     view: () => ({ host, cleanRoom }),
     added: () => added,
     async observe(servers) {
-      const names = servers.map((s) => s.name);
-      const fresh = seen === null ? [] : servers.filter((s) => !seen!.includes(s.name));
-      if (seen !== null && fresh.length === 0 && names.length === seen.length) return [];
-      seen = names;
-      added = [...added.filter((a) => servers.some((s) => s.name === a.name && s.target === a.target)), ...fresh.map((s) => ({ name: s.name, target: s.target }))].slice(-50);
+      const before = seen;
+      const next = Object.fromEntries(servers.map((s) => [s.name, s.target]));
+      const fresh: GlobalMcpChange[] = before === null ? [] : servers.flatMap((s) => (!Object.hasOwn(before, s.name) ? [{ name: s.name, target: s.target }] : before[s.name] !== null && before[s.name] !== s.target ? [{ name: s.name, target: s.target, was: before[s.name] as string }] : []));
+      if (before !== null && fresh.length === 0 && JSON.stringify(before) === JSON.stringify(next)) return [];
+      seen = next;
+      added = [...added.filter((a) => servers.some((s) => s.name === a.name && s.target === a.target)), ...fresh].slice(-50);
       const run = chain.then(() => save());
       chain = run.catch(() => undefined);
       await run.catch((error: unknown) => log.error('could not save the global MCP names', error));

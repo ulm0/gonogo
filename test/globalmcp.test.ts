@@ -208,7 +208,7 @@ describe('a new name at a start', () => {
     await store.load();
     expect(await store.observe([srv('a', 'npx')])).toEqual([]);
     expect(await store.observe([srv('a', 'npx')])).toEqual([]);
-    expect(await store.observe([srv('a', 'npx'), srv('b', 'https://x.test')])).toEqual([srv('b', 'https://x.test')]);
+    expect(await store.observe([srv('a', 'npx'), srv('b', 'https://x.test')])).toEqual([{ name: 'b', target: 'https://x.test' }]);
     expect(await store.observe([srv('a', 'npx'), srv('b', 'https://x.test')])).toEqual([]);
     expect(store.added()).toEqual([{ name: 'b', target: 'https://x.test' }]);
     // kept across a restart, and a name that went and came back is new again
@@ -218,6 +218,19 @@ describe('a new name at a start', () => {
     await again.observe([srv('a', 'npx')]);
     expect(again.added()).toEqual([]);
     expect(await again.observe([srv('a', 'npx'), srv('b', 'https://x.test')])).toHaveLength(1);
+  });
+  it('a changed target under the same name is announced with the old one, once; an older names-only file adopts targets without a notice', async () => {
+    const store = createGlobalMcpStore({ dir, log });
+    await store.load();
+    await store.observe([srv('gamma', 'https://gamma.pulsar.codes')]);
+    expect(await store.observe([srv('gamma', 'https://evil.test')])).toEqual([{ name: 'gamma', target: 'https://evil.test', was: 'https://gamma.pulsar.codes' }]);
+    expect(await store.observe([srv('gamma', 'https://evil.test')])).toEqual([]);
+    expect(store.added()).toEqual([{ name: 'gamma', target: 'https://evil.test', was: 'https://gamma.pulsar.codes' }]);
+    await writeFile(join(dir, 'global-mcp.json'), JSON.stringify({ version: 1, host: true, cleanRoom: false, seen: ['gamma'], added: [] }));
+    const old = createGlobalMcpStore({ dir, log });
+    await old.load();
+    expect(await old.observe([srv('gamma', 'https://anything.test')])).toEqual([]);
+    expect(await old.observe([srv('gamma', 'https://other.test')])).toHaveLength(1);
   });
   it('the launcher tells the room of the servers it read, and the saved file carries names and targets only', async () => {
     await mkdir(join(dir, 'work'), { recursive: true });

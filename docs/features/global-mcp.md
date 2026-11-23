@@ -32,7 +32,7 @@ Claude Code keeps the token of a remote server in its credential store (the conf
 
 ## A new server is told to you
 
-The room remembers the names it saw at the last start of an agent. When a **new name** shows up, you get a Downlink notice ("A new user-scope MCP server `NAME` → `COMMAND or ORIGIN` was added; it now starts with every agent") and a finding in the insecure-setup banner with the same words. Names and targets only, never an argument, a header or a value. The finding is dismissed by an id that is a hash of the name and the target (so the same server at another address shows again) and goes away by itself when the server is removed from the config. The very first start only records what is there, with no notice. A change of address under the same name is not a new name and is not announced.
+The room remembers the names it saw at the last start of an agent. When a **new name** shows up, you get a Downlink notice ("A new user-scope MCP server `NAME` → `COMMAND or ORIGIN` was added; it now starts with every agent") and a finding in the insecure-setup banner with the same words. Names and targets only, never an argument, a header or a value. The finding is dismissed by an id that is a hash of the name and the target (so the same server at another address shows again) and goes away by itself when the server is removed from the config. The very first start only records what is there, with no notice. A change of address under the same name IS announced ("The user-scope MCP server `NAME` now points to `TARGET` (was `OLD`)"), with the old target, so a swapped URL or command is not quiet; the id hashes name and new target. A file from before this change adopts the current targets once without a notice.
 
 ## What the page shows
 
