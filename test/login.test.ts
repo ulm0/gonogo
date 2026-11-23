@@ -1182,11 +1182,12 @@ describe('the device login of a terminal through the supervisor', () => {
     const host = '192.168.1.5';
     const read = (headers: Record<string, string>) => call('GET', '/api/exposure/findings', { ...headers, host });
     const found = (await read(session)).text;
-    expect(JSON.parse(found).findings.map((f: { id: string }) => f.id)).toEqual(['plain-http', 'public-name-no-mfa']); // the test supervisor lists a public name and has no second factor
+    const ids: string[] = JSON.parse(found).findings.map((f: { id: string }) => f.id);
+    expect(ids.map((id) => id.replace(/-[0-9a-f]{12}$/, ''))).toEqual(['plain-http', 'public-name-no-mfa']); // the test supervisor lists a public name and has no second factor
     // the list is a map of the weak spots: no key (read scope included) and no terminal login may read it
     expect((await read({ authorization: `Bearer ${key}` })).status).toBe(403);
     expect((await read({ authorization: `Bearer ${tui}` })).status).toBe(403);
-    const dismiss = (headers: Record<string, string>) => call('POST', '/api/exposure/dismiss', { ...JSONH, ...headers, host, origin: `http://${host}` }, JSON.stringify({ id: 'plain-http' }));
+    const dismiss = (headers: Record<string, string>) => call('POST', '/api/exposure/dismiss', { ...JSONH, ...headers, host, origin: `http://${host}` }, JSON.stringify({ id: ids[0] }));
     expect((await dismiss({ authorization: `Bearer ${key}` })).status).toBe(403);
     expect((await dismiss({ authorization: `Bearer ${tui}` })).status).toBe(403);
     expect(JSON.parse((await read(session)).text).findings).toHaveLength(2);
