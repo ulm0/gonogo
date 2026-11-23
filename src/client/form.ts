@@ -1,5 +1,5 @@
 import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
-import type { AgentView, CleanRoom, PayloadDefaults, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, CleanRoomFlavor, McpServer, ModelDefaults, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, PayloadDefaults, GlobalMcpView, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, CleanRoomFlavor, McpServer, ModelDefaults, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { parseRulesText, rulesOf, rulesToText } from './permissions.js';
 import { positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -313,7 +313,7 @@ export function payloadOffOf(values: Values): PayloadOff | null {
 export interface PayloadRow {
   kind: 'server' | 'skill';
   name: string;
-  from: 'room' | 'agent';
+  from: 'global' | 'room' | 'agent';
   on: boolean;
   /** Only a room item that this agent does not replace can be switched off. */
   canSwitch: boolean;
@@ -324,7 +324,7 @@ export interface PayloadRow {
  * What the agent starts with, item by item, and where each item comes from (docs/payload-spec.md): the room's defaults, each on, switched off or replaced by an
  * item of the agent's own of the same name, then the agent's own. The agent wins. A Clean Room agent, and an engine with no payload, get none of the room's.
  */
-export function payloadRows(defaults: PayloadDefaults | null, values: Values): PayloadRow[] {
+export function payloadRows(defaults: PayloadDefaults | null, values: Values, global: GlobalMcpView | null = null): PayloadRow[] {
   const kind = providerInfo(values.provider).payload;
   if (kind === null) return [];
   const ownServers = Object.keys(readServers(values.servers) ?? {});
@@ -336,6 +336,16 @@ export function payloadRows(defaults: PayloadDefaults | null, values: Values): P
     const switched = off.includes(name);
     return { kind: item, name, from: 'room', on: !replaced && !switched, canSwitch: !replaced, note: replaced ? "replaced by this agent's own" : switched ? 'switched off for this agent' : '' };
   };
+  // the user-scope servers of Claude Code, when the room includes them for this kind of agent: first, and replaced by a room default or this agent's own of the same name
+  const globalOn = values.provider === 'claude' && global !== null && (values.cleanRoom ? global.cleanRoom : global.host);
+  if (globalOn) {
+    for (const s of global.servers) {
+      const replacedByRoom = (room?.mcpServers ?? []).some((x) => x.name === s.name);
+      const replaced = ownServers.includes(s.name) || replacedByRoom;
+      const switched = values.offServers.includes(s.name);
+      rows.push({ kind: 'server', name: s.name, from: 'global', on: !replaced && !switched, canSwitch: !replaced, note: ownServers.includes(s.name) ? "replaced by this agent's own" : replacedByRoom ? 'replaced by a room default' : switched ? 'switched off for this agent' : '' });
+    }
+  }
   for (const s of room?.mcpServers ?? []) rows.push(roomRow('server', s.name, ownServers, values.offServers));
   if (kind === 'all') for (const s of room?.skills ?? []) rows.push(roomRow('skill', s.name, ownSkills, values.offSkills));
   // a name switched off that the room no longer has: shown so that it can be switched back, which drops it

@@ -2953,6 +2953,25 @@ describe('end to end with the stand-in agent', () => {
     await again.run.stop();
   }, 120_000);
 
+  it('Global MCP servers: two switches (host on, Clean Room off), saved by the API, kept across a restart, in the Black Box as on or off, and out of an agent\'s reach', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    const first = (await api<{ host: boolean; cleanRoom: boolean; source: string; servers: unknown[] }>(h, 'GET', '/api/global-mcp')).body;
+    expect(first).toMatchObject({ host: true, cleanRoom: false, source: 'global (claude mcp --scope user)' });
+    expect(Array.isArray(first.servers)).toBe(true);
+    expect((await api(h, 'PUT', '/api/global-mcp', { cleanRoom: true })).body).toMatchObject({ host: true, cleanRoom: true });
+    expect((await stat(join(h.home, 'global-mcp.json'))).mode & 0o777).toBe(0o600);
+    for (const bad of [{}, { host: 'yes' }, { more: true }]) expect((await api<ApiError>(h, 'PUT', '/api/global-mcp', bad)).status, JSON.stringify(bad)).toBe(400);
+    const events = (await api<AuditView>(h, 'GET', '/api/black-box')).body.events.map((e) => e.text).join('\n');
+    expect(events).toContain('Director set the global MCP servers: host agents on, Clean Room agents on');
+    const agentToken = await readToken(h, 'flight');
+    expect((await api(h, 'GET', '/api/global-mcp', undefined, agentToken)).status).toBe(401);
+    await h.run.stop();
+    const again = await startServer({ home: h.home });
+    expect((await api(again, 'GET', '/api/global-mcp')).body).toMatchObject({ host: true, cleanRoom: true });
+    await again.run.stop();
+  }, 120_000);
+
   it('Clean Room egress: a switch, off by default, saved by the API, kept across a restart, in the Black Box as on or off, and out of an agent\'s reach', async () => {
     const h = await startServer();
     await waitState(h, 'flight', 'idle');

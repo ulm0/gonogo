@@ -111,6 +111,8 @@ import { featureOfRoute } from '../shared/features.js';
 import type { SubagentStore } from './subagents.js';
 import type { CoauthorStore } from './coauthor.js';
 import type { Egress } from './egress.js';
+import type { GlobalMcpStore } from './globalmcp.js';
+import type { GlobalMcpView } from '../shared/protocol.js';
 import type { EgressSettingsStore } from './egresssettings.js';
 import type { RulesStore } from './rules.js';
 import { ROUTE_BODY_MAX_BYTES, ROUTE_KEY_HEADER, sameKey } from './telegramroute.js';
@@ -238,6 +240,8 @@ export interface WebOptions {
   ritualTemplate?: RitualTemplateStore;
   /** The co-author setting; absent in tests that do not need it (the routes answer 404). */
   coauthor?: Pick<CoauthorStore, 'view' | 'set'>;
+  /** Global MCP servers: the room's two switches and what is read from the user's Claude Code config; absent in tests that do not need it (the routes answer 404). Turning one on asks for a step-up. */
+  globalMcp?: { store: Pick<GlobalMcpStore, 'set'>; view(): Promise<GlobalMcpView> };
   /** Egress (egress.ts): the proxy a Clean Room agent's Anthropic requests go through; absent in tests that do not need it (the route answers 404). */
   egress?: Pick<Egress, 'handle'>;
   /** The room's egress setting (egresssettings.ts); absent in tests that do not need it (the routes answer 404). Writing it needs a step-up. */
@@ -1752,6 +1756,20 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!viaSocket.has(req) || !sameKey(typeof given === 'string' ? given : undefined, route.key)) return sendApiError(res, 404, 'not found', 'not_found');
           const body = await jsonObject(req, res, ROUTE_BODY_MAX_BYTES);
           if (body) sendJson(res, 200, route.take(body));
+        },
+      };
+    }
+    if (s[1] === 'global-mcp' && s.length === 2) {
+      const global = options.globalMcp;
+      if (!global) return null;
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, await global.view());
+          const body = await jsonObject(req, res);
+          if (!body) return;
+          await global.store.set(body);
+          sendJson(res, 200, await global.view());
         },
       };
     }
