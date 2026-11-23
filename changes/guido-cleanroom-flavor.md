@@ -1,1 +1,0 @@
-Clean Room sandbox flavor: docker (runc), gvisor (runsc) or microvm (Kata), a room default in DEFAULTS and an override per agent. A flavor whose runtime Docker does not list is refused, and a start never falls back to runc. The microVM cannot start until its bridge network mode exists.
