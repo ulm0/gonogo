@@ -48,6 +48,15 @@ jobs:
           docker compose exec gonogo sh -c 'gonogo-drop docker version --format "{{.Server.Version}}"'
           code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: 127.0.0.1:7777' http://127.0.0.1:7777/)
           [[ "$code" =~ ^(200|30[1-8])$ ]] || { echo "::error::127.0.0.1 got $code"; exit 1; }
+          # reachable by the machine's own address, with nothing allowed: an IP literal needs no configuration (a name does)
+          ip=$(hostname -I | awk '{print $1}')
+          echo "this machine: $ip"
+          viaip=$(curl -s -o /dev/null -w '%{http_code}' "http://$ip:7777/")
+          [[ "$viaip" =~ ^(200|30[1-8])$ ]] || { echo "::error::http://$ip:7777/ got $viaip"; exit 1; }
+          name=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: other.test:7777' "http://$ip:7777/")
+          [ "$name" = 403 ] || { echo "::error::a name nobody allowed got $name, not 403"; exit 1; }
+          # the data folder is said in the log, and warned about when it is the new empty default
+          docker compose logs gonogo | grep -q 'gonogo: data folder .* is new and empty (the default'
       - if: always()
         run: |
           cd "$RUNNER_TEMP/zero" 2>/dev/null && docker compose logs --tail 40 || true

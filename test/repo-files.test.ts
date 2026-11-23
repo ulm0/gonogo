@@ -111,7 +111,7 @@ describe('compose.yaml', () => {
     const compose = read('compose.yaml');
     const live = compose.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
     // every use is the whole expression: the variable, else the working directory (and an empty one STOPS compose), then /gonogo-data
-    expect(live).not.toMatch(/\$\{GONOGO_DATA(?!:-\$\{PWD:\?)/);
+    expect(live).not.toMatch(/\$\{GONOGO_DATA(?!:-\$\{PWD:\?|:\+yes\})/);
     expect(live).not.toMatch(/\$\{PWD(?!:\?)/);
     expect(live.match(/\$\{GONOGO_DATA:-\$\{PWD:\?[^}]+\}\/gonogo-data\}/g)?.length).toBeGreaterThanOrEqual(6);
     expect(live).not.toContain('DOCKER_GID');

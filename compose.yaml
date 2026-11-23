@@ -50,6 +50,8 @@ services:
       GONOGO_CLEANROOM_NETWORK: container:self
       # What the ready line says to open: the port the host publishes (the server inside listens on 7777).
       GONOGO_PUBLISHED_PORT: ${GONOGO_PORT:-7777}
+      # Set when you gave GONOGO_DATA yourself (empty when the default ./gonogo-data is in use): the entrypoint says which, and warns about a new empty default folder.
+      GONOGO_DATA_GIVEN: ${GONOGO_DATA:+yes}
     # The Clean Room shares this hosts file: its hook URLs name host.docker.internal, which the server limits to hooks and MCP.
     extra_hosts:
       - host.docker.internal:127.0.0.1
