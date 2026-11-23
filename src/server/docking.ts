@@ -31,6 +31,7 @@ import {
   STATION_NAME_PATTERN,
   TASK_DETAIL_MAX_CHARS,
 } from '../shared/protocol.js';
+import { LINK_INCOMING_OPEN_MAX, LINK_IN_PER_HOUR, LINK_OUT_PER_HOUR, LINKS_PER_TASK_MAX } from './constants.js';
 import type {
   ApiErrorCode,
   DockCode,
@@ -39,7 +40,10 @@ import type {
   DockHints,
   DockingView,
   DockView,
+  LinkEventView,
+  LinkView,
   Logger,
+  OutboundEntry,
   SendResult,
   StationMessage,
   Task,
@@ -61,7 +65,9 @@ import {
 } from './constants.js';
 import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
-import type { Tasks } from './tasks.js';
+import type { Actor, Tasks } from './tasks.js';
+import { cleanLine, createLinks, LINK_ID_RE, readOffer } from './links.js';
+import type { Links } from './links.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const STATION_RE = new RegExp(STATION_NAME_PATTERN);
@@ -71,7 +77,7 @@ const NONCE_RE = /^[0-9a-f]{16,64}$/;
 const TASK_ID_RE = /^t[1-9]\d{0,5}$/;
 const CODE_PREFIX = 'gonogo-dock:';
 /** The routes under /dock and the one method each takes. */
-export const DOCK_ROUTES: Readonly<Record<string, 'GET' | 'POST'>> = { pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', undock: 'POST' };
+export const DOCK_ROUTES: Readonly<Record<string, 'GET' | 'POST'>> = { pair: 'POST', roster: 'GET', message: 'POST', task: 'POST', link: 'POST', undock: 'POST' };
 
 /** The name of this station: GONOGO_STATION, else the first label of the host name, cut to the shape of a name. */
 export function stationName(raw: string | undefined, host: string): string {
@@ -141,7 +147,9 @@ export interface DockingOptions {
   addresses?(): string[];
   /** gonogo runs in a container: no address of its own is the computer's. */
   container?: boolean;
-  tasks: Pick<Tasks, 'list' | 'create' | 'handOff'>;
+  tasks: Pick<Tasks, 'list' | 'create' | 'handOff' | 'attach'>;
+  /** Docking 2: the links changed; carries the whole list. */
+  emitLinks?(links: LinkView[]): void;
   /** The history of triggers (docs/features/triggers.md): a hand-off to a station and every call that came in from one. */
   trigger?(entry: TriggerInput): void;
   /** The view changed (a dock was made or removed, a pull saw something new). */
@@ -165,6 +173,13 @@ export interface Docking extends DockLink {
   /** Removes the dock, here and (when the other side answers within a few seconds) there. `told` says whether it did. */
   undock(id: string): Promise<{ told: boolean }>;
   handOff(id: string, input: unknown): Promise<Task>;
+  /** Docking 2: a task that is bound to a link changed: its status and note become events of the link. */
+  taskChanged(before: Task, after: Task, actor: Actor, note: string | undefined): void;
+  linkViews(): LinkView[];
+  /** The trail of one link, or null. */
+  linkTrail(id: string): LinkEventView[] | null;
+  /** What left for a dock, as it left, with the acks: the Director's Outbound view. */
+  outbound(dockId: string): OutboundEntry[];
   /** One call to /dock/<route> from another station: the answer is a JSON value, a failure a HubError (401 for a call that does not prove itself). */
   handle(route: string, method: string, url: string, headers: IncomingHttpHeaders, body: Buffer): Promise<unknown>;
   /** Asks every docked station for its roster once. Never rejects. */
@@ -306,6 +321,27 @@ export function createDocking(options: DockingOptions): Docking {
     });
   const save = (): Promise<void> => writeAtomic(DOCKING_FILE, JSON.stringify({ version: 1, docks }, null, 2));
 
+  const links: Links = createLinks({
+    dir,
+    now,
+    station: () => ({ id, name: options.name }),
+    dockName: (dockId) => docks.find((d) => d.id === dockId)?.name,
+    write: writeAtomic,
+    send: async (dockId, events) => {
+      const answer = await call(find(dockId), 'POST', 'link', { events });
+      const acked: Record<string, number> = {};
+      if (isRecord(answer.acked)) for (const [k, v] of Object.entries(answer.acked)) if (LINK_ID_RE.test(k) && typeof v === 'number' && Number.isSafeInteger(v)) acked[k] = v;
+      return acked;
+    },
+    // the history of triggers keeps what happened by kind and id, never the text of an event
+    trace: (dockId, what, outcome = 'delivered') => options.trigger?.({ kind: 'docking', source: dockId, name: docks.find((d) => d.id === dockId)?.name ?? dockId, outcome, what }),
+    changed: () => {
+      options.emitLinks?.(links.views());
+      publish();
+    },
+    log,
+  });
+
   const liveOf = (dock: Dock): Live => {
     let state = live.get(dock.id);
     if (!state) {
@@ -317,7 +353,7 @@ export function createDocking(options: DockingOptions): Docking {
 
   const dockView = (dock: Dock): DockView => {
     const state = liveOf(dock);
-    return { id: dock.id, name: dock.name, url: dock.url, since: dock.since, status: state.status, seenAt: state.seenAt, error: state.error, agents: state.agents.map((a) => ({ ...a })) };
+    return { id: dock.id, name: dock.name, url: dock.url, since: dock.since, status: state.status, seenAt: state.seenAt, error: state.error, agents: state.agents.map((a) => ({ ...a })), waiting: links.waiting(dock.id) };
   };
   const view = (): DockingView => ({ station: options.name, docks: docks.map(dockView) });
   /** Tells the browsers, unless nothing they show has changed since the last time. */
@@ -410,9 +446,12 @@ export function createDocking(options: DockingOptions): Docking {
         save().catch(() => undefined);
       }
       state.agents = readAgents(answer.agents);
+      const wasDown = state.status === 'down';
       state.status = 'ok';
       state.seenAt = now();
       state.error = null;
+      // it is back: what waited for it goes now, not at the next retry
+      if (wasDown) void links.flush(dock.id, true);
     } catch (error) {
       state.status = 'down';
       state.error = error instanceof Error ? error.message : String(error);
@@ -425,6 +464,8 @@ export function createDocking(options: DockingOptions): Docking {
   async function pull(): Promise<void> {
     await Promise.all(docks.map((d) => pullOne(d)));
     publish();
+    // the retries of the outbox ride on the same clock
+    void links.flush();
   }
 
   /* ---------------------------------------------------------------- the calls we get */
@@ -482,16 +523,45 @@ export function createDocking(options: DockingOptions): Docking {
     return options.deliver(dock.name, body as unknown as StationMessage);
   }
 
+  /** What the sender is told when a task is not taken: a plain refusal with its reason, which it keeps in the trail of the link. */
+  const refusal = (reason: string): { ok: false; refused: string } => ({ ok: false, refused: reason });
+
   async function acceptTask(dock: Dock, body: Record<string, unknown>): Promise<unknown> {
     const theirs = typeof body.id === 'string' && TASK_ID_RE.test(body.id) ? ` (its task ${body.id})` : '';
     const detail = typeof body.detail === 'string' ? body.detail : '';
+    const linkId = typeof body.link === 'string' && LINK_ID_RE.test(body.link) ? body.link : null;
+    // a station without links (an older gonogo) copies the task once, as before
+    const offer = linkId === null ? null : readOffer(body);
+    if (linkId !== null) {
+      const have = links.find(linkId);
+      if (have !== undefined) {
+        // the same offer again (the answer was lost): the same task, not a second one
+        if (have.peer !== dock.id || have.role !== 'receiver') throw new HubError('conflict', 'that link belongs to another station', 'link');
+        const accept = have.trail.find((e) => e.kind === 'accept' && e.author === id);
+        return { ok: true, id: have.mine, link: linkId, ...(accept === undefined ? {} : { accept }) };
+      }
+      if (links.incomingThisHour(dock.id) >= LINK_IN_PER_HOUR) return refusal(`more than ${LINK_IN_PER_HOUR} tasks in the last hour from this station`);
+      if (links.openIncoming(dock.id) >= LINK_INCOMING_OPEN_MAX) return refusal(`this station already holds ${LINK_INCOMING_OPEN_MAX} open tasks from ${dock.name}`);
+    }
+    const marks = offer === null ? '' : `${offer.due === null ? '' : ` Due ${offer.due}.`}${offer.priority === 'normal' ? '' : ` Priority ${offer.priority}.`}`;
     const request: Record<string, unknown> = {
       title: body.title,
-      detail: `Handed off from ${dock.name}${theirs}.${detail === '' ? '' : `\n\n${detail}`}`.slice(0, TASK_DETAIL_MAX_CHARS),
+      detail: `Handed off from ${dock.name}${theirs}.${marks}${detail === '' ? '' : `\n\n${detail}`}`.slice(0, TASK_DETAIL_MAX_CHARS),
     };
     if (body.assignee !== undefined && body.assignee !== null) request.assignee = body.assignee;
-    const task = await options.tasks.create({ kind: 'dock', station: dock.name }, request);
-    return { ok: true, id: task.id };
+    let task: Task;
+    try {
+      task = await options.tasks.create({ kind: 'dock', station: dock.name }, request);
+    } catch (error) {
+      // a board that is full is a reason, not a failure of the call: the sender keeps the link and says why
+      if (linkId !== null && error instanceof HubError && error.code === 'conflict') return refusal(error.message);
+      throw error;
+    }
+    if (linkId === null || offer === null) return { ok: true, id: task.id };
+    await options.tasks.attach(task.id, { link: linkId, note: `handed off from ${dock.name}${theirs} on link ${linkId}` });
+    const link = links.incoming(dock, linkId, task.id, offer, task.title, `director@${dock.name}`);
+    const accept = links.record(link, 'accept', `station@${options.name}`, '', undefined, false);
+    return { ok: true, id: task.id, link: linkId, accept };
   }
 
   /** An inbound call from a station, kept in the history of triggers with how it ended (the payload is not kept). */
@@ -551,6 +621,7 @@ export function createDocking(options: DockingOptions): Docking {
         docks.push({ id: raw.id, name: raw.name, url: raw.url, secret: raw.secret, since: typeof raw.since === 'number' ? raw.since : now() });
       }
       lastSig = JSON.stringify(view());
+      await links.load();
     },
 
     start() {
@@ -653,6 +724,7 @@ export function createDocking(options: DockingOptions): Docking {
       }
       docks = docks.filter((d) => d !== dock);
       live.delete(dock.id);
+      links.detach(dock.id);
       await save();
       publish();
       return { told };
@@ -661,26 +733,54 @@ export function createDocking(options: DockingOptions): Docking {
     async handOff(dockId, input) {
       const dock = find(dockId);
       if (!isRecord(input)) throw bad('request body must be a JSON object');
-      for (const key of Object.keys(input)) if (key !== 'task' && key !== 'assignee') throw bad(`unknown field "${key}"`, key);
+      for (const key of Object.keys(input)) if (!['task', 'assignee', 'due', 'priority', 'onward', 'budget'].includes(key)) throw bad(`unknown field "${key}"`, key);
       const task = options.tasks.list().find((t) => t.id === input.task);
       if (!task) throw new HubError('not_found', 'unknown task', 'task');
       if (task.status === 'done' || task.handedOff !== undefined || handing.has(task.id)) throw new HubError('conflict', 'only a task that is open here can be handed off', 'task');
       const assignee = input.assignee ?? null;
       if (assignee !== null && (typeof assignee !== 'string' || !NAME_RE.test(assignee))) throw bad('assignee must be the name of an agent of that station, or null', 'assignee');
+      const offer = readOffer(input);
+      if ((task.links?.length ?? 0) >= LINKS_PER_TASK_MAX) throw new HubError('conflict', `a task has at most ${LINKS_PER_TASK_MAX} links to other stations`, 'task');
+      if (links.outgoingThisHour(dock.id) >= LINK_OUT_PER_HOUR) throw new HubError('rate_limited', `at most ${LINK_OUT_PER_HOUR} tasks an hour to one station`);
       handing.add(task.id);
-      const trace = (outcome: string, note?: string): void => options.trigger?.({ kind: 'docking', source: dock.id, name: dock.name, outcome, what: `hand-off of ${task.id}: ${task.title}`, ...(assignee === null ? {} : { agent: assignee as string }), ...(note === undefined ? {} : { note }) });
+      const trace = (outcome: string, note?: string): void => options.trigger?.({ kind: 'docking', source: dock.id, name: dock.name, outcome, what: `hand-off of ${task.id}: ${task.title}`, ...(assignee === null ? {} : { agent: assignee }), ...(note === undefined ? {} : { note }) });
+      const link = links.outgoing(dock, task, offer);
       try {
-        await call(dock, 'POST', 'task', { id: task.id, title: task.title, detail: task.detail, assignee });
-        const handed = await options.tasks.handOff(task.id, dock.name, assignee);
+        // the offer is the first event of the link, authored here; it travels on this call and the answer acks it
+        if (link.outSeq === 0) links.record(link, 'offer', `director@${options.name}`, '');
+        const answer = await call(dock, 'POST', 'task', { id: task.id, title: task.title, detail: task.detail, assignee, link: link.id, ...offer });
+        if (answer.ok === false) {
+          const reason = cleanLine(answer.refused) || 'no reason given';
+          links.applyOne(dock, { link: link.id, author: dock.id, seq: 1, at: now(), kind: 'refuse', by: 'station', text: reason });
+          trace('refused', reason);
+          throw new HubError('conflict', `${dock.name} did not take it: ${reason}`, 'task');
+        }
+        link.theirs = typeof answer.id === 'string' && TASK_ID_RE.test(answer.id) ? answer.id : null;
+        // the accept comes with the answer, authored by the other station (its own checks apply to it like to any event of it)
+        if (isRecord(answer.accept)) links.applyOne(dock, answer.accept);
+        links.noteOutgoing(dock.id);
+        const handed = await options.tasks.attach(task.id, { outgoing: link.id, note: `handed off to ${assignee === null ? '' : `${assignee}@`}${dock.name} on link ${link.id}` });
         trace('delivered');
         return handed;
       } catch (error) {
-        trace('failed', error instanceof Error ? error.message : 'hand-off failed');
+        if (!(error instanceof HubError && error.code === 'conflict' && link.state === 'refused')) trace('failed', error instanceof Error ? error.message : 'hand-off failed');
         throw error;
       } finally {
         handing.delete(task.id);
       }
     },
+
+    taskChanged(before, after, actor, note) {
+      const link = after.link === undefined ? undefined : links.find(after.link);
+      if (link === undefined || link.role !== 'receiver' || link.state === 'detached' || link.state === 'recalled') return;
+      const by = `${actor.kind === 'agent' ? actor.name : 'director'}@${options.name}`;
+      const text = after.localNotes === true ? '' : (note ?? '');
+      if (after.status !== before.status) links.record(link, 'status', by, text, after.status);
+      else if (note !== undefined && after.localNotes !== true) links.record(link, 'note', by, text);
+    },
+    linkViews: () => links.views(),
+    linkTrail: (linkId) => links.trail(linkId),
+    outbound: (dockId) => links.outbound(dockId),
 
     async handle(route, method, url, headers, body) {
       if (body.length > DOCK_BODY_MAX_BYTES) throw new HubError('too_large', 'request body too large');
@@ -695,10 +795,13 @@ export function createDocking(options: DockingOptions): Docking {
           return traced(dock, 'a message', () => acceptMessage(dock, readObject(body)));
         case 'task':
           return traced(dock, 'a task handed off to this station', () => acceptTask(dock, readObject(body)));
+        case 'link':
+          return traced(dock, 'link events', () => ({ acked: links.apply(dock, readObject(body)) }));
         default: {
           // undock: gone from here too, and the answer is the last thing this dock gets
           docks = docks.filter((d) => d !== dock);
           live.delete(dock.id);
+          links.detach(dock.id);
           await save();
           publish();
           return { ok: true };
@@ -711,7 +814,7 @@ export function createDocking(options: DockingOptions): Docking {
     close() {
       stopTimer?.();
       stopTimer = null;
-      return chain.then(() => undefined);
+      return links.close().then(() => chain).then(() => undefined);
     },
   };
 }

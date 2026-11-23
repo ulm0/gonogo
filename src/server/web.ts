@@ -210,7 +210,7 @@ export interface WebOptions {
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
-  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle'>;
+  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'linkViews' | 'linkTrail' | 'outbound'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
   /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
@@ -1158,11 +1158,38 @@ export function createWebServer(options: WebOptions): WebServer {
       if (s[3] === 'test') return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await uplinks.test(id)) };
       return null;
     }
+    // Docking 2: the links of this station (counts, states and cleaned titles) and the trail of one
+    if (s[1] === 'links' && s.length <= 3) {
+      const docking = options.docking;
+      if (!docking) return null;
+      if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, { links: docking.linkViews() }) };
+      const id = s[2] ?? '';
+      return {
+        allow: ['GET'],
+        run: (_req, res) => {
+          const trail = docking.linkTrail(id);
+          if (trail === null) return sendApiError(res, 404, 'unknown link', 'not_found');
+          sendJson(res, 200, { trail });
+        },
+      };
+    }
     if (s[1] === 'docking' && s.length <= 4) {
       const docking = options.docking;
       if (!docking) return null;
       if (s.length === 2) return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, docking.view()) };
       const id = s[2] ?? '';
+      // what left for a station, as it left: the Director's own login only (a key or a terminal login is told nothing)
+      if (s.length === 3 && id === 'outbound') {
+        return {
+          allow: ['GET'],
+          run: (req, res) => {
+            const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+            if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "what left for a station is shown to the Director's own login", 'forbidden');
+            const dock = new URL(req.url ?? '/', 'http://x').searchParams.get('dock') ?? '';
+            sendJson(res, 200, { dock, entries: /^[0-9a-f]{32}$/.test(dock) ? docking.outbound(dock) : [] });
+          },
+        };
+      }
       // the layout of the network goes to the Director's own login (or this machine's socket): a key, a terminal and anything else is told nothing
       if (s.length === 3 && id === 'addresses') {
         return {

@@ -1070,11 +1070,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     });
     // tasks and missions know each other: a task checks its missionId, a mission counts and unlinks its tasks
     let missionsRef: ReturnType<typeof createMissions> | null = null;
+    let dockingRef: ReturnType<typeof createDocking> | null = null;
     const tasks = audited(createTasks({
       dir: home.dir,
       now: io.now,
       hasMission: (id) => missionsRef?.has(id) ?? false,
       afterChange: (list) => missionsRef?.observe(list),
+      afterUpdate: (before, after, actor, note) => dockingRef?.taskChanged(before, after, actor, note),
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
       send: (actor, request) =>
         actor.kind === 'user'
@@ -1113,8 +1115,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       container: installInfo(env).docker,
       tasks,
       emit: (view) => web?.broadcast({ t: 'docking', docking: view }),
+      emitLinks: (links) => web?.broadcast({ t: 'links', links }),
       log: log.child('docking'),
     });
+    dockingRef = docking;
     io.dock = docking;
     // Search by meaning (docs/features/semantic-search.md): off until the Director turns it on and names an endpoint; the index is this room's
     const semantic = createSemantic({
