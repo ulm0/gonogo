@@ -30,6 +30,19 @@ export const EGRESS_PATH = 'egress';
 /** The service names after the token. Only one in S1. */
 export const EGRESS_SERVICE_ANTHROPIC = 'anthropic';
 export const ANTHROPIC_HOST = 'api.anthropic.com';
+
+/** A Location from the upstream, kept only when it points at the upstream itself (same scheme, host and port) under /v1/: returns its path and query, else null. No pattern is built from the host. */
+export function redirectInside(to: string, upstream: { protocol: string; hostname: string; port: number | string }): string | null {
+  try {
+    const host = upstream.hostname.includes(':') ? `[${upstream.hostname}]` : upstream.hostname;
+    const origin = new URL(`${upstream.protocol}//${host}:${upstream.port}`);
+    const url = new URL(to, origin);
+    if (url.protocol !== origin.protocol || url.host !== origin.host || !url.pathname.startsWith('/v1/')) return null;
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
 export const EGRESS_BODY_MAX_BYTES = 64 * 1024 * 1024;
 export const EGRESS_IDLE_MS = 10 * 60_000;
 export const EGRESS_CONCURRENT_MAX = 16;
@@ -245,8 +258,8 @@ export function createEgress(options: EgressOptions): Egress {
           // a redirect is not followed here: it goes back to the client, and only a Location to this very host stays, pointed at this proxy
           if (name.toLowerCase() === 'location') {
             const to = String(Array.isArray(value) ? value[0] : value);
-            const m = new RegExp(`^(?:https?://${upstream.hostname.replace(/\./g, '\\.')}(?::\\d+)?)?(/v1/[^\\s]*)$`).exec(to);
-            if (m !== null) headers.location = `${basePath(parsed.token)}${m[1]}`;
+            const next = redirectInside(to, upstream);
+            if (next !== null) headers.location = `${basePath(parsed.token)}${next}`;
             continue;
           }
           headers[name] = value;

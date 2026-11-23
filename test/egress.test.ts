@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../src/shared/protocol.js';
-import { createEgress, EGRESS_CONCURRENT_MAX, publicAddress } from '../src/server/egress.js';
+import { createEgress, EGRESS_CONCURRENT_MAX, publicAddress, redirectInside } from '../src/server/egress.js';
 import { weakensEgress } from '../src/server/stepup.js';
 import type { Egress } from '../src/server/egress.js';
 import { createEgressSettings } from '../src/server/egresssettings.js';
@@ -159,6 +159,14 @@ describe('the proxy', () => {
     expect((await call(`${base(token)}/v1/messages/batches/b1`, { method: 'DELETE' })).status).toBe(200);
     expect((await call(`${base(token)}/v1/models`, { method: 'HEAD' })).status).toBe(200);
     expect(seen.map((s) => s.method)).toEqual(['DELETE', 'HEAD']);
+  });
+
+  it('redirectInside keeps a relative /v1/ path and one to the upstream itself, with its query, and drops everything else', () => {
+    const up = { protocol: 'https:', hostname: 'api.anthropic.com', port: 443 };
+    expect(redirectInside('/v1/messages?x=1', up)).toBe('/v1/messages?x=1');
+    expect(redirectInside('https://api.anthropic.com/v1/files/9', up)).toBe('/v1/files/9');
+    expect(redirectInside('https://api.anthropic.com:443/v1/a', up)).toBe('/v1/a');
+    for (const bad of ['https://evil.example/v1/a', 'https://apixanthropic.com/v1/a', 'https://api.anthropic.com.evil.example/v1/a', 'http://api.anthropic.com/v1/a', 'https://api.anthropic.com:8443/v1/a', 'https://api.anthropic.com@evil.example/v1/a', '//evil.example/v1/a', '/other', '/v1', 'https://api.anthropic.com/v2/a', '/v1/../x', 'http://[', '']) expect(redirectInside(bad, up)).toBeNull();
   });
 
   it('does not follow a redirect: it goes back to the client, with the upstream host turned into this proxy, and any other host dropped', async () => {
