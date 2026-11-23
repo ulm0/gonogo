@@ -86,3 +86,54 @@
   flex-basis: 100%;
   margin: 0;
 }
+
+/* ---- Docking 2: the lines of a card for its links, the trail, the deliverables ---- */
+.dk-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dk-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--well);
+}
+
+.dk-link p {
+  margin: 0;
+}
+
+.dk-link [data-over] {
+  color: var(--nogo-text);
+}
+
+.dk-deliver {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.dk-trail ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.dk-link-keys,
+.dk-return {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.dk-return .field {
+  flex: 1 1 200px;
+  min-width: 0;
+}

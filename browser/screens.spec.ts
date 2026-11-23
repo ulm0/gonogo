@@ -9,6 +9,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { LINKS } from './linkFixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { duplicates, geometry } from './geometry.js';
@@ -377,6 +378,8 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   });
   await view(page, group, t('comms traffic'), () => page.getByRole('tab', { name: /traffic/i }).click({ timeout: 3000 }));
   await view(page, group, t('comms threads'), () => page.getByRole('tab', { name: /threads/i }).click({ timeout: 3000 }));
+  // Docking 2: the stand-in install has no second station, so the links are stood in (the same shapes as the server's)
+  await page.route('**/api/links', (route) => route.fulfill({ json: { links: LINKS } }));
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
   await view(page, group, t('launch window'), () => open(page, 'Launch Window'), true);
   if (full) await view(page, group, 'launch window history', () => page.getByRole('button', { name: /^History of/ }).first().click({ timeout: 3000 }), true);

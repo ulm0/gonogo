@@ -12,6 +12,9 @@ import { parseMoney } from '../shared/fuel.js';
 import { moneyText } from '../shared/prices.js';
 import { actionsOf, budgetShare, emptyMissionValues, progressOf, ritualProgress, ritualTextProblem, sourceText, spendText, sortMissions, STATUS_LABELS, STATUS_TONES, tasksOf, tickedText, validateMission } from './missionsModel.js';
 import type { MissionValues } from './missionsModel.js';
+import { LinkLines } from './LinkLines.js';
+import { incoming, outgoing } from './links.js';
+import { useLinks } from './linksData.js';
 import { cardId, labelOf } from './plan.js';
 import { useAgentList } from './RoomView.js';
 import { selectMission, showPlan, showRoom, useStore } from './store.js';
@@ -332,6 +335,9 @@ function Detail({ mission }: { mission: Mission }): ReactElement {
   const keep = useRef<HTMLButtonElement | null>(null);
   const taskSpend = useStore((s) => s.propellant.cost.tasks) ?? {};
   const linked = tasksOf(tasks, mission.id);
+  const allLinks = useLinks();
+  const incomingMission = incoming(allLinks, 'mission', mission.id);
+  const missionLinks = [...outgoing(allLinks, 'mission', mission.id), ...(incomingMission === undefined ? [] : [incomingMission])];
   const progress = progressOf(tasks, mission.id);
   useEffect(() => {
     if (confirming) keep.current?.focus();
@@ -355,6 +361,7 @@ function Detail({ mission }: { mission: Mission }): ReactElement {
         Lead {mission.lead ?? 'nobody'} · made by {mission.createdBy === 'user' ? 'the Director' : mission.createdBy}
       </p>
       <p className="mis-goal">{mission.goal === '' ? 'No goal written.' : mission.goal}</p>
+      <LinkLines links={missionLinks} />
       {error !== null && (
         <p className="error" role="alert">
           {error}

@@ -89,3 +89,33 @@ describe('what a card and the board take from the list', () => {
     expect(canRecall(link({ state: 'delivered' }))).toBe(false);
   });
 });
+
+describe('the line of a link on a card (rendered)', () => {
+  const render = async (l: LinkView): Promise<string> => {
+    const { renderToString } = await import('react-dom/server');
+    const { createElement } = await import('react');
+    const { LinkLines } = await import('../src/client/LinkLines.js');
+    return renderToString(createElement(LinkLines, { links: [l] }));
+  };
+  it('offers Accept and Send back for a delivery, with the deliverable as a safe link', async () => {
+    const html = await render(link({ state: 'delivered', theirStatus: 'review', trail: [{ author: 'd1', seq: 1, at: 1, kind: 'status', by: 'cara@lab', text: 'done', attachments: [{ kind: 'pr', ref: 'https://github.com/o/r/pull/1', label: 'PR 1' }, { kind: 'file', ref: 'docs/x.md', label: 'Notes' }] }] }));
+    expect(html).toContain('Accept t4 from lab');
+    expect(html).toContain('Send t4 back to lab');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('href="https://github.com/o/r/pull/1"');
+    expect(html).not.toContain('href="docs/x.md"');
+    expect(html).toContain('ready for you to accept');
+  });
+  it('offers Withdraw while it is open, nothing once it is done, Give back to the receiver', async () => {
+    expect(await render(link())).toContain('Withdraw t4 from lab');
+    const done = await render(link({ state: 'done' }));
+    expect(done).not.toContain('Withdraw');
+    expect(done).not.toContain('Accept');
+    expect(await render(link({ role: 'receiver' }))).toContain('Give t4 back to lab');
+  });
+  it('says the cap is passed and that nothing is reported', async () => {
+    expect(await render(link({ cost: { usd: 5.2, cap: 5 } }))).toContain('past the cap');
+    expect(await render(link({ cost: null }))).toContain('cost not reported');
+    expect(await render(link({ role: 'receiver' }))).not.toContain('cost');
+  });
+});

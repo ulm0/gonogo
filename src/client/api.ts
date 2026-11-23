@@ -74,6 +74,10 @@ import type {
   PayloadDefaults,
   ProjectFolderCheck,
   ProjectFolderView,
+  LinkView,
+  DockRules,
+  HandoffAsk,
+  OutboundEvent,
   RoomKeysView,
   RuntimeSettingKey,
   RuntimeSettingRow,
@@ -986,6 +990,44 @@ export async function undock(id: string): Promise<boolean> {
 export async function handOffTask(dockId: string, request: DockHandoffRequest): Promise<Task> {
   return toTask(await call('POST', `/docking/${encodeURIComponent(dockId)}/handoff`, request));
 }
+
+/* ---- Docking 2: links (docs/docking-collab-spec.md) ---- */
+
+/** Every link this station holds, with its trail. A server without Docking 2 has no route: then there are none. */
+export async function links(): Promise<LinkView[]> {
+  try {
+    const list = asRecord(await call('GET', '/links'))?.links;
+    return Array.isArray(list) ? (list as LinkView[]) : [];
+  } catch (e) {
+    if ((e as ApiFailure).status === 404) return [];
+    throw e;
+  }
+}
+const linkPath = (id: string, action: string): string => `/links/${encodeURIComponent(id)}/${action}`;
+/** The sender takes a delivery: its task is done. */
+export const acceptLink = (id: string): Promise<unknown> => call('POST', linkPath(id, 'accept'));
+/** Gives a task back (the receiver) or sends a delivery back (the sender): the reason is up to 200 characters. */
+export const returnLink = (id: string, reason: string): Promise<unknown> => call('POST', linkPath(id, 'return'), { reason });
+/** The sender withdraws what is not done yet. */
+export const recallLink = (id: string): Promise<unknown> => call('POST', linkPath(id, 'recall'));
+export const dockRules = async (dock: string): Promise<DockRules> => (await call('GET', `/docking/${encodeURIComponent(dock)}/rules`)) as DockRules;
+export const setDockRules = async (dock: string, patch: Partial<DockRules>): Promise<DockRules> => (await call('PATCH', `/docking/${encodeURIComponent(dock)}/rules`, patch)) as DockRules;
+/** The events that left for a dock, in full (only the Director's session may read them). */
+export async function outbound(dock: string): Promise<OutboundEvent[]> {
+  const list = asRecord(await call('GET', `/docking/${encodeURIComponent(dock)}/outbound`))?.events;
+  return Array.isArray(list) ? (list as OutboundEvent[]) : [];
+}
+/** Handoffs FLIGHT asks to send while a dock's rule is ask: the whole text, for the Director's GO. */
+export async function handoffAsks(): Promise<HandoffAsk[]> {
+  try {
+    const list = asRecord(await call('GET', '/handoff-requests'))?.requests;
+    return Array.isArray(list) ? (list as HandoffAsk[]) : [];
+  } catch (e) {
+    if ((e as ApiFailure).status === 404) return [];
+    throw e;
+  }
+}
+export const answerHandoff = (id: string, go: boolean, always = false): Promise<unknown> => call('POST', `/handoff-requests/${encodeURIComponent(id)}/answer`, { go, always });
 
 /** Livery: choose, delete, ask an agent for a new one. The list comes in the state and in `livery` frames; each call answers with it as it is now. */
 export async function selectLivery(slug: string): Promise<LiveryView> {
