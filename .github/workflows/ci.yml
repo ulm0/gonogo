@@ -62,7 +62,7 @@ jobs:
             docker compose -f compose.yaml -f "$overlay" config --quiet
           done
 
-  # The published image run by compose.yaml itself: a name in GONOGO_ALLOWED_HOSTS must reach the container (it once did not: the file never
+  # The published image run by compose.yaml itself: a (private) name in GONOGO_ALLOWED_HOSTS must reach the container (a public one is refused without the login account; it once did not: the file never
   # forwarded it, and every name but localhost got "forbidden host"). Only the compose file is under test, so the image is the published one.
   compose-run:
     runs-on: ubuntu-latest
@@ -76,7 +76,7 @@ jobs:
       - name: Start gonogo with compose.yaml and an allowed name
         env:
           GONOGO_PORT: '17777'
-          GONOGO_ALLOWED_HOSTS: example.test
+          GONOGO_ALLOWED_HOSTS: box.local
         run: |
           data="$RUNNER_TEMP/gonogo-data"
           sudo install -d -o 1000 -g 1000 -m 0755 "$data" "$data/state" "$data/claude" "$data/projects" "$data/home"
@@ -84,9 +84,9 @@ jobs:
           docker compose up -d
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:17777/rooms/health && break; sleep 2; done
           curl -fsS http://127.0.0.1:17777/rooms/health
-          allowed=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: example.test:7777' http://127.0.0.1:17777/)
+          allowed=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: box.local:7777' http://127.0.0.1:17777/)
           other=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: other.test:7777' http://127.0.0.1:17777/)
-          echo "example.test: $allowed, other.test: $other"
+          echo "box.local: $allowed, other.test: $other"
           [[ "$allowed" =~ ^(200|30[1-8])$ ]] || { echo "::error::a name in GONOGO_ALLOWED_HOSTS got $allowed: compose.yaml does not forward it"; exit 1; }
           [ "$other" = 403 ] || { echo "::error::a name nobody allowed got $other, not 403"; exit 1; }
       - if: always()
