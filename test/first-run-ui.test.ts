@@ -43,3 +43,24 @@ describe('the glossary', () => {
     expect(read('src/client/Rules.tsx')).toMatch(/href=\{GLOSSARY_URL\}[^>]*>\s*What do these words mean\?/);
   });
 });
+
+describe('the Commissioning card, as a newcomer meets it', () => {
+  const rules = read('src/client/Rules.tsx');
+
+  it('has a step that briefs FLIGHT, with the box it points to and where the answer shows', () => {
+    expect(rules).toContain("brief: { title: 'Brief FLIGHT'");
+    expect(rules).toContain('The answer shows in FLIGHT');
+    expect(rules).toContain("document.querySelector<HTMLElement>('.brief-input')?.focus()");
+  });
+
+  it('on a phone shows one line once FLIGHT is staffed, and a key opens the steps', () => {
+    expect(rules).toContain('const open = asked ?? !(phone && steps[0]?.done === true);');
+    expect(rules).toMatch(/aria-expanded=\{open\} onClick=\{\(\) => setAsked\(!open\)\}/);
+    expect(rules).toContain('<ol className="commission-steps" hidden={!open}>');
+  });
+
+  it('has the security note and the docs as keys, not as bare text', () => {
+    expect(rules).toMatch(/<summary className="btn" data-kind="quiet">\s*Show the note\s*<\/summary>/);
+    expect(rules).toMatch(/<a className="btn" data-kind="quiet" href=\{DOCS_URL\}[^>]*>\s*Read the docs\s*<\/a>/);
+  });
+});

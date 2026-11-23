@@ -28,10 +28,10 @@ import { STATUS_TEXT } from './notify.js';
 import { TabNameBlock } from './TabName.js';
 import { PHONE_MODES } from '../shared/protocol.js';
 import type { PhoneMode, RelayView } from '../shared/protocol.js';
-import { useAgentList, useSeats } from './RoomView.js';
+import { useAgentList, usePhone, useSeats } from './RoomView.js';
 import { commissioningSteps, loadMarks, saveMarks, showCommissioning } from './shell.js';
 import type { Mark, Step } from './shell.js';
-import { openConsole, openEdit, showLivery, showRoom, showRules, useFeature, useStore } from './store.js';
+import { openConsole, openEdit, showLivery, showLoop, showRoom, showRules, useFeature, useStore } from './store.js';
 import { legendOf } from './wall.js';
 import { MaxQ, Propellant } from './WallView.js';
 import { Row, useValue } from './Row.js';
@@ -362,7 +362,8 @@ function Notifications(): ReactElement {
 }
 
 const STEP_TEXT: Record<Step['id'], { title: string; detail: string }> = {
-  flight: { title: 'Staff FLIGHT', detail: 'FLIGHT is created at the first start. It is staffed once it is up: answer a startup question in its terminal if it asks one.' },
+  flight: { title: 'Staff FLIGHT', detail: 'FLIGHT is created at the first start. It is staffed once it is up and ready: answer a startup question, or sign in, in its terminal if it asks.' },
+  brief: { title: 'Brief FLIGHT', detail: 'Type what you want done in the box under the room. The answer shows in FLIGHT\u2019s console.' },
   propellant: { title: 'Set a Propellant limit', detail: 'A token budget for the room. Over it, Redline stops the agents.' },
   livery: { title: 'Pick a livery', detail: 'The look every device shows.' },
   note: { title: 'Read the security note', detail: '' },
@@ -375,13 +376,32 @@ export function Commissioning(): ReactElement | null {
   const propellant = useStore((s) => s.propellant);
   const livery = useStore((s) => s.livery);
   const current = useMarks();
+  const activity = useStore((s) => s.activity);
+  const phone = usePhone();
+  /** null: as it comes (a phone shows one line once FLIGHT is staffed, so the console is not pushed below the fold); a press of the key decides. */
+  const [asked, setAsked] = useState<boolean | null>(null);
   if (!showCommissioning(list, current)) return null;
   const boss = list.find((a) => a.boss);
-  const steps = commissioningSteps(list, propellant, livery, current);
+  const briefed = boss !== undefined && activity.some((m) => m.from === 'user' && m.to === boss.name);
+  const steps = commissioningSteps(list, propellant, livery, current, briefed);
+  const open = asked ?? !(phone && steps[0]?.done === true);
   const action: Record<Step['id'], ReactElement | null> = {
     flight: boss === undefined ? null : (
       <button type="button" className="btn" onClick={() => openConsole(boss.name)}>
         Open FLIGHT
+      </button>
+    ),
+    brief: (
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          // the box is in the room on a desk and at the foot of the loop on a phone (its field has the class `brief-input`)
+          (phone ? showLoop : showRoom)();
+          requestAnimationFrame(() => document.querySelector<HTMLElement>('.brief-input')?.focus());
+        }}
+      >
+        Open the box
       </button>
     ),
     propellant: (
@@ -413,6 +433,11 @@ export function Commissioning(): ReactElement | null {
         <a className="btn" data-kind="quiet" href={GLOSSARY_URL} target="_blank" rel="noreferrer noopener">
           What do these words mean?
         </a>
+        {phone && (
+          <button type="button" className="btn" data-kind="quiet" aria-expanded={open} onClick={() => setAsked(!open)}>
+            {open ? 'Hide the steps' : 'Show the steps'}
+          </button>
+        )}
         <button
           type="button"
           className="btn"
@@ -426,7 +451,7 @@ export function Commissioning(): ReactElement | null {
           Put away
         </button>
       </div>
-      <ol className="commission-steps">
+      <ol className="commission-steps" hidden={!open}>
         {steps.map((step) => (
           <li key={step.id} data-done={step.done || undefined}>
             <span className="led" data-on={step.done} style={step.done ? { '--led': 'var(--go)' } as CSSProperties : undefined} aria-hidden="true" />
@@ -437,7 +462,9 @@ export function Commissioning(): ReactElement | null {
               </h3>
               {step.id === 'note' ? (
                 <details className="commission-note" onToggle={(e) => e.currentTarget.open && addMark('note')}>
-                  <summary>Show the note</summary>
+                  <summary className="btn" data-kind="quiet">
+                    Show the note
+                  </summary>
                   <p>The address with #token= is the password of this room, and the server runs shells as you. Keep gonogo on 127.0.0.1; to reach it from elsewhere use HTTPS or a private network.</p>
                   <p>An agent in bypassPermissions mode runs as your user and can read every file you can, the secrets gonogo keeps among them. Dock only with people you trust: their agents can write to yours.</p>
                 </details>
@@ -449,10 +476,12 @@ export function Commissioning(): ReactElement | null {
           </li>
         ))}
       </ol>
-      <p className="hint commission-extra">
-        Docs: <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">{DOCS_URL}</a>
+      <p className="commission-extra" hidden={!open}>
+        <a className="btn" data-kind="quiet" href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+          Read the docs
+        </a>
       </p>
-      <p className="hint commission-extra">Away from this tab a lot? Flight Rules can turn on notifications for messages to you, T-minus polls and Relief requests.</p>
+      <p className="hint commission-extra" hidden={!open}>Away from this tab a lot? Flight Rules can turn on notifications for messages to you, T-minus polls and Relief requests.</p>
     </section>
   );
 }

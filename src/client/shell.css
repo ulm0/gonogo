@@ -2104,3 +2104,23 @@
     margin: 8px 12px 0;
   }
 }
+
+/* the note of the Commissioning card is a key, with an arrow: closed ▸, open ▾ */
+.commission-note > summary {
+  list-style: none;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.commission-note > summary::-webkit-details-marker {
+  display: none;
+}
+
+.commission-note > summary::before {
+  content: '▸';
+  margin-right: 6px;
+}
+
+.commission-note[open] > summary::before {
+  content: '▾';
+}

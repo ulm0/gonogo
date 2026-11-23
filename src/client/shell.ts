@@ -196,15 +196,19 @@ export const saveMarks = (marks: ReadonlySet<Mark>): void => writeStored(COMMISS
 export const showCommissioning = (agents: readonly AgentView[], marks: ReadonlySet<Mark>): boolean => !marks.has('away') && agents.every((a) => a.boss);
 
 export interface Step {
-  id: 'flight' | 'propellant' | 'livery' | 'note';
+  id: 'flight' | 'brief' | 'propellant' | 'livery' | 'note';
   done: boolean;
 }
 
-/** The four steps, in order. FLIGHT is staffed once it is up and past its startup questions. */
-export function commissioningSteps(agents: readonly AgentView[], propellant: PropellantView, livery: LiveryView, marks: ReadonlySet<Mark>): Step[] {
+/**
+ * The five steps, in order. FLIGHT is staffed once it is up and ready: idle or working. One that needs you (a startup question, a sign-in that is missing) is not,
+ * and nor is one that is still starting. FLIGHT is briefed once the Director has sent it a message (`briefed`).
+ */
+export function commissioningSteps(agents: readonly AgentView[], propellant: PropellantView, livery: LiveryView, marks: ReadonlySet<Mark>, briefed = false): Step[] {
   const boss = agents.find((a) => a.boss);
   return [
     { id: 'flight', done: boss !== undefined && (boss.state === 'idle' || boss.state === 'working') },
+    { id: 'brief', done: briefed },
     { id: 'propellant', done: Object.keys(propellant.room.limits).length > 0 },
     { id: 'livery', done: livery.current !== DEFAULT_LIVERY || marks.has('livery') },
     { id: 'note', done: marks.has('note') },
