@@ -57,11 +57,9 @@ Set one credential: `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `AN
 :::
 
 ```
-sudo install -d -o 1000 -g 1000 gonogo-data gonogo-data/projects gonogo-data/home   # next to compose.yaml
-printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\n' "$PWD/gonogo-data" "$(stat -L -c %g /var/run/docker.sock)" > .env
 export CLAUDE_CODE_OAUTH_TOKEN=...     # or ANTHROPIC_API_KEY, never both
 docker compose up -d                   # pulls ghcr.io/ulm0/gonogo:latest (amd64, arm64), restart: always
 docker compose logs gonogo
 ```
 
-Update: `docker compose pull && docker compose up -d` (own build: tag it `ghcr.io/ulm0/gonogo:latest` first). **Every compose command stops without `GONOGO_DATA`**. Paths, network and socket details: [Clean Room](../features/clean-room.md#gonogo-in-a-container-compose).
+Update: `docker compose pull && docker compose up -d` (own build: tag it `ghcr.io/ulm0/gonogo:latest` first). The data folder is `./gonogo-data` next to `compose.yaml` unless `GONOGO_DATA` says another (an absolute path); compose run from a UI with no working directory stops and asks for it. The port is published on every interface (`GONOGO_HOST=127.0.0.1` in `.env` keeps it on this machine). Paths, network and socket details: [Clean Room](../features/clean-room.md#gonogo-in-a-container-compose).
