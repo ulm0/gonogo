@@ -67,8 +67,8 @@ export async function geometry(page: Page, phone: boolean, scope = 'body'): Prom
  * No control or label appears twice for the same thing on a view (the Director's "botones duplicados" on Flight Rules): among what is visible inside `scope`, two keys with the
  * same name, a heading with the name of a row, two headings with one name, and a value line that a row already shows. A 1 px label for a screen reader is not drawn, so it does not count.
  */
-export async function duplicates(page: Page, scope: string): Promise<string[]> {
-  return page.evaluate((scope) => {
+export async function duplicates(page: Page, scope: string, sentences = false): Promise<string[]> {
+  return page.evaluate(({ scope, sentences }) => {
     const norm = (s: string): string => s.toLowerCase().replace(/[▾▸←→↓↑⌕⋯≡✓]/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
     const drawn = (el: Element): boolean => {
       const r = el.getBoundingClientRect();
@@ -98,6 +98,16 @@ export async function duplicates(page: Page, scope: string): Promise<string[]> {
       if (el.matches('.lay-group-title')) continue;
       note(kind, text, '');
     }
+    // the same sentence twice on a view (the update note printed in two places): any two drawn blocks of text of 40 characters or more that say the same
+    const said = new Map<string, number>();
+    // (only where asked: two settings may say "applies at once" each)
+    for (const el of sentences ? document.querySelectorAll<HTMLElement>('p, span, div') : []) {
+      if (!inside(el) || !drawn(el) || el.querySelector('p, div') !== null) continue;
+      const words = norm(el.textContent ?? '');
+      if (words.length < 40) continue;
+      said.set(words, (said.get(words) ?? 0) + 1);
+    }
+    for (const [words, n] of said) if (n > 1) problems.push(`the same sentence is drawn ${n} times: "${words.slice(0, 60)}…"`);
     // a line that says its value and, in a chip beside it, the same words ("built-in default" twice)
     for (const line of document.querySelectorAll<HTMLElement>('.rt-now')) {
       if (!inside(line) || !drawn(line)) continue;
@@ -112,5 +122,5 @@ export async function duplicates(page: Page, scope: string): Promise<string[]> {
       for (const v of row.querySelectorAll<HTMLElement>('.rules-value')) if (drawn(v) && norm(v.textContent ?? '') === now) problems.push(`"${now}" is shown by the row and again in its block`);
     }
     return problems;
-  }, scope);
+  }, { scope, sentences });
 }

@@ -149,6 +149,99 @@ async function stepUpIfAsked(page: Page): Promise<void> {
   }
 }
 
+/**
+ * The Docker update, as the Director meets it (the registry cannot be reached from a test, so the page is told what the server would tell it): the update strip, the version key,
+ * the confirmation, the image that cannot be checked, and the way on. The WebSocket carries a rollout view that says a newer version is out and this install can update itself;
+ * POST /api/update is answered by the page's own stand-in. The same steps run on the old flow and the new one (they look for the key by its words), and the clicks are counted.
+ */
+const UPDATE_NOTE =
+  '9.9.9 was not run: gonogo could not check its image (gh has no GitHub login in this container, so attestations cannot be fetched: log in from a console of room main (`gh auth login`; the login stays in that room folder) or set GH_TOKEN in the container (a token with no permissions is enough)). Nothing was changed. Log in as said, or update anyway if you trust this image.';
+const rolloutOf = (update?: Record<string, unknown>): Record<string, unknown> => ({
+  enabled: true,
+  current: '0.13.0',
+  latest: '9.9.9',
+  checkedAt: Date.now() - 120_000,
+  newer: true,
+  command: 'docker compose pull && docker compose up -d',
+  install: 'docker',
+  installNote: "Installed as a container image with the Docker socket: Update pulls this container's own tag and recreates it. The agents stop and the page reconnects.",
+  canUpdate: true,
+  selfUpdate: true,
+  ...(update === undefined ? {} : { update }),
+});
+
+async function updateFlow(page: Page, group: string): Promise<void> {
+  let current = rolloutOf();
+  let tell: (rollout: Record<string, unknown>) => void = () => undefined;
+  await page.routeWebSocket(/\/ws(\?|$)/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      if (typeof message === 'string') {
+        try {
+          const frame = JSON.parse(message) as { t?: string; state?: { rollout?: unknown }; rollout?: unknown };
+          if (frame.t === 'state' && frame.state !== undefined) frame.state.rollout = current;
+          if (frame.t === 'rollout') frame.rollout = current;
+          ws.send(JSON.stringify(frame));
+          return;
+        } catch {
+          // not a frame of text: passed on as it is
+        }
+      }
+      ws.send(message);
+    });
+    tell = (rollout) => {
+      current = rollout;
+      ws.send(JSON.stringify({ t: 'rollout', rollout }));
+    };
+  });
+  await page.route('**/api/update', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const forced = (route.request().postDataJSON() as { unverified?: boolean } | null)?.unverified === true;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    setTimeout(() => tell(rolloutOf(forced ? { state: 'running', version: '9.9.9', note: 'Pulling 9.9.9 and checking it…', tail: [], rollback: null } : { state: 'failed', version: '9.9.9', note: UPDATE_NOTE, tail: [], rollback: null, verify: 'unchecked' })), 700);
+  });
+  await page.goto(`${base}/r/main/`);
+  await page.locator('.topbar').waitFor({ timeout: 30_000 });
+  await page.locator('.rollout-strip').waitFor({ timeout: 10_000 });
+  let clicks = 0;
+  const click = async (name: string | RegExp, within?: string): Promise<void> => {
+    await (within === undefined ? page : page.locator(within)).getByRole('button', { name }).first().click({ timeout: 5000 });
+    clicks += 1;
+  };
+  const where = '.rollout-strip, .lay-pop';
+  const step = async (title: string): Promise<void> => {
+    await page.waitForTimeout(400);
+    await shoot(page, group, `update: ${title}`, true);
+    for (const problem of await duplicates(page, where, true)) geo.push(`${group}: update: ${title}: duplicate: ${problem}`);
+    for (const problem of await geometry(page, group.endsWith('phone'), where)) geo.push(`${group}: update: ${title}: ${problem}`);
+  };
+  await step('the strip when a newer gonogo is out');
+  await page.getByRole('button', { name: /^(↑ )?\d+\.\d+\.\d+/ }).first().click({ timeout: 5000 });
+  await step('the version key');
+  // the version key offers Update only when the strip is not showing it (the old flow had it twice)
+  if ((await page.locator('.lay-pop').getByRole('button', { name: /^Update to 9\.9\.9/ }).count()) > 0) {
+    await click(/^Update to 9\.9\.9/, '.lay-pop');
+    await step('after one click on Update in the version key');
+  } else {
+    await page.keyboard.press('Escape');
+  }
+  if (!(await page.getByRole('alertdialog').isVisible().catch(() => false))) await click(/^Update to 9\.9\.9/, '.rollout-strip');
+  await step('the confirmation');
+  await click(/^Update now$/);
+  await page.locator('.rollout-strip [role=alert]').first().waitFor({ timeout: 8000 });
+  await step('the image cannot be checked');
+  const fix = page.locator('.rollout-fix > summary');
+  if (await fix.isVisible().catch(() => false)) {
+    await fix.click();
+    await step('how to fix');
+  }
+  await click(/Update anyway|Update without checking/);
+  await page.waitForTimeout(1200);
+  await step('going on without the check');
+  missed.push(`info: ${group}: update flow: ${clicks} clicks from the first look at the strip to the run (the password prompt not counted)`);
+}
+
 /** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
 async function view(page: Page, group: string, title: string, get: () => Promise<void>, fullPage = false): Promise<void> {
   try {
@@ -463,6 +556,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       await measure(page, group, 'rooms list: stop all asks first');
       await page.getByRole('button', { name: 'Keep every room running' }).click({ timeout: 3000 }).catch(() => undefined);
       await app(page, group, true);
+      await updateFlow(await context.newPage(), group).catch((error: Error) => void missed.push(`${group}: update flow: ${error.message.split("\n")[0]}`));
       await context.close();
     }
   }

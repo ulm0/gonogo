@@ -111,7 +111,7 @@
   align-items: center;
   gap: 4px 12px;
   margin: 12px 24px 0;
-  padding: 2px 8px 2px 14px;
+  padding: 8px 8px 8px 14px;
   border: 1px solid var(--edge);
   border-radius: var(--radius-key);
   background: var(--well);
@@ -2011,6 +2011,76 @@
 }
 
 .system-actions {
+  margin: 0;
+}
+
+/* the update strip: a fold (what this runs, how to fix, about this install) is a line, not a paragraph in the way */
+.rollout-fold,
+.rollout-fix {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.rollout-fold > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.rollout-fold > p,
+.rollout-fix > p {
+  margin: 4px 0 0;
+  max-width: 70ch;
+}
+
+.rollout-confirm .rollout-fix {
+  flex-basis: auto;
+}
+
+.rollout-fold > summary,
+.rollout-fix > summary {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  width: fit-content;
+}
+
+@media (max-width: 700px) {
+  .rollout-fold > summary,
+  .rollout-fix > summary {
+    min-height: 44px;
+  }
+}
+
+/* a fold of the update strip is a key with an arrow: closed ▸, open ▾ */
+.rollout-fold > summary,
+.rollout-fix > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.rollout-fold > summary::-webkit-details-marker,
+.rollout-fix > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rollout-fold > summary::before,
+.rollout-fix > summary::before {
+  content: '▸';
+  margin-right: 6px;
+}
+
+.rollout-fold[open] > summary::before,
+.rollout-fix[open] > summary::before {
+  content: '▾';
+}
+
+.lay-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lay-confirm p {
   margin: 0;
 }
 

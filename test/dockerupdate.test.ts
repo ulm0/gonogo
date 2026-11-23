@@ -7,7 +7,8 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { agentCounts, updateDialogText } from '../src/client/selfupdate.js';
+import { agentCounts, stripDismissed, UPDATE_TRUST_TEXT, updateDialogText, verifyPanel } from '../src/client/selfupdate.js';
+import { readFileSync } from 'node:fs';
 import { parseArgs } from '../src/server/cli.js';
 import { labelVersion, followResult, settleResult, viewOfResult, checkPrevious, copyBody, REF_LABEL, selfRef, dockerUpdateStatus, helperBody, parseImage, pinnedReason, pullAndCheck, readResult, redact, socketCall, startHelper, swap, VERSION_LABEL, writeResult } from '../src/server/dockerupdate.js';
 import type { DockerCall } from '../src/server/dockerupdate.js';
@@ -871,8 +872,77 @@ describe('the dialog words', () => {
     const text = updateDialogText('0.4.0', { working: 2, idle: 1 }, 'running');
     expect(text).toContain('2 agents are working and 1 is idle: they will all stop.');
     expect(text).toContain('start again by themselves');
-    expect(text).toContain("image publisher's code");
+    // what the update runs is in a fold of the box, not in the sentence that has to be read
+    expect(text).not.toContain('publisher');
+    expect(UPDATE_TRUST_TEXT).toContain('publisher\u2019s code');
+    expect(text.length).toBeLessThan(330);
     expect(updateDialogText('0.4.0', { working: 0, idle: 0 }, 'off')).toContain('No agent is running.');
     expect(updateDialogText('0.4.0', { working: 1, idle: 0 }, 'boss')).toContain('only the boss');
+  });
+});
+
+describe('an image that cannot be checked', () => {
+  it('says it once and short, with how to fix it and a key that goes on, and gives no key for a failed check', () => {
+    const none = verifyPanel('unchecked');
+    expect(none.problem).toBe('Can\u2019t verify this image\u2019s signature right now.');
+    expect(none.problem.length).toBeLessThan(80);
+    expect(none.fix).toContain('Try again in a while');
+    expect(none.fix).toContain('gh auth login');
+    expect(none.fix).toContain('GH_TOKEN');
+    expect(none.button).toBe('Update without checking');
+    expect(verifyPanel('unattested').fix).toBeNull();
+    expect(verifyPanel('unattested').button).toBe('Update without checking');
+  });
+
+  it('the strip prints the note of the update once, and keeps the install sentence in a fold', () => {
+    const app = readFileSync('src/client/App.tsx', 'utf8');
+    expect(app.match(/\{update\.note\}/g)).toHaveLength(1);
+    expect(app).not.toMatch(/Update anyway/);
+    expect(app).toMatch(/<details className="rollout-fold rollout-note">\s*<summary[^>]*>\s*About this install\s*<\/summary>/);
+    // while the confirmation is open the Update key of the strip is not (it would be a second key for the same thing)
+    expect(app).toMatch(/failedVerify === null && !confirming && \(/);
+  });
+
+  it('one click on Update in the version key asks the strip to start, and the strip then asks once', () => {
+    const bar = readFileSync('src/client/TopBar.tsx', 'utf8');
+    expect(bar).toContain('detail: { start: canUpdate }');
+    const app = readFileSync('src/client/App.tsx', 'utf8');
+    expect(app.match(/setConfirming\(true\)/g)).toHaveLength(1);
+  });
+});
+
+describe('Dismiss on the update strip', () => {
+  it('hides the version that was dismissed, also with a result in it (done, rolled back), and never while an update runs', () => {
+    expect(stripDismissed('0.13.0', '0.13.0', false)).toBe(true); // after an update: update is set, the strip still goes
+    expect(stripDismissed('0.13.0', '0.13.0', true)).toBe(false); // installing: always shown
+    expect(stripDismissed('0.12.4', '0.13.0', false)).toBe(false); // another version is out: shown again
+    expect(stripDismissed('', '0.13.0', false)).toBe(false);
+    expect(stripDismissed(null, '0.13.0', false)).toBe(false);
+  });
+
+  it('is used by the strip, and the version key can still UNDO a dismissed update', () => {
+    const app = readFileSync('src/client/App.tsx', 'utf8');
+    expect(app).toContain('stripDismissed(dismissed, latest, busy)');
+    expect(app).not.toMatch(/dismissed === rollout\.latest && update === undefined/);
+    expect(readFileSync('src/client/TopBar.tsx', 'utf8')).toContain('UNDO the last update');
+  });
+});
+
+describe('what the version key asks before it stops agents', () => {
+  const bar = readFileSync('src/client/TopBar.tsx', 'utf8');
+  const app = readFileSync('src/client/App.tsx', 'utf8');
+
+  it('asks one line before UNDO, and before an update that is not a container\'s (a container\'s is asked by the strip)', () => {
+    expect(bar).toContain('UNDO stops every agent and goes back to the version before this update.');
+    expect(bar).toContain("onClick={() => setAsk('undo')}");
+    expect(bar).toMatch(/if \(canUpdate && !selfUpdate\) \{\s*setAsk\('update'\);\s*return;/);
+    expect(bar).toContain("api.undoUpdate().then(close");
+    // nothing calls undoUpdate before the confirmation
+    expect(bar.match(/api\.undoUpdate\(\)/g)).toHaveLength(1);
+  });
+
+  it('a request to start that outlives the strip never starts an update: the ref is emptied at every render', () => {
+    expect(app).toContain('startRef.current = null;');
+    expect(app).toMatch(/if \(wantStart\) \{\s*setWantStart\(false\);\s*startRef\.current\?\.\(\);/);
   });
 });
