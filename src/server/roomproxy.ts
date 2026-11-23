@@ -130,7 +130,7 @@ function reservedPath(rest: string): boolean {
   const first = segments[1] ?? '';
   // the list of rooms is "/" exactly ("//" and the like are no path of anything)
   if (segments.length === 2 && first === '') return true;
-  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push'));
+  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push' || segments[2] === 'exposure'));
 }
 
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {

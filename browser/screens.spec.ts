@@ -495,6 +495,21 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.locator('.patch-input').waitFor({ timeout: 3000 });
   });
   await page.keyboard.press('Escape');
+  // the banner of an insecure setup: the stand-in install has nothing open, so the list is stood in (the texts are the server's own kind: plain words, names and counts)
+  const findings = [
+    { id: 'public-name-no-mfa', severity: 'high', text: 'gonogo.example.org is a public address and the login has no second factor.', fix: 'Turn on the second factor (TOTP) in Flight Rules, LOGIN.' },
+    { id: 'plain-http', severity: 'medium', text: 'You are on plain http: the password and the token travel in the clear on this network.', fix: 'On a network you trust that is acceptable. For anything wider, use a name with https (see Exposing gonogo safely).' },
+    { id: 'agent-unattended-aaaaaaaaaaaa', severity: 'medium', text: 'ana (room main) works without asking (bypassPermissions) outside a Clean Room: it can change anything its user can.', fix: 'Put ana in a Clean Room, or set its mode to ask first.' },
+    { id: 'update-checks-off', severity: 'info', text: 'The check for a newer gonogo is off.', fix: 'Turn it on in Flight Rules, System and update.' },
+    { id: 'docker-socket', severity: 'info', text: 'The Docker socket is mounted in this container.', fix: 'Remove the mount if you do not use Update here.' },
+  ];
+  await page.route('**/api/exposure/findings', (route) => route.fulfill({ json: { findings } }));
+  await view(page, group, 'insecure-setup banner', async () => {
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.exposure-banner').waitFor({ timeout: 10_000 });
+  });
+  await view(page, group, 'insecure-setup banner: the rest open', () => page.locator('.exposure-more > summary').click({ timeout: 3000 }), true);
+  await page.unroute('**/api/exposure/findings');
   await view(page, group, 'hire form', async () => {
     // the key is in the room view now (it was in the top bar): go back to the room first
     await page.goto(`${base}/r/main/`);

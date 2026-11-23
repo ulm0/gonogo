@@ -11,7 +11,7 @@
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { dirname, join } from 'node:path';
 import { chmodSync } from 'node:fs';
@@ -22,7 +22,7 @@ import { createAuthHttp } from './authhttp.js';
 import { createDevices } from './devicelogin.js';
 import { createPasskeys } from './passkeys.js';
 import { GLOBAL_SETTINGS_FILE, globalSetting } from './settings.js';
-import { checkFolder, checkWithWarning, FolderError, writeFolder } from './projectfolder.js';
+import { checkFolder, checkWithWarning, FolderError, folderWarning, readFolder, writeFolder } from './projectfolder.js';
 import { KNOWLEDGE_DIR, nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
@@ -39,6 +39,9 @@ import type { RoomEntry } from './rooms.js';
 import { exposureProblem, parsePublicUrl } from './exposure.js';
 import { isIpLiteralHost, splitAllowed } from './hosts.js';
 import { forbiddenHostText } from './forbiddenhost.js';
+import { dismiss as dismissFinding, findingsOf, readDismissed } from './exposurefindings.js';
+import type { Finding } from './exposurefindings.js';
+import { SOCKET_PATH } from './dockerupdate.js';
 import { hostName } from './web.js';
 
 const DIRECTOR_TOKEN_FILE = 'token';
@@ -681,6 +684,81 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
     return { main: path === options.home ? '.' : 'rooms/main', path, migration };
   };
 
+  /** The findings behind the banner of an insecure setup, and their dismissal (only the Director's own login: a key or a terminal cannot silence a warning). */
+  const currentFindings = async (req: http.IncomingMessage): Promise<Finding[]> => {
+    const peer = req.socket.remoteAddress ?? '';
+    const proxied = (options.trustedProxies ?? []).includes(peer) && String(req.headers['x-forwarded-proto'] ?? '').toLowerCase() === 'https';
+    // the agents of the rooms that run, by name and mode: asked like the list page asks (a room that does not answer in 1.5 s adds nothing)
+    const agents: Array<{ room: string; name: string; mode: string; cleanRoom: boolean }> = [];
+    await Promise.all(
+      [...children.values()].map(async (child) => {
+        if (child.port === null) return;
+        try {
+          const body = (await askRoom(child, '/api/state', 1500)) as { agents?: Array<{ name?: unknown; mode?: unknown; cleanRoom?: unknown }> };
+          for (const a of Array.isArray(body.agents) ? body.agents : []) if (typeof a.name === 'string' && typeof a.mode === 'string') agents.push({ room: child.entry.id, name: a.name, mode: a.mode, cleanRoom: a.cleanRoom !== null && a.cleanRoom !== undefined });
+        } catch {
+          // no answer: no finding from this room
+        }
+      }),
+    );
+    // a project folder that is or holds gonogo's own folder (read from the file: the room need not answer)
+    const folders: Array<{ room: string }> = [];
+    for (const child of children.values()) {
+      const stored = readFolder(homeOfRoom(child.entry.id));
+      if (stored === null) continue;
+      try {
+        if ((folderWarning(checkFolder(stored), [options.home]) ?? '').startsWith('Agents can read and change')) folders.push({ room: child.entry.id });
+      } catch {
+        // not a folder any more: the room falls back by itself
+      }
+    }
+    const off = updateCheckOff(globalSetting(join(options.home, GLOBAL_SETTINGS_FILE), 'updateCheck', options.env) ?? undefined) || options.roomArgs?.includes('--no-update-check') === true;
+    const newer = newerNow();
+    return findingsOf({
+      account: auth.state(),
+      accountEpoch: auth.epoch(),
+      mfa: auth.mfa().enabled,
+      bindHost: options.host,
+      inContainer: options.inContainer === true,
+      pages: [...split.pages],
+      hooks: [...split.hooks],
+      requestHost: localReqs.has(req) ? '127.0.0.1' : req.headers.host,
+      requestHttps: proxied || (req.socket as { encrypted?: boolean }).encrypted === true,
+      dockerSocketMounted: options.inContainer === true && existsSync(options.env.GONOGO_DOCKER_SOCKET || SOCKET_PATH),
+      trustedProxies: options.trustedProxies ?? [],
+      keys: auth.keys().map((k) => ({ id: k.id, name: k.name, scope: k.scope, remote: k.remote, created: k.created, expires: k.expires })),
+      now: (options.now ?? Date.now)(),
+      agents,
+      folders,
+      updateChecksOff: off,
+      behind: !off && newer !== null && options.version !== undefined ? { running: options.version, latest: newer.latest } : null,
+    });
+  };
+  async function exposureApi(req: http.IncomingMessage, res: http.ServerResponse, grant: NonNullable<ReturnType<typeof authHttp.grant>>, dismissing: boolean): Promise<void> {
+    try {
+      const method = req.method ?? '';
+      if (!dismissing) {
+        if (method !== 'GET') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'GET' });
+        // the list is a map of the weak spots: the Director's own login and this machine's socket, never a key (read scope included) or a terminal login
+        if (grant.kind === 'key' || grant.kind === 'tui') return sendApiError(res, 403, "the findings are for the Director's own login", 'forbidden');
+        const hidden = new Set(readDismissed(options.home));
+        return sendJson(res, 200, { findings: (await currentFindings(req)).filter((f) => !hidden.has(f.id)).map(({ kind: _kind, ...f }) => f) }, { 'Cache-Control': 'no-store' });
+      }
+      if (method !== 'POST') return sendApiError(res, 405, 'method not allowed', 'bad_request', undefined, { Allow: 'POST' });
+      if (!originOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      if (grant.kind !== 'session' && grant.kind !== 'token') return sendApiError(res, 403, "a warning is dismissed from the Director's own login", 'forbidden');
+      const body = await readBody(req);
+      const id = typeof body.id === 'string' ? body.id : '';
+      if (!(await currentFindings(req)).some((f) => f.id === id)) return sendApiError(res, 400, 'that is not a finding of this gonogo now', 'bad_request', 'id');
+      dismissFinding(options.home, id);
+      return sendJson(res, 200, { ok: true });
+    } catch (error) {
+      if (error instanceof RoomsError) return sendApiError(res, 400, error.message, 'bad_request');
+      log.error('exposure api failed', error);
+      return sendApiError(res, 500, 'internal error', 'internal');
+    }
+  }
+
   /** GET: what a move would do now (nothing is written). POST {action}: request | undo | cancel | dismiss, each acted on at the next start. The Director's grant was checked. */
   async function migrateApi(req: http.IncomingMessage, res: http.ServerResponse, grant: NonNullable<ReturnType<typeof authHttp.grant>>): Promise<void> {
     try {
@@ -981,6 +1059,14 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
       // a device is tied to a login session; a key, the old token and the local socket have none
       void pushApi(push, req, res, path, grant.kind === 'session' ? (grant.sessionId ?? null) : null);
+      return;
+    }
+    if (path === '/api/exposure/findings' || path === '/api/exposure/dismiss') {
+      const grant = authHttp.grant(req, 'api');
+      if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
+      if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
+      if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
+      void exposureApi(req, res, grant, path.endsWith('dismiss'));
       return;
     }
     const rooms = /^\/api\/rooms(?:\/([^/]+)(?:\/(migrate|stop|start))?)?$/.exec(path);
