@@ -21,6 +21,12 @@ if (verb === 'rm') {
   if (process.env.FAKE_DOCKER_LOG) appendFileSync(process.env.FAKE_DOCKER_LOG, JSON.stringify({ verb, argv: args }) + '\n');
   process.exit(0);
 }
+// `docker inspect --format <f> <name>` for gonogo's own container, only when FAKE_DOCKER_INSPECT_MOUNTS (the JSON of .Mounts) is set
+if (verb === 'inspect' && process.env.FAKE_DOCKER_INSPECT_MOUNTS !== undefined) {
+  const format = args[args.indexOf('--format') + 1] ?? '';
+  process.stdout.write(format.includes('NetworkMode') ? `${process.env.FAKE_DOCKER_NETMODE ?? 'bridge'}\n` : `${process.env.FAKE_DOCKER_INSPECT_MOUNTS}\n`);
+  process.exit(0);
+}
 if (verb !== 'run') {
   process.stderr.write(`fake-docker: unknown command ${String(verb)}\n`);
   process.exit(125);

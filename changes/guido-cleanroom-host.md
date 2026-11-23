@@ -1,0 +1,1 @@
+- **Clean Room works with gonogo in `network_mode: host`.** `container:self` is now found by the container id from gonogo's own files (the host name is the host's under host networking), and when that container runs with the host's network the Clean Room is started with `--network host` and `host.docker.internal` on 127.0.0.1. Nothing changes in any other mode.
