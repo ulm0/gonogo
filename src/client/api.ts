@@ -72,6 +72,7 @@ import type {
   KnowledgeRepo,
   KnowledgeView,
   PayloadDefaults,
+  ProjectFolderCheck,
   ProjectFolderView,
   RoomKeysView,
   RuntimeSettingKey,
@@ -478,6 +479,17 @@ const toProjectFolder = (value: unknown): ProjectFolderView => {
 };
 export async function projectFolder(): Promise<ProjectFolderView> {
   return toProjectFolder(await call('GET', '/project-folder'));
+}
+/** Whether a folder would be accepted, and its warning, before anything is saved; null when this server has no such check (the answer comes after the save then). */
+export async function checkProjectFolder(dir: string): Promise<ProjectFolderCheck | null> {
+  try {
+    const record = asRecord(await call('GET', `/project-folder/check?dir=${encodeURIComponent(dir)}`));
+    if (record === null || typeof record.ok !== 'boolean') return null;
+    return record as unknown as ProjectFolderCheck;
+  } catch (e) {
+    if ((e as ApiFailure).status === 404) return null;
+    throw e;
+  }
 }
 /** Sets the folder; null goes back to the folder gonogo was started in. */
 export async function setProjectFolder(dir: string | null): Promise<ProjectFolderView> {

@@ -5,7 +5,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
-import type { ProjectFolderView } from '../shared/protocol.js';
+import type { ProjectFolderCheck, ProjectFolderView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { bossNeedsRestart, sourceText } from './projectFolderModel.js';
 
@@ -20,6 +20,8 @@ export function ProjectFolderBlock(): ReactElement {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [restarted, setRestarted] = useState<string | null>(null);
+  /** What the server says of the folder being typed, before it is saved: its reason, or its warning (both shown under the field). */
+  const [check, setCheck] = useState<ProjectFolderCheck | null>(null);
   useEffect(() => {
     let live = true;
     api.projectFolder().then(
@@ -30,6 +32,24 @@ export function ProjectFolderBlock(): ReactElement {
       live = false;
     };
   }, []);
+  // asked a moment after the last key, so a path is not checked letter by letter
+  useEffect(() => {
+    if (!editing || text.trim() === '') {
+      setCheck(null);
+      return undefined;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      api.checkProjectFolder(text.trim()).then(
+        (found) => live && setCheck(found),
+        () => live && setCheck(null),
+      );
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [editing, text]);
   const send = (dir: string | null): void => {
     if (busy) return;
     setBusy(true);
@@ -129,6 +149,16 @@ export function ProjectFolderBlock(): ReactElement {
                   Cancel
                 </button>
               </div>
+              {check !== null && check.ok === false && check.reason !== undefined && (
+                <p className="error" role="status">
+                  {check.reason}
+                </p>
+              )}
+              {check !== null && check.ok && typeof check.warning === 'string' && check.warning !== '' && (
+                <p className="flood pf-warning" data-tone="amber" role="note">
+                  {check.warning}
+                </p>
+              )}
               {error !== null && (
                 <p className="error" role="alert">
                   {error}

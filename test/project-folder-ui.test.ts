@@ -29,3 +29,18 @@ describe('the project folder row', () => {
     expect(block).toMatch(/className="flood pf-warning" data-tone="amber" role="note"/);
   });
 });
+
+describe('the warning before the save', () => {
+  it('asks the server a moment after the last key while a folder is typed, and shows its reason (red) or its warning (amber) under the field', () => {
+    const block = readFileSync('src/client/ProjectFolder.tsx', 'utf8');
+    expect(block).toContain('api.checkProjectFolder(text.trim())');
+    expect(block).toContain('}, 400);');
+    expect(block).toMatch(/check\.ok === false && check\.reason !== undefined[\s\S]*className="error"/);
+    expect(block).toMatch(/check\.ok && typeof check\.warning === 'string'[\s\S]*className="flood pf-warning"/);
+  });
+
+  it('a server without the check (404) says nothing and the warning comes after the save', () => {
+    const api = readFileSync('src/client/api.ts', 'utf8');
+    expect(api).toMatch(/\.status === 404\) return null;/);
+  });
+});

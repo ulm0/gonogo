@@ -1734,6 +1734,16 @@ export interface ProjectFolderView {
   note?: string;
 }
 
+/** The dry run of a folder (GET /api/project-folder/check?dir=): whether it would be accepted, and the warning it would carry. Nothing is written. */
+export interface ProjectFolderCheck {
+  ok: boolean;
+  /** The real path, when it is one. */
+  dir?: string;
+  /** Why not, in words. */
+  reason?: string;
+  warning: string | null;
+}
+
 /* ---- runtime settings (docs/runtime-settings-spec.md): GET /api/settings, PUT /api/settings/<key> ---- */
 
 export type RuntimeSettingKey = 'maxHops' | 'maxWorking' | 'agentCmd' | 'cleanRoomImage' | 'scrubEnv' | 'logLevel' | 'station' | 'updateCheck';

@@ -337,6 +337,11 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await view(page, group, 'project folder: the editor', () => page.getByRole('button', { name: 'Change the project folder' }).click({ timeout: 3000 }), true);
   await measure(page, group, 'project folder: the editor', '.lay-rules');
   await measureDuplicates(page, group, 'project folder: the editor', '.lay-rules');
+  await view(page, group, 'project folder: a broad folder warns before the save', async () => {
+    await page.getByLabel('Folder', { exact: true }).fill('/');
+    await page.waitForTimeout(900);
+  }, true);
+  await measure(page, group, 'project folder: a broad folder warns before the save', '.lay-rules');
   await view(page, group, 'project folder: a refused folder', async () => {
     await page.getByLabel('Folder', { exact: true }).fill('relative/path');
     await page.getByRole('button', { name: 'Set', exact: true }).click({ timeout: 3000 });
