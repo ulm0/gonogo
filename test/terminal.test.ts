@@ -236,6 +236,15 @@ describe('analyzeScreen', () => {
     }
     expect(analyzeScreen(['● It said "authentication rejected"', ...box('')], 80).authRejected).toBe(false);
     expect(analyzeScreen(['● The message was "Not logged in · Run /login", so I asked you to log in', ...box('')], 80).signedOut).toBe(false);
+    // RETRO's screens: tool output and a wrapped line of the assistant, above the box, are the transcript
+    const tool = ['● Bash(git push)', '  ⎿  remote: authentication rejected', ...box('')];
+    expect(analyzeScreen(tool, 80)).toMatchObject({ authRejected: false, signedOut: false });
+    expect(analyzeScreen(['  OAuth token has expired, so the CI job failed.', ...box('')], 80)).toMatchObject({ authRejected: false, signedOut: false });
+    expect(analyzeScreen(['  Remote managed settings failed to load (authentication rejected (401))', ...box('')], 80).authRejected).toBe(false); // above the box
+    // with no box found: only the last rows
+    const bare = ['x', 'y', 'z', 'w', 'v', 'u', 't', '  Not logged in · Run /login'];
+    expect(analyzeScreen(bare, 60).signedOut).toBe(true);
+    expect(analyzeScreen(['  Not logged in · Run /login', ...bare.slice(0, 7), ...bare.slice(0, 6)], 60).signedOut).toBe(false);
     expect(analyzeScreen(['> why does it say Not logged in · Run /login?', ...box('')], 80).signedOut).toBe(false);
   });
 

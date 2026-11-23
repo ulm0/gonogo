@@ -1372,7 +1372,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const probe = screenOf(rt);
       if (probe === null) return;
       // a pointer typed into a console with no login answers nothing: the mail waits for the Director's /login
-      if (probe.signedOut === true || probe.authRejected === true) {
+      if (!rt.hooksSeen && (probe.signedOut === true || probe.authRejected === true)) {
         setWaitNotes(rt, probe.authRejected === true ? `waiting: ${name}'s credential was rejected` : `waiting: ${name} isn't signed in`);
         return;
       }
@@ -1694,8 +1694,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     const info = titleOf(rt);
     const probe = screenOf(rt);
     // Claude Code with no login looks idle (a box, a quiet title) and answers nothing: it is the Director's to fix, not a ready agent
-    rt.authRejected = probe?.authRejected === true;
-    rt.signedOut = probe?.signedOut === true || rt.authRejected;
+    rt.authRejected = !rt.hooksSeen && probe?.authRejected === true;
+    rt.signedOut = !rt.hooksSeen && (probe?.signedOut === true || rt.authRejected);
+    // a Claude Code with no login, or a refused one, never fires a hook: once any hook has come the words on the screen are the transcript's, not a state
     if (rt.signedOut && (rt.state === 'starting' || rt.state === 'idle')) {
       log.warn(`${rt.record.name} ${rt.authRejected ? 'has a credential that Claude Code rejected' : 'is not signed in to Claude Code'}`);
       setState(rt, 'needs_you', { kind: 'dialog', reason: rt.authRejected ? AUTH_REJECTED_REASON : SIGNED_OUT_REASON });

@@ -1498,6 +1498,16 @@ describe('delivery to each recipient state (5.9)', () => {
       await h.advance(NEEDS_YOU_CLEAR_MS + RECONCILE_TICK_MS * 2);
       expect(h.view('ana').state).not.toBe('needs_you');
     });
+    it('once a hook has come, the words on the screen are not a state: a Claude that fired a hook is signed in', async () => {
+      const h = await withAna();
+      h.hook('ana', 'UserPromptSubmit');
+      h.hook('ana', 'Stop');
+      h.setScreen('ana', { promptBox: true, dialog: null, promptText: '', signedOut: true, authRejected: true });
+      h.send('user', 'ana');
+      await h.advance(RECONCILE_TICK_MS * 3);
+      expect(h.view('ana').state).toBe('idle');
+      expect(h.msg('m1').note).not.toMatch(/signed in|rejected/);
+    });
     it('a credential Claude Code rejected is needs_you with its own reason and note, held like no login', async () => {
       const h = await withAna();
       h.setScreen('ana', { promptBox: true, dialog: null, promptText: '', authRejected: true });

@@ -75,6 +75,8 @@ const RULE_EDGE = new RegExp(`^${RULE_CHAR}{${RULE_EDGE_MIN_RUN},} \\S`);
 const isRule = (row: string): boolean => RULE_RUN.test(row) || RULE_EDGE.test(row);
 const BOX_PREFIX = PROMPT_GLYPH + NBSP;
 const GENERIC_DIALOG = new RegExp(GENERIC_DIALOG_PATTERN, 'i');
+/** With no prompt box found, the last rows are the footer. */
+const FOOTER_ROWS_NO_BOX = 6;
 const SIGNED_OUT = new RegExp(SIGNED_OUT_PATTERN, 'i');
 const AUTH_REJECTED = new RegExp(AUTH_REJECTED_PATTERN, 'i');
 const DIALOGS = DIALOG_PATTERNS.map(({ kind, source }) => ({ kind, regex: new RegExp(source) }));
@@ -106,6 +108,7 @@ export function analyzeScreen(rows: readonly string[], cols: number): ScreenProb
   const boxRow = findPromptBox(rows);
   // The box row is left out of the dialog search: a draft or placeholder in the box must never look like a dialog.
   const lines = rows.map((row, y) => (y === boxRow ? '' : row.trimEnd()));
+  const footer = boxRow >= 0 ? lines.slice(boxRow + 1) : lines.slice(-FOOTER_ROWS_NO_BOX);
   return {
     cols,
     rows: rows.length,
@@ -113,9 +116,10 @@ export function analyzeScreen(rows: readonly string[], cols: number): ScreenProb
     dialog: findDialog(lines),
     // not a dialog (six other paths turn a dialog into needs_you): only the safety net that types waiting mail reads it
     modal: boxRow < 0 && lines.some((line) => GENERIC_DIALOG.test(line)),
-    // a line of the transcript that quotes the words (the assistant's, or the Director's) is not a state
-    signedOut: lines.some((line) => SIGNED_OUT.test(line) && !/^\s*[●⏺>]/.test(line)),
-    authRejected: lines.some((line) => AUTH_REJECTED.test(line) && !/^\s*[●⏺>]/.test(line)),
+    // Claude Code prints these in its footer, BELOW the live box (with no box: on the last rows). Anything above the box is the transcript: tool output and the
+    // assistant's own lines quote these words all the time, and are not a state.
+    signedOut: footer.some((line) => SIGNED_OUT.test(line)),
+    authRejected: footer.some((line) => AUTH_REJECTED.test(line)),
     promptText: boxRow >= 0 ? rows[boxRow].slice(BOX_PREFIX.length).trim() : null,
   };
 }
