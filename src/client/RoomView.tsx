@@ -281,7 +281,7 @@ function Need({ agent, legend, phone }: { agent: AgentView; legend: string; phon
 }
 
 /** Relief: the boss asks to hire. Every parameter is here, and GO is the only way the agent is hired. */
-function ReliefNeed({ request, legend, onFail }: { request: ReliefRequest; legend: string; onFail(text: string): void }): ReactElement {
+export function ReliefNeed({ request, legend, onFail }: { request: ReliefRequest; legend: string; onFail(text: string): void }): ReactElement {
   const now = useNow();
   const { busy, run } = useRun();
   const title = reliefTitle(request, legend);
