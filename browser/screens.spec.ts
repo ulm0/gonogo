@@ -330,6 +330,30 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await measure(page, group, 'runtime settings: a setting for all rooms only', '.lay-rules');
   await measureDuplicates(page, group, 'runtime settings: a setting for all rooms only', '.lay-rules');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
+  // the project folder (Room group): the editor, a refused folder, a folder set (the boss runs elsewhere: the page offers to restart it), then Reset
+  await page.locator('.lay-group-nav a', { hasText: 'Room' }).first().click({ timeout: 3000 }).catch(() => undefined);
+  await view(page, group, 'project folder: the editor', () => page.getByRole('button', { name: 'Change the project folder' }).click({ timeout: 3000 }), true);
+  await measure(page, group, 'project folder: the editor', '.lay-rules');
+  await measureDuplicates(page, group, 'project folder: the editor', '.lay-rules');
+  await view(page, group, 'project folder: a refused folder', async () => {
+    await page.getByLabel('Folder', { exact: true }).fill('relative/path');
+    await page.getByRole('button', { name: 'Set', exact: true }).click({ timeout: 3000 });
+    await stepUpIfAsked(page);
+    await page.locator('.pf-editor [role=alert]').waitFor({ timeout: 5000 });
+  }, true);
+  await measure(page, group, 'project folder: a refused folder', '.lay-rules');
+  await view(page, group, 'project folder: set, the boss runs elsewhere', async () => {
+    await page.getByLabel('Folder', { exact: true }).fill(tmpdir());
+    await page.getByRole('button', { name: 'Set', exact: true }).click({ timeout: 3000 });
+    await stepUpIfAsked(page);
+    await page.getByRole('button', { name: 'Restart the boss now' }).waitFor({ timeout: 5000 });
+  }, true);
+  await measure(page, group, 'project folder: set, the boss runs elsewhere', '.lay-rules');
+  await measureDuplicates(page, group, 'project folder: set, the boss runs elsewhere', '.lay-rules');
+  // back to the default, so that the shots that follow are as before
+  await page.getByRole('button', { name: 'Change the project folder' }).click({ timeout: 3000 }).catch(() => undefined);
+  await page.getByRole('button', { name: 'Reset', exact: true }).click({ timeout: 3000 }).catch(() => undefined);
+  await stepUpIfAsked(page);
   await view(page, group, 'livery', () => open(page, 'Livery'), true);
   await view(page, group, 'patch panel', async () => {
     await page.keyboard.press('Escape');
@@ -439,6 +463,9 @@ test('screens of the app and the docs', async ({ browser }) => {
       await page.goto(`${base}/`);
       await shoot(page, group, 'rooms list', true);
       await measure(page, group, 'rooms list');
+      await view(page, group, 'rooms list: the new room form', () => page.getByRole('button', { name: 'NEW ROOM' }).click({ timeout: 5000 }), true);
+      await measure(page, group, 'rooms list: the new room form');
+      await page.getByRole('button', { name: 'CANCEL' }).click({ timeout: 3000 }).catch(() => undefined);
       await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs', exact: true }).click({ timeout: 5000 }), true);
       await measure(page, group, 'rooms list: stop asks first');
       await page.getByRole('button', { name: 'Keep Docs running' }).click({ timeout: 3000 }).catch(() => undefined);

@@ -456,3 +456,11 @@
 .rt-editor .input:not([data-fit]) { width: 100%; box-sizing: border-box; }
 .rt-scope { display: flex; flex-wrap: wrap; gap: 6px; }
 .rt-warning { margin: 0; padding: 8px 10px; }
+
+/* PROJECT FOLDER */
+.pf-now { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; max-width: 100%; }
+.pf-dir { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.pf-editor { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+.pf-editor .input { width: 100%; box-sizing: border-box; }
+.pf-restart { margin: 0; padding: 8px 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.pf-restart p { margin: 0; overflow-wrap: anywhere; }
