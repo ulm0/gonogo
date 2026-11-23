@@ -217,7 +217,7 @@ async function updateFlow(page: Page, group: string): Promise<void> {
     for (const problem of await geometry(page, group.endsWith('phone'), where)) geo.push(`${group}: update: ${title}: ${problem}`);
   };
   await step('the strip when a newer gonogo is out');
-  await page.getByRole('button', { name: /^\d+\.\d+\.\d+/ }).first().click({ timeout: 5000 });
+  await page.getByRole('button', { name: /^(↑ )?\d+\.\d+\.\d+/ }).first().click({ timeout: 5000 });
   await step('the version key');
   // the version key offers Update only when the strip is not showing it (the old flow had it twice)
   if ((await page.locator('.lay-pop').getByRole('button', { name: /^Update to 9\.9\.9/ }).count()) > 0) {
