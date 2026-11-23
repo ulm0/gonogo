@@ -786,7 +786,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       defaultModel: (provider, position) => modelDefaults.resolve(provider, position),
       toolsOff: () => toolsOff(features.view().off),
       rules: () => rulesStore.text(),
-      globalMcp: { enabled: (cleanRoom) => globalMcp.enabled(cleanRoom) },
+      globalMcp: {
+        enabled: (cleanRoom) => globalMcp.enabled(cleanRoom),
+        saw: (servers) =>
+          void globalMcp.observe(servers).then((fresh) => {
+            for (const s of fresh) downlink.post('startup', `A new user-scope MCP server ${s.name} → ${s.target === '' ? 'no address' : s.target} was added; it now starts with every agent.`);
+          }),
+      },
       egress: { enabled: () => egressSettings.view().anthropic, issue: (agent, key) => egress.issue(agent, key), revoke: (agent) => egress.revoke(agent), basePath: (token) => egress.basePath(token) },
       // one line at each start, a count and fixed words: nothing from a repository reaches the role text. Waits for the checks at most 3 s.
       knowledge: async (name) => {
@@ -1453,7 +1459,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         view: async () => {
           const configRoot = typeof env.CLAUDE_CONFIG_DIR === 'string' && env.CLAUDE_CONFIG_DIR.trim() !== '' ? env.CLAUDE_CONFIG_DIR : homedir();
           const room = new Set(Object.keys(payloadDefaults.get()?.mcpServers ?? {}));
-          return { ...globalMcp.view(), source: 'global (claude mcp --scope user)', servers: globalView(await readGlobalMcp(join(configRoot, '.claude.json')), (name) => (room.has(name) ? 'room' : null)) };
+          const servers = globalView(await readGlobalMcp(join(configRoot, '.claude.json')), (name) => (room.has(name) ? 'room' : null));
+          return { ...globalMcp.view(), source: 'global (claude mcp --scope user)', servers, added: globalMcp.added().filter((a) => servers.some((s) => s.name === a.name && s.target === a.target)) };
         },
       },
       docking: audited(docking, blackBox.record, DOCKING_AUDIT),

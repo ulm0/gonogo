@@ -99,6 +99,10 @@ export function mergeGlobal(globals: Record<string, McpServer>, off: readonly st
 
 export interface GlobalMcpStore {
   load(): Promise<void>;
+  /** At a start: the servers just read. Returns the ones whose NAME was not there at the last start (none the very first time: that only records what is there). */
+  observe(servers: GlobalMcpServer[]): Promise<GlobalMcpServer[]>;
+  /** The servers added since the Director last looked, by name and target, for the findings of the banner. */
+  added(): Array<{ name: string; target: string }>;
   view(): GlobalMcp;
   /** Whether the globals go into the mcp.json of an agent: `cleanRoom` is whether it is one. */
   enabled(cleanRoom: boolean): boolean;
@@ -113,7 +117,20 @@ export function createGlobalMcpStore(options: { dir: string; log?: Logger }): Gl
   const path = join(options.dir, GLOBAL_MCP_FILE);
   let host = true;
   let cleanRoom = false;
+  /** The names at the last start (null: never recorded), and the new ones since, with their targets. */
+  let seen: string[] | null = null;
+  let added: Array<{ name: string; target: string }> = [];
   let chain: Promise<unknown> = Promise.resolve();
+  const save = async (): Promise<void> => {
+    const temp = `${path}.${randomBytes(4).toString('hex')}.tmp`;
+    try {
+      await writeFile(temp, JSON.stringify({ version: 1, host, cleanRoom, seen, added }, null, 2), { flag: 'wx', mode: FILE_MODE });
+      await rename(temp, path);
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined);
+      throw new Error(`could not save the global MCP setting: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   return {
     async load() {
       try {
@@ -121,6 +138,8 @@ export function createGlobalMcpStore(options: { dir: string; log?: Logger }): Gl
         if (!isRecord(saved) || saved.version !== 1) throw new Error('not a version 1 file');
         if (typeof saved.host === 'boolean') host = saved.host;
         if (typeof saved.cleanRoom === 'boolean') cleanRoom = saved.cleanRoom;
+        if (Array.isArray(saved.seen)) seen = saved.seen.filter((n): n is string => typeof n === 'string').slice(0, 200);
+        if (Array.isArray(saved.added)) added = saved.added.filter((a): a is { name: string; target: string } => isRecord(a) && typeof a.name === 'string' && typeof a.target === 'string').slice(0, 50);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
         // the defaults: host agents on, Clean Room off
@@ -128,6 +147,18 @@ export function createGlobalMcpStore(options: { dir: string; log?: Logger }): Gl
       }
     },
     view: () => ({ host, cleanRoom }),
+    added: () => added,
+    async observe(servers) {
+      const names = servers.map((s) => s.name);
+      const fresh = seen === null ? [] : servers.filter((s) => !seen!.includes(s.name));
+      if (seen !== null && fresh.length === 0 && names.length === seen.length) return [];
+      seen = names;
+      added = [...added.filter((a) => servers.some((s) => s.name === a.name && s.target === a.target)), ...fresh.map((s) => ({ name: s.name, target: s.target }))].slice(-50);
+      const run = chain.then(() => save());
+      chain = run.catch(() => undefined);
+      await run.catch((error: unknown) => log.error('could not save the global MCP names', error));
+      return fresh;
+    },
     enabled: (isCleanRoom) => (isCleanRoom ? cleanRoom : host),
     async set(input) {
       if (!isRecord(input)) throw new HubError('bad_request', 'request body must be a JSON object');
@@ -138,16 +169,13 @@ export function createGlobalMcpStore(options: { dir: string; log?: Logger }): Gl
       const nextCleanRoom = (input.cleanRoom as boolean | undefined) ?? cleanRoom;
       const run = chain.then(async () => {
         if (nextHost === host && nextCleanRoom === cleanRoom) return;
-        const temp = `${path}.${randomBytes(4).toString('hex')}.tmp`;
-        try {
-          await writeFile(temp, JSON.stringify({ version: 1, host: nextHost, cleanRoom: nextCleanRoom }, null, 2), { flag: 'wx', mode: FILE_MODE });
-          await rename(temp, path);
-        } catch (error) {
-          await rm(temp, { force: true }).catch(() => undefined);
-          throw new Error(`could not save the global MCP setting: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        const before = { host, cleanRoom };
         host = nextHost;
         cleanRoom = nextCleanRoom;
+        await save().catch((error: unknown) => {
+          ({ host, cleanRoom } = before);
+          throw error;
+        });
       });
       chain = run.catch(() => undefined);
       return run.then(() => ({ host, cleanRoom }));

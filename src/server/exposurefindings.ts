@@ -51,6 +51,8 @@ export interface FindingsInput {
   roomModes: ReadonlyArray<{ room: string; mode: string }>;
   /** Rooms whose project folder is or holds gonogo's home. */
   folders: ReadonlyArray<{ room: string }>;
+  /** Global MCP servers (claude mcp --scope user) that appeared since the last start of an agent: name and target only. */
+  globalMcpAdded?: ReadonlyArray<{ room: string; name: string; target: string }>;
   updateChecksOff: boolean;
   /** The running version, and the newest release the daily check saw when it is newer. */
   behind: { running: string; latest: string } | null;
@@ -97,6 +99,9 @@ export function findingsOf(input: FindingsInput): Finding[] {
   }
   for (const key of input.keys.filter((k) => k.remote && k.scope === 'full' && (input.now - k.created > 90 * DAY_MS || k.expires - k.created > 366 * DAY_MS))) {
     add('old-remote-key', 'medium', `The API key "${key.name}" can do everything, works from other computers, and ${input.now - key.created > 90 * DAY_MS ? 'is more than 90 days old' : 'never expires for practical purposes'}.`, `Make a new key with a shorter life and remove "${key.name}" (Flight Rules, LOGIN).`, key.id);
+  }
+  for (const g of input.globalMcpAdded ?? []) {
+    add('global-mcp-added', 'medium', `A new user-scope MCP server ${g.name} → ${g.target === '' ? 'no address' : g.target} was added; it now starts with every agent (room ${g.room}).`, 'If you did not add it, remove it with claude mcp remove --scope user, or switch it off in Flight Rules, GLOBAL MCP SERVERS. Dismiss this once you know it.', `${g.name}\0${g.target}`);
   }
   if (input.updateChecksOff) add('update-checks-off', 'info', 'gonogo does not check for new versions: it will not tell you about a fix.', 'Remove GONOGO_UPDATE_CHECK=0 (or turn it on in the runtime settings).');
   else if (input.behind !== null) add('version-behind', 'info', `gonogo ${input.behind.running} is running and ${input.behind.latest} is out.`, 'Update from the Update key or your install method.', input.behind.latest);

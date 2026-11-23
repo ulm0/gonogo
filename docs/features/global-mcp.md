@@ -25,9 +25,14 @@ A Clean Room is off by default because a global server can carry a header or a t
 
 Claude Code keeps the token of a remote server in its credential store (the config folder's `.credentials.json`, or the keychain), under a key made of the **name**, the **type**, the **address** and the **headers** of the server. gonogo copies a global server exactly, so an agent of the same user with the same config folder **finds the token and uses it**. Tried with Claude Code 2.1.325, a stored token and a fake server: started with `--strict-mcp-config --mcp-config <file>` that names the same server, it sent `Authorization: Bearer <the stored token>`. So the servers you already logged in to work in your agents, **on this machine**.
 
+- **A stdio global server with a path of this machine** (a `command` or `args` that point into your home or a local folder) **will not run inside a Clean Room**: the container has neither the program nor the folder. Only an `http`/`sse` server or a command that the image has can work there.
 - **A Clean Room has its own home**, with no credential store of yours: an OAuth server there is not logged in (and cannot be from inside it), another reason the switch is off for it.
 - **Not tried:** a real login flow, a token that expires and is refreshed while several agents run (Claude Code writes the store itself), and the macOS keychain.
 - If you **rename** a server in the config, or the address changes, the token is not found: log in again.
+
+## A new server is told to you
+
+The room remembers the names it saw at the last start of an agent. When a **new name** shows up, you get a Downlink notice ("A new user-scope MCP server `NAME` → `COMMAND or ORIGIN` was added; it now starts with every agent") and a finding in the insecure-setup banner with the same words. Names and targets only, never an argument, a header or a value. The finding is dismissed by an id that is a hash of the name and the target (so the same server at another address shows again) and goes away by itself when the server is removed from the config. The very first start only records what is there, with no notice. A change of address under the same name is not a new name and is not announced.
 
 ## What the page shows
 

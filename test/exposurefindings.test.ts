@@ -197,3 +197,15 @@ describe('findings that change with the situation', () => {
     expect(id({ mfa: false, pages: ['a.example.com'] }, 'public-name-no-mfa')).toBe(id({ mfa: false, pages: ['a.example.com'] }, 'public-name-no-mfa'));
   });
 });
+
+describe('a new user-scope MCP server', () => {
+  const added = [{ room: 'main', name: 'pulsar', target: 'https://gamma.pulsar.codes' }];
+  it('is a finding with its name and target, its id is a hash of both, and a different target is a new id', () => {
+    const found = findingsOf({ ...base, globalMcpAdded: added }).filter((f) => f.kind === 'global-mcp-added');
+    expect(found).toHaveLength(1);
+    expect(found[0]?.text).toBe('A new user-scope MCP server pulsar → https://gamma.pulsar.codes was added; it now starts with every agent (room main).');
+    expect(found[0]?.id).toBe(findingId('global-mcp-added', 'pulsar\0https://gamma.pulsar.codes'));
+    expect(found[0]?.id).not.toBe(findingId('global-mcp-added', 'pulsar\0https://other.test'));
+    expect(ids({})).toEqual([]);
+  });
+});

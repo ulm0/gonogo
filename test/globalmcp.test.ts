@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AgentRecord, Logger, McpServer } from '../src/shared/protocol.js';
+import type { AgentRecord, GlobalMcpServer, Logger, McpServer } from '../src/shared/protocol.js';
 import { createLauncher } from '../src/server/launcher.js';
 import { createGlobalMcpStore, globalView, mergeGlobal, readGlobalMcp } from '../src/server/globalmcp.js';
 import { parsePayloadOff } from '../src/server/payload.js';
@@ -198,5 +198,44 @@ describe('the start of a host agent', () => {
     const { spec } = await l.prepareStart(agentRecord(), { generation: 1, flag: null });
     const written = JSON.parse(await readFile(spec.args[spec.args.indexOf('--mcp-config') + 1] as string, 'utf8')) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(written.mcpServers)).toEqual(['gonogo']);
+  });
+});
+
+describe('a new name at a start', () => {
+  const srv = (name: string, target: string): GlobalMcpServer => ({ name, type: 'stdio', target, overriddenBy: null });
+  it('the first start only records; a new name later is returned once, with its target, and stays until it is gone', async () => {
+    const store = createGlobalMcpStore({ dir, log });
+    await store.load();
+    expect(await store.observe([srv('a', 'npx')])).toEqual([]);
+    expect(await store.observe([srv('a', 'npx')])).toEqual([]);
+    expect(await store.observe([srv('a', 'npx'), srv('b', 'https://x.test')])).toEqual([srv('b', 'https://x.test')]);
+    expect(await store.observe([srv('a', 'npx'), srv('b', 'https://x.test')])).toEqual([]);
+    expect(store.added()).toEqual([{ name: 'b', target: 'https://x.test' }]);
+    // kept across a restart, and a name that went and came back is new again
+    const again = createGlobalMcpStore({ dir, log });
+    await again.load();
+    expect(again.added()).toEqual([{ name: 'b', target: 'https://x.test' }]);
+    await again.observe([srv('a', 'npx')]);
+    expect(again.added()).toEqual([]);
+    expect(await again.observe([srv('a', 'npx'), srv('b', 'https://x.test')])).toHaveLength(1);
+  });
+  it('the launcher tells the room of the servers it read, and the saved file carries names and targets only', async () => {
+    await mkdir(join(dir, 'work'), { recursive: true });
+    await claudeJson({ mcpServers: { pulsar: { type: 'http', url: 'https://gamma.pulsar.codes/mcp?k=SECRETQ', headers: { Authorization: 'Bearer SECRETH' } } } });
+    const store = createGlobalMcpStore({ dir, log });
+    const seen: string[][] = [];
+    const l = createLauncher({
+      homeDir: join(dir, 'home'),
+      hubUrl: () => 'http://127.0.0.1:7777',
+      seed: false,
+      env: { PATH: '/usr/bin:/bin', HOME: join(dir, 'user'), CLAUDE_CONFIG_DIR: dir },
+      coauthor: () => ({ enabled: false, prFooter: false }),
+      globalMcp: { enabled: () => true, saw: (servers) => void seen.push(servers.map((s) => `${s.name}=${s.target}`)) },
+      log,
+    });
+    await l.prepareStart({ name: 'ana', role: 'r', dir: join(dir, 'work'), mode: 'default', sessionId: SID, desk: 1, boss: false, createdAt: 1 } as AgentRecord, { generation: 1, flag: null });
+    expect(seen).toEqual([['pulsar=https://gamma.pulsar.codes']]);
+    await store.observe([srv('pulsar', 'https://gamma.pulsar.codes')]);
+    expect(await readFile(join(dir, 'global-mcp.json'), 'utf8')).not.toMatch(/SECRET/);
   });
 });

@@ -450,6 +450,8 @@ export interface GlobalMcp {
 export interface GlobalMcpView extends GlobalMcp {
   source: string;
   servers: GlobalMcpServer[];
+  /** Names added since the last start that looked, with their targets: still in the config, for the banner. */
+  added?: Array<{ name: string; target: string }>;
 }
 /** The room's egress setting: a Clean Room agent holds no Anthropic API key, a proxy of gonogo's holds it. Off by default. */
 export interface EgressSettings {
@@ -2418,7 +2420,7 @@ export interface LauncherOptions {
   /** Co-author: the room's setting, read at each start. Default: on. */
   coauthor?: () => CoauthorSettings;
   /** Global MCP servers (globalmcp.ts): whether the user-scope servers of Claude Code are added to an agent's mcp.json, by host or Clean Room. Absent: none are. */
-  globalMcp?: { enabled(cleanRoom: boolean): boolean };
+  globalMcp?: { enabled(cleanRoom: boolean): boolean; /** The servers just read at a start: a new name is told to the Director. */ saw?(servers: GlobalMcpServer[]): void };
   /** Egress (egress.ts): a Clean Room agent whose setting is on holds a placeholder, and this proxy holds the Anthropic key. Absent: no agent has it. */
   egress?: {
     /** The room's setting; an agent's own `cleanRoom.egress` wins. */

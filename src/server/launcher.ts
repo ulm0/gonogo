@@ -61,7 +61,7 @@ import { coauthorEnv, ensureHooksDir, realHookNames } from './coauthor.js';
 import { remoteControlName } from './remotecontrol.js';
 import { effectiveRules } from './permissions.js';
 import { mergePayload } from './payload.js';
-import { mergeGlobal, readGlobalMcp } from './globalmcp.js';
+import { globalView, mergeGlobal, readGlobalMcp } from './globalmcp.js';
 import { buildDockerArgs, cleanRoomFlavor, cleanRoomImage, createVerified, containerUrl, prepareCleanRoom, removeContainer } from './cleanroom.js';
 import { parseAgentCmd } from './command.js';
 import { isRecord } from './hooks.js';
@@ -680,6 +680,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
       // the servers of `claude mcp add --scope user` come first, then the room's defaults, then the agent's own; the later name wins, and the agent can switch a global one off
       const globals = options.globalMcp?.enabled(clean !== null) === true ? await readGlobalMcp(join(hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : homedir(), CLAUDE_JSON), log.child('global mcp')) : {};
+      options.globalMcp?.saw?.(globalView(globals, () => null));
       await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, mergeGlobal(globals, agent.payloadOff?.mcpServers, payloadOf(agent, 'claude')?.mcpServers)), null, 2), FILE_MODE);
       const pluginDir = await writeSkillsPlugin(base, payloadOf(agent, 'claude')?.skills);
 
