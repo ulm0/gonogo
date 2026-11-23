@@ -226,12 +226,14 @@ describe('the route of a room', () => {
     expect((await call('PUT', '/api/project-folder', { dir: project }, 'token')).status).toBe(200);
   });
 
-  it('answers the dry run to anybody who asks, before anything is saved, and writes nothing', async () => {
-    const ask = (value: string) => call('GET', `/api/project-folder/check?dir=${encodeURIComponent(value)}`);
+  it('answers the dry run to the Director (session or browser token) only, before anything is saved, and writes nothing', async () => {
+    for (const actor of [undefined, 'key:abc', 'tui', 'socket', 'session; x']) expect((await call('GET', `/api/project-folder/check?dir=${encodeURIComponent(project)}`, undefined, actor)).status, String(actor)).toBe(403);
+    expect((await call('GET', `/api/project-folder/check?dir=${encodeURIComponent(project)}`, undefined, 'token')).json).toMatchObject({ ok: true });
+    const ask = (value: string) => call('GET', `/api/project-folder/check?dir=${encodeURIComponent(value)}`, undefined, 'session');
     expect((await ask(project)).json).toEqual({ ok: true, dir: project, warning: null });
     expect((await ask(home)).json).toMatchObject({ ok: true, warning: expect.stringMatching(/gonogo's own settings and keys/) as string });
     expect((await ask(join(dir, 'missing'))).json).toMatchObject({ ok: false, reason: expect.stringMatching(/does not exist/) as string });
-    expect((await call('GET', '/api/project-folder/check')).json).toMatchObject({ ok: false });
+    expect((await call('GET', '/api/project-folder/check', undefined, 'session')).json).toMatchObject({ ok: false });
     expect((await call('GET', '/api/project-folder')).json).toMatchObject({ source: 'default' });
     expect(existsSync(join(home, 'project-folder.json'))).toBe(false);
   });

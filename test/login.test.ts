@@ -1159,6 +1159,11 @@ describe('the device login of a terminal through the supervisor', () => {
       expect((await add({ authorization: `Bearer ${tui}` }, { id: 'a', dir: folder })).status).toBe(403);
       expect(existsSync(join(home, 'rooms', 'a'))).toBe(false);
       expect((await add({ authorization: `Bearer ${key}` }, { id: 'plain' })).status).toBe(201);
+      // the dry run of a folder says what exists on this computer: the Director's own login only
+      const check = (headers: Record<string, string>) => call('GET', `/api/rooms/check-folder?dir=${encodeURIComponent(folder)}`, headers);
+      expect((await check({ authorization: `Bearer ${key}` })).status).toBe(403);
+      expect((await check({ authorization: `Bearer ${tui}` })).status).toBe(403);
+      expect((await check(session)).status).toBe(200);
       expect((await add(session, { id: 'b', dir: folder })).status).toBe(201);
       expect(JSON.parse(readFileSync(join(home, 'rooms', 'b', 'project-folder.json'), 'utf8')).dir).toBe(folder);
     } finally {

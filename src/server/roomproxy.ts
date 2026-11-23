@@ -316,7 +316,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         }
         if (grant.kind === 'session' || grant.kind === 'tui') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
         director = (grant.kind === 'session' || grant.kind === 'token') && req.method === 'POST' && target.decoded === '/api/messages';
-        if (target.decoded.startsWith('/api/settings') || target.decoded === '/api/docking/addresses' || target.decoded === '/api/project-folder') actor = grant.kind === 'key' ? `key:${(grant.keyId ?? '').slice(0, 12)}` : grant.kind;
+        if (target.decoded.startsWith('/api/settings') || target.decoded === '/api/docking/addresses' || target.decoded === '/api/project-folder' || target.decoded === '/api/project-folder/check') actor = grant.kind === 'key' ? `key:${(grant.keyId ?? '').slice(0, 12)}` : grant.kind;
       }
       const forward = (buffered: Buffer | null): void => {
         const upstream = http.request(

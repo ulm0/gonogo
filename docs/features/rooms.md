@@ -75,7 +75,7 @@ Everything gonogo keeps lives in its home (`~/.gonogo`, or the folder you gave w
 - **When it applies:** to agents that are hired or restarted after the change, and to a boss made after it. A running agent keeps its folder. `GET /api/project-folder` names the boss and the folder it runs in, so the page can offer to restart it (`PATCH /api/agents/<boss>` with the new `dir`, then restart).
 - **If it goes away:** a room whose stored folder is deleted, or that no longer has the shape of one (somebody wrote the file by hand), uses the folder gonogo was started in again, and the log says so once. The stored value is checked every time it is read.
 
-Before you save: `GET /api/project-folder/check?dir=<path>` (a room) and `GET /api/rooms/check-folder?dir=<path>` (the new-room form) answer `{ ok, dir, reason, warning }` for what a save would find, and write nothing. A change is told to every open page at once (the hire form's default follows it).
+Before you save: `GET /api/project-folder/check?dir=<path>` (a room) and `GET /api/rooms/check-folder?dir=<path>` (the new-room form) answer `{ ok, dir, reason, warning }` for what a save would find, and write nothing; only the Director's own login (a session, or the browser token of an install with no account) may ask, since they say what exists on this computer. A change is told to every open page at once (the hire form's default follows it).
 
 State: `<room home>/project-folder.json` (0600).
 

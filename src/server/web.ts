@@ -1619,7 +1619,15 @@ export function createWebServer(options: WebOptions): WebServer {
       // a dry run of the PUT for the field of the page, before anything is saved: reveals only what the shape check and the warning say about a path
       const folder = options.projectFolder;
       if (!folder) return null;
-      return { allow: ['GET'], run: (req, res) => sendJson(res, 200, folder.store.check(new URL(req.url ?? '/', 'http://x').searchParams.get('dir') ?? '')) };
+      return {
+        allow: ['GET'],
+        run: (req, res) => {
+          // it says whether a path exists on this computer: the Director's own (a session, or the browser token of an install with no account), not a key's to ask
+          const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+          if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "the folders of this computer are asked from the Director's own login", 'forbidden');
+          sendJson(res, 200, folder.store.check(new URL(req.url ?? '/', 'http://x').searchParams.get('dir') ?? ''));
+        },
+      };
     }
     if (s[1] === 'project-folder' && s.length === 2) {
       const folder = options.projectFolder;
