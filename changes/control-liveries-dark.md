@@ -1,1 +1,0 @@
-- **Two more looks: Low Ink Dark and High Contrast Dark.** The livery switch now has six built-in looks. Low Ink Dark is dim graphite with pale text, thin quiet lines and muted signals (every text at least 4.5:1). High Contrast Dark is white on black with white lines and strong signals (every text at least 7:1). Both set the dark colour scheme for scrollbars and native controls.

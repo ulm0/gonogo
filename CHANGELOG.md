@@ -4,6 +4,13 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.16.0 (2026-11-23)
+
+Two more looks, Low Ink Dark and High Contrast Dark, and a room default for the permission mode in Engine Bay (Relief and hire_agent requests without a mode get it; the dangerous modes ask for your password, and bypassPermissions for a confirmation). Not verified: the new looks on a phone and the livery switch shown in them, and a real agent started under each room mode (see What was not verified).
+
+- **Two more looks: Low Ink Dark and High Contrast Dark.** The livery switch now has six built-in looks. Low Ink Dark is dim graphite with pale text, thin quiet lines and muted signals (every text at least 4.5:1). High Contrast Dark is white on black with white lines and strong signals (every text at least 7:1). Both set the dark colour scheme for scrollbars and native controls.
+- **A room default for the permission mode (Engine Bay).** A mode select next to the engine and effort: the hire form preselects it, and a Relief or `hire_agent` request without a mode gets it. `auto` and `bypassPermissions` need your password again, and `bypassPermissions` also a confirmation; a request that names no mode never gets `bypassPermissions`. The insecure-setup banner reports a room that starts agents in `auto` or `bypassPermissions`.
+
 ## 0.15.0 (2026-11-23)
 
 Docker Compose needs no settings: `docker compose up -d` and open it from any device on your network by its private IP. Before you update: the new compose.yaml publishes on every interface (0.0.0.0), so set GONOGO_HOST=127.0.0.1 in the .env next to it to keep gonogo on this machine, and make your account before you open it to others. Docker publishes ports past ufw and firewalld, so a host firewall does not hide port 7777; use GONOGO_HOST or a DOCKER-USER rule. If you set GONOGO_DATA before, keep it in that .env, or gonogo starts with a new, empty data folder (it says so in the log). Also: an insecure-setup banner, Docking that works behind the rooms proxy, Clean Room under network_mode host, a DOCKED chip, a shorter hire form, and an Update key that is never unreachable.
