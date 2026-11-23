@@ -105,7 +105,7 @@ import type {
   SemanticView,
 } from '../shared/protocol.js';
 import { withBase } from './base.js';
-import { EXPOSURE_REFRESH } from './exposureModel.js';
+import { changesExposure, EXPOSURE_REFRESH } from './exposureModel.js';
 import {
   API_PREFIX,
   RECONNECT_DELAYS_MS,
@@ -221,7 +221,7 @@ async function callOnce(method: string, path: string, body?: unknown): Promise<u
     );
   }
   // a write may open or close something the banner of the insecure setup lists
-  if (method !== 'GET' && typeof window !== 'undefined') window.dispatchEvent(new Event(EXPOSURE_REFRESH));
+  if (typeof window !== 'undefined' && changesExposure(method, path)) window.dispatchEvent(new Event(EXPOSURE_REFRESH));
   return parsed;
 }
 
@@ -1562,6 +1562,8 @@ async function authCallOnce(method: string, path: string, body?: unknown, base =
     const error = asRecord(parsed);
     throw Object.assign(failure(typeof error?.error === 'string' ? error.error : `The server answered ${response.status}.`, response.status, typeof error?.field === 'string' ? error.field : undefined), error?.stepUp === true ? { stepUp: true, second: error.second === true, passkey: error.passkey === true } : {});
   }
+  // the login and the keys are findings too (no second factor, an old key)
+  if (typeof window !== 'undefined' && base === '/api/auth' && changesExposure(method, '/auth')) window.dispatchEvent(new Event(EXPOSURE_REFRESH));
   return parsed;
 }
 

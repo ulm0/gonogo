@@ -23,3 +23,7 @@ export const bannerTitle = (count: number): string => (count === 1 ? 'One thing 
 
 /** Any write of this page may change what is open in the setup: the banner reads its list again. */
 export const EXPOSURE_REFRESH = 'gonogo:exposure-refresh';
+
+/** The writes that can open or close a finding: Flight Rules and the settings, keys and the login, Docking, hiring and editing an agent. A message or a vote cannot, and the list asks every room. */
+export const changesExposure = (method: string, path: string): boolean =>
+  method !== 'GET' && /^\/(features|settings|rules|permissions|room|room-keys|project-folder|startup|governor|autoupdate|relay|uplinks|coauthor|models|subagents|payload-defaults|semantic|docking|agents|auth)(\/|\?|$)/.test(path);

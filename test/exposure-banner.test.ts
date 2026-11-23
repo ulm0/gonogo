@@ -53,3 +53,11 @@ describe('the calls', () => {
     await expect(dismissExposure('x')).rejects.toThrow();
   });
 });
+
+describe('which writes read the list again', () => {
+  it('Flight Rules, settings, keys, Docking and agents do; a message, a vote, a task and any read do not', async () => {
+    const { changesExposure } = await import('../src/client/exposureModel.js');
+    for (const [m, p] of [['PUT', '/features'], ['PUT', '/settings/maxHops'], ['PUT', '/rules'], ['POST', '/agents'], ['PATCH', '/agents/ana'], ['POST', '/docking/pair'], ['DELETE', '/room-keys/x'], ['PUT', '/room?rev=3']]) expect(changesExposure(m as string, p as string), `${m} ${p}`).toBe(true);
+    for (const [m, p] of [['POST', '/messages'], ['POST', '/tasks'], ['PATCH', '/tasks/t1'], ['POST', '/log'], ['POST', '/relief/r1/go'], ['GET', '/features'], ['POST', '/poll/hold']]) expect(changesExposure(m as string, p as string), `${m} ${p}`).toBe(false);
+  });
+});
