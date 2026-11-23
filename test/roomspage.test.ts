@@ -84,8 +84,9 @@ interface Call {
   body?: Record<string, unknown>;
 }
 
-function run(options: { token?: string; rooms: unknown[]; layout?: unknown; livery?: string; hash?: string; search?: string; referrer?: string; status?: number; respond?: (call: Call) => { status: number; body: unknown } | undefined }): { calls: Call[]; byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
+function run(options: { token?: string; rooms: unknown[]; layout?: unknown; livery?: string; hash?: string; search?: string; referrer?: string; status?: number; respond?: (call: Call) => { status: number; body: unknown } | undefined }): { calls: Call[]; byId: Record<string, Node>; saved: Record<string, string>; replaced: string[]; urls: string[]; ctx: vm.Context; sent: Array<Record<string, string>>; root: Node & { style: { props: Record<string, string> } } } {
   const replaced: string[] = [];
+  const urls: string[] = [];
   const sent: Array<Record<string, string>> = [];
   const calls: Call[] = [];
   const html = roomsPage(null, '1.2.3');
@@ -103,7 +104,7 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
     document: Object.assign(doc, { getElementById: (id: string) => byId[id] ?? null, createElement: make }),
     localStorage: { getItem: (k: string) => saved[k] ?? null, setItem: (k: string, v: string) => (saved[k] = v) },
     location: { hash: options.hash ?? '', search: options.search ?? '', origin: 'http://127.0.0.1:7777', pathname: '/', replace: (to: string) => void replaced.push(to), assign: (to: string) => void replaced.push(`assign:${to}`) },
-    history: { replaceState() {} },
+    history: { replaceState: (_s: unknown, _t: string, url: string) => void urls.push(url) },
     URLSearchParams,
     fetch: async (url: string, init: { headers?: Record<string, string>; method?: string; body?: string } = {}) => {
       sent.push(init.headers ?? {});
@@ -126,7 +127,7 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
   };
   vm.createContext(context);
   for (const script of scripts) vm.runInContext(script, context);
-  return { calls, byId, saved, replaced, sent, root };
+  return { calls, byId, saved, replaced, urls, ctx: context, sent, root };
 }
 
 const room = (patch: Record<string, unknown> = {}): Record<string, unknown> => ({ id: 'main', name: 'Main', state: 'running', agents: 15, running: 15, needsYou: 0, working: 0, lastActivity: null, tabName: null, note: null, ...patch });
@@ -464,6 +465,20 @@ describe('an install with one room opens straight into it', () => {
     const { replaced } = run({ token: 'a'.repeat(64), rooms: [main()], referrer: '' });
     await settle();
     expect(replaced).toEqual(['/r/main/']);
+  });
+
+  it('decides on the first load only: a later poll that finds one room does not leave the list', async () => {
+    const rooms = [main(), main({ id: 'two', name: 'Two' })];
+    const { replaced, ctx } = run({ token: 'a'.repeat(64), rooms, referrer: '' });
+    await settle();
+    rooms.pop();
+    await vm.runInContext('load()', ctx);
+    expect(replaced).toEqual([]);
+  });
+
+  it('keeps ?list when it takes the token out of the address', () => {
+    const { urls } = run({ rooms: [], hash: '#token=' + 'a'.repeat(64), search: '?list' });
+    expect(urls).toEqual(['/?list']);
   });
 
   it('shows the list when the visit comes from a page of this site (the Rooms key of a room), or asks for it with ?list', async () => {
