@@ -55,7 +55,10 @@ describe('long placeholders and selects are not cut', () => {
 
 describe('Automation and connections holds the real controls', () => {
   it('has the schedules, the webhooks, Relay and Docking in rows, each the component of its own, and no key that only opens another view', () => {
-    for (const row of ['Schedules', 'Uplink webhooks', 'Relay: Slack, Telegram, GitHub, Linear', 'Docking: other stations']) expect(source, row).toContain(`<Row name="${row}"`);
+    for (const row of ['Schedules', 'Uplink webhooks', 'Relay: Slack, Telegram, GitHub, Linear']) expect(source, row).toContain(`<Row name="${row}"`);
+    // the Docking row takes its name from the constant the docked chip also opens it by
+    expect(source).toContain('<Row name={DOCKING_ROW.row}');
+    expect(readFileSync('src/client/rulesTarget.ts', 'utf8')).toContain("row: 'Docking: other stations'");
     for (const block of ['<SchedulesBlock />', '<UplinkPanel />', '<RelayPanel />', '<DockingPanel />']) expect(source, block).toContain(block);
     expect(source).not.toContain('Open Launch Window');
     expect(source).not.toMatch(/onClick=\{showWindow\}/);

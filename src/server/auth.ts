@@ -455,6 +455,8 @@ interface Bucket {
 
 export interface AuthStore {
   state(): AccountState;
+  /** When the account was set up (0 on a fresh install): a reset keeps it, a new account changes it. */
+  epoch(): number;
   /** The user name. */
   user(): string;
   /** A token on TCP is accepted only on a fresh install; this is the old Director token's say in it. */
@@ -633,6 +635,7 @@ export function openAuth(options: AuthOptions): AuthStore {
   };
   load();
 
+  const epoch = (): number => data.tombstone?.created ?? 0;
   const state = (): AccountState => (damaged ? 'damaged' : data.password !== null ? 'account' : data.tombstone !== null ? 'none' : 'fresh');
 
   const sign = (id: string): string => `${id}.${createHmac('sha256', serverKey).update(id).digest('base64url')}`;
@@ -881,6 +884,7 @@ export function openAuth(options: AuthOptions): AuthStore {
 
   return {
     state,
+    epoch,
     user: () => data.user,
     tokenAllowed: () => state() === 'fresh',
     setupTokenFile: () => join(options.home, SETUP_TOKEN_FILE),

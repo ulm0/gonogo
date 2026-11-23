@@ -24,6 +24,7 @@ export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && /^\/api\/knowledge\/[^/]+\/move$/.test(path)) return true;
   if (method === 'POST' && path === '/api/agents') return true;
   if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path)) return true;
+  if (method === 'PUT' && path === '/api/models/mode') return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
@@ -45,6 +46,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
     if (body === null) return 'editing an agent';
     return Object.keys(body).some((field) => body[field] !== undefined && !PLAIN_EDIT_FIELDS.has(field)) ? 'changing what an agent may do' : null;
   }
+  // the room's default mode: auto or bypass makes every hire from the form start without asking; clearing it or a milder mode stays free
+  if (method === 'PUT' && path === '/api/models/mode') return body !== null && typeof body.mode === 'string' && UNATTENDED.has(body.mode) ? 'setting the room to work without asking' : body === null ? 'setting the room to work without asking' : null;
   // Hangar writes and Recorder commits, per agent
   if (/^\/api\/agents\/[^/]+\/file$/.test(path)) return 'writing a file in an agent\'s folder';
   if (/^\/api\/agents\/[^/]+\/git\/commit$/.test(path)) return 'making a commit';

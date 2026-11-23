@@ -206,7 +206,7 @@ export interface WebOptions {
   projectFolder?: { store: ProjectFolder; audit: AuditRecord; boss(): { name: string; dir: string } | null; /** The folder in force changed: tell the open pages (the hire form's default). */ changed?(): void };
   settings?: { store: Settings; apply(): void; audit: AuditRecord; announce(): void };
   payloadDefaults?: Pick<PayloadDefaultsStore, 'view' | 'setServer' | 'removeServer' | 'addSkill' | 'removeSkill'>;
-  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort'>;
+  models?: Pick<ModelDefaultsStore, 'view' | 'set' | 'setPosition' | 'setEngine' | 'setEffort' | 'setMode'>;
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
@@ -1589,6 +1589,22 @@ export function createWebServer(options: WebOptions): WebServer {
           run: async (req, res) => {
             const body = await jsonObject(req, res);
             if (body) sendJson(res, 200, await changed(key === 'engine' ? models.setEngine(body.engine) : models.setEffort(body.effort)));
+          },
+        };
+      }
+      // PUT /api/models/mode: the room's default permission mode; bypassPermissions needs confirmBypass: true, as a hire does
+      if (s.length === 3 && s[2] === 'mode') {
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (!body) return;
+            // a mode that works without asking is set from the Director's own login, never by a key or a terminal
+            if (body.mode === 'auto' || body.mode === 'bypassPermissions') {
+              const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+              if (actorHeader !== 'session' && actorHeader !== 'token' && actorHeader !== 'socket') return sendApiError(res, 403, "a room default that works without asking is set from the Director's own login, not by a key or a terminal", 'forbidden');
+            }
+            sendJson(res, 200, await changed(models.setMode(body.mode, body.confirmBypass)));
           },
         };
       }

@@ -62,6 +62,60 @@ describe('the store', () => {
   });
 });
 
+describe('the default permission mode', () => {
+  it('starts as none (ask), is kept across a reload, and goes back with null or default', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    expect(store.mode()).toBeUndefined();
+    expect(await store.setMode('acceptEdits')).toEqual({ models: {}, positions: {}, mode: 'acceptEdits' });
+    const again = createModelDefaults({ dir: tmp });
+    await again.load();
+    expect(again.mode()).toBe('acceptEdits');
+    expect(JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'))).toMatchObject({ version: 1, mode: 'acceptEdits' });
+    expect(await again.setMode('default')).toEqual({ models: {}, positions: {} });
+    expect(await again.setMode('auto')).toMatchObject({ mode: 'auto' });
+    expect(await again.setMode(null)).toEqual({ models: {}, positions: {} });
+  });
+
+  it('refuses bypassPermissions without confirmBypass: true, and a mode that is not one, and writes nothing', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    await expect(store.setMode('bypassPermissions')).rejects.toMatchObject({ code: 'bad_request', field: 'confirmBypass' });
+    await expect(store.setMode('bypassPermissions', 'yes')).rejects.toMatchObject({ field: 'confirmBypass' });
+    await expect(store.setMode('yolo')).rejects.toMatchObject({ field: 'mode' });
+    await expect(store.setMode(3)).rejects.toMatchObject({ field: 'mode' });
+    expect(store.view()).toEqual({ models: {}, positions: {} });
+    expect(await store.setMode('bypassPermissions', true)).toMatchObject({ mode: 'bypassPermissions' });
+  });
+
+  it('bypassPermissions is read back only with the stamp setMode writes: a planted file does not preselect it', async () => {
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: {}, mode: 'bypassPermissions' }));
+    const planted = createModelDefaults({ dir: tmp });
+    await planted.load();
+    expect(planted.mode()).toBeUndefined();
+    const store = createModelDefaults({ dir: tmp });
+    await store.setMode('bypassPermissions', true);
+    const saved = JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'));
+    expect(typeof saved.bypassConfirmedAt).toBe('number');
+    const again = createModelDefaults({ dir: tmp });
+    await again.load();
+    expect(again.mode()).toBe('bypassPermissions');
+    await again.setMode('auto');
+    expect(JSON.parse(await readFile(join(tmp, 'models.json'), 'utf8'))).not.toHaveProperty('bypassConfirmedAt');
+  });
+
+  it('are dropped from a file when not usable, and an older file without one still loads', async () => {
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: { claude: 'opus' }, mode: 'warp' }));
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    expect(store.view()).toEqual({ models: { claude: 'opus' }, positions: {} });
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: {} }));
+    const old = createModelDefaults({ dir: tmp });
+    await old.load();
+    expect(old.mode()).toBeUndefined();
+  });
+});
+
 describe('the default engine and effort', () => {
   it('start as Claude Code and none, are kept across a reload, and go back with null', async () => {
     const store = createModelDefaults({ dir: tmp });

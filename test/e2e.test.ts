@@ -720,6 +720,9 @@ describe('end to end with the stand-in agent', () => {
     expect((await api(h, 'PUT', '/api/models/effort', { effort: 'high' })).status).toBe(200);
     const frame = await page.waitFrame((f) => f.t === 'models', 5000, 'the models frame', from);
     expect(frame).toEqual({ t: 'models', models: { models: {}, positions: {}, effort: 'high' } });
+    expect(await api(h, 'PUT', '/api/models/mode', { mode: 'bypassPermissions', confirmBypass: true })).toMatchObject({ status: 403 }); // no Director login marker on this socket
+    expect((await api(h, 'PUT', '/api/models/mode', { mode: 'acceptEdits' })).status).toBe(200);
+    expect((await api(h, 'GET', '/api/models')).body).toMatchObject({ mode: 'acceptEdits', effort: 'high' });
   });
 
   it('2. terminal: snapshot, binary frames, input, resize, size ownership', async () => {
@@ -2133,7 +2136,7 @@ describe('end to end with the stand-in agent', () => {
     // the four that ship are there, in the state too, and the default is on
     const first = await api<LiveryView>(h, 'GET', '/api/liveries');
     expect(first.body.current).toBe('instrument');
-    expect(first.body.liveries.map((e) => e.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'high-contrast']);
+    expect(first.body.liveries.map((e) => e.slug)).toEqual(['instrument', 'night-shift', 'low-ink', 'low-ink-dark', 'high-contrast', 'high-contrast-dark']);
     expect((await getState(h)).livery).toEqual(first.body);
 
     // a livery with a text that cannot be read is refused, and the answer says which pair; nothing is written
@@ -2176,7 +2179,7 @@ describe('end to end with the stand-in agent', () => {
 
     // deleting the chosen one goes back to the default, and the file goes
     const gone = await api<LiveryView>(h, 'DELETE', '/api/liveries/dusk');
-    expect([gone.status, gone.body.current, gone.body.liveries.length]).toEqual([200, 'instrument', 4]);
+    expect([gone.status, gone.body.current, gone.body.liveries.length]).toEqual([200, 'instrument', 6]);
     await waitFor(() => liveryFrames().at(-1)?.current === 'instrument', 5000, 'the frame of the delete');
     expect(existsSync(file)).toBe(false);
   }, 120_000);

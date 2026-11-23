@@ -42,6 +42,7 @@ import { UplinkPanel } from './UplinkPanel.js';
 import { GLOSSARY_URL } from './wording.js';
 import { ProjectFolderBlock } from './ProjectFolder.js';
 import { rowText as folderRowText } from './projectFolderModel.js';
+import { DOCKING_ROW, takeRulesTarget } from './rulesTarget.js';
 import { RuntimeSettingsBlock } from './RuntimeSettings.js';
 import { summary as runtimeSummary } from './runtimeSettingsModel.js';
 import './loop.css';
@@ -189,7 +190,21 @@ export function FlightRules(): ReactElement {
   const { legends } = useSeats();
   const livery = useStore((s) => s.livery);
   const heading = useRef<HTMLHeadingElement | null>(null);
-  const [openGroup, setOpenGroup] = useState('room');
+  // a key elsewhere (the docked chip) can ask for one row: its group opens and so does the row
+  const wanted = useRef(takeRulesTarget());
+  const [openGroup, setOpenGroup] = useState(wanted.current?.group ?? 'room');
+  useEffect(() => {
+    const row = wanted.current?.row;
+    wanted.current = null;
+    if (row === undefined) return;
+    requestAnimationFrame(() => {
+      const name = [...document.querySelectorAll('.lay-row-name')].find((el) => el.textContent === row);
+      const details = name?.closest('details');
+      if (details instanceof HTMLDetailsElement) details.open = true;
+      details?.querySelector('summary')?.focus();
+      details?.scrollIntoView({ block: 'nearest' });
+    });
+  }, []);
   const model = useValue(() => api.modelDefaults().then((m) => `${m.engine ?? 'claude'}${m.effort ? `, effort ${m.effort}` : ''}`));
   const perms = useValue(() => api.permissionDefaults().then((p) => `${Object.values(p.permissions as Record<string, unknown>).flat().length} rules`));
   const payload = useValue(() => api.payloadDefaults().then((p) => `${p.mcpServers.length} servers, ${p.skills.length} skills`));
@@ -314,7 +329,7 @@ export function FlightRules(): ReactElement {
         {!off.includes('launch-window') && <Row name="Schedules" now={`${schedules} ${schedules === 1 ? 'schedule' : 'schedules'}`}><SchedulesBlock /></Row>}
         {!off.includes('uplink') && <Row name="Uplink webhooks" now={`${uplinks} ${uplinks === 1 ? 'uplink' : 'uplinks'}`}><UplinkPanel /></Row>}
         {!off.includes('relay') && <Row name="Relay: Slack, Telegram, GitHub, Linear" now="chat in and out"><RelayPanel /></Row>}
-        {!off.includes('docking') && <Row name="Docking: other stations" now={`${docked} docked`}><DockingPanel /></Row>}
+        {!off.includes('docking') && <Row name={DOCKING_ROW.row} now={`${docked} docked`}><DockingPanel /></Row>}
         <Row name="Start again after a restart" now={startup}><StartupBlock /></Row>
       </Group>
       <Group id="knowledge" title="Knowledge">

@@ -1,6 +1,6 @@
 /*
  * Star Chart, the Mission Log as a graph, in the Instrument look: an SVG that scales to the width of its column and the same chart
- * as lists. Every colour is a token, so the four liveries hold. A node is told by its shape as well as by its fill, and each has a
+ * as lists. Every colour is a token, so every livery holds. A node is told by its shape as well as by its fill, and each has a
  * dark outline (3:1 against the panel in every livery); the text is --text on the panel, with a halo of the panel colour so that
  * a line behind it does not cut it. Nothing moves, so there is nothing to turn off for reduced motion.
  */
@@ -27,7 +27,7 @@
 .chart-edge {
   stroke: var(--muted);
   stroke-width: 1;
-  /* 3:1 against the panel in all four liveries (0.55 was 2.3:1 in Instrument) */
+  /* 3:1 against the panel in every livery (0.55 was 2.3:1 in Instrument) */
   stroke-opacity: 0.7;
 }
 

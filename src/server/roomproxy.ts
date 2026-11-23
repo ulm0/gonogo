@@ -130,7 +130,7 @@ function reservedPath(rest: string): boolean {
   const first = segments[1] ?? '';
   // the list of rooms is "/" exactly ("//" and the like are no path of anything)
   if (segments.length === 2 && first === '') return true;
-  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push'));
+  return first === 'rooms' || first === 'internal' || first === 'login' || first === 'setup' || (first === 'api' && (segments[2] === 'rooms' || segments[2] === 'auth' || segments[2] === 'push' || segments[2] === 'exposure'));
 }
 
 export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
@@ -320,7 +320,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         }
         if (grant.kind === 'session' || grant.kind === 'tui') stepUp = { grant, method: req.method ?? 'GET', path: target.decoded };
         director = (grant.kind === 'session' || grant.kind === 'token') && req.method === 'POST' && target.decoded === '/api/messages';
-        if (target.decoded.startsWith('/api/settings') || target.decoded === '/api/docking/addresses' || target.decoded === '/api/project-folder' || target.decoded === '/api/project-folder/check' || target.decoded.startsWith('/api/docking/') || target.decoded.startsWith('/api/links/') || target.decoded.startsWith('/api/handoff-requests')) actor = grant.kind === 'key' ? `key:${(grant.keyId ?? '').slice(0, 12)}` : grant.kind;
+        if (target.decoded.startsWith('/api/settings') || target.decoded === '/api/docking/addresses' || target.decoded === '/api/project-folder' || target.decoded === '/api/models/mode' || target.decoded === '/api/project-folder/check' || target.decoded.startsWith('/api/docking/') || target.decoded.startsWith('/api/links/') || target.decoded.startsWith('/api/handoff-requests')) actor = grant.kind === 'key' ? `key:${(grant.keyId ?? '').slice(0, 12)}` : grant.kind;
       }
       const forward = (buffered: Buffer | null): void => {
         const upstream = http.request(

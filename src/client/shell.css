@@ -2124,3 +2124,102 @@
 .commission-note[open] > summary::before {
   content: '▾';
 }
+
+/* the banner of an insecure setup: rows of severity, text with its fix, Dismiss; on a phone the key goes under the words */
+.exposure-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 24px 0;
+  padding: 10px 14px;
+}
+
+.exposure-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.exposure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exposure-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 12px;
+}
+
+/* a high one is a solid red pill: the tint of a nogo chip is the colour of this banner */
+.exposure-row .chip[data-tone='nogo'] {
+  background: var(--nogo);
+  color: var(--panel);
+}
+
+.exposure-row .chip {
+  justify-content: center;
+  text-align: center;
+}
+
+.exposure-text {
+  min-width: 0;
+}
+
+.exposure-text p {
+  margin: 0;
+}
+
+.exposure-more > summary {
+  list-style: none;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.exposure-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.exposure-more > summary::before {
+  content: '▸ ';
+}
+
+.exposure-more[open] > summary::before {
+  content: '▾ ';
+}
+
+.exposure-more .exposure-list {
+  margin-top: 8px;
+}
+
+@media (max-width: 700px) {
+  .exposure-banner {
+    margin: 8px 12px 0;
+  }
+
+  /* the chip and the key share the first line, the words take the second: a row is two lines, not four */
+  .exposure-row {
+    grid-template-columns: auto 1fr;
+  }
+
+  .exposure-row .chip {
+    justify-self: start;
+  }
+
+  .exposure-row .btn {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .exposure-text {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

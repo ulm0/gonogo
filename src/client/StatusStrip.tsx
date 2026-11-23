@@ -4,11 +4,13 @@
  */
 import { useMemo } from 'react';
 import type { ReactElement } from 'react';
+import { dockChipName, dockChipText } from './dockChip.js';
 import { Pop } from './Pop.js';
+import { DOCKING_ROW, openRules } from './rulesTarget.js';
 import { clockText, currentMission, pollWord } from './wall.js';
 import { PANELS, useRoomPrefs } from './roomPrefs.js';
 import type { PanelId } from './roomPrefs.js';
-import { useFeature, useNow, useStore } from './store.js';
+import { showRules, useFeature, useNow, useStore } from './store.js';
 import { MaxQ, Mission, Propellant, Sequence, TMinus } from './WallView.js';
 
 const BLOCK: Readonly<Record<PanelId, () => ReactElement>> = { mission: Mission, sequence: Sequence, tminus: TMinus, maxq: MaxQ, propellant: Propellant };
@@ -39,15 +41,17 @@ export function StatusStrip({ phone }: { phone: boolean }): ReactElement | null 
   const maxq = useFeature('maxq');
   const poll = useStore((s) => s.poll);
   const values = useValues();
+  const docks = useStore((s) => s.docking.docks);
+  const dockText = dockChipText(docks, phone);
   const allowed = (id: PanelId): boolean => !(id === 'tminus' && !tminus) && !(id === 'maxq' && !maxq);
   // a poll or a static fire that is open is shown whatever the layout says: it asks for an answer
   const live = !pollWord(poll).ghost;
   const chips = PANELS.filter((p) => (panels[p.id] === 'strip' || (p.id === 'tminus' && panels[p.id] === 'hidden' && live)) && allowed(p.id));
   const boxes = PANELS.filter((p) => panels[p.id] === 'panel' && allowed(p.id));
-  if (chips.length === 0 && boxes.length === 0) return null;
+  if (chips.length === 0 && boxes.length === 0 && dockText === null) return null;
   return (
     <section className="lay-strip" aria-label="Status of the room" data-phone={phone || undefined}>
-      {chips.length > 0 && (
+      {(chips.length > 0 || dockText !== null) && (
         <div className="lay-strip-row">
           {chips.map((p) => {
             const Block = BLOCK[p.id];
@@ -61,6 +65,14 @@ export function StatusStrip({ phone }: { phone: boolean }): ReactElement | null 
               </Pop>
             );
           })}
+          {dockText !== null && (
+            <span className="lay-anchor">
+              <button type="button" className="btn dock-chip" data-tone={docks.some((d) => d.status === 'down') ? 'amber' : undefined} aria-label={`${dockText}. ${dockChipName(docks)}`} onClick={() => { openRules(DOCKING_ROW.group, DOCKING_ROW.row); showRules(); }}>
+                {docks.map((d) => <span key={d.id} className="led" data-on={d.status === 'ok'} data-kind={d.status === 'ok' ? 'idle' : d.status === 'down' ? 'needs' : 'stopped'} aria-hidden="true" />)}
+                {dockText}
+              </button>
+            </span>
+          )}
         </div>
       )}
       {boxes.length > 0 && (

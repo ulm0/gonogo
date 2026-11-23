@@ -35,7 +35,7 @@ screens. Colour is a small light, or a tint on the one module that needs you. Th
 | [`src/client/primitives.css`](https://github.com/ulm0/gonogo/blob/main/src/client/primitives.css) | The classes everything is built from: type, LCD, module, LED, lamp, flood, key, field, chip, tile, console tile, the motion. Plain CSS and data attributes, no script. |
 | [`src/client/base.css`](https://github.com/ulm0/gonogo/blob/main/src/client/base.css) | The app page only: box sizing, the 13 px body, no margins on headings, the focus ring, reduced motion. |
 | `src/client/shell.css`, `forms.css`, `loop.css`, ... | The layout of one view each (top bar, wall, room, staffing, comm loop, ...), built from the two files above. They declare no colour of their own. |
-| [`src/shared/livery.ts`](https://github.com/ulm0/gonogo/blob/main/src/shared/livery.ts) | The 28 colour tokens with the role of each, the contrast rule and the values of the four liveries. A test keeps it equal to `tokens.css`. |
+| [`src/shared/livery.ts`](https://github.com/ulm0/gonogo/blob/main/src/shared/livery.ts) | The 28 colour tokens with the role of each, the contrast rule and the values of the six liveries. A test keeps it equal to `tokens.css`. |
 | `src/client/look.ts` | Puts a livery on the page: `data-livery` and `data-scheme` on `<html>`, and the values as properties of `:root` (how a livery an agent designed arrives). |
 | `.vitepress/theme/index.ts` | Loads `tokens.css` and `primitives.css` into this site. |
 | `docs/brand/` | The logo, as SVG. |
@@ -70,7 +70,7 @@ Hover a swatch for its role. The roles, in short:
 | Tracks | `--track`, `--seq-base` | an empty ring or bar; the empty line of a sequence track |
 
 Every livery must pass (the app refuses one that does not): each text token reaches **4.5:1** (WCAG 2) on every surface it sits
-on, and `--lcd` stays dark (the terminal draws for a dark screen). High Contrast reaches 7:1 everywhere.
+on, and `--lcd` stays dark (the terminal draws for a dark screen). High Contrast and High Contrast Dark reach 7:1 everywhere; Low Ink Dark is a dark, dim look at 4.5:1 or better.
 
 ## Signals
 
@@ -297,7 +297,7 @@ ROOM
 </div>
 </div>
 
-These are drawn from the app's own rules (the console chips of Engine Bay, Review, the feature toggle row, Missions, Worktrees, Room editor, Notifications, the terminal client and Rollout): the verdict line is bold text, amber with the tone token when it was of an older diff; a note has a `--edge` border and a left edge in the tone (word on a chip, never colour alone); the room editor's card is a `.module` with a handle row and a corner grip of `--text-2`, and its tray a `.module` with RESTORE keys; the terminal frame is `.lcd` text with a glyph and a word for each state. Only the tokens above colour them, so text keeps 4.5:1 (7:1 in High Contrast). The COMMS tab bar is the Tabs control above, with the count of INBOX in its name. The version in the top bar is the app's small mono `--text-2` text beside the logo; a newer one is a second link in `--you-ink` (`0.3.1 out`), underlined on hover or focus (on a phone it replaces the running version, and the unit name GN-1 gives way, so the bar stays one line). The feature toggle row is a `role="switch"` checkbox (a lock, not a switch, for a core feature), the name in bold (60% opacity when off), its hint, and quiet chips for what it needs and what uses it; the plan of a change opens under its row as a `--edge` bordered group with CANCEL and a primary TURN ON or TURN OFF.
+These are drawn from the app's own rules (the console chips of Engine Bay, Review, the feature toggle row, Missions, Worktrees, Room editor, Notifications, the terminal client and Rollout): the verdict line is bold text, amber with the tone token when it was of an older diff; a note has a `--edge` border and a left edge in the tone (word on a chip, never colour alone); the room editor's card is a `.module` with a handle row and a corner grip of `--text-2`, and its tray a `.module` with RESTORE keys; the terminal frame is `.lcd` text with a glyph and a word for each state. Only the tokens above colour them, so text keeps 4.5:1 (7:1 in High Contrast and High Contrast Dark). The COMMS tab bar is the Tabs control above, with the count of INBOX in its name. The version in the top bar is the app's small mono `--text-2` text beside the logo; a newer one is a second link in `--you-ink` (`0.3.1 out`), underlined on hover or focus (on a phone it replaces the running version, and the unit name GN-1 gives way, so the bar stays one line). The feature toggle row is a `role="switch"` checkbox (a lock, not a switch, for a core feature), the name in bold (60% opacity when off), its hint, and quiet chips for what it needs and what uses it; the plan of a change opens under its row as a `--edge` bordered group with CANCEL and a primary TURN ON or TURN OFF.
 
 ## Shape, depth and motion
 
@@ -364,7 +364,7 @@ only, no font. On a dark livery the app inverts the light lockup (`filter: inver
 - Keep colour small: a light, a chip, or the tint of the one module that needs you.
 - Counting numbers go in `.lcd-num` on an `.lcd`; names in Geist Mono capitals (`.label`, `.legend`).
 - Keys at least 44 px tall; every state also in words, never colour alone.
-- Check a new text/surface pair at 4.5:1 in all four liveries and add it to `CONTRAST_PAIRS` in `livery.ts`.
+- Check a new text/surface pair at 4.5:1 in all six liveries and add it to `CONTRAST_PAIRS` in `livery.ts`.
 
 **Don't**
 

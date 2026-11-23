@@ -931,6 +931,8 @@ export interface ModelDefaults {
   engine?: Provider;
   /** The room's default effort for a Claude Code console with none of its own. Absent means the CLI's own. */
   effort?: Effort;
+  /** The room's default permission mode: preselects the hire form, and is what a hire without a mode gets (bypassPermissions never: it falls back to default there). Absent means default. Ignored by an engine without permission modes. */
+  mode?: PermissionMode;
 }
 
 /** Telegram inbound (docs/features/relay.md): by long polling, by a webhook (uplink or one set on the bot), or off. `note` never holds a token. */
@@ -1623,6 +1625,8 @@ export interface ReliefRequest {
   dir: string;
   provider: Provider;
   mode: PermissionMode;
+  /** The request named no mode: this one is the room's default, and the card and the Downlink line say so. */
+  modeFromRoom?: boolean;
   /** The boss is a Clean Room agent: the new agent is one too. */
   cleanRoom: CleanRoom | null;
   /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */
@@ -3017,4 +3021,12 @@ export interface ReviewSent {
 export interface RecorderCommitRequest {
   message: string;
   scope: RecorderScope;
+}
+
+/** One thing about how this install is set up that the Director should know (GET /api/exposure/findings, the banner under the top bar). Plain words; names, hosts and counts only. */
+export interface ExposureFindingView {
+  id: string;
+  severity: 'high' | 'medium' | 'info';
+  text: string;
+  fix: string;
 }
