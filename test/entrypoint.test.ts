@@ -9,8 +9,11 @@ function say(env: Record<string, string>, seed: (home: string) => void = () => u
   const root = mkdtempSync(join(tmpdir(), 'gonogo-entry-'));
   const bin = join(root, 'bin');
   mkdirSync(bin);
-  writeFileSync(join(bin, 'gonogo'), '#!/bin/sh\nexit 0\n');
-  chmodSync(join(bin, 'gonogo'), 0o755);
+  // gonogo exits at once; cp is a stand-in too: the script copies /etc/skel into the home, and on a CI runner image /etc/skel holds gigabytes (rust, nvm)
+  for (const name of ['gonogo', 'cp']) {
+    writeFileSync(join(bin, name), '#!/bin/sh\nexit 0\n');
+    chmodSync(join(bin, name), 0o755);
+  }
   const data = join(root, 'data');
   const home = join(data, 'state');
   mkdirSync(home, { recursive: true });
@@ -18,6 +21,8 @@ function say(env: Record<string, string>, seed: (home: string) => void = () => u
   seed(home);
   const r = spawnSync('sh', [join(import.meta.dirname, '..', 'packaging', 'docker', 'entrypoint.sh')], {
     encoding: 'utf8',
+    input: '',
+    timeout: 20_000,
     env: { PATH: `${bin}:/usr/bin:/bin`, HOME: join(root, 'home'), GONOGO_HOME: home, ...env },
   });
   return r.stderr.replaceAll(data, '<data>');
