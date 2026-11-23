@@ -72,6 +72,8 @@ import type {
   KnowledgeRepo,
   KnowledgeView,
   PayloadDefaults,
+  ProjectFolderCheck,
+  ProjectFolderView,
   RoomKeysView,
   RuntimeSettingKey,
   RuntimeSettingRow,
@@ -470,6 +472,31 @@ export async function setRoomKey(name: string, body: { value?: string; cleanRoom
 }
 export async function removeRoomKey(name: string): Promise<RoomKeysView> {
   return toRoomKeys(await call('DELETE', `/room-keys/${encodeURIComponent(name)}`));
+}
+
+/** The project folder of the room: where its agents work. A write is the owner's own login and asks for the password again; a refusal says why in words. */
+const toProjectFolder = (value: unknown): ProjectFolderView => {
+  const record = asRecord(value);
+  if (record === null || typeof record.dir !== 'string' || (record.source !== 'set' && record.source !== 'default')) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as ProjectFolderView;
+};
+export async function projectFolder(): Promise<ProjectFolderView> {
+  return toProjectFolder(await call('GET', '/project-folder'));
+}
+/** Whether a folder would be accepted, and its warning, before anything is saved; null when this server has no such check (the answer comes after the save then). */
+export async function checkProjectFolder(dir: string): Promise<ProjectFolderCheck | null> {
+  try {
+    const record = asRecord(await call('GET', `/project-folder/check?dir=${encodeURIComponent(dir)}`));
+    if (record === null || typeof record.ok !== 'boolean') return null;
+    return record as unknown as ProjectFolderCheck;
+  } catch (e) {
+    if ((e as ApiFailure).status === 404) return null;
+    throw e;
+  }
+}
+/** Sets the folder; null goes back to the folder gonogo was started in. */
+export async function setProjectFolder(dir: string | null): Promise<ProjectFolderView> {
+  return toProjectFolder(await call('PUT', '/project-folder', { dir }));
 }
 
 /** Runtime settings: the GONOGO_* values the Director can change here. A write asks for the password again, as Room keys do. */

@@ -1,0 +1,219 @@
+name: Service
+
+# `gonogo service install` against a real service manager: systemd (a user manager on the runner), OpenRC (Debian in a container), and launchd's
+# plist on macOS. The packed tarball is installed globally, a stand-in `claude` satisfies the start-up check, and a room is started, reloaded
+# (the manager starts the next gonogo) and removed.
+on:
+  push:
+    branches: [main]
+    paths: [src/server/service.ts, src/server/reload.ts, src/server/cli.ts, package.json, .github/workflows/service.yml]
+  pull_request:
+    paths: [src/server/service.ts, src/server/reload.ts, src/server/cli.ts, package.json, .github/workflows/service.yml]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: service-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No version: it installs the pnpm that package.json `packageManager` pins.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          mkdir pack
+          pnpm pack --pack-destination pack
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball
+          path: pack/*.tgz
+          if-no-files-found: error
+
+  systemd:
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: pack
+      - run: npm install -g "$PWD"/pack/*.tgz
+      # A user manager for the runner's user: lingering starts user@<uid>.service, and the commands below talk to its bus.
+      - name: A systemd user manager
+        run: |
+          sudo loginctl enable-linger "$USER"
+          for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/bus" ] && break; sleep 1; done
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - name: A stand-in claude (gonogo refuses to start without one on the PATH; as an agent it just sleeps)
+        run: |
+          mkdir -p "$HOME/bin"
+          printf '#!/bin/sh\nexec sleep 1234567\n' > "$HOME/bin/claude"
+          chmod +x "$HOME/bin/claude"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: install starts it, an agent survives a reload, install again restarts, start and stop, uninstall
+        run: |
+          set -x
+          health() { curl -fsS http://127.0.0.1:7788/rooms/health; }
+          # install writes, enables and starts: no reboot, no second command
+          gonogo service install --pty-host --port 7788
+          for i in $(seq 1 40); do health && break; sleep 1; done
+          health
+          gonogo service status
+          unit=~/.config/systemd/user/gonogo.service
+          grep -q "^ExecStart=$(command -v node) " "$unit"
+          grep -q "^WorkingDirectory=$HOME$" "$unit"
+          grep -q "$HOME/bin" "$unit"
+          # an agent (the stand-in claude, FLIGHT's console) runs in the pty host
+          curl -fsS -X POST -H "Authorization: Bearer $(cat ~/.gonogo/token)" -H 'content-type: application/json' -d '{}' http://127.0.0.1:7788/api/agents/flight/restart > /dev/null
+          for i in $(seq 1 30); do agent=$(pgrep -f '[s]leep 1234567' | head -1); [ -n "$agent" ] && break; sleep 1; done
+          [ -n "$agent" ] || { echo "::error::the agent did not start"; exit 1; }
+          before=$(systemctl --user show -p MainPID --value gonogo.service)
+          gonogo reload
+          for i in $(seq 1 40); do
+            now=$(systemctl --user show -p MainPID --value gonogo.service)
+            [ "$now" != "$before" ] && [ "$now" != 0 ] && health && break
+            sleep 1
+          done
+          [ "$now" != "$before" ] && [ "$now" != 0 ] || { echo "::error::the manager did not start a new gonogo after reload"; systemctl --user status gonogo.service || true; exit 1; }
+          systemctl --user is-active gonogo.service
+          # one gonogo supervisor, and the agent is the very same process
+          [ "$(pgrep -fc 'gonogo --home')" = 1 ]
+          [ "$(pgrep -f '[s]leep 1234567' | head -1)" = "$agent" ] || { echo "::error::the agent did not survive the reload"; exit 1; }
+          # installing again rewrites the unit and restarts it
+          before=$(systemctl --user show -p MainPID --value gonogo.service)
+          gonogo service install --pty-host --port 7788
+          for i in $(seq 1 40); do health && break; sleep 1; done
+          [ "$(systemctl --user show -p MainPID --value gonogo.service)" != "$before" ]
+          gonogo service stop
+          ! systemctl --user is-active gonogo.service
+          gonogo service start
+          for i in $(seq 1 40); do health && break; sleep 1; done
+          gonogo service restart
+          for i in $(seq 1 40); do health && break; sleep 1; done
+          gonogo service uninstall
+          ! systemctl --user is-active gonogo.service
+          [ ! -e "$unit" ]
+          # a foreground gonogo on the port: no second one is started
+          node -e 'require("net").createServer().listen(7788, "127.0.0.1")' &
+          listener=$!
+          sleep 1
+          if gonogo service install --pty-host --port 7788 > out.txt 2>&1; then echo "::error::install started beside a listener"; exit 1; fi
+          cat out.txt
+          grep -q 'stop the running gonogo first (Ctrl+C), then run gonogo service start' out.txt
+          ! systemctl --user is-active gonogo.service
+          kill "$listener"
+          gonogo service start
+          for i in $(seq 1 40); do health && break; sleep 1; done
+          gonogo service uninstall
+          # a space in --home reaches gonogo as one word
+          gonogo service install --pty-host --port 7788 --home "$HOME/my agents"
+          for i in $(seq 1 40); do health && break; sleep 1; done
+          [ -f "$HOME/my agents/token" ]
+          grep -q -- "--home \"$HOME/my agents\"" "$unit"
+          gonogo service uninstall
+      - if: failure()
+        run: journalctl --user -u gonogo.service --no-pager | tail -60
+
+  openrc:
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: pack
+      # Debian with OpenRC (a glibc system: gonogo's pty library has no musl build, so Alpine cannot run agents); --init so that a stopped
+      # service's process is reaped (the container's own pid 1 would not)
+      - name: install, an agent surviving a reload, uninstall under OpenRC
+        run: |
+          docker run --rm --init -v "$PWD/pack:/pk:ro" node:24-bookworm sh -ec '
+            apt-get update >/dev/null
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openrc curl procps >/dev/null
+            mkdir -p /run/openrc && touch /run/openrc/softlevel
+            useradd -m ana
+            npm install -g /pk/*.tgz >/dev/null 2>&1
+            printf "#!/bin/sh\nexec sleep 1234567\n" > /usr/local/bin/claude && chmod +x /usr/local/bin/claude
+            # as root with no user to run as: refused
+            ! gonogo service install --pty-host 2>/dev/null
+            gonogo service install --user ana --pty-host --port 7788
+            for i in $(seq 1 40); do curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break; sleep 1; done
+            curl -fsS http://127.0.0.1:7788/rooms/health
+            gonogo service status
+            # runs as ana, not as root
+            ps -eo user,args | grep "gonogo --home" | grep -v grep | grep -q "^ana "
+            # an agent in the pty host; it must be the same process after the reload
+            curl -fsS -X POST -H "Authorization: Bearer $(cat /home/ana/.gonogo/token)" -H "content-type: application/json" -d "{}" http://127.0.0.1:7788/api/agents/flight/restart >/dev/null
+            for i in $(seq 1 30); do agent=$(pgrep -u ana -f "[s]leep 1234567" | head -1); [ -n "$agent" ] && break; sleep 1; done
+            [ -n "$agent" ]
+            before=$(pgrep -u ana -f "gonogo --home" | head -1)
+            su ana -c "gonogo reload --home /home/ana/.gonogo"
+            for i in $(seq 1 40); do
+              now=$(pgrep -u ana -f "gonogo --home" | head -1)
+              [ -n "$now" ] && [ "$now" != "$before" ] && curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break
+              sleep 1
+            done
+            [ "$now" != "$before" ]
+            [ "$(pgrep -u ana -f "[s]leep 1234567" | head -1)" = "$agent" ]
+            gonogo service status
+            # a space in --home reaches gonogo as one word (openrc-run evals the arguments)
+            gonogo service install --user ana --pty-host --port 7788 --home "/home/ana/my agents"
+            for i in $(seq 1 40); do curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break; sleep 1; done
+            [ -f "/home/ana/my agents/token" ]
+            gonogo service install --user ana --pty-host --port 7788
+            for i in $(seq 1 40); do curl -fsS http://127.0.0.1:7788/rooms/health >/dev/null && break; sleep 1; done
+            # without root: the sudo line comes first
+            su ana -c "gonogo service install --pty-host --port 7788" > /tmp/out.txt 2>&1 && exit 1
+            head -1 /tmp/out.txt | grep -q "This needs root: run .sudo gonogo service install --port 7788 --pty-host."
+            gonogo service uninstall
+            [ ! -e /etc/init.d/gonogo ]
+            [ -z "$(pgrep -u ana -f "gonogo --home")" ]
+          '
+
+  launchd:
+    needs: pack
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: pack
+      - run: npm install -g "$PWD"/pack/*.tgz
+      # --no-start: a CI runner has no login session to load a LaunchAgent into. The file is what has to be right.
+      - name: install with --no-start, lint the plist, uninstall
+        run: |
+          set -x
+          gonogo service install --pty-host --port 7788 --no-start
+          plist="$HOME/Library/LaunchAgents/com.ulm0.gonogo.plist"
+          plutil -lint "$plist"
+          /usr/libexec/PlistBuddy -c 'Print :KeepAlive' -c 'Print :RunAtLoad' -c 'Print :AbandonProcessGroup' -c 'Print :ProgramArguments:0' "$plist"
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$plist")" = "$(command -v node)" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :WorkingDirectory' "$plist")" = "$HOME" ]
+          gonogo service status || [ $? = 3 ]
+          gonogo service uninstall
+          [ ! -e "$plist" ]

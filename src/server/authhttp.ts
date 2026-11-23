@@ -272,7 +272,8 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
         return sendJson(res, 200, { ok: true, user: result.user }, { 'Set-Cookie': cookies as unknown as string });
       }
       const [status, message] = MESSAGE[result.reason] as [number, string];
-      const shown = result.reason === 'wait' && result.retryAfter !== undefined ? `Too many tries. Wait ${result.retryAfter} seconds, then try again.` : message;
+      // on the setup form the only thing that can be wrong is the setup token (the name and the password have their own words: 'weak')
+      const shown = result.reason === 'wait' && result.retryAfter !== undefined ? `Too many tries. Wait ${result.retryAfter} seconds, then try again.` : which === 'setup' && result.reason === 'wrong' ? 'That setup token is wrong: copy it again from the start-up output, or from the setup-token file in gonogo\'s home folder.' : message;
       if (asHtml) {
         res.setHeader('Retry-After', String(result.retryAfter ?? 0));
         if (result.reason === 'setup') return html(res, status, 'unset');

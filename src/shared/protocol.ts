@@ -1720,6 +1720,30 @@ export interface ApiError {
   needsForce?: boolean;
 }
 
+/* ---- the project folder of a room (docs/features/rooms.md, "Folders"): GET and PUT /api/project-folder ---- */
+
+/** Where the agents of the room work: the folder in force and where it comes from, the folder gonogo was started in (the default Reset goes back to), and the boss with the folder it runs in. */
+export interface ProjectFolderView {
+  dir: string;
+  source: 'set' | 'default';
+  default: string;
+  boss: { name: string; dir: string } | null;
+  /** About the folder in force, set or default: it is or holds gonogo's own folder, or it is a broad one. Said next to the value; never a refusal. */
+  warning?: string | null;
+  /** After a write: what the change does and does not reach. */
+  note?: string;
+}
+
+/** The dry run of a folder (GET /api/project-folder/check?dir=): whether it would be accepted, and the warning it would carry. Nothing is written. */
+export interface ProjectFolderCheck {
+  ok: boolean;
+  /** The real path, when it is one. */
+  dir?: string;
+  /** Why not, in words. */
+  reason?: string;
+  warning: string | null;
+}
+
 /* ---- runtime settings (docs/runtime-settings-spec.md): GET /api/settings, PUT /api/settings/<key> ---- */
 
 export type RuntimeSettingKey = 'maxHops' | 'maxWorking' | 'agentCmd' | 'cleanRoomImage' | 'scrubEnv' | 'logLevel' | 'station' | 'updateCheck';
@@ -2089,7 +2113,13 @@ export interface ModelsFrame {
   t: 'models';
   models: ModelDefaults;
 }
+/** The server's own answer changed (the project folder, so the hire form's default): carries the whole info. Also inside StateSnapshot. */
+export interface InfoFrame {
+  t: 'info';
+  info: ServerInfo;
+}
 export type ServerFrame =
+  | InfoFrame
   | ModelsFrame
   | TabNameFrame
   | RoomFrame
@@ -2116,7 +2146,7 @@ export type ServerFrame =
   | SizeFrame
   | ErrorFrame;
 /** What the hub emits to browsers. cli.ts passes it to the web server's broadcast(). */
-export type HubEvent = AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
+export type HubEvent = InfoFrame | AgentFrame | AgentRemovedFrame | ActivityFrame | PollFrame | GovernorFrame | PropellantFrame | SchedulesFrame | UplinksFrame | TasksFrame | MissionsFrame | RoomFrame | TabNameFrame | DownlinkFrame | LogFrame | KnowledgeFrame | LiveryFrame | DockingFrame | ReliefFrame | RolloutFrame | FeaturesFrame | ModelsFrame;
 
 /* ------------------------------------------------------------------------------------------------------------
  * Part 3. Server-internal contracts
@@ -2180,6 +2210,10 @@ export interface ScreenProbe {
   promptText: string | null;
   /** A modal with no numbered cursor (a text field, "Press Enter", "Esc to cancel") is on a screen with no prompt box. Read only by the 60 s safety net; absent from an older pty host. */
   modal?: boolean;
+  /** Claude Code's screen says it is not signed in ("Not logged in · Run /login"). Absent from an older pty host. */
+  signedOut?: boolean;
+  /** Claude Code's screen says its credential was rejected ("authentication rejected (401)"). Absent from an older pty host. */
+  authRejected?: boolean;
 }
 export interface TitleInfo {
   glyph: TitleGlyph;
@@ -2513,8 +2547,8 @@ export interface DockLink {
 export interface HubOptions {
   /** Messages with hops above this go to the user instead (default 8, GONOGO_MAX_HOPS). */
   maxHops: number;
-  /** Working directory of the boss when the roster is empty (the directory gonogo was started from). */
-  bossDir: string;
+  /** Working directory of the boss when the roster is empty (the directory gonogo was started from, or the room's project folder: a function reads it live). */
+  bossDir: string | (() => string);
   /** Max Q at start: at most this many agents work at once; null or absent = off (GONOGO_MAX_WORKING). */
   maxWorking?: number | null;
   /** Redline's automatic detectors (loop, error storm, ping-pong). Default true; GONOGO_REDLINE=off. Hub.trip works either way. */

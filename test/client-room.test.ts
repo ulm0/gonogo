@@ -190,7 +190,7 @@ describe('a tile', () => {
 
   it('strips the permission prefix from the reason', () => {
     expect(reasonText(agent('a', 1, { needsReason: 'permission request: Bash: npm test' }))).toBe('Bash: npm test');
-    expect(reasonText(agent('a', 1, { needsReason: 'startup dialog: answer it in the terminal' }))).toBe('startup dialog: answer it in the terminal');
+    expect(reasonText(agent('a', 1, { needsReason: 'first run of Claude Code: finish its setup in the console' }))).toBe('first run of Claude Code: finish its setup in the console');
     expect(reasonText(agent('a', 1))).toBeNull();
   });
 

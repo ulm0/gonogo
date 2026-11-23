@@ -314,10 +314,33 @@ async function load(){
 $('new').addEventListener('click',()=>form.hidden?showForm():hideForm());
 $('cancel').addEventListener('click',hideForm);
 form.addEventListener('keydown',e=>{if(e.key==='Escape')hideForm()});
+// what the server says of the folder being typed, before the room is made: why it would be refused, or its warning (never a block)
+let dirTimer=0;
+form.elements.dir.addEventListener('input',()=>{
+  clearTimeout(dirTimer);
+  const v=form.elements.dir.value.trim(),n=$('dirnote');
+  if(!v){n.hidden=true;return}
+  dirTimer=setTimeout(async()=>{
+    try{
+      const r=await call('GET','/api/rooms/check-folder?dir='+encodeURIComponent(v));
+      if(r.ok===false&&r.reason){n.className='error';delete n.dataset.tone;n.textContent=r.reason;n.hidden=false}
+      else if(r.warning){n.className='flood';n.dataset.tone='amber';n.textContent=r.warning;n.hidden=false}
+      else n.hidden=true
+    }catch{n.hidden=true}
+  },400);
+});
+async function addRoom(body){
+  try{await call('POST','/api/rooms',body);form.reset();form.hidden=true;$('new').setAttribute('aria-expanded','false');clear();seen='';await load();focus('open:'+body.id)}
+  catch(err){
+    // a folder is set from the Director's own login, which asks for the password again: the same box as the other asks, and the room is made after it
+    if(err.stepUp){ask={again:()=>addRoom(body),second:err.second,msg:err.message};seen='';draw();focus('step:password')}else fail(err)
+  }
+}
 form.addEventListener('submit',async e=>{
   e.preventDefault();
-  const id=form.elements.id.value.trim(),name=form.elements.name.value.trim();
-  try{await call('POST','/api/rooms',name?{id,name}:{id});form.reset();form.hidden=true;$('new').setAttribute('aria-expanded','false');clear();seen='';await load();focus('open:'+id)}catch(err){fail(err)}
+  const id=form.elements.id.value.trim(),name=form.elements.name.value.trim(),dir=form.elements.dir.value.trim();
+  const body={id};if(name)body.name=name;if(dir)body.dir=dir;
+  await addRoom(body);
 });
 load();setInterval(load,5000);setInterval(tick,30000);
 `;
@@ -351,7 +374,7 @@ export const roomsPage = (stylesheet: string | null, version: string | null = nu
   `<div class="rl-head"><h2 id="title" class="label" tabindex="-1">Rooms</h2><span id="sum"></span><span id="live" class="sr-only" role="status"></span></div>` +
   `<section id="gate" class="module rl-gate" hidden><h2 class="label"></h2><p class="hint"></p></section>` +
   `<p id="loading" class="hint">Asking the rooms…</p>` +
-  `<form id="add" class="module rl-form" hidden><span class="label">NEW ROOM</span><div class="rl-fields"><label><span class="label">ID</span><input class="input" name="id" required maxlength="24" pattern="[a-z][a-z0-9-]{0,23}" aria-describedby="idhint" autocomplete="off" spellcheck="false"><span id="idhint" class="hint">Lowercase letters, digits and dashes, like team-a. It is the folder and the address.</span></label><label><span class="label">NAME (OPTIONAL)</span><input class="input" name="name" maxlength="40" autocomplete="off"></label></div><div class="rl-keys"><button class="btn" data-kind="primary" type="submit">ADD ROOM</button><button id="cancel" class="btn" type="button">CANCEL</button></div></form>` +
+  `<form id="add" class="module rl-form" hidden><span class="label">NEW ROOM</span><div class="rl-fields"><label><span class="label">ID</span><input class="input" name="id" required maxlength="24" pattern="[a-z][a-z0-9-]{0,23}" aria-describedby="idhint" autocomplete="off" spellcheck="false"><span id="idhint" class="hint">Lowercase letters, digits and dashes, like team-a. It is the folder and the address.</span></label><label><span class="label">NAME (OPTIONAL)</span><input class="input" name="name" maxlength="40" autocomplete="off"></label><label><span class="label">PROJECT FOLDER (OPTIONAL)</span><input class="input" name="dir" maxlength="4096" autocomplete="off" spellcheck="false" aria-describedby="dirhint"><span id="dirhint" class="hint">Where its agents work, the whole path. Empty: the folder gonogo was started in. A folder asks for your password.</span><p id="dirnote" role="status" hidden></p></label></div><div class="rl-keys"><button class="btn" data-kind="primary" type="submit">ADD ROOM</button><button id="cancel" class="btn" type="button">CANCEL</button></div></form>` +
   `<p id="note" class="error rl-error" role="alert" hidden></p>` +
   `<div id="move" class="rl-move"></div>` +
   `<ul id="rooms" class="rl-cards" aria-labelledby="title"></ul>` +

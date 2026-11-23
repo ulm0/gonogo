@@ -279,6 +279,28 @@ describe('Pad Check', () => {
     expect(Date.now() - started).toBeLessThan(15_000);
   }, 20_000);
 
+  it('formatDoctor: only what is installed, claude even when it is not, and one line for the other engines that are not (--all lists them)', () => {
+    const checks = [
+      { provider: 'claude', label: 'Claude Code', bin: 'claude', path: null, version: null, install: 'curl x | bash', docs: 'https://a.example' },
+      { provider: 'codex', label: 'Codex', bin: 'codex', path: null, version: null, install: 'npm install -g @openai/codex', docs: 'https://b.example' },
+      { provider: 'kimi', label: 'Kimi CLI', bin: 'kimi', path: null, version: null, install: null, docs: 'https://c.example' },
+      { provider: 'pi', label: 'pi', bin: 'pi', path: '/bin/pi', version: null, install: 'x', docs: 'https://d.example' },
+    ] as const;
+    const short = formatDoctor(checks, null);
+    expect(short).toContain('--  Claude Code (claude)  not found\n    install: curl x | bash');
+    expect(short).toContain('ok  pi (pi)  no version printed  /bin/pi');
+    expect(short).not.toContain('Codex');
+    expect(short).not.toContain('Kimi');
+    expect(short).toContain('2 other engines are not installed (gonogo doctor --all)');
+    expect(formatDoctor(checks.slice(0, 2), null)).toContain('1 other engine is not installed (gonogo doctor --all)');
+    expect(formatDoctor(checks.slice(0, 1), null)).not.toContain('other engine');
+    const all = formatDoctor(checks, null, null, true);
+    expect(all).toContain('--  Codex (codex)  not found');
+    expect(all).not.toContain('gonogo doctor --all');
+    expect(parseArgs(['doctor', '--all'])).toEqual({ kind: 'doctor', all: true });
+    expect(parseArgs(['doctor', '--nope'])).toMatchObject({ kind: 'error' });
+  });
+
   it('formatDoctor: ok lines, then the install command and page of each missing engine, and the note that nothing is run', () => {
     const text = formatDoctor(
       [
@@ -288,6 +310,8 @@ describe('Pad Check', () => {
         { provider: 'pi', label: 'pi', bin: 'pi', path: '/bin/pi', version: null, install: 'x', docs: 'https://d.example' },
       ],
       null,
+      null,
+      true,
     );
     expect(text).toContain('ok  Claude Code (claude)  2.1.325  /bin/claude');
     expect(text).toContain('--  Codex (codex)  not found\n    install: npm install -g @openai/codex\n    docs: https://b.example');

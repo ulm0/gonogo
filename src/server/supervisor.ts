@@ -22,6 +22,7 @@ import { createAuthHttp } from './authhttp.js';
 import { createDevices } from './devicelogin.js';
 import { createPasskeys } from './passkeys.js';
 import { GLOBAL_SETTINGS_FILE, globalSetting } from './settings.js';
+import { checkFolder, checkWithWarning, FolderError, writeFolder } from './projectfolder.js';
 import { KNOWLEDGE_DIR, nullLogger, SHUTDOWN_MAX_MS } from './constants.js';
 import { sendApiError, sendJson, sendText } from './hooks.js';
 import { cachedLatest, isNewer, updateCheckOff } from './rollout.js';
@@ -883,7 +884,31 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       }
       const body = await readBody(req);
       if (method === 'POST') {
-        const entry = addRoom(options.home, body.id, typeof body.name === 'string' ? body.name : undefined);
+        // a folder that is not one adds no room; and a room that starts its agents in a folder is the Director's own doing: a session (asked for the password again), not a key or a terminal
+        let folder: string | null = null;
+        if (body.dir !== undefined && body.dir !== null) {
+          if (grant.kind !== 'session' && grant.kind !== 'token') return sendApiError(res, 403, "a project folder is set from the Director's own login: agents start in it", 'forbidden');
+          const reason = authHttp.stepUpNeeded(grant, 'POST', '/api/rooms', body);
+          if (reason !== null) return authHttp.stepUpDenied(req, res, reason, false);
+          try {
+            folder = checkFolder(body.dir);
+          } catch (error) {
+            if (error instanceof FolderError) throw new RoomsError(error.message);
+            throw error;
+          }
+        }
+        // with a folder the room is first made not to start with gonogo, and set to start only once its folder is in place: the 2 s poll of the supervisor can never launch it without
+        const entry = addRoom(options.home, body.id, typeof body.name === 'string' ? body.name : undefined, folder === null);
+        if (folder !== null) {
+          try {
+            writeFolder(homeOfRoom(entry.id), folder);
+            updateRoom(options.home, entry.id, { autostart: true });
+          } catch (error) {
+            removeRoom(options.home, entry.id);
+            throw error;
+          }
+          log.info(`room ${entry.id}: project folder ${folder}`);
+        }
         reconcile();
         return sendJson(res, 201, (await roomView(entry.id)) ?? entry);
       }
@@ -962,7 +987,11 @@ export async function startSupervisor(options: SupervisorOptions): Promise<Super
       if (grant === null) return sendApiError(res, 401, 'unauthorized', 'unauthorized', undefined, { 'WWW-Authenticate': 'Bearer' });
       if (grant.kind === 'session' && !authHttp.csrfOk(req)) return sendApiError(res, 403, 'forbidden origin', 'forbidden');
       if (grant.kind === 'key' && !keyMayDo(grant.scope ?? 'read', req.method ?? 'GET', path)) return sendApiError(res, 403, 'this key may not do that', 'forbidden');
-      if (rooms[2] === 'migrate') void (rooms[1] === 'main' ? migrateApi(req, res, grant) : sendApiError(res, 404, 'not found', 'not_found'));
+      if (rooms[1] === 'check-folder' && rooms[2] === undefined && req.method === 'GET') {
+        // the dry run of a folder for the new-room form: the same answer as the room's own check, nothing written, and the same askers: the Director's own login
+        if (grant.kind !== 'session' && grant.kind !== 'token') return sendApiError(res, 403, "the folders of this computer are asked from the Director's own login", 'forbidden');
+        sendJson(res, 200, checkWithWarning(new URL(req.url ?? '/', 'http://x').searchParams.get('dir') ?? '', [options.home], options.env));
+      } else if (rooms[2] === 'migrate') void (rooms[1] === 'main' ? migrateApi(req, res, grant) : sendApiError(res, 404, 'not found', 'not_found'));
       else if (rooms[2] === 'stop' || rooms[2] === 'start' || rooms[1] === 'stop-all' || rooms[1] === 'start-all') void powerApi(req, res, grant, rooms[2] ?? (rooms[1] as string), rooms[2] === undefined ? undefined : rooms[1]);
       else void roomsApi(req, res, grant, rooms[1]);
       return;

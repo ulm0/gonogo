@@ -317,9 +317,15 @@ export function checkEngines(env: Record<string, string | undefined>): Promise<E
 }
 
 /** What `gonogo doctor` prints: one line per engine, and under a missing one the vendor's install command to copy. */
-export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | null, installNote: string | null = null): string {
+export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | null, installNote: string | null = null, all = false): string {
   const lines = ['gonogo doctor: which agent CLIs are on the PATH', ''];
+  let hidden = 0;
   for (const check of checks) {
+    // the engines that are not installed are not news, except Claude Code (the default one): one line says how many, and --all lists them
+    if (check.path === null && !all && check.provider !== 'claude') {
+      hidden += 1;
+      continue;
+    }
     if (check.path !== null) {
       lines.push(`ok  ${check.label} (${check.bin})  ${check.version ?? 'no version printed'}  ${check.path}`);
       if (check.effort === false) lines.push('    this claude does not list --effort: a console with an effort setting (its own or the room\'s) will not start; update claude or clear the effort');
@@ -329,6 +335,7 @@ export function formatDoctor(checks: readonly EngineCheck[], agentCmd: string | 
     lines.push(check.install === null ? `    no install command was checked; see ${check.docs}` : `    install: ${check.install}`);
     if (check.install !== null) lines.push(`    docs: ${check.docs}`);
   }
+  if (hidden > 0) lines.push('', `${hidden} other ${hidden === 1 ? 'engine is' : 'engines are'} not installed (gonogo doctor --all)`);
   if (agentCmd !== null) lines.push('', `GONOGO_AGENT_CMD is set (${agentCmd}): it replaces claude.`);
   if (installNote !== null) lines.push('', installNote);
   lines.push('', 'doctor never runs an install command: copy the one you want. (Only the page\'s Update button installs gonogo itself, after your click.)', `docs: ${DOCS_URL}`);

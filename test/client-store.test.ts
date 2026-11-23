@@ -1005,3 +1005,11 @@ describe('Mission Log frames', () => {
     expect(run([{ t: 'state', state: snapshot([agent('flight', 0)]) }], second).log).toEqual({ rev: 3, changed: [], removed: [] });
   });
 });
+
+describe('info frame', () => {
+  it('replaces the info of the server, so that the hire form default follows a change of the project folder', () => {
+    const before = run([stateFrame([])]);
+    const info = { ...(before.info as NonNullable<typeof before.info>), cwd: '/srv/project' };
+    expect(run([{ t: 'info', info }], before).info?.cwd).toBe('/srv/project');
+  });
+});
