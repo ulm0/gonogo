@@ -389,7 +389,9 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   await measure(page, group, 'flight rules');
   await measureDuplicates(page, group, 'flight rules', '.lay-rules');
   // every group opened with every one of its rows open: the controls and the labels of each must be there once
-  const titles = page.locator('.lay-group-title button');
+  // the index at the top when there is one, else the heading keys of the groups
+  const index = page.locator('.lay-group-nav a');
+  const titles = (await index.count().catch(() => 0)) > 0 ? index : page.locator('.lay-group-title button');
   const count = await titles.count().catch(() => 0);
   for (let i = 0; i < count; i += 1) {
     const title = ((await titles.nth(i).textContent()) ?? '').replace(/[▾▸]/g, '').trim();

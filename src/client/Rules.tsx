@@ -31,10 +31,14 @@ import type { PhoneMode, RelayView } from '../shared/protocol.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commissioningSteps, loadMarks, saveMarks, showCommissioning } from './shell.js';
 import type { Mark, Step } from './shell.js';
-import { openConsole, openEdit, showLivery, showRoom, showRules, showWindow, useFeature, useStore } from './store.js';
+import { openConsole, openEdit, showLivery, showRoom, showRules, useFeature, useStore } from './store.js';
 import { legendOf } from './wall.js';
 import { MaxQ, Propellant } from './WallView.js';
 import { Row, useValue } from './Row.js';
+import { DockingPanel } from './DockingPanel.js';
+import { SchedulesBlock } from './LaunchWindow.js';
+import { RelayPanel } from './RelayPanel.js';
+import { UplinkPanel } from './UplinkPanel.js';
 import { RuntimeSettingsBlock } from './RuntimeSettings.js';
 import { summary as runtimeSummary } from './runtimeSettingsModel.js';
 import './loop.css';
@@ -157,19 +161,20 @@ function ReloadBlock(): ReactElement {
   );
 }
 
+/** The groups of Flight Rules, in order: the index at the top has a key for each, and each group below has its heading. */
+const GROUPS: ReadonlyArray<readonly [string, string]> = [['room', 'Room'], ['agents', 'Agents'], ['budget', 'Budget and limits'], ['auto', 'Automation and connections'], ['knowledge', 'Knowledge'], ['security', 'Security'], ['system', 'System and update']];
+
 /** The open group and how to change it: a context, so that Group is one component for good (one defined inside FlightRules is a new type at every render, and React would rebuild every block in it each time a value arrives). */
 const GroupContext = createContext<{ open: string; setOpen(id: string): void; base: string }>({ open: '', setOpen: () => undefined, base: '' });
 
-function Group({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement {
-  const { open, setOpen, base } = useContext(GroupContext);
+function Group({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement | null {
+  const { open, base } = useContext(GroupContext);
+  // option B: the index at the top chooses the group, and only that group is below it
+  if (open !== id) return null;
   return (
-    <section className="lay-group" id={`${base}-g-${id}`} aria-label={title} data-open={open === id || undefined}>
-      <h2 className="lay-group-title">
-        <button type="button" className="btn" data-kind="quiet" aria-expanded={open === id} onClick={() => setOpen(open === id ? '' : id)}>
-          {title} {open === id ? '▾' : '▸'}
-        </button>
-      </h2>
-      {open === id && <div className="lay-group-body">{children}</div>}
+    <section className="lay-group" id={`${base}-g-${id}`} aria-label={title} data-open>
+      <h2 className="lay-group-title">{title}</h2>
+      <div className="lay-group-body">{children}</div>
     </section>
   );
 }
@@ -193,6 +198,7 @@ export function FlightRules(): ReactElement {
   const governor = useStore((s) => s.governor);
   const schedules = useStore((s) => s.schedules.length);
   const uplinks = useStore((s) => s.uplinks.length);
+  const docked = useStore((s) => s.docking.docks.length);
   const rules = useValue(() => api.rulesView().then((r) => (r.bytes === 0 ? 'none written' : `${r.bytes} bytes`)));
   const template = useValue(() => api.ritualTemplate().then((r) => (r.bytes === 0 ? 'none written' : `${r.bytes} bytes`)));
   const startup = useValue(() => api.startupSettings().then((x) => `after a restart: ${x.policy}`));
@@ -210,17 +216,6 @@ export function FlightRules(): ReactElement {
       <p className="hint">The look of every device.</p>
       <button type="button" className="btn" onClick={showLivery}>
         Choose a livery
-      </button>
-    </section>
-  );
-  const launchBlock = (
-    <section className="module rules-block" aria-labelledby={`${titleId}-window`}>
-      <h2 className="label" id={`${titleId}-window`}>
-        LAUNCH WINDOW
-      </h2>
-      <p className="hint">Schedules, Uplink webhooks, Relay chat bridges and Docking with other stations.</p>
-      <button type="button" className="btn" onClick={showWindow}>
-        Open Launch Window
       </button>
     </section>
   );
@@ -270,6 +265,24 @@ export function FlightRules(): ReactElement {
           ← Back to the room
         </button>
       </header>
+      <nav className="lay-group-nav" aria-label="Groups of settings">
+        {GROUPS.map(([id, title]) => (
+          <a
+            key={id}
+            className="btn"
+            data-kind={openGroup === id ? 'primary' : 'quiet'}
+            aria-current={openGroup === id ? 'true' : undefined}
+            href={`#${titleId}-g-${id}`}
+            onClick={(e) => {
+              e.preventDefault();
+              setOpenGroup(id);
+              requestAnimationFrame(() => document.getElementById(`${titleId}-g-${id}`)?.scrollIntoView({ block: 'start' }));
+            }}
+          >
+            {title}
+          </a>
+        ))}
+      </nav>
       <Group id="room" title="Room">
         <Row name="Livery" now={currentEntry(livery).name}>{liveryBlock}</Row>
         <Row name="Tab name" now={tabName.name ?? tabName.fallback ?? 'not set'}><TabNameBlock /></Row>
@@ -291,7 +304,10 @@ export function FlightRules(): ReactElement {
         <Row name="Propellant: tokens and dollars" now="limits per window"><Propellant /></Row>
       </Group>
       <Group id="auto" title="Automation and connections">
-        <Row name="Launch Window: schedules, Uplink, Relay, Docking" now={`${schedules} schedules, ${uplinks} uplinks`}>{launchBlock}</Row>
+        {!off.includes('launch-window') && <Row name="Schedules" now={`${schedules} ${schedules === 1 ? 'schedule' : 'schedules'}`}><SchedulesBlock /></Row>}
+        {!off.includes('uplink') && <Row name="Uplink webhooks" now={`${uplinks} ${uplinks === 1 ? 'uplink' : 'uplinks'}`}><UplinkPanel /></Row>}
+        {!off.includes('relay') && <Row name="Relay: Slack, Telegram, GitHub, Linear" now="chat in and out"><RelayPanel /></Row>}
+        {!off.includes('docking') && <Row name="Docking: other stations" now={`${docked} docked`}><DockingPanel /></Row>}
         <Row name="Start again after a restart" now={startup}><StartupBlock /></Row>
       </Group>
       <Group id="knowledge" title="Knowledge">

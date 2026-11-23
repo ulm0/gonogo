@@ -155,7 +155,7 @@ function Target({ service, label, saved, setView, now, onNotice }: Acts & { serv
         </p>
       </div>
       <div className="rl-keys">
-        <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || undefined}>
+        <button type="submit" className="btn" data-kind="primary" aria-label={`Save target for ${label}`} aria-disabled={busy || undefined}>
           {busy ? 'Saving…' : 'Save target'}
         </button>
         <button

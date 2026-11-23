@@ -990,6 +990,13 @@ export interface DockingView {
   station: string;
   docks: DockView[];
 }
+/** GET /api/docking/addresses: for the Address box when the page was opened as localhost. Not part of the state: only a login session (or the local socket) is told. */
+export interface DockHints {
+  /** The addresses of this computer a station on the network may be able to reach, best first. Empty when none is known (or not told to this sender). */
+  addresses: string[];
+  /** gonogo runs in a container: its own addresses are not the host's. */
+  container: boolean;
+}
 /** POST /api/docking/code: the public address of this station, as the other side will reach it. */
 export interface DockCodeRequest {
   url: string;
@@ -998,6 +1005,8 @@ export interface DockCodeRequest {
 export interface DockCode {
   code: string;
   expiresAt: number;
+  /** Said when the address in the code works only on this computer. */
+  warning?: string;
 }
 /** POST /api/docking/pair: the code from the other side, and the public address of this station. */
 export interface DockPairRequest {
@@ -2178,6 +2187,8 @@ export interface TitleInfo {
   title: string;
   /** ms epoch when the glyph class last changed. */
   since: number;
+  /** ms epoch when the title TEXT last changed: a live spinner changes it all the time, a frozen one never. Absent from an older pty host (then `since`). */
+  textSince?: number;
 }
 export interface ExitInfo {
   /** Exit code, or null when killed by a signal. */

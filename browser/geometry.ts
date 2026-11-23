@@ -80,7 +80,7 @@ export async function duplicates(page: Page, scope: string, sentences = false): 
     const seen = new Map<string, string>();
     const note = (kind: string, text: string, where: string): void => {
       if (text === '') return;
-      const key = text;
+      const key = kind === 'a link of the index' ? 'nav:' + text : text;
       const before = seen.get(key);
       // a key and a heading with one word are two roles (a group's key "Room" and the Features block's heading "ROOM"): heard apart
       if (before !== undefined && before !== kind + ' ' + where && ![before, kind].every((k) => /a key|a heading/.test(k))) problems.push(`"${text}" is both ${before} and ${kind} ${where}`.replace('  ', ' '));
@@ -90,7 +90,9 @@ export async function duplicates(page: Page, scope: string, sentences = false): 
     for (const el of document.querySelectorAll<HTMLElement>('button, a[href], .lay-row-name, h1, h2, h3, .lay-group-title')) {
       if (!inside(el) || !drawn(el)) continue;
       if (el.closest('.lay-row > summary') !== null && !el.classList.contains('lay-row-name')) continue; // the Edit mark of a row is not a key of its own
-      const kind = el.matches('button, a[href]') ? 'a key' : el.classList.contains('lay-row-name') ? 'a row' : 'a heading';
+      // the index of the groups at the top and the heading of each group below are one pair, not a duplicate: the links are looked at among themselves
+      const inNav = el.closest('.lay-group-nav') !== null;
+      const kind = inNav ? 'a link of the index' : el.matches('button, a[href]') ? 'a key' : el.classList.contains('lay-row-name') ? 'a row' : 'a heading';
       const text = norm(el.getAttribute('aria-label') ?? el.textContent ?? '');
       // the key of a group is the heading of the group: it is one thing
       if (el.matches('.lay-group-title')) continue;

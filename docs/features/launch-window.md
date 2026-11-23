@@ -2,7 +2,7 @@
 
 <LaunchWindowMock class="doc-mock" />
 
-LAUNCH WINDOW (top bar, or LAUNCH in the phone bar) lists schedules: messages gonogo sends on a rule, as if typed into the Brief box. Design: [`docs/launch-window-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/launch-window-spec.md).
+LAUNCH WINDOW (top bar, or LAUNCH in the phone bar) lists schedules: messages gonogo sends on a rule, as if typed into the Brief box, and the History of what fired by itself or came in. The same schedules are a row of Flight Rules (Automation and connections), where [Uplink](./uplink.md), [Relay](./relay.md) and [Docking](./docking.md) are too. Design: [`docs/launch-window-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/launch-window-spec.md).
 
 ## A schedule
 

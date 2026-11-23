@@ -170,9 +170,9 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     await page.getByRole('group', { name: 'More' }).getByRole('button', { name: 'Flight Rules', exact: true }).click();
     // the groups are an accordion (one open) and each setting is a row that opens on Edit: open a group and all its rows, then look for the blocks it holds
     const open = async (group: RegExp): Promise<void> => {
-      const key = page.locator('.lay-group-title button', { hasText: group });
-      if ((await key.getAttribute('aria-expanded')) !== 'true') await key.click();
-      await expect(key).toHaveAttribute('aria-expanded', 'true');
+      const key = page.locator('.lay-group-nav a', { hasText: group });
+      await key.click();
+      await expect(key).toHaveAttribute('aria-current', 'true');
       await expect(page.locator('.lay-group-body').first()).toBeVisible();
       await expect(page.locator('details.lay-row').first()).toBeVisible();
       await page.locator('details.lay-row').evaluateAll((rows) => rows.forEach((row) => ((row as HTMLDetailsElement).open = true)));

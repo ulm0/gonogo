@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import type { DockView, Task } from '../src/shared/protocol.js';
-import { addressProblem, canHandOff, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, toneOf, undockedText, wordOf } from '../src/client/docking.js';
+import { suggestedAddress, addressProblem, canHandOff, codeProblem, expiresText, handoffChoices, handoffRequest, localNote, statusText, toneOf, undockedText, wordOf } from '../src/client/docking.js';
 
 // Set while the file loads: the dates below are made when the describe blocks are collected.
 const savedZone = process.env.TZ;
@@ -29,7 +29,7 @@ describe('codeProblem', () => {
     expect(codeProblem('gonogo-dock:abc')).toBeUndefined();
     expect(codeProblem('  gonogo-dock:abc  ')).toBeUndefined();
     expect(codeProblem('')).toMatch(/^Paste the whole code/);
-    expect(codeProblem('abc')).toMatch(/gonogo-dock:$/);
+    expect(codeProblem('abc')).toBeUndefined(); // the server reads a code without its first words and says what is wrong with a bad one
   });
 });
 
@@ -83,5 +83,24 @@ describe('handing a task off', () => {
   it('asks for the task and the agent, or null for nobody', () => {
     expect(handoffRequest(task(), 'bob')).toEqual({ task: 't1', assignee: 'bob' });
     expect(handoffRequest(task(), '')).toEqual({ task: 't1', assignee: null });
+  });
+});
+
+describe('localNote in a container', () => {
+  it('says to use the host\'s network address, as seen from another machine', () => {
+    expect(localNote('http://127.0.0.1:7777', true)).toMatch(/runs in a container.*host's network address.*address bar/);
+    expect(localNote('http://127.0.0.1:7777', false)).not.toMatch(/container/);
+    expect(localNote('http://192.168.0.5:7777', true)).toBeNull();
+  });
+});
+
+describe('suggestedAddress', () => {
+  it('starts the Address box with a network address of the computer when the page was opened as localhost, and keeps the scheme and the port', () => {
+    expect(suggestedAddress('http://127.0.0.1:7777', ['192.168.0.5'])).toBe('http://192.168.0.5:7777');
+    expect(suggestedAddress('http://localhost:7777', ['192.168.0.5', '10.0.0.2'])).toBe('http://192.168.0.5:7777');
+    expect(suggestedAddress('https://localhost', ['192.168.0.5'])).toBe('https://192.168.0.5');
+    expect(suggestedAddress('http://127.0.0.1:7777', [])).toBe('http://127.0.0.1:7777');
+    expect(suggestedAddress('https://gonogo.example.com', ['192.168.0.5'])).toBe('https://gonogo.example.com');
+    expect(suggestedAddress('nonsense', ['192.168.0.5'])).toBe('nonsense');
   });
 });

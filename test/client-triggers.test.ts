@@ -50,11 +50,14 @@ describe('the rows', () => {
 });
 
 describe('Launch Window', () => {
-  it('has the two tabs; History shows the filters, the triggers tab shows the schedules and the webhooks', () => {
+  it('has the two tabs; History shows the filters, the schedules tab shows the schedules (the webhooks, Relay and Docking are in Flight Rules)', () => {
     const triggers = renderToString(createElement(LaunchWindow));
     expect(triggers).toContain('aria-label="Launch Window views"');
     expect(triggers).toContain('aria-pressed="true"');
     expect(triggers).toContain('No schedules yet');
+    expect(triggers).not.toContain('New uplink');
+    expect(triggers).not.toContain('RELAY');
+    expect(triggers).not.toContain('DOCKING');
     expect(triggers).not.toContain('Filter the history');
     showHistory({ source: 'u1' });
     const history = renderToString(createElement(LaunchWindow));

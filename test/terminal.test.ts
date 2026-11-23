@@ -1389,12 +1389,14 @@ describe('terminal host with a fake pty', () => {
     expect(host.title('a')).toBeNull();
     await send('✳ Claude Code', 1100);
     await send('✳ renamed by the model', 1200);
-    expect(host.title('a')).toEqual({ glyph: 'idle', title: '✳ renamed by the model', since: 1100 });
+    expect(host.title('a')).toEqual({ glyph: 'idle', title: '✳ renamed by the model', since: 1100, textSince: 1200 });
     await send('◐ working', 1300);
     await send('◑ working', 1400);
-    expect(host.title('a')).toEqual({ glyph: 'working', title: '◑ working', since: 1300 });
+    expect(host.title('a')).toEqual({ glyph: 'working', title: '◑ working', since: 1300, textSince: 1400 });
+    await send('◑ working', 1450); // the same text again: not a change
+    expect(host.title('a')?.textSince).toBe(1400);
     await send('', 1500);
-    expect(host.title('a')).toEqual({ glyph: 'unknown', title: '', since: 1500 });
+    expect(host.title('a')).toEqual({ glyph: 'unknown', title: '', since: 1500, textSince: 1500 });
     expect(events.map((event) => (event.kind === 'title' ? [event.glyph, event.at] : event.kind))).toEqual([
       ['idle', 1100],
       ['working', 1300],
