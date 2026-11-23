@@ -73,6 +73,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # What the docs and the 403 page say to do: a .env next to compose.yaml, nothing exported.
+      - name: Start gonogo with a .env file
+        run: |
+          data="$RUNNER_TEMP/gonogo-data"
+          sudo install -d -o 1000 -g 1000 -m 0755 "$data" "$data/state" "$data/claude" "$data/projects" "$data/home"
+          printf 'GONOGO_DATA=%s\nDOCKER_GID=%s\nGONOGO_PORT=17777\nGONOGO_ALLOWED_HOSTS=box.local\n' "$data" "$(stat -L -c %g /var/run/docker.sock)" > .env
+          docker compose up -d
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:17777/rooms/health && break; sleep 2; done
+          curl -fsS http://127.0.0.1:17777/rooms/health
+          allowed=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: box.local:7777' http://127.0.0.1:17777/)
+          other=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: other.test:7777' http://127.0.0.1:17777/)
+          echo "box.local: $allowed, other.test: $other"
+          [[ "$allowed" =~ ^(200|30[1-8])$ ]] || { echo "::error::a name in .env GONOGO_ALLOWED_HOSTS got $allowed: compose.yaml does not forward it"; exit 1; }
+          [ "$other" = 403 ] || { echo "::error::a name nobody allowed got $other, not 403"; exit 1; }
+          docker compose down --timeout 20
+          rm .env
       # The Director's own flow: variables exported by his .envrc, then the compose file piped in from the repository (curl .../compose.yaml | docker compose -f - up -d).
       - name: Start gonogo from the file on stdin with the exported variables
         run: |
