@@ -41,7 +41,7 @@ The flags you give to `service install`: `--home` (default `~/.gonogo`, written 
 - **The folder it runs in** is your home directory.
 - **`PATH`.** The one of the shell that ran `service install`, with the folder of `node` first, so `claude`, `git` and `gh` are found when nothing logs in. Install again after you move them.
 - **Restart.** `Restart=always` (systemd), `KeepAlive` (launchd), `supervise-daemon` (OpenRC). A reload and the Update key make gonogo exit on purpose and the manager starts the next one; gonogo does not start a second one itself when `GONOGO_SERVICE` is set, which the file does.
-- **`--pty-host`.** Add it: the agents then live in a process of their own, and a reload or an Update keeps their turns running. systemd's `KillMode=process` and launchd's `AbandonProcessGroup` keep that process alive while gonogo restarts; stopping the service (`gonogo service stop`, `uninstall`) still stops gonogo, which stops the agents and the host.
+- **`--pty-host`.** Add it: the agents then live in a process of their own, and a reload or an Update keeps their turns running. systemd's `KillMode=process` and launchd's `AbandonProcessGroup` keep that process alive while gonogo restarts; stopping the service (`gonogo service stop`, `uninstall`) still stops gonogo, which stops the agents and the host. The trade-off: with `KillMode=process`, a stop that hangs past `TimeoutStopSec` (90 s) kills only gonogo and leaves the pty host and the agents running, orphaned; the next start adopts them or refuses to start over them, and `ps` shows what is left.
 
 ## A gonogo already running
 

@@ -332,6 +332,13 @@ function targetUser(host: ServiceHost, options: ServiceOptions): string {
   return name;
 }
 
+/** The user a root-run OpenRC install is for and that user's primary group (`id -gn`; a group named like the user is not assumed). */
+function rootTarget(host: ServiceHost, options: ServiceOptions): { user: string; group: string } {
+  const user = targetUser(host, options);
+  const group = host.run('id', ['-gn', user]).stdout.trim();
+  return { user, group: /^[a-z_][a-z0-9_-]*\$?$/i.test(group) ? group : user };
+}
+
 /** The port the file pins (--port), else gonogo's default: what a foreground gonogo would be holding. */
 function pinnedPort(file: string): number {
   try {
@@ -400,7 +407,7 @@ export function serviceInstall(host: ServiceHost, options: ServiceOptions): Resu
     return installForUser(host, 'install', options);
   }
   // OpenRC may run as root for another user: the default --home and the working folder are that user's
-  const who = manager === 'openrc' ? (root ? { user: targetUser(host, options), group: targetUser(host, options) } : { user: host.user, group: host.group }) : { user: host.user, group: host.group };
+  const who = manager === 'openrc' ? (root ? rootTarget(host, options) : { user: host.user, group: host.group }) : { user: host.user, group: host.group };
   const spec = resolveSpec(manager === 'openrc' && root ? { ...host, userHome: passwdHome(who.user) } : host, options);
   const target = filePath(host, manager);
   const pty = options.ptyHost === true ? [] : ['tip: add --pty-host to the install so that a reload and an Update keep the agents running (gonogo service install --pty-host).'];

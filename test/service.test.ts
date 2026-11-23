@@ -382,6 +382,13 @@ describe('gonogo service: OpenRC', () => {
     expect(cmds(calls)).toContain('rc-service gonogo restart');
   });
 
+  it('the group is the user\'s primary group from id -gn, not a group named like the user', () => {
+    const { host } = withOpenrc({ uid: 0, user: 'root', group: 'root' }, { 'id -gn ana': { code: 0, stdout: 'users\n' } });
+    host.env.SUDO_USER = 'ana';
+    serviceInstall(host, { noStart: true });
+    expect(readFileSync(join(host.initDir, 'gonogo'), 'utf8')).toContain("command_user='ana:users'");
+  });
+
   it('--no-start as root only writes the script', () => {
     const { host, calls } = withOpenrc({ uid: 0, user: 'root', group: 'root' });
     host.env.SUDO_USER = 'ana';
