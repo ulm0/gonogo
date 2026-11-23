@@ -39,6 +39,7 @@ import { DockingPanel } from './DockingPanel.js';
 import { SchedulesBlock } from './LaunchWindow.js';
 import { RelayPanel } from './RelayPanel.js';
 import { UplinkPanel } from './UplinkPanel.js';
+import { GLOSSARY_URL } from './wording.js';
 import { RuntimeSettingsBlock } from './RuntimeSettings.js';
 import { summary as runtimeSummary } from './runtimeSettingsModel.js';
 import './loop.css';
@@ -409,6 +410,9 @@ export function Commissioning(): ReactElement | null {
           COMMISSIONING
         </h2>
         <span className="hint">{`${steps.filter((s) => s.done).length} of ${steps.length} done`}</span>
+        <a className="btn" data-kind="quiet" href={GLOSSARY_URL} target="_blank" rel="noreferrer noopener">
+          What do these words mean?
+        </a>
         <button
           type="button"
           className="btn"

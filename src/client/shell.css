@@ -2013,3 +2013,24 @@
 .system-actions {
   margin: 0;
 }
+
+/* the first step of a new install: no login yet */
+.setup-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 12px 24px 0;
+  padding: 10px 14px;
+}
+
+.setup-strip p {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .setup-strip {
+    margin: 8px 12px 0;
+  }
+}

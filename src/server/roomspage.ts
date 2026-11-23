@@ -305,6 +305,8 @@ async function load(){
     if(res.status===401){location.replace('/login');return}
     const body=await res.json(),next=body.rooms||[],text=JSON.stringify([next,body.layout||null]);
     rooms=next;layout=body.layout||null;
+    // an install with one room (main, up) opens straight into it, from the printed address or a typed one; a click on Rooms from inside a room (the referrer is this site) still shows the list, and ?list asks for it
+    if(next.length===1&&next[0].id==='main'&&next[0].state==='running'&&!/[?&]list/.test(location.search||'')&&!String(document.referrer||'').startsWith(location.origin||'\u0000')){location.replace('/r/main/');return}
     // while a name is being typed the cards stay as they are; the next poll draws what changed
     if(text!==seen&&renaming===null&&ask===null){seen=text;draw()}
   }catch{if(rooms===null)shut('Could not reach the server','Is gonogo still running? This page asks again in a few seconds.');else fail('Could not reach the server.')}
