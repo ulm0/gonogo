@@ -1124,7 +1124,7 @@ describe('a room with a project folder (t113)', () => {
       expect(made.status).toBe(201);
       expect(JSON.parse(readFileSync(join(home, 'rooms', 'docs', 'project-folder.json'), 'utf8'))).toEqual({ version: 1, dir: folder });
       expect(statSync(join(home, 'rooms', 'docs', 'project-folder.json')).mode & 0o777).toBe(0o600);
-      for (const dir of [join(folder, 'nope'), 'relative', home, join(home, 'rooms'), 7]) {
+      for (const dir of [join(folder, 'nope'), 'relative', 7]) {
         const refused = await post(s, { id: 'other', dir });
         expect(refused.status, String(dir)).toBe(400);
         expect(loadRooms(home).map((r) => r.id)).toEqual(['main', 'docs']);

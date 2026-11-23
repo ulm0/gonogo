@@ -1632,7 +1632,7 @@ export function createWebServer(options: WebOptions): WebServer {
           if (body.dir !== null && typeof body.dir !== 'string') return sendApiError(res, 400, 'dir is the whole path of a folder, or null for the default', 'bad_request', 'dir');
           try {
             const done = folder.store.set(body.dir);
-            folder.audit('config', `project folder by ${actor}: ${JSON.stringify(done.before)} -> ${JSON.stringify(done.after)}`);
+            folder.audit('config', `project folder by ${actor}: ${JSON.stringify(done.before)} -> ${JSON.stringify(done.after)}${done.warning === null ? '' : ` (${done.warning})`}`);
             sendJson(res, 200, { ...view(), note: 'The agents that run keep their folder; a new or restarted agent starts in this one.' });
           } catch (error) {
             if (error instanceof FolderError) return sendApiError(res, 400, error.message, 'bad_request', 'dir');

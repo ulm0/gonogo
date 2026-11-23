@@ -379,10 +379,10 @@ export function createTerminalHost(options: TerminalHostOptions = {}): TerminalH
     const at = now();
     const previous = rec.title;
     if (previous !== null && previous.glyph === glyph) {
-      rec.title = { glyph, title, since: previous.since };
+      rec.title = { glyph, title, since: previous.since, textSince: previous.title === title ? (previous.textSince ?? previous.since) : at };
       return;
     }
-    rec.title = { glyph, title, since: at };
+    rec.title = { glyph, title, since: at, textSince: at };
     emit({ kind: 'title', name: rec.name, generation: rec.generation, glyph, title, at });
   };
 

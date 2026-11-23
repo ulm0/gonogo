@@ -667,7 +667,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const roomKeys = createRoomKeys({ dir: home.dir, log: log.child('room-keys') });
     await roomKeys.load();
     // the room's project folder (docs/features/rooms.md, "Folders"): not the home of gonogo, and not the root home of the supervisor
-    const projectFolder = createProjectFolder({ roomHome: home.dir, fallback: cwd, forbidden: [home.dir, ...(env.GONOGO_KNOWLEDGE_DIR ? [dirname(env.GONOGO_KNOWLEDGE_DIR)] : [])], log: log.child('folder') });
+    const projectFolder = createProjectFolder({ roomHome: home.dir, fallback: cwd, own: [home.dir, ...(env.GONOGO_KNOWLEDGE_DIR ? [dirname(env.GONOGO_KNOWLEDGE_DIR)] : [])], env, log: log.child('folder') });
     // runtime settings (docs/runtime-settings-spec.md): the room's file over the file of every room over the environment
     const runtime = createSettings({ roomHome: home.dir, globalPath: options.roomChild === true ? (env.GONOGO_GLOBAL_SETTINGS?.trim() || null) : null, env, log: log.child('settings') });
     /** What the files say (not the environment: that is the default the options and resolveSettings already hold), or null. */
@@ -1635,7 +1635,7 @@ async function runRoomsCommand(parsed: Extract<ParsedArgs, { kind: 'rooms' }>, e
     let folder: string | null = null;
     if (parsed.dir !== undefined) {
       try {
-        folder = checkFolder(resolve(parsed.dir), [root]);
+        folder = checkFolder(resolve(parsed.dir));
       } catch (error) {
         process.stderr.write(`gonogo: --dir: ${error instanceof Error ? error.message : String(error)}\n`);
         exit(2);

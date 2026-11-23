@@ -68,12 +68,12 @@ Every stop and start is written to the supervisor's log and to the Downlink of r
 
 Everything gonogo keeps lives in its home (`~/.gonogo`, or the folder you gave with `--home`): one folder per room, `rooms/<id>/`, and room `main` at the root of an older home. Start gonogo from anywhere: where your agents WORK is the room's **project folder**, set apart from that.
 
-- **Default:** the folder gonogo was started in, as always. A room with no project folder behaves exactly as before.
+- **Default:** the folder gonogo was started in, as always. A room with no project folder behaves exactly as before. Under `gonogo service` that is the user's home directory, and the page shows the broad-folder warning until a folder is set.
 - **Set one:** Flight Rules → Room → Project folder, `gonogo rooms add <id> --dir <folder>`, or the folder field of the new-room form. It is the folder the boss starts in and the one the hire form offers as the Working directory (each agent can still choose another).
-- **What is accepted:** the whole path of a folder that exists and that gonogo can read. The path kept is the real one (a link is followed when it is set). gonogo's own folders (its home and anything inside it) are refused; a folder that holds the home, such as `~`, is not.
+- **What is accepted:** the whole path of a folder that exists and that gonogo can read; the path kept is the real one (a link is followed when it is set). Nothing is refused by WHERE it is: your project is yours to choose. A folder that is or holds gonogo's own folders comes with the warning "Agents can read and change gonogo's own settings and keys in this folder without asking."; the root, your home directory or a folder that holds it, with "Broad folder: agents can read everything under it." The page shows the warning next to the folder (`warning` in `GET /api/project-folder`). Claude Code still asks its own trust question in such a folder: gonogo records no trust for the home directory, gonogo's home or Claude's configuration folder.
 - **Who may:** only the Director's own login session, and it asks for the password again. A key, a terminal login or an agent cannot: agents start in this folder. A change is in the Black Box (who, old → new).
 - **When it applies:** to agents that are hired or restarted after the change, and to a boss made after it. A running agent keeps its folder. `GET /api/project-folder` names the boss and the folder it runs in, so the page can offer to restart it (`PATCH /api/agents/<boss>` with the new `dir`, then restart).
-- **If it goes away:** a room whose folder is deleted uses the folder gonogo was started in again, and the log says so once.
+- **If it goes away:** a room whose stored folder is deleted, or that no longer has the shape of one (somebody wrote the file by hand), uses the folder gonogo was started in again, and the log says so once. The stored value is checked every time it is read.
 
 State: `<room home>/project-folder.json` (0600).
 
