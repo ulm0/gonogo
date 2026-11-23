@@ -299,8 +299,11 @@ export function createLinks(options: LinksOptions): Links {
     else if (event.kind === 'recall') link.state = 'recalled';
     if (event.kind === 'status' && event.status !== undefined) {
       link.peerStatus = event.status;
-      // the receiver says done: a delivery, waiting for the sender's acceptance
-      if (event.status === 'done' && (link.state === 'accepted' || link.state === 'delivered')) link.state = 'delivered';
+      // the receiver says done: a delivery, waiting for the sender's acceptance (while undocked it is the state the redock resumes)
+      if (event.status === 'done') {
+        if (link.state === 'accepted' || link.state === 'delivered') link.state = 'delivered';
+        else if (link.state === 'detached' && (link.resume === 'accepted' || link.resume === 'delivered')) link.resume = 'delivered';
+      }
     }
   };
 
@@ -402,8 +405,11 @@ export function createLinks(options: LinksOptions): Links {
         n += 1;
       }
       if (n > 0) {
+        // what waited while apart goes now, not after the backoff of the failed tries
+        retry.delete(dockId);
         save();
         options.changed();
+        sendNow(dockId);
       }
       return n;
     },

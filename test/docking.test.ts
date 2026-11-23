@@ -1571,6 +1571,26 @@ describe('links: reach', () => {
     expect(trailKinds(a, link).at(-1)).toBe('note');
   });
 
+  it('a task worked on while the dock is undocked keeps its events: the redock delivers them, and the sender hears the delivery', async () => {
+    const { a, b, dock, link } = await linked();
+    await b.docking.undock(b.docking.view().docks[0]!.id);
+    await settle();
+    expect(a.docking.linkViews()[0]).toMatchObject({ state: 'detached' });
+    const before = b.tasks.find((t) => t.id === 't9')!;
+    b.docking.taskChanged(before, { ...before, status: 'done' }, bob, 'finished while apart');
+    await settle();
+    expect(trailKinds(b, link).at(-1)).toBe('status');
+    expect(b.docking.linkViews()[0]).toMatchObject({ state: 'detached', waiting: 1 });
+    await pair(a, b);
+    await settle();
+    await b.docking.pull();
+    await settle();
+    expect(a.docking.linkViews()[0]).toMatchObject({ state: 'delivered', peerStatus: 'done' });
+    expect(b.docking.linkViews()[0]).toMatchObject({ state: 'delivered', waiting: 0 });
+    expect((a.docking.linkTrail(link) ?? []).at(-1)).toMatchObject({ kind: 'status', status: 'done', text: 'finished while apart' });
+    void dock;
+  });
+
   it('repair: a station that lost its outbox is asked what the other holds and sends what is lacking', async () => {
     const { w, a, b, link } = await linked();
     a.down = true;

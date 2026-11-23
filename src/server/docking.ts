@@ -1194,7 +1194,8 @@ export function createDocking(options: DockingOptions): Docking {
 
     taskChanged(before, after, actor, note, attachments = []) {
       const link = after.link === undefined ? undefined : links.find(after.link);
-      if (link === undefined || link.role !== 'receiver' || link.state === 'detached' || link.state === 'recalled') return;
+      // an undocked station's task goes on being worked: its events are kept (trail and outbox) and the redock delivers them
+      if (link === undefined || link.role !== 'receiver' || link.state === 'recalled') return;
       const by = `${actor.kind === 'agent' ? actor.name : 'director'}@${options.name}`;
       const text = after.localNotes === true ? '' : (note ?? '');
       if (after.status !== before.status) {
