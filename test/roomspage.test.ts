@@ -485,3 +485,10 @@ describe('an install with one room opens straight into it', () => {
     expect(down.replaced).toEqual([]);
   });
 });
+
+describe('the scripts of the page', () => {
+  it('hold no control character but a line break or a tab: the browser would change it, and the hash of the Content-Security-Policy would no longer fit the script (the page would not run)', () => {
+    const html = roomsPage(null, '1.2.3');
+    for (const [, body] of html.matchAll(/<script>([^]*?)<\/script>/g)) expect(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(body ?? '')).toBe(false);
+  });
+});

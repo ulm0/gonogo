@@ -65,7 +65,8 @@ async function phone(browser: Browser, width: number, height: number): Promise<P
     await page.goto(`${base}/login`);
     await page.locator('input[name=password]').fill(PASSWORD);
     await page.locator('form button[type=submit], form input[type=submit]').first().click();
-    await page.waitForURL(`${base}/`);
+    // with one room the list is not shown: "/" goes straight into main
+    await page.waitForURL((url) => url.pathname === '/' || url.pathname === '/r/main/');
   }
   return page;
 }
@@ -93,7 +94,8 @@ for (const [width, height] of [
 ] as const) {
   test(`${width} px: the list opens a room by a tap on its key or its card, and no key of the top bar is over another`, async ({ browser }) => {
     const page = await phone(browser, width, height);
-    // the list of rooms
+    // the list of rooms (asked for: with one room "/" opens main)
+    await page.goto(`${base}/?list`);
     await expect(page.locator('a[href="/r/main/"]').first()).toBeVisible();
     expect(await crossings(page)).toMatchObject({ crossing: [], sideways: false });
     // every key is inside its card (a card cut short let its keys spill over the next block), and the empty-state text stays in its box

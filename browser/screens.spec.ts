@@ -496,7 +496,7 @@ test('screens of the app and the docs', async ({ browser }) => {
   for (const size of SIZES) {
     const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
     const page = await context.newPage();
-    await page.goto(`${base}/`);
+    await page.goto(`${base}/?list`);
     await shoot(page, `empty-${size.name}`, 'rooms list', true);
     await app(page, `empty-${size.name}`, false);
     await context.close();
@@ -546,7 +546,7 @@ test('screens of the app and the docs', async ({ browser }) => {
       const group = `${scheme.name}-${size.name}`;
       const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height }, permissions: ['clipboard-read', 'clipboard-write'] });
       const page = await context.newPage();
-      await page.goto(`${base}/`);
+      await page.goto(`${base}/?list`);
       await shoot(page, group, 'rooms list', true);
       await measure(page, group, 'rooms list');
       await view(page, group, 'rooms list: stop asks first', () => page.getByRole('button', { name: 'Stop Docs', exact: true }).click({ timeout: 5000 }), true);
