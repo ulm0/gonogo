@@ -68,7 +68,6 @@
 
   /* the version and the Rooms key came into the bar: its words give back 6 px of padding on each side (never the 44 px height) */
   .topbar .btn {
-    padding: 0 10px;
   }
 }
 
@@ -2136,7 +2135,6 @@
 
 .exposure-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px 16px;
@@ -2152,14 +2150,18 @@
 }
 
 .exposure-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: start;
   gap: 8px 12px;
 }
 
+.exposure-row .chip {
+  justify-content: center;
+  text-align: center;
+}
+
 .exposure-text {
-  flex: 1 1 320px;
   min-width: 0;
 }
 
@@ -2192,5 +2194,25 @@
 @media (max-width: 700px) {
   .exposure-banner {
     margin: 8px 12px 0;
+  }
+
+  /* the chip and the key share the first line, the words take the second: a row is two lines, not four */
+  .exposure-row {
+    grid-template-columns: auto 1fr;
+  }
+
+  .exposure-row .chip {
+    justify-self: start;
+  }
+
+  .exposure-row .btn {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .exposure-text {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 }
