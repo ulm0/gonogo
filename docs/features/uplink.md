@@ -12,8 +12,8 @@ UPLINK (Flight Rules, Automation and connections, the row Uplink webhooks) lists
 
 `POST /uplink/<id>`, outside `/api`, no browser token. The sender proves itself with:
 
-- `X-Gonogo-Signature: sha256=<hex>`: HMAC-SHA256 of the raw body keyed with the 64-character secret as text; or
-- `Authorization: Bearer <secret>` for senders that cannot sign. It sends the secret itself: HTTPS only.
+- `X-Gonogo-Signature: sha256=<hex>`: HMAC-SHA256 of the raw body keyed with the 64-character secret as text. **Use this one:** it is the only proof that works through the supervisor (every install, since `gonogo` is a supervisor), which never forwards `Authorization`; a Bearer post gets `401` there.
+- `Authorization: Bearer <secret>`: only when you call a room directly (its own loopback port), for senders that cannot sign. It sends the secret itself.
 
 | Status | When |
 |---|---|
@@ -33,7 +33,6 @@ SECRET=<the secret from the page>
 BODY='{"event":"deploy","service":"web","ok":false}'
 SIG=$(printf %s "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
 curl -i -X POST "$URL" -H "X-Gonogo-Signature: sha256=$SIG" -d "$BODY"
-# or, unsigned: curl -i -X POST "$URL" -H "Authorization: Bearer $SECRET" -d "$BODY"
 ```
 
 Sign exactly the bytes sent. Node: `createHmac('sha256', secret).update(rawBody).digest('hex')`.
