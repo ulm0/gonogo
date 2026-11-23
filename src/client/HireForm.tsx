@@ -693,7 +693,6 @@ function Staff({ form }: { form: Target }): ReactElement {
         />
         <label htmlFor={`${id}-clean`}>Clean Room</label>
       </div>
-      {sandboxSelect}
       {cleanError !== undefined && (
         <p className="error" id={`${id}-clean-error`}>
           {cleanError}
@@ -703,6 +702,7 @@ function Staff({ form }: { form: Target }): ReactElement {
         Runs in a Docker container that holds only a copy of the project (a git worktree on the branch gonogo/{values.name === '' ? 'name' : values.name}) and this console's own files. Docker must be running and the folder must be inside a git repository. To
         take the work back, commit in the worktree and merge the branch.
       </p>
+      {sandboxSelect}
     </div>
   );
   // a Clean Room has a worktree already

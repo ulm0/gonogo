@@ -455,6 +455,8 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.getByRole('group', { name: 'Confirm bypass' }).waitFor({ timeout: 3000 });
   }, true);
   await measure(page, group, 'engine bay: bypass asks to confirm', '.rules-models');
+  // the Bypass pick was never saved: put the select back to the room's own value, so that the shots after it do not show it
+  await page.getByLabel('Permission mode').selectOption('');
   // Engine Bay: the room's default sandbox of the Clean Room (a flavor whose runtime Docker does not list is shown as not installed and cannot be picked)
   await view(page, group, 'engine bay: clean room sandbox', () => page.getByLabel('Clean Room sandbox').scrollIntoViewIfNeeded({ timeout: 3000 }), true);
   await measure(page, group, 'engine bay: clean room sandbox', '.rules-models');
