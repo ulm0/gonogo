@@ -290,20 +290,39 @@ describe('Homebrew installs from the release asset, not from npm\'s CDN', () => 
   });
 });
 
-describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scripts/update-e2e.sh)', () => {
-  const wf = read('.github', 'workflows', 'update-e2e.yml');
+describe('.github/workflows stays small (15 files became 3 in 0.23)', () => {
+  const ci = read('.github', 'workflows', 'ci.yml');
+  const release = read('.github', 'workflows', 'release.yml');
+  it('holds only ci, release and image: a new check is a job of one of them, not a new file', () => {
+    expect(readdirSync(join(root, '.github', 'workflows')).sort()).toEqual(['ci.yml', 'image.yml', 'release.yml']);
+  });
+  it('the release calls ci.yml for the smoke (which gates the publish) and the formula, and ci runs only the part asked for', () => {
+    expect(release).toMatch(/  smoke:\n    if: \$\{\{ !inputs\.docs_only \}\}\n    uses: \.\/\.github\/workflows\/ci\.yml\n    with:\n      run: smoke\n/);
+    expect(release).toMatch(/  formula:\n    if: \$\{\{ !inputs\.docs_only \}\}\n    uses: \.\/\.github\/workflows\/ci\.yml\n    with:\n      run: brew\n/);
+    expect(release).toContain('  publish:\n    needs: smoke\n');
+    expect(ci).toContain('  check:\n    if: ${{ !inputs.run }}\n');
+    expect(ci).toContain("  smoke:\n    needs: changes\n    if: ${{ needs.changes.outputs.smoke == 'true' }}\n");
+    expect(ci).toContain("  formula:\n    needs: changes\n    if: ${{ needs.changes.outputs.brew == 'true' }}\n");
+  });
+  it('the docs are deployed from the release, through the github-pages environment, one deploy at a time', () => {
+    expect(release).toMatch(/  docs-deploy:\n    needs: docs\n    concurrency:\n      group: pages\n/);
+    expect(release).toMatch(/permissions:\n\s+pages: write\n\s+id-token: write\n\s+environment:\n\s+name: github-pages/);
+  });
+});
+
+describe('the Docker self-update is tried end to end in CI (the update-e2e job of image.yml, scripts/update-e2e.sh)', () => {
+  const image = read('.github', 'workflows', 'image.yml');
+  const wf = image.slice(image.indexOf('\n  update-e2e:'));
   const script = read('scripts', 'update-e2e.sh');
-  it('image.yml calls it after a stable tag is pushed and attested; also by hand and for a change of the script; read access only, the job\'s own token, pinned actions, no secret', () => {
-    expect(wf).toContain('workflow_call:');
-    expect(wf).not.toContain('workflow_run');
-    expect(wf).toContain('workflow_dispatch:');
-    const image = read('.github', 'workflows', 'image.yml');
-    const job = image.slice(image.indexOf('\n  update-e2e:'));
-    expect(job).toContain('needs: merge');
-    expect(job).toContain("if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}");
-    expect(job).toContain('uses: ./.github/workflows/update-e2e.yml');
-    expect(job).toMatch(/permissions:\n\s+contents: read\n\s+packages: read\n\s+attestations: read/);
-    expect(wf).toMatch(/^permissions: \{\}/m);
+  it('runs after merge pushed and attested a stable tag, and by hand; read access only, the job\'s own token, pinned actions, no secret', () => {
+    expect(image).not.toContain('workflow_run');
+    expect(image).toContain('workflow_dispatch:');
+    expect(wf).toContain('needs: merge');
+    expect(wf).toContain("if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (needs.merge.result == 'success' && !contains(github.ref_name, '-'))) }}");
+    // a run by hand builds and pushes nothing: only this job runs
+    expect(image).toContain("if: ${{ github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/') }}");
+    expect(image).toContain("if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}");
+    expect(image).toMatch(/^permissions: \{\}/m);
     expect(wf).toMatch(/permissions:\n\s+contents: read\n\s+packages: read\n\s+attestations: read/);
     expect(wf).not.toMatch(/secrets\./);
     expect(wf).not.toMatch(/E2E_UNVERIFIED/);
@@ -351,14 +370,14 @@ describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scri
   });
 });
 
-describe('the Homebrew formula is tried on macOS and Linux (brew.yml)', () => {
-  const wf = read('.github', 'workflows', 'brew.yml');
-  it('runs for tags, by hand and for a change of the formula, on both platforms, with nothing but read access', () => {
-    expect(wf).toMatch(/tags: \['v\*'\]/);
-    expect(wf).toContain('workflow_dispatch:');
-    expect(wf).toMatch(/paths:\n\s+- packaging\/homebrew\/\*\*/);
+describe('the Homebrew formula is tried on macOS and Linux (the formula job of ci.yml)', () => {
+  const ci = read('.github', 'workflows', 'ci.yml');
+  const wf = ci.slice(ci.indexOf('\n  formula:'));
+  it('runs for tags (the release calls it), for a change of the formula, on both platforms, with nothing but read access', () => {
+    expect(read('.github', 'workflows', 'release.yml')).toContain('      run: brew\n');
+    expect(ci).toContain("has '^(packaging/homebrew/|");
     expect(wf).toContain('os: [macos-latest, ubuntu-latest]');
-    expect(wf).toMatch(/^permissions: \{\}/m);
+    expect(ci).toMatch(/^permissions: \{\}/m);
     expect(wf).toMatch(/permissions:\n\s+contents: read/);
     expect(wf).not.toMatch(/secrets\./);
     for (const use of wf.match(/uses: [^\n]+/g) ?? []) expect(use, use).toMatch(/@[0-9a-f]{40} # v\d/);

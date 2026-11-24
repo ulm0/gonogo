@@ -1,4 +1,4 @@
-// scripts/knowledge-bench.mjs: its arguments. The harness itself makes 100,000 files and runs in the workflow (.github/workflows/knowledge-bench.yml), not here.
+// scripts/knowledge-bench.mjs: its arguments. The harness itself makes 100,000 files and is run by hand (node scripts/knowledge-bench.mjs), not here.
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../scripts/knowledge-bench.mjs';
 

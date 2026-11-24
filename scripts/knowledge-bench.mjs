@@ -14,7 +14,7 @@
  *   6. the process RSS stays bounded through all of it.
  *
  * It prints the numbers, PASS or FAIL for each, and exits 1 if any failed. It is not part of `pnpm test` (it makes 100,000 files and takes a minute or two):
- * the workflow .github/workflows/knowledge-bench.yml runs it by hand or weekly. `--files 5000` is a quick look. It writes only in a temp folder, which it removes
+ * run it by hand (no workflow runs it since 0.23). `--files 5000` is a quick look. It writes only in a temp folder, which it removes
  * (`--keep` leaves it and prints the path).
  */
 import { execFileSync } from 'node:child_process';

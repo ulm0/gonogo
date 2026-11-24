@@ -1,5 +1,5 @@
 /*
- * Screenshots of every view, for the UI/UX audit (workflow screens.yml, by hand; not part of the smoke gate and not run by
+ * Screenshots of every view, for the UI/UX audit (by hand, after `pnpm build` and `pnpm docs:build`: `SCREENS=1 SCREENS_DOCS=1 pnpm exec playwright test browser/screens.spec.ts`; not run by
  * `pnpm exec playwright test` unless SCREENS=1). It starts the built server with the stand-in agent, takes the empty states, seeds a few
  * agents, messages, tasks and log entries, then takes each view at 1280x800 and 390x844 in a light and a dark livery, and the docs site.
  * Best effort on purpose: one view that cannot be reached is written down in the index and the rest go on.
@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { duplicates, geometry } from './geometry.js';
 import { type BrowserContext, type Locator, type Page, expect, test } from '@playwright/test';
 
-test.skip(process.env.SCREENS !== '1', 'screenshots are taken by the screens workflow (SCREENS=1)');
+test.skip(process.env.SCREENS !== '1', 'screenshots are taken by hand (SCREENS=1)');
 
 const OUT = 'screens';
 const PASSWORD = 'screens-password-1';
