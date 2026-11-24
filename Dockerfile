@@ -41,7 +41,8 @@
 # A floating tag: a rebuild can pick up a newer Node and a newer Debian. To pin the base image, build with
 #   --build-arg NODE_IMAGE=node:24-bookworm-slim@sha256:<digest>     (`docker pull node:24-bookworm-slim` prints the digest)
 ARG NODE_IMAGE=node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
-# Only the docker CLI binary of this image is copied (no daemon, no compose or buildx plugin), for Clean Room.
+# The docker CLI binary of this image (for Clean Room) and its buildx plugin (BuildKit: an agent in the container can run `docker build`
+# on the host's Docker, this Dockerfile included, which needs BuildKit for COPY --chmod). No daemon, no compose plugin.
 ARG DOCKER_CLI_IMAGE=docker:29.10.0-cli
 # The pnpm that installs Claude Code in the runtime stage: the same release as package.json `packageManager`.
 ARG PNPM_VERSION=12.21.0
@@ -109,6 +110,8 @@ RUN apt-get update \
  && git config --system --add safe.directory '/projects/*'
 
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+# The system-wide plugin folder: docker finds it for every user, so uid 1000 has `docker buildx` with no ~/.docker of its own.
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 # gh, binary only.
 COPY --from=gh /out/gh /usr/local/bin/gh
 
@@ -171,6 +174,7 @@ RUN claude --version \
  && pi --version \
  && opencode --version \
  && docker --version \
+ && docker buildx version \
  && gh --version \
  && gonogo --version \
  && cd /opt/gonogo \

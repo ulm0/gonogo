@@ -1,2 +1,2 @@
 - **Engine switch.** Any console, flight included, can move to another engine (and any model it takes) from its edit form, without being removed and hired again. A working console switches when its turn ends, with SWITCH NOW and CANCEL SWITCH; its mail waits for the new engine.
-- **pi and opencode in the container image.** The image ships `pi` and `opencode`, pinned, next to `claude`, so consoles can switch to them.
+- **pi, opencode and buildx in the container image.** The image ships `pi` and `opencode`, pinned, next to `claude`, so consoles can switch to them, and the buildx plugin, so an agent in the container can `docker build` with BuildKit.
