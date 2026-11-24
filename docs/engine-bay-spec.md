@@ -244,8 +244,27 @@ be guessed. Now the server asks the installed program itself where it has a comm
 - Shortcut: a provider an engine knows only from an API key in gonogo's environment (or a room or agent key) is not listed,
   because the listing gets no keys; its model is typed. pi signed out of every provider lists nothing.
 - opencode's list holds the providers the owner is signed in to, but an agent runs with its own `XDG_DATA_HOME` (its folder), where
-  no sign-in is: a model of another provider than `opencode/` then falls back to opencode's free default without a word (seen in
-  #296's run). So the opencode list carries a note, and the hire and Edit form warn (`opencodeKeyWarning`, client/models.ts) when the
+  no sign-in is: a model of another provider than `opencode/` then fell back to opencode's free default without a word (seen in
+  #296's run; now it asks, see below). So the opencode list carries a note, and the hire and Edit form warn (`opencodeKeyWarning`, client/models.ts) when the
   model the agent starts with (its own, else its position's or the room's) has a provider whose key is not among the agent's keys
   and the room's keys that reach it, the names from opencode's models.dev catalog (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...); a
   Clean Room with egress counts for Anthropic. A key in gonogo's own environment cannot be seen by the page: the text says so.
+
+### opencode: no silent free model (2026-11-24, RSO on #296)
+
+#296's real run: an opencode agent with `anthropic/claude-opus-5-5` and no Anthropic credential in its own data ran on `opencode/big-pickle`
+without a word, so its work went to a third-party free model the Director never chose. Now:
+
+- `opencodeFreeModels` (opencodeplugin.ts): an opencode agent starts with `OPENCODE_DISABLE_FREE_MODELS=1` (2.4.1 reads it) unless the model it
+  starts with is one of opencode's own (`opencode/...`): its free models run only when picked. A model whose provider has no credential for
+  the agent, or no model with no signed-in provider, then has no model at all instead of a free one. No model is still allowed: opencode
+  picks among the providers the agent is signed in to.
+- What opencode 2.4.1 does then (seen in a real run): its input box says `Build · No provider selected`, a prompt opens its `Connect an
+  integration` dialog, and nothing is sent. `analyzeScreen` reads either as `noModel` for opencode, and the hub's sweep holds the agent at
+  `needs_you` (kind `dialog`) with `NO_MODEL_ROUTE_REASON` (what to do: the provider's key, or an `opencode/` model); its mail waits. When the
+  screen no longer says so it is idle again. A turn that fails with opencode's own error `provider.no-route` (`opencode run` gives it: "No
+  model is available") is sent by the plugin as StopFailure `{ error: { type, message } }` and asks the Director the same way.
+- Flight Rules: a saved opencode default (engine or position) without `provider/`, from before #296, says that it is not passed to opencode.
+- Not built: agents using the owner's opencode sign-in. opencode 2.4.1 keeps credentials in the `credential` table of its `opencode.db`,
+  not in an `auth.json` (a legacy `auth.json` is copied into the db once by a migration), so a symlink of `auth.json` cannot share them,
+  and sharing the db shares every session too. Waiting on RSO.

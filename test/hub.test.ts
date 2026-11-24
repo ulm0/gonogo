@@ -19,6 +19,7 @@ import {
   DIRECTOR_STUCK_ALERT_MS,
   DIRECTOR_STUCK_FORCE_MS,
   SIGNED_OUT_REASON,
+  NO_MODEL_ROUTE_REASON,
   TITLE_STALE_MS,
   DELIVERY_COALESCE_MS,
   DELIVERY_SETTLE_MS,
@@ -755,6 +756,17 @@ describe('4.5 transition table', () => {
     expect(h.hook('ana', 'Stop')).toStrictEqual({});
     h.work('ana');
     expect(h.hook('ana', 'StopFailure')).toStrictEqual({});
+  });
+
+  it('a StopFailure of opencode with no model it may use (provider.no-route) asks the Director, with what to do', async () => {
+    const h = await withAna();
+    h.work('ana');
+    h.hook('ana', 'StopFailure', { error: { type: 'provider.no-route', message: 'No model is available for session s' } });
+    expect(h.hub.views().find((a) => a.name === 'ana')).toMatchObject({ state: 'needs_you', needsKind: 'dialog', needsReason: NO_MODEL_ROUTE_REASON });
+    // another failure is an ordinary failed turn
+    h.work('ana');
+    h.hook('ana', 'StopFailure', { error: 'session.execution.failed' });
+    expect(h.hub.views().find((a) => a.name === 'ana')?.state).toBe('idle');
   });
 
   it('every other event answers {}', async () => {
@@ -2132,6 +2144,27 @@ describe('the draft latch (4.6)', () => {
       h.setScreen('peer', { promptBox: true, promptText: 'abc' });
       await h.advance(DRAFT_SCREEN_CLEAR_MS + 3000);
       expect(h.view('peer').draft).toBe(true);
+    });
+
+    it('opencode with no model it may use (its screen says so) is held at needs_you with what to do, its mail waits, and it is idle again once the screen is clear', async () => {
+      const h = await started();
+      await h.hub.hire({ name: 'oc', role: 'r', dir: '/work/oc', mode: 'default', provider: 'opencode', model: 'anthropic/claude-opus-5-5' });
+      h.ready('oc');
+      h.setScreen('oc', { promptBox: true, promptText: '', noModel: true });
+      await h.advance(3000);
+      expect(h.view('oc')).toMatchObject({ state: 'needs_you', needsKind: 'dialog', needsReason: NO_MODEL_ROUTE_REASON });
+      await h.hub.sendFromUser({ to: 'oc', body: 'hi' } as never);
+      await h.advance(3000);
+      expect(h.view('oc').queued).toBe(1);
+      h.setScreen('oc', { promptBox: true, promptText: '' });
+      await h.advance(3000);
+      expect(h.view('oc').state).toBe('idle');
+      // another engine's screen is not read for it
+      await h.hub.hire({ name: 'p', role: 'r', dir: '/work/p', mode: 'default', provider: 'pi' });
+      h.ready('p');
+      h.setScreen('p', { promptBox: true, promptText: '', noModel: true });
+      await h.advance(3000);
+      expect(h.view('p').state).not.toBe('needs_you');
     });
 
     it('counts from the last input of any kind, a focus report included', async () => {

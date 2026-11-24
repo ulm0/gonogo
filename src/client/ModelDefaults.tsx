@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import type { CleanRoomFlavor, CleanRoomFlavors, Effort, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
 import { POSITIONS } from '../shared/positions.js';
-import { CLEAN_ROOM_FLAVORS, EFFORTS, MODEL_PATTERN, PROVIDERS, providerInfo } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, EFFORTS, MODEL_PATTERN, modelFormProblem, PROVIDERS, providerInfo } from '../shared/protocol.js';
 import * as api from './api.js';
 import { FLAVOR_TEXT, MODEL_PROVIDERS, modelNames, publishModelDefaults, useEngineModels } from './models.js';
 import { ModelListStatus } from './EngineModelList.js';
@@ -15,7 +15,7 @@ import { useRun } from './WallView.js';
 const MODEL_RE = new RegExp(MODEL_PATTERN);
 
 /** One line: a label, the model it holds and the call that changes it (an engine's line, or a position's). */
-function Row({ label, names, saved, set, onSaved, status }: { label: string; names: readonly string[]; saved: string; set(model: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void; status?: ReactNode }): ReactElement {
+function Row({ label, names, saved, set, onSaved, status, provider }: { label: string; names: readonly string[]; saved: string; set(model: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void; status?: ReactNode; provider?: Provider }): ReactElement {
   const id = useId();
   const [text, setText] = useState(saved);
   const { busy, error, run } = useRun();
@@ -23,6 +23,8 @@ function Row({ label, names, saved, set, onSaved, status }: { label: string; nam
   const value = text.trim();
   const bad = value !== '' && !MODEL_RE.test(value);
   const changed = value !== saved;
+  // a saved default an engine no longer takes (opencode without provider/, kept from before #296): said here, since it is not passed on
+  const stale = provider !== undefined && saved !== '' ? modelFormProblem(provider, saved) : null;
   const save = (next: string | null): void => run(async () => onSaved(await set(next)));
   return (
     <li className="rules-model">
@@ -60,6 +62,11 @@ function Row({ label, names, saved, set, onSaved, status }: { label: string; nam
         </p>
       )}
       {status !== undefined && <p className="hint">{status}</p>}
+      {stale !== null && (
+        <p className="error" role="status">
+          {`Saved before opencode needed provider/model: ${saved} is not passed to it, so opencode chooses its own. ${stale[0]?.toUpperCase() ?? ''}${stale.slice(1)}.`}
+        </p>
+      )}
       {error !== null && (
         <p className="error" role="alert">
           {error}
@@ -159,7 +166,7 @@ function SandboxPick({ saved, flavors, onSaved }: { saved: ModelDefaults['sandbo
 /** One engine's line of MODEL BY ENGINE, with the engine's own list of models. */
 function EngineRow({ provider, saved, onSaved }: { provider: Provider; saved: string; onSaved(next: ModelDefaults): void }): ReactElement {
   const state = useEngineModels(provider);
-  return <Row label={providerInfo(provider).label} names={modelNames(provider, state)} saved={saved} set={(model) => api.setModelDefault(provider, model)} onSaved={onSaved} status={<ModelListStatus provider={provider} state={state} />} />;
+  return <Row label={providerInfo(provider).label} names={modelNames(provider, state)} provider={provider} saved={saved} set={(model) => api.setModelDefault(provider, model)} onSaved={onSaved} status={<ModelListStatus provider={provider} state={state} />} />;
 }
 
 /** Which engine's position models the list shows: every engine with a model setting. */
@@ -262,6 +269,7 @@ export function ModelDefaultsBlock(): ReactElement {
                 key={`${positionEngine}-${p.id}`}
                 label={p.callSign}
                 names={modelNames(positionEngine, positionModels)}
+                provider={positionEngine}
                 saved={(positionEngine === 'claude' ? defaults.positions?.[p.id] : defaults.enginePositions?.[positionEngine]?.[p.id]) ?? ''}
                 set={(model) => api.setPositionModel(p.id, model, positionEngine)}
                 onSaved={saved}

@@ -375,6 +375,15 @@ describe('analyzeScreen for pi and opencode (rows as the real engines drew them 
     expect(analyzeScreen(pad(['┃', '┃  x']), 100, 'opencode')).toMatchObject({ promptBox: false });
   });
 
+  it('opencode 2.4.1 with no model it may use: "No provider selected" on its agent line, or its "Connect an integration" dialog (screens seen in a real run)', () => {
+    const none = pad(['', '             ┃', '             ┃  Ask anything… "Fix a TODO in the codebase"', '             ┃', '             ┃  Build · No provider selected Connect a provider', '             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀', '             /tmp/w/a                   shift+tab agents  ctrl+p commands', '  ⊙ 2 MCP /mcps      2.4.1']);
+    expect(analyzeScreen(none, 100, 'opencode')).toMatchObject({ promptBox: true, noModel: true });
+    expect(analyzeScreen(pad(['                                  Connect an integration                           esc', '                                  Search', '                                  Popular', '                              ┃   OpenCode']), 100, 'opencode').noModel).toBe(true);
+    expect(analyzeScreen(opencode('hello'), 100, 'opencode').noModel).toBe(false);
+    // another engine never reads it
+    expect(analyzeScreen(none, 100, 'pi').noModel).toBeUndefined();
+  });
+
   it('the text of the box is never read as a dialog', () => {
     expect(analyzeScreen(pi('Do you want to proceed?'), 100, 'pi').dialog).toBeNull();
     expect(analyzeScreen(opencode('1. Yes  2. No'), 100, 'opencode').dialog).toBeNull();

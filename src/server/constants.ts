@@ -314,6 +314,8 @@ export const SIGNED_OUT_PATTERN = 'Not logged in\\b[^\\n]{0,12}/login|Please run
 /** A credential Claude Code has and the server refuses ("Remote managed settings failed to load (authentication rejected (401))", "OAuth token has expired"). */
 export const AUTH_REJECTED_PATTERN = 'authentication rejected|authentication_error|Invalid API key|OAuth token has (?:expired|been revoked)|Invalid bearer token';
 export const AUTH_REJECTED_REASON = 'Claude Code rejected its credential: check the token (or run /login)';
+/** opencode found no model it may use (provider.no-route): its provider has no credential for this agent, and gonogo keeps its free models off unless one was chosen. */
+export const NO_MODEL_ROUTE_REASON = "opencode has no usable model: give this agent its model provider's key (its Keys or the room's, such as ANTHROPIC_API_KEY), or pick an opencode/ model; it does not fall back to a free model on its own";
 export const SIGNED_OUT_REASON = "Claude Code isn't signed in: open this console and run /login (or set the credential)";
 /** needs_you reason when a dialog is on screen but no PermissionRequest hook announced it. */
 export const SCREEN_DIALOG_REASON = 'a dialog is waiting in the terminal: answer it there';

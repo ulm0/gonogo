@@ -588,6 +588,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       hint={
         <>
           {`${values.provider === 'opencode' ? 'Written into its config as its model (provider/model).' : `Passed to ${providerInfo(values.provider).label} as --model.`} ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label, values.position === '' ? null : values.position)}`} <ModelListStatus provider={values.provider} state={engineModels} />
+          {values.provider === 'opencode' && " opencode's free models (opencode/...) run only when one is picked here: with another model or none, a provider without a key for this agent stops it with a question instead."}
         </>
       }
       error={modelError}

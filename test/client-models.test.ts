@@ -79,7 +79,7 @@ describe('Model lists on the page', () => {
 describe('opencode: a model of another provider needs its key for the agent', () => {
   it('warns when the provider\'s key is not among the agent\'s or the room\'s keys, and not for opencode\'s own models', () => {
     expect(opencodeKeyWarning('anthropic/claude-opus-5-5', [], false)).toContain('anthropic/claude-opus-5-5 needs ANTHROPIC_API_KEY for this agent');
-    expect(opencodeKeyWarning('anthropic/claude-opus-5-5', [], false)).toContain('falls back to its free default model');
+    expect(opencodeKeyWarning('anthropic/claude-opus-5-5', [], false)).toContain('stops at its first turn and asks you');
     expect(opencodeKeyWarning('anthropic/claude-opus-5-5', ['ANTHROPIC_API_KEY'], false)).toBeNull();
     // a Clean Room with egress holds the Anthropic key in gonogo's proxy
     expect(opencodeKeyWarning('anthropic/claude-opus-5-5', [], true)).toBeNull();

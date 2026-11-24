@@ -148,7 +148,7 @@ export function publishEngineModels(provider: Provider, list: EngineModels): voi
 /**
  * opencode: the key names a provider's models need (models.dev, opencode 2.4.1's catalog, read 2026-11-24). An opencode agent keeps its own
  * opencode data in its folder, so the owner's opencode sign-in does not reach it: without one of these keys (or a Clean Room's egress for
- * Anthropic) opencode falls back to its own free default model without a word. opencode's own models (`opencode/...`) need none.
+ * Anthropic) the agent has no model and asks the Director (its free models stay off unless picked: opencodeFreeModels). opencode's own models (`opencode/...`) need none.
  */
 export const OPENCODE_PROVIDER_KEYS: Readonly<Record<string, readonly string[]>> = {
   anthropic: ['ANTHROPIC_API_KEY'],
@@ -165,7 +165,7 @@ export const OPENCODE_PROVIDER_KEYS: Readonly<Record<string, readonly string[]>>
 
 /** The line under the opencode model list: which models need a key for the agent. */
 export const OPENCODE_KEY_NOTE =
-  "An opencode agent keeps its own opencode data, so your own opencode sign-in does not reach it: a model of another provider than opencode's own (anthropic/..., openai/...) needs that provider's key for the agent (Keys below or the room's keys, such as ANTHROPIC_API_KEY), or for Anthropic a Clean Room with egress. Without it opencode quietly falls back to its free default model.";
+  "An opencode agent keeps its own opencode data, so your own opencode sign-in does not reach it: a model of another provider than opencode's own (anthropic/..., openai/...) needs that provider's key for the agent (Keys below or the room's keys, such as ANTHROPIC_API_KEY), or for Anthropic a Clean Room with egress. Without it the agent stops and asks you: gonogo keeps opencode's free models off unless you pick one (opencode/...).";
 
 /**
  * A warning for an opencode agent about to start with `model`: its provider needs a key the agent will not have. `keys` are the key names it
@@ -181,5 +181,5 @@ export function opencodeKeyWarning(model: string, keys: readonly string[], egres
   const wanted = OPENCODE_PROVIDER_KEYS[provider];
   if (wanted !== undefined && wanted.some((name) => keys.includes(name))) return null;
   const which = wanted === undefined ? `the API key of ${provider}` : wanted.length === 1 ? (wanted[0] ?? '') : `one of ${wanted.join(', ')}`;
-  return `${model} needs ${which} for this agent, and it has none among its keys or the room's${provider === 'anthropic' ? ' (a Clean Room with egress also works)' : ''}. Without it opencode falls back to its free default model without saying so (unless gonogo's own environment has the key).`;
+  return `${model} needs ${which} for this agent, and it has none among its keys or the room's${provider === 'anthropic' ? ' (a Clean Room with egress also works)' : ''}. Without it the agent stops at its first turn and asks you (unless gonogo's own environment has the key): opencode's free models stay off unless one is picked.`;
 }

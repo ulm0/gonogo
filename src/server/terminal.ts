@@ -155,6 +155,8 @@ export function analyzeScreen(rows: readonly string[], cols: number, engine?: Pr
     // assistant's own lines quote these words all the time, and are not a state.
     signedOut: footer.some((line) => SIGNED_OUT.test(line)),
     authRejected: footer.some((line) => AUTH_REJECTED.test(line)),
+    // opencode 2.4.1 with no model available to it (its free models off, no credential for the provider): its agent line says so, and a prompt opens this dialog
+    ...(engine === 'opencode' ? { noModel: rows.some((row) => /No provider selected|Connect an integration/.test(row)) } : {}),
     promptText: other !== null ? other.text : boxRow >= 0 ? rows[boxRow].slice(BOX_PREFIX.length).trim() : null,
   };
 }

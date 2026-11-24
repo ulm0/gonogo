@@ -147,6 +147,7 @@ import {
   SESSION_MISSING_TEXT,
   STARTUP_DIALOG_REASON,
   SIGNED_OUT_REASON,
+  NO_MODEL_ROUTE_REASON,
   AUTH_REJECTED_REASON,
   STARTUP_READY_TIMEOUT_MS,
   STARTUP_WAVE,
@@ -497,6 +498,8 @@ interface Rt {
   signedOut: boolean;
   /** The credential Claude Code has was refused: the same hold as no login, with its own words. */
   authRejected: boolean;
+  /** opencode's screen says it has no model it may use ("Connect an integration" at start): held at needs_you until it is gone. */
+  noModel: boolean;
   /** The last tool call (name and input) and how many times in a row it came, for the agent itself ('main') and for each subagent by its agent_id (docs/subagents-spec.md). */
   repeat: Map<string, { sig: string; count: number }>;
   /** Times of failed tool calls (the same keys) and of API errors in their windows, oldest first. */
@@ -700,6 +703,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       stuckLogged: null,
       signedOut: false,
       authRejected: false,
+      noModel: false,
       repeat: new Map(),
       toolFailAt: new Map(),
       subagents: new Map(),
@@ -1589,6 +1593,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         break;
       case 'StopFailure':
         onStopFailure(rt);
+        // opencode with no credential for the model's provider (and its free models off): the Director's to fix, not a turn to retry
+        if (isRecord(payload.error) && payload.error.type === 'provider.no-route') setState(rt, 'needs_you', { kind: 'dialog', reason: NO_MODEL_ROUTE_REASON });
         if (countRecent(rt.apiErrorAt, io.now(), REDLINE_API_ERROR_WINDOW_MS) >= REDLINE_API_ERRORS) {
           detect(rt, `error storm: ${rt.apiErrorAt.length} API errors in 10 min`);
         }
@@ -1795,6 +1801,22 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else if (now - sample.since >= CUSTOM_START_MS) setState(rt, 'idle');
   }
 
+  /**
+   * opencode with no model it may use (its free ones off, no credential for the chosen provider) says "No provider selected" in its input box (and opens "Connect an integration" at a prompt)
+   * and takes no prompt: the agent is held at needs_you with what to do, and its mail waits. When the dialog is gone it is idle again.
+   */
+  function noModelCheck(rt: Rt, probe: ScreenProbe | null): void {
+    if (probe === null) return;
+    if (probe.noModel === true && !rt.noModel && (rt.state === 'starting' || rt.state === 'idle')) {
+      rt.noModel = true;
+      log.warn(`${rt.record.name}: opencode has no model it may use`);
+      setState(rt, 'needs_you', { kind: 'dialog', reason: NO_MODEL_ROUTE_REASON });
+    } else if (probe.noModel !== true && rt.noModel) {
+      rt.noModel = false;
+      if (rt.state === 'needs_you' && rt.needsReason === NO_MODEL_ROUTE_REASON) setState(rt, 'idle');
+    }
+  }
+
   function sweep(): void {
     const now = io.now();
     for (const rt of [...agents.values()]) {
@@ -1807,7 +1829,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         else {
           // Gemini CLI: its hooks alone move the state; the sweep ends a stale draft and retries the mail.
           // pi and opencode: their input box is read from the screen too (terminal.ts), so a draft that was erased ends at once, not after DRAFT_EXPIRY_MS.
-          if (rt.record.provider === 'pi' || rt.record.provider === 'opencode') screenProof(rt, now, screenOf(rt));
+          const probe = rt.record.provider === 'pi' || rt.record.provider === 'opencode' ? screenOf(rt) : null;
+          if (probe !== null) screenProof(rt, now, probe);
+          if (rt.record.provider === 'opencode') noModelCheck(rt, probe);
           expireDraft(rt, now);
           if (rt.queue.length > 0) deliveryCheck(rt);
         }
