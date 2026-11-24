@@ -5,6 +5,7 @@ name: Image
 # installs from, the scripts it copies, this file): CI already builds and packs the code on every pull request, and main catches the rest.
 # A pushed v* tag pushes each platform to ghcr.io by digest, then one job joins the digests into a multi-arch
 # manifest list tagged <version>, <major>.<minor> and latest (latest only for a tag without a pre-release suffix).
+# A run by hand (Run workflow) runs only update-e2e, the last job.
 on:
   pull_request:
     paths:
@@ -17,16 +18,26 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "update-e2e: the version to start from, x.y.z (0.8.0 or later). Default is the stable release before the newest"
+        required: false
+        type: string
+      to:
+        description: "update-e2e: the version to update to, x.y.z, which must be what ghcr.io/ulm0/gonogo latest is. Default is the newest stable release"
+        required: false
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: image-${{ github.ref }}
+  group: image-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +62,7 @@ jobs:
           cache-to: type=gha,scope=image-${{ matrix.arch }},mode=max,ignore-error=true
 
   publish:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: true
       matrix:
@@ -165,13 +176,59 @@ jobs:
           subject-digest: ${{ steps.index.outputs.digest }}
           push-to-registry: true
 
-  # The Docker self-update end to end (update-e2e.yml): the previous stable release's container updated to the one just pushed, then UNDOne.
-  # Only for a stable tag: `latest` moved to it above, and the update follows `latest`.
+  # update-e2e: the Docker self-update, end to end, on the runner's own Docker (an isolated, throwaway machine): gonogo of the previous release is
+  # started from its image, updated to the current release through the real path (pull, `gh attestation verify` with this job's GITHUB_TOKEN,
+  # helper, health check), asserted to run, then UNDOne back. scripts/update-e2e.sh does the work; the job only picks the two versions and gives it
+  # the token. Only images of this repository on ghcr.io are pulled, and the only credential is the job's own GITHUB_TOKEN (read access to the
+  # attestations). The update takes the container's moving tag, so TO must be what `ghcr.io/ulm0/gonogo:latest` is: it runs after merge pushed
+  # and attested a stable release (a v* tag without a pre-release suffix), and TO is that tag; FROM is the stable release before it. By hand (Run
+  # workflow, also on a branch that changes scripts/update-e2e.sh) only this job runs, and both can be given.
   update-e2e:
     needs: merge
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
-    uses: ./.github/workflows/update-e2e.yml
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (needs.merge.result == 'success' && !contains(github.ref_name, '-'))) }}
+    concurrency:
+      group: update-e2e-${{ github.ref }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
       attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pick the two versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_FROM: ${{ inputs.from }}
+          INPUT_TO: ${{ inputs.to }}
+          # set only when image.yml called this for a pushed tag (its event is that push): the tag IS the release that was just built
+          RUN_TAG: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: |
+          set -euo pipefail
+          # the stable releases of this repository, newest first (x.y.z only; a pre-release has a suffix)
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name | ltrimstr("v")' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' > "$RUNNER_TEMP/releases.txt"
+          # TO: what was asked; else the tag image.yml was run for (the GitHub Release may not be marked yet when the image is
+          # pushed, and :latest is already the new one); else the newest stable release
+          to=${INPUT_TO:-${RUN_TAG#v}}
+          to=${to:-$(sed -n 1p "$RUNNER_TEMP/releases.txt")}
+          [[ "$to" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::TO '$to' is not x.y.z"; exit 1; }
+          # FROM: what was asked; else the newest stable release BELOW TO (the list may or may not have TO yet)
+          below() { while read -r v; do [ "$v" != "$to" ] && [ "$(printf '%s\n%s\n' "$v" "$to" | sort -V | head -1)" = "$v" ] && { echo "$v"; return; }; done < <(sort -Vr "$RUNNER_TEMP/releases.txt"); }
+          from=${INPUT_FROM:-$(below)}
+          # FROM is checked like TO before it is written anywhere (an input by hand is free text)
+          [[ "$from" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::FROM '$from' is not x.y.z"; exit 1; }
+          [ -n "$to" ] && [ -n "$from" ] || { echo "::error::could not pick two releases from: $(tr '\n' ' ' < "$RUNNER_TEMP/releases.txt")"; exit 1; }
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          echo "to=$to" >> "$GITHUB_OUTPUT"
+          echo "update $from -> $to"
+      - name: Update end to end, then UNDO
+        env:
+          # read by `gh attestation verify` inside the container, by name: never printed
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ steps.versions.outputs.from }}
+          TO: ${{ steps.versions.outputs.to }}
+        run: scripts/update-e2e.sh "$FROM" "$TO"

@@ -22,15 +22,26 @@ name: Release
 # npm's CDN to serve the version it just accepted (it took longer than ten minutes for 0.7.0 and 0.8.1). It is off until the repository
 # variable HOMEBREW_TAP is `true` and the secret HOMEBREW_TAP_TOKEN exists (a fine-grained token with Contents and Pull requests write
 # on the tap repository only). A pre-release is skipped.
+#
+# Before the publish, ci.yml is called twice on the tag: run: smoke (the Chromium pass; a failure blocks the publish) and run: brew (the formula
+# installed, tested and audited on macOS and Linux; it reports, it does not block).
+#
+# Docs: the site (https://gonogo.ulm0.com/, GitHub Pages, source "GitHub Actions") is built from the tag and deployed, whether or not the publish
+# succeeds, so it shows what is released, not what is on main. The github-pages environment accepts main and v* tags. To publish a docs-only
+# fix: Run workflow on main with docs_only and, as tag, the tag or branch to build; then nothing else runs.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: An existing tag to publish, for example v0.2.0
+        description: An existing tag to publish, for example v0.2.0 (with docs_only, the tag or branch to build the docs from)
         required: true
         type: string
+      docs_only:
+        description: Only build and deploy the docs site
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -44,15 +55,27 @@ env:
 
 jobs:
   # A real-browser pass of the tagged code first: a failure blocks the publish (the tag, also on a run by hand, where github.ref is a branch).
-  browser:
-    uses: ./.github/workflows/browser.yml
+  smoke:
+    if: ${{ !inputs.docs_only }}
+    uses: ./.github/workflows/ci.yml
     with:
+      run: smoke
+      ref: refs/tags/${{ inputs.tag || github.ref_name }}
+    permissions:
+      contents: read
+
+  # The Homebrew formula from the tagged code, on macOS and Linux. Nothing waits for it.
+  formula:
+    if: ${{ !inputs.docs_only }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      run: brew
       ref: refs/tags/${{ inputs.tag || github.ref_name }}
     permissions:
       contents: read
 
   publish:
-    needs: browser
+    needs: smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -307,3 +330,64 @@ jobs:
           git commit -m "gonogo $version"
           git push --force origin "$branch"
           gh pr create --title "gonogo $version" --body "From the release workflow of $GITHUB_REPOSITORY, tag $TAG." --head "$branch" || echo "the pull request exists already"
+
+  # The docs site, from the tag (or, with docs_only, the ref given)
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      # No version: it installs the pnpm that package.json `packageManager` pins.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          # no dependency cache: the ref may be any branch, and a cache saved from it would be restored on the default branch (cache poisoning)
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm docs:build
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .vitepress/dist
+
+  docs-deploy:
+    needs: docs
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # What a link preview reads (og: and twitter: tags, the canonical link, og.png) on the site as it is now served.
+  docs-verify:
+    needs: docs-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # The tags must name the public site, whatever address the deploy reports (a wrong custom domain would otherwise pass).
+      - run: node scripts/check-docs-site.mjs "$PAGE_URL" https://gonogo.ulm0.com
+        env:
+          PAGE_URL: ${{ needs.docs-deploy.outputs.page_url }}

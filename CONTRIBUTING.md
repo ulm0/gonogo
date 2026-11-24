@@ -15,7 +15,7 @@ pnpm build           # client (vite) and server (tsc) into dist/
 
 All three must pass. `pnpm check:pack` packs the project and runs it in plain Node; it needs the npm registry and rebuilds `dist`, so do not run it while something uses `dist`.
 
-Docs are VitePress, from `docs/` (pages listed in `.vitepress/config.mts`): `pnpm docs:dev` serves them with live reload, `pnpm docs:build` checks them (a dead link fails the build). CI runs it on every pull request. The site (gonogo.ulm0.com) is published **with a release**, from the `v*` tag, not on every merge: a merged docs change shows up with the next release. To publish a docs-only fix sooner, run the **Docs** workflow by hand (Actions, Run workflow) with a tag or branch as the ref; empty means the newest release tag.
+Docs are VitePress, from `docs/` (pages listed in `.vitepress/config.mts`): `pnpm docs:dev` serves them with live reload, `pnpm docs:build` checks them (a dead link fails the build). CI runs it on every pull request. The site (gonogo.ulm0.com) is published **with a release**, from the `v*` tag, not on every merge: a merged docs change shows up with the next release. To publish a docs-only fix sooner, run the **Release** workflow by hand (Actions, Run workflow, on main) with `docs_only` checked and a tag or branch as the tag: only the docs are built and deployed.
 
 ## Where things are
 
@@ -46,7 +46,7 @@ pnpm exec playwright install --with-deps chromium   # once, about 150 MB
 pnpm exec playwright test
 ```
 
-CI runs it (`.github/workflows/browser.yml`) on pull requests that touch `src/client`, the auth and web server files, any `.css`, `public/sw.js` or the Vite config, by hand, and before a release publishes. A failure uploads a screenshot and a trace as an artifact. Its `engines` job runs the same spec on Firefox and WebKit weekly and by hand (Run workflow on your branch, run: engines; not part of the release gate; locally `PW_BROWSERS=firefox,webkit pnpm exec playwright test browser/smoke.spec.ts`). WebKit runs with service workers blocked: Playwright's WebKit hangs the page once one is installed.
+CI runs it (the `smoke` job of `.github/workflows/ci.yml`) on pull requests that touch `src/client`, the auth and web server files, any `.css`, `public/` or the Vite config, and before a release publishes (`release.yml` calls it on the tag). A failure uploads a screenshot and a trace as an artifact. Firefox and WebKit are not run in CI; locally `PW_BROWSERS=firefox,webkit pnpm exec playwright test browser/smoke.spec.ts`. WebKit runs with service workers blocked: Playwright's WebKit hangs the page once one is installed.
 
 ## The real smoke
 
