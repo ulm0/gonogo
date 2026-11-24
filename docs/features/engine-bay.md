@@ -10,7 +10,7 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 | Gemini CLI (legacy) | `gemini` | hooks | yes | first prompt | `default`, `auto_edit`, `yolo` | `gemini --help` and source (0.59.0); not run with a model |
 | Antigravity CLI | `agy` | output | no | first prompt | `accept-edits`, `auto`, `--dangerously-skip-permissions` | `agy --help` (1.5.11); not run signed in |
 | Codex | `codex` | output | yes | first prompt | default, `--full-auto`, `--dangerously-bypass-approvals-and-sandbox` | vendor docs only |
-| opencode | `opencode` | hooks (gonogo's plugin) | yes | instructions file | yes (gonogo's tool gate) | real runs (1.19.6) |
+| opencode | `opencode` | hooks (gonogo's plugin) | yes | instructions file | yes (gonogo's tool gate) | real runs (2.4.1) |
 | Kimi CLI | `kimi` | output | yes | no | no | vendor docs only |
 | Copilot CLI | `copilot` | output | yes | no | no | vendor docs only |
 | pi | `pi` | hooks (gonogo's extension) | yes | system prompt | yes (gonogo's tool gate) | real runs (1.6.0) |
@@ -26,7 +26,7 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 
 ## pi and opencode: everything Claude Code has
 
-pi (1.6) and opencode (1.19) work like Claude Code. Each starts with a piece of gonogo of its own, written into `agents/<name>/` at every start (never into your project, `~/.pi` or `~/.config/opencode`): pi an **extension** (`--extension gonogo-pi.ts`, settings in `gonogo-pi.json`), opencode a **plugin** named in the config gonogo passes with `OPENCODE_CONFIG` (`opencode.json`, `gonogo-opencode.js`, `gonogo-opencode.json`).
+pi (1.6) and opencode (2.4, the package `@opencode/cli`; 1.x is not supported) work like Claude Code. Each starts with a piece of gonogo of its own, written into `agents/<name>/` at every start (never into your project, `~/.pi` or `~/.config/opencode`): pi an **extension** (`--extension gonogo-pi.ts`, settings in `gonogo-pi.json`), opencode a **plugin** (a folder `gonogo-opencode/`) named in the config gonogo passes with `OPENCODE_CONFIG` (`opencode.json`, `gonogo-opencode.json`); it runs `opencode --standalone`, with its database and sessions in `agents/<name>/opencode-data`.
 
 | Feature | Claude Code | pi | opencode |
 |---|---|---|---|

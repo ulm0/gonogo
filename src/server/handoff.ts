@@ -83,7 +83,10 @@ function parseLines(lines: readonly string[]): Record<string, unknown>[] {
   return out;
 }
 
-/** opencode: `opencode export <id>` prints the session as JSON (after a line or two of its own); text parts only, synthetic ones left out. */
+/**
+ * opencode 2: `opencode session export <id>` prints the session as JSON: `messages` of `{ type: 'user', text }` and `{ type: 'assistant', content: [{ type: 'text' | 'reasoning' | tool..., text }] }`;
+ * only the text of the user and of the assistant is a turn (reasoning, tools and synthetic notes are left out).
+ */
 export function opencodeTurns(output: string): Turn[] {
   const start = output.indexOf('{');
   if (start < 0) return [];
@@ -96,15 +99,18 @@ export function opencodeTurns(output: string): Turn[] {
   if (!isRecord(data) || !Array.isArray(data.messages)) return [];
   const turns: Turn[] = [];
   for (const message of data.messages) {
-    if (!isRecord(message) || !isRecord(message.info) || !Array.isArray(message.parts)) continue;
-    const role = message.info.role;
-    if (role !== 'user' && role !== 'assistant') continue;
-    const text = message.parts
-      .filter((part): part is { type: string; text: string } => isRecord(part) && part.type === 'text' && typeof part.text === 'string' && part.synthetic !== true)
-      .map((part) => part.text)
-      .join('\n')
-      .trim();
-    if (text !== '') turns.push({ role, text });
+    if (!isRecord(message)) continue;
+    if (message.type === 'user') {
+      const text = typeof message.text === 'string' ? message.text.trim() : '';
+      if (text !== '') turns.push({ role: 'user', text });
+    } else if (message.type === 'assistant' && Array.isArray(message.content)) {
+      const text = message.content
+        .filter((part): part is { type: string; text: string } => isRecord(part) && part.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text)
+        .join('\n')
+        .trim();
+      if (text !== '') turns.push({ role: 'assistant', text });
+    }
   }
   return turns;
 }
@@ -191,16 +197,16 @@ function opencodeRunner(env: Record<string, string | undefined>, cwd: string, bi
     });
 }
 
-/** `opencode export <id>` with that environment. */
+/** `opencode session export <id>` with that environment (its own server: `--standalone`, never the shared background service). */
 export function opencodeExporter(env: Record<string, string | undefined>, cwd: string, bin = 'opencode'): (id: string) => Promise<string> {
   const run = opencodeRunner(env, cwd, bin);
-  return (id) => run(['export', id]);
+  return (id) => run(['session', 'export', id, '--standalone']);
 }
 
 /** `opencode session list --format json` with that environment. */
 export function opencodeLister(env: Record<string, string | undefined>, cwd: string, bin = 'opencode'): () => Promise<string> {
   const run = opencodeRunner(env, cwd, bin);
-  return () => run(['session', 'list', '--format', 'json']);
+  return () => run(['session', 'list', '--format', 'json', '--standalone']);
 }
 
 /** The id of the newest opencode session of this folder that is not newer than `until`, from the JSON of `opencode session list`; null when there is none. */
@@ -277,7 +283,7 @@ export async function readTranscript(side: HandoffSide, places: TranscriptPlaces
     // a session of an older gonogo has no recorded id: the newest one of this folder is the old one
     if (id === null && places.listOpencode !== undefined && places.cwd !== undefined) id = newestOpencodeSession(await places.listOpencode(), places.cwd, places.until ?? Date.now());
     if (id === null || places.exportOpencode === undefined) return null;
-    return { path: `opencode session ${id} (opencode export ${id})`, turns: opencodeTurns(await places.exportOpencode(id)) };
+    return { path: `opencode session ${id} (opencode session export ${id})`, turns: opencodeTurns(await places.exportOpencode(id)) };
   }
   if (provider === 'pi') {
     // the session gonogo named lives in the agent's folder; one that pi started on its own (an older gonogo) lives in pi's own folder, found by the folder and the time

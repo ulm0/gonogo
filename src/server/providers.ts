@@ -10,7 +10,7 @@ import { delimiter, join } from 'node:path';
 import { DOCS_URL, MCP_SERVER_NAME, PROVIDER_INFO, PROVIDERS } from '../shared/protocol.js';
 import type { EngineCheck, HookEvent, McpServer, PermissionMode, Provider } from '../shared/protocol.js';
 import { ENGINE_VERSION_CHARS, ENGINE_VERSION_MS, HOOK_PATH_PREFIX, HOOK_TIMEOUT_S, MCP_PATH } from './constants.js';
-import { buildOpencodeConfig, buildOpencodeSettings, OPENCODE_CONFIG_FILE, OPENCODE_DATA_DIR, OPENCODE_PLUGIN_FILE, OPENCODE_PLUGIN_SOURCE, OPENCODE_ROLE_FILE, OPENCODE_SETTINGS_ENV, OPENCODE_SETTINGS_FILE } from './opencodeplugin.js';
+import { buildOpencodeConfig, buildOpencodeSettings, OPENCODE_CONFIG_FILE, OPENCODE_DATA_DIR, OPENCODE_PLUGIN_DIR, OPENCODE_PLUGIN_FILE, OPENCODE_PLUGIN_PACKAGE, OPENCODE_PLUGIN_PACKAGE_FILE, OPENCODE_PLUGIN_SOURCE, OPENCODE_ROLE_FILE, OPENCODE_SETTINGS_ENV, OPENCODE_SETTINGS_FILE } from './opencodeplugin.js';
 import type { GatePolicy } from './toolgate.js';
 import { buildPiConfig, PI_CONFIG_ENV, PI_CONFIG_FILE, PI_EXTENSION_FILE, PI_EXTENSION_SOURCE, PI_SESSIONS_DIR } from './piextension.js';
 
@@ -226,13 +226,15 @@ export function buildProviderStart(provider: OtherProvider, ctx: StartContext): 
     case 'opencode': {
       // OPENCODE_CONFIG is merged over the owner's config; {env:...} is opencode's own substitution. gonogo's plugin (opencodeplugin.ts) brings
       // the hooks, mail at the end of a turn and the tool gate; the role is an instructions file, so a resumed session does not get it again as a prompt.
-      const { config, names, skipped } = buildOpencodeConfig({ hubUrl: ctx.hubUrl, pluginPath: file(OPENCODE_PLUGIN_FILE), rolePath: file(OPENCODE_ROLE_FILE), servers: ctx.servers, skills: ctx.skills, effort: ctx.effort, anthropicBaseUrl: ctx.anthropicBaseUrl });
-      const settings = buildOpencodeSettings({ hubUrl: ctx.hubUrl, name: ctx.name, servers: names, subagentLimit: ctx.subagentLimit ?? null, policy: ctx.policy ?? { mode: ctx.mode, rules: {}, allowed: [], cwd: '/', home: '/' } });
+      const { config, names, skipped } = buildOpencodeConfig({ hubUrl: ctx.hubUrl, pluginPath: file(OPENCODE_PLUGIN_DIR), rolePath: file(OPENCODE_ROLE_FILE), servers: ctx.servers, skills: ctx.skills, effort: ctx.effort, anthropicBaseUrl: ctx.anthropicBaseUrl });
+      const settings = buildOpencodeSettings({ ownDir: ctx.agentDir ?? '', hubUrl: ctx.hubUrl, name: ctx.name, servers: names, subagentLimit: ctx.subagentLimit ?? null, policy: ctx.policy ?? { mode: ctx.mode, rules: {}, allowed: [], cwd: '/', home: '/' } });
       return {
-        args: [...(ctx.engineSession ? ['--session', ctx.engineSession] : []), ...model],
-        env: { OPENCODE_CONFIG: file(OPENCODE_CONFIG_FILE), [OPENCODE_SETTINGS_ENV]: file(OPENCODE_SETTINGS_FILE), XDG_DATA_HOME: file(OPENCODE_DATA_DIR) },
+        // --standalone: a server of its own for this agent, not the shared background service (which would serve every agent with one environment)
+        args: ['--standalone', ...(ctx.engineSession ? ['--session', ctx.engineSession] : []), ...model],
+        env: { OPENCODE_CONFIG: file(OPENCODE_CONFIG_FILE), [OPENCODE_SETTINGS_ENV]: file(OPENCODE_SETTINGS_FILE), XDG_DATA_HOME: file(OPENCODE_DATA_DIR), OPENCODE_DISABLE_AUTOUPDATE: '1' },
         files: {
           [OPENCODE_CONFIG_FILE]: JSON.stringify(config, null, 2),
+          [OPENCODE_PLUGIN_PACKAGE_FILE]: OPENCODE_PLUGIN_PACKAGE,
           [OPENCODE_PLUGIN_FILE]: OPENCODE_PLUGIN_SOURCE,
           [OPENCODE_SETTINGS_FILE]: JSON.stringify(settings, null, 2),
           [OPENCODE_ROLE_FILE]: ctx.roleText,

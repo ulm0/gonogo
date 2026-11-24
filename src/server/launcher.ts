@@ -698,7 +698,10 @@ export function createLauncher(options: LauncherOptions): Launcher {
     };
     const start = buildProviderStart(provider, ctx);
     if (start.skipped !== undefined) log.warn(`${agent.name}: ${PROVIDER_INFO[provider].label} cannot run these MCP servers (no SSE transport): ${start.skipped.join(', ')}`);
-    for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
+    for (const [file, content] of Object.entries(start.files)) {
+      await mkdir(dirname(join(base, file)), { recursive: true, mode: DIR_MODE });
+      await writeFileAtomic(join(base, file), content, FILE_MODE);
+    }
     if (provider === 'opencode') await prepareOpencodeData(base, options.env ?? process.env);
     const childEnv = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: keysOf(agent), gh: await ensureGh() }), ...start.env };
     if (clean === null) {
