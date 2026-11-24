@@ -30,3 +30,27 @@
     padding: 8px 12px 0;
   }
 }
+
+/* what waits on the Director, above the tabs: one amber flood for each, answered where it stands */
+.needs-you {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 24px 0;
+}
+
+@media (max-width: 760px) {
+  .needs-you {
+    padding: 8px 12px 0;
+  }
+}
+
+.needs-you-title {
+  margin: 0;
+}
+
+.needs-body {
+  white-space: pre-wrap;
+  max-height: 10em;
+  overflow: auto;
+}

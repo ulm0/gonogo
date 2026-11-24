@@ -328,7 +328,8 @@
 
   .loop-title {
     flex: 1 1 0;
-    min-width: 0;
+    /* the word of the title is never cut by the chips beside it (DOWNLINK next to "2 UNREAD" lost its last letters at 390 px) */
+    min-width: min-content;
     font-size: 22px;
   }
 

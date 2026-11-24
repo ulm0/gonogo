@@ -7,6 +7,7 @@ import { useId } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 import { Loop } from './Activity.js';
 import { Downlink } from './Downlink.js';
+import { NeedsYou } from './NeedsYou.js';
 import { PartyLine } from './PartyLine.js';
 import { unreadText } from './inbox.js';
 import { useAgentList } from './RoomView.js';
@@ -40,6 +41,7 @@ export function Comms(): ReactElement {
   };
   return (
     <div className="comms">
+      <NeedsYou />
       <div className="comms-bar">
         <div className="tabs" role="tablist" aria-label="Comms" onKeyDown={move}>
           {COMMS_TABS.map((t) => (
