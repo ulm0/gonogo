@@ -80,3 +80,10 @@ describe('the copy that runs in another process', () => {
     }
   });
 });
+
+describe('an edit whose path is not known', () => {
+  it('is asked under acceptEdits and auto (opencode\'s patch names its files in its text), and still allowed in bypass', () => {
+    for (const mode of ['acceptEdits', 'auto'] as const) expect(gateDecision(policy({ mode }), { tool: 'Edit' }).permission, mode).toBe('ask');
+    expect(gateDecision(policy({ mode: 'bypassPermissions' }), { tool: 'Edit' }).permission).toBe('allow');
+  });
+});

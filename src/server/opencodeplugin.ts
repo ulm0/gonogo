@@ -97,11 +97,12 @@ export function buildOpencodeSettings(input: { hubUrl: string; name: string; ser
  * gate as Claude Code's (shell is Bash, an MCP tool \`files_read\` is \`mcp__files__read\`).
  */
 export const OPENCODE_PLUGIN_SOURCE = `// Written by gonogo at every start of this agent: an edit is lost at the next start.
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { resolve } from "node:path";
 
 ${GATE_SOURCE}
 
-const TOOLS = { shell: "Bash", read: "Read", edit: "Edit", write: "Write", patch: "Edit", glob: "Glob", grep: "Grep", list: "LS", webfetch: "WebFetch", websearch: "WebSearch", subagent: "Task", task: "Task", todowrite: "TodoWrite", skill: "Skill" };
+const TOOLS = { bash: "Bash", shell: "Bash", todoread: "TodoRead", codesearch: "WebSearch", read: "Read", edit: "Edit", write: "Write", patch: "Edit", glob: "Glob", grep: "Grep", list: "LS", webfetch: "WebFetch", websearch: "WebSearch", subagent: "Task", task: "Task", todowrite: "TodoWrite", skill: "Skill" };
 
 const setup = async (ctx) => {
   let settings;
@@ -145,10 +146,34 @@ const setup = async (ctx) => {
   };
   const decide = (tool, resources, meta) => {
     try {
-      return gateDecision(settings.policy, callOf(tool, resources, meta));
+      // a call that names several files (a patch) is judged file by file: one denied is denied, one asked is asked, all allowed is allowed
+      const list = Array.isArray(resources) && resources.length > 1 && (tool === "Edit" || tool === "Write" || tool === "Read") ? resources : [Array.isArray(resources) ? resources[0] : undefined];
+      let answer = null;
+      for (const one of list) {
+        const next = gateDecision(settings.policy, callOf(tool, one === undefined ? resources : [one], meta));
+        if (next.permission === "deny") return next;
+        if (answer === null || (next.permission === "ask" && answer.permission !== "ask")) answer = next;
+      }
+      return answer ?? { permission: "ask", reason: "nothing to judge" };
     } catch (error) {
       return { permission: "ask", reason: "the gate failed: " + String(error) };
     }
+  };
+  // a folder outside the project is the agent's own only when it really is: ".." is refused, and a link that leaves the folder is asked about
+  const ownFolder = (dir) => {
+    if (typeof dir !== "string" || settings.ownDir === "") return false;
+    const bare = dir.replace(/[*\\/]+$/, "");
+    if (bare.split("/").includes("..")) return false;
+    const real = (p) => {
+      try {
+        return realpathSync(p);
+      } catch {
+        return resolve(p);
+      }
+    };
+    const own = real(settings.ownDir);
+    const there = real(bare);
+    return there === own || there.startsWith(own + "/");
   };
   // the sessions of subagents (they have a parent): their prompts and their end are not the agent's turn
   const children = new Map();
@@ -196,9 +221,15 @@ const setup = async (ctx) => {
     // a folder outside the project: the agent's own (memory, handoff, role) is its own; any other is asked
     if (input?.action === "external_directory") {
       const dirs = Array.isArray(input.resources) ? input.resources : [];
-      const own = settings.ownDir !== "" && dirs.length > 0 && dirs.every((d) => typeof d === "string" && (d.replace(/[*/]+$/, "") + "/").startsWith(settings.ownDir + "/"));
+      const own = dirs.length > 0 && dirs.every(ownFolder);
       input.effect = own ? "allow" : "ask";
       if (!own) await post("PermissionRequest", { tool_name: "external_directory", tool_input: { resources: dirs } });
+      return;
+    }
+    // what opencode asks about that no rule of Claude Code covers: always asked
+    if (input?.action === "lsp" || input?.action === "doom_loop") {
+      input.effect = "ask";
+      await post("PermissionRequest", { tool_name: String(input.action), tool_input: input?.metadata ?? {} });
       return;
     }
     const tool = toolName(input?.action);

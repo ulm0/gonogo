@@ -2,7 +2,7 @@
  * Engine Bay, opencode (src/server/opencodeplugin.ts): the config gonogo writes, and gonogo's plugin run against a fake opencode client and a
  * local hook server: hooks as Claude Code sends them, the tool gate answering opencode's permission questions, subagents, usage and mail.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -37,6 +37,73 @@ describe('the config gonogo writes', () => {
       agent: { build: { variant: 'high' }, plan: { variant: 'high' } },
       provider: { anthropic: { options: { baseURL: 'http://h/egress/t/anthropic/v1', apiKey: '{env:ANTHROPIC_API_KEY}' } } },
     });
+  });
+});
+
+describe('the gate of the plugin (opencode 2): what RSO asked of #286', () => {
+  /** Runs the plugin's permission hook alone, against the given policy and own folder. */
+  async function evaluate(policy: GatePolicy, ownDir: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const settings = buildOpencodeSettings({ hubUrl: 'http://127.0.0.1:9', name: 'ana', servers: ['gonogo'], policy, ownDir });
+    await writeFile(join(tmp, 'g.json'), JSON.stringify(settings));
+    await writeFile(join(tmp, 'g.mjs'), OPENCODE_PLUGIN_SOURCE);
+    const saved = process.env.GONOGO_OPENCODE_CONFIG;
+    process.env.GONOGO_OPENCODE_CONFIG = join(tmp, 'g.json');
+    try {
+      let hook: ((i: Record<string, unknown>) => Promise<void>) | undefined;
+      const ctx = {
+        session: { hook: () => undefined, get: async () => ({}), synthetic: async () => undefined },
+        tool: { hook: () => undefined },
+        permission: { hook: (_: string, cb: (i: Record<string, unknown>) => Promise<void>) => void (hook = cb) },
+        event: { subscribe: async function* () { /* none */ } },
+      };
+      const mod = (await import(`${join(tmp, 'g.mjs')}?${Math.random()}`)) as { default: { setup: (c: unknown) => Promise<void> } };
+      await mod.default.setup(ctx);
+      await hook?.(input);
+      return input;
+    } finally {
+      if (saved === undefined) delete process.env.GONOGO_OPENCODE_CONFIG;
+      else process.env.GONOGO_OPENCODE_CONFIG = saved;
+    }
+  }
+  const own = (): string => join(tmp, 'agent');
+
+  it('the agent\'s own folder is its own only for real: a \"..\" way out, a link that leaves it and another folder are asked; the folder itself and what is inside are allowed', async () => {
+    await mkdir(join(own(), 'sub'), { recursive: true });
+    await mkdir(join(tmp, 'elsewhere'), { recursive: true });
+    await symlink(join(tmp, 'elsewhere'), join(own(), 'link'));
+    const ask = async (dir: string): Promise<unknown> => (await evaluate(POLICY, own(), { action: 'external_directory', resources: [dir], effect: 'ask' })).effect;
+    expect(await ask(`${own()}/*`)).toBe('allow');
+    expect(await ask(`${own()}/sub/*`)).toBe('allow');
+    expect(await ask(`${own()}/../../etc/*`)).toBe('ask');
+    expect(await ask(`${own()}/sub/../../..`)).toBe('ask');
+    expect(await ask(`${own()}/link/*`)).toBe('ask');
+    expect(await ask('/etc/*')).toBe('ask');
+    expect(await ask(`${own()}-other/*`)).toBe('ask');
+  });
+
+  it('`bash` and `shell` are both Bash: a deny rule holds for either, in bypassPermissions too', async () => {
+    const policy: GatePolicy = { ...POLICY, mode: 'bypassPermissions', rules: { deny: ['Bash(rm -rf *)'] } };
+    for (const action of ['bash', 'shell']) {
+      expect(await evaluate(policy, own(), { action, resources: ['rm -rf /'], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'deny' });
+      expect(await evaluate(policy, own(), { action, resources: ['ls'], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'allow' });
+    }
+  });
+
+  it('an edit that names its files is judged file by file, and one with no path is asked under acceptEdits and auto; todoread is the quiet TodoRead and codesearch a WebSearch', async () => {
+    const policy: GatePolicy = { ...POLICY, mode: 'acceptEdits', cwd: '/work', rules: {} };
+    expect(await evaluate(policy, own(), { action: 'edit', resources: ['/work/a.ts', '/work/b.ts'], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'allow' });
+    expect(await evaluate(policy, own(), { action: 'edit', resources: ['/work/a.ts', '/etc/passwd'], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'ask' });
+    expect(await evaluate(policy, own(), { action: 'edit', resources: [], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'ask' });
+    expect(await evaluate({ ...policy, mode: 'auto' }, own(), { action: 'patch', resources: [], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'ask' });
+    const deny: GatePolicy = { ...policy, rules: { deny: ['Edit(//work/secret.ts)'] } };
+    expect(await evaluate(deny, own(), { action: 'edit', resources: ['/work/a.ts', '/work/secret.ts'], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'deny' });
+    const asking: GatePolicy = { ...POLICY, mode: 'default', rules: { allow: ['TodoRead'], ask: ['WebSearch'] } };
+    expect(await evaluate(asking, own(), { action: 'todoread', resources: [], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'allow' });
+    expect(await evaluate(asking, own(), { action: 'codesearch', resources: ['q'], metadata: {}, effect: 'ask' })).toMatchObject({ effect: 'ask' });
+  });
+
+  it('lsp and doom_loop are always asked, whatever the mode', async () => {
+    for (const action of ['lsp', 'doom_loop']) expect(await evaluate({ ...POLICY, mode: 'bypassPermissions', rules: {} }, own(), { action, resources: ['*'], metadata: {}, effect: 'allow' })).toMatchObject({ effect: 'ask' });
   });
 });
 
