@@ -4,6 +4,13 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.17.1 (2026-11-24)
+
+Engine switch: any console, flight included, can move to another engine from its edit form without being removed and hired again, and the container image ships pi, opencode and the buildx plugin. Not verified: no real CLI was run after a switch, and whether Claude Code fires StopFailure when the plan's quota runs out was not checked (see What was not verified).
+
+- **Engine switch.** Any console, flight included, can move to another engine (and any model it takes) from its edit form, without being removed and hired again. A working console switches when its turn ends, with SWITCH NOW and CANCEL SWITCH; its mail waits for the new engine.
+- **pi, opencode and buildx in the container image.** The image ships `pi` and `opencode`, pinned, next to `claude`, so consoles can switch to them, and the buildx plugin, so an agent in the container can `docker build` with BuildKit.
+
 ## 0.17.0 (2026-11-23)
 
 Docking 2: stations work together on a task link (hand back, recall, deliver and accept, chains, missions, cost reports, knowledge on request) with its UI; Clean Room sandbox flavors (docker, gVisor, microVM); an egress proxy that keeps the Anthropic API key out of a Clean Room container; your own Claude Code MCP servers reach the agents. Not verified: gVisor and Kata never ran for real; egress OAuth is not shipped and egress is not enforced; global MCP OAuth was not tried with a real login; Docking's stale nudge, the 7-day give-up and a lost outbox were not run, and its UI was not tried against a real server (see What was not verified).
