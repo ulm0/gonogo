@@ -123,6 +123,13 @@ export function chooseEngine(values: Values, provider: Provider): Values {
   return { ...values, provider, model: '', effort: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom, worktree: values.worktree && !(provider === 'claude' && values.cleanRoom), remoteControl: provider === 'claude' && values.remoteControl, rules: provider === 'claude' ? values.rules : '' };
 }
 
+/** The edit form: picking the engine the console runs on again brings back what the form opened with for it, not a blank model. */
+export function chooseEngineAgain(values: Values, provider: Provider, opened: Values): Values {
+  if (provider !== opened.provider) return chooseEngine(values, provider);
+  const { model, effort, mode, confirm, cleanRoom, worktree, remoteControl, rules } = opened;
+  return { ...values, provider, model, effort, mode, confirm, cleanRoom, worktree, remoteControl, rules };
+}
+
 /** A new hire as it opens: the room's default engine, then its default permission mode (an engine without modes keeps ask; bypass is preselected but still confirmed in the form). A form the person already touched is left alone. */
 export function withRoomDefaults(values: Values, defaults: Pick<ModelDefaults, 'engine' | 'mode'>): Values {
   if (values.provider !== 'claude' || values.name !== '' || values.role !== '') return values;
@@ -236,7 +243,7 @@ export function callOf(values: Values): string {
 
 /** Bypass needs the owner's tick when it is being chosen, not when an agent that already bypasses is edited. */
 export const needsBypassConfirm = (values: Values, original: AgentView | null): boolean =>
-  providerInfo(values.provider).modes && values.mode === 'bypassPermissions' && original?.mode !== 'bypassPermissions';
+  providerInfo(values.provider).modes && values.mode === 'bypassPermissions' && (original?.mode !== 'bypassPermissions' || original.provider !== values.provider);
 
 const FIX_WORDS: ReadonlyArray<readonly [Field, string]> = [
   ['name', 'NAME'],
@@ -494,7 +501,7 @@ export function hireRequest(values: Values): HireRequest {
 
 /**
  * The body of PATCH /api/agents/:name with only what changed (the server answers 400 to an edit with nothing in it), or null
- * when nothing changed. The provider cannot change, so `values.provider` is the original's.
+ * when nothing changed. A new engine (never to or from custom) is sent as `provider`; what it does not take is not sent, and the server drops it.
  */
 export function editRequest(values: Values, original: AgentView, nameLocked: boolean): EditRequest | null {
   const changes: EditRequest = {};
@@ -507,7 +514,8 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     const command = values.command.trim();
     if (command !== (original.command ?? '')) changes.command = command;
   } else {
-    if (providerInfo(original.provider).modes && values.mode !== original.mode) changes.mode = values.mode;
+    if (values.provider !== original.provider && values.provider !== 'custom') changes.provider = values.provider;
+    if (providerInfo(values.provider).modes && values.mode !== original.mode) changes.mode = values.mode;
     if (values.position !== (original.position ?? '')) changes.position = values.position === '' ? null : values.position;
     const payload = payloadOf(values);
     if (JSON.stringify(payload) !== JSON.stringify(original.payload ?? null)) changes.payload = payload;

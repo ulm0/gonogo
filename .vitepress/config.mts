@@ -92,6 +92,7 @@ export default defineConfig({
         text: 'Features',
         items: [
           { text: 'Engine Bay', link: '/features/engine-bay' },
+          { text: 'Engine switch', link: '/features/engine-switch' },
           { text: 'Payload', link: '/features/payload' },
           { text: 'Global MCP servers', link: '/features/global-mcp' },
           { text: 'Registry', link: '/features/registry' },

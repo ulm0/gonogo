@@ -10,6 +10,7 @@
 # Build, from the repository root:
 #   docker build -t gonogo:<tag> .
 #   (optional) --build-arg CLAUDE_CODE_VERSION=<x.y.z>   the Claude Code release baked into the image, default below
+#   (optional) --build-arg PI_VERSION=<x.y.z> --build-arg OPENCODE_VERSION=<x.y.z>   the pi and opencode releases (Engine Bay)
 #
 # Run. One credential only: CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY, never both.
 # `-e NAME` without a value forwards the variable from your shell, so the secret is not typed into the command line.
@@ -40,7 +41,8 @@
 # A floating tag: a rebuild can pick up a newer Node and a newer Debian. To pin the base image, build with
 #   --build-arg NODE_IMAGE=node:24-bookworm-slim@sha256:<digest>     (`docker pull node:24-bookworm-slim` prints the digest)
 ARG NODE_IMAGE=node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
-# Only the docker CLI binary of this image is copied (no daemon, no compose or buildx plugin), for Clean Room.
+# The docker CLI binary of this image (for Clean Room) and its buildx plugin (BuildKit: an agent in the container can run `docker build`
+# on the host's Docker, this Dockerfile included, which needs BuildKit for COPY --chmod). No daemon, no compose plugin.
 ARG DOCKER_CLI_IMAGE=docker:29.10.0-cli
 # The pnpm that installs Claude Code in the runtime stage: the same release as package.json `packageManager`.
 ARG PNPM_VERSION=12.21.0
@@ -92,6 +94,8 @@ RUN mkdir /app \
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 ARG CLAUDE_CODE_VERSION=2.1.325
+ARG PI_VERSION=1.6.0
+ARG OPENCODE_VERSION=1.19.6
 ARG PNPM_VERSION
 
 # The base image has neither git nor a CA bundle. tini reaps the orphans that agents' tools leave behind and forwards
@@ -106,6 +110,8 @@ RUN apt-get update \
  && git config --system --add safe.directory '/projects/*'
 
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+# The system-wide plugin folder: docker finds it for every user, so uid 1000 has `docker buildx` with no ~/.docker of its own.
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 # gh, binary only.
 COPY --from=gh /out/gh /usr/local/bin/gh
 
@@ -119,6 +125,17 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global
       --config.global-dir=/usr/local/share/pnpm --config.global-bin-dir=/usr/local/bin --config.enable-global-virtual-store=false \
       --allow-build=@anthropic-ai/claude-code @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
  && claude --version \
+ && rm -rf /root/.cache /root/.local/share/pnpm
+
+# Two more engines (Engine Bay), so an agent can move off Claude Code when its quota runs out: pi and opencode, pinned, the same way and in
+# a layer of their own after Claude Code's. pi is plain JavaScript (no build step). opencode-ai's postinstall links the binary of its
+# platform package (opencode-linux-x64 or -arm64, an optional dependency pnpm picks for the build's architecture), hence --allow-build.
+# Each brings its own login: an API key set as a Clearance key of the agent, or a login stored under HOME (the /home/node volume).
+RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global \
+      --config.global-dir=/usr/local/share/pnpm --config.global-bin-dir=/usr/local/bin --config.enable-global-virtual-store=false \
+      --allow-build=opencode-ai @earendil-works/pi-coding-agent@${PI_VERSION} opencode-ai@${OPENCODE_VERSION} \
+ && pi --version \
+ && opencode --version \
  && rm -rf /root/.cache /root/.local/share/pnpm
 
 COPY --from=build /app /opt/gonogo
@@ -142,6 +159,7 @@ ENV HOME=/home/node \
     GONOGO_HOME=/state/gonogo \
     GONOGO_SEED_CLAUDE=1 \
     DISABLE_AUTOUPDATER=1 \
+    OPENCODE_DISABLE_AUTOUPDATE=1 \
     LANG=C.UTF-8
 
 # uid 1000: Claude Code refuses bypassPermissions as root. The boss starts in /projects. The build-time proof below runs as node;
@@ -153,7 +171,10 @@ WORKDIR /projects
 # Build-time proof as the non-root user. `gonogo --version` imports the whole compiled server, so a missing
 # platform package of the pty library, a CommonJS import that only fails in plain Node or a bad bin fails here.
 RUN claude --version \
+ && pi --version \
+ && opencode --version \
  && docker --version \
+ && docker buildx version \
  && gh --version \
  && gonogo --version \
  && cd /opt/gonogo \

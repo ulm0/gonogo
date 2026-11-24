@@ -707,6 +707,11 @@ export interface AgentView {
    * state at the left edge), at most HISTORY_MAX. Memory only; the last entry is the current state.
    */
   history: StateChange[];
+  /**
+   * Engine switch (docs/engine-switch-spec.md): the engine an edit asked for while the agent was working. It is applied (the agent
+   * restarts on it) when the turn ends; its mail waits until then. null or absent: none pending (absent from an older server).
+   */
+  pendingEngine?: Provider | null;
 }
 
 /** One position's answer in a T-minus poll. */
@@ -1762,7 +1767,16 @@ export interface EditRequest {
   confirmBypass?: boolean;
   /** A roster position id, or null to clear it. */
   position?: string | null;
-  /** Custom provider only; the provider itself cannot change after hire. */
+  /**
+   * Engine switch (docs/engine-switch-spec.md): run the agent on another engine. Never to or from `custom`. Settings the new
+   * engine does not take are dropped, the model unless this request names one; the agent starts a new session. A stopped agent
+   * just saves; an idle one restarts at once; a working one keeps the whole request pending until its turn ends (AgentView.pendingEngine).
+   * The current engine cancels a pending switch.
+   */
+  provider?: Provider;
+  /** With `provider`, or alone to force a pending switch: restart now, even in the middle of a turn. */
+  switchNow?: boolean;
+  /** Custom provider only. */
   command?: string;
   /** Replaces the whole payload; null removes it. */
   payload?: Payload | null;
