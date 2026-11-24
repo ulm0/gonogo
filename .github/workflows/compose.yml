@@ -6,7 +6,7 @@ name: Compose
 # - zero: the image built from this checkout, run by compose.yaml with NOTHING exported and no .env: `docker compose up -d` must be enough.
 #   The data folder is made next to the file and given to uid 1000, the Docker socket's group is found by the image (no DOCKER_GID), and the
 #   port is published on every interface.
-# parse and run were jobs of ci.yml until 0.22, on every pull request. Weekly too, so a newly published image is run by the compose file.
+# parse and run were jobs of ci.yml through 0.22, on every pull request. Weekly too, so a newly published image is run by the compose file.
 on:
   push:
     branches: [main]
