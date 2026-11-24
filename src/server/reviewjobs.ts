@@ -226,7 +226,9 @@ export function createReviewRunner(options: { dir: string; now: () => number; st
     async draft(id) {
       const job = find(id);
       const draft = await readDraft(id);
-      return draft === null ? null : { ...draft, usd: ops.spent(job) };
+      if (draft === null) return null;
+      const usd = ops.spent(job);
+      return { ...draft, usd, ...(usd > store.settings().maxUsdPerPr ? { overCap: true } : {}) };
     },
 
     async post(id) {

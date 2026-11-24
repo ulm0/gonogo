@@ -520,6 +520,8 @@ export interface AutoReviewDraft {
   parts: Array<{ position: string; summary: string; findings: Array<{ file: string; line: number; severity: string; text: string }>; dropped: string[] }>;
   /** Dollars the job's mission has spent (an estimate), when known. */
   usd?: number;
+  /** The job spent more than its per-PR cap (the cap is soft): it is never auto-posted, only posted by a click. */
+  overCap?: boolean;
 }
 export interface AutoReviewView {
   settings: AutoReviewSettings;

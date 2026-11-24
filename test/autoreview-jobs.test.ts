@@ -267,6 +267,7 @@ describe('a review job', () => {
     await submit(`${id}-retro`);
     expect(posted).toHaveLength(0);
     expect(review.view().jobs[0]?.status).toBe('done');
+    expect((await runner.draft(id))?.overCap).toBe(true);
     expect((await runner.post(id)).status).toBe('posted');
   });
 
