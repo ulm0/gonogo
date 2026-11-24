@@ -1,1 +1,0 @@
-- **Budgets per engine or provider.** A dollar budget can now be set for an engine (claude, pi, opencode) or a provider (anthropic, opencode, openai), over the use of that engine or provider. At 100 % only its agents are stopped; the rest of the room keeps working. Set with the API for now.

@@ -1,1 +1,0 @@
-- **Code scanning alerts addressed.** The docs workflow no longer keeps a dependency cache when it builds a branch picked by hand, so a branch cannot leave a cache for the default branch to restore; the rest are tidy-ups in tests and one call in the server, with no change in behavior.
