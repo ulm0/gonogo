@@ -81,6 +81,7 @@ import { ENGINE_SESSION_PATTERN,
   isHoldReason,
   HOOK_EVENTS,
   MODEL_PATTERN,
+  modelFormProblem,
   PERMISSION_MODES,
   POLL_VOTES,
   PROVIDERS,
@@ -2359,6 +2360,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (!MODEL_RE.test(model)) {
       throw new HubError('bad_request', 'model must be 1 to 100 letters, digits or . _ : / @ + -, starting with a letter or digit', 'model');
     }
+    const problem = modelFormProblem(provider, model);
+    if (problem !== null) throw new HubError('bad_request', problem, 'model');
     return model;
   }
 

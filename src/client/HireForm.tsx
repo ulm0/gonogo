@@ -620,8 +620,8 @@ function Staff({ form }: { form: Target }): ReactElement {
     </Control>
   );
   const roomEffort = effectiveEffort({ provider: values.provider, effort: null }, roomModels);
-  // how each engine takes the level: Claude Code's flag, pi's thinking level, opencode's variant of its agents
-  const EFFORT_FLAG: Partial<Record<Provider, string>> = { claude: '--effort', pi: '--thinking', opencode: 'the variant of its agents' };
+  // how each engine takes the level: Claude Code's flag, pi's thinking level, opencode's variant of its model
+  const EFFORT_FLAG: Partial<Record<Provider, string>> = { claude: '--effort', pi: '--thinking', opencode: 'the variant of its model (only with a model set)' };
   const effortField = takesEffort(values.provider) && (
     <Control id={`${id}-effort`} label="Effort" hint={`Passed to ${providerInfo(values.provider).label} as ${EFFORT_FLAG[values.provider] ?? '--effort'}. ${roomEffort === null ? 'Empty uses its own.' : `Empty: the room's default ${roomEffort.level} applies.`} A setting changed inside the console only changes that session.`} error={undefined}>
       <select id={`${id}-effort`} className="input" value={values.effort} onChange={(event) => change({ effort: event.target.value }, 'effort')}>

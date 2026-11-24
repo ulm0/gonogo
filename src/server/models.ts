@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { POSITION_IDS } from '../shared/positions.js';
-import { CLEAN_ROOM_FLAVORS, EFFORTS, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, EFFORTS, MODEL_PATTERN, modelFormProblem, PERMISSION_MODES, PROVIDERS, providerInfo } from '../shared/protocol.js';
 import type { CleanRoomFlavor, Effort, Logger, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
 import { FILE_MODE, MODELS_FILE, nullLogger } from './constants.js';
 import { HubError } from './hub.js';
@@ -153,6 +153,8 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
       const name = model === null || model === undefined ? '' : typeof model === 'string' ? model.trim() : null;
       if (name === null) throw new HubError('bad_request', 'model must be text or null', 'model');
       if (name !== '' && !MODEL_RE.test(name)) throw new HubError('bad_request', 'model must be 1 to 100 letters, digits or . _ : / @ + -, starting with a letter or digit', 'model');
+      const problem = name === '' ? null : modelFormProblem(provider as Provider, name);
+      if (problem !== null) throw new HubError('bad_request', problem, 'model');
       const run = chain.then(() => save(() => {
         const next = { ...models };
         if (name === '') delete next[provider as Provider];
@@ -169,6 +171,8 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
       const name = model === null || model === undefined ? '' : typeof model === 'string' ? model.trim() : null;
       if (name === null) throw new HubError('bad_request', 'model must be text or null', 'model');
       if (name !== '' && !MODEL_RE.test(name)) throw new HubError('bad_request', 'model must be 1 to 100 letters, digits or . _ : / @ + -, starting with a letter or digit', 'model');
+      const problem = name === '' ? null : modelFormProblem(provider as Provider, name);
+      if (problem !== null) throw new HubError('bad_request', problem, 'model');
       const run = chain.then(() => save(() => {
         const next = { ...(provider === 'claude' ? positions : (enginePositions[provider as Provider] ?? {})) };
         if (name === '') delete next[position];

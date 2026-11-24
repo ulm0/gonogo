@@ -8,7 +8,9 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildOpencodeConfig, buildOpencodeSettings, OPENCODE_PLUGIN_SOURCE, opencodeServers } from '../src/server/opencodeplugin.js';
+import { buildOpencodeConfig, buildOpencodeSettings, OPENCODE_CONFIG_FILE, OPENCODE_PLUGIN_SOURCE, opencodeModel, opencodeServers } from '../src/server/opencodeplugin.js';
+import { buildProviderStart } from '../src/server/providers.js';
+import { modelFormProblem } from '../src/shared/protocol.js';
 import type { GatePolicy } from '../src/server/toolgate.js';
 
 let tmp: string;
@@ -27,14 +29,14 @@ describe('the config gonogo writes', () => {
       servers: { files: { type: 'local', command: ['npx', '-y', 'fs'], environment: { A: '1' }, enabled: true }, docs: { type: 'remote', url: 'https://d.example/mcp', headers: { K: 'v' }, enabled: true } },
       skipped: ['old'],
     });
-    const { config, names } = buildOpencodeConfig({ hubUrl: 'http://127.0.0.1:7', pluginPath: '/a/p', rolePath: '/a/role.md', servers: { 'my-files': { command: 'x' } }, skills: ['/skills/review'], effort: 'high', anthropicBaseUrl: 'http://h/egress/t/anthropic' });
+    const { config, names } = buildOpencodeConfig({ hubUrl: 'http://127.0.0.1:7', pluginPath: '/a/p', rolePath: '/a/role.md', servers: { 'my-files': { command: 'x' } }, skills: ['/skills/review'], model: 'anthropic/claude-opus-5-5', effort: 'high', anthropicBaseUrl: 'http://h/egress/t/anthropic' });
     expect(Object.keys(config.mcp as object)).toStrictEqual(['my-files', 'gonogo']);
     expect(names).toStrictEqual(['my-files', 'gonogo']);
     expect(config).toMatchObject({
       plugin: ['/a/p'],
       instructions: ['/a/role.md'],
       skills: { paths: ['/skills/review'] },
-      agent: { build: { variant: 'high' }, plan: { variant: 'high' } },
+      model: { providerID: 'anthropic', model: 'claude-opus-5-5', variant: 'high' },
       provider: { anthropic: { options: { baseURL: 'http://h/egress/t/anthropic/v1', apiKey: '{env:ANTHROPIC_API_KEY}' } } },
     });
   });
@@ -244,5 +246,34 @@ describe('the plugin against a hook server (opencode 2: the plugin context is a 
         else process.env[key] = value;
       }
     }
+  });
+});
+
+describe('the model and effort of an opencode 2 agent (2.4.1 has no --model)', () => {
+  it('the model goes in the config as providerID and model, with the effort as its variant; no old agent.build.variant', () => {
+    expect(opencodeModel('opencode/big-pickle', undefined)).toStrictEqual({ model: { providerID: 'opencode', model: 'big-pickle' } });
+    expect(opencodeModel('anthropic/claude-opus-5-5', 'max')).toStrictEqual({ model: { providerID: 'anthropic', model: 'claude-opus-5-5', variant: 'max' } });
+    // a model id may hold a slash of its own: only the first one names the provider
+    expect(opencodeModel('openrouter/meta/llama-4', undefined)).toStrictEqual({ model: { providerID: 'openrouter', model: 'meta/llama-4' } });
+    // no model, or one opencode would drop: nothing, and an effort alone has nothing to go on
+    for (const model of [undefined, 'sonnet', '/x', 'x/']) expect(opencodeModel(model, 'high'), String(model)).toStrictEqual({});
+    const { config } = buildOpencodeConfig({ hubUrl: 'http://h', pluginPath: '/p', rolePath: '/r', effort: 'high' });
+    expect(config).not.toHaveProperty('agent');
+    expect(config).not.toHaveProperty('model');
+  });
+
+  it('the start passes no --model and writes the model into OPENCODE_CONFIG', () => {
+    const start = buildProviderStart('opencode', { name: 'ana', mode: 'default', role: 'r', roleText: 'r', hubUrl: 'http://h', agentDir: '/a', tokenFile: '/a/t', token: 't', model: 'opencode/big-pickle', effort: 'low' } as never);
+    expect(start.args).not.toContain('--model');
+    expect(start.args).toStrictEqual(['--standalone']);
+    const written = JSON.parse(Object.entries(start.files).find(([path]) => path === OPENCODE_CONFIG_FILE)?.[1] ?? '{}') as Record<string, unknown>;
+    expect(written.model).toStrictEqual({ providerID: 'opencode', model: 'big-pickle', variant: 'low' });
+  });
+
+  it('a model without provider/ is refused for opencode, and only for opencode', () => {
+    expect(modelFormProblem('opencode', 'sonnet')).toContain('provider/model');
+    expect(modelFormProblem('opencode', 'anthropic/claude-opus-5-5')).toBeNull();
+    expect(modelFormProblem('pi', 'sonnet')).toBeNull();
+    expect(modelFormProblem('claude', 'opus')).toBeNull();
   });
 });
