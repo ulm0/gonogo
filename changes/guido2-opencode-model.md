@@ -1,1 +1,0 @@
-- **opencode agents start with a model.** An opencode agent hired or edited with a model exited at once, because opencode 2 has no `--model`; the model now goes into its config (as `provider/model`, for example `anthropic/claude-opus-5-5`), with the effort as that model's variant. A name without `provider/` is refused for opencode.

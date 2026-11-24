@@ -1,1 +1,0 @@
-- **opencode models that need a key.** The opencode model list now says that a model of another provider than opencode's own needs that provider's key for the agent (or a Clean Room with egress for Anthropic), and the hire and Edit form warn when the agent would start without it: opencode otherwise falls back to its free default model without saying so.
