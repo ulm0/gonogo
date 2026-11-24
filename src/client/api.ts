@@ -1282,6 +1282,16 @@ export async function putSemantic(request: SemanticRequest): Promise<SemanticVie
   return (await call('PUT', '/semantic', request)) as SemanticView;
 }
 
+/** The managed Ollama: start or stop it (starting is behind a step-up). The answer is the status, which has the progress of the download and the pull. */
+export async function semanticManaged(action: 'start' | 'stop'): Promise<SemanticView> {
+  return (await call('POST', '/semantic/managed', { action })) as SemanticView;
+}
+
+/** The last lines the managed Ollama wrote. */
+export async function semanticManagedLogs(): Promise<string[]> {
+  return ((await call('GET', '/semantic/managed/logs')) as { lines: string[] }).lines;
+}
+
 /** One request to the endpoint: the size of the vectors it answers with. */
 export async function testSemantic(): Promise<{ dimension: number }> {
   return (await call('POST', '/semantic/test')) as { dimension: number };

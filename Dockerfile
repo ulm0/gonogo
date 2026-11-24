@@ -50,6 +50,11 @@ ARG PNPM_VERSION=12.21.0
 ARG GH_VERSION=2.103.3
 ARG GH_SHA256_AMD64=4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d
 ARG GH_SHA256_ARM64=ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63
+# Ollama for Search by meaning (managed mode), pinned, the CPU part of the release only: src/server/ollama.ts pins the same version and the same checksums (a test keeps
+# them equal). The archive is 1.6 GB (CUDA and ROCm libraries are most of it); the image keeps the 79 MB a CPU needs, in /opt/ollama.
+ARG OLLAMA_VERSION=0.40.18
+ARG OLLAMA_SHA256_AMD64=b82649006cb5b54ed1237fa2d1a26a7f939a4fd03150033759acbff7ff315adf
+ARG OLLAMA_SHA256_ARM64=63f01dae3b65641866991e75e2aecb7aed8a4041f4c2c3c7d92862c5a47ebed6
 
 FROM ${DOCKER_CLI_IMAGE} AS docker-cli
 
@@ -66,6 +71,23 @@ RUN set -eu; \
     node -e 'fetch(process.argv[1]).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()}).then(b=>require("fs").writeFileSync(process.argv[2],Buffer.from(b)))' "https://github.com/cli/cli/releases/download/v${GH_VERSION}/$f" "/tmp/$f"; \
     echo "$sum  /tmp/$f" | sha256sum -c -; \
     mkdir /out; tar -xzf "/tmp/$f" -C /out --strip-components=2 "gh_${GH_VERSION}_linux_${arch}/bin/gh"
+
+# Stage: the CPU part of the Ollama release, for the architecture of the build. The archive is streamed to a file by node (no curl here), checked with sha256sum
+# against the pin above BEFORE it is opened, then unpacked through node's zstd into tar with the CUDA, ROCm, Vulkan and MLX libraries left out. The 1.6 GB file is
+# removed in the same step, so only /out stays.
+FROM ${NODE_IMAGE} AS ollama
+ARG OLLAMA_VERSION
+ARG OLLAMA_SHA256_AMD64
+ARG OLLAMA_SHA256_ARM64
+RUN set -eu; \
+    case "$(uname -m)" in x86_64) arch=amd64; sum="$OLLAMA_SHA256_AMD64" ;; aarch64) arch=arm64; sum="$OLLAMA_SHA256_ARM64" ;; *) echo "no ollama for $(uname -m)" >&2; exit 1 ;; esac; \
+    f=/tmp/ollama.tar.zst; \
+    node -e 'const {pipeline}=require("node:stream/promises"),{Readable}=require("node:stream"),fs=require("node:fs");fetch(process.argv[1]).then(r=>{if(!r.ok)throw new Error(r.status);return pipeline(Readable.fromWeb(r.body),fs.createWriteStream(process.argv[2]))}).catch(e=>{console.error(String(e));process.exit(1)})' "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-${arch}.tar.zst" "$f"; \
+    echo "$sum  $f" | sha256sum -c -; \
+    mkdir /out; \
+    node -e 'const {pipeline}=require("node:stream/promises"),fs=require("node:fs"),z=require("node:zlib"),cp=require("node:child_process");const t=cp.spawn("tar",["-xf","-","-C","/out","--no-same-owner","--exclude=lib/ollama/cuda_*","--exclude=lib/ollama/vulkan","--exclude=lib/ollama/rocm*","--exclude=lib/ollama/mlx*","--exclude=lib/ollama/jetpack*"],{stdio:["pipe","inherit","inherit"]});t.on("close",c=>process.exit(c));pipeline(fs.createReadStream(process.argv[1]),z.createZstdDecompress(),t.stdin).catch(e=>{console.error(String(e));process.exit(1)})' "$f"; \
+    rm -f "$f"; \
+    /out/bin/ollama --version
 
 # ---------------------------------------------------------------------------
 # Stage 1: build the package tarball exactly as `pnpm publish` would ship it. The runtime stage runs that tarball,
@@ -114,6 +136,8 @@ COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 # gh, binary only.
 COPY --from=gh /out/gh /usr/local/bin/gh
+# The Ollama that Search by meaning (managed mode) runs: the CPU part of the pinned release, found by src/server/ollama.ts before it would download one.
+COPY --from=ollama /out /opt/ollama
 
 # Claude Code, pinned, from the npm registry (the package its docs give for containers), installed by the pinned pnpm
 # through corepack. --allow-build: the postinstall step links the native binary into place, and pnpm skips it

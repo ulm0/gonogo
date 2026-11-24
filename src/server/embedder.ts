@@ -11,7 +11,8 @@
  *   https too;
  * - redirects are not followed; the answer is read while it streams and ended past 4 MiB (a `Content-Length` over it is refused before
  *   a byte is read); 20 s in all; the vectors are checked (finite numbers, one dimension, at most 4096 floats);
- * - the body of an error answer is never read, shown or logged: a status number and fixed words are all there is to say.
+ * - the body of an error answer is never read, shown or logged: a status number and fixed words are all there is to say;
+ * - an API key (an Ollama behind a proxy) goes in `Authorization: Bearer` to this endpoint only (redirects are not followed), and only over https or to this machine.
  */
 import { lookup } from 'node:dns/promises';
 import { request as httpRequest } from 'node:http';
@@ -157,6 +158,11 @@ export interface EmbedOptions {
   confirmed: string | null;
   resolver?: Resolver;
   timeoutMs?: number;
+  /** An API key for an Ollama behind a proxy: sent as `Authorization: Bearer` to this endpoint only, and only over https or to this machine. */
+  apiKey?: string;
+  /** Managed mode: how long Ollama keeps the model, and the CPU threads of the request. */
+  keepAlive?: string;
+  numThread?: number;
   /** For tests: the largest answer read. */
   maxBytes?: number;
 }
@@ -167,7 +173,15 @@ export async function embed(options: EmbedOptions, texts: readonly string[]): Pr
   const checked = await checkEndpoint(options.endpoint, options.confirmed, options.resolver);
   if (typeof checked === 'string') throw new EmbedError(checked);
   const { endpoint, resolved } = checked;
-  const body = JSON.stringify({ model: options.model, input: texts.map((t) => t.slice(0, EMBED_TEXT_MAX_CHARS)), truncate: true });
+  // a key travels in the clear on http: only to this machine, never to another host
+  if (options.apiKey !== undefined && options.apiKey !== '' && endpoint.scheme !== 'https' && resolved.class !== 'loopback') throw new EmbedError('an API key is sent only over https, or to this machine');
+  const body = JSON.stringify({
+    model: options.model,
+    input: texts.map((t) => t.slice(0, EMBED_TEXT_MAX_CHARS)),
+    truncate: true,
+    ...(options.keepAlive === undefined ? {} : { keep_alive: options.keepAlive }),
+    ...(options.numThread === undefined || options.numThread <= 0 ? {} : { options: { num_thread: options.numThread } }),
+  });
   const maxBytes = options.maxBytes ?? EMBED_RESPONSE_MAX_BYTES;
   const answer = await new Promise<Buffer>((resolve, reject) => {
     const send = endpoint.scheme === 'https' ? httpsRequest : httpRequest;
@@ -177,7 +191,7 @@ export async function embed(options: EmbedOptions, texts: readonly string[]): Pr
         port: endpoint.port,
         path: EMBED_PATH,
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), accept: 'application/json' },
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), accept: 'application/json', ...(options.apiKey === undefined || options.apiKey === '' ? {} : { authorization: `Bearer ${options.apiKey}` }) },
         // the connection goes to the address that was classified, whatever the name says now
         lookup: ((_host: string, o: { all?: boolean }, cb: (e: Error | null, address: string | Array<{ address: string; family: number }>, family?: number) => void) =>
           // (Node asks for every address when it tries more than one family: the answer is the same one address)

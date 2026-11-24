@@ -34,6 +34,7 @@ export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path)) return true;
   if (method === 'PUT' && path === '/api/models/mode') return true;
   if (method === 'PUT' && path === '/api/global-mcp') return true;
+  if (method === 'POST' && path === '/api/semantic/managed') return true;
   if (method === 'PUT' && path === '/api/relief/rules') return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
@@ -43,12 +44,14 @@ export function bodyMatters(method: string, path: string): boolean {
  * setting, so one that does not say egress:true can end an agent's own). Only a browser session (with its step-up) or the terminal may weaken it.
  */
 export const egressChange = (method: string, path: string): boolean =>
-  (method === 'PUT' && (path === '/api/egress' || path === '/api/global-mcp')) || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
+  (method === 'PUT' && (path === '/api/egress' || path === '/api/global-mcp' || path === '/api/semantic')) || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
 export function weakensEgress(method: string, path: string, body: Record<string, unknown> | null): boolean {
   if (body === null) return true;
   if (path === '/api/egress') return body.anthropic !== true;
   // an API key never carries a step-up, so it may not add the user's MCP servers (and their tokens) to a Clean Room either
   if (path === '/api/global-mcp') return body.cleanRoom === true || body.host === true;
+  // Search by meaning: choosing the managed Ollama, or accepting that a Clean Room can reach it, is a decision for a session with its step-up, not for a key
+  if (path === '/api/semantic') return body.acknowledge === true || body.mode === 'managed';
   const room = body.cleanRoom;
   if (typeof room !== 'object' || room === null) return false;
   const egress = (room as Record<string, unknown>).egress;
@@ -143,6 +146,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (method === 'POST' && /^\/api\/knowledge\/[^/]+\/move$/.test(path)) return body !== null && body.action === 'keep' ? null : 'moving the claims of a repository';
   // Search by meaning sends the notes of the room to the endpoint that is named here
   if (method === 'PUT' && path === '/api/semantic') return 'the endpoint of Search by meaning';
+  // starting the managed Ollama downloads a program and runs it; stopping it only does less
+  if (method === 'POST' && path === '/api/semantic/managed') return body !== null && body.action === 'stop' ? null : 'starting the Ollama that gonogo runs';
   // the template of the closing checklist: its lines are copied into every new mission and shown in the Director's name
   if (method === 'PUT' && path === '/api/ritual-template') return 'the closing checklist template';
   // a Docker self-update

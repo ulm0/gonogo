@@ -10,6 +10,7 @@ import { hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { IMAGE_OLLAMA_BIN, OLLAMA_SHA256, OLLAMA_VERSION } from '../src/server/ollama.js';
 import { listProblems } from '../scripts/check-pack.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -232,6 +233,19 @@ describe('the container starts as root only to fix a bind folder, and drops to u
     expect(rootPart).not.toMatch(/find [^\n]*(-L\b|-follow|-H\b)/);
     expect(rootPart).not.toContain('-exec chown');
     expect(rootPart).not.toMatch(/chown\s+-[a-zA-Z]*R/);
+  });
+
+  it('the Ollama the image carries is the one src/server/ollama.ts pins, with the same checksums', () => {
+    const dockerfile = readFileSync(join(root, 'Dockerfile'), 'utf8');
+    const arg = (name: string): string | undefined => new RegExp('^ARG ' + name + '=(\\S+)$', 'm').exec(dockerfile)?.[1];
+    expect(arg('OLLAMA_VERSION')).toBe(OLLAMA_VERSION);
+    expect(arg('OLLAMA_SHA256_AMD64')).toBe(OLLAMA_SHA256.x64);
+    expect(arg('OLLAMA_SHA256_ARM64')).toBe(OLLAMA_SHA256.arm64);
+    // the file is checked before it is opened, and only the CPU part is kept
+    expect(dockerfile).toContain('sha256sum -c');
+    expect(dockerfile).toContain('COPY --from=ollama /out /opt/ollama');
+    for (const dropped of ['cuda_*', 'vulkan', 'rocm*', 'mlx*']) expect(dockerfile).toContain('--exclude=lib/ollama/' + dropped);
+    expect(IMAGE_OLLAMA_BIN).toBe('/opt/ollama/bin/ollama');
   });
 
   it('a container started with --user (not root) skips the fix and keeps the warning', () => {

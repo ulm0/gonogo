@@ -353,7 +353,7 @@ describe('the setting of the endpoint', () => {
     expect(await refused({ model: '../etc' })).toMatchObject({ field: 'model' });
     const ok = await s.setConfig({ endpoint: 'http://192.168.1.10:11434/', model: 'nomic-embed-text:latest', confirm: '192.168.1.10' });
     expect(ok).toMatchObject({ endpoint: 'http://192.168.1.10:11434', confirmed: '192.168.1.10', model: 'nomic-embed-text:latest' });
-    expect(JSON.parse(await readFile(join(dir, 'semantic', 'config.json'), 'utf8'))).toEqual({ endpoint: 'http://192.168.1.10:11434', model: 'nomic-embed-text:latest', confirmed: '192.168.1.10' });
+    expect(JSON.parse(await readFile(join(dir, 'semantic', 'config.json'), 'utf8'))).toEqual({ mode: 'remote', endpoint: 'http://192.168.1.10:11434', model: 'nomic-embed-text:latest', confirmed: '192.168.1.10' });
     // back to this machine: the confirmation is dropped
     expect((await s.setConfig({ endpoint: 'http://127.0.0.1:11434' })).confirmed).toBeNull();
   });
@@ -484,5 +484,205 @@ describe('while the feature is off', () => {
     await new Promise((r) => setTimeout(r, 60));
     await s.stop();
     expect(frames).toBe(0);
+  });
+});
+
+/** The managed Ollama and the remote key: the real embedder against a stand-in Ollama on loopback, and a stand-in for the managed server. */
+describe('the managed mode and the remote key', () => {
+  let ollama: import('node:http').Server;
+  let url: string;
+  let requests: Array<{ authorization: string | undefined; body: Record<string, unknown> }>;
+
+  beforeEach(async () => {
+    requests = [];
+    const { createServer } = await import('node:http');
+    ollama = createServer((req, res) => {
+      let text = '';
+      req.on('data', (c) => (text += c));
+      req.on('end', () => {
+        const body = JSON.parse(text) as { input: string[] } & Record<string, unknown>;
+        requests.push({ authorization: req.headers.authorization, body });
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ embeddings: body.input.map(vectorOf) }));
+      });
+    });
+    await new Promise<void>((resolve) => ollama.listen(0, '127.0.0.1', resolve));
+    url = `http://127.0.0.1:${(ollama.address() as { port: number }).port}`;
+  });
+  afterEach(async () => {
+    await new Promise<void>((resolve) => ollama.close(() => resolve()));
+  });
+
+  /** A managed server that is a stand-in: it answers with the address of the stand-in Ollama, and notes what it was asked. */
+  function fakeManaged(shared = false): { m: import('../src/server/ollama.js').ManagedOllama; calls: string[]; state: { value: import('../src/server/ollama.js').ManagedState } } {
+    const calls: string[] = [];
+    const state = { value: 'off' as import('../src/server/ollama.js').ManagedState };
+    let settings = { keepAlive: '5m', idleMinutes: 10, threads: 0, memoryMb: 0 };
+    const m: import('../src/server/ollama.js').ManagedOllama = {
+      status: () => ({ state: state.value, reason: '', version: '0.40.18', port: 1, progress: null, rssMb: null, restarts: 0, shared, settings }),
+      acquire: async (model) => {
+        calls.push(`acquire ${model}`);
+        state.value = 'ready';
+        return url;
+      },
+      touch: () => void calls.push('touch'),
+      start: async (model) => void calls.push(`start ${model}`),
+      stop: async () => {
+        calls.push('stop');
+        state.value = 'off';
+      },
+      settings: (patch) => {
+        if (patch !== undefined) settings = { ...settings, ...patch };
+        return settings;
+      },
+      logs: () => ['line one'],
+      needsDownload: async () => false,
+    };
+    return { m, calls, state };
+  }
+
+  it('embeds through the managed server, with its keep-alive and threads, no key, and touches it after each request', async () => {
+    const { m, calls: managedCalls } = fakeManaged();
+    const s = make({ embedder: undefined, managed: m });
+    await s.load();
+    const status = await s.setConfig({ mode: 'managed', model: 'nomic-embed-text', keepAlive: '30s', threads: 4, idleMinutes: 3, memoryMb: 900 });
+    expect(status).toMatchObject({ mode: 'managed', configured: true, apiKeySet: false, managed: { settings: { keepAlive: '30s', threads: 4, idleMinutes: 3, memoryMb: 900 } } });
+    // switching it on starts it at once, so that the download and the pull show their progress
+    expect(managedCalls).toContain('acquire nomic-embed-text');
+    await s.idle();
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests[0]?.body).toMatchObject({ model: 'nomic-embed-text', keep_alive: '30s', options: { num_thread: 4 } });
+    expect(requests[0]?.authorization).toBeUndefined();
+    expect(managedCalls).toContain('touch');
+    // the saved file holds the mode and the settings of the managed server, and still no key
+    const saved = JSON.parse(await readFile(join(dir, 'semantic', 'config.json'), 'utf8')) as Record<string, unknown>;
+    expect(saved).toMatchObject({ mode: 'managed', model: 'nomic-embed-text', managed: { keepAlive: '30s', idleMinutes: 3, threads: 4, memoryMb: 900 } });
+    await s.stop();
+    expect(managedCalls.at(-1)).toBe('stop');
+  });
+
+  it('a search that comes while the managed server is not up is a word search, and starts it for the next one', async () => {
+    const { m, calls: managedCalls, state } = fakeManaged();
+    const s = make({ embedder: undefined, managed: m });
+    await s.load();
+    await s.setConfig({ mode: 'managed', model: 'nomic-embed-text' });
+    await s.idle();
+    expect(s.status().indexed).toBeGreaterThan(0);
+    state.value = 'off';
+    managedCalls.length = 0;
+    expect(await ask(s, 'compile')).toBeNull();
+    expect(managedCalls).toEqual(['acquire nomic-embed-text']);
+    // up again: the same question is answered by meaning
+    expect((await ask(s, 'compile'))?.[0]).toBe('l1');
+  });
+
+  it('leaving the managed mode stops the server; the start and stop keys need it', async () => {
+    const { m, calls: managedCalls } = fakeManaged();
+    const s = make({ embedder: undefined, managed: m });
+    await s.load();
+    await expect(s.managedAction('start')).rejects.toMatchObject({ field: 'action' });
+    await s.setConfig({ mode: 'managed', model: 'nomic-embed-text' });
+    await s.managedAction('start');
+    expect(managedCalls).toContain('start nomic-embed-text');
+    await expect(s.managedAction('reboot')).rejects.toMatchObject({ field: 'action' });
+    expect(s.managedLogs()).toEqual(['line one']);
+    await s.setConfig({ mode: 'remote', endpoint: url, model: 'nomic-embed-text' });
+    expect(managedCalls.at(-1)).toBe('stop');
+    expect(s.status().mode).toBe('remote');
+    await expect(s.managedAction('start')).rejects.toMatchObject({ field: 'action' });
+  });
+
+  it('is refused where there is no managed Ollama, and for settings it does not know', async () => {
+    const none = make();
+    await none.load();
+    await expect(none.setConfig({ mode: 'managed', model: 'x' })).rejects.toMatchObject({ field: 'mode' });
+    await expect(none.setConfig({ endpoint: url, model: 'x', threads: 2 })).rejects.toMatchObject({ field: 'threads' });
+    await expect(none.setConfig({ mode: 'cloud' })).rejects.toMatchObject({ field: 'mode' });
+    const { m } = fakeManaged();
+    const s = make({ managed: m });
+    await s.load();
+    await expect(s.setConfig({ mode: 'managed', model: 'nomic-embed-text', keepAlive: 'forever' })).rejects.toMatchObject({ field: 'keepAlive' });
+    await expect(s.setConfig({ mode: 'managed', model: 'nomic-embed-text', threads: -2 })).rejects.toMatchObject({ field: 'threads' });
+    await expect(s.setConfig({ mode: 'managed', model: 'nomic-embed-text', apiKey: 'k' })).rejects.toMatchObject({ field: 'apiKey' });
+    expect(s.status().configured).toBe(false);
+  });
+
+  it('where the Clean Rooms share the network, managed Ollama runs only after the Director said he understands', async () => {
+    const { m, calls: managedCalls } = fakeManaged(true);
+    const s = make({ embedder: undefined, managed: m });
+    await s.load();
+    const refused = await s.setConfig({ mode: 'managed', model: 'nomic-embed-text' }).then(() => null, (e: unknown) => e as { field?: string; message: string });
+    expect(refused?.field).toBe('acknowledge');
+    expect(refused?.message).toMatch(/Clean Room/);
+    expect(refused?.message).toMatch(/no login/);
+    await expect(s.setConfig({ mode: 'managed', model: 'nomic-embed-text', acknowledge: 'yes' })).rejects.toMatchObject({ field: 'acknowledge' });
+    expect(s.status()).toMatchObject({ configured: false, acknowledged: false });
+    expect(managedCalls).toEqual([]);
+    const done = await s.setConfig({ mode: 'managed', model: 'nomic-embed-text', acknowledge: true });
+    expect(done).toMatchObject({ mode: 'managed', acknowledged: true, managed: { shared: true } });
+    expect(managedCalls).toContain('acquire nomic-embed-text');
+    expect(JSON.parse(await readFile(join(dir, 'semantic', 'config.json'), 'utf8'))).toMatchObject({ mode: 'managed', acknowledged: true });
+    // later saves keep it (he is not asked again for a setting)
+    expect((await s.setConfig({ keepAlive: '1m' })).acknowledged).toBe(true);
+    // Remote never needs it
+  });
+
+  it('a saved managed setup that was never acknowledged on such a network does not start the server', async () => {
+    await mkdir(join(dir, 'semantic'), { recursive: true });
+    await writeFile(join(dir, 'semantic', 'config.json'), JSON.stringify({ mode: 'managed', endpoint: 'http://127.0.0.1:11434', model: 'nomic-embed-text', confirmed: null }));
+    const { m, calls: managedCalls } = fakeManaged(true);
+    const s = make({ embedder: undefined, managed: m });
+    await s.load();
+    expect(s.status()).toMatchObject({ mode: 'managed', acknowledged: false });
+    await s.idle();
+    expect(managedCalls).toEqual([]);
+    expect(s.status()).toMatchObject({ state: 'error', reason: expect.stringContaining('accept that a Clean Room can reach it') });
+    await expect(s.managedAction('start')).rejects.toMatchObject({ field: 'acknowledge' });
+    // stop only does less: it is always allowed
+    await expect(s.managedAction('stop')).resolves.toMatchObject({ mode: 'managed' });
+    expect(managedCalls).toEqual(['stop']);
+    managedCalls.length = 0;
+    expect(await ask(s, 'compile')).toBeNull();
+    expect(managedCalls).toEqual([]);
+    // Remote is not asked
+    await s.setConfig({ mode: 'remote', endpoint: url, model: 'nomic-embed-text' });
+    expect(s.status().mode).toBe('remote');
+  });
+
+  it('sends the key of a remote Ollama as Authorization: Bearer, keeps it in its own 0600 file, and never shows it', async () => {
+    const s = make({ embedder: undefined });
+    await s.load();
+    const status = await s.setConfig({ mode: 'remote', endpoint: url, model: 'nomic-embed-text', apiKey: 'sk-secret-key-123' });
+    expect(status.apiKeySet).toBe(true);
+    expect(JSON.stringify(status)).not.toContain('sk-secret');
+    await s.idle();
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every((r) => r.authorization === 'Bearer sk-secret-key-123')).toBe(true);
+    const file = join(dir, 'semantic', 'api-key');
+    expect(await readFile(file, 'utf8')).toBe('sk-secret-key-123');
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect(await readFile(join(dir, 'semantic', 'config.json'), 'utf8')).not.toContain('sk-secret');
+    // a restart reads it again; removing it removes the file and the header
+    const again = make({ embedder: undefined });
+    await again.load();
+    expect(again.status().apiKeySet).toBe(true);
+    const cleared = await again.setConfig({ apiKey: null });
+    expect(cleared.apiKeySet).toBe(false);
+    await expect(stat(file)).rejects.toThrow();
+    requests.length = 0;
+    again.changed('l1');
+    await again.idle();
+    expect(requests.every((r) => r.authorization === undefined)).toBe(true);
+  });
+
+  it('refuses a key it would send in the clear to another machine, or that is not a key', async () => {
+    const s = make({ embedder: undefined });
+    await s.load();
+    await expect(s.setConfig({ mode: 'remote', endpoint: 'http://192.168.1.10:11434', confirm: '192.168.1.10', model: 'nomic-embed-text', apiKey: 'k' })).rejects.toMatchObject({ field: 'apiKey' });
+    await expect(s.setConfig({ mode: 'remote', endpoint: url, model: 'nomic-embed-text', apiKey: 'has a space' })).rejects.toMatchObject({ field: 'apiKey' });
+    await expect(s.setConfig({ mode: 'remote', endpoint: url, model: 'nomic-embed-text', apiKey: 'x'.repeat(501) })).rejects.toMatchObject({ field: 'apiKey' });
+    // loopback takes a key over http (a proxy on this machine); the embedder itself refuses the same key to a private host over http
+    const { embed } = await import('../src/server/embedder.js');
+    await expect(embed({ endpoint: 'http://192.168.1.10:11434', model: 'm', confirmed: '192.168.1.10', apiKey: 'k', resolver: async () => [{ address: '192.168.1.10', family: 4 }] }, ['x'])).rejects.toThrow(/only over https/);
   });
 });
