@@ -200,9 +200,9 @@ describe('the container starts as root only to fix a bind folder, and drops to u
     expect(fix).toContain('stat -c %u "$p")" = 0');
     expect(fix).toContain('mountpoint -q "$p" || { d=$(dirname "$p"); [ "$d" != / ] && mountpoint -q "$d"; }');
     for (const system of ['/', '/etc', '/home', '/root', '/usr', '/var', '/proc']) expect(fix, system).toMatch(new RegExp(`[ |]${system.replaceAll('/', '\\/')}( \\||\\))`));
-    // exactly these four paths are offered to it
-    for (const target of ['fix "$HOME"', 'fix "$(dirname "$GONOGO_HOME")"', 'fix "${CLAUDE_CONFIG_DIR:-}"', 'fix "$PWD"']) expect(entry, target).toContain(target);
-    expect(entry.match(/\bfix "/g)).toHaveLength(4);
+    // exactly these five paths are offered to it
+    for (const target of ['fix "$HOME"', 'fix "${XDG_CONFIG_HOME:-}"', 'fix "$(dirname "$GONOGO_HOME")"', 'fix "${CLAUDE_CONFIG_DIR:-}"', 'fix "$PWD"']) expect(entry, target).toContain(target);
+    expect(entry.match(/\bfix "/g)).toHaveLength(5);
     // as root it only fixes, then drops: nothing of gonogo's runs before the drop
     const rootPart = entry.slice(entry.indexOf('if [ "$(id -u)" = 0 ]; then'), entry.indexOf('# Past here'));
     expect(rootPart).not.toMatch(/exec gonogo/);
@@ -222,9 +222,12 @@ describe('the container starts as root only to fix a bind folder, and drops to u
 
   it('repairs the files `docker exec` as root left in HOME: regular files and folders only, no symlink followed, no mount crossed, chown run in the directory', () => {
     const rootPart = entry.slice(entry.indexOf('if [ "$(id -u)" = 0 ]; then'), entry.indexOf('# Past here'));
-    const find = /find "\$HOME" (.*) -execdir chown -h 1000:1000 \{\} \+/.exec(rootPart);
+    const find = /find "\$1" (.*) -execdir chown -h 1000:1000 \{\} \+/.exec(rootPart);
     expect(find?.[1]).toBeDefined();
-    expect(rootPart).toMatch(/realpath -e "\$HOME"[^\n]*= "\$HOME" \]/);
+    expect(rootPart).toMatch(/realpath -e "\$1"[^\n]*= "\$1" \]/);
+    // run for the home, and for XDG_CONFIG_HOME only on another filesystem than the image's
+    expect(rootPart).toContain('heal "$HOME"');
+    expect(rootPart).toContain('heal "$XDG_CONFIG_HOME"');
     for (const part of ['-xdev', '-mindepth 1', '-user 0', '\\( -type f -links 1 -o -type d \\)', '\\( -type d -exec mountpoint -q {} \\; -prune \\)']) expect(find?.[1], part).toContain(part);
     expect(rootPart).not.toMatch(/find [^\n]*(-L\b|-follow|-H\b)/);
     expect(rootPart).not.toContain('-exec chown');

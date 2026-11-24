@@ -57,6 +57,6 @@ describe('the root half repairs a bound XDG_CONFIG_HOME like the home', () => {
     expect(script).toContain('fix "${XDG_CONFIG_HOME:-}"');
   });
   it('keeps every guard of the repair: -xdev, mount points pruned, one-link files and directories only, no symlink', () => {
-    expect(script).toContain('find "$1" -xdev -mindepth 1 \\( -type d -exec mountpoint -q {} \; -prune \\) -o -user 0 \\( -type f -links 1 -o -type d \\) -execdir chown -h 1000:1000 {} +');
+    expect(script).toContain('find "$1" -xdev -mindepth 1 \\( -type d -exec mountpoint -q {} \\; -prune \\) -o -user 0 \\( -type f -links 1 -o -type d \\) -execdir chown -h 1000:1000 {} +');
   });
 });

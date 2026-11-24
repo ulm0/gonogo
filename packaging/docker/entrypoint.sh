@@ -35,7 +35,7 @@ if [ "$(id -u)" = 0 ]; then
     esac
   }
   heal "$HOME"
-  # The same for XDG_CONFIG_HOME when it is set outside the home (a Docker setup that binds one config folder for gh, aws, opencode...): `docker exec gonogo opencode models` runs as root too and
+  # The same for XDG_CONFIG_HOME when it is set outside the home (a Docker setup that binds one config folder for gh, aws, opencode...): `docker exec <container> opencode models` runs as root too and
   # leaves root's files there, which the server (uid 1000) could not write. The folder is gonogo's own, so it gets the same repair, and the same guards.
   fix "${XDG_CONFIG_HOME:-}"
   # only a folder on another filesystem than the image's own (a bind or a volume): a path inside the image is never touched
