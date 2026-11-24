@@ -137,7 +137,7 @@ export function skipReason(pr: ListedPr, repo: string, settings: AutoReviewSetti
   if (pr.isDraft) return 'a draft';
   const owner = repo.split('/')[0] ?? '';
   if (pr.isCrossRepository !== false) return 'from a fork (only branches of this repo are reviewed)';
-  if (pr.headRepositoryOwner === null || pr.headRepositoryOwner === undefined || pr.headRepositoryOwner.login.toLowerCase() !== owner.toLowerCase()) return 'the head belongs to another owner';
+  if (typeof pr.headRepositoryOwner?.login !== 'string' || pr.headRepositoryOwner.login.toLowerCase() !== owner.toLowerCase()) return 'the head belongs to another owner';
   if (!byDefaultAuthor && !settings.authors.some((a) => a.toLowerCase() === String(pr.author?.login).toLowerCase())) return `author ${String(pr.author?.login)} is not on the list`;
   if (pr.changedFiles > settings.maxFiles || pr.additions + pr.deletions > settings.maxLines) return `too large (${pr.changedFiles} files, ${pr.additions + pr.deletions} lines)`;
   return null;
@@ -221,8 +221,17 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
       for (const pr of seen.values()) {
         const sha = typeof pr.headRefOid === 'string' ? pr.headRefOid : '';
         const key = jobKey(repo, pr.number, sha);
-        if (jobs.some((j) => j.key === key)) continue;
+        const known = jobs.find((j) => j.key === key);
+        // a head already made into a job is not made again; one the GATE skipped is judged again (the PR may have been marked ready, or the list changed), and only that
+        if (known !== undefined && known.gate !== true) continue;
         const reason = skipReason(pr, repo, settings, byDefault);
+        if (known !== undefined) {
+          if (reason !== null) {
+            known.reason = reason;
+            continue;
+          }
+          jobs = jobs.filter((j) => j !== known);
+        }
         const title = typeof pr.title === 'string' ? pr.title.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 120) : '';
         if (reason === null) {
           // a storm guard: at most JOBS_PER_HOUR jobs per repo in an hour; the rest wait for the next poll
@@ -234,7 +243,7 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
           // a new head supersedes the job of the older one that did not finish
           for (const old of jobs) if (old.repo === repo && old.pr === pr.number && (old.status === 'queued' || old.status === 'running')) old.status = 'superseded';
         }
-        const job: AutoReviewJob = { id: `rv${(seq += 1)}`, key, repo, pr: pr.number, sha, title, status: reason === null ? 'queued' : 'skipped', ...(reason === null ? {} : { reason }), at: now() };
+        const job: AutoReviewJob = { id: `rv${(seq += 1)}`, key, repo, pr: pr.number, sha, title, status: reason === null ? 'queued' : 'skipped', ...(reason === null ? {} : { reason, gate: true }), at: now() };
         jobs.push(job);
         if (reason === null) made.push(job);
       }

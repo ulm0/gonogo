@@ -91,6 +91,8 @@ describe('the eligibility gate', () => {
     expect(skipReason(pr({ isCrossRepository: true }), 'ulm0/gonogo', base, false)).toMatch(/fork/);
     expect(skipReason(pr({ headRepositoryOwner: { login: 'evil' } }), 'ulm0/gonogo', base, false)).toMatch(/another owner/);
     expect(skipReason(pr({ headRepositoryOwner: null }), 'ulm0/gonogo', base, false)).toMatch(/another owner/);
+    expect(skipReason(pr({ headRepositoryOwner: { login: 5 } as never }), 'ulm0/gonogo', base, false)).toMatch(/another owner/);
+    expect(skipReason(pr({ headRepositoryOwner: {} as never }), 'ulm0/gonogo', base, false)).toMatch(/another owner/);
     expect(skipReason(pr({ isDraft: true }), 'ulm0/gonogo', base, false)).toMatch(/draft/);
     expect(skipReason(pr({ author: { login: 'mallory' } }), 'ulm0/gonogo', base, false)).toMatch(/not on the list/);
     expect(skipReason(pr({ changedFiles: 41 }), 'ulm0/gonogo', base, false)).toMatch(/too large/);
@@ -144,6 +146,22 @@ describe('the poller', () => {
     const jobs = r.view().jobs;
     expect(jobs).toHaveLength(2);
     expect(jobs.every((j) => j.status === 'skipped' && typeof j.reason === 'string')).toBe(true);
+  });
+  it('a head the gate skipped is judged again, once: ready later it becomes a job; a skip that was not the gate\'s is never revived', async () => {
+    const r = await make();
+    await on(r, { authors: ['ulm0'] });
+    listed['ulm0/gonogo|ulm0'] = [pr({ isDraft: true })];
+    expect(await r.pollNow()).toEqual([]);
+    expect(r.view().jobs).toHaveLength(1);
+    listed['ulm0/gonogo|ulm0'] = [pr({ isDraft: false })];
+    const [job] = await r.pollNow();
+    expect(job).toMatchObject({ status: 'queued', pr: 7 });
+    expect(r.view().jobs).toHaveLength(1);
+    expect(r.view().jobs[0]?.gate).toBeUndefined();
+    // the Director (or the runner) skipped it: the same head is not made again
+    await r.mark(job!.id, { status: 'skipped', reason: 'skipped by the Director' });
+    expect(await r.pollNow()).toEqual([]);
+    expect(r.view().jobs[0]?.status).toBe('skipped');
   });
   it('a storm guard: at most JOBS_PER_HOUR jobs per repo an hour; the rest wait', async () => {
     const r = await make();

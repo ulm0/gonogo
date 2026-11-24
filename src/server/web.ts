@@ -666,6 +666,8 @@ function rejectUpgrade(socket: Duplex, status: number, contentType: string, body
 }
 
 export function createWebServer(options: WebOptions): WebServer {
+  /** When the page last asked auto-review to look at GitHub by hand. */
+  let lastReviewLook = 0;
   const { hub, terminals, log } = options;
   const nameRe = new RegExp(AGENT_NAME_PATTERN);
   const tokenDigest = sha256(options.browserToken);
@@ -1933,6 +1935,9 @@ export function createWebServer(options: WebOptions): WebServer {
         return {
           allow: ['POST'],
           run: async (_req, res) => {
+            // a hand on the key cannot drain the GitHub API: one look every 30 s
+            if (Date.now() - lastReviewLook < 30_000) return sendApiError(res, 429, 'looked a moment ago: wait 30 seconds', 'rate_limited');
+            lastReviewLook = Date.now();
             await review.pollNow();
             sendJson(res, 200, review.view());
           },

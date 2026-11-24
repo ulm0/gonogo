@@ -498,6 +498,8 @@ export interface AutoReviewJob {
   title: string;
   status: AutoReviewStatus;
   reason?: string;
+  /** Skipped by the eligibility gate (judged again at the next poll), not by the Director or a failure. */
+  gate?: boolean;
   /** The Flight Plan task of the job, once it has one. */
   task?: string;
   at: number;

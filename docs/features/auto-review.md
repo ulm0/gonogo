@@ -34,7 +34,7 @@ A pull request becomes a **job** only when all of this holds, and otherwise it i
 - not larger than `maxFiles` files or `maxLines` changed lines;
 - the head commit is a full SHA.
 
-**One job per head commit**: the same head is never made twice, even after a restart. A new push **supersedes** the older job of that pull request that has not finished. At most **4 jobs per repo per hour**: more wait for the next poll. A repo that cannot be listed shows the error in the last poll and the others are still read.
+**One job per head commit**: the same head is never made twice, even after a restart (a head that the gate only skipped, say a draft, is judged again at the next poll, once it passes it becomes a job; one you or a failure skipped is not revived). **Look now** (and `POST /api/auto-review/poll`) is limited to one every 30 seconds. A new push **supersedes** the older job of that pull request that has not finished. At most **4 jobs per repo per hour**: more wait for the next poll. A repo that cannot be listed shows the error in the last poll and the others are still read.
 
 Files: `auto-review.json` (the setting, 0600) and `auto-review-jobs.json` (the last 200 jobs: repo, number, head, a title cleaned of control characters, status). **No diff, comment or finding is stored.** The Black Box says that it was switched, with a count of repos, never a pull request.
 
