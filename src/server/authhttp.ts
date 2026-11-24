@@ -15,7 +15,7 @@ import { authPage, authPageHeaders, PASSKEY_SCRIPT } from './authpage.js';
 import type { AuthPageExtra } from './authpage.js';
 import type { Passkeys } from './passkeys.js';
 import { relyingParty } from './passkeys.js';
-import { bodyMatters, needsRoomSandbox, stepUpReason } from './stepup.js';
+import { bodyMatters, needsRoomSandbox, reliefGoId, stepUpReason } from './stepup.js';
 import type { StepUpContext } from './stepup.js';
 import type { AuthPageKind } from './authpage.js';
 import { nullLogger } from './constants.js';
@@ -596,7 +596,7 @@ export function createAuthHttp(options: AuthHttpOptions): AuthHttp {
     csrfOk,
     whoOf,
     stepUpBody: bodyMatters,
-    stepUpWantsRoom: needsRoomSandbox,
+    stepUpWantsRoom: (method, path, body) => needsRoomSandbox(method, path, body) || reliefGoId(method, path) !== null,
     stepUpNeeded: (grant, method, path, body, context) => {
       if (grant.kind === 'tui') return stepUpReason(method, path, body, context);
       if (grant.kind !== 'session' || grant.sessionId === undefined || auth.stepFresh(grant.sessionId)) return null;

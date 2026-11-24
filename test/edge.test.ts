@@ -852,6 +852,16 @@ describe('home', () => {
     expect(home.loadRoster()).toEqual({ version: 1, agents: [] });
   });
 
+  it('a restart keeps who the boss hired by rule (hiredBy), and a bad value is refused', async () => {
+    const dir = tmpDir();
+    const home = openTestHome(dir);
+    const agent = { name: 'ana', role: 'dev', dir: '/work/a', mode: 'acceptEdits' as const, sessionId: '223e4567-e89b-42d3-a456-426614174000', desk: 1, boss: false, createdAt: 6 };
+    await home.saveRoster({ version: 1, agents: [{ ...agent, hiredBy: 'boss' }] });
+    expect(home.loadRoster().agents[0]?.hiredBy).toBe('boss');
+    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ version: 1, agents: [{ ...agent, hiredBy: 'user' }] }));
+    expect(() => home.loadRoster()).toThrow(/hiredBy is boss or absent/);
+  });
+
   it('saves the roster atomically, round-trips it and leaves no temp file', async () => {
     const dir = tmpDir();
     const home = openTestHome(dir);
@@ -2484,6 +2494,14 @@ describe('relief', () => {
       calls,
       relief: {
         view: () => view,
+        setRules: async (body) => {
+          calls.push(['setRules', body]);
+          return view;
+        },
+        stopCrew: async () => {
+          calls.push(['stopCrew']);
+          return { stopped: ['g1'], view };
+        },
         request: async (by, input) => {
           calls.push(['request', by, input]);
           if ((input as { name?: unknown }).name === 'full') throw new FakeHubError('conflict', 'the operations room is full (24 agents)');
@@ -2524,11 +2542,24 @@ describe('relief', () => {
     const { calls, relief } = fakeRelief();
     const { port } = await startWeb({ relief });
     for (const token of [ANA_TOKEN, BEN_TOKEN, 'nope']) {
+      // the rules and STOP CREW are the Director's too: an agent (the boss included) cannot reach them
+      expect((await api(port, 'PUT', '/api/relief/rules', { autoApprove: true }, token)).status, token).toBe(401);
+      expect((await api(port, 'POST', '/api/relief/stop-crew', undefined, token)).status, token).toBe(401);
       expect((await api(port, 'POST', '/api/relief/h1/go', undefined, token)).status, token).toBe(401);
       expect((await api(port, 'POST', '/api/relief/h1/no-go', undefined, token)).status, token).toBe(401);
       expect((await api(port, 'GET', '/api/relief', undefined, token)).status, token).toBe(401);
     }
     expect(calls).toEqual([]);
+  });
+
+  it('the rules and STOP CREW are routes of the Director: the body goes to the Relief, with the methods each allows', async () => {
+    const { calls, relief } = fakeRelief();
+    const { port } = await startWeb({ relief });
+    expect((await api(port, 'PUT', '/api/relief/rules', { maxCrew: 2 })).status).toBe(200);
+    expect((await api(port, 'POST', '/api/relief/stop-crew')).status).toBe(200);
+    expect((await api(port, 'GET', '/api/relief/rules')).status).toBe(405);
+    expect((await api(port, 'PUT', '/api/relief/stop-crew', {})).status).toBe(405);
+    expect(calls).toEqual([['setRules', { maxCrew: 2 }], ['stopCrew']]);
   });
 
   it('has no requests in the state and answers 404 without a Relief', async () => {

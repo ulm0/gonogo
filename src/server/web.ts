@@ -228,7 +228,7 @@ export interface WebOptions {
   /** Post-Flight Review; absent in tests that do not need it (the routes answer 404 and the two review tools say it is not available). The page asks again; no frame. */
   review?: Pick<Review, 'view' | 'read' | 'addNote' | 'addNotes' | 'update' | 'remove' | 'verdict' | 'ask'>;
   /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
-  relief?: Pick<Relief, 'request' | 'view' | 'decide'>;
+  relief?: Pick<Relief, 'request' | 'view' | 'decide' | 'setRules' | 'stopCrew'>;
   /** The startup policy; absent in tests that do not need it (the routes answer 404). */
   startup?: Pick<StartupStore, 'view' | 'set'>;
   /** Auto-update (room main under Docker): the switch, the windows and SKIP THIS VERSION; absent elsewhere (the routes answer 404). */
@@ -2007,6 +2007,17 @@ export function createWebServer(options: WebOptions): WebServer {
       const relief = options.relief;
       if (!relief) return null;
       if (s.length === 2) return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, relief.view()) };
+      // the rules and STOP CREW (docs/hire-fire-spec.md): a browser session with the full scope; the step-up is asked before, by stepUpReason
+      if (s.length === 3 && s[2] === 'rules') {
+        return {
+          allow: ['PUT'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await relief.setRules(body));
+          },
+        };
+      }
+      if (s.length === 3 && s[2] === 'stop-crew') return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, (await relief.stopCrew()).view) };
       // browser token only, like every /api route: an agent's token never reaches here, so the boss cannot answer its own request
       if (s.length !== 4 || (s[3] !== 'go' && s[3] !== 'no-go')) return null;
       const verdict = s[3];

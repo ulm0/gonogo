@@ -356,7 +356,7 @@ describe('what a Redline trip and a poll say', () => {
 });
 
 describe('what the Director answers to Relief', () => {
-  const relief = { decide: async (id: string, verdict: string, _by: unknown) => ({ id, verdict, requests: [{ name: 'secret-name', role: SECRET }] }), view: () => ({ requests: [] }) };
+  const relief = { request: async (_by: unknown, input: { name: string; role: string }) => (input.name === 'rule' ? { id: 'hired:rule', status: 'hired', name: 'rule' } : { id: 'h3', status: 'pending', note: `needs the Director's GO: ${SECRET}` }), setRules: async (_body: unknown) => ({ requests: [] }), stopCrew: async () => ({ stopped: ['a', 'b'], view: { requests: [] } }), decide: async (id: string, verdict: string, _by: unknown) => ({ id, verdict, requests: [{ name: 'secret-name', role: SECRET }] }), view: () => ({ requests: [] }) };
 
   it('records a go and a no-go by the id of the request, and nothing of the request', async () => {
     const { store, told } = wrapped(relief, RELIEF_AUDIT);
@@ -370,8 +370,23 @@ describe('what the Director answers to Relief', () => {
     expect(store.view()).toEqual({ requests: [] });
   });
 
+  it('records the boss\'s hire by rule, the rules changed and STOP CREW: names and counts, never the role text or the note', async () => {
+    const { store, told } = wrapped(relief, RELIEF_AUDIT);
+    await store.request({}, { name: 'rule', role: SECRET });
+    await store.request({}, { name: 'wait', role: SECRET });
+    await store.setRules({ role: SECRET });
+    await store.stopCrew();
+    expect(told).toEqual([
+      ['crew', 'boss hired rule by rule'],
+      ['crew', 'boss asked to hire an agent: waits for the Director (h3)'],
+      ['config', 'Director changed the Relief rules'],
+      ['crew', 'STOP CREW: 2 agents stopped, automatic hires off'],
+    ]);
+    expect(JSON.stringify(told)).not.toContain(SECRET);
+  });
+
   it('records nothing when the answer is refused or the id is not a plain id', async () => {
-    const refusing = { decide: async (_id: string, _verdict: string, _by: unknown): Promise<never> => { throw new Error('forbidden'); } };
+    const refusing = { request: async () => ({}), setRules: async () => ({}), stopCrew: async () => ({}), decide: async (_id: string, _verdict: string, _by: unknown): Promise<never> => { throw new Error('forbidden'); } };
     const refused = wrapped(refusing, RELIEF_AUDIT);
     await expect(refused.store.decide('h1', 'go', { kind: 'agent' })).rejects.toThrow();
     expect(refused.told).toEqual([]);

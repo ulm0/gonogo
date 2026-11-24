@@ -79,6 +79,7 @@ import { createLiveries } from './livery.js';
 import { createPhone } from './phone.js';
 import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
+import { createReliefRules } from './reliefrules.js';
 import { createMassBudget } from './massbudget.js';
 import { createAnchorChecker, knowledgeLine } from './anchors.js';
 import { createMissionLog } from './missionlog.js';
@@ -1279,8 +1280,21 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     }), blackBox.record, REVIEW_AUDIT);
     const room = audited(createRoomLayout({ dir: home.dir, emit: (view) => web?.broadcast({ t: 'room', room: view }), log: log.child('room') }), blackBox.record, ROOM_AUDIT);
     const tabName = audited(createTabName({ dir: home.dir, fallback: (runtime.get('station') ?? env[STATION_ENV] ?? '').trim() === '' ? null : stationName(runtime.get('station') ?? env[STATION_ENV], hostname()), emit: (view) => web?.broadcast({ t: 'tabname', tabName: view }), log: log.child('tabname') }), blackBox.record, TABNAME_AUDIT);
+    // the rules of the boss's hires (docs/hire-fire-spec.md): off by default; the file is checked against the last change this process wrote, on every decision and on a timer
+    const reliefRules = createReliefRules({ dir: home.dir, log: log.child('relief rules'), alarm: (text) => tell('relief', text) });
+    await reliefRules.load();
+    // the rules come back from disk: when they say automatic hires are ON, the Director is told at once (a file nobody of ours wrote would otherwise switch it on silently)
+    if (reliefRules.view().autoApprove) {
+      const r = reliefRules.view();
+      tell('relief', `Relief rules loaded from disk: automatic hires ON, maxMode ${r.maxMode}, autoOnHost ${r.autoOnHost ? 'ON' : 'off'}`);
+    }
+    const reliefRulesTimer = setInterval(() => void reliefRules.check().catch((error: unknown) => log.error('relief rules check failed', error)), 30_000);
+    reliefRulesTimer.unref();
     const relief = createRelief({
       hub: hubInstance,
+      rules: reliefRules,
+      // a hire by rule in `auto` runs every tool without a check: the API key must stay out of its container and no global MCP server may reach it (the room's keys marked for the Clean Room are all it gets)
+      cleanRoomUnsafe: () => (!egressSettings.view().anthropic ? 'egress is off: the API key would enter the container' : globalMcp.enabled(true) ? 'the global MCP servers reach Clean Room agents' : null),
       defaultEngine: () => modelDefaults.engine(),
       defaultMode: () => modelDefaults.mode(),
       defaultSandbox: () => modelDefaults.sandbox(),
@@ -1625,7 +1639,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       audit('audit', 'gonogo stopped');
       await step('black box close', () => blackBox.close());
       await step('livery close', () => liveries.close());
-      await step('relief close', async () => relief.close());
+      await step('relief close', async () => {
+        clearInterval(reliefRulesTimer);
+        relief.close();
+        await reliefRules.close();
+      });
       await step('telegram polling close', async () => telegramPoll?.stop());
       await step('relay close', () => relay.close());
       await step('models close', () => modelDefaults.close());

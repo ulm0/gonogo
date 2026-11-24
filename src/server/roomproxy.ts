@@ -22,7 +22,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Grant } from './authhttp.js';
 import { keyMayDo } from './auth.js';
-import { egressChange, weakensEgress } from './stepup.js';
+import { egressChange, reliefGoId, weakensEgress } from './stepup.js';
 import { isIpLiteralHost } from './hosts.js';
 import http from 'node:http';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
@@ -51,7 +51,7 @@ export interface ProxyAuth {
   alive(sessionId: string): boolean;
   touchSession(sessionId: string): void;
   stepUpBody(method: string, path: string): boolean;
-  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null, context?: { roomSandbox?: string }): string | null;
+  stepUpNeeded(grant: Grant, method: string, path: string, body: Record<string, unknown> | null, context?: { roomSandbox?: string; reliefMode?: string }): string | null;
   stepUpWantsRoom(method: string, path: string, body: Record<string, unknown> | null): boolean;
   stepUpDenied(req: IncomingMessage, res: ServerResponse, reason: string, tui?: boolean): void;
 }
@@ -384,27 +384,33 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
         } catch {
           // not JSON: the room answers 400; the strictest reading of a body nobody could read is that it needs the check
         }
-        const decide = (roomSandbox: string | undefined): void => {
-          const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed, roomSandbox === undefined ? {} : { roomSandbox });
+        const reliefId = reliefGoId(asked.method, asked.path);
+        const decide = (found: string | undefined): void => {
+          // for a hire request's GO the room's answer is the request's mode; for a hire it is the room's sandbox
+          const reason = options.auth.stepUpNeeded(asked.grant, asked.method, asked.path, parsed, found === undefined ? {} : reliefId !== null ? { reliefMode: found } : { roomSandbox: found });
           if (reason !== null) options.auth.stepUpDenied(req, res, reason, asked.grant.kind === 'tui');
           else forward(got.body);
         };
         // a hire that names a Clean Room flavor is judged against the room's own default, which only the room knows: asked on its socket (a room that does not answer is read as the strongest wall, so the hire asks for the password)
         if (!options.auth.stepUpWantsRoom(asked.method, asked.path, parsed)) return decide(undefined);
-        const ask = http.request({ socketPath: target.room.socket, method: 'GET', path: '/api/models', headers: { host: '127.0.0.1', accept: 'application/json' }, timeout: 1500 }, (answer) => {
+        const ask = http.request({ socketPath: target.room.socket, method: 'GET', path: reliefId !== null ? '/api/relief' : '/api/models', headers: { host: '127.0.0.1', accept: 'application/json' }, timeout: 1500 }, (answer) => {
           const chunks: Buffer[] = [];
           answer.on('data', (c: Buffer) => chunks.push(c));
           answer.on('end', () => {
             try {
-              const value = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sandbox?: unknown }).sandbox;
-              decide(typeof value === 'string' ? value : 'docker');
+              const answer = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sandbox?: unknown; requests?: Array<{ id?: unknown; mode?: unknown }> };
+              if (reliefId !== null) {
+                // a request that is gone (answered, expired) has no mode: the room answers 404 to the GO itself
+                const mode = answer.requests?.find((r) => r.id === reliefId)?.mode;
+                decide(typeof mode === 'string' ? mode : undefined);
+              } else decide(typeof answer.sandbox === 'string' ? answer.sandbox : 'docker');
             } catch {
-              decide('microvm');
+              decide(reliefId !== null ? 'auto' : 'microvm');
             }
           });
         });
         ask.on('timeout', () => ask.destroy());
-        ask.on('error', () => decide('microvm'));
+        ask.on('error', () => decide(reliefId !== null ? 'auto' : 'microvm'));
         ask.end();
       });
       return true;
