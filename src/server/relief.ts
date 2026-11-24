@@ -15,11 +15,14 @@ import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { positionById, POSITION_IDS } from '../shared/positions.js';
 import { AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
+import type { AgentView, CleanRoom, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
 import { providerInfo, takesCleanRoom } from '../shared/protocol.js';
+import type { ReliefRules } from '../shared/protocol.js';
 import { RELIEF_PENDING_MAX, RELIEF_RATE_MAX, RELIEF_RATE_WINDOW_MS, RELIEF_TTL_MS } from './constants.js';
 import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
+import { hireStepUpReason } from './stepup.js';
+import { modeRank } from './reliefrules.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const ID_RE = /^h[1-9]\d{0,9}$/;
@@ -38,7 +41,11 @@ export type ReliefActor = { kind: 'user' } | { kind: 'agent'; name: string };
 
 export interface ReliefOptions {
   /** The parts of the hub it uses: the room, the hire of the form, and the message that tells the boss. */
-  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'>;
+  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'> & Partial<Pick<Hub, 'stop'>>;
+  /** The room's rules (`relief.json`). Absent: no rule hires, every request waits for the Director, as before. */
+  rules?: { view(): ReliefRules; check(): Promise<void>; set?(body: unknown): Promise<ReliefRules>; off?(): Promise<ReliefRules> };
+  /** Why a hire in `auto` (or bypass) must not run by rule in a Clean Room now (egress off, the global MCP servers on), or null. */
+  cleanRoomUnsafe?(): string | null;
   /** `HubIo.checkDirectory`: the check of the hire form (absolute, exists, a directory). */
   checkDirectory(path: string): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** `HubIo.checkWorktree`: null when `dir` is in a git repository a worktree can be made of, else why not. Without it the hire's own check is the only one. */
@@ -59,14 +66,20 @@ export interface ReliefOptions {
 
 export interface ReliefAsked {
   id: string;
-  status: 'pending';
+  /** `hired`: inside the rules, staffed at once. `pending`: waits for the Director (the note names the rule that sent it there). */
+  status: 'pending' | 'hired';
   note: string;
+  name?: string;
 }
 
 export interface Relief {
   /** The boss asks. `by` comes from its token. Throws a HubError that says what to change. */
   request(by: { agent: string; generation: number }, input: unknown): Promise<ReliefAsked>;
   view(): ReliefView;
+  /** The Director's change of the rules (the route asked for the step-up before). Throws a bad_request that names the field. */
+  setRules(body: unknown): Promise<ReliefView>;
+  /** STOP CREW: every boss-hired agent is stopped (the Director's own stop: the boss cannot start it again) and autoApprove goes off. It only removes power, so it needs no step-up. */
+  stopCrew(): Promise<{ stopped: string[]; view: ReliefView }>;
   /** The Director's GO (the agent is hired, as the form does it) or NO-GO. Throws the HubError of the hire when it fails. */
   decide(id: string, verdict: ReliefVerdict, by: ReliefActor): Promise<ReliefView>;
   close(): void;
@@ -91,8 +104,10 @@ export function createRelief(options: ReliefOptions): Relief {
   /** When each request of the window was made, oldest first. */
   let made: number[] = [];
   let seq = 0;
+  /** Names of rule hires being staffed now: they count as crew before the hub has them, so two parallel hires cannot both pass the cap. */
+  const staffing = new Set<string>();
 
-  const view = (): ReliefView => ({ requests: [...pending.values()].map(({ request }) => ({ ...request, cleanRoom: request.cleanRoom === null ? null : { ...request.cleanRoom }, ...(request.worktree === undefined || request.worktree === null ? {} : { worktree: { ...request.worktree } }) })) });
+  const view = (): ReliefView => ({ ...(options.rules === undefined ? {} : { rules: options.rules.view(), crew: hub.views().filter((a) => a.hiredBy === 'boss').map((a) => a.name) }), requests: [...pending.values()].map(({ request }) => ({ ...request, cleanRoom: request.cleanRoom === null ? null : { ...request.cleanRoom }, ...(request.worktree === undefined || request.worktree === null ? {} : { worktree: { ...request.worktree } }) })) });
   const changed = (): void => options.emit({ t: 'relief', relief: view() });
   const notify = (text: string, ref?: DownlinkRef): void => options.notify?.('relief', text, ref);
 
@@ -155,6 +170,35 @@ export function createRelief(options: ReliefOptions): Relief {
     if (requester.cleanRoom !== null && !(await insideRealpath(requester.dir, dir))) {
       throw new HubError('forbidden', 'a Clean Room agent can hire only inside its own project folder: leave dir out to use it', 'dir');
     }
+  };
+
+  const HOUR_MS = 3_600_000;
+  /**
+   * Which rule sends this request to the Director, or null when it fits every rule (docs/hire-fire-spec.md). Synchronous on purpose: the caller reserves the crew slot
+   * right after it, with no await between, so parallel hires cannot both pass the cap. Reads the rules from the store, never from the request.
+   */
+  const ruleAsks = (rules: ReliefRules, requester: AgentView, r: { name: string; position: string | null; free: boolean; dir: string; provider: Provider; mode: PermissionMode; cleanRoom: CleanRoom | null; worktree: boolean; insideBoss: boolean }): string | null => {
+    const crew = hub.views().filter((a) => a.hiredBy === 'boss');
+    if (crew.length + staffing.size >= rules.maxCrew) return `maxCrew is ${rules.maxCrew}`;
+    const since = now() - HOUR_MS;
+    if (crew.filter((a) => (a.hiredAt ?? 0) > since).length + [...staffing].length >= rules.ratePerHour) return `ratePerHour is ${rules.ratePerHour}`;
+    if (r.free || r.position === null) return 'a role written by the boss is never approved by a rule';
+    if (!rules.positions.includes(r.position)) return `the position ${r.position} is not in the rules`;
+    const engines = rules.engines.length > 0 ? rules.engines : [options.defaultEngine?.() ?? 'claude'];
+    if (!engines.includes(r.provider)) return `the engine ${r.provider} is not in the rules`;
+    if (!r.insideBoss) return "the folder is not the boss's own or inside it";
+    if (modeRank(r.mode) > modeRank(rules.maxMode)) return `mode ${r.mode} is above maxMode (${rules.maxMode})`;
+    if (r.mode === 'auto') {
+      if (r.cleanRoom === null && !rules.autoOnHost) return 'mode auto on the host needs autoOnHost';
+      const unsafe = r.cleanRoom === null ? null : (options.cleanRoomUnsafe?.() ?? null);
+      if (unsafe !== null) return `mode auto needs a safe Clean Room: ${unsafe}`;
+    }
+    // the one judge of the hire form's step-up: whatever it names is the Director's, whatever the request carries (a request has no keys, payload, command or remote control; the function is asked anyway)
+    const body: Record<string, unknown> = { name: r.name, dir: r.dir, mode: r.mode, provider: r.provider, ...(r.cleanRoom === null ? {} : { cleanRoom: r.cleanRoom }), ...(r.worktree ? { worktree: {} } : {}) };
+    const judged = hireStepUpReason(body, { roomSandbox: options.defaultSandbox?.() }, true);
+    if (judged !== null) return `${judged} needs your GO`;
+    void requester;
+    return null;
   };
 
   return {
@@ -222,6 +266,29 @@ export function createRelief(options: ReliefOptions): Relief {
       }
       // the checks above waited on the disk: another request may have taken the name or the last place meanwhile
       limits(name);
+      // the rules: read from the store (its file is checked against the last record first), never from the request
+      await options.rules?.check();
+      limits(name);
+      const rules = options.rules?.view();
+      const insideBoss = await insideRealpath(requester.dir, checked.path);
+      limits(name);
+      // from here to the reservation there is no await: a hire by rule takes its crew slot at once
+      const asks = rules?.autoApprove === true ? ruleAsks(rules, requester, { name, position: typeof position === 'string' ? position : null, free: typeof role === 'string', dir: checked.path, provider, mode, cleanRoom, worktree: wantsWorktree, insideBoss }) : undefined;
+      if (rules?.autoApprove === true && asks === null) {
+        made.push(now());
+        staffing.add(name);
+        const hire: HireRequest = { name, role: roleText, dir: checked.path, mode, provider, position: position as string };
+        if (cleanRoom !== null) hire.cleanRoom = cleanRoom;
+        if (wantsWorktree) hire.worktree = {};
+        try {
+          const hired = await hub.hire(hire, { hiredBy: 'boss' });
+          // the line says which rule decided and the counts, never the role text
+          notify(`${hired.name} hired by ${requester.name} by rule: ${typeof position === 'string' ? position.toUpperCase() : ''} ${provider}, ${mode}, crew ${hub.views().filter((a) => a.hiredBy === 'boss').length} of ${rules.maxCrew}`.replace('  ', ' '));
+          return { id: `hired:${hired.name}`, status: 'hired', name: hired.name, note: `hired at once, inside the Director's rules (crew ${hub.views().filter((a) => a.hiredBy === 'boss').length} of ${rules.maxCrew}); brief it with send_message` };
+        } finally {
+          staffing.delete(name);
+        }
+      }
 
       seq += 1;
       const at = now();
@@ -231,14 +298,45 @@ export function createRelief(options: ReliefOptions): Relief {
       const roomFlavor = options.defaultSandbox?.() ?? 'docker';
       const flavor = cleanRoom === null ? undefined : (cleanRoom.flavor ?? roomFlavor);
       const flavorBelowRoom = flavor !== undefined && CLEAN_ROOM_FLAVORS.indexOf(flavor) < CLEAN_ROOM_FLAVORS.indexOf(roomFlavor);
-      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(flavor === undefined ? {} : { flavor }), ...(flavorBelowRoom ? { flavorBelowRoom } : {}), ...(wantsWorktree ? { worktree: {} } : {}) };
+      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(flavor === undefined ? {} : { flavor }), ...(flavorBelowRoom ? { flavorBelowRoom } : {}), ...(wantsWorktree ? { worktree: {} } : {}), ...(typeof asks === 'string' ? { asks } : {}) };
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
+      if (typeof asks === 'string') notify(`${requester.name}'s hire of ${name} is outside the rules (${asks}): it waits for your GO`);
       notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}${modeFromRoom ? " (the room's default)" : ''}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}${flavor === undefined ? '' : `, Clean Room sandbox ${flavor}${flavorBelowRoom ? " (below the room's default)" : ''}`}`, { kind: 'relief', id });
-      return { id, status: 'pending', note: `waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
+      return { id, status: 'pending', note: `${typeof asks === 'string' ? `needs the Director's GO: ${asks}; ` : ''}waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
     },
 
     view,
+
+    async setRules(body) {
+      if (!options.rules?.set) throw new HubError('not_found', 'the Relief rules are not available');
+      const before = options.rules.view();
+      const after = await options.rules.set(body);
+      const moved = Object.keys(after).filter((k) => JSON.stringify(after[k as keyof ReliefRules]) !== JSON.stringify(before[k as keyof ReliefRules]));
+      // the line names the rules that moved and their new values (numbers, switches, positions), never any text somebody wrote
+      if (moved.length > 0) notify(`Relief rules changed: ${moved.map((k) => `${k} ${JSON.stringify(after[k as keyof ReliefRules])}`).join(', ')}`);
+      changed();
+      return view();
+    },
+
+    async stopCrew() {
+      if (!options.rules?.off || !hub.stop) throw new HubError('not_found', 'the Relief rules are not available');
+      // off first: whatever happens next, no new rule hire gets through
+      await options.rules.off();
+      const names = hub.views().filter((a) => a.hiredBy === 'boss').map((a) => a.name);
+      const stopped: string[] = [];
+      for (const name of names) {
+        try {
+          await hub.stop(name);
+          stopped.push(name);
+        } catch (error) {
+          log.warn(`STOP CREW could not stop ${name}`, error);
+        }
+      }
+      notify(`STOP CREW: ${stopped.length} of ${names.length} boss-hired agents stopped, automatic hires are off`);
+      changed();
+      return { stopped, view: view() };
+    },
 
     async decide(idInput, verdict, by) {
       if (!by || by.kind !== 'user') throw new HubError('forbidden', 'only the Director answers a hire request');

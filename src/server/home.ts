@@ -384,6 +384,10 @@ function parseAgent(a: unknown): AgentRecord | string {
     if (cleanRoom !== undefined) return `${name}: a Clean Room agent has a worktree already`;
     record.worktree = checked.worktree;
   }
+  if (a.hiredBy !== undefined) {
+    if (a.hiredBy !== 'boss') return `${name}: hiredBy is boss or absent`;
+    record.hiredBy = 'boss';
+  }
   if (a.stoppedBy !== undefined) {
     if (a.stoppedBy !== 'director') return `${name}: stoppedBy is director or absent`;
     record.stoppedBy = 'director';

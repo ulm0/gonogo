@@ -29,6 +29,7 @@ export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path)) return true;
   if (method === 'PUT' && path === '/api/models/mode') return true;
   if (method === 'PUT' && path === '/api/global-mcp') return true;
+  if (method === 'PUT' && path === '/api/relief/rules') return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
 }
 
@@ -57,31 +58,40 @@ export interface StepUpContext {
   roomSandbox?: string;
 }
 
+/**
+ * THE judge of a hire: why it needs more than a plain click (null: nothing more). The hire form's step-up asks it, and Relief asks the very same function before the
+ * boss's hire is staffed by rule (docs/hire-fire-spec.md, F3): a hire that this function names is never approved by a rule, so the two cannot drift.
+ * `unattendedOk` leaves the mode out of the question (Relief judges the mode against its own rules: maxMode, Clean Room, autoOnHost).
+ */
+export function hireStepUpReason(body: Record<string, unknown> | null, context: StepUpContext = {}, unattendedOk = false): string | null {
+  if (body === null) return 'hiring an agent';
+  if (body.command !== undefined && body.command !== null) return 'hiring an agent with a command of your own';
+  if (!unattendedOk && typeof body.mode === 'string' && UNATTENDED.has(body.mode)) return 'hiring an agent that works without asking';
+  // a Clean Room with a wall below the room's own default: a session that has not stepped up cannot undercut what the Director stepped up to set
+  const flavor = typeof body.cleanRoom === 'object' && body.cleanRoom !== null ? (body.cleanRoom as Record<string, unknown>).flavor : undefined;
+  if (typeof flavor === 'string' && FLAVOR_RANK.indexOf(flavor) < FLAVOR_RANK.indexOf(context.roomSandbox ?? 'docker')) return "hiring below the room's sandbox";
+  // outside a Clean Room, with a remote control or with keys of its own: more than a plain hire
+  if (body.cleanRoom === false) return 'hiring an agent outside a Clean Room';
+  // a Clean Room that keeps its API key inside its container, against the room's setting
+  if (typeof body.cleanRoom === 'object' && body.cleanRoom !== null && (body.cleanRoom as Record<string, unknown>).egress === false) return 'hiring a Clean Room agent that holds its own API key';
+  if (given(body.remoteControl)) return 'hiring an agent with remote control';
+  if (given(body.keys)) return 'hiring an agent with keys of its own';
+  if (given(body.payload) || given(body.permissions) || given(body.payloadOff)) return 'hiring an agent with a payload or permissions of its own';
+  return null;
+}
+
 /** Why this change needs a fresh check, or null when it does not. `body` is the parsed JSON object, or null when there is none or it is not one. */
 export function stepUpReason(method: string, path: string, body: Record<string, unknown> | null, context: StepUpContext = {}): string | null {
   if (!CHANGES.has(method)) return null;
-  if (method === 'POST' && path === '/api/agents') {
-    if (body === null) return 'hiring an agent';
-    if (body.command !== undefined && body.command !== null) return 'hiring an agent with a command of your own';
-    if (typeof body.mode === 'string' && UNATTENDED.has(body.mode)) return 'hiring an agent that works without asking';
-    // a Clean Room with a wall below the room's own default: a session that has not stepped up cannot undercut what the Director stepped up to set
-    const flavor = typeof body.cleanRoom === 'object' && body.cleanRoom !== null ? (body.cleanRoom as Record<string, unknown>).flavor : undefined;
-    if (typeof flavor === 'string' && FLAVOR_RANK.indexOf(flavor) < FLAVOR_RANK.indexOf(context.roomSandbox ?? 'docker')) return "hiring below the room's sandbox";
-    // outside a Clean Room, with a remote control or with keys of its own: more than a plain hire
-    if (body.cleanRoom === false) return 'hiring an agent outside a Clean Room';
-    // a Clean Room that keeps its API key inside its container, against the room's setting
-    if (typeof body.cleanRoom === 'object' && body.cleanRoom !== null && (body.cleanRoom as Record<string, unknown>).egress === false) return 'hiring a Clean Room agent that holds its own API key';
-    if (given(body.remoteControl)) return 'hiring an agent with remote control';
-    if (given(body.keys)) return 'hiring an agent with keys of its own';
-    if (given(body.payload) || given(body.permissions)) return 'hiring an agent with a payload or permissions of its own';
-    return null;
-  }
+  if (method === 'POST' && path === '/api/agents') return hireStepUpReason(body, context);
   if ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path)) {
     if (body === null) return 'editing an agent';
     return Object.keys(body).some((field) => body[field] !== undefined && !PLAIN_EDIT_FIELDS.has(field)) ? 'changing what an agent may do' : null;
   }
   // the room's default mode: auto or bypass makes every hire from the form start without asking; clearing it or a milder mode stays free
   if (method === 'PUT' && path === '/api/models/mode') return body !== null && typeof body.mode === 'string' && UNATTENDED.has(body.mode) ? 'setting the room to work without asking' : body === null ? 'setting the room to work without asking' : null;
+  // the rules of the boss's hires (docs/hire-fire-spec.md): turning them up asks; the two changes that only take power away (autoApprove off, autoOnHost off) never do, and STOP CREW is not a change of rules
+  if (method === 'PUT' && path === '/api/relief/rules') return body !== null && Object.keys(body).length > 0 && Object.entries(body).every(([k, v]) => (k === 'autoApprove' || k === 'autoOnHost') && v === false) ? null : 'changing what the boss may hire without asking';
   // marking a note or a claim shareable is publishing it to a docked station
   if (method === 'PUT' && path === '/api/dock-shares') return 'sharing with a docked station';
   // the room's default sandbox: a weaker wall for the Clean Room agents of the room (toward docker), or a stronger one the Director may not have asked for; the password again either way

@@ -738,6 +738,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       mode: record.mode,
       desk: record.desk,
       boss: record.boss,
+      ...(record.hiredBy === 'boss' ? { hiredBy: 'boss' as const, hiredAt: record.createdAt } : {}),
       state: rt.state,
       stateSince: rt.stateSince,
       needsKind: rt.needsKind,
@@ -2473,7 +2474,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     return desk;
   }
 
-  async function hire(request: HireRequest): Promise<AgentView> {
+  async function hire(request: HireRequest, meta?: { hiredBy: 'boss' }): Promise<AgentView> {
     assertOpen();
     const req = asObject(request, 'the request');
     const name = checkName(req.name);
@@ -2539,6 +2540,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (model) record.model = model;
       if (effort) record.effort = effort;
       if (kept?.names) record.keys = kept.names;
+      // set by Relief's own call only (the second argument), never by a field of a request from the wire
+      if (meta?.hiredBy === 'boss') record.hiredBy = 'boss';
       hiring.set(name, record);
       // The values first, from none (a removed agent of this name may have left some), then the roster; a roster that cannot be saved takes them back.
       await io.keys?.apply(name, kept?.patch ?? {}, true);

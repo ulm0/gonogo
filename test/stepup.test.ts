@@ -202,3 +202,16 @@ describe('stopping and starting rooms', () => {
     expect(stepUpReason('PATCH', '/api/rooms/docs', { autostart: false })).toBeNull();
   });
 });
+
+describe('the rules of the boss\'s hires (docs/hire-fire-spec.md)', () => {
+  it('turning them up asks; only autoApprove off and autoOnHost off, and STOP CREW, never do', () => {
+    for (const body of [{ autoApprove: true }, { maxCrew: 5 }, { maxMode: 'auto' }, { positions: ['guido'] }, { autoApprove: false, maxCrew: 1 }, {}, { autoOnHost: true }]) {
+      expect(stepUpReason('PUT', '/api/relief/rules', body), JSON.stringify(body)).toBe('changing what the boss may hire without asking');
+    }
+    expect(stepUpReason('PUT', '/api/relief/rules', null)).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/relief/rules', { autoApprove: false })).toBeNull();
+    expect(stepUpReason('PUT', '/api/relief/rules', { autoApprove: false, autoOnHost: false })).toBeNull();
+    expect(stepUpReason('POST', '/api/relief/stop-crew', null)).toBeNull();
+    expect(bodyMatters('PUT', '/api/relief/rules')).toBe(true);
+  });
+});

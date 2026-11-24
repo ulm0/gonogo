@@ -9,13 +9,18 @@ import type { AgentView } from '../shared/protocol.js';
 import { useModelDefaults } from './models.js';
 import './details.css';
 
-export function DetailChips({ agent }: { agent: Pick<AgentView, 'model' | 'provider' | 'position' | 'effort'> }): ReactElement {
+export function DetailChips({ agent }: { agent: Pick<AgentView, 'model' | 'provider' | 'position' | 'effort' | 'hiredBy'> }): ReactElement {
   const d = detailsOf(agent, useModelDefaults());
   return (
     <span className="detail-chips" role="group" aria-label="Engine, model and effort">
       <span className="chip" data-tone="quiet" data-detail="engine">
         {d.engine}
       </span>
+      {agent.hiredBy === 'boss' && (
+        <span className="chip" data-tone="quiet" data-detail="hired-by" title="FLIGHT hired this agent on its own, inside the Relief rules">
+          hired by flight
+        </span>
+      )}
       {d.model !== null && (
         <span className="chip" data-tone="quiet" data-detail="model" title={d.model.from === 'console' ? 'The model of this console' : d.model.from === 'position' ? "The default model of this console's position" : "The room's default model for this engine"}>
           {modelText(d.model)}

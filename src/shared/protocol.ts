@@ -602,6 +602,8 @@ export interface AgentRecord {
    * a new sessionId, so the old engine's session is not resumed). Set from the session id its hooks report. Absent: a new session.
    */
   engineSession?: { for: string; id: string };
+  /** Hired by the boss on its own, inside the Relief rules (docs/hire-fire-spec.md), not by the Director's hand or GO. Set by Relief's call only, never by a request. */
+  hiredBy?: 'boss';
 }
 export interface RosterFile {
   version: 1;
@@ -662,6 +664,9 @@ export interface AgentView {
   mode: PermissionMode;
   desk: number;
   boss: boolean;
+  /** `boss` when FLIGHT hired it by rule (the roster tile shows "hired by flight"), and when (ms epoch). */
+  hiredBy?: 'boss';
+  hiredAt?: number;
   state: AgentState;
   /** ms epoch of the last state change. */
   stateSince: number;
@@ -1707,7 +1712,27 @@ export interface Envelope {
  * Relief (docs/relief-spec.md): a hire that the boss asked for with `hire_agent`. It waits for the Director's GO, and only
  * then does the hub staff the agent, as the hire form does. `mode` is never above acceptEdits.
  */
-export const RELIEF_MODES = ['default', 'acceptEdits'] as const;
+export const RELIEF_MODES = ['default', 'acceptEdits', 'auto'] as const;
+/** The rules of the room for the boss's hires (docs/hire-fire-spec.md, `<home>/relief.json`). Everything is off or lowest by default; a bad or missing file reads as the defaults. */
+export interface ReliefRules {
+  /** Off: every hire waits for the Director's GO, as before. */
+  autoApprove: boolean;
+  /** Agents the boss hired by rule that exist now (running or stopped). */
+  maxCrew: number;
+  /** Dollars per day for the whole boss-hired crew; required (not null) when autoApprove is on. */
+  crewBudgetUsd: number | null;
+  /** Roster positions a rule hire may take; a free-text role is never auto-approved. */
+  positions: string[];
+  /** Engines a rule hire may use; empty means the room's default engine only. */
+  engines: Provider[];
+  /** The highest mode a rule hire may have. */
+  maxMode: (typeof RELIEF_MODES)[number];
+  /** The only way a rule hire may run in `auto` outside a Clean Room. */
+  autoOnHost: boolean;
+  /** Hires (not live agents) in the last hour. */
+  ratePerHour: number;
+}
+export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3 };
 export interface ReliefRequest {
   /** `h1`, `h2`, ...; never used twice in one run. */
   id: string;
@@ -1734,9 +1759,14 @@ export interface ReliefRequest {
   flavorBelowRoom?: boolean;
   /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */
   worktree?: Worktree | null;
+  /** The rule that sent this request to the Director instead of staffing it at once ("mode auto needs your GO: maxMode is acceptEdits"). Absent when autoApprove is off. */
+  asks?: string;
 }
 export interface ReliefView {
   requests: ReliefRequest[];
+  /** The room's rules and the names of the agents the boss hired by rule. Absent from an older server. */
+  rules?: ReliefRules;
+  crew?: string[];
 }
 
 /* ---- REST bodies ---- */
@@ -2860,7 +2890,7 @@ export interface Hub {
    * exit.text "could not start: ..."). Once shutdown() has begun, hire, edit, restart, stop and remove reject with
    * HubError('conflict', 'the server is shutting down').
    */
-  hire(req: HireRequest): Promise<AgentView>;
+  hire(req: HireRequest, meta?: { hiredBy: 'boss' }): Promise<AgentView>;
   /**
    * Save changes (role, dir, mode apply at the next start). Rename only while stopped; a rename emits an
    * AgentRemovedFrame for the old name and then an AgentFrame for the new one.
