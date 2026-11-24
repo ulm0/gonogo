@@ -41,6 +41,13 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
   if (raw.bypassInCleanRoom !== undefined) out.bypassInCleanRoom = flag(raw.bypassInCleanRoom, 'bypassInCleanRoom');
   if (raw.maxCrew !== undefined) out.maxCrew = whole(raw.maxCrew, 'maxCrew', 1, MAX_AGENTS);
   if (raw.ratePerHour !== undefined) out.ratePerHour = whole(raw.ratePerHour, 'ratePerHour', 1, 60);
+  if (raw.autoscale !== undefined) {
+    if (raw.autoscale !== 'off' && raw.autoscale !== 'dry-run' && raw.autoscale !== 'on') throw bad('autoscale is off, dry-run or on', 'rules.autoscale');
+    out.autoscale = raw.autoscale;
+  }
+  if (raw.scaleUpTodo !== undefined) out.scaleUpTodo = whole(raw.scaleUpTodo, 'scaleUpTodo', 1, 50);
+  if (raw.idleStopMinutes !== undefined) out.idleStopMinutes = raw.idleStopMinutes === null ? null : whole(raw.idleStopMinutes, 'idleStopMinutes', 5, 1440);
+  if (raw.removeStoppedHours !== undefined) out.removeStoppedHours = raw.removeStoppedHours === null ? null : whole(raw.removeStoppedHours, 'removeStoppedHours', 1, 720);
   if (raw.crewBudgetUsd !== undefined) {
     const usd = raw.crewBudgetUsd;
     if (usd === null) out.crewBudgetUsd = null;
@@ -74,6 +81,11 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
   }
   // shortcut: the crew budget is stored but not enforced until the hold of PR3; automatic approval without a ceiling on spend is refused until then (PR3 passes budgetEnforced)
   if (out.autoApprove && !budgetEnforced) throw bad('automatic approval is not available yet: the crew budget is not enforced yet', 'rules.autoApprove');
+  // autoscale acts through the same rule hire: without automatic approval there is nothing for it to use (and it is re-checked every tick as well)
+  if (out.autoscale === 'on' && !out.autoApprove) {
+    if (raw.autoscale === 'on') throw bad('autoscale on needs autoApprove on', 'rules.autoscale');
+    out.autoscale = 'off';
+  }
   if (out.autoApprove && out.crewBudgetUsd === null) throw bad('crewBudgetUsd is needed when autoApprove is on: the dollars per day the boss-hired crew may spend', 'rules.crewBudgetUsd');
   return out;
 }
@@ -86,6 +98,9 @@ export function raisesPower(now: ReliefRules, next: ReliefRules): boolean {
     (!now.autoOnHost && next.autoOnHost) ||
     (!now.mayStop && next.mayStop) ||
     (!now.mayRemove && next.mayRemove) ||
+    (now.autoscale !== 'on' && next.autoscale === 'on') ||
+    next.scaleUpTodo < now.scaleUpTodo ||
+    (next.removeStoppedHours !== null && (now.removeStoppedHours === null || next.removeStoppedHours < now.removeStoppedHours)) ||
     (!now.bypassInCleanRoom && next.bypassInCleanRoom) ||
     next.maxCrew > now.maxCrew ||
     next.ratePerHour > now.ratePerHour ||
@@ -184,7 +199,7 @@ export function createReliefRules(options: { dir: string; log?: Logger; alarm?: 
     off: () =>
       queue(async () => {
         await compare();
-        await write({ ...current, autoApprove: false });
+        await write({ ...current, autoApprove: false, autoscale: 'off' });
         return copy();
       }),
     async close() {

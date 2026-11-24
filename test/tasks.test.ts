@@ -38,6 +38,7 @@ function make(agents: string[] = ['ana', 'ben', 'flight']): Tasks {
     dir,
     now: () => now,
     isAgent: (name) => agents.includes(name),
+    isBoss: (name) => name === 'flight',
     send: (actor, request) => {
       sent.push({ actor, request });
       return answer(request);
@@ -446,5 +447,53 @@ describe('flight plan: docking', () => {
     const t = make();
     await t.load();
     expect(t.list().map((x) => x.handedOff)).toEqual(['lab', undefined, undefined]);
+  });
+});
+
+describe('a position on a task (autoscale hires for it)', () => {
+  const FLIGHT: Actor = { kind: 'agent', name: 'flight', generation: 1 };
+  const DOCK: Actor = { kind: 'dock', station: 'lab' };
+
+  it('the Director and the boss may name one, on a new task and on a change, and null clears it; it is saved and read back', async () => {
+    const t = make();
+    await t.load();
+    const a = await t.create(USER, { title: 'A', position: 'guido' });
+    const b = await t.create(FLIGHT, { title: 'B', position: 'fido' });
+    expect([a.position, b.position]).toEqual(['guido', 'fido']);
+    expect((await t.update(FLIGHT, a.id, { position: 'fido' })).position).toBe('fido');
+    expect((await t.update(USER, a.id, { position: null })).position).toBeUndefined();
+    const again = make();
+    await again.load();
+    expect(again.list().find((x) => x.id === b.id)?.position).toBe('fido');
+  });
+
+  it('another agent is refused on create and on update; nothing is written', async () => {
+    const t = make();
+    await t.load();
+    await expect(t.create(ANA, { title: 'X', position: 'guido' })).rejects.toMatchObject({ code: 'forbidden', field: 'position' });
+    const task = await t.create(ANA, { title: 'X' });
+    await expect(t.update(ANA, task.id, { position: 'guido' })).rejects.toMatchObject({ code: 'forbidden', field: 'position' });
+    expect(t.list().every((x) => x.position === undefined)).toBe(true);
+  });
+
+  it('a task that comes in from a docked station loses its position; a position must be a roster position', async () => {
+    const t = make();
+    await t.load();
+    expect((await t.create(DOCK, { title: 'From the lab', position: 'guido' })).position).toBeUndefined();
+    await expect(t.create(USER, { title: 'Y', position: 'nobody' })).rejects.toMatchObject({ field: 'position' });
+    await expect(t.create(USER, { title: 'Y', position: 5 })).rejects.toMatchObject({ field: 'position' });
+  });
+
+  it('a task file with a bad position reads without it', async () => {
+    const t = make();
+    await t.load();
+    const task = await t.create(USER, { title: 'Z', position: 'guido' });
+    const path = join(dir, 'tasks.json');
+    const saved = JSON.parse(await readFile(path, 'utf8'));
+    saved.tasks.find((x: { id: string }) => x.id === task.id).position = 'root';
+    await writeFile(path, JSON.stringify(saved));
+    const again = make();
+    await again.load();
+    expect(again.list().find((x) => x.id === task.id)?.position).toBeUndefined();
   });
 });

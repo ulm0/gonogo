@@ -578,7 +578,7 @@ export const MCP_DESCRIPTIONS = {
   task_list:
     'List the tasks of the Flight Plan, the team task board, most recently changed first. Optional filters: mine (only the tasks assigned to you) and status (todo, doing, review, done or blocked).',
   task_create:
-    'Add a task to the Flight Plan. It starts as todo. Give a short title, a detail with what done means, and optionally the name of the agent it is assigned to; that agent gets a message. Optionally missionId, the id of the mission it serves (see mission_list).',
+    'Add a task to the Flight Plan. It starts as todo. Give a short title, a detail with what done means, and optionally the name of the agent it is assigned to; that agent gets a message. Optionally missionId, the id of the mission it serves (see mission_list). Only the boss may also give position, a roster position (guido, fido, ...): with autoscale on (the Director turns it on), enough unassigned todo tasks for a position get an agent of it hired.',
   task_handoff:
     'Boss only. Send a task of the Flight Plan to a docked station: give the task id, the station name and optionally an agent of that station (only a hint: if there is none by that name, its boss gets the task), a due date (YYYY-MM-DD), a priority (low, normal, high), onward (true lets that station hand it on) and a budget in dollars. The task stays open here and the other station reports its status back on the link. If the Director has set that station to ask first, nothing leaves until he has read the text and said go: the answer then says it is waiting. What you write in the task leaves this station.',
   station_suggest:
