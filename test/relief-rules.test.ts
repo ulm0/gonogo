@@ -84,8 +84,9 @@ describe('the rules file', () => {
     expect(rules.view().autoApprove).toBe(false);
   });
 
-  it('autoApprove needs a daily crew budget; bypassPermissions is not a maxMode; unknown rules are refused', async () => {
-    await expect(rules.set({ autoApprove: true })).rejects.toMatchObject({ field: 'rules.crewBudgetUsd' });
+  it('autoApprove saves without a crew budget (it is optional); bypassPermissions is not a maxMode; unknown rules are refused', async () => {
+    expect((await rules.set({ autoApprove: true })).crewBudgetUsd).toBeNull();
+    await rules.set({ autoApprove: false });
     await expect(rules.set({ maxMode: 'bypassPermissions' })).rejects.toMatchObject({ field: 'rules.maxMode' });
     await expect(rules.set({ bypassInRoom: true })).rejects.toMatchObject({ field: 'rules.bypassInRoom' });
     await expect(rules.set({ engines: ['custom'] })).rejects.toBeInstanceOf(HubError);
@@ -123,7 +124,7 @@ describe('the rules file', () => {
     expect(raisesPower(base, { ...base, maxMode: 'auto' })).toBe(true);
     expect(raisesPower(base, { ...base, positions: ['guido'] })).toBe(true);
     expect(raisesPower(base, { ...base, maxCrew: 5 })).toBe(true);
-    expect(raisesPower({ ...base, maxCrew: 5, positions: ['guido'], maxMode: 'auto', autoApprove: true, crewBudgetUsd: 9 }, base)).toBe(false);
+    expect(raisesPower({ ...base, maxCrew: 5, positions: ['guido'], maxMode: 'auto', autoApprove: true, crewBudgetUsd: 9 }, { ...base, crewBudgetUsd: 9 })).toBe(false);
     expect(readRules({ maxCrew: 2 }, { ...base, maxCrew: 9 }).maxCrew).toBe(2);
   });
 
@@ -326,10 +327,19 @@ describe('the crew budget and the models (PR3)', () => {
     expect(raisesPower({ ...base, models: { claude: ['a', 'b'] } }, { ...base, models: { claude: ['a'] } })).toBe(false);
   });
 
-  it('a crew budget of none never approves (autoApprove needs one anyway)', async () => {
-    await on();
-    await rules.set({ crewBudgetUsd: null, autoApprove: false });
-    expect(rules.view().autoApprove).toBe(false);
+  it('with no crew budget (null) a rule hire is made, however much the crew spent; with one set, it still holds; the first ceiling is not a raise, lifting it is', async () => {
+    await on({ crewBudgetUsd: null });
+    expect(rules.view().crewBudgetUsd).toBeNull();
+    const make = (spent: number) => createRelief({ hub: { views: () => views, hire: async (request, meta) => { const v = agent(request.name, { dir: request.dir, desk: views.length, ...(meta?.hiredBy === 'boss' ? { hiredBy: 'boss', hiredAt: now } : {}) }); views.push(v); return v; }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }) }, rules, crewSpentToday: () => spent, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    expect(await make(9999).request(BOSS, { name: 'n1', position: 'guido', dir: project })).toMatchObject({ status: 'hired' });
+    now += 11 * 60_000;
+    await rules.set({ crewBudgetUsd: 5 });
+    expect((await make(9999).request(BOSS, { name: 'n2', position: 'guido', dir: project })).note).toMatch(/the crew budget is reached/);
+    const base = RELIEF_RULES_DEFAULT;
+    expect(raisesPower({ ...base, crewBudgetUsd: null }, { ...base, crewBudgetUsd: 5 })).toBe(false);
+    expect(raisesPower({ ...base, crewBudgetUsd: 5 }, { ...base, crewBudgetUsd: null })).toBe(true);
+    expect(raisesPower({ ...base, crewBudgetUsd: 5 }, { ...base, crewBudgetUsd: 9 })).toBe(true);
+    expect(raisesPower({ ...base, crewBudgetUsd: 9 }, { ...base, crewBudgetUsd: 5 })).toBe(false);
   });
 });
 

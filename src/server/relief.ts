@@ -205,10 +205,9 @@ export function createRelief(options: ReliefOptions): Relief {
   const ruleAsks = (rules: ReliefRules, requester: AgentView, r: { name: string; position: string | null; free: boolean; dir: string; provider: Provider; mode: PermissionMode; cleanRoom: CleanRoom | null; worktree: boolean; insideBoss: boolean; model: string | undefined }): string | null => {
     const crew = hub.views().filter((a) => a.hiredBy === 'boss');
     if (crew.length + staffing.size >= rules.maxCrew) return `maxCrew is ${rules.maxCrew}`;
-    // the dollars the crew spent today: at the ceiling no rule hire is made (and the crew already running is held by Propellant); a missing ceiling never approves
-    if (rules.crewBudgetUsd === null) return 'crewBudgetUsd is not set';
-    const spent = options.crewSpentToday?.([...new Set([...crew.map((a) => a.name), ...(options.ledger?.recentNames() ?? [])])]) ?? 0;
-    if (spent >= rules.crewBudgetUsd) return `the crew budget is reached ($${spent.toFixed(2)} of $${rules.crewBudgetUsd.toFixed(2)} today)`;
+    // the dollars the crew spent today: at the ceiling no rule hire is made (and the crew already running is held by Propellant); no ceiling set (null) is no daily ceiling, the room's budgets and Redline still apply
+    const spent = rules.crewBudgetUsd === null ? 0 : (options.crewSpentToday?.([...new Set([...crew.map((a) => a.name), ...(options.ledger?.recentNames() ?? [])])]) ?? 0);
+    if (rules.crewBudgetUsd !== null && spent >= rules.crewBudgetUsd) return `the crew budget is reached ($${spent.toFixed(2)} of $${rules.crewBudgetUsd.toFixed(2)} today)`;
     const since = now() - HOUR_MS;
     const hiredLastHour = options.ledger?.hiresLastHour() ?? crew.filter((a) => (a.hiredAt ?? 0) > since).length;
     if (hiredLastHour + [...staffing].length >= rules.ratePerHour) return `ratePerHour is ${rules.ratePerHour}`;

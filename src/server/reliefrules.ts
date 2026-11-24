@@ -86,7 +86,6 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
     if (raw.autoscale === 'on') throw bad('autoscale on needs autoApprove on', 'rules.autoscale');
     out.autoscale = 'off';
   }
-  if (out.autoApprove && out.crewBudgetUsd === null) throw bad('crewBudgetUsd is needed when autoApprove is on: the dollars per day the boss-hired crew may spend', 'rules.crewBudgetUsd');
   return out;
 }
 
@@ -104,7 +103,8 @@ export function raisesPower(now: ReliefRules, next: ReliefRules): boolean {
     (!now.bypassInCleanRoom && next.bypassInCleanRoom) ||
     next.maxCrew > now.maxCrew ||
     next.ratePerHour > now.ratePerHour ||
-    (next.crewBudgetUsd !== null && (now.crewBudgetUsd === null || next.crewBudgetUsd > now.crewBudgetUsd)) ||
+    // no ceiling is the most power: lifting an existing one is a raise, and so is a higher one; setting a first ceiling takes power away
+    (now.crewBudgetUsd !== null && (next.crewBudgetUsd === null || next.crewBudgetUsd > now.crewBudgetUsd)) ||
     modeRank(next.maxMode) > modeRank(now.maxMode) ||
     more(now.positions, next.positions) ||
     more(now.engines, next.engines) ||

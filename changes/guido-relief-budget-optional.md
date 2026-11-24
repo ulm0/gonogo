@@ -1,0 +1,1 @@
+Hire on demand: the daily crew budget is optional. With automatic approval on and the budget left empty there is no daily ceiling for the agents FLIGHT hires (the room's budgets and Redline still apply); with a budget set it holds the crew as before. Lifting a budget you set now asks for the password again.
