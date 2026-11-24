@@ -217,3 +217,22 @@ describe('the words of the Missions view', () => {
     expect(budgetShare({ usd: 8, unpriced: 0 })).toBeNull();
   });
 });
+
+describe('the boss-hired crew budget (docs/hire-fire-spec.md)', () => {
+  it('holds the crew together once the crew has spent its dollars today, and no one else', async () => {
+    let crew: { names: string[]; budgetUsd: number } | null = { names: ['ana', 'rt1'], budgetUsd: 10 };
+    const projects = join(root, 'claude', 'projects');
+    const p = createPropellant({ dir: home, projectsRoot: projects, now: () => NOW, log: quiet, crew: () => crew });
+    await p.load();
+    await spend(p, 'a', 1_400_000, 'ana'); // $7
+    expect(p.over('ana')).toBeNull();
+    await spend(p, 'b', 600_000, 'ana'); // $10
+    expect(p.over('ana')).toEqual({ scope: 'crew', names: ['ana', 'rt1'], reason: 'crew budget reached: the boss-hired crew spent $10.00 of $10.00 today' });
+    // a stopped crew member that never spent still shares the hold; an agent of the Director is never in it
+    expect(p.over('rt1')?.scope).toBe('crew');
+    expect(p.over('ben')).toBeNull();
+    // no ceiling, no hold
+    crew = null;
+    expect(p.over('ana')).toBeNull();
+  });
+});

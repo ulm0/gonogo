@@ -834,8 +834,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // what Claude Code itself says a session cost (its status line): kept beside the ledger, never mixed into it
     const reported = createReported({ dir: home.dir, now: () => Date.now(), log: log.child('reported') });
     await reported.load();
+    /** The boss-hired crew and its daily ceiling, read when Propellant checks a limit; set once Relief has its rules (below). */
+    let crewBudget: () => { names: string[]; budgetUsd: number } | null = () => null;
     const propellant = createPropellant({
       reported,
+      crew: () => crewBudget(),
       dir: home.dir,
       plan: () => quota.view(),
       attribute: workingOn,
@@ -920,6 +923,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
 
     /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, a mission's budget the agents working on it, an agent's own only that agent. */
     const linkCapTold = new Set<string>();
+    const crewCapTold = new Set<string>();
+    const day = (): string => new Date().toISOString().slice(0, 10);
     const enforce = (name: string): void => {
       const over = propellant.over(name);
       if (over === null || !hub) return;
@@ -937,6 +942,21 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         if (over.link !== undefined && !linkCapTold.has(over.link)) {
           linkCapTold.add(over.link);
           tell('flight-plan', `${over.reason}: its agents are held; raise or clear the cap in Propellant, or return the task`);
+        }
+        return;
+      }
+      // the crew is held, not the room and not the Director's agents: its ceiling is its own
+      if (over.scope === 'crew') {
+        for (const n of over.names ?? []) {
+          try {
+            if (hub.views().find((v) => v.name === n)?.state !== 'stopped') hub.hold(n, over.reason);
+          } catch (e) {
+            log.debug(`could not hold ${n}`, e);
+          }
+        }
+        if (!crewCapTold.has(day())) {
+          crewCapTold.add(day());
+          tell('redline', `${over.reason}: the crew is held and no hire by rule is made; raise the ceiling in Flight Rules or resume the agents`);
         }
         return;
       }
@@ -1291,18 +1311,25 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const room = audited(createRoomLayout({ dir: home.dir, emit: (view) => web?.broadcast({ t: 'room', room: view }), log: log.child('room') }), blackBox.record, ROOM_AUDIT);
     const tabName = audited(createTabName({ dir: home.dir, fallback: (runtime.get('station') ?? env[STATION_ENV] ?? '').trim() === '' ? null : stationName(runtime.get('station') ?? env[STATION_ENV], hostname()), emit: (view) => web?.broadcast({ t: 'tabname', tabName: view }), log: log.child('tabname') }), blackBox.record, TABNAME_AUDIT);
     // the rules of the boss's hires (docs/hire-fire-spec.md): off by default; the file is checked against the last change this process wrote, on every decision and on a timer
-    const reliefRules = createReliefRules({ dir: home.dir, log: log.child('relief rules'), alarm: (text) => tell('relief', text) });
+    const reliefRules = createReliefRules({ dir: home.dir, log: log.child('relief rules'), budgetEnforced: true, alarm: (text) => tell('relief', text) });
     await reliefRules.load();
     // the rules come back from disk: when they say automatic hires are ON, the Director is told at once (a file nobody of ours wrote would otherwise switch it on silently)
     if (reliefRules.view().autoApprove) {
       const r = reliefRules.view();
       tell('relief', `Relief rules loaded from disk: automatic hires ON, maxMode ${r.maxMode}, autoOnHost ${r.autoOnHost ? 'ON' : 'off'}`);
     }
+    // Propellant holds the boss-hired crew at its daily ceiling (relief.json crewBudgetUsd); with automatic approval off there is no ceiling
+    crewBudget = () => {
+      const rules = reliefRules.view();
+      if (!rules.autoApprove || rules.crewBudgetUsd === null || !hub) return null;
+      return { names: hub.views().filter((v) => v.hiredBy === 'boss').map((v) => v.name), budgetUsd: rules.crewBudgetUsd };
+    };
     const reliefRulesTimer = setInterval(() => void reliefRules.check().catch((error: unknown) => log.error('relief rules check failed', error)), 30_000);
     reliefRulesTimer.unref();
     const relief = createRelief({
       hub: hubInstance,
       rules: reliefRules,
+      crewSpentToday: (names) => names.reduce((sum, n) => sum + (propellant.view().cost.agents[n]?.usd.day ?? 0), 0),
       tasks: tasks,
       voteWaitsFor: (name) => {
         const poll = hubInstance.poll();

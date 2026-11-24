@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { POSITION_IDS } from '../shared/positions.js';
-import { MAX_AGENTS, PROVIDERS, RELIEF_MODES, RELIEF_RULES_DEFAULT } from '../shared/protocol.js';
+import { MAX_AGENTS, MODEL_PATTERN, PROVIDERS, RELIEF_MODES, RELIEF_RULES_DEFAULT } from '../shared/protocol.js';
 import type { Logger, Provider, ReliefRules } from '../shared/protocol.js';
 import { FILE_MODE, nullLogger, RELIEF_FILE } from './constants.js';
 import { HubError } from './hub.js';
@@ -25,7 +25,7 @@ export const modeRank = (mode: string): number => MODE_RANK.indexOf(mode);
 export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT, budgetEnforced = false): ReliefRules {
   if (!isRecord(raw)) throw bad('the rules are an object', 'rules');
   for (const key of Object.keys(raw)) if (!FIELDS.includes(key)) throw bad(`unknown rule "${key}"`, `rules.${key}`);
-  const out: ReliefRules = { ...base, positions: [...base.positions], engines: [...base.engines] };
+  const out: ReliefRules = { ...base, positions: [...base.positions], engines: [...base.engines], models: { ...base.models } };
   const whole = (value: unknown, name: string, min: number, max: number): number => {
     if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) throw bad(`${name} is a whole number from ${min} to ${max}`, `rules.${name}`);
     return value;
@@ -55,6 +55,17 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
     if (!Array.isArray(list) || !list.every((p) => typeof p === 'string' && (PROVIDERS as readonly string[]).includes(p) && p !== 'custom')) throw bad(`engines is a list of ${PROVIDERS.filter((p) => p !== 'custom').join(', ')} (never a custom command)`, 'rules.engines');
     out.engines = [...new Set(list as Provider[])];
   }
+  if (raw.models !== undefined) {
+    const given = raw.models;
+    if (!isRecord(given)) throw bad('models is an object: an engine and the list of model names it may use', 'rules.models');
+    const models: Partial<Record<Provider, string[]>> = {};
+    for (const [engine, list] of Object.entries(given)) {
+      if (!(PROVIDERS as readonly string[]).includes(engine) || engine === 'custom') throw bad(`models names the engine "${engine}", which is not one a rule can hire`, 'rules.models');
+      if (!Array.isArray(list) || list.length > 20 || !list.every((m) => typeof m === 'string' && new RegExp(MODEL_PATTERN).test(m))) throw bad(`the models of ${engine} are a list of at most 20 model names`, 'rules.models');
+      if (list.length > 0) models[engine as Provider] = [...new Set(list as string[])];
+    }
+    out.models = models;
+  }
   if (raw.maxMode !== undefined) {
     if (typeof raw.maxMode !== 'string' || !MODE_RANK.includes(raw.maxMode)) throw bad(`maxMode is one of ${RELIEF_MODES.join(', ')} (bypassPermissions is not a choice)`, 'rules.maxMode');
     out.maxMode = raw.maxMode as ReliefRules['maxMode'];
@@ -77,7 +88,8 @@ export function raisesPower(now: ReliefRules, next: ReliefRules): boolean {
     (next.crewBudgetUsd !== null && (now.crewBudgetUsd === null || next.crewBudgetUsd > now.crewBudgetUsd)) ||
     modeRank(next.maxMode) > modeRank(now.maxMode) ||
     more(now.positions, next.positions) ||
-    more(now.engines, next.engines)
+    more(now.engines, next.engines) ||
+    Object.entries(next.models).some(([engine, list]) => more(now.models[engine as Provider] ?? [], list))
   );
 }
 
@@ -139,7 +151,7 @@ export function createReliefRules(options: { dir: string; log?: Logger; alarm?: 
     return run;
   };
 
-  const copy = (): ReliefRules => ({ ...current, positions: [...current.positions], engines: [...current.engines] });
+  const copy = (): ReliefRules => ({ ...current, positions: [...current.positions], engines: [...current.engines], models: Object.fromEntries(Object.entries(current.models).map(([k, v]) => [k, [...(v ?? [])]])) });
 
   return {
     async load() {
