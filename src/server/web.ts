@@ -179,7 +179,7 @@ export interface WebOptions {
   /** Mission Log; absent in tests that do not need it (the routes answer 404 and the log tools say it is not available). It tells the browsers itself. */
   missionLog?: Pick<MissionLog, 'search' | 'searchMeaning' | 'get' | 'verify' | 'recheck' | 'chart' | 'create' | 'update' | 'remove'>;
   /** Search by meaning: the status, the endpoint and the test. Absent, /api/semantic is 404. */
-  semantic?: Pick<Semantic, 'status' | 'setConfig' | 'test'>;
+  semantic?: Pick<Semantic, 'status' | 'setConfig' | 'test' | 'managedAction' | 'managedLogs'>;
   /** Knowledge (the store, the proposals, the claims): the Director's routes and the agents' two tools. Absent, /api/knowledge is 404. */
   knowledgeStore?: Knowledge;
   /** For each agent, how many Mission Log entries anchored to its own repository were last found not confirmed (the tile). */
@@ -1508,6 +1508,19 @@ export function createWebServer(options: WebOptions): WebServer {
         };
       }
       if (s[2] === 'test') return { allow: ['POST'], run: async (_req, res) => sendJson(res, 200, await semantic.test()) };
+    }
+    // the managed Ollama: POST {action: start|stop} (behind a step-up), GET the last lines it wrote
+    if (semantic && s[1] === 'semantic' && s[2] === 'managed' && s.length <= 4) {
+      if (s.length === 3) {
+        return {
+          allow: ['POST'],
+          run: async (req, res) => {
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await semantic.managedAction(body.action));
+          },
+        };
+      }
+      if (s[3] === 'logs') return { allow: ['GET'], run: (_req, res) => sendJson(res, 200, { lines: semantic.managedLogs() }) };
     }
     const knowledge = options.knowledgeStore;
     // the Director's Knowledge routes (docs/knowledge-spec.md 0b.4): a write answers the whole repository as it is now

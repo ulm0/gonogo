@@ -1410,8 +1410,25 @@ export interface LogHit {
 }
 /** GET /api/log?q=: the ranked hits, or the newest entries when q is empty. `total` is every entry the log holds. */
 /** GET /api/semantic: Search by meaning (docs/features/semantic-search.md). Never the text of an entry, never what the endpoint said. */
+/** The Ollama that gonogo runs (Search by meaning, managed mode). */
+export interface ManagedOllamaView {
+  state: 'off' | 'unsupported' | 'downloading' | 'starting' | 'pulling' | 'ready' | 'error';
+  reason: string;
+  version: string;
+  port: number | null;
+  progress: { done: number; total: number } | null;
+  rssMb: number | null;
+  restarts: number;
+  settings: { keepAlive: string; idleMinutes: number; threads: number; memoryMb: number };
+}
 export interface SemanticView {
   enabled: boolean;
+  /** Has a setup been saved? A page that has none starts on the managed mode. */
+  configured: boolean;
+  mode: 'managed' | 'remote';
+  /** An API key is saved for the remote endpoint; its value never comes back. */
+  apiKeySet: boolean;
+  managed: ManagedOllamaView | null;
   endpoint: string;
   model: string;
   confirmed: string | null;
@@ -1425,9 +1442,17 @@ export interface SemanticView {
 }
 /** PUT /api/semantic: the fields given change. `confirm` is the host that may get your notes when it is not this machine. */
 export interface SemanticRequest {
+  mode?: 'managed' | 'remote';
   endpoint?: string;
   model?: string;
   confirm?: string;
+  /** A key for an Ollama behind a proxy (sent as `Authorization: Bearer`, over https or to this machine); null or '' removes it. */
+  apiKey?: string | null;
+  /** The managed server: keep-alive of the model (`5m`), minutes idle before it stops, CPU threads, memory limit in MB (0: none). */
+  keepAlive?: string;
+  idleMinutes?: number;
+  threads?: number;
+  memoryMb?: number;
 }
 export interface LogSearch {
   total: number;

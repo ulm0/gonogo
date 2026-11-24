@@ -45,6 +45,7 @@ import { createHangar, createRoots } from './hangar.js';
 import { createRecorder } from './recorder.js';
 import { createAnchorEngine } from './anchorengine.js';
 import { createKnowledge } from './knowledge.js';
+import { createManagedOllama } from './ollama.js';
 import { createSemantic, SEMANTIC_DIR } from './semantic.js';
 import { createProposalStore } from './knowledgeproposals.js';
 import { createKnowledgeStore } from './knowledgestore.js';
@@ -1202,8 +1203,17 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     dockingRef = docking;
     io.dock = docking;
     // Search by meaning (docs/features/semantic-search.md): off until the Director turns it on and names an endpoint; the index is this room's
+    // its own Ollama, started on demand and stopped when idle or when gonogo stops (ollama.ts); the binary and the models are in this room's folder
+    const managedOllama = createManagedOllama({
+      dir: join(home.dir, 'ollama'),
+      now: io.now,
+      env,
+      changed: () => web?.broadcast({ t: 'log', changed: [], removed: [] }),
+      log: log.child('ollama'),
+    });
     const semantic = createSemantic({
       dir: join(home.dir, SEMANTIC_DIR),
+      managed: managedOllama,
       now: io.now,
       entries: () => missionLog.all(),
       on: () => features.isOn('semantic-search'),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LOG_BODY_MAX_CHARS, LOG_TAGS_MAX, LOG_TITLE_MAX_CHARS } from '../src/shared/protocol.js';
 import type { LogEntry, LogSearch } from '../src/shared/protocol.js';
-import { semanticStatusText } from '../src/client/semanticview.js';
+import { managedStatusText, semanticStatusText } from '../src/client/semanticview.js';
 import { countText, searchPath, searchPlan, emptyValues, FIELDS, newsText, NO_LOG_NEWS, parseTags, requestOf, rowId, validate, valuesOf } from '../src/client/log.js';
 
 const entry: LogEntry = { id: 'l1', title: 'Cache key', body: 'The cache key has the node version.', tags: ['build', 'cache'], author: 'ana', createdAt: 1, updatedAt: 2 };
@@ -88,12 +88,24 @@ describe('the label of a search', () => {
   });
 
   it('the status line is counts and fixed words', () => {
-    const v = { enabled: true, endpoint: 'http://127.0.0.1:11434', model: 'nomic-embed-text', confirmed: null, state: 'indexing' as const, reason: '', indexed: 340, total: 1900, dimension: 768, used: 120, cap: 20000 };
+    const v = { enabled: true, configured: true, mode: 'remote' as const, apiKeySet: false, managed: null, endpoint: 'http://127.0.0.1:11434', model: 'nomic-embed-text', confirmed: null, state: 'indexing' as const, reason: '', indexed: 340, total: 1900, dimension: 768, used: 120, cap: 20000 };
     expect(semanticStatusText(v)).toBe('Indexing 340 of 1,900 chunks. nomic-embed-text, 768 numbers. 120 of 20,000 used today.');
     expect(semanticStatusText({ ...v, state: 'idle', indexed: 1900 })).toMatch(/^1,900 of 1,900 chunks indexed\./);
     expect(semanticStatusText({ ...v, state: 'error', reason: 'the endpoint answered 500' })).toMatch(/^The endpoint does not answer: the endpoint answered 500\./);
     expect(semanticStatusText({ ...v, state: 'cap' })).toMatch(/limit of 20,000 chunks is reached: word search goes on/);
     expect(semanticStatusText({ ...v, state: 'off', dimension: 0 })).toBe('Off. 120 of 20,000 used today.');
+    expect(semanticStatusText({ ...v, mode: 'managed', state: 'error', reason: 'the model could not be pulled' })).toMatch(/^The Ollama that gonogo runs does not answer: the model could not be pulled\./);
+  });
+
+  it('the managed Ollama in a sentence, with the numbers of a download or a pull', () => {
+    const m = { state: 'off' as const, reason: '', version: '0.40.18', port: null, progress: null, rssMb: null, restarts: 0, settings: { keepAlive: '5m', idleMinutes: 10, threads: 0, memoryMb: 0 } };
+    expect(managedStatusText(m)).toBe('Not running: it starts when an entry is indexed, and stops when it is idle.');
+    expect(managedStatusText({ ...m, state: 'off', reason: 'stopped after being idle' })).toBe('Not running (stopped after being idle).');
+    expect(managedStatusText({ ...m, state: 'downloading', progress: { done: 412_000_000, total: 1_648_000_000 } })).toBe('Downloading Ollama 0.40.18, once. 412 MB of 1.65 GB (25%). Only the part a CPU needs is kept.');
+    expect(managedStatusText({ ...m, state: 'pulling', progress: { done: 137_000_000, total: 274_000_000 } })).toBe('Pulling the model. 137 MB of 274 MB (50%).');
+    expect(managedStatusText({ ...m, state: 'ready', port: 41234, rssMb: 352, restarts: 2 })).toBe('Running on 127.0.0.1:41234, 352 MB in memory, restarted 2 times.');
+    expect(managedStatusText({ ...m, state: 'error', reason: 'the download does not match the checksum pinned in this gonogo' })).toBe('Stopped: the download does not match the checksum pinned in this gonogo.');
+    expect(managedStatusText({ ...m, state: 'unsupported', reason: 'managed Ollama runs on Linux' })).toBe('managed Ollama runs on Linux');
   });
 });
 
