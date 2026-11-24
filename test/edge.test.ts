@@ -2421,6 +2421,20 @@ describe('livery', () => {
     expect((await api((await startWeb()).port, 'GET', '/api/engines')).status).toBe(404);
   });
 
+  it('Model lists: GET /api/engines/<provider>/models answers one engine\'s list, refresh=1 asks again, and only engines with a model field', async () => {
+    const asked: Array<[string, boolean]> = [];
+    const { port } = await startWeb({ engineModels: async (provider, refresh) => (asked.push([provider, refresh]), { provider, source: 'cli', models: ['anthropic/claude-opus-5-5'], command: 'pi --list-models', version: '1.6.0', at: 1 }) });
+    const res = await api(port, 'GET', '/api/engines/pi/models');
+    expect([res.status, res.json()]).toEqual([200, { provider: 'pi', source: 'cli', models: ['anthropic/claude-opus-5-5'], command: 'pi --list-models', version: '1.6.0', at: 1 }]);
+    expect((await api(port, 'GET', '/api/engines/opencode/models?refresh=1')).status).toBe(200);
+    expect(asked).toEqual([['pi', false], ['opencode', true]]);
+    for (const path of ['/api/engines/custom/models', '/api/engines/qwen/models', '/api/engines/nope/models']) expect((await api(port, 'GET', path)).status, path).toBe(404);
+    expect((await api(port, 'GET', '/api/engines/pi/models', undefined, ANA_TOKEN)).status).toBe(401);
+    expect((await api(port, 'POST', '/api/engines/pi/models', {})).status).toBe(405);
+    expect(asked).toHaveLength(2);
+    expect((await api((await startWeb()).port, 'GET', '/api/engines/pi/models')).status).toBe(404);
+  });
+
   it('Rollout: the state carries the view when there is one, and nothing when there is not', async () => {
     const view = { enabled: true, current: '0.1.1', latest: '0.2.0', checkedAt: 5, newer: true, command: 'pnpm add -g @ulm0/gonogo@latest' };
     const { port } = await startWeb({ rollout: { view: () => view } });

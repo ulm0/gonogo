@@ -304,7 +304,7 @@ const versionCache = new Map<string, string>();
  * `<file> --version`, no shell, a few seconds at most, and an environment of PATH, HOME and LANG only, so that no key or token of
  * gonogo's environment reaches a program that is merely asked its version. null when it did not answer or printed nothing.
  */
-async function versionOf(file: string, env: Record<string, string | undefined>): Promise<string | null> {
+export async function versionOf(file: string, env: Record<string, string | undefined>): Promise<string | null> {
   const key = `${file}\0${statSync(file).mtimeMs}`;
   const known = versionCache.get(key);
   if (known !== undefined) return known;

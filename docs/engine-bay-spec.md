@@ -217,3 +217,29 @@ one (see Pad Check).
 - Not checked: that the Grok CLI of that README is the one the adapter's `grok` means, that Cursor's installer puts
   `cursor-agent` on the PATH (its page uses `agent`), and any installer actually running. Commands change; the page link is the
   source of truth.
+
+### Model lists: the names each engine offers (2026-11-24)
+
+The Director's report: the model field only offered the few names in `PROVIDER_INFO.model` (none for opencode), so a model had to
+be guessed. Now the server asks the installed program itself where it has a command for it.
+
+- `src/server/enginemodels.ts`. pi: `pi --list-models` (a table; the names are `provider/model`, which pi's `--model` takes).
+  opencode: `opencode models --standalone`, one `provider/model` per line; `--standalone` runs a private server that ends with
+  the call (plain `opencode models` starts or joins opencode's background service, which outlives the call and writes
+  `service.json` into its config folder: here that folder was root's, and the call failed with `PermissionDenied`). Claude Code
+  and every other engine: no listing command was checked (Claude Code's `--help` names aliases and "a model's full name", no
+  list), so their suggested names (`static`).
+- Run like Pad Check: no shell, 20 s, 2 MiB of output and 1000 names at most, its own process group killed at the end (so a
+  helper it started does not stay), cwd its `HOME`, and an environment of `PATH`, `HOME`, `LANG`, `NO_COLOR` and the
+  `XDG_*` folders only, where both keep their sign-in. Every name must pass `MODEL_PATTERN`.
+- Remembered per engine until the program changes (path, modification time, `--version`) or the page asks for a refresh; a
+  failure is asked again after 30 s. Two readers at once share one run.
+- `GET /api/engines/<engine>/models[?refresh=1]` (browser token) answers `EngineModels`: `source` `cli`, `static`, `missing`
+  (not on the PATH) or `error` (with `error`, and the suggested names), the `command` run, the `version` and `at`. 404 for an
+  engine without a model field. It is a GET of its own, asked by the page after it has loaded, so it never holds a page up.
+- The page asks once per engine for the whole page (`useEngineModels` in `client/models.ts`): the hire and Edit form's MODEL
+  field, the MODEL BY ENGINE lines and BY POSITION of DEFAULTS. The field stays free text with the list as its datalist (a
+  browser filters it as you type); a line under it says where the names come from (`18 models from pi --list-models (1.6.0)`),
+  that the engine is not installed, that it listed none ("is a provider signed in?"), or the error, with a Refresh key.
+- Shortcut: a provider an engine knows only from an API key in gonogo's environment (or a room or agent key) is not listed,
+  because the listing gets no keys; its model is typed. pi signed out of every provider lists nothing.

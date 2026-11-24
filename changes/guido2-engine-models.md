@@ -1,0 +1,1 @@
+- **Real model lists.** The model field of the hire and Edit form, and the models in DEFAULTS, now offer the models the engine itself lists (`pi --list-models`, `opencode models`) as names to pick from, with a Refresh key, and say when the engine is not installed or could not be asked. Free text still works.

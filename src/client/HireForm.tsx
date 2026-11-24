@@ -7,7 +7,8 @@ import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
 import { PermissionsEditor } from './PermissionsEditor.js';
 import { effectiveEffort, effectiveModel as startModel } from '../shared/details.js';
-import { FLAVOR_TEXT, modelNote, useModelDefaults } from './models.js';
+import { FLAVOR_TEXT, modelNames, modelNote, useEngineModels, useModelDefaults } from './models.js';
+import { ModelListStatus } from './EngineModelList.js';
 import { hasServer, mergeServer } from './registry.js';
 import { RegistryPicker } from './RegistryPicker.js';
 import {
@@ -253,6 +254,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [moreOpen, setMoreOpen] = useState(() => form.mode === 'edit' && differsFromDefault(values, Object.keys(current?.keys ?? {}).length));
   const [checks, setChecks] = useState<EngineCheck[]>([]);
   const roomModels = useModelDefaults();
+  const engineModels = useEngineModels(values.provider);
   const [flavors, setFlavors] = useState<CleanRoomFlavors | null>(null);
   useEffect(() => {
     let live = true;
@@ -459,7 +461,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const worktreeError = shown('worktree');
   const modelError = shown('model');
   const keysError = shown('keys');
-  const modelHints = providerInfo(values.provider).model;
+  const modelHints = providerInfo(values.provider).model === null ? null : modelNames(values.provider, engineModels);
   const storedKeys = Object.keys(original?.keys ?? {}).sort();
   const setRows = (keys: Values['keys']): void => change({ keys }, 'keys');
   const toggleRemoved = (name: string): void =>
@@ -569,7 +571,11 @@ function Staff({ form }: { form: Target }): ReactElement {
     <Control
       id={`${id}-model`}
       label="Model"
-      hint={`Passed to ${providerInfo(values.provider).label} as --model. ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label, values.position === '' ? null : values.position)}${modelHints.length > 0 ? ` Names it knows: ${modelHints.join(', ')}.` : ''} Any name it accepts works.`}
+      hint={
+        <>
+          {`Passed to ${providerInfo(values.provider).label} as --model. ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label, values.position === '' ? null : values.position)}`} <ModelListStatus provider={values.provider} state={engineModels} />
+        </>
+      }
       error={modelError}
     >
       <input

@@ -91,6 +91,7 @@ import { createTriggers } from './triggers.js';
 import { createTelegramFiles } from './telegramfiles.js';
 import { createUplinks } from './uplinks.js';
 import { checkEngines, formatDoctor, installedProviders, onPath } from './providers.js';
+import { createEngineModelLists } from './enginemodels.js';
 import { createClearance } from './clearance.js';
 import { createRoomKeys } from './roomkeys.js';
 import { createModelDefaults } from './models.js';
@@ -1532,6 +1533,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
       },
       engines: () => checkEngines(env),
+      engineModels: createEngineModelLists({ env }).get,
       cleanRoomFlavors: () => cleanRoomFlavors(env, modelDefaults.sandbox()),
       hangar: createHangar(roots),
       worktrees: {
