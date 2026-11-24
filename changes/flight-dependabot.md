@@ -1,0 +1,1 @@
+- Repository: `.github/dependabot.yml` lists the project's ecosystems (npm at the root and in `scripts/multivac-tool`, GitHub Actions, Docker, Docker Compose) so Dependabot security updates cover them. Version updates stay with Renovate (`renovate.json`); Dependabot's are off (`open-pull-requests-limit: 0`) to avoid duplicate pull requests.

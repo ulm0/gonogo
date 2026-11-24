@@ -1,0 +1,56 @@
+# Dependabot for gonogo.
+# Renovate (renovate.json) opens the version updates: it pins, groups, waits for a minimum
+# release age and knows the Dockerfile ARG images. Two bots doing the same updates would open
+# duplicate pull requests, so Dependabot opens SECURITY updates only here:
+# open-pull-requests-limit: 0 turns its version updates off, and security updates (on in the
+# repository settings) still open for every ecosystem listed below.
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # The app: package.json and pnpm-lock.yaml
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Santiago"
+    open-pull-requests-limit: 0
+    labels: ["security", "dependencies"]
+    commit-message:
+      prefix: "deps"
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The pinned multivac used by the conformance workflow
+  - package-ecosystem: "npm"
+    directory: "/scripts/multivac-tool"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    labels: ["security", "dependencies"]
+
+  # Actions in .github/workflows (pinned to commit SHAs)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    labels: ["security", "dependencies"]
+
+  # The image's base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    labels: ["security", "dependencies"]
+
+  # compose.yaml and the tunnel overlays
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    labels: ["security", "dependencies"]
