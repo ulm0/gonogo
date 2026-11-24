@@ -1163,6 +1163,8 @@ export interface Task {
   handedOff?: string;
   /** Missions: the one mission this task serves (ms1, ...). The mission's task list is derived from this field. */
   missionId?: string;
+  /** The roster position this task is for (autoscale hires that position when enough unassigned todo tasks name it). Set only by the boss or the Director; never from a docked station. */
+  position?: string;
   /** Docking 2: the one incoming link of this task (it was handed to this station), `dl_` and 16 hex. */
   link?: string;
   /** Docking 2: the links of this task to other stations (it was handed off), at most 10. */
@@ -1785,12 +1787,20 @@ export interface ReliefRules {
   mayStop: boolean;
   /** The boss may remove an agent with `fire_agent remove:true` (the record goes, the folder is archived). Off by default; turning it on needs the step-up. */
   mayRemove: boolean;
+  /** Autoscale (docs/hire-fire-spec.md 9.3): `off`, `dry-run` (only writes to the Downlink what it would do) or `on` (needs autoApprove). Re-checked every tick: autoApprove off stops it at once. */
+  autoscale: 'off' | 'dry-run' | 'on';
+  /** Hire one agent of a position when at least this many unassigned todo tasks name it and no boss-hired agent of that position runs. */
+  scaleUpTodo: number;
+  /** Stop a boss-hired agent that has had no open task and no work for this many minutes (null: never). */
+  idleStopMinutes: number | null;
+  /** Remove a boss-hired agent that has been stopped this many hours (null: never; needs mayRemove). */
+  removeStoppedHours: number | null;
   /** The only way the boss may grant `bypassPermissions` by rule: it also needs a Clean Room hire with egress on and no global MCP. Off by default; turning it on needs the step-up. */
   bypassInCleanRoom: boolean;
   /** Per engine, the model names a rule hire may name. A hire that names none follows the room's default model; one that names a model not listed here asks. */
   models: Partial<Record<Provider, string[]>>;
 }
-export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3, mayStop: true, mayRemove: false, bypassInCleanRoom: false, models: {} };
+export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3, mayStop: true, mayRemove: false, autoscale: 'off', scaleUpTodo: 3, idleStopMinutes: null, removeStoppedHours: null, bypassInCleanRoom: false, models: {} };
 export interface ReliefRequest {
   /** `h1`, `h2`, ...; never used twice in one run. */
   id: string;

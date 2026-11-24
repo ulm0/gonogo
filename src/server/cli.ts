@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import net from 'node:net';
 import { stat } from 'node:fs/promises';
 import { homedir, hostname, networkInterfaces, userInfo } from 'node:os';
@@ -80,6 +80,7 @@ import { createPhone } from './phone.js';
 import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
 import { createReliefRules } from './reliefrules.js';
+import { AUTOSCALE_TICK_MS, createAutoscale } from './autoscale.js';
 import { createMassBudget } from './massbudget.js';
 import { createAnchorChecker, knowledgeLine } from './anchors.js';
 import { createMissionLog } from './missionlog.js';
@@ -1158,6 +1159,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       afterChange: (list) => missionsRef?.observe(list),
       afterUpdate: (before, after, actor, note, attachments) => dockingRef?.taskChanged(before, after, actor, note, attachments),
       isAgent: (name) => hubInstance.views().some((v) => v.name === name),
+      isBoss: (name) => hubInstance.views().some((v) => v.name === name && v.boss),
       send: (actor, request) =>
         actor.kind === 'user'
           ? hubInstance.sendFromUser(request)
@@ -1312,7 +1314,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the rules come back from disk: when they say automatic hires are ON, the Director is told at once (a file nobody of ours wrote would otherwise switch it on silently)
     if (reliefRules.view().autoApprove) {
       const r = reliefRules.view();
-      tell('relief', `Relief rules loaded from disk: automatic hires ON, maxMode ${r.maxMode}, autoOnHost ${r.autoOnHost ? 'ON' : 'off'}`);
+      tell('relief', `Relief rules loaded from disk: automatic hires ON, maxMode ${r.maxMode}, autoOnHost ${r.autoOnHost ? 'ON' : 'off'}, mayRemove ${r.mayRemove ? 'ON' : 'off'}, bypassInCleanRoom ${r.bypassInCleanRoom ? 'ON' : 'off'}, autoscale ${r.autoscale}`);
     }
     // Propellant holds the boss-hired crew at its daily ceiling (relief.json crewBudgetUsd); with automatic approval off there is no ceiling
     crewBudget = () => {
@@ -1327,6 +1329,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rules: reliefRules,
       crewSpentToday: (names) => names.reduce((sum, n) => sum + (propellant.view().cost.agents[n]?.usd.day ?? 0), 0),
       tasks: tasks,
+      nameRetired: (name) => {
+        try {
+          return readdirSync(join(home.dir, 'agents')).some((entry) => entry.startsWith(`${name}.removed-`));
+        } catch {
+          return false;
+        }
+      },
       voteWaitsFor: (name) => {
         const poll = hubInstance.poll();
         return poll !== null && poll.status === 'open' && poll.entries.some((e) => e.agent === name && e.vote === null);
@@ -1345,6 +1354,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       notify: tell,
       log: log.child('relief'),
     });
+    const autoscale = createAutoscale({ rules: reliefRules, tasks, views: () => hubInstance.views(), relief, now: () => Date.now(), notify: tell, log: log.child('autoscale') });
+    const autoscaleTimer = setInterval(() => void autoscale.tick().catch((error: unknown) => log.error('autoscale tick failed', error)), AUTOSCALE_TICK_MS);
+    autoscaleTimer.unref();
     // Telegram and several rooms (telegramroute.ts): main's poller is the one consumer of the bot and offers a reply to the room that sent what it replies to
     const routeKey = env.GONOGO_TELEGRAM_ROUTE_KEY ?? '';
     const installRoot = env.GONOGO_INSTALL_ROOT === undefined || env.GONOGO_INSTALL_ROOT === '' ? null : env.GONOGO_INSTALL_ROOT;
@@ -1679,6 +1691,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('livery close', () => liveries.close());
       await step('relief close', async () => {
         clearInterval(reliefRulesTimer);
+        clearInterval(autoscaleTimer);
         relief.close();
         await reliefRules.close();
       });

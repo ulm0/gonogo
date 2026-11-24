@@ -60,6 +60,18 @@ Only FLIGHT is fixed: the boss can stop **any** agent but itself with `fire_agen
 
 **Protected:** tick *Protect it from FLIGHT's fire_agent* in the Edit form of any agent but FLIGHT (no password); unticking asks for the password. *Flight Rules > Security > Hire on demand* has the rules, SAVE RULES and STOP CREW.
 
+## Autoscale
+
+Off by default; it needs automatic approval on and it acts only through the same rule hire (same positions, engines, mode ceiling, folder, crew size, hourly rate and budget). In *Flight Rules > Hire on demand*: **off**, **dry run** (it only writes to the Downlink what it would do, at most one line an hour per position or agent, and changes nothing) or **on** (the password again). A task can name a **position** (`task_create`/`task_update` `position`, and the Flight Plan): only the boss and you may set it; another agent's attempt is refused and a task that comes from a docked station loses it.
+
+Every 60 seconds it does **at most one thing**, and reads the rules again first (turn automatic approval off and it stops at once):
+
+1. **Scale up:** when at least *N* unassigned `todo` tasks name a position (`scaleUpTodo`, default 3) and no boss-hired agent of that position is running, hire one `<position>-<n>` (the lowest number never used by a live agent, a waiting request or a removed agent). Its mode is the room's default mode, never above `maxMode`. A rule that says no leaves a line, not a request.
+2. **Scale down:** a boss-hired agent that has been idle (the console's own state: a long build is working, not idle) with no open task for `idleStopMinutes` is stopped, never within 10 minutes of its hire, never a protected one.
+3. **Remove:** a boss-hired agent stopped for `removeStoppedHours` is removed (needs *FLIGHT may also remove agents*).
+
+Autoscale never touches an agent you hired. STOP CREW turns it off.
+
 ## API
 
 `GET /api/relief` -> `{ "requests": [...], "rules": {...}, "crew": [...] }` (also in state and a `relief` frame). `PUT /api/relief/rules` takes the rules that change (a bad one is 400 with the field `rules.<name>`). `POST /api/relief/:id/go` and `/no-go` take nothing, answer the list; gone id is 404.

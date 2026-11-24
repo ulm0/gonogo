@@ -84,6 +84,12 @@ export function ReliefRulesBlock(): ReactElement {
       <fieldset className="rules-set"><legend>Engines (none checked: the room's default engine)</legend>
         {ENGINES.map((p) => <label key={p} className="staff-check"><input type="checkbox" className="check" checked={draft.engines.includes(p)} onChange={(event) => set({ engines: toggle(draft.engines, p, event.target.checked) })} />{p}</label>)}
       </fieldset>
+      <fieldset className="rules-set"><legend>Autoscale (the crew follows the Flight Plan; needs automatic hires on)</legend>
+        <label>Mode <select className="input" value={draft.autoscale} onChange={(event) => set({ autoscale: event.target.value as ReliefRules['autoscale'] })}><option value="off">off</option><option value="dry-run">dry run: only says what it would do</option><option value="on">on</option></select></label>
+        <label>Hire when unassigned todo tasks for a position reach <input type="number" className="input" min={1} max={50} value={draft.scaleUpTodo} onChange={(event) => set({ scaleUpTodo: num(event.target.value, draft.scaleUpTodo) })} /></label>
+        <label>Stop an agent idle with no task for (minutes, empty: never) <input type="number" className="input" min={5} max={1440} value={draft.idleStopMinutes ?? ''} onChange={(event) => set({ idleStopMinutes: event.target.value.trim() === '' ? null : num(event.target.value, draft.idleStopMinutes ?? 60) })} /></label>
+        <label>Remove an agent stopped for (hours, empty: never) <input type="number" className="input" min={1} max={720} value={draft.removeStoppedHours ?? ''} onChange={(event) => set({ removeStoppedHours: event.target.value.trim() === '' ? null : num(event.target.value, draft.removeStoppedHours ?? 24) })} /></label>
+      </fieldset>
       <label>Models it may name (one line per engine, for example <code>claude: opus, sonnet</code>; none listed: only the engine's default)
         <textarea className="textarea" rows={3} aria-label="Models a rule hire may name" value={modelsDraft} onChange={(event) => { setModelsDraft(event.target.value); set({ models: modelsOf(event.target.value) }); }} />
       </label>

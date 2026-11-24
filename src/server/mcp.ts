@@ -201,7 +201,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
       'task_create',
       {
         description: MCP_DESCRIPTIONS.task_create,
-        inputSchema: { title: z.string().min(1).max(TASK_TITLE_MAX_CHARS), detail: z.string().max(TASK_DETAIL_MAX_CHARS).optional(), assignee: z.string().min(1).max(64).optional(), missionId: z.string().min(1).max(16).optional() },
+        inputSchema: { title: z.string().min(1).max(TASK_TITLE_MAX_CHARS), detail: z.string().max(TASK_DETAIL_MAX_CHARS).optional(), assignee: z.string().min(1).max(64).optional(), missionId: z.string().min(1).max(16).optional(), position: z.string().min(1).max(32).optional() },
       },
       (args) => guarded('task_create', async () => (tasks ? toolResult({ ok: true, task: await tasks.create(actor, args) }, false) : noBoard())),
     );
@@ -216,6 +216,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           assignee: z.string().min(1).max(64).nullable().optional(),
           note: z.string().max(TASK_NOTE_MAX_CHARS).optional(),
           missionId: z.string().min(1).max(16).nullable().optional(),
+          position: z.string().min(1).max(32).nullable().optional(),
           localNotes: z.boolean().optional(),
           attachments: z.array(z.object({ kind: z.enum(['pr', 'branch', 'commit', 'file', 'url']), ref: z.string().min(1).max(300), label: z.string().max(80).optional() })).max(5).optional(),
         },

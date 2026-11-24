@@ -46,6 +46,8 @@ export interface ReliefOptions {
   tasks?: { list(): Array<{ id: string; assignee: string | null; status: string }>; update(actor: { kind: 'agent'; name: string; generation: number }, id: string, input: unknown): Promise<unknown> };
   /** Whether an open T-minus poll waits for this agent's vote (it is not fired then). */
   voteWaitsFor?(name: string): boolean;
+  /** True when a removed agent once had this name (an `agents/<name>.removed-*` folder): autoscale never uses such a name again. */
+  nameRetired?(name: string): boolean;
   /** Dollars the named agents (the boss-hired crew) spent today, from Propellant. Absent: 0, and the crew budget cannot hold. */
   crewSpentToday?(names: string[]): number;
   /** The room's rules (`relief.json`). Absent: no rule hires, every request waits for the Director, as before. */
@@ -73,14 +75,21 @@ export interface ReliefOptions {
 export interface ReliefAsked {
   id: string;
   /** `hired`: inside the rules, staffed at once. `pending`: waits for the Director (the note names the rule that sent it there). */
-  status: 'pending' | 'hired';
+  status: 'pending' | 'hired' | 'refused' | 'dry';
   note: string;
   name?: string;
 }
 
 export interface Relief {
   /** The boss asks. `by` comes from its token. Throws a HubError that says what to change. */
-  request(by: { agent: string; generation: number }, input: unknown): Promise<ReliefAsked>;
+  request(by: { agent: string; generation: number }, input: unknown, how?: 'rules-only' | 'dry'): Promise<ReliefAsked>;
+  /**
+   * Autoscale's hire (docs/hire-fire-spec.md 9.3): the same path and the same rules as the boss's `hire_agent`, but it never makes a pending request: a rule that says no is `refused`. `dry` only says
+   * what would happen. The name is `<position>-<n>`, the lowest number that is not a live agent, a waiting request or a removed one; the mode is the room's default capped by maxMode.
+   */
+  staff(boss: { agent: string; generation: number }, position: string, how: 'rules-only' | 'dry'): Promise<ReliefAsked>;
+  /** Autoscale's stop or removal of a boss-hired agent, with the line it leaves in the Downlink. Throws the hub's refusal. */
+  retire(boss: { agent: string; generation: number }, name: string, how: 'stop' | 'remove', reason: string): Promise<void>;
   view(): ReliefView;
   /** The Director's change of the rules (the route asked for the step-up before). Throws a bad_request that names the field. */
   setRules(body: unknown): Promise<ReliefView>;
@@ -223,7 +232,7 @@ export function createRelief(options: ReliefOptions): Relief {
   };
 
   return {
-    async request(by, input) {
+    async request(by, input, how) {
       // identity first: the token names the agent, the generation says it is this run of it
       const requester = hub.views().find((agent) => agent.name === by.agent);
       if (!requester) throw new HubError('not_found', 'unknown agent');
@@ -302,6 +311,12 @@ export function createRelief(options: ReliefOptions): Relief {
       limits(name);
       // from here to the reservation there is no await: a hire by rule takes its crew slot at once
       const asks = rules?.autoApprove === true ? ruleAsks(rules, requester, { model, name, position: typeof position === 'string' ? position : null, free: typeof role === 'string', dir: checked.path, provider, mode, cleanRoom, worktree: wantsWorktree, insideBoss }) : undefined;
+      if (how !== undefined) {
+        // autoscale: only a hire the rules allow; a rule that says no is an answer, not a request for the Director
+        if (rules?.autoApprove !== true) return { id: 'none', status: 'refused', name, note: 'automatic approval is off' };
+        if (typeof asks === 'string') return { id: 'none', status: 'refused', name, note: asks };
+        if (how === 'dry') return { id: 'dry', status: 'dry', name, note: 'would hire' };
+      }
       if (rules?.autoApprove === true && asks === null) {
         made.push(now());
         staffing.add(name);
@@ -345,6 +360,37 @@ export function createRelief(options: ReliefOptions): Relief {
       if (moved.length > 0) notify(`Relief rules changed: ${moved.map((k) => `${k} ${JSON.stringify(after[k as keyof ReliefRules])}`).join(', ')}`);
       changed();
       return view();
+    },
+
+    async staff(boss, position, how) {
+      const requester = hub.views().find((agent) => agent.name === boss.agent);
+      if (!requester?.boss) throw new HubError('forbidden', 'only the boss staffs');
+      await options.rules?.check();
+      const rules = options.rules?.view();
+      if (rules === undefined) return { id: 'none', status: 'refused', note: 'no rules' };
+      const taken = (n: string): boolean => hub.views().some((a) => a.name === n) || [...pending.values()].some(({ request }) => request.name === n) || staffing.has(n) || options.nameRetired?.(n) === true;
+      let n = 1;
+      while (taken(`${position}-${n}`)) n += 1;
+      // the room's default mode, never bypass, capped by maxMode: never maxMode itself
+      const room = options.defaultMode?.();
+      let mode: string = room === undefined || room === 'bypassPermissions' ? 'default' : room;
+      if (modeRank(mode) < 0 || modeRank(mode) > modeRank(rules.maxMode)) mode = rules.maxMode;
+      return this.request(boss, { name: `${position}-${n}`, position, dir: requester.dir, mode }, how);
+    },
+
+    async retire(boss, name, how, reason) {
+      const requester = hub.views().find((agent) => agent.name === boss.agent);
+      if (!requester?.boss) throw new HubError('forbidden', 'only the boss acts');
+      await options.rules?.check();
+      const rules = options.rules?.view();
+      if (rules?.autoApprove !== true || rules.autoscale !== 'on') throw new HubError('forbidden', 'autoscale is not on');
+      if (!rules.mayStop || (how === 'remove' && !rules.mayRemove)) throw new HubError('forbidden', how === 'remove' ? 'removing is off' : 'stopping is off');
+      // only what FLIGHT hired by rule: autoscale never touches an agent the Director hired
+      if (hub.views().find((a) => a.name === name)?.hiredBy !== 'boss') throw new HubError('forbidden', `${name} was not hired by rule`);
+      if (how === 'remove') await hub.retireAgent?.(name, requester.name);
+      else await hub.fireAgent?.(name, requester.name);
+      notify(`autoscale ${how === 'remove' ? 'removed' : 'stopped'} ${name}: ${reason}`);
+      changed();
     },
 
     async fire(by, input) {

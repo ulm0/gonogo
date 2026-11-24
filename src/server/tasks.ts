@@ -26,6 +26,7 @@ import {
   taskSubject,
 } from '../shared/protocol.js';
 import type { AgentSendRequest, Deliverable, DownlinkNotify, Logger, SendResult, Task, TaskStatus } from '../shared/protocol.js';
+import { POSITION_IDS } from '../shared/positions.js';
 import { readDeliverables } from './links.js';
 import { FILE_MODE, TASK_NOTES_MAX, TASKS_DONE_KEEP, TASKS_FILE } from './constants.js';
 import { isRecord } from './hooks.js';
@@ -36,8 +37,8 @@ const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const STATION_RE = new RegExp(STATION_NAME_PATTERN);
 const ID_RE = /^t[1-9]\d{0,5}$/;
 const MISSION_ID_RE = /^ms[1-9]\d{0,5}$/;
-const CREATE_FIELDS = ['title', 'detail', 'assignee', 'missionId'];
-const PATCH_FIELDS = ['status', 'assignee', 'note', 'missionId', 'localNotes', 'attachments'];
+const CREATE_FIELDS = ['title', 'detail', 'assignee', 'missionId', 'position'];
+const PATCH_FIELDS = ['status', 'assignee', 'note', 'missionId', 'localNotes', 'attachments', 'position'];
 const LINK_ID_RE = /^dl_[0-9a-f]{16}$/;
 
 /**
@@ -52,6 +53,8 @@ export interface TasksOptions {
   now(): number;
   /** Is this the name of an agent in the room? */
   isAgent(name: string): boolean;
+  /** Is this the boss? Only the boss (and the Director) may name a position on a task: that is what makes autoscale hire. Absent: no agent may. */
+  isBoss?(name: string): boolean;
   /** Hub.sendFromUser or Hub.sendFromAgent: the message that tells an agent about its task. May throw a HubError. */
   send(actor: Actor, request: AgentSendRequest): SendResult;
   /** Missions: does a mission with this id exist? Without it a task takes no `missionId`. */
@@ -102,6 +105,7 @@ interface Fields {
   assignee?: string | null;
   note?: string;
   missionId?: string | null;
+  position?: string | null;
   localNotes?: boolean;
   attachments?: Deliverable[];
 }
@@ -142,6 +146,10 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
     if (whole && input.missionId === null) throw bad('missionId must be the id of a mission', 'missionId');
     out.missionId = input.missionId;
   }
+  if (input.position !== undefined) {
+    if (input.position !== null && (typeof input.position !== 'string' || !POSITION_IDS.includes(input.position))) throw bad(`position must be one of the roster positions (${POSITION_IDS.join(', ')}), or null`, 'position');
+    out.position = input.position;
+  }
   if (input.attachments !== undefined) {
     const list: unknown[] = Array.isArray(input.attachments) ? input.attachments : [];
     if (!Array.isArray(input.attachments) || list.length === 0 || list.length > 5) throw bad('attachments is a list of 1 to 5 deliverables: { kind: pr|branch|commit|file|url, ref, label }', 'attachments');
@@ -165,7 +173,7 @@ function validate(input: unknown, whole: boolean, isAgent: (name: string) => boo
 /** A saved record read back; one that is not a task throws, and the caller skips it. Unlike a request, it may name an agent that is gone. */
 function fromRecord(raw: unknown, at: number): Task {
   if (!isRecord(raw) || typeof raw.id !== 'string' || !ID_RE.test(raw.id)) throw new Error('no valid id');
-  const { id, title, detail, status, assignee, createdBy, createdAt, updatedAt, notes, handedOff, missionId, link, links, localNotes } = raw;
+  const { id, title, detail, status, assignee, createdBy, createdAt, updatedAt, notes, handedOff, missionId, link, links, localNotes, position } = raw;
   if (typeof title !== 'string' || title === '' || title.length > TASK_TITLE_MAX_CHARS) throw new Error('no valid title');
   if (typeof status !== 'string' || !(TASK_STATUSES as readonly string[]).includes(status)) throw new Error('no valid status');
   return {
@@ -180,6 +188,7 @@ function fromRecord(raw: unknown, at: number): Task {
     notes: Array.isArray(notes) ? notes.filter((n): n is string => typeof n === 'string').slice(-TASK_NOTES_MAX) : [],
     ...(typeof handedOff === 'string' && STATION_RE.test(handedOff) ? { handedOff } : {}),
     ...(typeof missionId === 'string' && MISSION_ID_RE.test(missionId) ? { missionId } : {}),
+    ...(typeof position === 'string' && POSITION_IDS.includes(position) ? { position } : {}),
     ...(typeof link === 'string' && LINK_ID_RE.test(link) ? { link } : {}),
     ...(Array.isArray(links) && links.some((l) => typeof l === 'string' && LINK_ID_RE.test(l)) ? { links: links.filter((l): l is string => typeof l === 'string' && LINK_ID_RE.test(l)).slice(0, 10) } : {}),
     ...(localNotes === true ? { localNotes } : {}),
@@ -193,6 +202,19 @@ export function createTasks(options: TasksOptions): Tasks {
   let tasks: Task[] = [];
   let seq = 0;
   let chain: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Who may name a position on a task (autoscale hires for it): the Director, and the boss. Decided from the actor, not the text: another agent is refused, and a task that comes in
+   * from a docked station loses it (a peer's text must not staff this room).
+   */
+  const allowPosition = (actor: Actor, fields: Fields): void => {
+    if (fields.position === undefined) return;
+    if (actor.kind === 'dock') {
+      delete fields.position;
+      return;
+    }
+    if (actor.kind === 'agent' && !(options.isBoss?.(actor.name) ?? false)) throw new HubError('forbidden', 'only the boss and the Director may name a position on a task', 'position');
+  };
 
   const later = (fn: () => Promise<unknown>): Promise<void> => {
     const run = chain.then(fn);
@@ -280,6 +302,7 @@ export function createTasks(options: TasksOptions): Tasks {
 
     async create(actor, input) {
       const request = validate(input, true, options.isAgent, hasMission);
+      allowPosition(actor, request);
       if (tasks.filter(isOpen).length >= TASKS_OPEN_MAX) throw full();
       const at = now();
       const task: Task = {
@@ -293,6 +316,7 @@ export function createTasks(options: TasksOptions): Tasks {
         updatedAt: at,
         notes: [],
         ...(request.missionId === undefined || request.missionId === null ? {} : { missionId: request.missionId }),
+        ...(request.position === undefined || request.position === null ? {} : { position: request.position }),
       };
       task.notes.push(line(actor, `${task.assignee === null ? 'created' : `created; assigned to ${task.assignee}`}${task.missionId === undefined ? '' : `; mission ${task.missionId}`}`, at));
       tell(actor, task, at);
@@ -362,6 +386,7 @@ export function createTasks(options: TasksOptions): Tasks {
     async update(actor, id, input) {
       const task = find(id);
       const patch = validate(input, false, options.isAgent, hasMission);
+      allowPosition(actor, patch);
       const at = now();
       const next = copy(task);
       const parts: string[] = [];
@@ -378,6 +403,11 @@ export function createTasks(options: TasksOptions): Tasks {
         if (patch.missionId === null) delete next.missionId;
         else next.missionId = patch.missionId;
         parts.push(patch.missionId === null ? 'unlinked from its mission' : `mission ${patch.missionId}`);
+      }
+      if (patch.position !== undefined && (patch.position ?? undefined) !== task.position) {
+        if (patch.position === null) delete next.position;
+        else next.position = patch.position;
+        parts.push(patch.position === null ? 'no position' : `for position ${patch.position}`);
       }
       if (patch.localNotes !== undefined && (patch.localNotes === true) !== (task.localNotes === true)) {
         if (patch.localNotes) next.localNotes = true;
