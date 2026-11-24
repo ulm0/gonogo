@@ -54,6 +54,12 @@ describe('cleaning', () => {
     }
     expect(cleanText('<scr<script>ipt>', 100)).toBe('&lt;scr&lt;script&gt;ipt&gt;');
   });
+  it('builds no entity: & is escaped first, so &#64;user, &#x40;user and &#35;1 stay literal text (no ping, no reference)', () => {
+    const out = cleanText('&#64;user &#x40;user &#35;1 owner/repo&#35;12 &lt;b&gt; a&b', 500);
+    expect(out.replace(/\u200b/g, '')).toBe('&amp;#64;user &amp;#x40;user &amp;#35;1 owner/repo&amp;#35;12 &amp;lt;b&amp;gt; a&amp;b');
+    // an entity that reaches GitHub decodes to text only, never to a mention
+    expect(out).not.toMatch(/&(?!amp;)/);
+  });
   it('is cut to the limit', () => {
     expect(cleanText('ab '.repeat(2000), 100)).toHaveLength(100);
   });
