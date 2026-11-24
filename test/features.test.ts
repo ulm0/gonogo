@@ -34,7 +34,7 @@ describe('the table', () => {
     for (const tool of owned) expect(MCP_TOOL_NAMES as readonly string[]).toContain(tool);
     for (const core of ['send_message', 'list_roster', 'read_messages']) expect(owned).not.toContain(core);
     for (const id of Object.keys(FEATURE_TOOLS)) expect(featureById(id)?.core).toBeUndefined();
-    expect(toolsOff(['relief', 'flight-plan'])).toEqual(['hire_agent', 'task_list', 'task_create', 'task_update']);
+    expect(toolsOff(['relief', 'flight-plan'])).toEqual(['hire_agent', 'fire_agent', 'task_list', 'task_create', 'task_update']);
   });
 
   it('maps the routes of the features that are wired, and no route of a core feature', () => {
