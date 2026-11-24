@@ -1,0 +1,1 @@
+- **A security policy.** `SECURITY.md` says how to report a vulnerability privately (GitHub's Report a vulnerability), which versions get fixes (the latest release), what to expect and what is in scope.
