@@ -11,7 +11,7 @@ import { existsSync } from 'node:fs';
 import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { basename, join } from 'node:path';
-import { CLEAN_ROOM_DIR, CLEAN_ROOM_FLAVORS, CLEAN_ROOM_RUNTIMES, cleanRoomBranch } from '../shared/protocol.js';
+import { CLEAN_ROOM_DIR, CLEAN_ROOM_FLAVORS, CLEAN_ROOM_RUNTIMES, cleanRoomBranch, takesCleanRoom } from '../shared/protocol.js';
 import type { AgentRecord, CleanRoom, CleanRoomFlavor, CleanRoomFlavors, Provider } from '../shared/protocol.js';
 import { cwdInWorktree, ensureWorktree, messageOf, run, topOf } from './worktree.js';
 export { ensureWorktree };
@@ -39,7 +39,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 /** The one reader of a Clean Room setting: the hub uses it for hire and edit, home.ts for the roster file. `{}` is the default image. */
 export function parseCleanRoom(value: unknown, provider: Provider | undefined): CleanRoomCheck {
   if (!isRecord(value)) return { ok: false, error: 'cleanRoom must be an object' };
-  if ((provider ?? 'claude') !== 'claude') return { ok: false, error: 'a Clean Room runs Claude Code agents only' };
+  if (!takesCleanRoom(provider)) return { ok: false, error: 'a Clean Room runs Claude Code, pi and opencode agents only' };
   const unknown = Object.keys(value).find((key) => key !== 'image' && key !== 'flavor' && key !== 'egress');
   if (unknown !== undefined) return { ok: false, error: `cleanRoom has no field "${unknown}"` };
   const { image, flavor, egress } = value;

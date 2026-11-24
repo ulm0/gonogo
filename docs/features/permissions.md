@@ -17,7 +17,7 @@ The mode (default, acceptEdits, auto, bypass) is set apart. Claude Code checks `
 
 ## Other engines
 
-Only Claude Code has rules gonogo can set. For Gemini CLI, Antigravity, Codex, opencode, Qwen Code, Grok, Kimi, Crush, pi, Copilot, Cursor and a custom command the form says "Not supported" and the server refuses `permissions` (400, field `permissions`). Some have an allow flag of their own; none was checked against a real run, so none is mapped.
+Claude Code takes the rules in its settings; pi and opencode through gonogo's tool gate, in the extension and the plugin gonogo starts them with (Engine Bay, "pi and opencode"): the same rules, the same order, the same modes. For Gemini CLI, Antigravity, Codex, Qwen Code, Grok, Kimi, Crush, Copilot, Cursor and a custom command the form says "Not supported" and the server refuses `permissions` (400, field `permissions`). Some have an allow flag of their own; none was checked against a real run, so none is mapped.
 
 ## Not verified
 

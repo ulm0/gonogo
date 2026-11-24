@@ -8,6 +8,7 @@ gonogo shows a Claude Code agent's helpers (subagents), counts their cost, and o
 - **Loops**: Redline's loop and error-storm counters are kept per agent and per helper (`agent_id`), so two helpers making the same call are not a loop. A trip still interrupts the whole session.
 - **Who asked**: a dialog a helper opened says so: `Bash: git push (subagent Explore)`. GO or NO-GO is still the parent's.
 - **Counted**: Propellant reads helpers' transcripts (`<session>/subagents/agent-<id>.jsonl`) and adds them to the parent, so token limits, dollar budgets and the out-of-propellant trip include the fan-out. Each file has its own cursor; a file linking outside Claude's projects folder is refused.
+- **opencode**: its `task` tool is a subagent. gonogo's plugin sends `SubagentStart` and `SubagentStop` for it, keeps the helper's own session apart (its prompt and its end are not the agent's turn, its tool calls carry the helper's id), counts its replies in Propellant, and applies the room's setting: `none` denies `task`, `limit` refuses a `task` call past the number at once. pi has no subagents.
 - **Setting**: Flight Rules, SUBAGENTS, one per room, applied at each console's next start:
 
 | Choice | Effect |

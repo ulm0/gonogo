@@ -51,7 +51,7 @@ describe('what the Director reads', () => {
     const rows = reliefRows(request({ position: null, provider: 'gemini', mode: 'default', cleanRoom: { image: 'img:1' } }), 1_000);
     expect(rows.map((r) => r.value)).toEqual(['guido-1', 'none: a role of its own', 'Gemini CLI', 'ASK: asks you for a go before a tool runs', '/work/app', 'yes: its own container and branch, image img:1', '30 minutes left']);
     // an engine without permission modes is not shown as asking before each tool
-    expect(reliefRows(request({ provider: 'opencode', mode: 'default' }), 1_000).find((r) => r.label === 'Mode')?.value).toMatch(/^none: this engine has no permission modes/);
+    expect(reliefRows(request({ provider: 'copilot', mode: 'default' }), 1_000).find((r) => r.label === 'Mode')?.value).toMatch(/^none: this engine has no permission modes/);
     expect(reliefRows(request({ cleanRoom: {} }), 1_000).find((r) => r.label === 'Clean Room')?.value).toBe('yes: its own container and branch');
     expect(reliefRows(request({ cleanRoom: {}, flavor: 'gvisor' }), 1_000).find((r) => r.label === 'Clean Room')?.value).toBe('yes: its own container and branch, sandbox gVisor (runsc)');
     expect(reliefRows(request({ cleanRoom: {}, flavor: 'docker', flavorBelowRoom: true }), 1_000).find((r) => r.label === 'Clean Room')?.value).toBe("yes: its own container and branch, sandbox Docker (runc) (below the room's default)");

@@ -95,8 +95,8 @@ describe('parseCleanRoom', () => {
     for (const value of [null, undefined, 'x', 1, true, []]) expect(refused(value)).toBe('cleanRoom must be an object');
     expect(refused({ mount: '/' })).toBe('cleanRoom has no field "mount"');
     for (const image of ['', '-v', '--privileged', 'a b', 'a;b', 'a\nb', 'a'.repeat(201), 3, null]) expect(refused({ image }), String(image)).toMatch(/Docker image name/);
-    expect(refused({}, 'gemini')).toBe('a Clean Room runs Claude Code agents only');
-    expect(refused({}, 'custom')).toBe('a Clean Room runs Claude Code agents only');
+    expect(refused({}, 'gemini')).toBe('a Clean Room runs Claude Code, pi and opencode agents only');
+    expect(refused({}, 'custom')).toBe('a Clean Room runs Claude Code, pi and opencode agents only');
   });
 });
 

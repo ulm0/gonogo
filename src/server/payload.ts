@@ -208,7 +208,7 @@ export function payloadRefusal(provider: Provider | undefined, payload: Payload)
   const info = providerInfo(provider);
   if (info.payload === null) return { field: 'payload', error: `${info.label} takes no payload` };
   if (payload.skills !== undefined && info.payload !== 'all') {
-    return { field: 'payload.skills', error: `skills need Claude Code; ${info.label} takes MCP servers only` };
+    return { field: 'payload.skills', error: `skills need Claude Code, pi or opencode; ${info.label} takes MCP servers only` };
   }
   return null;
 }

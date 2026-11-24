@@ -31,8 +31,26 @@ those four, and lets the owner pick the CLI in the hire form.
   hooked but with the tools (Codex, opencode, Kimi, Copilot): the pointer is typed when the output has been quiet and
   counts as delivered at once. No tools: no mail, like the custom command.
 - **The role.** With the tools the agent gets the role text with the preamble about them, as its first prompt where the
-  CLI has a flag for one (Gemini `--prompt-interactive`, Codex positional prompt, opencode `--prompt`). pi gets the bare
-  role through `--append-system-prompt`. The others get no role.
+  CLI has a flag for one (Gemini `--prompt-interactive`, Codex positional prompt, opencode `--prompt`); pi gets it in its
+  system prompt (`--append-system-prompt`). The others get no role.
+- **opencode (1.19) through a plugin.** `src/server/opencodeplugin.ts` writes `opencode.json` (passed with `OPENCODE_CONFIG`:
+  `plugin` `file://.../gonogo-opencode.js`, `instructions` `opencode-role.md`, `mcp` with gonogo's server and the Payload and global
+  ones, `permission` `"*": "ask"` and each tool, `skills.paths`, the effort as `agent.build/plan.variant`, egress as
+  `provider.anthropic.options.baseURL`) and `gonogo-opencode.json` (the hook URL, the server names and the tool gate's policy). The plugin
+  posts `chat.message` (UserPromptSubmit with the session id, kept as `engineSession` and resumed with `--session`),
+  `tool.execute.before/after`, `permission.asked` (answered by the gate with `postSessionIdPermissionsPermissionId`, or passed on as
+  PermissionRequest), `permission.replied`, `session.idle` (Stop; a block is sent with `session.promptAsync`), `session.error`, the
+  `task` tool as SubagentStart/Stop (child sessions kept apart) and each finished reply's usage. Checked in real runs of opencode 1.19.6
+  with its free models, in a Clean Room too.
+- **The tool gate** (`src/server/toolgate.ts`): Claude Code's permission order and rule syntax, in one self-contained function copied
+  into the extension and the plugin (`GATE_SOURCE`).
+- **pi (1.6) through an extension.** `src/server/piextension.ts` writes `gonogo-pi.ts` and `gonogo-pi.json` (0600) into the
+  agent's folder and starts pi with `--extension`. The extension registers the gonogo server and the Payload and global servers
+  (`pi.registerMcpServer`, every tool `direct`, SSE left out), and posts `session_start` (Notification: the agent is up),
+  `before_agent_start` (UserPromptSubmit), `tool_call` / `tool_result` (PreToolUse, PostToolUse(Failure), with Claude's tool names)
+  and `agent_before_settle` (Stop, or StopFailure for an aborted or failed run) to the hook URLs with `GONOGO_TOKEN`. A Stop block
+  becomes a `custom_message` entry with `continue: true`, pi's own continuation. Sessions: `--session-dir agents/<name>/pi-sessions
+  --session-id <sessionId>` (made or resumed). Skills: `--skill <folder>`. Checked in real runs of pi 1.6.0.
 - **MCP config only through a documented per-run way.** Gemini: the settings file. Codex: `-c mcp_servers.gonogo.*`
   overrides (rather than a per-agent `CODEX_HOME`, which would hide the owner's login). opencode: `OPENCODE_CONFIG`.
   Kimi: `--mcp-config-file`. Copilot: `--additional-mcp-config @file`. Kimi and Copilot files hold the token itself
@@ -68,10 +86,10 @@ those four, and lets the owner pick the CLI in the hire form.
 | Gemini CLI (legacy) | `gemini` | hooks | yes | local: `--help` and the bundled source of 0.59.0, not signed in |
 | Antigravity CLI | `agy` | output | no | local: `--help` of 1.5.11, not signed in; hooks and tools wait for a per-agent config location (`docs/facts/antigravity.md`) |
 | Codex | `codex` | output | yes | docs |
-| opencode | `opencode` | output | yes | docs |
+| opencode | `opencode` | hooks | yes | run: 1.19.6 |
 | Kimi CLI | `kimi` | output | yes | docs |
 | Copilot CLI | `copilot` | output | yes | docs |
-| pi | `pi` | output | no | local: `--help` of 1.5.2 |
+| pi | `pi` | hooks | yes | run: 1.6.0 |
 | Qwen Code, Grok CLI, Crush, Cursor Agent | `qwen`, `grok`, `crush`, `cursor-agent` | output | no | docs |
 
 Tests use stand-ins: the hub with fake hooks and output counters, the launcher's files and argv, the shim against a

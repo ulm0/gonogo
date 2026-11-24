@@ -1691,7 +1691,8 @@ export function createWebServer(options: WebOptions): WebServer {
           allow: ['PUT'],
           run: async (req, res) => {
             const body = await jsonObject(req, res);
-            if (body) sendJson(res, 200, await changed(models.setPosition(s[3] ?? '', body.model)));
+            // `provider` names the engine; none is Claude Code, as before
+            if (body) sendJson(res, 200, await changed(models.setPosition(s[3] ?? '', body.model, body.provider ?? 'claude')));
           },
         };
       }

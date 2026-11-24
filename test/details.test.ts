@@ -40,7 +40,7 @@ describe('the facts', () => {
     expect(effectiveModel(agent({ provider: 'pi' }), defaults)).toBeNull();
     expect(effectiveModel(agent({ provider: 'custom' }), defaults)).toBeNull();
     // an engine that takes no model setting shows the model of nobody, even with a stale record
-    expect(effectiveModel(agent({ provider: 'opencode', model: null }), { models: { claude: 'sonnet' } })).toBeNull();
+    expect(effectiveModel(agent({ provider: 'copilot', model: null }), { models: { claude: 'sonnet' } })).toBeNull();
     expect(effectiveModel(agent({ model: '  ' }), null)).toBeNull();
   });
 
@@ -61,7 +61,8 @@ describe('the effort a console starts with', () => {
     const room: ModelDefaults = { models: {}, effort: 'high' };
     expect(effectiveEffort(agent({ effort: 'low' }), room)).toEqual({ level: 'low', from: 'console' });
     expect(effectiveEffort(agent(), room)).toEqual({ level: 'high', from: 'room' });
-    expect(effectiveEffort(agent({ provider: 'pi' }), room)).toBeNull();
+    expect(effectiveEffort(agent({ provider: 'pi' }), room)).toEqual({ level: 'high', from: 'room' });
+    expect(effectiveEffort(agent({ provider: 'gemini' }), room)).toBeNull();
     expect(effectiveEffort(agent(), { models: {} })).toBeNull();
     expect(effectiveEffort(agent(), null)).toBeNull();
     expect(detailsLine(detailsOf(agent(), room))).toBe('Claude Code · high · room default');
@@ -69,10 +70,11 @@ describe('the effort a console starts with', () => {
 });
 
 describe('the effort field', () => {
-  it('is for Claude Code only, with the levels of its own --effort', () => {
+  it('is for Claude Code, pi and opencode, with the levels of --effort', () => {
     expect([...EFFORTS]).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     expect(takesEffort('claude')).toBe(true);
-    for (const other of ['gemini', 'antigravity', 'codex', 'opencode', 'pi', 'custom'] as const) expect(takesEffort(other)).toBe(false);
+    for (const other of ['gemini', 'antigravity', 'codex', 'custom'] as const) expect(takesEffort(other)).toBe(false);
+    for (const engine of ['claude', 'pi', 'opencode'] as const) expect(takesEffort(engine)).toBe(true);
   });
 
   const values = (patch: Partial<Values> = {}): Values => ({ ...initialValues({ mode: 'hire' }, null, {}, '/work'), name: 'ana', role: 'does things', ...patch });

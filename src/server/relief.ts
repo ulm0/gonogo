@@ -16,7 +16,7 @@ import { isAbsolute, relative, sep } from 'node:path';
 import { positionById, POSITION_IDS } from '../shared/positions.js';
 import { AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
 import type { AgentView, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
-import { providerInfo } from '../shared/protocol.js';
+import { providerInfo, takesCleanRoom } from '../shared/protocol.js';
 import { RELIEF_PENDING_MAX, RELIEF_RATE_MAX, RELIEF_RATE_WINDOW_MS, RELIEF_TTL_MS } from './constants.js';
 import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
@@ -196,7 +196,7 @@ export function createRelief(options: ReliefOptions): Relief {
       if (roleText === '') throw bad('give a position or a role', 'role');
 
       const cleanRoom = requester.cleanRoom === null ? null : { ...requester.cleanRoom };
-      if (cleanRoom !== null && provider !== 'claude') throw bad('a Clean Room agent hires Clean Room agents, and those run Claude Code only', 'engine');
+      if (cleanRoom !== null && !takesCleanRoom(provider)) throw bad('a Clean Room agent hires Clean Room agents, and those run Claude Code, pi or opencode only', 'engine');
       const asDir = input.dir === undefined ? (cleanRoom === null ? undefined : requester.dir) : input.dir;
       if (typeof asDir !== 'string' || asDir.length === 0 || asDir.length > DIR_MAX_CHARS) throw bad(`dir must be an absolute path of 1 to ${DIR_MAX_CHARS} characters`, 'dir');
 

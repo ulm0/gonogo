@@ -4,7 +4,7 @@
  * room's for its engine) and says where it comes from when it is not its own; it is null when none of these is set, because the CLI's
  * own default is not something gonogo knows (never a guess). The effort is only ever the stored one: gonogo does not read the live one.
  */
-import { providerInfo } from './protocol.js';
+import { takesEffort, providerInfo } from './protocol.js';
 import type { AgentView, ModelDefaults } from './protocol.js';
 
 export type ModelSource = 'console' | 'position' | 'room';
@@ -14,25 +14,25 @@ export interface Details {
   engine: string;
   /** The model and where it comes from, or null when nothing sets one. */
   model: { name: string; from: ModelSource } | null;
-  /** The effort a Claude Code console starts with and where it comes from, or null. */
+  /** The effort a console starts with (an engine that takes one) and where it comes from, or null. */
   effort: { level: string; from: 'console' | 'room' } | null;
 }
 
-/** The model a console starts with, as `claude` does it: own, then the position's (Claude Code only), then the engine's. */
+/** The model a console starts with: own, then its position's for its engine, then the engine's. */
 export function effectiveModel(agent: Pick<AgentView, 'model' | 'provider' | 'position'>, defaults: ModelDefaults | null): Details['model'] {
   const own = agent.model?.trim();
   if (own) return { name: own, from: 'console' };
   if (defaults === null || providerInfo(agent.provider).model === null) return null;
-  const byPosition = agent.provider === 'claude' && agent.position !== null ? defaults.positions?.[agent.position] : undefined;
+  const byPosition = agent.position === null ? undefined : agent.provider === 'claude' ? defaults.positions?.[agent.position] : defaults.enginePositions?.[agent.provider]?.[agent.position];
   if (byPosition) return { name: byPosition, from: 'position' };
   const room = defaults.models[agent.provider];
   return room ? { name: room, from: 'room' } : null;
 }
 
-/** The effort a console starts with: its own, else the room's for Claude Code; null when neither is set. */
+/** The effort a console starts with: its own, else the room's for an engine that takes one; null when neither is set. */
 export function effectiveEffort(agent: Pick<AgentView, 'provider' | 'effort'>, defaults: ModelDefaults | null): Details['effort'] {
   if (agent.effort) return { level: agent.effort, from: 'console' };
-  return agent.provider === 'claude' && defaults?.effort ? { level: defaults.effort, from: 'room' } : null;
+  return takesEffort(agent.provider) && defaults?.effort ? { level: defaults.effort, from: 'room' } : null;
 }
 
 export function detailsOf(agent: Pick<AgentView, 'model' | 'provider' | 'position' | 'effort'>, defaults: ModelDefaults | null): Details {

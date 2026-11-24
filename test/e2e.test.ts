@@ -2409,7 +2409,7 @@ describe('end to end with the stand-in agent', () => {
       expect(JSON.stringify(response.body)).not.toContain(SECRET);
     };
     await refuse({ model: '--dangerously' }, 'model');
-    await refuse({ model: 'x', provider: 'opencode' }, 'model');
+    await refuse({ model: 'x', provider: 'copilot' }, 'model');
     await refuse({ keys: { PATH: SECRET } }, 'keys');
     await refuse({ keys: { OPENAI_API_KEY: `${SECRET} with a space` } }, 'keys');
     await refuse({ keys: { [SECRET]: 'x' } }, 'keys');
@@ -2523,7 +2523,7 @@ describe('end to end with the stand-in agent', () => {
         expect(response.body).toMatchObject({ field: 'cleanRoom', error: expect.stringMatching(text) });
       };
       await refuse({ dir: h.work }, /inside a git repository/);
-      await refuse({ provider: 'gemini' }, /Claude Code agents only/);
+      await refuse({ provider: 'gemini' }, /Claude Code, pi and opencode agents only/);
       await refuse({ cleanRoom: { image: '--privileged' } }, /Docker image name/);
       expect((await getState(h)).agents.map((agent) => agent.name), 'a refused hire leaves nothing behind').toEqual(['flight']);
       expect(existsSync(join(h.home, 'cleanroom'))).toBe(false);

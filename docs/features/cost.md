@@ -35,7 +35,7 @@ A reply is counted to the **mission and task the agent works on**: its Flight Pl
 
 ## Limits
 
-- Counted like tokens: Claude Code agents only, not Clean Room agents, not subagent (Task tool) transcripts.
+- Counted like tokens: Claude Code agents from their transcripts, pi and opencode agents from the usage their extension reports with each reply (opencode's subagents included); not Clean Room agents, not Claude Code subagent (Task tool) transcripts.
 - An unpriced model adds to unpriced tokens, not dollars, so it does not move a budget. Old ledger lines have no model: tokens only, shown unpriced ("priced since" date). Not rewritten.
 - Cache writes use the 5-minute price. The 1-hour price, batch discounts, long-context surcharges and per-call fees are not modelled.
 - The ledger and budgets are keyed by agent name: a rename starts from zero.

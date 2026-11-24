@@ -4655,6 +4655,41 @@ describe('Engine Bay: other agent CLIs', () => {
     expect(h.saves.at(-1)?.agents.find((a) => a.name === 'gem')?.sessionId).not.toBe(UUID_B);
   });
 
+  it('pi and opencode: their sessions are kept for the next start, their usage is metered, a permission answer resumes the turn', async () => {
+    const record = (h: Harness, name: string): AgentRecord | undefined => h.saves.at(-1)?.agents.find((a) => a.name === name);
+    const h = await started();
+    const usage: Array<{ name: string; usage: unknown }> = [];
+    h.io.meterUsage = (name, _generation, reported) => void usage.push({ name, usage: reported });
+    await hireAs(h, 'pip', 'pi', 'default');
+    await hireAs(h, 'oc', 'opencode', 'acceptEdits');
+    expect(h.view('oc').mode).toBe('acceptEdits');
+    // pi's /new gives a new session id, which the next start resumes
+    h.hook('pip', 'UserPromptSubmit', { prompt: 'go', session_id: UUID_B });
+    await settle();
+    expect(record(h, 'pip')?.sessionId).toBe(UUID_B);
+    // opencode's own id is kept for the gonogo session it belongs to
+    const ocSession = record(h, 'oc')?.sessionId;
+    h.hook('oc', 'UserPromptSubmit', { prompt: 'go', session_id: 'ses_abc' });
+    await settle();
+    expect(record(h, 'oc')?.engineSession).toStrictEqual({ for: ocSession, id: 'ses_abc' });
+    h.hook('oc', 'UserPromptSubmit', { prompt: 'go', session_id: '--flag' });
+    await settle();
+    expect(record(h, 'oc')?.engineSession?.id).toBe('ses_abc');
+    // a call the gate asked about: needs you, then the answer puts it back to work
+    h.hook('pip', 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+    h.hook('pip', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+    expect(h.view('pip')).toMatchObject({ state: 'needs_you' });
+    h.hook('pip', 'Notification', { notification_type: 'permission_answered' });
+    expect(h.view('pip').state).toBe('working');
+    h.hook('pip', 'Stop', { usage: [{ id: 'r1', i: 1 }] });
+    h.hook('oc', 'PostToolUse', { tool_name: 'Read', tool_input: {}, usage: [{ id: 'r2', o: 2 }] });
+    expect(usage).toStrictEqual([{ name: 'pip', usage: [{ id: 'r1', i: 1 }] }, { name: 'oc', usage: [{ id: 'r2', o: 2 }] }]);
+    // a switch drops the old engine's own session
+    await h.hub.edit('oc', { provider: 'claude', switchNow: true });
+    await settle();
+    expect(record(h, 'oc')).not.toHaveProperty('engineSession');
+  });
+
   it('gemini gets mail as a typed pointer without a screen check, confirmed by its BeforeAgent hook', async () => {
     const h = await started();
     await hireAs(h, 'gem', 'gemini');
@@ -4706,12 +4741,12 @@ describe('Engine Bay: other agent CLIs', () => {
     expect(h.hub.startPoll({}).entries.map((entry) => entry.agent)).toEqual(['cx']);
   });
 
-  it('pi has no gonogo tools: no permission modes, no mail, no votes, and a note that names it', async () => {
+  it('crush has no gonogo tools: no permission modes, no mail, no votes, and a note that names it', async () => {
     const h = await started();
-    expect(await hireAs(h, 'pip', 'pi', 'bypassPermissions')).toMatchObject({ provider: 'pi', mode: 'default' });
-    expect(h.send('user', 'pip')).toMatchObject({ ok: false, status: 'undelivered', note: 'pip runs pi without the gonogo tools and cannot receive messages' });
+    expect(await hireAs(h, 'pip', 'crush', 'bypassPermissions')).toMatchObject({ provider: 'crush', mode: 'default' });
+    expect(h.send('user', 'pip')).toMatchObject({ ok: false, status: 'undelivered', note: 'pip runs Crush without the gonogo tools and cannot receive messages' });
     expectHubError(() => h.hub.startPoll({}), 'bad_request', 'nobody to poll');
-    expectHubError(() => h.hub.startPoll({ agents: ['pip'] }), 'bad_request', 'pip runs pi without the gonogo tools and cannot vote', 'agents');
+    expectHubError(() => h.hub.startPoll({ agents: ['pip'] }), 'bad_request', 'pip runs Crush without the gonogo tools and cannot vote', 'agents');
     expect(await h.hub.edit('pip', { mode: 'acceptEdits', role: 'new' })).toMatchObject({ mode: 'default', role: 'new' });
   });
 });
@@ -5824,7 +5859,7 @@ describe('Payload: MCP servers and skills per agent (hire and edit)', () => {
     await hireWith(h, { mcpServers: { files } }, { name: 'gem', dir: '/work/gem', provider: 'gemini' });
     expect(h.view('gem').payload).toEqual({ mcpServers: { files } });
     await expectHubReject(hireWith(h, { skills: ['/skills/review'] }, { name: 'gem2', dir: '/work/gem2', provider: 'gemini' }), 'bad_request', /skills need Claude Code/, 'payload.skills');
-    await expectHubReject(hireWith(h, { mcpServers: { files } }, { name: 'pi1', dir: '/work/pi1', provider: 'pi' }), 'bad_request', 'pi takes no payload', 'payload');
+    await expectHubReject(hireWith(h, { mcpServers: { files } }, { name: 'cdx', dir: '/work/cdx', provider: 'codex' }), 'bad_request', 'Codex takes no payload', 'payload');
     await expectHubReject(hireWith(h, { mcpServers: { files } }, { name: 'tail', dir: '/work/tail', provider: 'custom', command: 'htop' }), 'bad_request', 'Custom command takes no payload', 'payload');
   });
 
@@ -5893,7 +5928,7 @@ describe('Clean Room: a container on its own worktree (hire and edit)', () => {
     await refuse({ image: 'a b' }, /Docker image name/);
     await refuse({ image: 3 }, /Docker image name/);
     await refuse({ imag: 'x' }, 'cleanRoom has no field "imag"');
-    await refuse({}, 'a Clean Room runs Claude Code agents only', { provider: 'gemini' });
+    await refuse({}, 'a Clean Room runs Claude Code, pi and opencode agents only', { provider: 'gemini' });
     h.script.cleanRoomProblem = 'Clean Room needs Docker, and "docker version" failed: Cannot connect';
     await refuse({}, /docker version/);
     expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
@@ -6229,7 +6264,7 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     for (const model of ['-x', '--model', 'a b', 'a;b', '$(id)', 'x'.repeat(101), '\nx;']) {
       await expectHubReject(hireWith(h, { model }), 'bad_request', /model must be 1 to 100 letters/, 'model');
     }
-    await expectHubReject(hireWith(h, { model: 'x', provider: 'opencode' }), 'bad_request', 'opencode takes no model setting', 'model');
+    await expectHubReject(hireWith(h, { model: 'x', provider: 'copilot' }), 'bad_request', 'Copilot CLI takes no model setting', 'model');
     await expectHubReject(hireWith(h, { model: 'x', provider: 'custom', command: 'htop' }), 'bad_request', 'Custom command takes no model setting', 'model');
     await expectHubReject(hireWith(h, { model: 5 }), 'bad_request', /model must be/, 'model');
     expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
@@ -7312,14 +7347,19 @@ describe('Engine switch: an agent moves to another engine (docs/engine-switch-sp
     await h.hub.stop('ana');
     const session = record(h, 'ana')?.sessionId;
     const spawns = h.spawns.length;
-    const view = await h.hub.edit('ana', { provider: 'pi' });
-    expect(view).toMatchObject({ provider: 'pi', state: 'stopped', mode: 'default', model: null, effort: null, permissions: null, remoteControl: null, pendingEngine: null });
+    const view = await h.hub.edit('ana', { provider: 'crush' });
+    expect(view).toMatchObject({ provider: 'crush', state: 'stopped', mode: 'default', model: null, effort: null, permissions: null, remoteControl: null, pendingEngine: null });
     const saved = record(h, 'ana');
-    expect(saved).toMatchObject({ provider: 'pi', mode: 'default' });
+    expect(saved).toMatchObject({ provider: 'crush', mode: 'default' });
     expect(saved?.sessionId).not.toBe(session);
     expect(saved).not.toHaveProperty('model');
     expect(h.spawns).toHaveLength(spawns);
-    expect(h.notices.at(-1)?.[1]).toBe('ana now runs pi; settings it does not take were dropped: mode, model, effort, remoteControl, permissions.');
+    expect(h.notices.at(-1)?.[1]).toBe('ana now runs Crush; settings it does not take were dropped: mode, model, effort, remoteControl, permissions.');
+    // pi takes what Claude Code takes, but Remote Control (a Claude app feature) and the model (names do not carry): those alone are dropped
+    await h.hub.edit('ana', { provider: 'claude', mode: 'acceptEdits', effort: 'high', permissions: { allow: ['Bash(git:*)'] }, remoteControl: {} });
+    await h.hub.edit('ana', { provider: 'pi' });
+    expect(h.view('ana')).toMatchObject({ provider: 'pi', mode: 'acceptEdits', effort: 'high', permissions: { allow: ['Bash(git:*)'] }, remoteControl: null });
+    expect(h.notices.at(-1)?.[1]).toBe('ana now runs pi; settings it does not take were dropped: remoteControl.');
     // and back: Claude Code is the absent provider again
     await h.hub.edit('ana', { provider: 'claude', model: 'sonnet' });
     expect(record(h, 'ana')).not.toHaveProperty('provider');
@@ -7353,6 +7393,27 @@ describe('Engine switch: an agent moves to another engine (docs/engine-switch-sp
     expect(h.msg(sent.id).status).toBe('queued');
   });
 
+  it('a switch writes the handoff from the old engine\'s session for the new one, before the new engine starts', async () => {
+    const h = await withAna();
+    const handoffs: Array<{ from: unknown; to: unknown; spawnsBefore: number }> = [];
+    h.io.writeHandoff = async (from, to) => {
+      handoffs.push({ from: { provider: from.provider, sessionId: from.sessionId }, to: { provider: to.provider, sessionId: to.sessionId }, spawnsBefore: h.spawns.length });
+    };
+    const old = h.view('ana');
+    const spawns = h.spawns.length;
+    await h.hub.edit('ana', { provider: 'pi' });
+    expect(handoffs).toHaveLength(1);
+    expect(handoffs[0]?.from).toStrictEqual({ provider: undefined, sessionId: h.spawns[spawns - 1]?.agent.sessionId });
+    expect(handoffs[0]?.to).toMatchObject({ provider: 'pi' });
+    expect((handoffs[0]?.to as { sessionId: string }).sessionId).not.toBe((handoffs[0]?.from as { sessionId: string }).sessionId);
+    expect(handoffs[0]?.spawnsBefore).toBe(spawns);
+    expect(h.spawns.at(-1)?.agent).toMatchObject({ provider: 'pi', sessionId: (handoffs[0]?.to as { sessionId: string }).sessionId });
+    expect(old.provider).toBe('claude');
+    // an edit that does not switch writes none
+    await h.hub.edit('ana', { role: 'other' });
+    expect(handoffs).toHaveLength(1);
+  });
+
   it('while a switch is pending, the mail says why it waits and no pointer is typed', async () => {
     const h = await withAna();
     h.work('ana');
@@ -7366,13 +7427,13 @@ describe('Engine switch: an agent moves to another engine (docs/engine-switch-sp
   it('a new engine without the gonogo tools gets no mail: what waited goes back to the user', async () => {
     const h = await withAna();
     h.work('ana');
-    await h.hub.edit('ana', { provider: 'pi' });
+    await h.hub.edit('ana', { provider: 'crush' });
     const sent = h.send('user', 'ana');
     h.hook('ana', 'Stop');
     await settle();
     await settle();
-    expect(h.view('ana').provider).toBe('pi');
-    expect(h.msg(sent.id)).toMatchObject({ status: 'undelivered', note: 'ana now runs pi without the gonogo tools; the message went to the user' });
+    expect(h.view('ana').provider).toBe('crush');
+    expect(h.msg(sent.id)).toMatchObject({ status: 'undelivered', note: 'ana now runs Crush without the gonogo tools; the message went to the user' });
   });
 
   it('the current engine cancels a pending switch, and the Stop hands the mail over as before', async () => {
@@ -7429,8 +7490,8 @@ describe('Engine switch: an agent moves to another engine (docs/engine-switch-sp
 
   it('the request is checked against the new engine, and custom is never one end of a switch', async () => {
     const h = await withAna();
-    await expectHubReject(h.hub.edit('ana', { provider: 'opencode', model: 'opus' }), 'bad_request', 'opencode takes no model setting', 'model');
-    await expectHubReject(h.hub.edit('ana', { provider: 'pi', effort: 'high' }), 'bad_request', 'pi takes no effort setting', 'effort');
+    await expectHubReject(h.hub.edit('ana', { provider: 'copilot', model: 'opus' }), 'bad_request', 'Copilot CLI takes no model setting', 'model');
+    await expectHubReject(h.hub.edit('ana', { provider: 'codex', effort: 'high' }), 'bad_request', 'Codex takes no effort setting', 'effort');
     await expectHubReject(h.hub.edit('ana', { provider: 'custom' }), 'bad_request', /cannot become a custom command/, 'provider');
     await expectHubReject(h.hub.edit('ana', { provider: 'nope' as Provider }), 'bad_request', /^provider must be one of/, 'provider');
     await h.hub.hire({ name: 'cmd', role: 'r', dir: '/work/cmd', mode: 'default', provider: 'custom', command: 'bash' });

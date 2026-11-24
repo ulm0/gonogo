@@ -1013,7 +1013,7 @@ describe('home', () => {
     ['an effort on a gemini agent', { provider: 'gemini', effort: 'high' }],
     ['a model that is not text', { model: 5 }],
     ['a model that looks like a flag', { model: '--yolo' }],
-    ['a model on an opencode agent', { provider: 'opencode', model: 'x' }],
+    ['a model on a copilot agent', { provider: 'copilot', model: 'x' }],
     ['a model on a custom agent', { provider: 'custom', command: 'ls', model: 'x' }],
     ['keys that are a list', { keys: ['A_KEY'] }],
     ['a key with a lower case name', { keys: { openai: 5 } }],
@@ -6175,6 +6175,9 @@ function installFakes(options: { stopAllGate?: Promise<void>; hub?: Partial<Hub>
   const launcherCalls: Call[] = [];
   const launcher: Launcher = {
     keepTokens: () => undefined,
+    writeHandoff: async (from, to) => {
+      launcherCalls.push({ fn: 'writeHandoff', args: [from.name, to.name] });
+    },
     prepareStart: async (agent, opts) => {
       launcherCalls.push({ fn: 'prepareStart', args: [agent, opts] });
       return { spec: { file: 'fake-claude', args: ['--x'], env: { A: '1' }, cwd: agent.dir }, flag: opts.flag ?? 'session-id', token: 'tok' };
@@ -7649,7 +7652,7 @@ describe('seams with the real hub, launcher and terminal host', () => {
 
     const home = tmpDir();
     const launcher = launcherModule.createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:1', seed: false, env: {}, log: nullLogger });
-    expect(members(launcher)).toEqual(['keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke']);
+    expect(members(launcher)).toEqual(['keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke', 'writeHandoff']);
     expect(launcher.resolveToken('f'.repeat(64))).toBeNull();
 
     const io = {

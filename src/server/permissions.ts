@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PERMISSION_LISTS, PERMISSION_RULE_PATTERN, PERMISSION_RULES_MAX, providerInfo } from '../shared/protocol.js';
+import { PERMISSION_LISTS, PERMISSION_RULE_PATTERN, PERMISSION_RULES_MAX, providerInfo, takesPermissions } from '../shared/protocol.js';
 import type { Logger, PermissionDefaults, PermissionRules, Provider } from '../shared/protocol.js';
 import { FILE_MODE, nullLogger, PERMISSIONS_FILE } from './constants.js';
 import { HubError } from './hub.js';
@@ -18,13 +18,12 @@ const GONOGO_TOOLS = /^mcp__gonogo(__|$|\()/;
 
 export type PermissionsCheck = { ok: true; permissions: PermissionRules } | { ok: false; error: string };
 
-/** Claude Code takes these; the other engines have no rule list gonogo has checked. */
-export const takesPermissions = (provider: Provider | undefined): boolean => (provider ?? 'claude') === 'claude';
+export { takesPermissions };
 
 /** `{ allow?, ask?, deny? }` of rules; a list is trimmed, deduplicated and dropped when empty. `{}` is no rules. */
 export function parsePermissions(value: unknown, provider: Provider | undefined): PermissionsCheck {
   if (!isRecord(value)) return { ok: false, error: 'permissions must be an object' };
-  if (!takesPermissions(provider)) return { ok: false, error: `tool permissions are not supported for ${providerInfo(provider).label}: only Claude Code has rules gonogo can set` };
+  if (!takesPermissions(provider)) return { ok: false, error: `tool permissions are not supported for ${providerInfo(provider).label}: only Claude Code, pi and opencode have rules gonogo can set` };
   const unknown = Object.keys(value).find((key) => !(PERMISSION_LISTS as readonly string[]).includes(key));
   if (unknown !== undefined) return { ok: false, error: `permissions has no list "${unknown}": use allow, ask or deny` };
   const out: PermissionRules = {};

@@ -19,7 +19,7 @@ import {
 import { appendFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { POSITION_IDS } from '../shared/positions.js';
-import { ACTIVITY_STATUSES, EFFORTS, KEYS_MAX, MODEL_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo, RESERVED_NAMES, takesEffort } from '../shared/protocol.js';
+import { ACTIVITY_STATUSES, EFFORTS, KEYS_MAX, MODEL_PATTERN, ENGINE_SESSION_PATTERN, PERMISSION_MODES, PROVIDERS, providerInfo, RESERVED_NAMES, takesEffort } from '../shared/protocol.js';
 import type {
   ActivityStatus,
   AgentRecord,
@@ -57,6 +57,7 @@ import { keyNameProblem, keyNameReserved } from './clearance.js';
 import { parsePayload, parsePayloadOff, payloadRefusal } from './payload.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
+const ENGINE_SESSION_RE = new RegExp(ENGINE_SESSION_PATTERN);
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
@@ -410,6 +411,11 @@ function parseAgent(a: unknown): AgentRecord | string {
     if (typeof model !== 'string' || !MODEL_RE.test(model)) return `${name}: model is not a usable name`;
     if (providerInfo(record.provider).model === null) return `${name}: ${providerInfo(record.provider).label} takes no model setting`;
     record.model = model;
+  }
+  const { engineSession } = a;
+  if (engineSession !== undefined) {
+    if (!isRecord(engineSession) || typeof engineSession.for !== 'string' || typeof engineSession.id !== 'string' || !ENGINE_SESSION_RE.test(engineSession.id)) return `${name}: engineSession is not usable`;
+    record.engineSession = { for: engineSession.for, id: engineSession.id };
   }
   const { effort } = a;
   if (effort !== undefined) {

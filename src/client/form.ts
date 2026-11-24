@@ -1,4 +1,4 @@
-import { AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
+import { takesCleanRoom, takesPermissions, AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
 import type { AgentView, CleanRoom, PayloadDefaults, GlobalMcpView, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, CleanRoomFlavor, McpServer, ModelDefaults, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { parseRulesText, rulesOf, rulesToText } from './permissions.js';
 import { positionById } from '../shared/positions.js';
@@ -35,7 +35,7 @@ export interface Values {
   /** The room's Payload defaults this agent switches off, by server name and skill folder name (docs/payload-spec.md). */
   offServers: string[];
   offSkills: string[];
-  /** Clean Room: run the agent in a container on its own worktree. Claude Code only. */
+  /** Clean Room: run the agent in a container on its own worktree. Claude Code, pi and opencode. */
   cleanRoom: boolean;
   /** Clean Room sandbox flavor of this agent; '' is the room's default. */
   sandbox: '' | CleanRoomFlavor;
@@ -45,7 +45,7 @@ export interface Values {
   worktree: boolean;
   /** Remote Control: start the agent with --remote-control, to approve in the Claude app. Claude Code only, not with a Clean Room. */
   remoteControl: boolean;
-  /** Tool permissions: a rule on each line as `allow Bash(git:*)` (src/client/permissions.ts). Claude Code only; '' is none, and the room's rules apply. */
+  /** Tool permissions: a rule on each line as `allow Bash(git:*)` (src/client/permissions.ts). Claude Code, pi and opencode; '' is none, and the room's rules apply. */
   rules: string;
   /** Start with gonogo: false keeps the room's startup policy from starting this agent again. */
   autostart: boolean;
@@ -53,7 +53,7 @@ export interface Values {
   coauthor: boolean;
   /** Engine Bay: the model for `--model`; '' is the CLI's default. */
   model: string;
-  /** Claude Code only: a level of EFFORTS for `--effort`; '' is the CLI's own. */
+  /** An engine that takes effort (takesEffort): a level of EFFORTS; '' is the CLI's own. */
   effort: string;
   /** Clearance: keys typed now (a name that is already set replaces its value), and the names of set keys to remove. */
   keys: KeyRow[];
@@ -120,7 +120,7 @@ export function chooseCustom(values: Values, agents: Readonly<Record<string, Age
 
 /** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
 export function chooseEngine(values: Values, provider: Provider): Values {
-  return { ...values, provider, model: '', effort: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: provider === 'claude' && values.cleanRoom, worktree: values.worktree && !(provider === 'claude' && values.cleanRoom), remoteControl: provider === 'claude' && values.remoteControl, rules: provider === 'claude' ? values.rules : '' };
+  return { ...values, provider, model: '', effort: '', mode: providerInfo(provider).modes ? values.mode : 'default', confirm: false, cleanRoom: takesCleanRoom(provider) && values.cleanRoom, worktree: values.worktree && !(takesCleanRoom(provider) && values.cleanRoom), remoteControl: provider === 'claude' && values.remoteControl, rules: takesPermissions(provider) ? values.rules : '' };
 }
 
 /** The edit form: picking the engine the console runs on again brings back what the form opened with for it, not a blank model. */
@@ -336,15 +336,15 @@ export function payloadRows(defaults: PayloadDefaults | null, values: Values, gl
   if (kind === null) return [];
   const ownServers = Object.keys(readServers(values.servers) ?? {});
   const ownSkills = kind === 'all' ? readSkills(values.skills).map((path) => path.replace(/\/+$/, '').split('/').pop() ?? path) : [];
-  const room = values.provider === 'claude' && values.cleanRoom ? null : defaults;
+  const room = takesCleanRoom(values.provider) && values.cleanRoom ? null : defaults;
   const rows: PayloadRow[] = [];
   const roomRow = (item: 'server' | 'skill', name: string, mine: string[], off: string[]): PayloadRow => {
     const replaced = mine.includes(name);
     const switched = off.includes(name);
     return { kind: item, name, from: 'room', on: !replaced && !switched, canSwitch: !replaced, note: replaced ? "replaced by this agent's own" : switched ? 'switched off for this agent' : '' };
   };
-  // the user-scope servers of Claude Code, when the room includes them for this kind of agent: first, and replaced by a room default or this agent's own of the same name
-  const globalOn = values.provider === 'claude' && global !== null && (values.cleanRoom ? global.cleanRoom : global.host);
+  // the user-scope servers of Claude Code, when the room includes them for this kind of agent: first, and replaced by a room default or this agent's own of the same name (every engine that takes servers)
+  const globalOn = providerInfo(values.provider).payload !== null && global !== null && (values.cleanRoom ? global.cleanRoom : global.host);
   if (globalOn) {
     for (const s of global.servers) {
       const replacedByRoom = (room?.mcpServers ?? []).some((x) => x.name === s.name);
@@ -368,7 +368,7 @@ export function payloadRows(defaults: PayloadDefaults | null, values: Values, gl
 
 /** The Clean Room the form describes: only for Claude Code, and a setting made through the API (an image) stays when the box stays ticked; the flavor is the form's (empty: the room's default). */
 export function cleanRoomOf(values: Values, original: AgentView | null): CleanRoom | null {
-  if (values.provider !== 'claude' || !values.cleanRoom) return null;
+  if (!takesCleanRoom(values.provider) || !values.cleanRoom) return null;
   const { flavor: _flavor, egress: _egress, ...kept } = original?.cleanRoom ?? {};
   // what the page does not edit (an image set through the API) stays; the sandbox and the key's place are the form's own
   return { ...kept, ...(values.sandbox === '' ? {} : { flavor: values.sandbox }), ...(values.egress === '' ? {} : { egress: values.egress === 'on' }) };
@@ -381,7 +381,7 @@ export function remoteControlOf(values: Values): RemoteControl | null {
 
 /** The worktree the form describes: a Clean Room has its own, so the box is off then. */
 export function worktreeOf(values: Values): Worktree | null {
-  return values.worktree && !(values.provider === 'claude' && values.cleanRoom) ? {} : null;
+  return values.worktree && !(takesCleanRoom(values.provider) && values.cleanRoom) ? {} : null;
 }
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
@@ -432,7 +432,7 @@ export function validate(
   nameLocked: boolean,
 ): Problems {
   const problems: Problems = {};
-  if (values.provider === 'claude') {
+  if (takesPermissions(values.provider)) {
     const problem = parseRulesText(values.rules).problem;
     if (problem !== null) problems.permissions = problem;
   }
@@ -492,7 +492,7 @@ export function hireRequest(values: Values): HireRequest {
   if (cleanRoom !== null) request.cleanRoom = cleanRoom;
   if (worktreeOf(values) !== null) request.worktree = {};
   if (remoteControlOf(values) !== null) request.remoteControl = {};
-  const rules = values.provider === 'claude' ? rulesOf(values.rules) : null;
+  const rules = takesPermissions(values.provider) ? rulesOf(values.rules) : null;
   if (rules !== null) request.permissions = rules;
   if (!values.autostart) request.autostart = false;
   if (!values.coauthor) request.coauthor = false;
@@ -528,7 +528,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
     // the text itself, not effortOf(): a level this page does not know (a newer server) is kept as it is, never cleared by a save that did not touch it
     if ((values.effort ?? '') !== (original.effort ?? '')) changes.effort = effortOf(values);
   }
-  if (values.provider === 'claude') {
+  if (takesPermissions(values.provider)) {
     const rules = rulesOf(values.rules);
     if (JSON.stringify(rules) !== JSON.stringify(original.permissions ?? null)) changes.permissions = rules;
   }

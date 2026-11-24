@@ -107,7 +107,8 @@ describe('staffing a seat, no position or a custom command', () => {
   it('opens with the room\'s default mode (an engine without modes keeps ask; bypass is chosen but not confirmed), and leaves a form that was touched alone', () => {
     expect(withRoomDefaults(EMPTY, { mode: 'acceptEdits' })).toMatchObject({ mode: 'acceptEdits', confirm: false });
     expect(withRoomDefaults(EMPTY, { mode: 'bypassPermissions' })).toMatchObject({ mode: 'bypassPermissions', confirm: false });
-    expect(withRoomDefaults(EMPTY, { engine: 'opencode', mode: 'auto' })).toMatchObject({ provider: 'opencode', mode: 'default' });
+    expect(withRoomDefaults(EMPTY, { engine: 'copilot', mode: 'auto' })).toMatchObject({ provider: 'copilot', mode: 'default' });
+    expect(withRoomDefaults(EMPTY, { engine: 'opencode', mode: 'auto' })).toMatchObject({ provider: 'opencode', mode: 'auto' });
     expect(withRoomDefaults(EMPTY, {})).toEqual(EMPTY);
     const touched = { ...EMPTY, name: 'ana' };
     expect(withRoomDefaults(touched, { mode: 'auto' })).toBe(touched);
@@ -138,7 +139,8 @@ describe('the engine (Engine Bay)', () => {
     expect(options[0]?.text).toBe('Claude Code');
     expect(options[1]?.text).toBe('Gemini CLI');
     expect(options.find((o) => o.provider === 'codex')?.text).toBe('Codex · not installed · unverified');
-    expect(options.find((o) => o.provider === 'pi')?.text).toBe('pi · not installed · no mail');
+    expect(options.find((o) => o.provider === 'pi')?.text).toBe('pi · not installed');
+    expect(options.find((o) => o.provider === 'crush')?.text).toBe('Crush · not installed · unverified · no mail');
   });
 
   it('a position keeps the engine; an engine without permission modes runs in default and drops the bypass tick', () => {
@@ -146,17 +148,20 @@ describe('the engine (Engine Bay)', () => {
     expect(gemini).toMatchObject({ provider: 'gemini', mode: 'bypassPermissions', confirm: false });
     expect(needsBypassConfirm(gemini, null)).toBe(true);
     expect(choosePosition(gemini, 'fido', {}, true).provider).toBe('gemini');
-    const pi = chooseEngine(gemini, 'pi');
-    expect(pi.mode).toBe('default');
-    expect(needsBypassConfirm({ ...pi, mode: 'bypassPermissions' }, null)).toBe(false);
+    const crush = chooseEngine(gemini, 'crush');
+    expect(crush.mode).toBe('default');
+    expect(needsBypassConfirm({ ...crush, mode: 'bypassPermissions' }, null)).toBe(false);
+    // pi and opencode take the modes through gonogo's tool gate: the mode stays, and bypass needs its tick again
+    for (const engine of ['pi', 'opencode'] as const) expect(chooseEngine(gemini, engine)).toMatchObject({ mode: 'bypassPermissions', confirm: false });
   });
 
   it('sends the engine with the hire, and no mode an engine cannot use', () => {
     const values: Values = { ...EMPTY, name: 'gem', role: 'r', provider: 'gemini', mode: 'acceptEdits' };
     expect(hireRequest(values)).toEqual({ name: 'gem', role: 'r', dir: '/work', mode: 'acceptEdits', provider: 'gemini' });
-    expect(hireRequest({ ...values, provider: 'pi', mode: 'bypassPermissions', confirm: true })).toEqual({ name: 'gem', role: 'r', dir: '/work', mode: 'default', provider: 'pi' });
-    const pip = agent('pip', 1, { provider: 'pi' });
-    expect(editRequest({ ...EMPTY, name: 'pip', role: 'a role', provider: 'pi', mode: 'acceptEdits' }, pip, false)).toBeNull();
+    expect(hireRequest({ ...values, provider: 'crush', mode: 'bypassPermissions', confirm: true })).toEqual({ name: 'gem', role: 'r', dir: '/work', mode: 'default', provider: 'crush' });
+    expect(hireRequest({ ...values, provider: 'pi', mode: 'acceptEdits' })).toEqual({ name: 'gem', role: 'r', dir: '/work', mode: 'acceptEdits', provider: 'pi' });
+    const cr = agent('cr', 1, { provider: 'crush' });
+    expect(editRequest({ ...EMPTY, name: 'cr', role: 'a role', provider: 'crush', mode: 'acceptEdits' }, cr, false)).toBeNull();
   });
 
   it('the hint says where the state comes from, whether mail arrives and how far it was checked', () => {
@@ -262,9 +267,10 @@ describe('the payload fold', () => {
     expect(payloadOf(EMPTY)).toBeNull();
   });
 
-  it('keeps only what the engine takes: servers for gemini, nothing for a custom command or pi', () => {
+  it('keeps only what the engine takes: servers for gemini, both for pi, nothing for a custom command or codex', () => {
     expect(payloadOf({ ...filled, provider: 'gemini' })).toEqual({ mcpServers: { files } });
-    expect(payloadOf({ ...filled, provider: 'pi' })).toBeNull();
+    expect(payloadOf({ ...filled, provider: 'pi' })).toEqual({ mcpServers: { files }, skills: ['/skills/review', '/skills/triage'] });
+    expect(payloadOf({ ...filled, provider: 'codex' })).toBeNull();
     expect(payloadOf({ ...filled, provider: 'custom', command: 'htop' })).toBeNull();
   });
 
@@ -273,7 +279,7 @@ describe('the payload fold', () => {
     expect(validate({ ...filled, servers: '{' }, {}, null, false)['payload.mcpServers']).toBe('Not a JSON object of servers.');
     expect(validate({ ...filled, servers: '[]' }, {}, null, false)['payload.mcpServers']).toBe('Not a JSON object of servers.');
     expect(validate({ ...filled, skills: 'skills/review' }, {}, null, false)['payload.skills']).toBe('Use absolute paths: each starts with /.');
-    expect(validate({ ...filled, provider: 'pi', servers: '{' }, {}, null, false)).toEqual({});
+    expect(validate({ ...filled, provider: 'codex', servers: '{' }, {}, null, false)).toEqual({});
     expect(submitLabel({ 'payload.mcpServers': 'x' }, 'ANA', false)).toBe('FIX THE PAYLOAD TO STAFF ANA');
   });
 
@@ -367,9 +373,9 @@ describe('the model field (Engine Bay)', () => {
   });
 
   it('is never sent for an engine without a model setting, a custom command included', () => {
-    expect(hireRequest({ ...base, provider: 'opencode', model: 'x' })).not.toHaveProperty('model');
+    expect(hireRequest({ ...base, provider: 'copilot', model: 'x' })).not.toHaveProperty('model');
     expect(hireRequest({ ...chooseCustom(base, {}), name: 'logs', command: 'htop', model: 'x' })).not.toHaveProperty('model');
-    expect(validate({ ...base, provider: 'opencode', model: '--bad' }, {}, null, false)).toEqual({});
+    expect(validate({ ...base, provider: 'copilot', model: '--bad' }, {}, null, false)).toEqual({});
   });
 
   it('turning to another engine empties it, because the engines name their models differently', () => {
@@ -656,11 +662,13 @@ describe('Payload fold: what a console starts with and where each item comes fro
       expect(globalRows({ offServers: ['pulsar'] })[0]).toBe('global:server:pulsar:off:switched off for this agent');
     });
 
-    it('follow the room\'s two switches: a Clean Room console has them only when the room says so, a host console unless it says no, and an engine other than Claude Code never', () => {
+    it('follow the room\'s two switches: a Clean Room console has them only when the room says so, a host console unless it says no, and an engine that takes no servers never', () => {
       expect(globalRows({ cleanRoom: true }, view())).toEqual([]);
       expect(globalRows({ cleanRoom: true }, view({ cleanRoom: true }))).toHaveLength(3);
       expect(globalRows({}, view({ host: false }))).toEqual(['room:server:files:on', 'room:server:web:on', 'room:skill:review:on']);
-      expect(globalRows({ provider: 'gemini' }).some((r) => r.startsWith('global'))).toBe(false);
+      // every engine that takes servers gets them, as Claude Code does
+      for (const provider of ['gemini', 'pi', 'opencode'] as const) expect(globalRows({ provider }).some((r) => r.startsWith('global')), provider).toBe(true);
+      expect(globalRows({ provider: 'codex' }).some((r) => r.startsWith('global'))).toBe(false);
       expect(payloadRows(room, { ...EMPTY }, null).some((r) => r.from === 'global')).toBe(false);
     });
   });

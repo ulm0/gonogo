@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, ReactNode } from 'react';
-import { CLEAN_ROOM_FLAVORS, EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, keyWarning, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, keyWarning, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesCleanRoom, takesEffort, takesPermissions } from '../shared/protocol.js';
 import type { AgentView, CleanRoomFlavors, EngineCheck, PermissionMode, PhoneMode, Provider } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
@@ -595,8 +595,10 @@ function Staff({ form }: { form: Target }): ReactElement {
     </Control>
   );
   const roomEffort = effectiveEffort({ provider: values.provider, effort: null }, roomModels);
+  // how each engine takes the level: Claude Code's flag, pi's thinking level, opencode's variant of its agents
+  const EFFORT_FLAG: Partial<Record<Provider, string>> = { claude: '--effort', pi: '--thinking', opencode: 'the variant of its agents' };
   const effortField = takesEffort(values.provider) && (
-    <Control id={`${id}-effort`} label="Effort" hint={`Passed to Claude Code as --effort. ${roomEffort === null ? 'Empty uses its own.' : `Empty: the room's default ${roomEffort.level} applies.`} An /effort typed inside the console only changes that session.`} error={undefined}>
+    <Control id={`${id}-effort`} label="Effort" hint={`Passed to ${providerInfo(values.provider).label} as ${EFFORT_FLAG[values.provider] ?? '--effort'}. ${roomEffort === null ? 'Empty uses its own.' : `Empty: the room's default ${roomEffort.level} applies.`} A setting changed inside the console only changes that session.`} error={undefined}>
       <select id={`${id}-effort`} className="input" value={values.effort} onChange={(event) => change({ effort: event.target.value }, 'effort')}>
         <option value="">{roomEffort === null ? 'its own' : `room default (${roomEffort.level})`}</option>
         {/* a stored level this page does not know (a newer server) stays selected instead of falling back to blank, which a save would clear */}
@@ -704,7 +706,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       </select>
     </Control>
   );
-  const cleanRoomBox = values.provider === 'claude' && (
+  const cleanRoomBox = takesCleanRoom(values.provider) && (
     <div className="staff-clean" data-invalid={cleanError !== undefined ? '' : undefined}>
       <div className="staff-check">
         <input
@@ -740,7 +742,7 @@ function Staff({ form }: { form: Target }): ReactElement {
     </div>
   );
   // a Clean Room has a worktree already
-  const worktreeBox = !(values.provider === 'claude' && values.cleanRoom) && (
+  const worktreeBox = !(takesCleanRoom(values.provider) && values.cleanRoom) && (
     <div className="staff-clean" data-invalid={worktreeError !== undefined ? '' : undefined}>
       <div className="staff-check">
         <input
@@ -809,14 +811,14 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
-  // only Claude Code has rules gonogo can set: the others say so
+  // Claude Code, pi and opencode take rules gonogo can set: the others say so
   const rulesFold = (
     <details className="staff-fold">
       <summary className="label">TOOL PERMISSIONS</summary>
-      {values.provider === 'claude' ? (
+      {takesPermissions(values.provider) ? (
         <PermissionsEditor id={`${id}-rules`} value={values.rules} onChange={(next) => change({ rules: next }, 'permissions')} error={rulesError} inheritedDeny={roomDeny} />
       ) : (
-        <p className="hint">Not supported for {providerInfo(values.provider).label}: only Claude Code has rules gonogo can set.</p>
+        <p className="hint">Not supported for {providerInfo(values.provider).label}: only Claude Code, pi and opencode have rules gonogo can set.</p>
       )}
     </details>
   );
@@ -854,7 +856,7 @@ function Staff({ form }: { form: Target }): ReactElement {
     <details className="staff-fold" open={foldOpen} onToggle={(event) => setFoldOpen(event.currentTarget.open)}>
       <summary className="label">PAYLOAD</summary>
       <div className="staff-fold-body">
-        {values.provider === 'claude' && values.cleanRoom && roomDefaults !== null && (roomDefaults.mcpServers.length > 0 || roomDefaults.skills.length > 0) && <p className="hint">A Clean Room console gets none of the room's Payload defaults: their env and headers hold keys. Only what is written below.</p>}
+        {takesCleanRoom(values.provider) && values.cleanRoom && roomDefaults !== null && (roomDefaults.mcpServers.length > 0 || roomDefaults.skills.length > 0) && <p className="hint">A Clean Room console gets none of the room's Payload defaults: their env and headers hold keys. Only what is written below.</p>}
         {roomPayload}
         <Control
           id={`${id}-servers`}
@@ -889,7 +891,7 @@ function Staff({ form }: { form: Target }): ReactElement {
           <Control
             id={`${id}-skills`}
             label="Skill folders"
-            hint="One absolute folder per line, each with a SKILL.md. Claude Code loads them for this console only."
+            hint={`One absolute folder per line, each with a SKILL.md. ${providerInfo(values.provider).label} loads them for this console only.`}
             error={skillsError}
           >
             <textarea
