@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -45,5 +45,18 @@ describe('the entrypoint says which data folder it is', () => {
 
   it('says nothing about a data folder without GONOGO_HOME', () => {
     expect(say({ GONOGO_HOME: '' })).not.toContain('data folder');
+  });
+});
+
+describe('the root half repairs a bound XDG_CONFIG_HOME like the home', () => {
+  // the root half needs root, so it is proved in a container (a root file in a bound XDG_CONFIG_HOME is uid 1000's after the start; a symlink, a hardlink, a nested mount and a folder inside the image are not touched); here only that it stays wired the same way
+  const script = readFileSync(join(import.meta.dirname, '..', 'packaging', 'docker', 'entrypoint.sh'), 'utf8');
+  it('heals XDG_CONFIG_HOME with the home\'s function, and only on another filesystem than the image\'s', () => {
+    expect(script).toContain('heal "$HOME"');
+    expect(script).toMatch(/\[ "\$\(stat -c %d "\$XDG_CONFIG_HOME" 2>\/dev\/null\)" != "\$\(stat -c %d \/ 2>\/dev\/null\)" \] && heal "\$XDG_CONFIG_HOME"/);
+    expect(script).toContain('fix "${XDG_CONFIG_HOME:-}"');
+  });
+  it('keeps every guard of the repair: -xdev, mount points pruned, one-link files and directories only, no symlink', () => {
+    expect(script).toContain('find "$1" -xdev -mindepth 1 \\( -type d -exec mountpoint -q {} \; -prune \\) -o -user 0 \\( -type f -links 1 -o -type d \\) -execdir chown -h 1000:1000 {} +');
   });
 });

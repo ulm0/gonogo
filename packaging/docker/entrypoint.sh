@@ -5,7 +5,7 @@
 # prepares HOME and becomes gonogo. A container started with `--user 1000` never is root here: it skips all of this and only warns.
 #
 # What it will chown, and what never:
-#  - only $HOME, the folder above $GONOGO_HOME (the data folder), $CLAUDE_CONFIG_DIR and the working directory;
+#  - only $HOME, the folder above $GONOGO_HOME (the data folder), $CLAUDE_CONFIG_DIR, $XDG_CONFIG_HOME and the working directory;
 #  - only a real directory (not a symlink), owned by uid 0, that is a mount point or sits directly in one (Docker made it);
 #  - never recursively (a root-owned folder with files of someone else keeps them as they are), never `/` or a system folder, never anything else.
 if [ "$(id -u)" = 0 ]; then
@@ -28,10 +28,18 @@ if [ "$(id -u)" = 0 ]; then
   # that are root's to uid 1000. Only regular files with ONE link and directories (a symlink an agent planted is no `-type f` or `-type d` and is never followed; a hardlink planted to a root file has a second link and is never chowned, whatever fs.protected_hardlinks says), never across a mount
   # (-xdev for another device, and every mount point is pruned: a bind of the same filesystem has the same device, so -xdev alone does not see it), and `-execdir` so chown runs inside each directory on `./name` and `-h` leaves a symlink alone: nothing outside the home can be reached.
   # At this point nothing else of this container runs, so nobody can swap a path under it.
-  case "$HOME" in
-    '' | / | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /media | /mnt | /opt | /proc | /root | /run | /sbin | /srv | /sys | /tmp | /usr | /var) ;;
-    /*) if [ "$(realpath -e "$HOME" 2>/dev/null)" = "$HOME" ] && [ -d "$HOME" ] && [ ! -L "$HOME" ]; then find "$HOME" -xdev -mindepth 1 \( -type d -exec mountpoint -q {} \; -prune \) -o -user 0 \( -type f -links 1 -o -type d \) -execdir chown -h 1000:1000 {} + 2>/dev/null; fi ;;
-  esac
+  heal() {
+    case "$1" in
+      '' | / | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /media | /mnt | /opt | /proc | /root | /run | /sbin | /srv | /sys | /tmp | /usr | /var) ;;
+      /*) if [ "$(realpath -e "$1" 2>/dev/null)" = "$1" ] && [ -d "$1" ] && [ ! -L "$1" ]; then find "$1" -xdev -mindepth 1 \( -type d -exec mountpoint -q {} \; -prune \) -o -user 0 \( -type f -links 1 -o -type d \) -execdir chown -h 1000:1000 {} + 2>/dev/null; fi ;;
+    esac
+  }
+  heal "$HOME"
+  # The same for XDG_CONFIG_HOME when it is set outside the home (a Docker setup that binds one config folder for gh, aws, opencode...): `docker exec gonogo opencode models` runs as root too and
+  # leaves root's files there, which the server (uid 1000) could not write. The folder is gonogo's own, so it gets the same repair, and the same guards.
+  fix "${XDG_CONFIG_HOME:-}"
+  # only a folder on another filesystem than the image's own (a bind or a volume): a path inside the image is never touched
+  [ -n "${XDG_CONFIG_HOME:-}" ] && [ "$(stat -c %d "$XDG_CONFIG_HOME" 2>/dev/null)" != "$(stat -c %d / 2>/dev/null)" ] && heal "$XDG_CONFIG_HOME"
   [ -n "${GONOGO_HOME:-}" ] && fix "$(dirname "$GONOGO_HOME")"
   fix "${CLAUDE_CONFIG_DIR:-}"
   fix "$PWD"
