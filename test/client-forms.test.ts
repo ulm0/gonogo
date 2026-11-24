@@ -73,7 +73,7 @@ function item(id: string, from: string, to: string, extra: Partial<ActivityItem>
   };
 }
 
-const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', offServers: [], offSkills: [], cleanRoom: false, sandbox: '', egress: '', worktree: false, remoteControl: false, autostart: true, coauthor: true, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
+const EMPTY: Values = { provider: 'claude', position: '', name: '', role: '', dir: '/work', mode: 'default', confirm: false, command: '', servers: '', skills: '', offServers: [], offSkills: [], cleanRoom: false, sandbox: '', egress: '', worktree: false, remoteControl: false, autostart: true, coauthor: true, protectedAgent: false, rules: '', model: '', effort: '', keys: [], keysRemoved: [] };
 
 describe('staffing a seat, no position or a custom command', () => {
   it('picking a position after a custom command makes the agent a Claude one and replaces the placeholder role', () => {
@@ -239,6 +239,14 @@ describe('the bypass confirmation', () => {
   it('lets an agent that already bypasses be edited without a tick, and sends no confirmBypass for it', () => {
     expect(validate(same, { ana: bypassing }, bypassing, true)).toEqual({});
     expect(editRequest({ ...same, role: 'new' }, bypassing, true)).toEqual({ role: 'new' });
+  });
+
+  it('protects an agent the boss hired by rule from fire_agent, and only that one', () => {
+    const hired = { ...bypassing, hiredBy: 'boss' as const };
+    const form = { ...same, name: 'ana' };
+    expect(editRequest({ ...form, protectedAgent: true }, hired, true)).toEqual({ protected: true });
+    expect(editRequest({ ...form, protectedAgent: false }, { ...hired, protected: true }, true)).toEqual({ protected: false });
+    expect(editRequest({ ...form, protectedAgent: true }, bypassing, true)).toBeNull();
   });
 
   it('is not needed for auto, which sends no confirmBypass either', () => {

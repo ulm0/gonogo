@@ -19,6 +19,7 @@ import { RitualTemplateBlock, RoomRulesBlock } from './RoomRules.js';
 import { RoomKeysBlock } from './RoomKeys.js';
 import { PermissionDefaultsBlock } from './PermissionDefaults.js';
 import { AccountBlock } from './AccountBlock.js';
+import { ReliefRulesBlock } from './ReliefRules.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
 import { EgressBlock } from './EgressRules.js';
 import { GlobalMcpBlock } from './GlobalMcp.js';
@@ -347,6 +348,7 @@ export function FlightRules(): ReactElement {
         <Row name="Room keys" now={keys}><RoomKeysBlock /></Row>
         <Row name="Phone approvals" now="see Edit"><PhoneApprovals /></Row>
         <Row name="Hold all agents" now="one key"><AllStopBlock /></Row>
+        <Row name="Hire on demand" now="see Edit"><ReliefRulesBlock /></Row>
       </Group>
       <Group id="system" title="System and update">
         <Row name="Version and update check" now={version === '' ? null : `${version}`}><VersionCheckBlock /></Row>

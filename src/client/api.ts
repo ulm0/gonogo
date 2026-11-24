@@ -47,6 +47,7 @@ import type {
   RecorderStatus,
   RelayView,
   TriggerEntry,
+  ReliefRules,
   ReliefView,
   ScheduleRequest,
   ScheduleView,
@@ -891,6 +892,19 @@ export async function answer(name: string, go: boolean): Promise<AgentView> {
 /** Relief: the Director's GO or NO-GO on a hire request of the boss. The answer is the list as it is now. */
 export async function answerRelief(id: string, go: boolean): Promise<ReliefView> {
   return toReliefView(await call('POST', `/relief/${encodeURIComponent(id)}/${go ? 'go' : 'no-go'}`));
+}
+
+/** Relief by rule (docs/hire-fire-spec.md): the requests with the rules and the names of the agents the boss hired. */
+export async function reliefView(): Promise<ReliefView> {
+  return toReliefView(await call('GET', '/relief'));
+}
+/** The rules that change, as the fields of ReliefRules; turning them up asks for the password again. */
+export async function setReliefRules(patch: Partial<ReliefRules>): Promise<ReliefView> {
+  return toReliefView(await call('PUT', '/relief/rules', patch));
+}
+/** STOP CREW: stops every agent the boss hired by rule and turns automatic approval off. No password. */
+export async function stopCrew(): Promise<ReliefView> {
+  return toReliefView(await call('POST', '/relief/stop-crew'));
 }
 
 /** Max Q: a limit of 1 to MAX_AGENTS, or null to switch it off. */

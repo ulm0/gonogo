@@ -228,7 +228,7 @@ export interface WebOptions {
   /** Post-Flight Review; absent in tests that do not need it (the routes answer 404 and the two review tools say it is not available). The page asks again; no frame. */
   review?: Pick<Review, 'view' | 'read' | 'addNote' | 'addNotes' | 'update' | 'remove' | 'verdict' | 'ask'>;
   /** Relief; absent in tests that do not need it (the snapshot then has none, the routes answer 404 and the hire tool says it is not available). It tells the browsers itself. */
-  relief?: Pick<Relief, 'request' | 'view' | 'decide' | 'setRules' | 'stopCrew'>;
+  relief?: Pick<Relief, 'request' | 'fire' | 'view' | 'decide' | 'setRules' | 'stopCrew'>;
   /** The startup policy; absent in tests that do not need it (the routes answer 404). */
   startup?: Pick<StartupStore, 'view' | 'set'>;
   /** Auto-update (room main under Docker): the switch, the windows and SKIP THIS VERSION; absent elsewhere (the routes answer 404). */
@@ -596,6 +596,10 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
   if (o.coauthor !== undefined) {
     if (typeof o.coauthor !== 'boolean') return fieldError('coauthor', 'true or false');
     value.coauthor = o.coauthor;
+  }
+  if (o.protected !== undefined) {
+    if (typeof o.protected !== 'boolean') return fieldError('protected', 'true or false');
+    value.protected = o.protected;
   }
   if (o.autostart !== undefined) {
     if (typeof o.autostart !== 'boolean') return fieldError('autostart', 'true or false');

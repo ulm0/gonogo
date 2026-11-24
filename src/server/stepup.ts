@@ -11,7 +11,7 @@ const CHANGES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * The fields of an edit that change nothing an agent may DO. An ALLOW-list on purpose: any other field (mode, command, role, permissions, payload,
  * dir, cleanRoom, confirmBypass, worktree, remoteControl, keys, and one a later version adds) asks for the password again.
  */
-const PLAIN_EDIT_FIELDS = new Set(['name', 'position', 'autostart', 'coauthor', 'model', 'effort']);
+const PLAIN_EDIT_FIELDS = new Set(['name', 'position', 'autostart', 'coauthor', 'model', 'effort', 'protected']);
 const UNATTENDED = new Set(['auto', 'bypassPermissions']);
 
 /** A field that carries something: not missing, null, empty text, an empty object or an empty list. */
@@ -95,6 +95,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (method === 'POST' && path === '/api/agents') return hireStepUpReason(body, context);
   if ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path)) {
     if (body === null) return 'editing an agent';
+    // protecting an agent from the boss's fire_agent only removes power; clearing the mark gives it back
+    if (body.protected === false) return 'letting the boss stop an agent';
     return Object.keys(body).some((field) => body[field] !== undefined && !PLAIN_EDIT_FIELDS.has(field)) ? 'changing what an agent may do' : null;
   }
   // the room's default mode: auto or bypass makes every hire from the form start without asking; clearing it or a milder mode stays free

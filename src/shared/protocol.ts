@@ -178,7 +178,7 @@ export const cleanRoomBranch = (name: string): string => `gonogo/${name}`;
 export const WORKTREE_DIR = 'worktrees';
 /** The online documentation: the one address every install surface (startup, --help, doctor, the page) links to. The site has one version only, so the link is not versioned. */
 export const DOCS_URL = 'https://gonogo.ulm0.com/';
-export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'task_handoff', 'station_suggest', 'knowledge_ask', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'knowledge_propose', 'knowledge_list', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent'] as const;
+export const MCP_TOOL_NAMES = ['send_message', 'list_roster', 'read_messages', 'go_nogo', 'task_list', 'task_create', 'task_update', 'task_handoff', 'station_suggest', 'knowledge_ask', 'mission_list', 'mission_create', 'mission_update', 'log_write', 'log_search', 'log_read', 'knowledge_propose', 'knowledge_list', 'board_read', 'board_write', 'livery_submit', 'hire_agent', 'review_read', 'review_note', 'start_agent', 'fire_agent'] as const;
 
 /** Message outcome shown in the activity strip. See contract section 5 for the exact rules and notes. */
 export const ACTIVITY_STATUSES = ['queued', 'held', 'delivered', 'read', 'undelivered', 'to_user'] as const;
@@ -607,6 +607,8 @@ export interface AgentRecord {
   engineSession?: { for: string; id: string };
   /** Hired by the boss on its own, inside the Relief rules (docs/hire-fire-spec.md), not by the Director's hand or GO. Set by Relief's call only, never by a request. */
   hiredBy?: 'boss';
+  /** The Director marked it: the boss's `fire_agent` and a rule never stop it. Absent means the default (an agent the boss hired by rule can be fired, any other cannot). */
+  protected?: true;
 }
 export interface RosterFile {
   version: 1;
@@ -670,6 +672,8 @@ export interface AgentView {
   /** `boss` when FLIGHT hired it by rule (the roster tile shows "hired by flight"), and when (ms epoch). */
   hiredBy?: 'boss';
   hiredAt?: number;
+  /** The Director protected it from `fire_agent`. */
+  protected?: boolean;
   state: AgentState;
   /** ms epoch of the last state change. */
   stateSince: number;
@@ -1886,6 +1890,8 @@ export interface EditRequest {
   autostart?: boolean;
   /** false: the co-author line stays off for this agent; true follows the room's. */
   coauthor?: boolean;
+  /** true: the boss may never fire this agent (the default for an agent that is not boss-hired); false lets it (clearing asks for the password). */
+  protected?: boolean;
   /** A level of EFFORTS, or null for the CLI's own. */
   effort?: Effort | null;
   /** A model name, or null or empty text for the CLI's default. */
@@ -2944,6 +2950,11 @@ export interface Hub {
   restart(name: string): Promise<AgentView>;
   /** The boss starts a stopped agent (the `start_agent` tool). Refused when it is running or on hold. `by` is the caller's name, for the Black Box. */
   startAgent(name: string, by: string): Promise<AgentView>;
+  /**
+   * The boss stops an agent it hired by rule (docs/hire-fire-spec.md): the process ends, the record, memory and worktree stay, and it can be started again (it is NOT marked stopped by the Director).
+   * Refused: the boss, an agent the Director hired, a protected one, one at a permission prompt or dialog, one with mail waiting.
+   */
+  fireAgent(name: string, by: string): Promise<AgentView>;
   /** ALL STOP: holds every agent that can be held (as `hold` does, one by one); the others are named in `skipped`. */
   holdAll(): HoldAllResult;
   /** ALL RESUME: resumes every agent that is on hold (a Redline trip is left for its own Resume). */

@@ -301,4 +301,51 @@ describe('the rules by the Director: the API and STOP CREW', () => {
   });
 });
 
+describe('fire_agent through Relief', () => {
+  const FIRE = { agent: 'flight', generation: 1 };
+  function withFire(over: Partial<ReliefOptions> = {}, task = { id: 't7', assignee: 'g1', status: 'doing' }) {
+    const updates: Array<[string, unknown]> = [];
+    const fired: string[] = [];
+    const r = createRelief({
+      hub: {
+        views: () => views,
+        hire: async () => { throw new Error('no'); },
+        sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }),
+        fireAgent: async (name: string) => { fired.push(name); return views.find((v) => v.name === name) as AgentView; },
+      },
+      tasks: { list: () => [task, { id: 't8', assignee: 'g1', status: 'done' }, { id: 't9', assignee: 'other', status: 'todo' }], update: async (_a, id, input) => void updates.push([id, input]) },
+      checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet, ...over,
+    });
+    return { r, updates, fired };
+  }
+
+  it('stops the agent, releases its open tasks only, and the Downlink line says how many', async () => {
+    views.push(agent('g1', { hiredBy: 'boss' }));
+    const { r, updates, fired } = withFire();
+    const done = await r.fire(FIRE, { name: 'g1', reason: 'the work is done' });
+    expect(done).toMatchObject({ name: 'g1', released: 1 });
+    expect(fired).toEqual(['g1']);
+    expect(updates).toEqual([['t7', { status: 'todo', assignee: null, note: 'released: g1 was stopped by flight' }]]);
+    expect(events.map(([, t]) => t).join('\n')).toMatch(/flight fired g1 \(1 tasks released\): the work is done/);
+  });
+
+  it('only the boss fires; a bad name or reason, and an agent with a vote to cast, are refused before anything stops', async () => {
+    views.push(agent('g1', { hiredBy: 'boss' }), agent('ben'));
+    const { r, fired } = withFire({ voteWaitsFor: (name) => name === 'g1' });
+    await expect(r.fire({ agent: 'ben', generation: 1 }, { name: 'g1', reason: 'x' })).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(r.fire(FIRE, { name: 'Bad Name', reason: 'x' })).rejects.toMatchObject({ field: 'name' });
+    await expect(r.fire(FIRE, { name: 'g1', reason: '' })).rejects.toMatchObject({ field: 'reason' });
+    await expect(r.fire(FIRE, { name: 'g1', reason: 'hidden\u200Btext' })).rejects.toMatchObject({ field: 'reason' });
+    await expect(r.fire(FIRE, { name: 'g1', reason: 'x' })).rejects.toMatchObject({ code: 'conflict' });
+    expect(fired).toEqual([]);
+  });
+
+  it('the hub\'s refusal (the Director\'s own agent, protected) stops it with no task released', async () => {
+    views.push(agent('ana'));
+    const { r, updates } = withFire({ hub: { views: () => views, hire: async () => { throw new Error('no'); }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }), fireAgent: async () => { throw new HubError('forbidden', 'ana was not hired by you by rule'); } } });
+    await expect(r.fire(FIRE, { name: 'ana', reason: 'x' })).rejects.toMatchObject({ code: 'forbidden' });
+    expect(updates).toEqual([]);
+  });
+});
+
 void rename;

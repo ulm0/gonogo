@@ -695,7 +695,7 @@ const VALUES: Values = {
   worktree: false,
   remoteControl: false,
   rules: '',
-  autostart: true, coauthor: true,
+  autostart: true, coauthor: true, protectedAgent: false,
   model: '',
   effort: '',
   keys: [],

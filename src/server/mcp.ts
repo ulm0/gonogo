@@ -69,7 +69,7 @@ export interface McpDeps {
   /** Livery; absent in tests that do not need it (the tool then answers that it is not available). */
   liveries?: Pick<Liveries, 'submit'>;
   /** Relief; absent in tests that do not need it (the tool then answers that it is not available). */
-  relief?: Pick<Relief, 'request'>;
+  relief?: Pick<Relief, 'request' | 'fire'>;
   /** Feature toggles: is a feature switched off? Its tools are then not listed and a call is refused. Default: nothing is off. */
   featureOff?(id: string): boolean;
   resolveToken(token: string): AgentIdentity | null;
@@ -98,6 +98,8 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
   const { hub, log } = deps;
   /** When each boss started agents in the last minute (start_agent's rate limit). Memory only. */
   const starts = new Map<string, number[]>();
+  /** The same for fire_agent. */
+  const fires = new Map<string, number[]>();
   const logClose = (e: unknown): void => log.debug('mcp close failed', e);
 
   /** A HubError tells the agent why; anything else is a bug, logged here and reported without its text. */
@@ -543,6 +545,22 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           if (!relief) return toolResult({ ok: false, error: 'Relief is not available' }, true);
           // the requester is the agent of the token, never a field of the call
           return toolResult({ ok: true, ...(await relief.request({ agent, generation }, args)) }, false);
+        }),
+    );
+
+    server.registerTool(
+      'fire_agent',
+      { description: MCP_DESCRIPTIONS.fire_agent, inputSchema: z.strictObject({ name: z.string().min(1).max(AGENT_NAME_MAX), reason: z.string().min(1).max(200) }) },
+      (args) =>
+        guarded('fire_agent', async () => {
+          if (!isBoss()) return toolResult({ ok: false, error: 'only the boss may fire an agent' }, true);
+          if (!relief) return toolResult({ ok: false, error: 'Relief is not available' }, true);
+          const at = Date.now();
+          const mine = (fires.get(agent) ?? []).filter((t) => at - t < 60_000);
+          if (mine.length >= START_AGENT_RATE_MAX) return toolResult({ ok: false, error: `at most ${START_AGENT_RATE_MAX} fires a minute` }, true);
+          fires.set(agent, [...mine, at]);
+          // the caller is the agent of the token, never a field of the call
+          return toolResult({ ok: true, ...(await relief.fire({ agent, generation }, args)) }, false);
         }),
     );
 

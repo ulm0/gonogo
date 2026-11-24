@@ -241,7 +241,7 @@ export function featureOfRoute(segments: readonly string[]): string | null {
 /** The MCP tools that belong to a feature: off, they are not listed and a call is refused. */
 export const FEATURE_TOOLS: Readonly<Record<string, readonly string[]>> = {
   tminus: ['go_nogo'],
-  relief: ['hire_agent'],
+  relief: ['hire_agent', 'fire_agent'],
   'flight-plan': ['task_list', 'task_create', 'task_update'],
   missions: ['mission_list', 'mission_create', 'mission_update'],
   'mission-log': ['log_write', 'log_search', 'log_read'],

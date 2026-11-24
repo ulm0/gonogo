@@ -1293,6 +1293,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const relief = createRelief({
       hub: hubInstance,
       rules: reliefRules,
+      tasks: tasks,
+      voteWaitsFor: (name) => {
+        const poll = hubInstance.poll();
+        return poll !== null && poll.status === 'open' && poll.entries.some((e) => e.agent === name && e.vote === null);
+      },
       // a hire by rule in `auto` runs every tool without a check: the API key must stay out of its container and no global MCP server may reach it (the room's keys marked for the Clean Room are all it gets)
       cleanRoomUnsafe: () => (!egressSettings.view().anthropic ? 'egress is off: the API key would enter the container' : globalMcp.enabled(true) ? 'the global MCP servers reach Clean Room agents' : null),
       defaultEngine: () => modelDefaults.engine(),

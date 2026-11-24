@@ -51,6 +51,8 @@ export interface Values {
   autostart: boolean;
   /** Co-author line: this console's commits end with `Co-Authored-By: <name> (gonogo)`. Unticked: not for this console, whatever the room says. */
   coauthor: boolean;
+  /** Edit of an agent the boss hired by rule: the boss's fire_agent never stops it. */
+  protectedAgent: boolean;
   /** Engine Bay: the model for `--model`; '' is the CLI's default. */
   model: string;
   /** An engine that takes effort (takesEffort): a level of EFFORTS; '' is the CLI's own. */
@@ -115,7 +117,7 @@ export function choosePosition(
 
 /** The custom command tile: no position, no permissions, and a fixed role (the form shows none for it). */
 export function chooseCustom(values: Values, agents: Readonly<Record<string, AgentView>>): Values {
-  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, autostart: values.autostart, coauthor: values.coauthor, rules: '', model: '', effort: '', name: untouched(values, agents).name ? '' : values.name };
+  return { ...values, provider: 'custom', position: '', role: CUSTOM_ROLE, cleanRoom: false, worktree: values.worktree, remoteControl: false, autostart: values.autostart, coauthor: values.coauthor, protectedAgent: values.protectedAgent, rules: '', model: '', effort: '', name: untouched(values, agents).name ? '' : values.name };
 }
 
 /** Engine Bay: another agent CLI keeps the position and role; one without permission modes runs in 'default'. Another engine names its models otherwise, so the model starts empty. */
@@ -206,6 +208,7 @@ export function initialValues(
     rules: rulesToText(current?.permissions),
     autostart: current?.autostart !== false,
     coauthor: current?.coauthor !== false,
+    protectedAgent: current?.protected === true,
     model: current?.model ?? '',
     effort: current?.effort ?? '',
     keys: [],
@@ -538,6 +541,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
   }
   if (values.autostart !== (original.autostart !== false)) changes.autostart = values.autostart;
   if (values.coauthor !== (original.coauthor !== false)) changes.coauthor = values.coauthor;
+  if (original.hiredBy === 'boss' && values.protectedAgent !== (original.protected === true)) changes.protected = values.protectedAgent;
   if (JSON.stringify(remoteControlOf(values)) !== JSON.stringify(original.remoteControl ?? null)) changes.remoteControl = remoteControlOf(values);
   if (JSON.stringify(worktreeOf(values)) !== JSON.stringify(original.worktree ?? null)) changes.worktree = worktreeOf(values);
   const keys = keysOf(values, Object.keys(original.keys ?? {}));

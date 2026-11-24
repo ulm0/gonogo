@@ -813,6 +813,17 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
+  const protectBox = editing && original?.hiredBy === 'boss' && (
+    <div className="staff-clean">
+      <div className="staff-check">
+        <input id={`${id}-protected`} type="checkbox" className="check" checked={values.protectedAgent} onChange={(event) => change({ protectedAgent: event.target.checked }, 'coauthor')} aria-describedby={`${id}-protected-hint`} />
+        <label htmlFor={`${id}-protected`}>Protect it from FLIGHT's fire_agent</label>
+      </div>
+      <p className="hint" id={`${id}-protected-hint`}>
+        FLIGHT hired this console by rule and may stop it. Ticked: it never will. Unticking asks for the password again.
+      </p>
+    </div>
+  );
   const remoteBox = values.provider === 'claude' && !values.cleanRoom && (values.remoteControl || phoneMode === 'remote-control' || phoneMode === 'both') && (
     <div className="staff-clean" data-invalid={remoteError !== undefined ? '' : undefined}>
       <div className="staff-check">
@@ -1087,6 +1098,7 @@ function Staff({ form }: { form: Target }): ReactElement {
                   {worktreeBox}
                   {remoteBox}
                   {coauthorBox}
+                  {protectBox}
                   {autostartBox}
                   {modes}
                   {confirmPanel}
@@ -1193,6 +1205,7 @@ function Staff({ form }: { form: Target }): ReactElement {
                 {worktreeBox}
                 {remoteBox}
                 {coauthorBox}
+                {protectBox}
                 {modes}
                 {confirmPanel}
                 {payloadFold}

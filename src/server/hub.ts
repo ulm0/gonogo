@@ -740,6 +740,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       desk: record.desk,
       boss: record.boss,
       ...(record.hiredBy === 'boss' ? { hiredBy: 'boss' as const, hiredAt: record.createdAt } : {}),
+      ...(record.protected === true ? { protected: true } : {}),
       state: rt.state,
       stateSince: rt.stateSince,
       needsKind: rt.needsKind,
@@ -2111,11 +2112,13 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     return buildView(rt);
   }
 
-  async function stopOp(rt: Rt): Promise<AgentView> {
+  async function stopOp(rt: Rt, byDirector = true): Promise<AgentView> {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     // remembered across a restart: FLIGHT may bring back an agent, never one the Director stopped (an agent that crashed and is STOPped too)
     const remember = (): Promise<void> => {
+      // a stop by the boss's fire_agent is not the Director's: the boss may start it again (the Director's stop is remembered)
+      if (!byDirector) return Promise.resolve();
       rt.record.stoppedBy = 'director';
       return saveRecords(rosterRecords()).catch((error: unknown) => log.warn(`could not save that ${rt.record.name} was stopped`, error));
     };
@@ -2270,6 +2273,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.engineSession = from.engineSession;
     if (from.autostart === undefined) delete target.autostart;
     else target.autostart = from.autostart;
+    if (from.protected === undefined) delete target.protected;
+    else target.protected = from.protected;
     if (from.coauthor === undefined) delete target.coauthor;
     else target.coauthor = from.coauthor;
     if (from.model === undefined) delete target.model;
@@ -2572,7 +2577,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     let req = asObject(request, 'the request');
     if (req.switchNow !== undefined && typeof req.switchNow !== 'boolean') throw new HubError('bad_request', 'switchNow must be true or false', 'switchNow');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'model', 'effort', 'keys', 'provider'];
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'protected', 'model', 'effort', 'keys', 'provider'];
     if (req.switchNow === true && !fields.some((field) => req[field] !== undefined)) {
       // switchNow alone: the pending engine switch, now
       if (rt.pendingEdit === null) throw new HubError('bad_request', 'no engine switch is pending', 'switchNow');
@@ -2655,6 +2660,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         if (req.coauthor) delete next.coauthor;
         else next.coauthor = false;
       }
+      if (req.protected !== undefined) {
+        if (typeof req.protected !== 'boolean') throw new HubError('bad_request', 'protected must be true or false', 'protected');
+        if (req.protected) next.protected = true;
+        else delete next.protected;
+      }
       if (req.autostart !== undefined) {
         if (typeof req.autostart !== 'boolean') throw new HubError('bad_request', 'autostart must be true or false', 'autostart');
         if (req.autostart) delete next.autostart;
@@ -2726,6 +2736,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         rulesKey(next) !== rulesKey(current) ||
         next.autostart !== current.autostart ||
         next.coauthor !== current.coauthor ||
+        next.protected !== current.protected ||
         engineKey(next) !== engineKey(current) ||
         switching;
       if (!changed) return buildView(rt);
@@ -3591,6 +3602,20 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       assertOpen();
       const rt = lookup(name);
       return enqueue(rt, 'stop', () => stopOp(rt), true);
+    },
+    fireAgent: async (name, by) => {
+      assertOpen();
+      const rt = lookup(name);
+      const { record } = rt;
+      // decided here from the stored record, never from the request: only the boss's own hires, only unprotected ones, never the boss
+      if (record.boss) throw new HubError('forbidden', 'the boss cannot be fired');
+      if (record.hiredBy !== 'boss') throw new HubError('forbidden', `${record.name} was not hired by you by rule: only the Director stops it`);
+      if (record.protected === true) throw new HubError('forbidden', `${record.name} is protected by the Director`);
+      if (rt.state === 'stopped' || rt.transition !== null) throw new HubError('conflict', `${record.name} is stopped or changing already`);
+      if (rt.needsKind !== null) throw new HubError('conflict', `${record.name} waits for the Director (${rt.needsKind}): do not fire it now`);
+      if (rt.queue.length > 0) throw new HubError('conflict', `${record.name} has mail waiting: let it read it first`);
+      log.info(`${by} fires ${record.name}`);
+      return enqueue(rt, 'stop', () => stopOp(rt, false), true);
     },
     remove: async (name) => {
       assertOpen();

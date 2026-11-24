@@ -52,7 +52,7 @@ export function audited<T extends object>(store: T, record: AuditRecord, table: 
 }
 
 /** The fields an edit names: the names of the fields only, never their values. */
-const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor'];
+const EDIT_FIELDS = ['name', 'role', 'dir', 'mode', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'protected'];
 const fieldsOf = (value: unknown, allowed: string[]): string[] => (isRecord(value) ? Object.keys(value).filter((key) => allowed.includes(key) && value[key] !== undefined) : []);
 
 const actorName = (actor: unknown): string => {
@@ -87,6 +87,7 @@ export const RELIEF_AUDIT: Table = {
   decide: ['answer', (args) => `Director answered hire request ${plain(args[0]) ?? '?'}: ${args[1] === 'go' ? 'go' : 'no-go'}`],
   // the boss's hire: who, which name, which rule sent it to the Director; never the role text
   request: ['crew', (args, result) => (isRecord(result) && result.status === 'hired' ? `boss hired ${plain(result.name) ?? '?'} by rule` : isRecord(result) ? `boss asked to hire an agent: waits for the Director (${plain(result.id) ?? '?'})` : null)],
+  fire: ['crew', (args, result) => (isRecord(result) && plain(result.name) !== null ? `boss fired ${plain(result.name)} (${typeof result.released === 'number' ? result.released : 0} tasks released)` : null)],
   setRules: ['config', 'Director changed the Relief rules'],
   stopCrew: ['crew', (_args, result) => (isRecord(result) && Array.isArray(result.stopped) ? `STOP CREW: ${result.stopped.length} agents stopped, automatic hires off` : 'STOP CREW')],
 };
