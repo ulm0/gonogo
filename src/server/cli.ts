@@ -924,7 +924,6 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, a mission's budget the agents working on it, an agent's own only that agent. */
     const linkCapTold = new Set<string>();
     const crewCapTold = new Set<string>();
-    const day = (): string => new Date().toISOString().slice(0, 10);
     const enforce = (name: string): void => {
       const over = propellant.over(name);
       if (over === null || !hub) return;
@@ -954,8 +953,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
             log.debug(`could not hold ${n}`, e);
           }
         }
-        if (!crewCapTold.has(day())) {
-          crewCapTold.add(day());
+        // one line per hold (this crew under this ceiling), not per day: the spend window is a rolling one
+        const holdKey = `${(over.names ?? []).join(',')}|${reliefRules.view().crewBudgetUsd ?? ''}`;
+        if (!crewCapTold.has(holdKey)) {
+          crewCapTold.add(holdKey);
           tell('redline', `${over.reason}: the crew is held and no hire by rule is made; raise the ceiling in Flight Rules or resume the agents`);
         }
         return;
@@ -1321,8 +1322,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // Propellant holds the boss-hired crew at its daily ceiling (relief.json crewBudgetUsd); with automatic approval off there is no ceiling
     crewBudget = () => {
       const rules = reliefRules.view();
-      if (!rules.autoApprove || rules.crewBudgetUsd === null || !hub) return null;
-      return { names: hub.views().filter((v) => v.hiredBy === 'boss').map((v) => v.name), budgetUsd: rules.crewBudgetUsd };
+      // whenever a ceiling is set and the crew is not empty: turning automatic hires off does not lift the ceiling of the agents already hired
+      if (rules.crewBudgetUsd === null || !hub) return null;
+      const names = hub.views().filter((v) => v.hiredBy === 'boss').map((v) => v.name);
+      return names.length === 0 ? null : { names, budgetUsd: rules.crewBudgetUsd };
     };
     const reliefRulesTimer = setInterval(() => void reliefRules.check().catch((error: unknown) => log.error('relief rules check failed', error)), 30_000);
     reliefRulesTimer.unref();
