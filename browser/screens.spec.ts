@@ -13,7 +13,7 @@ import { LINKS, OUTBOUND, TRAILS } from './linkFixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { duplicates, geometry } from './geometry.js';
-import { type BrowserContext, type Page, expect, test } from '@playwright/test';
+import { type BrowserContext, type Locator, type Page, expect, test } from '@playwright/test';
 
 test.skip(process.env.SCREENS !== '1', 'screenshots are taken by the screens workflow (SCREENS=1)');
 
@@ -385,6 +385,18 @@ async function updateFlow(page: Page, group: string): Promise<void> {
   missed.push(`info: ${group}: update flow: ${clicks} clicks from the first look at the strip to the run (the password prompt not counted)`);
 }
 
+/**
+ * Puts a long text in a box the way a paste does: one value and one input event. Playwright's fill types it through the editing
+ * pipeline line by line, which takes seconds for 2,000 lines and does not end for 20,000; a real paste of 20,000 lines takes about 0.7 s.
+ */
+async function pasteInto(box: Locator, text: string): Promise<void> {
+  await box.evaluate((el, value) => {
+    const area = el as HTMLTextAreaElement;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(area, value);
+    area.dispatchEvent(new Event('input', { bubbles: true }));
+  }, text);
+}
+
 /** Runs a step that gets to a view and shoots it; whatever goes wrong is noted and the run goes on. */
 async function view(page: Page, group: string, title: string, get: () => Promise<void>, fullPage = false): Promise<void> {
   try {
@@ -492,6 +504,21 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
         await shoot(page, group, `layout: ${density}`, true);
         await measure(page, group, `layout: ${density}`);
       }
+    }
+    // long text (shared/longtext.ts): the line under the BRIEF box for a paste over a message, then one over the most; nothing is sent
+    // on a phone the box is not in the room's first view: these two are desktop shots
+    const brief = page.locator('.brief-input').first();
+    if (await brief.isVisible().catch(() => false)) {
+      await view(page, group, 'brief: a long text goes as a file', async () => {
+        await pasteInto(brief, `A log from the other session\n${'2026-11-24 18:30:01 INFO a line of the log\n'.repeat(600)}`);
+        await page.locator('.brief-long:not(:empty)').waitFor({ timeout: 3000 });
+      }, true);
+      await measure(page, group, 'brief: a long text goes as a file', '.brief');
+      await view(page, group, 'brief: a text over the most is refused', async () => {
+        await pasteInto(brief, '2026-11-24 18:30:01 INFO a line of a very long log\n'.repeat(20_000));
+        await page.locator('.brief-long.error').waitFor({ timeout: 3000 });
+      }, true);
+      await brief.fill('', { timeout: 5000 }).catch(() => undefined);
     }
     await toolbarProofs(page, group);
     await page.reload();

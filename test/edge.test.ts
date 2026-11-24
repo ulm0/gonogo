@@ -67,6 +67,7 @@ import {
   MAX_COLS,
   MAX_HOOK_BODY_BYTES,
   MAX_REST_BODY_BYTES,
+  MAX_MESSAGE_BODY_BYTES,
   MESSAGES_FILE,
   MESSAGES_ROTATED_FILE,
   MESSAGES_ROTATE_BYTES,
@@ -4447,6 +4448,14 @@ describe('web: REST', () => {
       expect(hubCalls.filter((c) => c.fn === 'sendFromUser').map((c) => c.args[0])).toStrictEqual([{ to: 'boss', body: 'do it', subject: 'Brief', inReplyTo: 'm2' }]);
     });
 
+    it('takes a long text of a million characters (the hub saves it to a file), far over the 256 KiB of other forms', async () => {
+      const { port, hubCalls } = await startWeb();
+      const body = 'x'.repeat(1_000_000);
+      const res = await api(port, 'POST', '/api/messages', { to: 'boss', body });
+      expect(res.status).toBe(201);
+      expect((hubCalls.find((c) => c.fn === 'sendFromUser')?.args[0] as { body: string }).body).toHaveLength(1_000_000);
+    });
+
     describe("the Director's words (docs/features/relay.md)", () => {
       /** A request on the local socket, the way the supervisor's proxy makes one. */
       const overSocket = (socketPath: string, headers: Record<string, string>): Promise<number> =>
@@ -4582,7 +4591,7 @@ describe('web: REST', () => {
     it('answers 413 for a body over the limit and keeps serving', async () => {
       const { port, hubCalls } = await startWeb();
       const agent = keepAliveAgent();
-      const body = JSON.stringify({ to: 'ana', body: 'x'.repeat(MAX_REST_BODY_BYTES) });
+      const body = JSON.stringify({ to: 'ana', body: 'x'.repeat(MAX_MESSAGE_BODY_BYTES) });
       const res = await send(port, { method: 'POST', path: '/api/messages', headers: { ...bearer(TOKEN), ...JSON_HEADERS }, body, agent });
       expect(res.status).toBe(413);
       expect(res.json()).toEqual({ error: 'request body too large', code: 'too_large' });
@@ -7767,7 +7776,7 @@ describe('seams with the real hub, launcher and terminal host', () => {
 
     const home = tmpDir();
     const launcher = launcherModule.createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:1', seed: false, env: {}, log: nullLogger });
-    expect(members(launcher)).toEqual(['archiveAgentFiles', 'keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke', 'writeHandoff']);
+    expect(members(launcher)).toEqual(['archiveAgentFiles', 'keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke', 'saveLongText', 'writeHandoff']);
     expect(launcher.resolveToken('f'.repeat(64))).toBeNull();
 
     const io = {

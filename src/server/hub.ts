@@ -92,6 +92,7 @@ import { ENGINE_SESSION_PATTERN,
   STATION_NAME_PATTERN,
 } from '../shared/protocol.js';
 import { POSITION_IDS } from '../shared/positions.js';
+import { LONG_TEXT_MAX_CHARS, longTextBody } from '../shared/longtext.js';
 import {
   ACTIVITY_BACKLOG,
   ACTIVITY_HUB_MAX,
@@ -2871,8 +2872,13 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (typeof body !== 'string' || body.trim() === '') {
       throw new HubError('bad_request', 'body must not be empty', 'body');
     }
-    if (body.length > BODY_MAX_CHARS) {
+    // the Director's long text is saved to a file in the recipient's folder (docs/features/comms.md, "Long text"); an agent writes a file itself
+    const long = body.length > BODY_MAX_CHARS;
+    if (long && (sender.kind !== 'user' || io.saveLongText === undefined)) {
       throw new HubError('bad_request', `body must be at most ${BODY_MAX_CHARS} characters`, 'body');
+    }
+    if (body.length > LONG_TEXT_MAX_CHARS) {
+      throw new HubError('bad_request', `body must be at most ${LONG_TEXT_MAX_CHARS} characters`, 'body');
     }
     const inReplyTo =
       typeof req.inReplyTo === 'string' && req.inReplyTo.length <= REPLY_ID_MAX_CHARS && REPLY_ID_RE.test(req.inReplyTo)
@@ -2914,12 +2920,23 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
 
     const hops = sender.kind === 'station' ? sender.hops : senderRt === null ? 0 : senderRt.trigger ? senderRt.trigger.maxHops + 1 : 1;
     const at = io.now();
+    const id = io.newMessageId();
+    let stored = body;
+    if (long && recipient !== null && io.saveLongText !== undefined) {
+      let path: string;
+      try {
+        path = io.saveLongText(recipient.record.name, id, body);
+      } catch (error) {
+        throw new HubError('internal', `the long text could not be saved as a file: ${error instanceof Error ? error.message : String(error)}`, 'body');
+      }
+      stored = longTextBody(body, path);
+    }
     const record: MessageRecord = {
-      id: io.newMessageId(),
+      id,
       from: sender.kind === 'user' ? 'user' : sender.name,
       to: recipientName,
       subject,
-      body,
+      body: stored,
       inReplyTo,
       hops,
       at,
@@ -3062,7 +3079,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     // only a channel this code names, and only a message that is waiting for a pointer
     if (!DIRECTOR_CHANNELS.includes(channel)) return result;
     const record = messages.get(result.id);
-    const text = directorLine(said ?? (typeof request.body === 'string' ? request.body : ''));
+    // a long text is typed as what the message carries (its path and first lines), never the whole of it
+    const text = directorLine(said ?? record?.body ?? (typeof request.body === 'string' ? request.body : ''));
     if (record !== undefined && text !== '' && (record.status === 'queued' || record.status === 'held')) {
       directorTurns.set(result.id, { channel, text });
       // bounded: the oldest go first (a Map keeps insertion order)

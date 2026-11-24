@@ -68,7 +68,7 @@ export function validate(v: Values): Problems {
   if (v.to === '') problems.to = 'Pick who gets it.';
   if (scheduleSubject(name, v.subject.trim()).length > SUBJECT_MAX_CHARS) problems.subject = `The name and the subject together are too long (at most ${SUBJECT_MAX_CHARS - 'Launch Window: : '.length}).`;
   if (v.body.trim() === '') problems.body = 'Write the message.';
-  else if (v.body.length > BODY_MAX_CHARS) problems.body = `At most ${BODY_MAX_CHARS} characters.`;
+  else if (v.body.length > BODY_MAX_CHARS) problems.body = `At most ${BODY_MAX_CHARS.toLocaleString('en-US')} characters; this is ${v.body.length.toLocaleString('en-US')}.`;
   if (v.rule.trim() === '') problems.rule = 'Give the rule.';
   else if (v.rule.length > CRON_MAX_CHARS) problems.rule = `At most ${CRON_MAX_CHARS} characters.`;
   else {

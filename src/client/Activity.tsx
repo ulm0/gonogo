@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
 import type { ActivityItem, AgentView } from '../shared/protocol.js';
 import * as api from './api.js';
+import { longTextKind, longTextNote } from '../shared/longtext.js';
 import { Brief, enterSends } from './Brief.js';
 import { chipOf, FILTERS, filterCounts, filterItems, legendOf, noteOf, replyRequest, routeText, subjectOf, ofAgent, trafficOf } from './loop.js';
 import type { FilterId } from './loop.js';
@@ -37,11 +38,14 @@ export function Reply({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ text: string; failed: boolean } | null>(null);
   const to = legendOf(item.from, agents);
+  // a long reply goes as a file, as a long brief does (shared/longtext.ts)
+  const kind = longTextKind(text.trim().length);
+  const long = longTextNote(text.trim().length, to);
 
   async function send(event?: FormEvent): Promise<void> {
     event?.preventDefault();
     const body = text.trim();
-    if (busy || body === '') return;
+    if (busy || body === '' || kind === 'too_long') return;
     setBusy(true);
     setResult(null);
     try {
@@ -50,7 +54,8 @@ export function Reply({
         setResult({ text: sent.note ?? 'The message could not be delivered.', failed: true });
       } else {
         setText('');
-        setResult({ text: briefSentText(sent.note, sent.to, to), failed: false });
+        const sentText = briefSentText(sent.note, sent.to, to);
+        setResult({ text: kind === 'file' ? `${sentText} The whole text was saved as a file; ${to} got its path and the first lines.` : sentText, failed: false });
         onSent?.();
       }
     } catch (e) {
@@ -71,15 +76,19 @@ export function Reply({
         rows={1}
         value={text}
         autoComplete="off"
-        aria-describedby={`${id}-result`}
+        aria-describedby={`${id}-result ${id}-long`}
+        aria-invalid={kind === 'too_long' || undefined}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
           if (enterSends(event)) void send(event);
         }}
       />
-      <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || text.trim() === ''}>
+      <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || text.trim() === '' || kind === 'too_long'}>
         {busy ? 'Sending…' : 'Send'}
       </button>
+      <p id={`${id}-long`} className={long?.tone === 'danger' ? 'error loop-result' : 'hint loop-result'}>
+        {long?.text}
+      </p>
       <p id={`${id}-result`} className={result?.failed === true ? 'error loop-result' : 'hint loop-result'} role="status">
         {result?.text}
       </p>

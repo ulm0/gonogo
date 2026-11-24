@@ -4,7 +4,8 @@
  * mode only.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { LONG_TEXT_NAME } from '../shared/longtext.js';
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -55,6 +56,7 @@ import {
   TOKEN_BYTES,
   TRUST_VERIFY_ATTEMPTS,
   TRUST_VERIFY_DELAY_MS,
+  TELEGRAM_FILES_DIR,
 } from './constants.js';
 import { prepareWorktree, worktreeBranch } from './worktree.js';
 import type { WorktreePlace } from './worktree.js';
@@ -167,6 +169,8 @@ export function buildSettings(input: {
   const memoryRule = `//${input.memoryPath.replace(/^\//, '')}`;
   // an engine switch tells the first session to read handoff.md in the agent's own folder: reading it must not wait for a GO
   const handoffRule = `//${join(dirname(input.memoryPath), HANDOFF_FILE).replace(/^\//, '')}`;
+  // what the Director sends as a file (a long text, a Telegram file) is in inbox-files/ next to it: reading it must not wait for a GO either
+  const filesRule = `//${join(dirname(input.memoryPath), TELEGRAM_FILES_DIR).replace(/^\//, '')}/**`;
   const settings: Record<string, unknown> = {
     hooks,
     tui: 'fullscreen',
@@ -174,7 +178,7 @@ export function buildSettings(input: {
     crossSessionInbound: 'refuse',
     permissions: {
       deny: unique([...DENIED_TOOLS, ...(input.rules?.deny ?? [])]),
-      allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, ...(input.rules?.allow ?? [])]),
+      allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, `Read(${filesRule})`, ...(input.rules?.allow ?? [])]),
       ...(input.rules?.ask?.length ? { ask: unique(input.rules.ask) } : {}),
     },
   };
@@ -633,10 +637,11 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const rules = withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), options.subagents?.() ?? { mode: 'allow' as const, limit: 4 });
     const memoryRule = `//${memoryPath.replace(/^\//, '')}`;
     const handoffRule = `//${join(dirname(memoryPath), HANDOFF_FILE).replace(/^\//, '')}`;
+    const filesRule = `//${join(dirname(memoryPath), TELEGRAM_FILES_DIR).replace(/^\//, '')}/**`;
     const off = new Set(options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`));
     return {
       mode: agent.mode,
-      rules: { ...rules, deny: unique([...DENIED_TOOLS, ...(rules.deny ?? [])]), allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, ...(rules.allow ?? [])]) },
+      rules: { ...rules, deny: unique([...DENIED_TOOLS, ...(rules.deny ?? [])]), allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, `Read(${filesRule})`, ...(rules.allow ?? [])]) },
       allowed: ALLOWED_TOOLS.filter((tool) => !off.has(tool)),
       cwd: resolve(cwd),
       home,
@@ -976,5 +981,25 @@ export function createLauncher(options: LauncherOptions): Launcher {
       }
     },
     memoryPath: (name) => join(agentDir(name), MEMORY_FILE),
+    saveLongText: (name, id, text) => {
+      if (!/^m\d+$/.test(id)) throw new Error('invalid message id');
+      const home = agentDir(name);
+      const dir = join(home, TELEGRAM_FILES_DIR);
+      // the agent writes in its own folder (a Clean Room one too): `inbox-files` may be a link it made, so only a real folder inside it (or none, made here) is used, as for Telegram files
+      const there = (() => {
+        try {
+          return lstatSync(dir);
+        } catch {
+          return null;
+        }
+      })();
+      if (there !== null && !there.isDirectory()) throw new Error(`${TELEGRAM_FILES_DIR} is not a folder`);
+      mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+      if (!realpathSync(dir).startsWith(`${realpathSync(home)}${sep}`)) throw new Error(`${TELEGRAM_FILES_DIR} is not inside the agent's folder`);
+      const path = join(dir, `${id}-${LONG_TEXT_NAME}`);
+      // a new file per message id: never over one that is there
+      writeFileSync(path, text.endsWith('\n') ? text : `${text}\n`, { mode: FILE_MODE, flag: 'wx' });
+      return path;
+    },
   };
 }

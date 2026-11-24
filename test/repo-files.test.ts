@@ -412,6 +412,7 @@ describe('scripts/check-pack.mjs file list', () => {
     'package/dist/shared/diff.js',
     'package/dist/shared/layout.js',
     'package/dist/shared/livery.js',
+    'package/dist/shared/longtext.js',
     'package/dist/shared/prices.js',
     'package/dist/shared/features.js',
     'package/dist/shared/registry.js',
@@ -426,7 +427,7 @@ describe('scripts/check-pack.mjs file list', () => {
     expect(listProblems(complete, server)).toStrictEqual([]);
   });
 
-  it.each(['package/LICENSE', 'package/dist/client/THIRD-PARTY-NOTICES.md', 'package/dist/shared/positions.js', 'package/dist/shared/fuel.js', 'package/dist/shared/cron.js', 'package/dist/shared/diff.js', 'package/dist/shared/layout.js', 'package/dist/shared/livery.js', 'package/dist/shared/prices.js', 'package/dist/shared/features.js', 'package/dist/shared/registry.js'])('fails when %s is not packed', (gone) => {
+  it.each(['package/LICENSE', 'package/dist/client/THIRD-PARTY-NOTICES.md', 'package/dist/shared/positions.js', 'package/dist/shared/fuel.js', 'package/dist/shared/cron.js', 'package/dist/shared/diff.js', 'package/dist/shared/layout.js', 'package/dist/shared/livery.js', 'package/dist/shared/longtext.js', 'package/dist/shared/prices.js', 'package/dist/shared/features.js', 'package/dist/shared/registry.js'])('fails when %s is not packed', (gone) => {
     expect(listProblems(complete.filter((entry) => entry !== gone), server)).toStrictEqual([`missing ${gone}`]);
   });
 

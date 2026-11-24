@@ -5,7 +5,7 @@
  */
 import { createHmac } from 'node:crypto';
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -175,6 +175,27 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     await box.pressSequentially('two');
     await expect(box).toHaveValue('one\ntwo');
     await box.fill('');
+  });
+
+  // a paste over a message (20,000 characters) is not cut by the box: it is sent as a file in FLIGHT's folder, and the box says so (shared/longtext.ts)
+  await test.step('a long text goes as a file', async () => {
+    const box = page.locator('.brief-input');
+    if (!(await box.isEnabled({ timeout: 5000 }).catch(() => false))) return;
+    const text = `A log from the other session\n${'2026-11-24 18:30:01 INFO a line of the log\n'.repeat(1000)}`;
+    await box.fill(text);
+    await expect(box).toHaveValue(text);
+    await expect(page.locator('.brief-long')).toContainText('Long text: 43,028 characters') // the box counts the text it sends: trimmed, so without the last newline;
+    await box.press('Enter');
+    await expect(page.locator('.brief-note[role=status]')).toContainText('saved as a file', { timeout: 15_000 });
+    await expect(box).toHaveValue('');
+    const saved = readdirSync(join(home, 'rooms', 'main', 'agents'), { recursive: true, encoding: 'utf8' }).filter((p) => p.endsWith('-long-text.txt'));
+    expect(saved).toHaveLength(1);
+    expect(readFileSync(join(home, 'rooms', 'main', 'agents', saved[0] as string), 'utf8')).toBe(text);
+    // over the most, Send does nothing and the line says why
+    await box.fill('x'.repeat(1_000_001));
+    await expect(page.locator('.brief-long.error')).toContainText('Too long to send: 1,000,001 characters');
+    await box.fill('');
+    expectClean('the long text');
   });
 
   // 7. Flight Rules: the blocks the audit listed, drawn from the built client

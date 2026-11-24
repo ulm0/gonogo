@@ -1,6 +1,7 @@
 import { useId, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
-import { BODY_MAX_CHARS, MISSION_NAME_MAX_CHARS } from '../shared/protocol.js';
+import { MISSION_NAME_MAX_CHARS } from '../shared/protocol.js';
+import { longTextKind, longTextNote } from '../shared/longtext.js';
 import type { AgentView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { draftFromBrief } from './missionsModel.js';
@@ -31,7 +32,10 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
 
   const stopped = boss !== null && boss.state === 'stopped';
   const body = text.trim();
-  const blocked = boss === null || stopped || busy;
+  // a text over a message's size goes as a file (shared/longtext.ts); one over the most a file takes is refused here, before anything is sent
+  const kind = longTextKind(body.length);
+  const long = longTextNote(body.length, 'FLIGHT');
+  const blocked = boss === null || stopped || busy || kind === 'too_long';
 
   async function send(): Promise<void> {
     if (blocked || body === '') return;
@@ -43,7 +47,8 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
         setResult({ text: sent.note ?? 'The message could not be delivered.', tone: 'danger' });
       } else {
         setText('');
-        setResult({ text: briefSentText(sent.note, boss.name, 'FLIGHT'), tone: 'ok' });
+        const sentText = briefSentText(sent.note, boss.name, 'FLIGHT');
+        setResult({ text: kind === 'file' ? `${sentText} The whole text was saved as a file; FLIGHT got its path and the first lines.` : sentText, tone: 'ok' });
       }
     } catch (e) {
       setResult({ text: e instanceof Error ? e.message : String(e), tone: 'danger' });
@@ -74,10 +79,10 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
         className="textarea brief-input"
         rows={1}
         value={text}
-        maxLength={BODY_MAX_CHARS}
         placeholder={phone ? 'Brief FLIGHT' : 'What do you want done?'}
         disabled={boss === null || stopped}
-        aria-describedby={`${id}-note`}
+        aria-describedby={`${id}-note ${id}-long`}
+        aria-invalid={kind === 'too_long' || undefined}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
       />
@@ -89,6 +94,9 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
           Make this a mission
         </button>
       )}
+      <p id={`${id}-long`} className={long?.tone === 'danger' ? 'error brief-note brief-long' : 'hint brief-note brief-long'}>
+        {long?.text}
+      </p>
       <p id={`${id}-note`} className={note?.tone === 'danger' ? 'error brief-note' : 'hint brief-note'} role="status">
         {note?.text}
       </p>

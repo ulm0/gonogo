@@ -7,6 +7,7 @@
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { LONG_TEXT_MAX_CHARS } from '../src/shared/longtext.js';
 import { classifyInput, createHub, describeDoing, describePermission, directorLine, HubError, pointerText } from '../src/server/hub.js';
 import {
   ACTIVITY_HUB_MAX,
@@ -7679,5 +7680,66 @@ describe('Engine switch: an agent moves to another engine (docs/engine-switch-sp
     await h.hub.stop('ana');
     await expectHubReject(h.hub.edit('ana', { provider: 'gemini' }), 'bad_request', 'bypassPermissions on Gemini CLI needs confirmBypass: true', 'confirmBypass');
     expect(await h.hub.edit('ana', { provider: 'gemini', confirmBypass: true })).toMatchObject({ provider: 'gemini', mode: 'bypassPermissions' });
+  });
+});
+
+describe('long text from the Director (shared/longtext.ts)', () => {
+  const withFiles = async (): Promise<{ h: Harness; saved: Array<[string, string, string]> }> => {
+    const h = await withAna();
+    const saved: Array<[string, string, string]> = [];
+    h.io.saveLongText = (agent, id, text) => {
+      saved.push([agent, id, text]);
+      return `/home/agents/${agent}/inbox-files/${id}-long-text.txt`;
+    };
+    return { h, saved };
+  };
+
+  it('a text over a message is saved to a file in the recipient folder, and the message carries the path and the first lines', async () => {
+    const { h, saved } = await withFiles();
+    const text = `first line\n${'x'.repeat(BODY_MAX_CHARS + 500)}`;
+    const sent = h.send('user', 'ana', text);
+    expect(sent.ok).toBe(true);
+    expect(saved).toEqual([['ana', sent.id, text]]);
+    const body = h.msg(sent.id).body;
+    expect(body.length).toBeLessThan(BODY_MAX_CHARS);
+    expect(body).toContain(`/home/agents/ana/inbox-files/${sent.id}-long-text.txt`);
+    expect(body).toContain('first line');
+    expect(body).toContain('20,511 characters, 2 lines');
+  });
+
+  it('the boss gets it under its own name; a text that fits is never saved', async () => {
+    const { h, saved } = await withFiles();
+    h.send('user', 'ana', 'x'.repeat(BODY_MAX_CHARS));
+    expect(saved).toEqual([]);
+    const sent = h.send('user', 'boss', 'y'.repeat(BODY_MAX_CHARS + 1));
+    expect(saved[0]?.[0]).toBe(h.msg(sent.id).to);
+  });
+
+  it('an agent cannot send one (it writes a file itself), and nobody can without saveLongText or over the most', async () => {
+    const { h, saved } = await withFiles();
+    expectHubError(() => h.send('user', 'ana', 'x'.repeat(LONG_TEXT_MAX_CHARS + 1)), 'bad_request', /at most 1000000 characters/, 'body');
+    expectHubError(() => h.send('ana', 'user', 'x'.repeat(BODY_MAX_CHARS + 1)), 'bad_request', /at most 20000 characters/, 'body');
+    expect(saved).toEqual([]);
+    delete h.io.saveLongText;
+    expectHubError(() => h.send('user', 'ana', 'x'.repeat(BODY_MAX_CHARS + 1)), 'bad_request', /at most 20000 characters/, 'body');
+  });
+
+  it('a file that cannot be written is an error before anything is sent', async () => {
+    const { h } = await withFiles();
+    h.io.saveLongText = () => {
+      throw new Error('disk full');
+    };
+    expectHubError(() => h.send('user', 'ana', 'x'.repeat(BODY_MAX_CHARS + 1)), 'internal', /could not be saved as a file: disk full/, 'body');
+    expect(h.view('ana').queued).toBe(0);
+  });
+
+  it('from the browser route, what is typed as his words is the short message, not the whole text', async () => {
+    const { h } = await withFiles();
+    const sent = h.hub.sendFromDirector({ to: 'ana', subject: '', body: `please read\n${'z'.repeat(BODY_MAX_CHARS * 2)}` }, 'web');
+    await h.advance(DELIVERY_COALESCE_MS);
+    const text = h.typed[0]?.text ?? '';
+    expect(text).toContain('[Director via web] Long text from the Director');
+    expect(text.length).toBeLessThan(2000);
+    expect(h.msg(sent.id).body).toContain('please read');
   });
 });
