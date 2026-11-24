@@ -1,1 +1,0 @@
-- **opencode never falls back to a free model on its own.** An opencode agent runs opencode's free models only when you pick one (`opencode/...`). With another model whose provider has no key for the agent, it now asks you (needs you, with what to do) instead of quietly running on a free third-party model. Flight Rules says when a saved opencode default lacks `provider/`.
