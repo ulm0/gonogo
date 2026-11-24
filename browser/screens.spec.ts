@@ -271,7 +271,7 @@ async function dockedChip(page: Page, group: string): Promise<void> {
   await view(page, group, 'docked chip: opens Docking in Flight Rules', () => page.locator('.dock-chip').click({ timeout: 3000 }), true);
 }
 
-/** COMMS "Needs you": the state frame is given two questions to the Director (a go/no-go and a plain question), a hire request, and a handoff waits for GO, so that the strip has all four kinds. */
+/** COMMS "Needs you": the state frame is given two questions to the Director (a go/no-go and a plain question), a hire request, a console that asks for a go, and a handoff waits for GO, so that the strip has all five kinds. */
 async function needsYou(page: Page, group: string): Promise<void> {
   const message = (id: string, from: string, subject: string, body: string): Record<string, unknown> => ({ type: 'message', id, at: Date.now() - 600_000, from, subject, body, truncated: false, inReplyTo: null, read: false, archived: false });
   const items = [
@@ -285,10 +285,12 @@ async function needsYou(page: Page, group: string): Promise<void> {
     server.onMessage((message) => {
       if (typeof message === 'string') {
         try {
-          const frame = JSON.parse(message) as { t?: string; state?: { downlink?: { unread: number; items: unknown[] }; relief?: { requests: unknown[] } } };
+          const frame = JSON.parse(message) as { t?: string; state?: { downlink?: { unread: number; items: unknown[] }; relief?: { requests: unknown[] }; agents?: Array<Record<string, unknown>> } };
           if (frame.t === 'state' && frame.state !== undefined) {
             frame.state.downlink = { unread: items.length, items };
             frame.state.relief = { requests: [relief] };
+            // a console that asks for a go (a permission prompt): ben
+            frame.state.agents = (frame.state.agents ?? []).map((a) => (a.name === 'ben' ? { ...a, state: 'needs_you', needsKind: 'permission', needsReason: 'Run: git push origin main', needsSince: Date.now() - 120_000, transition: null } : a));
           }
           ws.send(JSON.stringify(frame));
           return;

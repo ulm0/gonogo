@@ -1,5 +1,5 @@
 /**
- * COMMS, above the tabs: everything that waits on the Director, each with its answer on the spot: a hire request, a handoff FLIGHT asks to send, and a message that asks something
+ * COMMS, above the tabs: everything that waits on the Director, each with its answer on the spot: a console that asks for a go or a permission, a hire request, a handoff FLIGHT asks to send, and a message that asks something
  * (GO or NO-GO keys for a go/no-go, a reply box for a question). An answered one leaves the list. Nothing is moved: the same requests are still in the room, answered by the same keys.
  */
 import { useId, useMemo, useState } from 'react';
@@ -10,8 +10,9 @@ import * as api from './api.js';
 import { HandoffNeed } from './HandoffAsks.js';
 import { useHandoffAsks } from './linksData.js';
 import { replyRequest, subjectOf, legendOf as nameOf } from './loop.js';
-import { asksOf, needsCount, needsTitle, wantsGoNoGo } from './needsYou.js';
-import { ReliefNeed, useSeats } from './RoomView.js';
+import { asksOf, needsCount, needsTitle, wantsGoNoGo } from './needsModel.js';
+import { needingYou } from './room.js';
+import { Need, ReliefNeed, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { useStore } from './store.js';
 import { legendOf } from './wall.js';
 import { useRun } from './WallView.js';
@@ -69,9 +70,11 @@ export function NeedsYou(): ReactElement | null {
   const relief = useStore((s) => s.relief);
   const handoffs = useHandoffAsks();
   const { legends } = useSeats();
+  const phone = usePhone();
+  const consoles = needingYou(useAgentList());
   const [failed, setFailed] = useState<string | null>(null);
   const asks = useMemo(() => asksOf(items), [items]);
-  const n = needsCount(asks.length, relief.length, handoffs.length);
+  const n = needsCount(consoles.length, asks.length, relief.length, handoffs.length);
   if (n === 0 && failed === null) return null;
   return (
     <section className="needs-you" aria-label={needsTitle(n)}>
@@ -84,6 +87,9 @@ export function NeedsYou(): ReactElement | null {
           </button>
         </section>
       )}
+      {consoles.map((agent) => (
+        <Need key={agent.name} agent={agent} legend={legendOf(legends, agent.name)} phone={phone} />
+      ))}
       {relief.map((request) => (
         <ReliefNeed key={request.id} request={request} legend={legendOf(legends, request.by)} onFail={setFailed} />
       ))}

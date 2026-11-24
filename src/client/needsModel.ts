@@ -18,7 +18,7 @@ export const isAsk = (item: DownlinkItem): item is DownlinkMessage => item.type 
 /** The messages that wait for an answer, the one that has waited longest first (an old question is the one forgotten). */
 export const asksOf = (items: readonly DownlinkItem[]): DownlinkMessage[] => items.filter(isAsk).sort((a, b) => a.at - b.at);
 
-/** What the strip counts: messages, hire requests and handoffs. */
-export const needsCount = (asks: number, relief: number, handoffs: number): number => asks + relief + handoffs;
+/** What the strip counts: consoles that wait on you (a permission or a go), messages, hire requests and handoffs. */
+export const needsCount = (consoles: number, asks: number, relief: number, handoffs: number): number => consoles + asks + relief + handoffs;
 
 export const needsTitle = (n: number): string => (n === 1 ? 'Needs you: 1 answer' : `Needs you: ${n} answers`);

@@ -257,7 +257,7 @@ function RedlineButtons({ agent, size }: { agent: AgentView; size: 'row' | 'phon
   );
 }
 
-function Need({ agent, legend, phone }: { agent: AgentView; legend: string; phone: boolean }): ReactElement {
+export function Need({ agent, legend, phone }: { agent: AgentView; legend: string; phone: boolean }): ReactElement {
   const now = useNow();
   const ask = asksForGo(agent);
   return (
