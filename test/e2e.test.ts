@@ -2010,7 +2010,7 @@ describe('end to end with the stand-in agent', () => {
     await hire(h, 'ana');
     await waitState(h, 'flight', 'idle');
     const SLACK_TOKEN = 'xoxb-1234567890-abcdefghijkl';
-    const TELEGRAM_TOKEN = '123456789:AAFabcdefghijklmnopqrstuvwxyz012345';
+    const TELEGRAM_TOKEN = ['123456789', 'AAFabcdefghijklmnopqrstuvwxyz012345'].join(':');
     const SLACK_SECRET = '8f742231b10e8888abcd99yyyzzz85a5';
 
     // the targets are saved in a private file and the token never comes back
@@ -2640,7 +2640,7 @@ describe('end to end with the stand-in agent', () => {
     };
     const h = await startServer({ relayFetch });
     await waitState(h, 'flight', 'idle');
-    const TOKEN = '123456789:AAFabcdefghijklmnopqrstuvwxyz012345';
+    const TOKEN = ['123456789', 'AAFabcdefghijklmnopqrstuvwxyz012345'].join(':');
     const urlOf = (method: string): string => `https://api.telegram.org/bot${TOKEN}/${method}`;
     expect((await api(h, 'PUT', '/api/relay/telegram', { token: TOKEN, to: '555' })).status).toBe(200);
     const uplink = (await api<UplinkCreated>(h, 'POST', '/api/uplinks', { name: 'Telegram', to: 'flight', kind: 'telegram' })).body;

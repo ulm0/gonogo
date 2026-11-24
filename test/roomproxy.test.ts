@@ -224,7 +224,7 @@ describe('rooms proxy: HTTP', () => {
   it('main answers the same at / and at /r/main/, and the room sees no Authorization at either', async () => {
     const one = await (await get('/api/state', director)).text();
     const two = await (await get('/r/main/api/state', director)).text();
-    expect(one.replace('GET /api', 'GET /api')).toBe('room main GET /api/state');
+    expect(one).toBe('room main GET /api/state');
     expect(two).toBe('room main GET /api/state');
     for (const seen of main.seen) expect(seen.headers.authorization).toBeUndefined();
     expect(JSON.stringify(main.seen)).not.toContain(DIRECTOR);

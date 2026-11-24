@@ -338,7 +338,7 @@ describe('moving room main into rooms/main', () => {
     const lock = join(root, 'server.lock');
     writeFileSync(lock, `${process.ppid}\n`); // a live pid, no stamp: judged by its beat
     // the check waits on the file with a blocking sleep, so the holder must be another process
-    const holder = spawn(process.execPath, ['-e', `setInterval(() => require('fs').utimesSync(${JSON.stringify(lock)}, new Date(), new Date()), 10)`], { stdio: 'ignore' });
+    const holder = spawn(process.execPath, ['-e', "setInterval(() => require('fs').utimesSync(process.argv[1], new Date(), new Date()), 10)", lock], { stdio: 'ignore' });
     // wait until the holder is running and has touched the lock, not for a fixed time: node can take longer than that to start under load
     const first = statSync(lock).mtimeMs;
     for (let i = 0; i < 300 && statSync(lock).mtimeMs === first; i += 1) await new Promise((r) => setTimeout(r, 50));

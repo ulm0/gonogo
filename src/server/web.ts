@@ -2023,7 +2023,7 @@ export function createWebServer(options: WebOptions): WebServer {
         allow: ['POST'],
         run: async (req, res) => {
           const body = await jsonObject(req, res);
-          if (body) sendJson(res, 200, await downlink[action](body));
+          if (body) sendJson(res, 200, await (action === 'read' ? downlink.read(body) : downlink.archive(body)));
         },
       };
     }

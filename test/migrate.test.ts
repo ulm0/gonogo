@@ -164,7 +164,7 @@ describe('the formats of this gonogo', () => {
     for (const { file } of FORMATS) {
       const dir = mkdtempSync(join(tmpdir(), 'gonogo-migrate-real-'));
       try {
-        const path = file.endsWith('/*.json') ? join(dir, file.replace('*', 'x')) : join(dir, file);
+        const path = file.endsWith('/*.json') ? join(dir, file.replaceAll('*', 'x')) : join(dir, file);
         mkdirSync(join(path, '..'), { recursive: true });
         writeFileSync(path, JSON.stringify({ version: 2 }));
         expect(() => migrateHome(dir, log)).toThrowError(/was saved by a newer gonogo \(format version 2; this one reads up to 1\)/);

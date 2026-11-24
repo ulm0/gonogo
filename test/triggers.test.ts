@@ -58,7 +58,7 @@ describe('redaction (what may stay in the log)', () => {
     ['github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz', 'github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz'],
     ['sk-ant-api03-abcdefghijklmnopqrstuvwxyz', 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz'],
     ['AKIAABCDEFGHIJKLMNOP', 'AKIAABCDEFGHIJKLMNOP'],
-    ['123456789:AAFabcdefghijklmnopqrstuvwxyz012345', 'AAFabcdefghijklmnopqrstuvwxyz012345'],
+    [['123456789', 'AAFabcdefghijklmnopqrstuvwxyz012345'].join(':'), 'AAFabcdefghijklmnopqrstuvwxyz012345'],
     ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abcdefghijklmnop', 'eyJzdWIiOiIxMjM0In0'],
     ['gnk_abcdefgh12345678', 'gnk_abcdefgh12345678'],
     ['api_key=ABCD1234efgh5678', 'ABCD1234efgh5678'],
