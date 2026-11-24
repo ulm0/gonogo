@@ -135,6 +135,7 @@ interface Script {
   stopExits: boolean;
   renameGate: Gate | null;
   renameError: string | null;
+  archiveError: string | null;
   forgetError: string | null;
   missingDirs: Set<string>;
   /** What the fake Clean Room check answers: null is a working Docker and a repository, text is the reason it is not. */
@@ -161,6 +162,7 @@ interface Harness {
   cleanRoomFlavorsAsked: string[];
   stops: Array<{ name: string; generation: number }>;
   renames: Array<[string, string]>;
+  archives: Array<{ name: string; keys: unknown; now: number }>;
   /** Names the hub asked the terminal host to forget, in order. */
   forgotten: string[];
   warnings: string[];
@@ -231,6 +233,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   const cleanRoomFlavorsAsked: string[] = [];
   const stops: Array<{ name: string; generation: number }> = [];
   const renames: Array<[string, string]> = [];
+  const archives: Array<{ name: string; keys: unknown; now: number }> = [];
   const forgotten: string[] = [];
   const warnings: string[] = [];
   const screens = new Map<string, ScreenProbe | null>();
@@ -249,6 +252,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     stopExits: true,
     renameGate: null,
     renameError: null,
+    archiveError: null,
     forgetError: null,
     missingDirs: new Set(),
     cleanRoomProblem: null,
@@ -312,6 +316,11 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     },
     loadHistory: async (limit) => history.slice(-limit).map((record) => ({ ...record })),
     logMessage: (record) => void logged.push({ ...record }),
+    archiveAgentFiles: async (name, record, now) => {
+      archives.push({ name, keys: record.keys, now });
+      if (script.archiveError !== null) throw new Error(script.archiveError);
+      return { archived: `${name}.removed-${now}` };
+    },
     renameAgentFiles: async (oldName, newName) => {
       renames.push([oldName, newName]);
       const hold = takeGate('renameGate');
@@ -415,6 +424,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     cleanRoomFlavorsAsked,
     stops,
     renames,
+    archives,
     forgotten,
     warnings,
     now: () => now,
@@ -6939,6 +6949,44 @@ describe('Hub.fireAgent: the boss stops an agent it hired by rule', () => {
     const h = await started();
     await h.hire('ana');
     await expectHubReject(h.hub.edit('ana', { protected: 'yes' } as never), 'bad_request', /protected must be true or false/, 'protected');
+  });
+});
+
+describe('Hub.retireAgent: the boss removes an agent', () => {
+  it('archives the folder with a record (no keys), removes the roster entry and the agent, and leaves the Director\'s remove alone', async () => {
+    const h = await started();
+    await h.hire('ana');
+    const out = await h.hub.retireAgent('ana', 'flight');
+    expect(out.archived).toMatch(/^ana\.removed-\d+$/);
+    expect(h.archives).toHaveLength(1);
+    expect(h.hub.views().some((v) => v.name === 'ana')).toBe(false);
+    expect(h.saves.at(-1)?.agents.some((r) => r.name === 'ana')).toBe(false);
+    // the name is free again, with no leftover of the old one
+    await h.hire('ana');
+    expect(h.hub.views().some((v) => v.name === 'ana')).toBe(true);
+  });
+
+  it('refuses the boss, a protected one, one with keys of its own, one at a dialog or with mail; a failed archive leaves the agent in place', async () => {
+    const h = await started();
+    await h.hire('ana');
+    await h.hire('ben');
+    await expectHubReject(h.hub.retireAgent('flight', 'flight'), 'forbidden', /the boss cannot be removed/);
+    await h.hub.edit('ana', { protected: true });
+    await expectHubReject(h.hub.retireAgent('ana', 'flight'), 'forbidden', /protected/);
+    h.work('ben');
+    h.hook('ben', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+    await expectHubReject(h.hub.retireAgent('ben', 'flight'), 'conflict', /waits for the Director/);
+    await h.hire('cy');
+    h.script.archiveError = 'disk full';
+    await expectHubReject(h.hub.retireAgent('cy', 'flight'), 'conflict', /could not archive the files of cy: disk full/);
+    expect(h.hub.views().some((v) => v.name === 'cy')).toBe(true);
+    h.script.archiveError = null;
+    await expectHubReject(h.hub.retireAgent('ghost', 'flight'), 'not_found', 'unknown agent');
+  });
+
+  it('a name can never hold a dot, so an archive folder (name.removed-ms) cannot be a live agent', async () => {
+    const h = await started();
+    await expectHubReject(h.hub.hire({ name: 'ana.removed-1', role: 'r', dir: '/work/x', mode: 'default' }), 'bad_request', undefined, 'name');
   });
 });
 

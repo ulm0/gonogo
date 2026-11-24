@@ -278,6 +278,10 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       rec('fireAgent', name, by);
       return agentView(name);
     },
+    retireAgent: async (name, by) => {
+      rec('retireAgent', name, by);
+      return { archived: `${name}.removed-1` };
+    },
     refreshLimits: () => rec('refreshLimits'),
     restart: async (name) => {
       rec('restart', name);
@@ -2504,7 +2508,7 @@ describe('relief', () => {
         },
         fire: async (by, input) => {
           calls.push(['fire', by, input]);
-          return { name: 'g1', released: 0, note: 'ok' };
+          return { name: 'g1', released: 0, removed: false, note: 'ok' };
         },
         stopCrew: async () => {
           calls.push(['stopCrew']);
@@ -6243,6 +6247,7 @@ function installFakes(options: { stopAllGate?: Promise<void>; hub?: Partial<Hub>
   const launcherCalls: Call[] = [];
   const launcher: Launcher = {
     keepTokens: () => undefined,
+    archiveAgentFiles: async (name) => ({ archived: `${name}.removed-1` }),
     writeHandoff: async (from, to) => {
       launcherCalls.push({ fn: 'writeHandoff', args: [from.name, to.name] });
     },
@@ -7720,7 +7725,7 @@ describe('seams with the real hub, launcher and terminal host', () => {
 
     const home = tmpDir();
     const launcher = launcherModule.createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:1', seed: false, env: {}, log: nullLogger });
-    expect(members(launcher)).toEqual(['keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke', 'writeHandoff']);
+    expect(members(launcher)).toEqual(['archiveAgentFiles', 'keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke', 'writeHandoff']);
     expect(launcher.resolveToken('f'.repeat(64))).toBeNull();
 
     const io = {

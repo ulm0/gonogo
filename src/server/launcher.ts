@@ -904,8 +904,29 @@ export function createLauncher(options: LauncherOptions): Launcher {
     await rename(from, to);
   };
 
+  /** The boss's removal (hub.retireAgent): the agent's folder is renamed, with a record of the agent in it, and never deleted. */
+  const archiveAgentFiles = async (name: string, record: AgentRecord, now: number): Promise<{ archived: string }> => {
+    const from = agentDir(name);
+    const archived = `${name}.removed-${now}`;
+    const to = join(homeDir, AGENTS_DIR, archived);
+    if (await lstat(to).then(() => true, () => false)) throw new Error('an archive of that name exists already');
+    if (await lstat(from).then(() => true, () => false)) await rename(from, to);
+    else await mkdir(to, { recursive: true, mode: DIR_MODE });
+    // what the Director needs to hire it again; never the keys, which are secrets that are not kept anywhere else
+    const { keys: _keys, ...kept } = record;
+    // 'wx': an agent in a Clean Room can write its own folder, so removed-record.json may be a link planted to a file of the room; O_EXCL refuses any existing entry, links included
+    try {
+      await writeFile(join(to, 'removed-record.json'), JSON.stringify({ version: 1, removedAt: now, agent: kept }, null, 2), { mode: FILE_MODE, flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('removed-record.json exists already in its folder: only the Director removes this agent');
+      throw error;
+    }
+    return { archived };
+  };
+
   return {
     prepareStart,
+    archiveAgentFiles,
     resolveToken: (token) => (typeof token === 'string' ? (byToken.get(hashOf(token)) ?? null) : null),
     keepTokens: (live) => {
       for (const [name, v] of [...byAgent.entries()]) {

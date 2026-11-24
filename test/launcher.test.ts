@@ -1536,6 +1536,40 @@ describe('seed mode', () => {
   });
 });
 
+describe('archiveAgentFiles (the boss removes an agent)', () => {
+  it('renames the folder, memory included, and writes the record without its keys; never deletes', async () => {
+    const l = launcher();
+    await l.prepareStart(agent(), START);
+    await writeFile(agentFile('ana', 'memory.md'), 'kept notes\n');
+    const { archived } = await l.archiveAgentFiles('ana', { ...agent(), keys: { SECRET_NAME: 5 } }, 1700);
+    expect(archived).toBe('ana.removed-1700');
+    expect(await exists(join(home, 'agents', 'ana'))).toBe(false);
+    expect(await text(join(home, 'agents', archived, 'memory.md'))).toBe('kept notes\n');
+    const record = JSON.parse(await text(join(home, 'agents', archived, 'removed-record.json')));
+    expect(record).toMatchObject({ version: 1, removedAt: 1700, agent: { name: 'ana', role: expect.any(String) } });
+    expect(JSON.stringify(record)).not.toContain('SECRET_NAME');
+    // a second archive of the same name and millisecond is refused, not merged
+    await l.prepareStart(agent(), START);
+    await expect(l.archiveAgentFiles('ana', agent(), 1700)).rejects.toThrow(/exists already/);
+  });
+
+  it('does not follow a link planted at removed-record.json: the removal is refused and the target is untouched', async () => {
+    const l = launcher();
+    await l.prepareStart(agent(), START);
+    const target = join(home, 'relief.json');
+    await writeFile(target, 'precious');
+    await symlink(target, agentFile('ana', 'removed-record.json'));
+    await expect(l.archiveAgentFiles('ana', agent(), 77)).rejects.toThrow(/exists already in its folder/);
+    expect(await text(target)).toBe('precious');
+  });
+
+  it('an agent that never started gets an archive with its record all the same', async () => {
+    const l = launcher();
+    const { archived } = await l.archiveAgentFiles('ana', agent(), 9);
+    expect(JSON.parse(await text(join(home, 'agents', archived, 'removed-record.json'))).agent.name).toBe('ana');
+  });
+});
+
 describe('renameAgentFiles and memoryPath', () => {
   it('moves the whole agent directory, memory included', async () => {
     const l = launcher();

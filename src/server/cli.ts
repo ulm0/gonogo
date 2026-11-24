@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import net from 'node:net';
 import { stat } from 'node:fs/promises';
 import { homedir, hostname, networkInterfaces, userInfo } from 'node:os';
@@ -81,6 +81,7 @@ import { createPhone } from './phone.js';
 import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
 import { createReliefRules } from './reliefrules.js';
+import { createCrewLedger } from './crewledger.js';
 import { createMassBudget } from './massbudget.js';
 import { createAnchorChecker, knowledgeLine } from './anchors.js';
 import { createMissionLog } from './missionlog.js';
@@ -924,7 +925,6 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     /** Stops what Propellant says is over its limit or budget: a room limit every Claude agent, a mission's budget the agents working on it, an agent's own only that agent. */
     const linkCapTold = new Set<string>();
     const crewCapTold = new Set<string>();
-    const day = (): string => new Date().toISOString().slice(0, 10);
     const enforce = (name: string): void => {
       const over = propellant.over(name);
       if (over === null || !hub) return;
@@ -954,8 +954,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
             log.debug(`could not hold ${n}`, e);
           }
         }
-        if (!crewCapTold.has(day())) {
-          crewCapTold.add(day());
+        // one line per hold (this crew under this ceiling), not per day: the spend window is a rolling one
+        const holdKey = `${(over.names ?? []).join(',')}|${reliefRules.view().crewBudgetUsd ?? ''}`;
+        if (!crewCapTold.has(holdKey)) {
+          crewCapTold.add(holdKey);
           tell('redline', `${over.reason}: the crew is held and no hire by rule is made; raise the ceiling in Flight Rules or resume the agents`);
         }
         return;
@@ -1010,6 +1012,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         terminalHost.rename(oldName, newName);
       },
       writeHandoff: (from, to) => launcher.writeHandoff(from, to),
+      archiveAgentFiles: async (name, record, now) => {
+        const done = await launcher.archiveAgentFiles(name, record, now);
+        // the mirror of its console goes with the name: a later agent of that name starts clean
+        terminalHost.forget?.(name);
+        return done;
+      },
       keys: clearance,
       spawn: async (req) => {
         const prepared = await launcher.prepareStart(req.agent, { generation: req.generation, flag: req.flag });
@@ -1313,6 +1321,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the rules of the boss's hires (docs/hire-fire-spec.md): off by default; the file is checked against the last change this process wrote, on every decision and on a timer
     const reliefRules = createReliefRules({ dir: home.dir, log: log.child('relief rules'), budgetEnforced: true, alarm: (text) => tell('relief', text) });
     await reliefRules.load();
+    const crewLedger = createCrewLedger({ dir: home.dir, now: () => Date.now(), log: log.child('crew ledger') });
+    await crewLedger.load();
     // the rules come back from disk: when they say automatic hires are ON, the Director is told at once (a file nobody of ours wrote would otherwise switch it on silently)
     if (reliefRules.view().autoApprove) {
       const r = reliefRules.view();
@@ -1321,14 +1331,25 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // Propellant holds the boss-hired crew at its daily ceiling (relief.json crewBudgetUsd); with automatic approval off there is no ceiling
     crewBudget = () => {
       const rules = reliefRules.view();
-      if (!rules.autoApprove || rules.crewBudgetUsd === null || !hub) return null;
-      return { names: hub.views().filter((v) => v.hiredBy === 'boss').map((v) => v.name), budgetUsd: rules.crewBudgetUsd };
+      // whenever a ceiling is set and the crew is not empty: turning automatic hires off does not lift the ceiling of the agents already hired
+      if (rules.crewBudgetUsd === null || !hub) return null;
+      // the live crew and the ones hired in the last 24 hours: removing an agent does not give its dollars back
+      const names = [...new Set([...hub.views().filter((v) => v.hiredBy === 'boss').map((v) => v.name), ...crewLedger.recentNames()])];
+      return names.length === 0 ? null : { names, budgetUsd: rules.crewBudgetUsd };
     };
     const reliefRulesTimer = setInterval(() => void reliefRules.check().catch((error: unknown) => log.error('relief rules check failed', error)), 30_000);
     reliefRulesTimer.unref();
     const relief = createRelief({
       hub: hubInstance,
       rules: reliefRules,
+      ledger: crewLedger,
+      nameRetired: (name) => {
+        try {
+          return readdirSync(join(home.dir, 'agents')).some((entry) => entry.startsWith(`${name}.removed-`));
+        } catch {
+          return false;
+        }
+      },
       crewSpentToday: (names) => names.reduce((sum, n) => sum + (propellant.view().cost.agents[n]?.usd.day ?? 0), 0),
       tasks: tasks,
       voteWaitsFor: (name) => {
@@ -1685,6 +1706,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         clearInterval(reliefRulesTimer);
         relief.close();
         await reliefRules.close();
+        await crewLedger.close();
       });
       await step('telegram polling close', async () => telegramPoll?.stop());
       await step('relay close', () => relay.close());
