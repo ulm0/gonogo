@@ -4,17 +4,17 @@
 import '../landing/landing.css';
 
 const ENGINES = [
-  { name: 'Claude Code', bin: 'claude', checked: 'real runs' },
-  { name: 'Gemini CLI', bin: 'gemini', checked: 'gemini --help and source' },
-  { name: 'Codex', bin: 'codex', checked: 'vendor docs only' },
-  { name: 'opencode', bin: 'opencode', checked: 'vendor docs only' },
-  { name: 'Kimi CLI', bin: 'kimi', checked: 'vendor docs only' },
-  { name: 'Copilot CLI', bin: 'copilot', checked: 'vendor docs only' },
-  { name: 'pi', bin: 'pi', checked: 'pi --help' },
-  { name: 'Qwen Code', bin: 'qwen', checked: 'vendor docs only' },
-  { name: 'Grok CLI', bin: 'grok', checked: 'vendor docs only' },
-  { name: 'Crush', bin: 'crush', checked: 'vendor docs only' },
-  { name: 'Cursor Agent', bin: 'cursor-agent', checked: 'vendor docs only' },
+  { name: 'Claude Code', bin: 'claude', checked: 'tested: real runs' },
+  { name: 'Gemini CLI', bin: 'gemini', checked: 'not run: gemini --help and source' },
+  { name: 'Codex', bin: 'codex', checked: 'not run: vendor docs only' },
+  { name: 'opencode', bin: 'opencode', checked: 'partly: real room' },
+  { name: 'Kimi CLI', bin: 'kimi', checked: 'not run: vendor docs only' },
+  { name: 'Copilot CLI', bin: 'copilot', checked: 'not run: vendor docs only' },
+  { name: 'pi', bin: 'pi', checked: 'partly: real room' },
+  { name: 'Qwen Code', bin: 'qwen', checked: 'not run: vendor docs only' },
+  { name: 'Grok CLI', bin: 'grok', checked: 'not run: vendor docs only' },
+  { name: 'Crush', bin: 'crush', checked: 'not run: vendor docs only' },
+  { name: 'Cursor Agent', bin: 'cursor-agent', checked: 'not run: vendor docs only' },
 ];
 </script>
 
@@ -25,7 +25,7 @@ const ENGINES = [
       <li v-for="e in ENGINES" :key="e.bin" class="module">
         <span class="legend">{{ e.name }}</span>
         <span class="eb-bin">{{ e.bin }}</span>
-        <span class="chip" :data-tone="e.checked === 'real runs' ? 'go' : 'quiet'">{{ e.checked }}</span>
+        <span class="chip" :data-tone="e.checked.startsWith('tested') ? 'go' : 'quiet'">{{ e.checked }}</span>
       </li>
     </ul>
   </div>

@@ -4,17 +4,22 @@
 
 The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PATH` come first; the rest say `not installed`. Sign in to each CLI yourself. To move a console to another engine later, see [Engine switch](./engine-switch.md). Design and limits: [`docs/engine-bay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/engine-bay-spec.md).
 
-| Engine | Program | State from | Mail and votes | Role | Permission modes | How it was checked |
+| Engine | Program | State from | Mail and votes | Role | Permission modes | Tested |
 |---|---|---|---|---|---|---|
-| Claude Code | `claude` | hooks, title, screen | yes | system prompt | yes | real runs |
-| Gemini CLI (legacy) | `gemini` | hooks | yes | first prompt | `default`, `auto_edit`, `yolo` | `gemini --help` and source (0.59.0); not run with a model |
-| Antigravity CLI | `agy` | output | no | first prompt | `accept-edits`, `auto`, `--dangerously-skip-permissions` | `agy --help` (1.5.11); not run signed in |
-| Codex | `codex` | output | yes | first prompt | default, `--full-auto`, `--dangerously-bypass-approvals-and-sandbox` | vendor docs only |
-| opencode | `opencode` | hooks (gonogo's plugin) | yes | instructions file | yes (gonogo's tool gate) | real runs (2.4.1) |
-| Kimi CLI | `kimi` | output | yes | no | no | vendor docs only |
-| Copilot CLI | `copilot` | output | yes | no | no | vendor docs only |
-| pi | `pi` | hooks (gonogo's extension) | yes | system prompt | yes (gonogo's tool gate) | real runs (1.6.0) |
-| Qwen Code, Grok CLI, Crush, Cursor Agent | `qwen`, `grok`, `crush`, `cursor-agent` | output | no | no | no | vendor docs only |
+| Claude Code | `claude` | hooks, title, screen | yes | system prompt | yes | [tested] real runs; the whole room runs on Claude Code (2.1.325) |
+| Gemini CLI (legacy) | `gemini` | hooks | yes | first prompt | `default`, `auto_edit`, `yolo` | [not run] `gemini --help` and source (0.59.0); not run with a model |
+| Antigravity CLI | `agy` | output | no | first prompt | `accept-edits`, `auto`, `--dangerously-skip-permissions` | [not run] `agy --help` (1.5.11); not run signed in |
+| Codex | `codex` | output | yes | first prompt | default, `--full-auto`, `--dangerously-bypass-approvals-and-sandbox` | [not run] vendor docs only |
+| opencode | `opencode` | hooks (gonogo's plugin) | yes | instructions file | yes (gonogo's tool gate) | [partly] opencode 2.4.1, real room, 2026-11-24 (gonogo 0.19.0): see below |
+| Kimi CLI | `kimi` | output | yes | no | no | [not run] vendor docs only |
+| Copilot CLI | `copilot` | output | yes | no | no | [not run] vendor docs only |
+| pi | `pi` | hooks (gonogo's extension) | yes | system prompt | yes (gonogo's tool gate) | [partly] pi 1.6.0, real room, 2026-11-24 (gonogo 0.19.0): see below |
+| Qwen Code, Grok CLI, Crush, Cursor Agent | `qwen`, `grok`, `crush`, `cursor-agent` | output | no | no | no | [not run] vendor docs only |
+
+**Tested:** [tested] in a real room and works; [partly] (what is said); [not run] with a model (its `--help` or the vendor docs only). Nothing is marked [tested] without a run in the room that builds gonogo.
+
+- [partly] **pi 1.6.0 and opencode 2.4.1** ran as agents on 2026-11-24 (gonogo 0.19.0; pi on `claude-opus-5-5`, opencode on `big-pickle`). **Worked:** the gonogo tools, mail (read within the turn), editing the memory file, a T-minus vote counted, an engine switch that kept the context (Claude Code to pi; opencode to pi and back), opencode's own subagent (`task` tool) returning output, text from the Brief box reaching pi, and a model change made inside opencode's own UI to `anthropic/claude-opus-5-5` (not a hire with a model: see the bug below). **Not seen:** mail handed over at the end of a turn (the pointer), the GO / NO-GO permission gate (the room allows Bash), Clean Room, pi's plan quota, Remote Control. **Known bug:** opencode 2.4.1 has no `--model` flag, so an opencode agent hired *with a model* exits at start: hire it without one.
+- Cost by engine, provider and model: [tested] for opencode (a real run), [tests only] for pi and Claude Code.
 
 <AgyMock class="doc-mock" />
 
@@ -26,27 +31,27 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 
 ## pi and opencode: everything Claude Code has
 
-pi (1.6) and opencode (2.4, the package `@opencode/cli`; 1.x is not supported) work like Claude Code. Each starts with a piece of gonogo of its own, written into `agents/<name>/` at every start (never into your project, `~/.pi` or `~/.config/opencode`): pi an **extension** (`--extension gonogo-pi.ts`, settings in `gonogo-pi.json`), opencode a **plugin** (a folder `gonogo-opencode/`) named in the config gonogo passes with `OPENCODE_CONFIG` (`opencode.json`, `gonogo-opencode.json`); it runs `opencode --standalone`, with its database and sessions in `agents/<name>/opencode-data`.
+pi (1.6) and opencode (2.4, the package `@opencode/cli`; 1.x is not supported) work like Claude Code. **Marks in the table:** [tested] in a real room (2026-11-24, gonogo 0.19.0), [tests only] (tests or the stand-in agent), [not run]. Each starts with a piece of gonogo of its own, written into `agents/<name>/` at every start (never into your project, `~/.pi` or `~/.config/opencode`): pi an **extension** (`--extension gonogo-pi.ts`, settings in `gonogo-pi.json`), opencode a **plugin** (a folder `gonogo-opencode/`) named in the config gonogo passes with `OPENCODE_CONFIG` (`opencode.json`, `gonogo-opencode.json`); it runs `opencode --standalone`, with its database and sessions in `agents/<name>/opencode-data`.
 
 | Feature | Claude Code | pi | opencode |
 |---|---|---|---|
-| Mail, votes, Telegram, the gonogo tools | MCP | MCP (registered by the extension) | MCP (in its config) |
-| State, Max Q, Redline, Hold, telemetry | hooks | the extension posts the same hooks | the plugin posts the same hooks |
-| Mail at the end of a turn | Stop block | a Stop block continues the run | a Stop block is sent as the next prompt |
-| Permission modes and tool rules | its settings | gonogo's tool gate in the extension; pi's own confirmation for "ask" | gonogo's tool gate answers opencode's own questions ("ask" stays for you) |
-| GO / NO-GO from the page and the phone | Enter / Escape | Enter / Escape | Enter (allow once) / Escape (reject) |
-| Payload MCP servers, global servers | mcp.json | registered by the extension | its config |
-| Skills | `--plugin-dir` | `--skill` | `skills.paths` |
-| Session resumed at a restart | `--resume` | `--session-id` (in `agents/<name>/pi-sessions`) | `--session` (the id its plugin reported) |
-| Effort | `--effort` | `--thinking` | the variant of its agents |
-| Model by engine and by position | yes | yes | yes |
-| Subagents shown, counted, limited or off | yes | pi has no subagents | its `task` tool: shown, counted, limited, off |
-| Propellant, budgets, cost | from its transcripts | each reply's usage, sent with the hooks | each reply's usage, sent with the hooks |
-| Plan quota | status line | Anthropic's subscription headers (not checked against a subscription) | not available (the plugin does not see responses) |
-| Clean Room, egress | yes | yes (`models.json` in the container's home points at the proxy) | yes (its Anthropic provider points at the proxy) |
-| Not signed in | read from its screen | the extension sees no usable model and asks you | free models need no login |
-| Engine switch handoff | read and written | read and written | read (`opencode export`) and written |
-| Remote Control | yes | no: a Claude app feature | no: a Claude app feature |
+| Mail, votes, Telegram, the gonogo tools | MCP | MCP (registered by the extension) [tested] tools, mail, vote; [not run] Telegram | MCP (in its config) [tested] tools, mail, vote; [not run] Telegram |
+| State, Max Q, Redline, Hold, telemetry | hooks | the extension posts the same hooks [tests only] | the plugin posts the same hooks [tests only] |
+| Mail at the end of a turn | Stop block | a Stop block continues the run [not run] pointer not seen | a Stop block is sent as the next prompt [not run] pointer not seen |
+| Permission modes and tool rules | its settings | gonogo's tool gate in the extension; pi's own confirmation for "ask" [tests only] | gonogo's tool gate answers opencode's own questions ("ask" stays for you) [tests only] |
+| GO / NO-GO from the page and the phone | Enter / Escape | Enter / Escape [tests only] ([not run] in a real room) | Enter (allow once) / Escape (reject) [tests only] ([not run] in a real room) |
+| Payload MCP servers, global servers | mcp.json | registered by the extension [tests only] | its config [tests only] |
+| Skills | `--plugin-dir` | `--skill` [tests only] | `skills.paths` [tests only] |
+| Session resumed at a restart | `--resume` | `--session-id` (in `agents/<name>/pi-sessions`) [tests only] | `--session` (the id its plugin reported) [tests only] |
+| Effort | `--effort` | `--thinking` [not run] | the variant of its agents [tests only] |
+| Model by engine and by position | yes | yes [tests only] | yes, but **hiring or editing an opencode agent with a model exits at start** (2.4.1 has no `--model`; known bug, hire without one); [tested] changing the model inside opencode's own UI to `anthropic/claude-opus-5-5`; by position [tests only] |
+| Subagents shown, counted, limited or off | yes | pi has no subagents | its `task` tool [tested] returns output; [tests only] shown, counted, limited, off |
+| Propellant, budgets, cost | from its transcripts | each reply's usage, sent with the hooks [tests only] | each reply's usage, sent with the hooks [tested] cost by provider and model |
+| Plan quota | status line | Anthropic's subscription headers (not checked against a subscription) [not run] | not available (the plugin does not see responses) |
+| Clean Room, egress | yes | yes (`models.json` in the container's home points at the proxy) [not run] | yes (its Anthropic provider points at the proxy) [not run] |
+| Not signed in | read from its screen | the extension sees no usable model and asks you [not run] | free models need no login [not run] |
+| Engine switch handoff | read and written | read and written [tested] Claude Code to pi | read (`opencode export`) and written [tested] opencode to pi and back |
+| Remote Control | yes [not run] not run | no: a Claude app feature | no: a Claude app feature |
 
 - **The tool gate** (`src/server/toolgate.ts`) is Claude Code's rule: deny, then ask, then allow, then the mode (`default` asks for commands, edits, the web and other MCP tools; `acceptEdits` and `auto` accept edits inside the working folder; bypass runs everything a deny does not stop). Rules use Claude Code's syntax (`Bash(git:*)`, `Read(./.env)`, `WebFetch(domain:x)`, `mcp__server__tool`). gonogo's own tools are allowed, except those of a feature that is off.
 - **opencode** asks about every tool (`"permission": { "*": "ask" }`) so that the gate answers each call whatever your own opencode config allows; a project's `opencode.json` can still change that.

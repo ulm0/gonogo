@@ -81,18 +81,18 @@ function wear(slug: string): void {
 }
 
 const ENGINES = [
-  { name: 'Claude Code', bin: 'claude', checked: 'real runs' },
-  { name: 'Gemini CLI', bin: 'gemini', checked: 'gemini --help and source' },
-  { name: 'Antigravity CLI', bin: 'agy', checked: 'agy --help' },
-  { name: 'Codex', bin: 'codex', checked: 'vendor docs only' },
-  { name: 'opencode', bin: 'opencode', checked: 'vendor docs only' },
-  { name: 'Kimi CLI', bin: 'kimi', checked: 'vendor docs only' },
-  { name: 'Copilot CLI', bin: 'copilot', checked: 'vendor docs only' },
-  { name: 'pi', bin: 'pi', checked: 'pi --help' },
-  { name: 'Qwen Code', bin: 'qwen', checked: 'vendor docs only' },
-  { name: 'Grok CLI', bin: 'grok', checked: 'vendor docs only' },
-  { name: 'Crush', bin: 'crush', checked: 'vendor docs only' },
-  { name: 'Cursor Agent', bin: 'cursor-agent', checked: 'vendor docs only' },
+  { name: 'Claude Code', bin: 'claude', checked: 'tested: real runs' },
+  { name: 'Gemini CLI', bin: 'gemini', checked: 'not run: gemini --help and source' },
+  { name: 'Antigravity CLI', bin: 'agy', checked: 'not run: agy --help' },
+  { name: 'Codex', bin: 'codex', checked: 'not run: vendor docs only' },
+  { name: 'opencode', bin: 'opencode', checked: 'partly: real room' },
+  { name: 'Kimi CLI', bin: 'kimi', checked: 'not run: vendor docs only' },
+  { name: 'Copilot CLI', bin: 'copilot', checked: 'not run: vendor docs only' },
+  { name: 'pi', bin: 'pi', checked: 'partly: real room' },
+  { name: 'Qwen Code', bin: 'qwen', checked: 'not run: vendor docs only' },
+  { name: 'Grok CLI', bin: 'grok', checked: 'not run: vendor docs only' },
+  { name: 'Crush', bin: 'crush', checked: 'not run: vendor docs only' },
+  { name: 'Cursor Agent', bin: 'cursor-agent', checked: 'not run: vendor docs only' },
 ];
 
 const PLAN = [
@@ -303,8 +303,8 @@ const SMALL = [
         <p class="label">Engine Bay</p>
         <h2 id="lp-engine" class="disp">Bring your own engine.</h2>
         <p>
-          Each agent runs one CLI, picked when you hire it. You sign in to each CLI yourself. How far each one was checked is written down: Claude Code is used daily to build gonogo itself, the others
-          have not had real runs.
+          Each agent runs one CLI, picked when you hire it. You sign in to each CLI yourself. How far each one was checked is written down: Claude Code is used daily to build gonogo itself; pi and opencode
+          have run as agents in that room; the others have not had real runs.
         </p>
         <a class="lp-more" href="/features/engine-bay">Engine Bay</a>
       </div>
@@ -312,7 +312,7 @@ const SMALL = [
         <li v-for="e in ENGINES" :key="e.bin" class="module">
           <span class="legend">{{ e.name }}</span>
           <code>{{ e.bin }}</code>
-          <span class="chip" :data-tone="e.checked === 'real runs' ? 'go' : 'quiet'">{{ e.checked }}</span>
+          <span class="chip" :data-tone="e.checked.startsWith('tested') ? 'go' : 'quiet'">{{ e.checked }}</span>
         </li>
       </ul>
     </section>
