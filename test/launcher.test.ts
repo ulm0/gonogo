@@ -1638,6 +1638,14 @@ describe('Room keys under the keys of an agent', () => {
     const plain = await launcher({ roomKeys: () => ({ ROOM_ONLY: 'r' }) }).prepareStart(agent(), START);
     expect(plain.spec.env.ROOM_ONLY).toBe('r');
   });
+
+  it('Amazon Bedrock (t144): a pi or opencode agent on the host gets the AWS settings of the room and of gonogo, and its HOME stays the owner\'s (~/.aws, the SSO cache)', async () => {
+    const l = launcher({ env: baseEnv({ HOME: '/home/me', AWS_CONFIG_FILE: '/home/me/.aws/config' }), roomKeys: () => ({ AWS_PROFILE: 'work', AWS_REGION: 'us-west-2' }) });
+    for (const provider of ['pi', 'opencode'] as const) {
+      const start = await l.prepareStart(agent({ provider, model: 'amazon-bedrock/anthropic.claude-fable-5' }), START);
+      expect(start.spec.env, provider).toMatchObject({ AWS_PROFILE: 'work', AWS_REGION: 'us-west-2', AWS_CONFIG_FILE: '/home/me/.aws/config', HOME: '/home/me' });
+    }
+  });
 });
 
 describe('Payload: MCP servers and skills', () => {

@@ -231,7 +231,7 @@ be guessed. Now the server asks the installed program itself where it has a comm
   list), so their suggested names (`static`).
 - Run like Pad Check: no shell, 20 s, 2 MiB of output and 1000 names at most, its own process group killed at the end (so a
   helper it started does not stay), cwd its `HOME`, and an environment of `PATH`, `HOME`, `LANG`, `NO_COLOR` and the
-  `XDG_*` folders only, where both keep their sign-in. Every name must pass `MODEL_PATTERN`.
+  `XDG_*` folders only, where both keep their sign-in. Every name must pass `MODEL_PATTERN`. Since t144 also the AWS settings a host agent of the room gets, a secret only as a placeholder (see docs/facts/bedrock.md).
 - Remembered per engine until the program changes (path, modification time, `--version`) or the page asks for a refresh; a
   failure is asked again after 30 s. Two readers at once share one run.
 - `GET /api/engines/<engine>/models[?refresh=1]` (browser token) answers `EngineModels`: `source` `cli`, `static`, `missing`

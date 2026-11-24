@@ -1686,7 +1686,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         return { ok: true, note: remote ? 'reloading: the agents keep running' : 'reloading: no pty host here (start gonogo with --pty-host to keep agents running), so the agents stop and resume' };
       },
       engines: () => checkEngines(env),
-      engineModels: createEngineModelLists({ env }).get,
+      engineModels: createEngineModelLists({ env, room: () => roomKeys.values(false) }).get,
       cleanRoomFlavors: () => cleanRoomFlavors(env, modelDefaults.sandbox()),
       hangar: createHangar(roots),
       worktrees: {

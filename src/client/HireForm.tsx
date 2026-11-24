@@ -7,7 +7,7 @@ import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
 import { PermissionsEditor } from './PermissionsEditor.js';
 import { effectiveEffort, effectiveModel as startModel } from '../shared/details.js';
-import { FLAVOR_TEXT, modelNames, modelNote, opencodeKeyWarning, useEngineModels, useModelDefaults } from './models.js';
+import { FLAVOR_TEXT, modelNames, modelNote, opencodeKeyWarning, bedrockModelWarning, useEngineModels, useModelDefaults } from './models.js';
 import { ModelListStatus } from './EngineModelList.js';
 import { hasServer, mergeServer } from './registry.js';
 import { RegistryPicker } from './RegistryPicker.js';
@@ -257,7 +257,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const engineModels = useEngineModels(values.provider);
   // the room's keys, for the warning on an opencode model whose provider needs one (asked once, when the engine is opencode)
   const [roomKeys, setRoomKeys] = useState<RoomKeysView['keys'] | null>(null);
-  const wantsRoomKeys = values.provider === 'opencode' && roomKeys === null;
+  const wantsRoomKeys = (values.provider === 'opencode' || values.provider === 'pi') && roomKeys === null;
   useEffect(() => {
     if (!wantsRoomKeys) return;
     let live = true;
@@ -477,6 +477,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const startsWith = startModel({ model: values.model.trim() || null, provider: values.provider, position: values.position === '' ? null : values.position }, roomModels)?.name ?? '';
   const keyNames = [...storedKeys.filter((n) => !values.keysRemoved.includes(n)), ...values.keys.map((row) => row.name.trim()).filter((n) => n !== ''), ...(roomKeys ?? []).filter((k) => !values.cleanRoom || k.cleanRoom).map((k) => k.name)];
   const keyWarningOfModel = values.provider === 'opencode' && roomKeys !== null && startsWith !== '' ? opencodeKeyWarning(startsWith, keyNames, values.cleanRoom && values.egress !== 'off') : null;
+  const bedrockWarning = roomKeys !== null ? bedrockModelWarning(values.provider, startsWith, keyNames, values.cleanRoom) : null;
   const setRows = (keys: Values['keys']): void => change({ keys }, 'keys');
   const toggleRemoved = (name: string): void =>
     change({ keysRemoved: values.keysRemoved.includes(name) ? values.keysRemoved.filter((n) => n !== name) : [...values.keysRemoved, name] }, 'keys');
@@ -616,6 +617,11 @@ function Staff({ form }: { form: Target }): ReactElement {
       {keyWarningOfModel !== null && (
         <p className="hint" role="status">
           {keyWarningOfModel}
+        </p>
+      )}
+      {bedrockWarning !== null && (
+        <p className="hint" role="status">
+          {bedrockWarning}
         </p>
       )}
     </Control>

@@ -8,7 +8,8 @@
  * - every other engine has no listing command that was checked: the names PROVIDER_INFO suggests (`static`).
  *
  * No shell, a time limit, the process group killed at the end, and an environment of PATH, HOME, LANG, NO_COLOR and the XDG folders only
- * (where both programs keep their sign-in), so no key of gonogo's environment reaches a program that is merely asked for a list.
+ * (where both programs keep their sign-in), so no key of gonogo's environment reaches a program that is merely asked for a list; the AWS settings
+ * go in as below (a secret only as a placeholder), for the Bedrock models.
  * Shortcut: a provider an engine knows only through an API key in the environment is therefore not listed; its model is typed.
  * A list is remembered per engine until the program changes (path, modification time, version) or the page asks for a refresh.
  */
@@ -61,12 +62,30 @@ export const MODEL_LISTERS: Partial<Record<Provider, Lister>> = {
 /** Names that pass the model field's own check, once each, in their order, at most MODEL_LIST_MAX. */
 const clean = (names: readonly string[]): string[] => [...new Set(names.filter((n) => MODEL_RE.test(n)))].slice(0, MODEL_LIST_MAX);
 
-/** The environment a listing gets: no keys, the folders where the engines keep their sign-in. */
-export function listEnv(env: Record<string, string | undefined>): Record<string, string> {
+/**
+ * Amazon Bedrock: pi and opencode list their `amazon-bedrock/...` models only when an AWS setting is in their environment (pi 1.6.0, opencode
+ * 2.4.1: a profile, a key pair or a Bedrock API key; nothing is asked of AWS to list them). So the listing gets the AWS settings an agent of the
+ * room would get, gonogo's own and the room's keys (the room's win): the profile, region and file names as they are, and for a secret only that it
+ * is there (a placeholder value, never the secret).
+ */
+export const AWS_LIST_PLAIN = ['AWS_PROFILE', 'AWS_REGION', 'AWS_DEFAULT_REGION', 'AWS_CONFIG_FILE', 'AWS_SHARED_CREDENTIALS_FILE'] as const;
+export const AWS_LIST_SECRET = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_BEARER_TOKEN_BEDROCK'] as const;
+export const AWS_LIST_PLACEHOLDER = 'gonogo-listing-placeholder';
+
+/** The environment a listing gets: no keys, the folders where the engines keep their sign-in, and the AWS settings as above. */
+export function listEnv(env: Record<string, string | undefined>, room: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = { NO_COLOR: '1' };
   for (const name of ['PATH', 'HOME', 'LANG', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME']) {
     const value = env[name];
     if (value !== undefined && value !== '') out[name] = value;
+  }
+  for (const name of AWS_LIST_PLAIN) {
+    const value = room[name] ?? env[name];
+    if (value !== undefined && value !== '') out[name] = value;
+  }
+  for (const name of AWS_LIST_SECRET) {
+    const value = room[name] ?? env[name];
+    if (value !== undefined && value !== '') out[name] = AWS_LIST_PLACEHOLDER;
   }
   return out;
 }
@@ -119,7 +138,8 @@ export interface EngineModelLists {
   get(provider: Provider, refresh?: boolean): Promise<EngineModels>;
 }
 
-export function createEngineModelLists(options: { env: Record<string, string | undefined>; now?: () => number; run?: typeof runListing }): EngineModelLists {
+/** `room`: the room's keys a host agent gets (values), for the AWS settings of a listing. */
+export function createEngineModelLists(options: { env: Record<string, string | undefined>; room?: () => Record<string, string>; now?: () => number; run?: typeof runListing }): EngineModelLists {
   const now = options.now ?? Date.now;
   const run = options.run ?? runListing;
   const cache = new Map<Provider, { key: string; value: EngineModels }>();
@@ -141,7 +161,10 @@ export function createEngineModelLists(options: { env: Record<string, string | u
     } catch {
       // gone between the two looks: asked anyway
     }
-    const key = `${path}\0${mtime}\0${version ?? ''}`;
+    // the AWS settings are part of what a list depends on: a room key added or removed lists again
+    const env = listEnv(options.env, options.room?.() ?? {});
+    const aws = Object.entries(env).filter(([name]) => name.startsWith('AWS_')).map(([name, value]) => `${name}=${value}`).sort().join('\0');
+    const key = `${path}\0${mtime}\0${version ?? ''}\0${aws}`;
     const known = cache.get(provider);
     if (!refresh && known && known.key === key && (known.value.source !== 'error' || now() - known.value.at < MODEL_LIST_RETRY_MS)) return known.value;
     let value: EngineModels;
@@ -150,7 +173,7 @@ export function createEngineModelLists(options: { env: Record<string, string | u
     } else {
       const command = `${info.bin} ${lister.args.join(' ')}`;
       try {
-        value = { provider, source: 'cli', models: clean(lister.parse(await run(path, lister.args, listEnv(options.env)))), command, version, at: now() };
+        value = { provider, source: 'cli', models: clean(lister.parse(await run(path, lister.args, env))), command, version, at: now() };
       } catch (error) {
         value = { provider, source: 'error', models: hints, command, version, error: error instanceof Error ? error.message : String(error), at: now() };
       }
