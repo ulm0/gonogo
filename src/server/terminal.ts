@@ -137,6 +137,16 @@ function findOpencodeBox(rows: readonly string[]): { top: number; bottom: number
   return null;
 }
 
+/**
+ * opencode 2.4.1 with no model it may use: the agent line of its input box (the row above the `╹▀▀` line) says "No provider selected", or its own
+ * dialog is open, whose title row is "Connect an integration" with "esc" at the right. Only those two rows count: the transcript (a printed file, a
+ * diff) may hold the same words anywhere else.
+ */
+function opencodeNoModel(rows: readonly string[], box: { top: number; bottom: number } | null): boolean {
+  if (box !== null && /^\s*┃.*\bNo provider selected\b/.test(rows[box.bottom - 1] ?? '')) return true;
+  return rows.some((row) => /^\s*Connect an integration\s{2,}esc\s*$/.test(row));
+}
+
 /** `rows` are the visible rows of the active buffer as xterm returns them (the NBSP of an empty box row must survive). */
 export function analyzeScreen(rows: readonly string[], cols: number, engine?: Provider): ScreenProbe {
   const other = engine === 'pi' ? findPiBox(rows) : engine === 'opencode' ? findOpencodeBox(rows) : null;
@@ -156,7 +166,7 @@ export function analyzeScreen(rows: readonly string[], cols: number, engine?: Pr
     signedOut: footer.some((line) => SIGNED_OUT.test(line)),
     authRejected: footer.some((line) => AUTH_REJECTED.test(line)),
     // opencode 2.4.1 with no model available to it (its free models off, no credential for the provider): its agent line says so, and a prompt opens this dialog
-    ...(engine === 'opencode' ? { noModel: rows.some((row) => /No provider selected|Connect an integration/.test(row)) } : {}),
+    ...(engine === 'opencode' ? { noModel: opencodeNoModel(rows, other) } : {}),
     promptText: other !== null ? other.text : boxRow >= 0 ? rows[boxRow].slice(BOX_PREFIX.length).trim() : null,
   };
 }
