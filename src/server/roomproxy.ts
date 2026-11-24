@@ -358,7 +358,7 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
           } catch {
             // not JSON: the room answers 400, and a body nobody could read is the strictest case
           }
-          if (weakensEgress(method, target.decoded, parsed)) return void sendText(res, 403, 'an API key may not turn off, or leave to the room, where a Clean Room keeps its API key: do it in the browser');
+          if (weakensEgress(method, target.decoded, parsed)) return void sendText(res, 403, 'an API key may not make that change (it would take the API key of a Clean Room back into the container, add the MCP servers of the user, or turn on auto-review): do it in the browser');
           forward(got.body);
         });
         return true;

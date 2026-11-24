@@ -95,6 +95,7 @@ export default defineConfig({
           { text: 'Engine switch', link: '/features/engine-switch' },
           { text: 'Payload', link: '/features/payload' },
           { text: 'Global MCP servers', link: '/features/global-mcp' },
+          { text: 'Auto-review', link: '/features/auto-review' },
           { text: 'Registry', link: '/features/registry' },
           { text: 'Room keys', link: '/features/room-keys' },
           { text: 'Knowledge', link: '/features/knowledge' },

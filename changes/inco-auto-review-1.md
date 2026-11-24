@@ -1,0 +1,1 @@
+- **Auto-review, first slice (off by default).** A room setting that watches the GitHub repos you link and makes one review job for each open pull request head from a branch of the same repo, by you or the authors you list (never a fork, a draft or a large one); skipped ones say why. It only lists pull requests for now: the reviewers and the comment come in the next slices.

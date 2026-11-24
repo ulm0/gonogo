@@ -35,7 +35,7 @@ import { createSettings, globalSetting } from './settings.js';
 import { checkFolder, createProjectFolder, writeFolder } from './projectfolder.js';
 import type { SettingKey } from './settings.js';
 import { createRitualTemplate } from './ritual.js';
-import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, EGRESS_AUDIT, GLOBAL_MCP_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
+import { audited, RITUAL_TEMPLATE_AUDIT, AUTOUPDATE_AUDIT, FEATURES_AUDIT, COAUTHOR_AUDIT, EGRESS_AUDIT, AUTO_REVIEW_AUDIT, GLOBAL_MCP_AUDIT, RULES_AUDIT, SUBAGENTS_AUDIT, STARTUP_AUDIT, PERMISSIONS_AUDIT, PAYLOAD_DEFAULTS_AUDIT, ROOM_KEYS_AUDIT, BOARD_AUDIT, DOCKING_AUDIT, HUB_AUDIT, LIVERIES_AUDIT, MISSIONS_AUDIT, pollText, PRICES_AUDIT, PROPELLANT_AUDIT, RELAY_AUDIT, RELIEF_AUDIT, REVIEW_AUDIT, ROOM_AUDIT, SCHEDULES_AUDIT, TABNAME_AUDIT, TASKS_AUDIT, tripText, UPLINKS_AUDIT } from './audited.js';
 import { createBlackBox } from './blackbox.js';
 import { createBoard } from './board.js';
 import { createDocking, lanAddresses, stationName } from './docking.js';
@@ -107,6 +107,7 @@ import { createSubagentStore } from './subagents.js';
 import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { createRules } from './rules.js';
 import { createEgress } from './egress.js';
+import { createAutoReview, ghLister } from './autoreview.js';
 import { createGlobalMcpStore, globalView, readGlobalMcp } from './globalmcp.js';
 import { createEgressSettings } from './egresssettings.js';
 import { runKnowledgeCli } from './knowledgecli.js';
@@ -762,6 +763,9 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await startupStore.load();
     const coauthorStore = createCoauthorStore({ dir: home.dir, log: log.child('coauthor') });
     await coauthorStore.load();
+    const autoReview = createAutoReview({ dir: home.dir, now: () => Date.now(), log: log.child('auto review'), list: ghLister({ dir: home.dir, env }) });
+    await autoReview.load();
+    autoReview.start();
     const globalMcp = createGlobalMcpStore({ dir: home.dir, log: log.child('global mcp') });
     await globalMcp.load();
     const egressSettings = createEgressSettings({ dir: home.dir, log: log.child('egress') });
@@ -1596,6 +1600,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       rules: audited(rulesStore, blackBox.record, RULES_AUDIT),
       egress,
       egressSettings: audited(egressSettings, blackBox.record, EGRESS_AUDIT),
+      autoReview: audited(autoReview, blackBox.record, AUTO_REVIEW_AUDIT),
       globalMcp: {
         store: audited(globalMcp, blackBox.record, GLOBAL_MCP_AUDIT),
         view: async () => {
@@ -1725,6 +1730,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       await step('rules close', () => rulesStore.close());
       await step('egress settings close', () => egressSettings.close());
       await step('global mcp close', () => globalMcp.close());
+      await step('auto review close', () => autoReview.close());
       await step('startup close', async () => {
         await startupStore.close();
         await runState.close();

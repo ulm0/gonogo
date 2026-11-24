@@ -467,6 +467,47 @@ export interface GlobalMcpView extends GlobalMcp {
   /** Names added since the last start that looked, with their targets: still in the config, for the banner. */
   added?: Array<{ name: string; target: string; was?: string }>;
 }
+/** Auto-review (docs/auto-review-spec.md): the room's setting. Off by default; turning it on or changing what it watches needs a step-up. */
+export interface AutoReviewSettings {
+  enabled: boolean;
+  /** Post a finished review without the Director's click. Needs a step-up. */
+  autoPost: boolean;
+  /** `owner/repo` of the repos watched. */
+  repos: string[];
+  /** GitHub logins whose pull requests are reviewed; empty means the room's own gh login only. */
+  authors: string[];
+  /** The roster positions that review (default rso and retro). */
+  positions: string[];
+  model: string | null;
+  maxUsdPerPr: number;
+  maxUsdPerDay: number;
+  maxLines: number;
+  maxFiles: number;
+  focus: string;
+  ignorePaths: string[];
+}
+export type AutoReviewStatus = 'queued' | 'running' | 'done' | 'posted' | 'skipped' | 'superseded' | 'failed';
+/** One review job: a pull request head. Skipped ones say why. */
+export interface AutoReviewJob {
+  id: string;
+  /** `owner/repo#N@sha`: the dedupe key. */
+  key: string;
+  repo: string;
+  pr: number;
+  sha: string;
+  title: string;
+  status: AutoReviewStatus;
+  reason?: string;
+  /** The Flight Plan task of the job, once it has one. */
+  task?: string;
+  at: number;
+}
+export interface AutoReviewView {
+  settings: AutoReviewSettings;
+  /** Newest first. */
+  jobs: AutoReviewJob[];
+  lastPoll: { at: number; error: string | null } | null;
+}
 /** The room's egress setting: a Clean Room agent holds no Anthropic API key, a proxy of gonogo's holds it. Off by default. */
 export interface EgressSettings {
   anthropic: boolean;

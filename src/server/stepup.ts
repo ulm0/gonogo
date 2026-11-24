@@ -33,7 +33,7 @@ export function bodyMatters(method: string, path: string): boolean {
   if (method === 'POST' && path === '/api/agents') return true;
   if (method === 'POST' && /^\/api\/handoff-requests\/ha\d+\/answer$/.test(path)) return true;
   if (method === 'PUT' && path === '/api/models/mode') return true;
-  if (method === 'PUT' && path === '/api/global-mcp') return true;
+  if (method === 'PUT' && (path === '/api/global-mcp' || path === '/api/auto-review')) return true;
   if (method === 'POST' && path === '/api/semantic/managed') return true;
   if (method === 'PUT' && path === '/api/relief/rules') return true;
   return (method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path);
@@ -44,7 +44,9 @@ export function bodyMatters(method: string, path: string): boolean {
  * setting, so one that does not say egress:true can end an agent's own). Only a browser session (with its step-up) or the terminal may weaken it.
  */
 export const egressChange = (method: string, path: string): boolean =>
-  (method === 'PUT' && (path === '/api/egress' || path === '/api/global-mcp' || path === '/api/semantic')) || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
+  (method === 'PUT' && (path === '/api/egress' || path === '/api/global-mcp' || path === '/api/semantic' || path === '/api/auto-review')) || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
+/** A body that only turns auto-review or its auto-post off. */
+const onlyOff = (body: Record<string, unknown>): boolean => Object.keys(body).length > 0 && Object.entries(body).every(([k, v]) => (k === 'enabled' || k === 'autoPost') && v === false);
 export function weakensEgress(method: string, path: string, body: Record<string, unknown> | null): boolean {
   if (body === null) return true;
   if (path === '/api/egress') return body.anthropic !== true;
@@ -52,6 +54,8 @@ export function weakensEgress(method: string, path: string, body: Record<string,
   if (path === '/api/global-mcp') return body.cleanRoom === true || body.host === true;
   // Search by meaning: choosing the managed Ollama, or accepting that a Clean Room can reach it, is a decision for a session with its step-up, not for a key
   if (path === '/api/semantic') return body.acknowledge === true || body.mode === 'managed';
+  // auto-review posts under the Director's login and reads other people's text: an API key may only switch it OFF
+  if (path === '/api/auto-review') return !onlyOff(body);
   const room = body.cleanRoom;
   if (typeof room !== 'object' || room === null) return false;
   const egress = (room as Record<string, unknown>).egress;
@@ -122,6 +126,8 @@ export function stepUpReason(method: string, path: string, body: Record<string, 
   if (/^\/api\/features(\/|$)/.test(path)) return 'the feature switches';
   // the user-scope MCP servers become tools of every agent (a program started with its rights, with its keys): turning them on asks, turning them off does not
   if (method === 'PUT' && path === '/api/global-mcp') return body === null || body.host === true || body.cleanRoom === true ? 'adding the global MCP servers to the agents' : null;
+  // auto-review: reads pull requests of the linked repos and (with a click, or autoPost) comments on them as the Director; only turning it off asks for nothing
+  if (method === 'PUT' && path === '/api/auto-review') return body === null || !onlyOff(body) ? 'turning on auto-review, or changing what it watches' : null;
   // where a Clean Room's API key is held: turning it off puts the key back in the container
   if (/^\/api\/egress(\/|$)/.test(path)) return 'where a Clean Room keeps its API key';
   // the rules of the room reach every agent at the authority of a system prompt
