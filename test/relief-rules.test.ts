@@ -301,6 +301,44 @@ describe('the rules by the Director: the API and STOP CREW', () => {
   });
 });
 
+describe('the crew budget and the models (PR3)', () => {
+  it('a hire by rule asks once the crew has spent its dollars today, and says so; below it hires', async () => {
+    await on({ crewBudgetUsd: 5 });
+    let spent = 4.99;
+    const metered = createRelief({ hub: { views: () => views, hire: async (request, meta) => { const v = agent(request.name, { dir: request.dir, desk: views.length, ...(meta?.hiredBy === 'boss' ? { hiredBy: 'boss', hiredAt: now } : {}) }); views.push(v); return v; }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }) }, rules, crewSpentToday: () => spent, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    expect(await metered.request(BOSS, { name: 'b1', position: 'guido', dir: project })).toMatchObject({ status: 'hired' });
+    now += 11 * 60_000;
+    spent = 5;
+    expect((await metered.request(BOSS, { name: 'b2', position: 'guido', dir: project })).note).toMatch(/the crew budget is reached \(\$5.00 of \$5.00 today\)/);
+  });
+
+  it('a model not in the rules for the engine asks; a listed one, or none, hires and the model reaches the hire', async () => {
+    await on({ models: { claude: ['opus', 'sonnet'] } });
+    expect((await ask({ name: 'm1', model: 'haiku' })).note).toMatch(/the model haiku is not in the rules for claude/);
+    expect((await ask({ name: 'm2', model: 'opus' }))).toMatchObject({ status: 'hired' });
+    expect(hired.at(-1)?.request.model).toBe('opus');
+    expect((await ask({ name: 'm3' }))).toMatchObject({ status: 'hired' });
+    expect(hired.at(-1)?.request.model).toBeUndefined();
+    await expect(ask({ name: 'm4', model: 'bad model!' })).rejects.toMatchObject({ field: 'model' });
+    expect(relief.view().requests.find((r) => r.name === 'm1')?.model).toBe('haiku');
+  });
+
+  it('models in the rules: only known engines, a list of names, and only a longer list is a raise', async () => {
+    await expect(rules.set({ models: { custom: ['x'] } })).rejects.toMatchObject({ field: 'rules.models' });
+    await expect(rules.set({ models: { claude: [1] } })).rejects.toMatchObject({ field: 'rules.models' });
+    await expect(rules.set({ models: 'x' })).rejects.toMatchObject({ field: 'rules.models' });
+    const base = RELIEF_RULES_DEFAULT;
+    expect(raisesPower({ ...base, models: { claude: ['a'] } }, { ...base, models: { claude: ['a', 'b'] } })).toBe(true);
+    expect(raisesPower({ ...base, models: { claude: ['a', 'b'] } }, { ...base, models: { claude: ['a'] } })).toBe(false);
+  });
+
+  it('a crew budget of none never approves (autoApprove needs one anyway)', async () => {
+    await on();
+    await rules.set({ crewBudgetUsd: null, autoApprove: false });
+    expect(rules.view().autoApprove).toBe(false);
+  });
+});
+
 describe('fire_agent through Relief', () => {
   const FIRE = { agent: 'flight', generation: 1 };
   function withFire(over: Partial<ReliefOptions> = {}, task = { id: 't7', assignee: 'g1', status: 'doing' }) {

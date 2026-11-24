@@ -14,7 +14,7 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { positionById, POSITION_IDS } from '../shared/positions.js';
-import { AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
+import { MODEL_PATTERN, AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
 import type { AgentView, CleanRoom, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
 import { providerInfo, takesCleanRoom } from '../shared/protocol.js';
 import type { ReliefRules } from '../shared/protocol.js';
@@ -26,7 +26,7 @@ import { modeRank } from './reliefrules.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const ID_RE = /^h[1-9]\d{0,9}$/;
-const FIELDS = new Set(['name', 'position', 'role', 'dir', 'engine', 'mode', 'worktree']);
+const FIELDS = new Set(['name', 'position', 'role', 'dir', 'engine', 'mode', 'worktree', 'model']);
 /**
  * What a person cannot see in the block but the new agent reads: control codes (a newline, a return and a tab are fine), format
  * characters (zero width, direction overrides, the Unicode tag block that hides a whole sentence), line and paragraph
@@ -46,6 +46,8 @@ export interface ReliefOptions {
   tasks?: { list(): Array<{ id: string; assignee: string | null; status: string }>; update(actor: { kind: 'agent'; name: string; generation: number }, id: string, input: unknown): Promise<unknown> };
   /** Whether an open T-minus poll waits for this agent's vote (it is not fired then). */
   voteWaitsFor?(name: string): boolean;
+  /** Dollars the named agents (the boss-hired crew) spent today, from Propellant. Absent: 0, and the crew budget cannot hold. */
+  crewSpentToday?(names: string[]): number;
   /** The room's rules (`relief.json`). Absent: no rule hires, every request waits for the Director, as before. */
   rules?: { view(): ReliefRules; check(): Promise<void>; set?(body: unknown): Promise<ReliefRules>; off?(): Promise<ReliefRules> };
   /** Why a hire in `auto` (or bypass) must not run by rule in a Clean Room now (egress off, the global MCP servers on), or null. */
@@ -167,6 +169,7 @@ export function createRelief(options: ReliefOptions): Relief {
     const hire: HireRequest = { name: r.name, role: r.role, dir: r.dir, mode: r.mode, provider: r.provider };
     if (r.position !== null) hire.position = r.position;
     if (r.cleanRoom !== null) hire.cleanRoom = r.cleanRoom;
+    if (r.model !== undefined) hire.model = r.model;
     if (r.worktree !== undefined && r.worktree !== null) hire.worktree = { ...r.worktree };
     return hire;
   };
@@ -183,15 +186,20 @@ export function createRelief(options: ReliefOptions): Relief {
    * Which rule sends this request to the Director, or null when it fits every rule (docs/hire-fire-spec.md). Synchronous on purpose: the caller reserves the crew slot
    * right after it, with no await between, so parallel hires cannot both pass the cap. Reads the rules from the store, never from the request.
    */
-  const ruleAsks = (rules: ReliefRules, requester: AgentView, r: { name: string; position: string | null; free: boolean; dir: string; provider: Provider; mode: PermissionMode; cleanRoom: CleanRoom | null; worktree: boolean; insideBoss: boolean }): string | null => {
+  const ruleAsks = (rules: ReliefRules, requester: AgentView, r: { name: string; position: string | null; free: boolean; dir: string; provider: Provider; mode: PermissionMode; cleanRoom: CleanRoom | null; worktree: boolean; insideBoss: boolean; model: string | undefined }): string | null => {
     const crew = hub.views().filter((a) => a.hiredBy === 'boss');
     if (crew.length + staffing.size >= rules.maxCrew) return `maxCrew is ${rules.maxCrew}`;
+    // the dollars the crew spent today: at the ceiling no rule hire is made (and the crew already running is held by Propellant); a missing ceiling never approves
+    if (rules.crewBudgetUsd === null) return 'crewBudgetUsd is not set';
+    const spent = options.crewSpentToday?.(crew.map((a) => a.name)) ?? 0;
+    if (spent >= rules.crewBudgetUsd) return `the crew budget is reached ($${spent.toFixed(2)} of $${rules.crewBudgetUsd.toFixed(2)} today)`;
     const since = now() - HOUR_MS;
     if (crew.filter((a) => (a.hiredAt ?? 0) > since).length + [...staffing].length >= rules.ratePerHour) return `ratePerHour is ${rules.ratePerHour}`;
     if (r.free || r.position === null) return 'a role written by the boss is never approved by a rule';
     if (!rules.positions.includes(r.position)) return `the position ${r.position} is not in the rules`;
     const engines = rules.engines.length > 0 ? rules.engines : [options.defaultEngine?.() ?? 'claude'];
     if (!engines.includes(r.provider)) return `the engine ${r.provider} is not in the rules`;
+    if (r.model !== undefined && !(rules.models[r.provider] ?? []).includes(r.model)) return `the model ${r.model} is not in the rules for ${r.provider}`;
     if (!r.insideBoss) return "the folder is not the boss's own or inside it";
     if (modeRank(r.mode) < 0 || modeRank(r.mode) > modeRank(rules.maxMode)) return `mode ${r.mode} is above maxMode (${rules.maxMode})`;
     if (r.mode === 'auto') {
@@ -216,7 +224,7 @@ export function createRelief(options: ReliefOptions): Relief {
       if (!requester.boss) throw new HubError('forbidden', 'only the boss can ask for a hire');
 
       if (!isRecord(input)) throw bad('the request must be an object');
-      for (const key of Object.keys(input)) if (!FIELDS.has(key)) throw bad(`unknown field "${key}": a request has name, position, role, dir, engine and mode`, key);
+      for (const key of Object.keys(input)) if (!FIELDS.has(key)) throw bad(`unknown field "${key}": a request has name, position, role, dir, engine, mode, worktree and model`, key);
 
       const { name } = input;
       if (typeof name !== 'string' || !NAME_RE.test(name)) throw bad('name must be 1 to 32 lowercase letters, digits or hyphens, and start with a letter or digit', 'name');
@@ -236,6 +244,14 @@ export function createRelief(options: ReliefOptions): Relief {
       const mode: PermissionMode = providerInfo(provider).modes ? (asked as PermissionMode) : 'default';
       // the Director is told when the mode is the room's default and not something the boss asked for
       const modeFromRoom = input.mode === undefined && mode !== 'default' && room === mode;
+
+      // Engine Bay: a model name for an engine that takes one; the hub checks it again (checkModel) when the agent is hired
+      let model: string | undefined;
+      if (input.model !== undefined) {
+        if (typeof input.model !== 'string' || !new RegExp(MODEL_PATTERN).test(input.model.trim())) throw bad('model is a model name of the engine', 'model');
+        model = input.model.trim();
+        if (!providerInfo(provider).model) throw bad(`${providerInfo(provider).label} takes no model setting`, 'model');
+      }
 
       const { position, role } = input;
       if (position !== undefined && (typeof position !== 'string' || !POSITION_IDS.includes(position))) throw bad(`position must be one of ${POSITION_IDS.join(', ')}`, 'position');
@@ -279,11 +295,11 @@ export function createRelief(options: ReliefOptions): Relief {
       const insideBoss = await insideRealpath(requester.dir, checked.path);
       limits(name);
       // from here to the reservation there is no await: a hire by rule takes its crew slot at once
-      const asks = rules?.autoApprove === true ? ruleAsks(rules, requester, { name, position: typeof position === 'string' ? position : null, free: typeof role === 'string', dir: checked.path, provider, mode, cleanRoom, worktree: wantsWorktree, insideBoss }) : undefined;
+      const asks = rules?.autoApprove === true ? ruleAsks(rules, requester, { model, name, position: typeof position === 'string' ? position : null, free: typeof role === 'string', dir: checked.path, provider, mode, cleanRoom, worktree: wantsWorktree, insideBoss }) : undefined;
       if (rules?.autoApprove === true && asks === null) {
         made.push(now());
         staffing.add(name);
-        const hire: HireRequest = { name, role: roleText, dir: checked.path, mode, provider, position: position as string };
+        const hire: HireRequest = { name, role: roleText, dir: checked.path, mode, provider, position: position as string, ...(model === undefined ? {} : { model }) };
         if (cleanRoom !== null) hire.cleanRoom = cleanRoom;
         if (wantsWorktree) hire.worktree = {};
         try {
@@ -304,7 +320,7 @@ export function createRelief(options: ReliefOptions): Relief {
       const roomFlavor = options.defaultSandbox?.() ?? 'docker';
       const flavor = cleanRoom === null ? undefined : (cleanRoom.flavor ?? roomFlavor);
       const flavorBelowRoom = flavor !== undefined && CLEAN_ROOM_FLAVORS.indexOf(flavor) < CLEAN_ROOM_FLAVORS.indexOf(roomFlavor);
-      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(flavor === undefined ? {} : { flavor }), ...(flavorBelowRoom ? { flavorBelowRoom } : {}), ...(wantsWorktree ? { worktree: {} } : {}), ...(typeof asks === 'string' ? { asks } : {}) };
+      const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(flavor === undefined ? {} : { flavor }), ...(flavorBelowRoom ? { flavorBelowRoom } : {}), ...(wantsWorktree ? { worktree: {} } : {}), ...(model === undefined ? {} : { model }), ...(typeof asks === 'string' ? { asks } : {}) };
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
       if (typeof asks === 'string') notify(`${requester.name}'s hire of ${name} is outside the rules (${asks}): it waits for your GO`);

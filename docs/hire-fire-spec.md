@@ -1,6 +1,6 @@
 # Spec: FLIGHT hires and fires on demand, within rules (draft)
 
-By FIDO, 2026-11-24, task t131. Status: PR1 built (rules file and API with step-up, the check in `hire_agent`, `hiredBy`, badge, audit lines, `auto` up to `maxMode`, STOP CREW); PR2 built (`fire_agent`, `protected`, the Relief block in Flight Rules); PR3 and PR4 not built. Builds on `docs/relief-spec.md` (the pending-GO path stays) and my earlier note on the archived branch `fido/relief-auto-decision` (the `archive/` tag keeps it); read: `relief.ts`, `RELIEF_MODES` (`protocol.ts:1687`), `Hub.remove`, `mcp.ts` (`hire_agent`, `start_agent`). Nothing run.
+By FIDO, 2026-11-24, task t131. Status: PR1 built (rules file and API with step-up, the check in `hire_agent`, `hiredBy`, badge, audit lines, `auto` up to `maxMode`, STOP CREW); PR2 built (`fire_agent`, `protected`, the Relief block in Flight Rules); PR3 built (crew budget hold, `models`); PR4 and PR5 (§9) not built. Builds on `docs/relief-spec.md` (the pending-GO path stays) and my earlier note on the archived branch `fido/relief-auto-decision` (the `archive/` tag keeps it); read: `relief.ts`, `RELIEF_MODES` (`protocol.ts:1687`), `Hub.remove`, `mcp.ts` (`hire_agent`, `start_agent`). Nothing run.
 
 ## 1. The two things the Director asked for
 

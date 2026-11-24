@@ -538,6 +538,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           engine: z.string().max(32).optional(),
           mode: z.string().max(32).optional(),
           worktree: z.boolean().optional(),
+          model: z.string().max(100).optional(),
         }),
       },
       (args) =>

@@ -8,19 +8,35 @@ import * as api from './api.js';
 
 const ENGINES = PROVIDERS.filter((p) => p !== 'custom');
 const text = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+/** `claude: opus, sonnet` per line, to and from the rule. */
+const modelsText = (models: ReliefRules['models']): string => Object.entries(models).map(([engine, list]) => `${engine}: ${(list ?? []).join(', ')}`).join('\n');
+const modelsOf = (value: string): ReliefRules['models'] => {
+  const out: ReliefRules['models'] = {};
+  for (const line of value.split('\n')) {
+    const at = line.indexOf(':');
+    if (at < 0) continue;
+    const names = line.slice(at + 1).split(',').map((n) => n.trim()).filter((n) => n !== '');
+    if (names.length > 0) out[line.slice(0, at).trim() as keyof ReliefRules['models']] = names;
+  }
+  return out;
+};
 const toggle = <T,>(list: readonly T[], item: T, on: boolean): T[] => (on ? [...list.filter((x) => x !== item), item] : list.filter((x) => x !== item));
 
 export function ReliefRulesBlock(): ReactElement {
   const id = useId();
   const [view, setView] = useState<ReliefView | null>(null);
   const [draft, setDraft] = useState<ReliefRules>(RELIEF_RULES_DEFAULT);
+  const [modelsDraft, setModelsDraft] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const take = useCallback((next: ReliefView): void => {
     setView(next);
-    if (next.rules !== undefined) setDraft(next.rules);
+    if (next.rules !== undefined) {
+      setDraft(next.rules);
+      setModelsDraft(modelsText(next.rules.models));
+    }
   }, []);
   useEffect(() => {
     let live = true;
@@ -68,6 +84,9 @@ export function ReliefRulesBlock(): ReactElement {
       <fieldset className="rules-set"><legend>Engines (none checked: the room's default engine)</legend>
         {ENGINES.map((p) => <label key={p} className="staff-check"><input type="checkbox" className="check" checked={draft.engines.includes(p)} onChange={(event) => set({ engines: toggle(draft.engines, p, event.target.checked) })} />{p}</label>)}
       </fieldset>
+      <label>Models it may name (one line per engine, for example <code>claude: opus, sonnet</code>; none listed: only the engine's default)
+        <textarea className="textarea" rows={3} aria-label="Models a rule hire may name" value={modelsDraft} onChange={(event) => { setModelsDraft(event.target.value); set({ models: modelsOf(event.target.value) }); }} />
+      </label>
       <label className="staff-check">
         <input type="checkbox" className="check" checked={draft.mayStop} onChange={(event) => set({ mayStop: event.target.checked })} />
         FLIGHT may stop agents with fire_agent (not itself, and not the ones you protect). Protect the consoles that gate your work, a reviewer for one, in their Edit form.

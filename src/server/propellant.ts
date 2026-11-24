@@ -272,6 +272,8 @@ export interface PropellantOptions {
   attribute?: (agent: string) => { mission?: string; task?: string };
   /** The task a docking link is bound to here (a link budget caps that task only). */
   linkTask?: (linkId: string) => string | undefined;
+  /** The boss-hired crew and the dollars per day it may spend together (docs/hire-fire-spec.md). Null: no crew budget. */
+  crew?: () => { names: string[]; budgetUsd: number } | null;
 }
 
 export interface Propellant {
@@ -292,7 +294,7 @@ export interface Propellant {
   /** Replaces the dollar budget of each scope given ({} clears it); posts the 80 % warning when a new budget is already past it. */
   setBudget(budget: NonNullable<PropellantRequest['budget']>): Promise<PropellantView>;
   /** Why this agent must stop, or null: its own limit first, then the room's. */
-  over(agent: string): { scope: 'agent' | 'room' | 'mission' | 'link'; reason: string; /** For scope 'mission': its id. */ mission?: string; /** For scope 'link': the link, and the one task it caps. */ link?: string; task?: string } | null;
+  over(agent: string): { scope: 'agent' | 'room' | 'mission' | 'link' | 'crew'; reason: string; /** For scope 'crew': the whole crew, which is held together. */ names?: string[]; /** For scope 'mission': its id. */ mission?: string; /** For scope 'link': the link, and the one task it caps. */ link?: string; task?: string } | null;
   close(): Promise<void>;
 }
 
@@ -883,6 +885,12 @@ export function createPropellant(options: PropellantOptions): Propellant {
           const spent = spentOn('task', doing, table).usd;
           if (spent >= limit) return { scope: 'link', link: linkId, task: doing, reason: `task ${doing} reached the cap its link allows: spent ${moneyText(spent)} of ${moneyText(limit)}` };
         }
+      }
+      // the boss-hired crew shares one ceiling per local day, summed over its agents (a stopped one still counts: fire then rehire does not reset it)
+      const crew = options.crew?.() ?? null;
+      if (crew !== null && crew.names.includes(agent)) {
+        const spent = crew.names.reduce((sum, n) => sum + costGauge(n, {}, table).usd.day, 0);
+        if (spent >= crew.budgetUsd) return { scope: 'crew', names: crew.names, reason: `crew budget reached: the boss-hired crew spent ${moneyText(spent)} of ${moneyText(crew.budgetUsd)} today` };
       }
       const on = options.attribute?.(agent).mission;
       const missionLimit = on === undefined ? undefined : saved.budget.missions[on];
