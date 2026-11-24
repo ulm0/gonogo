@@ -74,17 +74,18 @@ Each console shows chips for **engine**, **model it starts with** and **effort**
 
 <ModelsMock class="doc-mock" />
 
-The MODEL field of the hire and edit form is free text with suggestions; empty is the CLI's own default. Passed as `--model <name>`, applies at next start. Names: letters, digits and `. _ : / @ + -`, starting with a letter or digit, at most 100; anything else, and a model for an engine without the field, is refused. The CLI judges the name.
+The MODEL field of the hire and edit form is free text with a list to pick from; empty is the CLI's own default. pi and opencode give the list themselves (`pi --list-models`, `opencode models`, read by the server when the form opens and kept until the program changes; **Refresh** asks again), as `provider/model` names; the other engines offer the names below. The line under the field says where the names came from, or that the engine is not installed or could not be asked. The same list is offered in DEFAULTS. Passed as `--model <name>`, applies at next start. Names: letters, digits and `. _ : / @ + -`, starting with a letter or digit, at most 100; anything else, and a model for an engine without the field, is refused. The CLI judges the name.
 
 | Engine | Suggestions | Flag checked in |
 |---|---|---|
-| Claude Code | `sonnet`, `opus`, `haiku` | real runs (only `haiku`) |
+| Claude Code | `sonnet`, `opus`, `haiku`, `fable` (the aliases of its `--help`, 2.1.325; a full model name works too) | real runs (only `haiku`) |
 | Gemini CLI (legacy) | `auto`, `pro`, `flash`, `flash-lite` | `--help` of 0.59.0 |
 | Antigravity CLI | none | `--help` of 1.5.11 |
-| pi | `sonnet`, `haiku` | real runs (1.6.0) |
+| pi | its own list (`pi --list-models`); else `sonnet`, `haiku` | real runs (1.6.0) |
+| opencode | its own list (`opencode models`) | real runs (2.4.1) |
 | Codex, Kimi CLI, Cursor Agent | none | their docs, not installed |
 
-opencode, Copilot CLI, Qwen Code, Grok CLI, Crush and the custom command have no model field (no flag found); set the model in the CLI.
+Copilot CLI, Qwen Code, Grok CLI, Crush and the custom command have no model field (no flag found); set the model in the CLI.
 
 ## Amazon Bedrock
 

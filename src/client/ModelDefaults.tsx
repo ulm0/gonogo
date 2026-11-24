@@ -3,18 +3,19 @@
  * others use this one at their next start (hires, the 16 positions and Relief hires included, because they all start without one).
  */
 import { useEffect, useId, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { CleanRoomFlavor, CleanRoomFlavors, Effort, ModelDefaults, PermissionMode, Provider } from '../shared/protocol.js';
 import { POSITIONS } from '../shared/positions.js';
 import { CLEAN_ROOM_FLAVORS, EFFORTS, MODEL_PATTERN, PROVIDERS, providerInfo } from '../shared/protocol.js';
 import * as api from './api.js';
-import { FLAVOR_TEXT, MODEL_PROVIDERS, publishModelDefaults } from './models.js';
+import { FLAVOR_TEXT, MODEL_PROVIDERS, modelNames, publishModelDefaults, useEngineModels } from './models.js';
+import { ModelListStatus } from './EngineModelList.js';
 import { useRun } from './WallView.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
 
 /** One line: a label, the model it holds and the call that changes it (an engine's line, or a position's). */
-function Row({ label, names, saved, set, onSaved }: { label: string; names: readonly string[]; saved: string; set(model: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void }): ReactElement {
+function Row({ label, names, saved, set, onSaved, status }: { label: string; names: readonly string[]; saved: string; set(model: string | null): Promise<ModelDefaults>; onSaved(next: ModelDefaults): void; status?: ReactNode }): ReactElement {
   const id = useId();
   const [text, setText] = useState(saved);
   const { busy, error, run } = useRun();
@@ -58,6 +59,7 @@ function Row({ label, names, saved, set, onSaved }: { label: string; names: read
           Use letters, digits and . _ : / @ + -, starting with a letter or digit.
         </p>
       )}
+      {status !== undefined && <p className="hint">{status}</p>}
       {error !== null && (
         <p className="error" role="alert">
           {error}
@@ -154,6 +156,12 @@ function SandboxPick({ saved, flavors, onSaved }: { saved: ModelDefaults['sandbo
   );
 }
 
+/** One engine's line of MODEL BY ENGINE, with the engine's own list of models. */
+function EngineRow({ provider, saved, onSaved }: { provider: Provider; saved: string; onSaved(next: ModelDefaults): void }): ReactElement {
+  const state = useEngineModels(provider);
+  return <Row label={providerInfo(provider).label} names={modelNames(provider, state)} saved={saved} set={(model) => api.setModelDefault(provider, model)} onSaved={onSaved} status={<ModelListStatus provider={provider} state={state} />} />;
+}
+
 /** Which engine's position models the list shows: every engine with a model setting. */
 function PositionEngine({ value, onChange }: { value: Provider; onChange: (provider: Provider) => void }): ReactElement {
   const id = useId();
@@ -177,6 +185,7 @@ export function ModelDefaultsBlock(): ReactElement {
   const titleId = useId();
   const [defaults, setDefaults] = useState<ModelDefaults | null>(null);
   const [positionEngine, setPositionEngine] = useState<Provider>('claude');
+  const positionModels = useEngineModels(positionEngine);
   const saved = (next: ModelDefaults): void => {
     setDefaults(next);
     publishModelDefaults(next);
@@ -233,7 +242,7 @@ export function ModelDefaultsBlock(): ReactElement {
       {defaults !== null && (
         <ul className="rules-model-list">
           {MODEL_PROVIDERS.map((provider) => (
-            <Row key={provider} label={providerInfo(provider).label} names={providerInfo(provider).model ?? []} saved={defaults.models[provider] ?? ''} set={(model) => api.setModelDefault(provider, model)} onSaved={saved} />
+            <EngineRow key={provider} provider={provider} saved={defaults.models[provider] ?? ''} onSaved={saved} />
           ))}
         </ul>
       )}
@@ -244,12 +253,15 @@ export function ModelDefaultsBlock(): ReactElement {
             A console in a position starts with its engine's model for that position before the engine's line above. Its own model still wins. Each engine has its own list, because model names do not carry from one engine to another.
           </p>
           <PositionEngine value={positionEngine} onChange={setPositionEngine} />
+          <p className="hint">
+            <ModelListStatus provider={positionEngine} state={positionModels} />
+          </p>
           <ul className="rules-model-list">
             {POSITIONS.map((p) => (
               <Row
                 key={`${positionEngine}-${p.id}`}
                 label={p.callSign}
-                names={providerInfo(positionEngine).model ?? []}
+                names={modelNames(positionEngine, positionModels)}
                 saved={(positionEngine === 'claude' ? defaults.positions?.[p.id] : defaults.enginePositions?.[positionEngine]?.[p.id]) ?? ''}
                 set={(model) => api.setPositionModel(p.id, model, positionEngine)}
                 onSaved={saved}

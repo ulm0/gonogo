@@ -9,7 +9,7 @@ import type { Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
-import { CLEAN_ROOM_FLAVORS, CLEAN_ROOM_RUNTIMES, PERMISSION_MODES, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
+import { CLEAN_ROOM_FLAVORS, CLEAN_ROOM_RUNTIMES, PERMISSION_MODES, PROVIDER_INFO, PROVIDERS, TRIGGER_KINDS, WS_BINARY_OUTPUT, WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../shared/protocol.js';
 import type {
   CleanRoomFlavor,
   CleanRoomFlavors,
@@ -24,6 +24,7 @@ import type {
   Effort,
   EditRequest,
   EngineCheck,
+  EngineModels,
   ErrorFrame,
   GovernorRequest,
   HireRequest,
@@ -254,6 +255,8 @@ export interface WebOptions {
   rollout?: Pick<Rollout, 'view'> & Partial<Pick<Rollout, 'checkNow'>>;
   /** Pad Check: where each engine is and what it calls itself; absent in tests that do not need it (the route answers 404). */
   engines?: () => Promise<EngineCheck[]>;
+  /** Model lists: the models an engine offers, read from the program where it has a command for it; absent in tests that do not need it (the route answers 404). */
+  engineModels?: (provider: Provider, refresh: boolean) => Promise<EngineModels>;
   log: Logger;
 }
 
@@ -913,6 +916,20 @@ export function createWebServer(options: WebOptions): WebServer {
       const engines = options.engines;
       if (!engines) return null;
       return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, await engines()) };
+    }
+    // GET /api/engines/<provider>/models[?refresh=1]: the models of one engine with a model field (Model lists)
+    if (s.length === 4 && s[1] === 'engines' && s[3] === 'models') {
+      const lists = options.engineModels;
+      if (!lists) return null;
+      const provider = s[2] ?? '';
+      return {
+        allow: ['GET'],
+        run: async (req, res) => {
+          if (!(PROVIDERS as readonly string[]).includes(provider) || PROVIDER_INFO[provider as Provider].model === null) return sendApiError(res, 404, `no engine with a model field is called "${provider}"`, 'not_found', 'provider');
+          const refresh = new URL(req.url ?? '/', 'http://localhost').searchParams.get('refresh') === '1';
+          sendJson(res, 200, await lists(provider as Provider, refresh));
+        },
+      };
     }
     if (s.length === 2 && s[1] === 'agents') {
       return {

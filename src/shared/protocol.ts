@@ -80,7 +80,7 @@ export interface ProviderInfo {
   docs: string;
 }
 export const PROVIDER_INFO: Readonly<Record<Provider, ProviderInfo>> = {
-  claude: { label: 'Claude Code', bin: 'claude', hooks: true, mcp: true, modes: true, payload: 'all', check: 'run', model: ['sonnet', 'opus', 'haiku'], install: 'npm install -g @anthropic-ai/claude-code@latest', docs: 'https://code.claude.com/docs/en/setup' },
+  claude: { label: 'Claude Code', bin: 'claude', hooks: true, mcp: true, modes: true, payload: 'all', check: 'run', model: ['sonnet', 'opus', 'haiku', 'fable'], install: 'npm install -g @anthropic-ai/claude-code@latest', docs: 'https://code.claude.com/docs/en/setup' },
   gemini: { label: 'Gemini CLI', bin: 'gemini', hooks: true, mcp: true, modes: true, payload: 'servers', check: 'local', model: ['auto', 'pro', 'flash', 'flash-lite'], install: 'npm install -g @google/gemini-cli', docs: 'https://github.com/google-gemini/gemini-cli' },
   // hooks and mcp are false until a start can load them from the agent's own folder (docs/facts/antigravity.md): agy reads hooks.json and mcp_config.json only from .agents/, ~/.gemini/config/ and plugins.
   antigravity: { label: 'Antigravity CLI', bin: 'agy', hooks: false, mcp: false, modes: true, payload: null, check: 'local', model: [], install: 'curl -fsSL https://antigravity.google/cli/install.sh | bash', docs: 'https://antigravity.google/docs/getting-started' },
@@ -1690,6 +1690,26 @@ export interface EngineCheck {
   /** The vendor's documented install command, or null when none was checked. Shown, never run. */
   install: string | null;
   docs: string;
+}
+
+/**
+ * The models one engine offers, as GET /api/engines/<provider>/models answers them (docs/engine-bay-spec.md, Model lists). `cli`: read now
+ * from the program itself (`pi --list-models`, `opencode models`), names as it takes them after `--model`; `static`: the engine has no
+ * command that lists them, so these are the names PROVIDER_INFO suggests; `missing`: the program is not on the PATH; `error`: it was
+ * asked and did not answer (the suggested names still come, and `error` says why). Any other name the engine accepts still works.
+ */
+export interface EngineModels {
+  provider: Provider;
+  source: 'cli' | 'static' | 'missing' | 'error';
+  models: string[];
+  /** The command that was run, for the page to name (`pi --list-models`), or null when none was. */
+  command: string | null;
+  /** First line of `<bin> --version` when it was read, else null. */
+  version: string | null;
+  /** Why the list could not be read (source `error`). */
+  error?: string;
+  /** When the list was read (ms epoch). */
+  at: number;
 }
 
 /**

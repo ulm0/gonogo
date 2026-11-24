@@ -14,6 +14,7 @@ import type {
   DownlinkView,
   EditRequest,
   EngineCheck,
+  EngineModels,
   ErrorFrame,
   GovernorRequest,
   GovernorView,
@@ -831,6 +832,13 @@ export async function engines(): Promise<EngineCheck[]> {
   const list = await call('GET', '/engines');
   if (!Array.isArray(list) || !list.every((e) => typeof asRecord(e)?.provider === 'string')) throw failure('The server sent an answer gonogo does not understand.');
   return list as EngineCheck[];
+}
+
+/** Model lists: the models one engine offers; `refresh` makes the server ask the program again. */
+export async function engineModels(provider: Provider, refresh = false): Promise<EngineModels> {
+  const answer = asRecord(await call('GET', `/engines/${encodeURIComponent(provider)}/models${refresh ? '?refresh=1' : ''}`));
+  if (answer === null || !Array.isArray(answer.models) || !answer.models.every((m) => typeof m === 'string') || typeof answer.source !== 'string') throw failure('The server sent an answer gonogo does not understand.');
+  return answer as unknown as EngineModels;
 }
 
 /** Also starts a stopped agent. */
