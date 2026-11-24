@@ -243,3 +243,9 @@ be guessed. Now the server asks the installed program itself where it has a comm
   that the engine is not installed, that it listed none ("is a provider signed in?"), or the error, with a Refresh key.
 - Shortcut: a provider an engine knows only from an API key in gonogo's environment (or a room or agent key) is not listed,
   because the listing gets no keys; its model is typed. pi signed out of every provider lists nothing.
+- opencode's list holds the providers the owner is signed in to, but an agent runs with its own `XDG_DATA_HOME` (its folder), where
+  no sign-in is: a model of another provider than `opencode/` then falls back to opencode's free default without a word (seen in
+  #296's run). So the opencode list carries a note, and the hire and Edit form warn (`opencodeKeyWarning`, client/models.ts) when the
+  model the agent starts with (its own, else its position's or the room's) has a provider whose key is not among the agent's keys
+  and the room's keys that reach it, the names from opencode's models.dev catalog (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...); a
+  Clean Room with egress counts for Anthropic. A key in gonogo's own environment cannot be seen by the page: the text says so.

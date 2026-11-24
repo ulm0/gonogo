@@ -129,7 +129,7 @@ export function modelListText(provider: Provider, state: EngineModelsState): str
   const count = `${n} ${n === 1 ? 'model' : 'models'}`;
   switch (list.source) {
     case 'cli':
-      return n === 0 ? `${list.command ?? label} listed no models: is a provider signed in? Type a name.` : `${count} from ${list.command ?? label}${list.version ? ` (${list.version})` : ''}. Pick one or type any name it accepts.`;
+      return `${n === 0 ? `${list.command ?? label} listed no models: is a provider signed in? Type a name.` : `${count} from ${list.command ?? label}${list.version ? ` (${list.version})` : ''}. Pick one or type any name it accepts.`}${provider === 'opencode' && n > 0 ? ` ${OPENCODE_KEY_NOTE}` : ''}`;
     case 'static':
       return n === 0 ? `${label} has no command that lists its models: type a name.` : `${label} has no command that lists its models; names it knows: ${list.models.join(', ')}. Any name it accepts works.`;
     case 'missing':
@@ -143,4 +143,43 @@ export function modelListText(provider: Provider, state: EngineModelsState): str
 export function publishEngineModels(provider: Provider, list: EngineModels): void {
   modelLists.set(provider, { state: 'ready', list });
   modelListeners.forEach((l) => l());
+}
+
+/**
+ * opencode: the key names a provider's models need (models.dev, opencode 2.4.1's catalog, read 2026-11-24). An opencode agent keeps its own
+ * opencode data in its folder, so the owner's opencode sign-in does not reach it: without one of these keys (or a Clean Room's egress for
+ * Anthropic) opencode falls back to its own free default model without a word. opencode's own models (`opencode/...`) need none.
+ */
+export const OPENCODE_PROVIDER_KEYS: Readonly<Record<string, readonly string[]>> = {
+  anthropic: ['ANTHROPIC_API_KEY'],
+  openai: ['OPENAI_API_KEY'],
+  google: ['GOOGLE_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'GEMINI_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  xai: ['XAI_API_KEY'],
+  mistral: ['MISTRAL_API_KEY'],
+  deepseek: ['DEEPSEEK_API_KEY'],
+  'amazon-bedrock': ['AWS_BEARER_TOKEN_BEDROCK', 'AWS_ACCESS_KEY_ID', 'AWS_PROFILE'],
+  'github-copilot': ['GITHUB_TOKEN'],
+};
+
+/** The line under the opencode model list: which models need a key for the agent. */
+export const OPENCODE_KEY_NOTE =
+  "An opencode agent keeps its own opencode data, so your own opencode sign-in does not reach it: a model of another provider than opencode's own (anthropic/..., openai/...) needs that provider's key for the agent (Keys below or the room's keys, such as ANTHROPIC_API_KEY), or for Anthropic a Clean Room with egress. Without it opencode quietly falls back to its free default model.";
+
+/**
+ * A warning for an opencode agent about to start with `model`: its provider needs a key the agent will not have. `keys` are the key names it
+ * will get (its own and the room's that reach it); `egress` is a Clean Room whose Anthropic key is held by gonogo's proxy. null: no warning
+ * (no model, opencode's own, a key is there). A key in gonogo's own environment is not seen here, so the text says it may still be there.
+ */
+export function opencodeKeyWarning(model: string, keys: readonly string[], egress: boolean): string | null {
+  const slash = model.indexOf('/');
+  if (slash <= 0) return null;
+  const provider = model.slice(0, slash);
+  if (provider === 'opencode') return null;
+  if (provider === 'anthropic' && egress) return null;
+  const wanted = OPENCODE_PROVIDER_KEYS[provider];
+  if (wanted !== undefined && wanted.some((name) => keys.includes(name))) return null;
+  const which = wanted === undefined ? `the API key of ${provider}` : wanted.length === 1 ? (wanted[0] ?? '') : `one of ${wanted.join(', ')}`;
+  return `${model} needs ${which} for this agent, and it has none among its keys or the room's${provider === 'anthropic' ? ' (a Clean Room with egress also works)' : ''}. Without it opencode falls back to its free default model without saying so (unless gonogo's own environment has the key).`;
 }

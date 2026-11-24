@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement, ReactNode } from 'react';
 import { CLEAN_ROOM_FLAVORS, EFFORTS, KEY_SUGGESTIONS, KEYS_MAX, keyWarning, MAX_AGENTS, providerInfo, ROLE_MAX_CHARS, takesCleanRoom, takesEffort, takesPermissions } from '../shared/protocol.js';
-import type { AgentView, CleanRoomFlavors, EngineCheck, PermissionMode, PhoneMode, Provider } from '../shared/protocol.js';
+import type { AgentView, CleanRoomFlavors, EngineCheck, PermissionMode, PhoneMode, Provider, RoomKeysView } from '../shared/protocol.js';
 import { POSITIONS, positionById } from '../shared/positions.js';
 import type { Position } from '../shared/positions.js';
 import * as api from './api.js';
 import { PermissionsEditor } from './PermissionsEditor.js';
 import { effectiveEffort, effectiveModel as startModel } from '../shared/details.js';
-import { FLAVOR_TEXT, modelNames, modelNote, useEngineModels, useModelDefaults } from './models.js';
+import { FLAVOR_TEXT, modelNames, modelNote, opencodeKeyWarning, useEngineModels, useModelDefaults } from './models.js';
 import { ModelListStatus } from './EngineModelList.js';
 import { hasServer, mergeServer } from './registry.js';
 import { RegistryPicker } from './RegistryPicker.js';
@@ -255,6 +255,17 @@ function Staff({ form }: { form: Target }): ReactElement {
   const [checks, setChecks] = useState<EngineCheck[]>([]);
   const roomModels = useModelDefaults();
   const engineModels = useEngineModels(values.provider);
+  // the room's keys, for the warning on an opencode model whose provider needs one (asked once, when the engine is opencode)
+  const [roomKeys, setRoomKeys] = useState<RoomKeysView['keys'] | null>(null);
+  const wantsRoomKeys = values.provider === 'opencode' && roomKeys === null;
+  useEffect(() => {
+    if (!wantsRoomKeys) return;
+    let live = true;
+    api.roomKeys().then((view) => live && setRoomKeys(view.keys), () => live && setRoomKeys([]));
+    return () => {
+      live = false;
+    };
+  }, [wantsRoomKeys]);
   const [flavors, setFlavors] = useState<CleanRoomFlavors | null>(null);
   useEffect(() => {
     let live = true;
@@ -463,6 +474,9 @@ function Staff({ form }: { form: Target }): ReactElement {
   const keysError = shown('keys');
   const modelHints = providerInfo(values.provider).model === null ? null : modelNames(values.provider, engineModels);
   const storedKeys = Object.keys(original?.keys ?? {}).sort();
+  const startsWith = startModel({ model: values.model.trim() || null, provider: values.provider, position: values.position === '' ? null : values.position }, roomModels)?.name ?? '';
+  const keyNames = [...storedKeys.filter((n) => !values.keysRemoved.includes(n)), ...values.keys.map((row) => row.name.trim()).filter((n) => n !== ''), ...(roomKeys ?? []).filter((k) => !values.cleanRoom || k.cleanRoom).map((k) => k.name)];
+  const keyWarningOfModel = values.provider === 'opencode' && roomKeys !== null && startsWith !== '' ? opencodeKeyWarning(startsWith, keyNames, values.cleanRoom && values.egress !== 'off') : null;
   const setRows = (keys: Values['keys']): void => change({ keys }, 'keys');
   const toggleRemoved = (name: string): void =>
     change({ keysRemoved: values.keysRemoved.includes(name) ? values.keysRemoved.filter((n) => n !== name) : [...values.keysRemoved, name] }, 'keys');
@@ -573,7 +587,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       label="Model"
       hint={
         <>
-          {`Passed to ${providerInfo(values.provider).label} as --model. ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label, values.position === '' ? null : values.position)}`} <ModelListStatus provider={values.provider} state={engineModels} />
+          {`${values.provider === 'opencode' ? 'Written into its config as its model (provider/model).' : `Passed to ${providerInfo(values.provider).label} as --model.`} ${modelNote(values.model, roomModels, values.provider, providerInfo(values.provider).label, values.position === '' ? null : values.position)}`} <ModelListStatus provider={values.provider} state={engineModels} />
         </>
       }
       error={modelError}
@@ -598,6 +612,11 @@ function Staff({ form }: { form: Target }): ReactElement {
           <option key={name} value={name} />
         ))}
       </datalist>
+      {keyWarningOfModel !== null && (
+        <p className="hint" role="status">
+          {keyWarningOfModel}
+        </p>
+      )}
     </Control>
   );
   const roomEffort = effectiveEffort({ provider: values.provider, effort: null }, roomModels);
