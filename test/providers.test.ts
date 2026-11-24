@@ -118,13 +118,13 @@ describe('prepareStart for another agent CLI', () => {
     const recorded = agent('opencode', { engineSession: { for: SID, id: 'ses_old' } });
     const first = await l.prepareStart(recorded, START);
     expect(first.spec.env.XDG_DATA_HOME).toBe(join(agentDir(), 'opencode-data'));
-    expect(first.spec.args).toStrictEqual([]); // ses_old lived in the shared database
+    expect(first.spec.args).toStrictEqual(['--standalone']); // ses_old lived in the shared database
     expect(await readFile(join(agentDir(), 'opencode-data', 'opencode', 'auth.json'), 'utf8')).toBe('{"x":1}');
     expect((await lstat(join(agentDir(), 'opencode-data', 'opencode', 'auth.json'))).isSymbolicLink()).toBe(true);
     expect(await readdir(join(agentDir(), 'opencode-data', 'opencode'))).toStrictEqual(['auth.json']);
     // once the agent has a database of its own, the recorded session resumes
     await writeFile(join(agentDir(), 'opencode-data', 'opencode', 'opencode.db'), 'its own');
-    expect((await l.prepareStart(recorded, START)).spec.args).toStrictEqual(['--session', 'ses_old']);
+    expect((await l.prepareStart(recorded, START)).spec.args).toStrictEqual(['--standalone', '--session', 'ses_old']);
   });
 
   it('opencode, kimi and copilot: a config file in the agent folder; kimi and copilot carry the token, mode 0600', async () => {
@@ -133,11 +133,11 @@ describe('prepareStart for another agent CLI', () => {
     expect(open.spec.env.OPENCODE_CONFIG).toBe(join(agentDir(), 'opencode.json'));
     expect(open.spec.env.GONOGO_OPENCODE_CONFIG).toBe(join(agentDir(), 'gonogo-opencode.json'));
     // the role is an instructions file, so a resumed session does not get it again as a prompt
-    expect(open.spec.args).toStrictEqual([]);
+    expect(open.spec.args).toStrictEqual(['--standalone']);
     expect(await readFile(join(agentDir(), 'opencode-role.md'), 'utf8')).toContain(roleText());
     const config = JSON.parse(await readFile(join(agentDir(), 'opencode.json'), 'utf8'));
     expect(config).toMatchObject({
-      plugin: [`file://${join(agentDir(), 'gonogo-opencode.js')}`],
+      plugin: [join(agentDir(), 'gonogo-opencode')],
       instructions: [join(agentDir(), 'opencode-role.md')],
       mcp: { gonogo: { type: 'remote', url: `${HUB}/mcp`, headers: { Authorization: 'Bearer {env:GONOGO_TOKEN}' }, enabled: true } },
     });
@@ -150,9 +150,9 @@ describe('prepareStart for another agent CLI', () => {
     await mkdir(join(agentDir(), 'opencode-data', 'opencode'), { recursive: true });
     await writeFile(join(agentDir(), 'opencode-data', 'opencode', 'opencode.db'), 'its own');
     const again = await l.prepareStart(agent('opencode', { engineSession: { for: SID, id: 'ses_abc' } }), START);
-    expect(again.spec.args).toStrictEqual(['--session', 'ses_abc']);
+    expect(again.spec.args).toStrictEqual(['--standalone', '--session', 'ses_abc']);
     const stale = await l.prepareStart(agent('opencode', { engineSession: { for: 'another', id: 'ses_abc' } }), START);
-    expect(stale.spec.args).toStrictEqual([]);
+    expect(stale.spec.args).toStrictEqual(['--standalone']);
     const kimi = await l.prepareStart(agent('kimi'), START);
     expect(kimi.spec.args).toStrictEqual(['--mcp-config-file', join(agentDir(), 'kimi-mcp.json')]);
     const kimiFile = join(agentDir(), 'kimi-mcp.json');

@@ -34,15 +34,20 @@ those four, and lets the owner pick the CLI in the hire form.
 - **The role.** With the tools the agent gets the role text with the preamble about them, as its first prompt where the
   CLI has a flag for one (Gemini `--prompt-interactive`, Codex positional prompt, opencode `--prompt`); pi gets it in its
   system prompt (`--append-system-prompt`). The others get no role.
-- **opencode (1.19) through a plugin.** `src/server/opencodeplugin.ts` writes `opencode.json` (passed with `OPENCODE_CONFIG`:
-  `plugin` `file://.../gonogo-opencode.js`, `instructions` `opencode-role.md`, `mcp` with gonogo's server and the Payload and global
+- **opencode (2.4, `@opencode/cli`) through a plugin.** opencode 1.x is no longer supported: opencode 2 has another plugin API, config and session store. Every start is `opencode --standalone`
+  (a server of its own for the agent, never the shared background service) with `--session <id>` to resume. `src/server/opencodeplugin.ts` writes `opencode.json` (passed with `OPENCODE_CONFIG`:
+  `plugin` the plugin directory `gonogo-opencode/` (a package.json and an index.js that default-exports `{ id, setup(ctx) }`), `instructions` `opencode-role.md`, `mcp` with gonogo's server and the Payload and global
   ones, `permission` `"*": "ask"` and each tool, `skills.paths`, the effort as `agent.build/plan.variant`, egress as
   `provider.anthropic.options.baseURL`) and `gonogo-opencode.json` (the hook URL, the server names and the tool gate's policy). The plugin
-  posts `chat.message` (UserPromptSubmit with the session id, kept as `engineSession` and resumed with `--session`),
-  `tool.execute.before/after`, `permission.asked` (answered by the gate with `postSessionIdPermissionsPermissionId`, or passed on as
-  PermissionRequest), `permission.replied`, `session.idle` (Stop; a block is sent with `session.promptAsync`), `session.error`, the
-  `task` tool as SubagentStart/Stop (child sessions kept apart) and each finished reply's usage. Checked in real runs of opencode 1.19.6
-  with its free models, in a Clean Room too.
+  posts `session.hook('prompt')` (UserPromptSubmit with the session id, kept as `engineSession`), `tool.hook('execute.before'/'execute.after')`,
+  `permission.hook('evaluate')` (the tool gate: it sets `effect` to allow or deny with the rule's words; ask is left to opencode's own question, answered from the console,
+  the page or the phone, and passed on as PermissionRequest; a folder outside the project is the agent's own when it is inside `agents/<name>/`),
+  `session.hook('experimental.idle')` (Stop; a block is handed over with `session.synthetic` and the turn goes on), the events
+  `session.execution.interrupted` (a NO-GO: the turn ends, Stop) and `session.execution.failed` (StopFailure), `session.usage.updated` (the session's running totals, reported as the
+  difference), and the `subagent` tool as SubagentStart/Stop (child sessions, which `session.get` says have a `parentID`, kept apart). The database and sessions of an agent live in
+  `agents/<name>/opencode-data` (`XDG_DATA_HOME`), the owner's `auth.json` linked in. A switch reads the old session with `opencode session export <id> --standalone` and finds one of an
+  older gonogo with `opencode session list --format json`. Checked in real runs of opencode 2.4.1 with its free model (state from hooks, mail at idle and mid-turn, GO and NO-GO of a shell
+  command, the agent's own folder).
 - **The tool gate** (`src/server/toolgate.ts`): Claude Code's permission order and rule syntax, in one self-contained function copied
   into the extension and the plugin (`GATE_SOURCE`).
 - **pi (1.6) through an extension.** `src/server/piextension.ts` writes `gonogo-pi.ts` and `gonogo-pi.json` (0600) into the
@@ -87,7 +92,7 @@ those four, and lets the owner pick the CLI in the hire form.
 | Gemini CLI (legacy) | `gemini` | hooks | yes | local: `--help` and the bundled source of 0.59.0, not signed in |
 | Antigravity CLI | `agy` | output | no | local: `--help` of 1.5.11, not signed in; hooks and tools wait for a per-agent config location (`docs/facts/antigravity.md`) |
 | Codex | `codex` | output | yes | docs |
-| opencode | `opencode` | hooks | yes | run: 1.19.6 |
+| opencode | `opencode` | hooks | yes | run: 2.4.1 |
 | Kimi CLI | `kimi` | output | yes | docs |
 | Copilot CLI | `copilot` | output | yes | docs |
 | pi | `pi` | hooks | yes | run: 1.6.0 |

@@ -698,7 +698,10 @@ export function createLauncher(options: LauncherOptions): Launcher {
     };
     const start = buildProviderStart(provider, ctx);
     if (start.skipped !== undefined) log.warn(`${agent.name}: ${PROVIDER_INFO[provider].label} cannot run these MCP servers (no SSE transport): ${start.skipped.join(', ')}`);
-    for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
+    for (const [file, content] of Object.entries(start.files)) {
+      await mkdir(dirname(join(base, file)), { recursive: true, mode: DIR_MODE });
+      await writeFileAtomic(join(base, file), content, FILE_MODE);
+    }
     if (provider === 'opencode') await prepareOpencodeData(base, options.env ?? process.env);
     const childEnv = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: keysOf(agent), gh: await ensureGh() }), ...start.env };
     if (clean === null) {
@@ -924,7 +927,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
         const own = { ...env, XDG_DATA_HOME: join(agentDir(from.name), OPENCODE_DATA_DIR) };
         const firstOwn = <T>(ask: (e: Record<string, string | undefined>) => Promise<T>, empty: (value: T) => boolean) => async (): Promise<T> => {
           const mine = await ask(own).catch(() => null);
-          return mine !== null && !empty(mine) ? mine : ask(env);
+          if (mine !== null && !empty(mine)) return mine;
+          // the agent has a database of its own: another agent's sessions in the shared one are not its old session; only an agent without one (an older gonogo) is looked for there
+          return existsSync(join(agentDir(from.name), OPENCODE_DATA_DIR, 'opencode', 'opencode.db')) && mine !== null ? mine : ask(env);
         };
         const exportOpencode = (id: string): Promise<string> => firstOwn((e) => opencodeExporter(e, from.dir)(id), (out) => !out.includes('{'))();
         const listOpencode = (): Promise<string> => firstOwn((e) => opencodeLister(e, from.dir)(), (out) => !out.includes('"id"'))();

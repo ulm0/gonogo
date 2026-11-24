@@ -95,7 +95,7 @@ RUN mkdir /app \
 FROM ${NODE_IMAGE} AS runtime
 ARG CLAUDE_CODE_VERSION=2.1.325
 ARG PI_VERSION=1.6.0
-ARG OPENCODE_VERSION=1.19.6
+ARG OPENCODE_VERSION=2.4.1
 ARG PNPM_VERSION
 
 # The base image has neither git nor a CA bundle. tini reaps the orphans that agents' tools leave behind and forwards
@@ -128,12 +128,12 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global
  && rm -rf /root/.cache /root/.local/share/pnpm
 
 # Two more engines (Engine Bay), so an agent can move off Claude Code when its quota runs out: pi and opencode, pinned, the same way and in
-# a layer of their own after Claude Code's. pi is plain JavaScript (no build step). opencode-ai's postinstall links the binary of its
-# platform package (opencode-linux-x64 or -arm64, an optional dependency pnpm picks for the build's architecture), hence --allow-build.
+# a layer of their own after Claude Code's. pi is plain JavaScript (no build step). opencode 2 is the package @opencode/cli: its postinstall links the
+# binary of its platform package (@opencode/cli-linux-x64 or -arm64, an optional dependency pnpm picks for the build's architecture), hence --allow-build.
 # Each brings its own login: an API key set as a Clearance key of the agent, or a login stored under HOME (the /home/node volume).
 RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global \
       --config.global-dir=/usr/local/share/pnpm --config.global-bin-dir=/usr/local/bin --config.enable-global-virtual-store=false \
-      --allow-build=opencode-ai @earendil-works/pi-coding-agent@${PI_VERSION} opencode-ai@${OPENCODE_VERSION} \
+      --allow-build=@opencode/cli @earendil-works/pi-coding-agent@${PI_VERSION} @opencode/cli@${OPENCODE_VERSION} \
  && pi --version \
  && opencode --version \
  && rm -rf /root/.cache /root/.local/share/pnpm

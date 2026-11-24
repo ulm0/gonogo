@@ -120,7 +120,8 @@ export function gateDecision(policy: GatePolicy, call: GateCall): GateAnswer {
   if (policy.mode === 'bypassPermissions') return { permission: 'allow', reason: 'bypass mode' };
   if (READS.includes(call.tool) || QUIET.includes(call.tool)) return { permission: 'allow', reason: 'reading' };
   if (EDITS.includes(call.tool) && (policy.mode === 'acceptEdits' || policy.mode === 'auto')) {
-    const inside = call.path === undefined || pathMatches('**', call.path);
+    // an edit whose path is not known (opencode's patch names its files in the patch text) is not known to be inside: it is asked
+    const inside = call.path !== undefined && pathMatches('**', call.path);
     if (inside) return { permission: 'allow', reason: `${policy.mode} accepts edits in the working folder` };
   }
   return { permission: 'ask', reason: `${policy.mode} mode asks` };
