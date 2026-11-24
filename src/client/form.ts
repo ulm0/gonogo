@@ -1,4 +1,4 @@
-import { takesCleanRoom, takesPermissions, AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
+import { takesCleanRoom, takesPermissions, AGENT_NAME_PATTERN, DIR_MAX_CHARS, EFFORTS, KEY_NAME_PATTERN, KEY_VALUE_PATTERN, KEYS_MAX, MODEL_PATTERN, modelFormProblem, PROVIDERS, providerInfo, RESERVED_NAMES, ROLE_MAX_CHARS, takesEffort } from '../shared/protocol.js';
 import type { AgentView, CleanRoom, PayloadDefaults, GlobalMcpView, PayloadOff, Effort, EditRequest, EngineCheck, HireRequest, CleanRoomFlavor, McpServer, ModelDefaults, Payload, PermissionMode, Provider, RemoteControl, Worktree } from '../shared/protocol.js';
 import { parseRulesText, rulesOf, rulesToText } from './permissions.js';
 import { positionById } from '../shared/positions.js';
@@ -464,6 +464,10 @@ export function validate(
   if (kind === 'all' && readSkills(values.skills).some((path) => !path.startsWith('/'))) problems['payload.skills'] = 'Use absolute paths: each starts with /.';
   const model = modelOf(values);
   if (model !== '' && !MODEL_RE.test(model)) problems.model = 'Use letters, digits and . _ : / @ + -, starting with a letter or digit (at most 100 characters).';
+  else if (model !== '') {
+    const problem = modelFormProblem(values.provider, model);
+    if (problem !== null) problems.model = `${problem[0]?.toUpperCase() ?? ''}${problem.slice(1)}.`;
+  }
   const keys = keysProblem(values, Object.keys(original?.keys ?? {}));
   if (keys !== null) problems.keys = keys;
   return problems;

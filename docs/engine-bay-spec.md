@@ -37,7 +37,7 @@ those four, and lets the owner pick the CLI in the hire form.
 - **opencode (2.4, `@opencode/cli`) through a plugin.** opencode 1.x is no longer supported: opencode 2 has another plugin API, config and session store. Every start is `opencode --standalone`
   (a server of its own for the agent, never the shared background service) with `--session <id>` to resume. `src/server/opencodeplugin.ts` writes `opencode.json` (passed with `OPENCODE_CONFIG`:
   `plugin` the plugin directory `gonogo-opencode/` (a package.json and an index.js that default-exports `{ id, setup(ctx) }`), `instructions` `opencode-role.md`, `mcp` with gonogo's server and the Payload and global
-  ones, `permission` `"*": "ask"` and each tool, `skills.paths`, the effort as `agent.build/plan.variant`, egress as
+  ones, `permission` `"*": "ask"` and each tool, `skills.paths`, the model as `model: { providerID, model, variant }` (opencode 2 has no `--model`: 2.4.1 answers "Unrecognized flag: --model" and the agent exited; a hire refuses a name without `provider/`, which opencode would drop) with the effort as its `variant` (an effort with no model is not passed: 2.4.1 turns the old `agent.build.variant` into nothing), egress as
   `provider.anthropic.options.baseURL`) and `gonogo-opencode.json` (the hook URL, the server names and the tool gate's policy). The plugin
   posts `session.hook('prompt')` (UserPromptSubmit with the session id, kept as `engineSession`), `tool.hook('execute.before'/'execute.after')`,
   `permission.hook('evaluate')` (the tool gate: it sets `effect` to allow or deny with the rule's words; ask is left to opencode's own question, answered from the console,

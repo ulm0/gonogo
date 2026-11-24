@@ -90,6 +90,8 @@ The MODEL field of the hire and edit form is free text with a list to pick from;
 | opencode | its own list (`opencode models`) | real runs (2.4.1) |
 | Codex, Kimi CLI, Cursor Agent | none | their docs, not installed |
 
+opencode takes its model as `provider/model` (as `opencode models` lists it, for example `anthropic/claude-opus-5-5`); gonogo writes it into the agent's `opencode.json`, since opencode 2 has no `--model`, and the effort becomes that model's variant (no model, no effort). An opencode agent keeps its own opencode data, so a provider it is not signed in to there (Anthropic through your own opencode login, say) is not available to it unless it gets that provider's key (an `ANTHROPIC_API_KEY` key of the agent or the room), and opencode then quietly uses its default free model instead.
+
 Copilot CLI, Qwen Code, Grok CLI, Crush and the custom command have no model field (no flag found); set the model in the CLI.
 
 ## Amazon Bedrock

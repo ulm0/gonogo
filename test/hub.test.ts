@@ -6289,6 +6289,9 @@ describe('Engine Bay: the model and the keys of an agent', () => {
     await expectHubReject(hireWith(h, { model: 5 }), 'bad_request', /model must be/, 'model');
     expect(h.hub.views().map((agent) => agent.name)).toEqual(['flight']);
     expect((await hireWith(h, { model: 'flash', provider: 'gemini' })).model).toBe('flash');
+    // opencode 2 takes its model only as provider/model (in its config): any other name it would drop
+    await expectHubReject(hireWith(h, { model: 'sonnet', provider: 'opencode', name: 'oc' }), 'bad_request', /opencode takes a model as provider\/model/, 'model');
+    expect((await hireWith(h, { model: 'opencode/big-pickle', provider: 'opencode', name: 'oc' })).model).toBe('opencode/big-pickle');
   });
 
   it('edit changes and clears the model, and either is dirty until the restart', async () => {

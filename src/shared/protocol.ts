@@ -98,7 +98,7 @@ export const PROVIDER_INFO: Readonly<Record<Provider, ProviderInfo>> = {
 
 /**
  * Effort: how hard an agent thinks. Claude Code `--effort <level>` (`claude --help` 2.1.325), pi `--thinking <level>` (1.6.0, the same
- * names and more), opencode the `variant` of its agents (1.19.6; a model without that variant runs as it would). agy lists `--effort` in its
+ * names and more), opencode the `variant` of its model (2.4.1, in its config; only with a model set: a variant goes with one). agy lists `--effort` in its
  * help but the levels it takes were not read, so it has none here.
  */
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -117,6 +117,9 @@ export const takesPermissions = (provider: Provider | undefined): boolean => ['c
 export const ENGINE_SESSION_PATTERN = '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$';
 /** Model field of the hire form and the roster: a CLI model name or alias, passed as `--model <name>`. A leading dash would be read as a flag. */
 export const MODEL_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$';
+/** Why a model name does not suit this engine, or null. opencode 2 takes its model only as `provider/model` (as `opencode models` lists it) in its config, and drops any other name. */
+export const modelFormProblem = (provider: Provider, model: string): string | null =>
+  provider === 'opencode' && !/^[^/]+\/.+$/.test(model) ? 'opencode takes a model as provider/model, as opencode models lists it (for example anthropic/claude-opus-5-5)' : null;
 /**
  * Clearance (docs/engine-bay-spec.md): environment variables the Director sets for one agent, usually API keys. Upper case
  * names; a value is printable ASCII without a space. At most KEYS_MAX per agent. The values never leave the server.
