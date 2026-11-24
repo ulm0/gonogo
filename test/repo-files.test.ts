@@ -290,6 +290,20 @@ describe('Homebrew installs from the release asset, not from npm\'s CDN', () => 
   });
 });
 
+describe('.github/workflows stays small (15 files became 8 in 0.23)', () => {
+  it('holds only these workflows: a new check is a job of one of them, not a new file', () => {
+    expect(readdirSync(join(root, '.github', 'workflows')).sort()).toEqual(
+      ['brew.yml', 'browser.yml', 'ci.yml', 'docs.yml', 'image.yml', 'install.yml', 'release.yml', 'update-e2e.yml'],
+    );
+  });
+  it('the release still runs the Chromium smoke: the job is skipped only by the weekly run and by a run by hand that asked for another job', () => {
+    expect(read('.github', 'workflows', 'release.yml')).toContain('uses: ./.github/workflows/browser.yml');
+    expect(read('.github', 'workflows', 'browser.yml')).toContain(
+      "  smoke:\n    # inputs.run is empty when the release calls this (its own dispatch has no such input): the smoke runs\n    if: ${{ github.event_name != 'schedule' && inputs.run != 'engines' && inputs.run != 'screens' }}\n",
+    );
+  });
+});
+
 describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scripts/update-e2e.sh)', () => {
   const wf = read('.github', 'workflows', 'update-e2e.yml');
   const script = read('scripts', 'update-e2e.sh');

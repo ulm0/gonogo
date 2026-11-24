@@ -1,5 +1,5 @@
 /*
- * Screenshots of every view, for the UI/UX audit (workflow screens.yml, by hand; not part of the smoke gate and not run by
+ * Screenshots of every view, for the UI/UX audit (the screens job of workflow browser.yml, by hand; not part of the smoke gate and not run by
  * `pnpm exec playwright test` unless SCREENS=1). It starts the built server with the stand-in agent, takes the empty states, seeds a few
  * agents, messages, tasks and log entries, then takes each view at 1280x800 and 390x844 in a light and a dark livery, and the docs site.
  * Best effort on purpose: one view that cannot be reached is written down in the index and the rest go on.

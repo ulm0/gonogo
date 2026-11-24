@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 // The real-browser smoke (browser/smoke.spec.ts). It starts the built gonogo (`pnpm build` first) itself.
-// PW_BROWSERS picks the engines, comma separated; Chromium alone by default (the release gate). browsers.yml runs firefox and webkit (weekly and by hand).
+// PW_BROWSERS picks the engines, comma separated; Chromium alone by default (the release gate). browser.yml (job engines) runs firefox and webkit (weekly and by hand).
 const engines = (process.env.PW_BROWSERS ?? 'chromium').split(',').map((name) => name.trim());
 
 export default defineConfig({

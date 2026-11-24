@@ -4,7 +4,7 @@
  *
  * Does the Knowledge store's export read as multivac's own file (docs/features/knowledge.md, `gonogo knowledge export --multivac`)? The grammar is ported from
  * multivac (MIT, the same author) and the export turns a gonogo-only `"literal"` leg into an escaped POSIX regex, so the two must agree. This installs multivac at an EXACT
- * pinned version, with its dependencies LOCKED (scripts/multivac-tool/package-lock.json, `npm ci --ignore-scripts`: a weekly run cannot pick up a changed dependency),
+ * pinned version, with its dependencies LOCKED (scripts/multivac-tool/package-lock.json, `npm ci --ignore-scripts`: a CI run cannot pick up a changed dependency),
  * in a scratch folder, and then:
  *
  *   1. makes a fixture store (claims with every mode, literals full of regex metacharacters, a glob exclusion, a dotfile);

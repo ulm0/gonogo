@@ -1,5 +1,5 @@
 // scripts/multivac-conformance.mjs: the reading of `multivac verify` and the fixture. The conformance itself installs multivac and runs in the workflow
-// (.github/workflows/multivac-conformance.yml), not here: a unit test must not need the network.
+// (a step of the check job in .github/workflows/ci.yml), not here: a unit test must not need the network.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseAnchors } from '../src/server/anchorgrammar.js';
