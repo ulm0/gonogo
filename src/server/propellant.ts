@@ -14,7 +14,7 @@
 import { appendFile, open, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { AGENT_NAME_PATTERN, FUEL_WINDOWS } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, FUEL_WINDOWS, reportsSpend } from '../shared/protocol.js';
 import type {
   PlanQuota,
   SpendOf,
@@ -229,6 +229,8 @@ export function parsePropellantRequest(body: Record<string, unknown>): { ok: tru
         if (!LABEL_RE.test(name)) return { ok: false, error: `budget.${kind}: invalid name "${name}"`, field: 'budget' };
         const b = parseBudget(one, `budget.${kind}.${name}`);
         if (typeof b === 'string') return { ok: false, error: b, field: 'budget' };
+        // an engine that does not report its spend (Gemini CLI, agy, custom) never fills the ledger: a budget on it could never trip, so it is refused rather than looking like a guard
+        if (kind === 'engines' && Object.keys(b).length > 0 && !reportsSpend(name as never)) return { ok: false, error: `budget.engines: ${name} does not report its spend (only claude, pi and opencode do), so a budget on it could never trip`, field: 'budget' };
         out[name] = b;
       }
       budget[kind] = out;

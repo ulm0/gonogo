@@ -112,6 +112,9 @@ describe('budgets per engine and per provider', () => {
     const { parsePropellantRequest } = await import('../src/server/propellant.js');
     expect(parsePropellantRequest({ budget: { engines: { pi: { day: 5 } }, providers: { openai: { week: 20 } } } })).toMatchObject({ ok: true, value: { budget: { engines: { pi: { day: 5 } }, providers: { openai: { week: 20 } } } } });
     expect(parsePropellantRequest({ budget: { engines: { 'bad name': { day: 5 } } } })).toMatchObject({ ok: false, field: 'budget' });
+    // an engine that reports no spend can never trip a budget: refused (clearing one is fine)
+    for (const engine of ['gemini', 'agy', 'custom', 'kimi']) expect(parsePropellantRequest({ budget: { engines: { [engine]: { day: 5 } } } }), engine).toMatchObject({ ok: false, field: 'budget' });
+    expect(parsePropellantRequest({ budget: { engines: { gemini: {} } } })).toMatchObject({ ok: true });
     expect(parsePropellantRequest({ budget: { engines: { pi: { day: -1 } } } })).toMatchObject({ ok: false });
     const p = await makeB();
     await p.setBudget({ engines: { pi: { day: 5 } } });
