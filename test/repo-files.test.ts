@@ -293,11 +293,16 @@ describe('Homebrew installs from the release asset, not from npm\'s CDN', () => 
 describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scripts/update-e2e.sh)', () => {
   const wf = read('.github', 'workflows', 'update-e2e.yml');
   const script = read('scripts', 'update-e2e.sh');
-  it('runs after a stable Image run on a tag, by hand and for a change of the script; read access only, the job\'s own token, pinned actions, no secret', () => {
-    expect(wf).toMatch(/workflow_run:\n\s+workflows: \[Image\]/);
-    expect(wf).toContain("!contains(github.event.workflow_run.head_branch, '-')");
-    expect(wf).toContain("github.event.workflow_run.conclusion == 'success'");
+  it('image.yml calls it after a stable tag is pushed and attested; also by hand and for a change of the script; read access only, the job\'s own token, pinned actions, no secret', () => {
+    expect(wf).toContain('workflow_call:');
+    expect(wf).not.toContain('workflow_run');
     expect(wf).toContain('workflow_dispatch:');
+    const image = read('.github', 'workflows', 'image.yml');
+    const job = image.slice(image.indexOf('\n  update-e2e:'));
+    expect(job).toContain('needs: merge');
+    expect(job).toContain("if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}");
+    expect(job).toContain('uses: ./.github/workflows/update-e2e.yml');
+    expect(job).toMatch(/permissions:\n\s+contents: read\n\s+packages: read\n\s+attestations: read/);
     expect(wf).toMatch(/^permissions: \{\}/m);
     expect(wf).toMatch(/permissions:\n\s+contents: read\n\s+packages: read\n\s+attestations: read/);
     expect(wf).not.toMatch(/secrets\./);
@@ -305,8 +310,8 @@ describe('the Docker self-update is tried end to end in CI (update-e2e.yml, scri
     expect(wf.match(/GH_TOKEN: \$\{\{ github\.token \}\}/g)).toHaveLength(2);
     for (const use of wf.match(/uses: [^\n]+/g) ?? []) expect(use, use).toMatch(/@[0-9a-f]{40} # v\d/);
   });
-  it('TO is the tag of the Image run that started it (the release may not be marked latest yet), FROM the newest stable release below it', () => {
-    expect(wf).toContain('RUN_TAG: ${{ github.event.workflow_run.head_branch }}');
+  it('TO is the tag image.yml ran for (the release may not be marked latest yet), FROM the newest stable release below it', () => {
+    expect(wf).toContain("RUN_TAG: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}");
     expect(wf).toContain('to=${INPUT_TO:-${RUN_TAG#v}}');
     expect(wf).toContain('sort -Vr');
     expect(wf).toContain("[[ \"$to\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]");

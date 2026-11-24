@@ -1,11 +1,19 @@
 name: Image
 
 # Every run builds linux/amd64 and linux/arm64, each on a runner of its own architecture (no QEMU).
-# A pull request or a push to main builds both and pushes nothing.
+# A push to main builds both and pushes nothing; so does a pull request, but only one that touches the image's own files (the Dockerfile, what it
+# installs from, the scripts it copies, this file): CI already builds and packs the code on every pull request, and main catches the rest.
 # A pushed v* tag pushes each platform to ghcr.io by digest, then one job joins the digests into a multi-arch
 # manifest list tagged <version>, <major>.<minor> and latest (latest only for a tag without a pre-release suffix).
 on:
   pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - packaging/docker/**
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/image.yml
   push:
     branches: [main]
     tags: ['v*']
@@ -156,3 +164,14 @@ jobs:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.index.outputs.digest }}
           push-to-registry: true
+
+  # The Docker self-update end to end (update-e2e.yml): the previous stable release's container updated to the one just pushed, then UNDOne.
+  # Only for a stable tag: `latest` moved to it above, and the update follows `latest`.
+  update-e2e:
+    needs: merge
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+    uses: ./.github/workflows/update-e2e.yml
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
