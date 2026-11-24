@@ -4,6 +4,8 @@
  */
 import { useState } from 'react';
 import type { ReactElement } from 'react';
+import { ArrowDown01Icon, MoreHorizontalIcon, Search01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import { DOCS_URL } from '../shared/protocol.js';
 import * as api from './api.js';
 import { CheckNow } from './CheckNow.js';
@@ -195,7 +197,7 @@ function WorkMenu({ phone, up = false }: { phone: boolean; up?: boolean }): Reac
     requestAnimationFrame(() => document.querySelector<HTMLElement>('.brief-input')?.focus());
   };
   return (
-    <Pop label="Work ▾" name="Work" up={up} align="start">
+    <Pop label={<>Work <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" aria-hidden="true" /></>} name="Work" up={up} align="start">
       {(close) => (
         <div className="lay-menu" role="group" aria-label="Work">
           {phone && <Item label="Brief" aria="Brief the boss" run={goBrief} close={close} />}
@@ -212,7 +214,7 @@ function WorkMenu({ phone, up = false }: { phone: boolean; up?: boolean }): Reac
 function MoreMenu({ up = false }: { up?: boolean }): ReactElement {
   const off = useStore((s) => s.features);
   return (
-    <Pop label={up ? 'More' : '⋯'} name="More" up={up} align="end">
+    <Pop label={up ? 'More' : <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" aria-hidden="true" />} name="More" up={up} align="end">
       {(close) => (
         <div className="lay-menu" role="group" aria-label="More">
           <Item label="Flight Rules" run={showRules} close={close} />
@@ -256,7 +258,7 @@ export function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }):
         </>
       )}
       <button type="button" className="btn lay-jump" data-kind="quiet" aria-label="Jump to… a console, a view or an action" aria-keyshortcuts="Meta+K Control+K" onClick={onPanel}>
-        <span aria-hidden="true">⌕</span>
+        <HugeiconsIcon icon={Search01Icon} className="size-3.5" aria-hidden="true" />
         <span className="lay-jump-text">{phone ? 'Jump' : 'Jump to…'}</span>
         <kbd className="lay-kbd">⌘K</kbd>
       </button>

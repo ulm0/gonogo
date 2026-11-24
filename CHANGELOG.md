@@ -4,6 +4,8 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+- **Party Line on shadcn/ui (pilot, a mock for the Director's go/no-go).** Tailwind v4 sits next to the Instrument CSS (theme and utilities only, no Preflight); every shadcn colour is an alias of a Livery token (`src/client/shadcn.css`), so each livery recolours it and its contrast check still holds. The THREADS tab of COMMS loads lazily and shows an open thread as Nexus UI Messages with a PromptInput reply box, Hugeicons (free) icons and a shimmer while sending; message text stays plain. The top bar's Work, More and Jump keys carry Hugeicons.
+
 ## 0.22.0 (2026-11-24)
 
 Auto-review: read-only reviewer agents draft one comment review per pull request for you to post; and the hire-on-demand crew can be removed, run bypassPermissions in a Clean Room by rule, and autoscale from the Flight Plan. Before you update: autoscale and auto-review are both off by default. Auto-review posts as the Director's own gh login (a comment review, never an approval), only after you click POST unless you turn on auto-post. Its per-PR and per-day spend caps are soft: a reviewer's spend counts after its turn, so one turn can overrun a cap. Not verified: the AUTO-REVIEW block and its POST key in a browser, autoPost against GitHub, a cap stopping a real reviewer, bypass by rule in a real container, and autoscale's idle stop and removal by time (see What was not verified).

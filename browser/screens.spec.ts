@@ -550,6 +550,13 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   });
   await view(page, group, t('comms traffic'), () => page.getByRole('tab', { name: /traffic/i }).click({ timeout: 3000 }));
   await view(page, group, t('comms threads'), () => page.getByRole('tab', { name: /threads/i }).click({ timeout: 3000 }));
+  // the shadcn pilot: an open thread shows the Nexus Thread of Messages and the PromptInput reply box
+  if (full) {
+    await view(page, group, 'comms threads: one open', async () => {
+      await page.locator('[data-slot="thread-row"]').first().click({ timeout: 3000 });
+      await page.locator('[data-slot="prompt-input"], [data-slot="thread"]').first().waitFor({ timeout: 3000 });
+    }, true);
+  }
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
   await view(page, group, t('mission with a link'), async () => {
     await page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 });

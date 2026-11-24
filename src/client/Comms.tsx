@@ -3,17 +3,19 @@
  * INBOX is the Downlink (what needs the Director, read and archived kept on the server, the badge), TRAFFIC is the Loop (every message, with
  * an agent filter) and THREADS is Party Line. Nothing is merged underneath. The tab is remembered in this browser.
  */
-import { useId } from 'react';
+import { lazy, Suspense, useId } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 import { Loop } from './Activity.js';
 import { Downlink } from './Downlink.js';
 import { NeedsYou } from './NeedsYou.js';
-import { PartyLine } from './PartyLine.js';
 import { unreadText } from './inbox.js';
 import { useAgentList } from './RoomView.js';
 import { chooseCommsTab, COMMS_TABS, openConsole, setCommsAgent, showRoom, useStore } from './store.js';
 import type { CommsTab } from './store.js';
 import './comms.css';
+
+// THREADS is the shadcn pilot: its libraries (Radix, Nexus UI, motion) load with the tab, not with the first screen
+const PartyLine = lazy(() => import('./PartyLine.js').then((m) => ({ default: m.PartyLine })));
 
 export const COMMS_TAB_TEXT: Record<CommsTab, { label: string; hint: string }> = {
   inbox: { label: 'INBOX', hint: 'Messages to you and what the server noticed.' },
@@ -72,7 +74,11 @@ export function Comms(): ReactElement {
       <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="comms-panel">
         {tab === 'inbox' && <Downlink />}
         {tab === 'traffic' && <Loop items={activity} agents={agents} boss={list.find((a) => a.boss) ?? null} onSelect={openConsole} onClose={showRoom} agent={agent} onAgent={setCommsAgent} />}
-        {tab === 'threads' && <PartyLine />}
+        {tab === 'threads' && (
+          <Suspense fallback={<p className="hint">Loading the threads…</p>}>
+            <PartyLine />
+          </Suspense>
+        )}
       </div>
     </div>
   );
