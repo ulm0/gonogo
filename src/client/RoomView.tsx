@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, ReactElement, RefObject } from 'react';
 import type { AgentView, ReliefRequest, WorktreeStatus } from '../shared/protocol.js';
-import { MAX_AGENTS } from '../shared/protocol.js';
+import { MAX_AGENTS, reportsSpend, resumesSession } from '../shared/protocol.js';
 import type { Position } from '../shared/positions.js';
 import { ConsoleTraffic } from './Activity.js';
 import { AgentFuel } from './Propellant.js';
@@ -449,7 +449,7 @@ function Foot({ agent, run, locked }: { agent: AgentView; run(action: () => Prom
         <p className="hint">
           {agent.provider === 'custom'
             ? 'Start runs the command again.'
-            : `Mail to a stopped console comes back to you undelivered. Start ${agent.provider === 'claude' ? 'picks up its last session' : 'opens a new session'}.`}
+            : `Mail to a stopped console comes back to you undelivered. Start ${resumesSession(agent.provider) ? 'picks up its last session' : 'opens a new session'}.`}
         </p>
         <button type="button" className="btn" data-kind="primary" data-size="big" aria-disabled={locked || undefined} onClick={() => !locked && run(() => api.restart(agent.name))}>
           Start
@@ -614,7 +614,7 @@ function ConsolePanel({ agent, legend, position }: { agent: AgentView; legend: s
       <TerminalBar />
       <TerminalPane agent={agent} />
       <Foot agent={agent} run={run} locked={locked} />
-      {agent.provider === 'claude' && (
+      {reportsSpend(agent.provider) && (
         <details className="panel-fuel">
           <summary className="label">PROPELLANT</summary>
           <AgentFuel name={agent.name} />

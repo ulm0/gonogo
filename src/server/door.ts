@@ -32,7 +32,8 @@ export const DOOR: Readonly<Record<Provider, { reads: ReadsAgentsMd; channel: Ro
   kimi: { reads: 'unknown', channel: 'none' },
   // only the global ~/.config/AGENTS.md is documented in its README
   crush: { reads: 'unknown', channel: 'none' },
-  pi: { reads: 'unknown', channel: 'role' },
+  // pi 1.6 (docs/security.md): AGENTS.md and CLAUDE.md load from the working folder; gonogo's extension makes it a preamble engine
+  pi: { reads: 'yes', channel: 'preamble' },
   copilot: { reads: 'yes', channel: 'none' },
   cursor: { reads: 'yes', channel: 'none' },
   custom: { reads: 'unknown', channel: 'none' },

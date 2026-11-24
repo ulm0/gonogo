@@ -47,8 +47,9 @@ describe('parsePermissions', () => {
     expect(parsePermissions({ deny: ['mcp__gonogofake__x'] }, 'claude')).toMatchObject({ ok: true });
   });
 
-  it('is for Claude Code only, and says so for another engine', () => {
-    for (const provider of ['gemini', 'codex', 'antigravity', 'opencode', 'custom'] as const) {
+  it('is for Claude Code, pi and opencode, and says so for another engine', () => {
+    for (const provider of ['claude', 'pi', 'opencode'] as const) expect(parsePermissions({ allow: ['Bash'] }, provider), provider).toMatchObject({ ok: true });
+    for (const provider of ['gemini', 'codex', 'antigravity', 'crush', 'custom'] as const) {
       expect(parsePermissions({ allow: ['Bash'] }, provider), provider).toMatchObject({ ok: false, error: expect.stringContaining('not supported for') });
     }
   });

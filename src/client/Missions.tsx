@@ -5,7 +5,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent, ReactElement } from 'react';
-import { MISSION_GOAL_MAX_CHARS, MISSION_NAME_MAX_CHARS, RITUAL_ITEM_MAX_CHARS, RITUAL_ITEMS_MAX } from '../shared/protocol.js';
+import { MISSION_GOAL_MAX_CHARS, MISSION_NAME_MAX_CHARS, providerInfo, RITUAL_ITEM_MAX_CHARS, RITUAL_ITEMS_MAX } from '../shared/protocol.js';
 import type { Mission, RitualItem } from '../shared/protocol.js';
 import * as api from './api.js';
 import { parseMoney } from '../shared/fuel.js';
@@ -225,7 +225,8 @@ function MissionForm({ original, draft, onDone }: { original: Mission | null; dr
   const [busy, setBusy] = useState(false);
   const first = useRef<HTMLInputElement | null>(null);
   useEffect(() => first.current?.focus(), []);
-  const leads = list.filter((a) => a.provider === 'claude' || a.boss);
+  // a lead must get mail: every engine with the gonogo tools
+  const leads = list.filter((a) => providerInfo(a.provider).mcp || a.boss);
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();

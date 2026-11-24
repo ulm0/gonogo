@@ -85,25 +85,36 @@ export const PROVIDER_INFO: Readonly<Record<Provider, ProviderInfo>> = {
   // hooks and mcp are false until a start can load them from the agent's own folder (docs/facts/antigravity.md): agy reads hooks.json and mcp_config.json only from .agents/, ~/.gemini/config/ and plugins.
   antigravity: { label: 'Antigravity CLI', bin: 'agy', hooks: false, mcp: false, modes: true, payload: null, check: 'local', model: [], install: 'curl -fsSL https://antigravity.google/cli/install.sh | bash', docs: 'https://antigravity.google/docs/getting-started' },
   codex: { label: 'Codex', bin: 'codex', hooks: false, mcp: true, modes: true, payload: null, check: 'docs', model: [], install: 'npm install -g @openai/codex', docs: 'https://github.com/openai/codex' },
-  opencode: { label: 'opencode', bin: 'opencode', hooks: false, mcp: true, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://opencode.ai/v2/install | bash', docs: 'https://opencode.ai/docs/' },
+  opencode: { label: 'opencode', bin: 'opencode', hooks: true, mcp: true, modes: true, payload: 'all', check: 'run', model: [], install: 'curl -fsSL https://opencode.ai/v2/install | bash', docs: 'https://opencode.ai/docs/' },
   qwen: { label: 'Qwen Code', bin: 'qwen', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | bash', docs: 'https://github.com/QwenLM/qwen-code' },
   grok: { label: 'Grok CLI', bin: 'grok', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/main/install.sh | bash', docs: 'https://github.com/superagent-ai/grok-cli' },
   kimi: { label: 'Kimi CLI', bin: 'kimi', hooks: false, mcp: true, modes: false, payload: 'servers', check: 'docs', model: [], install: null, docs: 'https://moonshotai.github.io/kimi-cli/' },
   crush: { label: 'Crush', bin: 'crush', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: null, install: 'brew install charmbracelet/tap/crush', docs: 'https://github.com/charmbracelet/crush' },
-  pi: { label: 'pi', bin: 'pi', hooks: false, mcp: false, modes: false, payload: null, check: 'local', model: ['sonnet', 'haiku'], install: 'curl -fsSL https://pi.dev/install.sh | sh', docs: 'https://pi.dev/' },
+  pi: { label: 'pi', bin: 'pi', hooks: true, mcp: true, modes: true, payload: 'all', check: 'run', model: ['sonnet', 'haiku'], install: 'curl -fsSL https://pi.dev/install.sh | sh', docs: 'https://pi.dev/' },
   copilot: { label: 'Copilot CLI', bin: 'copilot', hooks: false, mcp: true, modes: false, payload: null, check: 'docs', model: null, install: 'curl -fsSL https://gh.io/copilot-install | bash', docs: 'https://github.com/github/copilot-cli' },
   cursor: { label: 'Cursor Agent', bin: 'cursor-agent', hooks: false, mcp: false, modes: false, payload: null, check: 'docs', model: [], install: 'curl https://cursor.com/install -fsS | bash', docs: 'https://cursor.com/docs/cli/overview' },
   custom: { label: 'Custom command', bin: '', hooks: false, mcp: false, modes: false, payload: null, check: 'run', model: null, install: null, docs: '' },
 };
 
 /**
- * Effort (`claude --effort <level>`, checked in `claude --help` 2.1.325): how hard a Claude Code agent thinks. The one engine with a per-agent
- * mechanism that was checked: agy lists `--effort` in its help but the levels it takes were not read, so it has none here.
+ * Effort: how hard an agent thinks. Claude Code `--effort <level>` (`claude --help` 2.1.325), pi `--thinking <level>` (1.6.0, the same
+ * names and more), opencode the `variant` of its agents (1.19.6; a model without that variant runs as it would). agy lists `--effort` in its
+ * help but the levels it takes were not read, so it has none here.
  */
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORTS)[number];
-export const takesEffort = (provider: Provider): boolean => provider === 'claude';
+export const takesEffort = (provider: Provider): boolean => provider === 'claude' || provider === 'pi' || provider === 'opencode';
+/** A restart resumes the last session: Claude Code by its session id, pi by its own (`--session-id`), opencode by the id its plugin reports (`--session`). */
+export const resumesSession = (provider: Provider | undefined): boolean => ['claude', 'pi', 'opencode'].includes(provider ?? 'claude');
+/** Clean Room (docs/features/clean-room.md): the image ships claude, pi and opencode, and gonogo starts each of them the same way in it. */
+export const takesCleanRoom = (provider: Provider | undefined): boolean => ['claude', 'pi', 'opencode'].includes(provider ?? 'claude');
+/** Propellant and cost (docs/features/propellant.md): Claude Code from its transcripts, pi and opencode from the replies their extension reports. */
+export const reportsSpend = (provider: Provider | undefined): boolean => ['claude', 'pi', 'opencode'].includes(provider ?? 'claude');
+/** Tool permissions (docs/features/permissions.md): Claude Code in its settings, pi and opencode through gonogo's tool gate in their extension. */
+export const takesPermissions = (provider: Provider | undefined): boolean => ['claude', 'pi', 'opencode'].includes(provider ?? 'claude');
 
+/** An engine's own session id (opencode `ses_...`): one argument after `--session`, never a flag. */
+export const ENGINE_SESSION_PATTERN = '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$';
 /** Model field of the hire form and the roster: a CLI model name or alias, passed as `--model <name>`. A leading dash would be read as a flag. */
 export const MODEL_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$';
 /**
@@ -586,6 +597,11 @@ export interface AgentRecord {
   effort?: Effort;
   /** Clearance: the names of the keys set for this agent and the ms epoch each was set. The values live in keys.json, never here. Absent means none. */
   keys?: Record<string, number>;
+  /**
+   * An engine that names its own sessions (opencode `ses_...`): the session to resume, valid while `for` is still `sessionId` (a switch gives
+   * a new sessionId, so the old engine's session is not resumed). Set from the session id its hooks report. Absent: a new session.
+   */
+  engineSession?: { for: string; id: string };
 }
 export interface RosterFile {
   version: 1;
@@ -977,6 +993,8 @@ export interface ModelDefaults {
   models: Partial<Record<Provider, string>>;
   /** Position id to a model for a Claude Code agent in that position; wins over `models.claude`, loses to the agent's own model. Absent from an older server. */
   positions?: Record<string, string>;
+  /** Position models of the other engines with a model setting (pi, opencode, ...): engine to position id to model; the same rule as `positions` for Claude Code. Absent from an older server. */
+  enginePositions?: Partial<Record<Provider, Record<string, string>>>;
   /** The room's default engine: preselects the hire form, and is what a hire without an engine (Relief, hire_agent) gets. Absent means Claude Code. Never `custom`. */
   engine?: Provider;
   /** The room's default effort for a Claude Code console with none of its own. Absent means the CLI's own. */
@@ -2601,6 +2619,8 @@ export interface Launcher {
   revoke(name: string, generation: number): void;
   /** Rename <home>/agents/<old> to <new>. Rejects when <new> exists. Resolves when <old> does not exist. */
   renameAgentFiles(oldName: string, newName: string): Promise<void>;
+  /** Engine switch: write agents/<name>/handoff.md from the old engine's transcript, for the new session (handoff.ts). Never rejects. */
+  writeHandoff(from: AgentRecord, to: AgentRecord): Promise<void>;
   /** Absolute path of agents/<name>/memory.md. */
   memoryPath(name: string): string;
 }
@@ -2703,6 +2723,8 @@ export interface HubIo {
   logMessage(record: MessageRecord): void;
   /** The launcher renames agents/<old>; the glue in cli.ts also moves the terminal host's finished record (TerminalHost.rename) and the agent's keys. */
   renameAgentFiles(oldName: string, newName: string): Promise<void>;
+  /** Engine switch: the last turns of the old engine, written for the new session (Launcher.writeHandoff). Optional for fakes. Never rejects. */
+  writeHandoff?(from: AgentRecord, to: AgentRecord): Promise<void>;
   /** Clearance: where the values of an agent's keys are kept. The hub holds names only. Optional for fakes: without it keys are refused. */
   keys?: KeyStore;
   /**
@@ -2719,6 +2741,8 @@ export interface HubIo {
   press?(name: string, generation: number, data: string): boolean;
   /** Propellant: count the tokens of that agent's transcript since the last call (a Stop, or a tool call at most every METER_INTERVAL_MS). */
   meter?(name: string, generation: number, transcriptPath: string): void;
+  /** Propellant for pi and opencode: the `usage` list their extension sends with a hook (propellant.ts reportedUsage reads it). Optional for fakes. */
+  meterUsage?(name: string, generation: number, usage: unknown): void;
   /** Telemetry: a PreToolUse, PostToolUse or PostToolUseFailure hook of that agent's current process. Optional for fakes. */
   toolHook?(name: string, event: HookEvent, payload: Record<string, unknown>): void;
   /** An agent's Stop hook: its turn ended (Knowledge anchors recheck the repository of that agent). Optional for fakes. */

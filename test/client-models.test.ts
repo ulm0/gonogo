@@ -27,6 +27,6 @@ describe('modelNote', () => {
 
 describe('MODEL_PROVIDERS', () => {
   it('lists the engines with a model field and not the others', () => {
-    expect([...MODEL_PROVIDERS].sort()).toEqual(['antigravity', 'claude', 'codex', 'cursor', 'gemini', 'kimi', 'pi']);
+    expect([...MODEL_PROVIDERS].sort()).toEqual(['antigravity', 'claude', 'codex', 'cursor', 'gemini', 'kimi', 'opencode', 'pi']);
   });
 });

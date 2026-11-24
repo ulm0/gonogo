@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseMoney, parseTokens, tokenText } from '../src/shared/fuel.js';
-import { createPropellant, lineUsage, parseLimits, parsePropellantRequest } from '../src/server/propellant.js';
+import { createPropellant, lineUsage, parseLimits, parsePropellantRequest, reportedUsage } from '../src/server/propellant.js';
 import type { Propellant } from '../src/server/propellant.js';
 import { budgetLevel, fuelLevel, withBudget, withLimit } from '../src/client/wall.js';
 import type { Logger } from '../src/shared/protocol.js';
@@ -59,6 +59,26 @@ describe('lineUsage', () => {
 });
 
 describe('Propellant', () => {
+  it('counts the replies pi and opencode report as it counts a transcript, each id once, and drops what is not well formed', async () => {
+    const p = await make();
+    const usage = reportedUsage([
+      { id: 'r1', at: NOW, model: 'claude-haiku-5-5', i: 100, cw: 20, o: 30, cr: 1000 },
+      { id: 'r2', at: NOW, model: 'claude-haiku-5-5', i: 1, o: 2 },
+      { id: '', i: 5 },
+      'nope',
+      { id: 'r3', i: -4, o: 'x' },
+    ]);
+    expect(usage.map((u) => u.id)).toStrictEqual(['r1', 'r2', 'r3']);
+    expect(usage[2]?.split).toStrictEqual({ i: 0, cw: 0, o: 0, cr: 0 });
+    // tokens are input + cache write + output; the cache reads come back too, for the budget check
+    expect(await p.recordUsage('pip', usage)).toBe(150 + 1000 + 3);
+    expect(await p.recordUsage('pip', usage)).toBe(0);
+    expect(p.view().agents.pip?.used['5h']).toBe(153);
+    await p.close();
+    const again = await make();
+    expect(again.view().agents.pip?.used['5h']).toBe(153);
+  });
+
   it('counts each reply once, reads only what is new, and keeps the ledger across a restart', async () => {
     await writeFile(transcript, reply('msg_a', { input_tokens: 100, output_tokens: 50 }));
     const p = await make();

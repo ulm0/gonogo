@@ -95,7 +95,8 @@ describe('the text after the role, per engine', () => {
     }
     expect(doorText('codex', '', 'AGENTS.md')).toBe('');
     expect(doorText('opencode', '', 'AGENTS.md')).toBe('');
-    for (const p of ['claude', 'gemini', 'antigravity', 'pi'] as const) expect(doorText(p, '', 'AGENTS.md'), p).toBe(`\n\n${pointerOf('AGENTS.md')}`);
+    expect(doorText('pi', '', 'AGENTS.md')).toBe('');
+    for (const p of ['claude', 'gemini', 'antigravity'] as const) expect(doorText(p, '', 'AGENTS.md'), p).toBe(`\n\n${pointerOf('AGENTS.md')}`);
   });
 
   it('with only CLAUDE.md, every engine but Claude Code is pointed to it', () => {
@@ -144,7 +145,8 @@ describe('the start of an agent', () => {
     const l = launcher(() => RULES);
     for (const p of PROVIDERS.filter((x) => x !== 'custom')) {
       const { spec } = await l.prepareStart(agent(p), { generation: 1, flag: null });
-      const argv = spec.args.join('\n');
+      // opencode takes its role as an instructions file that gonogo writes, which stands for its argv here
+      const argv = spec.args.join('\n') + (p === 'opencode' ? `\n${await readFile(join(tmp, 'home', 'agents', 'ana', 'opencode-role.md'), 'utf8')}` : '');
       expect(argv, p).not.toContain(SENTINEL);
       expect(argv.includes(RULES), p).toBe(DOOR[p].channel !== 'none');
       expect(argv.includes(pointerOf('AGENTS.md')), p).toBe(DOOR[p].channel !== 'none' && DOOR[p].reads !== 'yes');

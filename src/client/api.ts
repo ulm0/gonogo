@@ -643,8 +643,9 @@ export async function setDefaultMode(mode: PermissionMode | null, confirmBypass 
   return toModelDefaults(await call('PUT', '/models/mode', { mode, ...(confirmBypass ? { confirmBypass: true } : {}) }));
 }
 
-export async function setPositionModel(position: string, model: string | null): Promise<ModelDefaults> {
-  return toModelDefaults(await call('PUT', `/models/positions/${encodeURIComponent(position)}`, { model }));
+/** The model of a position for one engine (Claude Code when none is named). */
+export async function setPositionModel(position: string, model: string | null, provider: Provider = 'claude'): Promise<ModelDefaults> {
+  return toModelDefaults(await call('PUT', `/models/positions/${encodeURIComponent(position)}`, { model, ...(provider === 'claude' ? {} : { provider }) }));
 }
 
 function toModelDefaults(value: unknown): ModelDefaults {

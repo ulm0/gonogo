@@ -72,7 +72,7 @@ import type {
   DirectorChannel,
   VoteResult,
 } from '../shared/protocol.js';
-import {
+import { ENGINE_SESSION_PATTERN,
   DOING_MAX_CHARS,
   EFFORTS,
   HISTORY_MAX,
@@ -204,6 +204,7 @@ const worktreeKey = (record: AgentRecord): string | null => (record.worktree ===
 const engineKey = (record: AgentRecord): string => JSON.stringify([record.model ?? null, record.effort ?? null, record.keys ?? null]);
 const MODEL_RE = new RegExp(MODEL_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ENGINE_SESSION_RE = new RegExp(ENGINE_SESSION_PATTERN);
 const REPLY_ID_RE = /^m\d+$/;
 const REPLY_ID_MAX_CHARS = 40;
 const RECIPIENT_MAX_CHARS = 64;
@@ -588,6 +589,12 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   /** Has the gonogo MCP tools, so it can be handed mail and asked to vote. */
   function mailable(rt: Rt): boolean {
     return providerInfo(rt.record.provider).mcp;
+  }
+
+  /** The Director's own words are typed as his turn (not handed over in a Stop block): Claude Code, and pi and opencode, whose hooks confirm the pointer the same way. */
+  function typesDirector(rt: Rt): boolean {
+    const provider = rt.record.provider ?? 'claude';
+    return provider === 'claude' || provider === 'pi' || provider === 'opencode';
   }
 
   /** The screen and title rules (prompt box, dialogs, title glyphs) are Claude Code's own. */
@@ -1191,7 +1198,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     if (!io.press?.(rt.record.name, rt.generation, go ? '\r' : '\x1b')) {
       throw new HubError('conflict', `could not reach the terminal of ${rt.record.name}`);
     }
-    if (!go && !isClaude(rt)) {
+    if (!go && rt.record.provider === 'gemini') {
       // Gemini CLI ends the turn on Escape and no hook says so, and its screen is not read (Claude has R2 for this).
       // shortcut: an Escape typed in the terminal itself still leaves needs_you until the next prompt, upgrade when its screen is read.
       setState(rt, 'idle');
@@ -1342,6 +1349,17 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
 
   /** Propellant reads the transcript at most every METER_INTERVAL_MS on a tool hook, and at every Stop. */
   function meter(rt: Rt, payload: Record<string, unknown>, force: boolean): void {
+    // pi and opencode report each reply's usage with their hooks: no transcript to read
+    if (!isClaude(rt)) {
+      if (payload.usage !== undefined && io.meterUsage) {
+        try {
+          io.meterUsage(rt.record.name, rt.generation, payload.usage);
+        } catch (error) {
+          log.warn('meter failed', error);
+        }
+      }
+      return;
+    }
     const path = payload.transcript_path;
     // Propellant reads Claude Code transcripts only.
     if (!io.meter || !isClaude(rt) || typeof path !== 'string' || path === '') return;
@@ -1512,6 +1530,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       case 'PostToolUse':
         toolHook(rt, input.event, payload);
         onToolHook(rt);
+        meter(rt, payload, false);
         break;
       case 'PostToolUseFailure':
         toolHook(rt, input.event, payload);
@@ -1603,10 +1622,15 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     syncHolds(rt);
     if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
     const session = payload.session_id;
-    if (isClaude(rt) && typeof session === 'string' && UUID_RE.test(session) && session !== rt.record.sessionId) {
-      // claude started a new session (/clear): the next resume must name it.
+    const provider = rt.record.provider ?? 'claude';
+    if ((provider === 'claude' || provider === 'pi') && typeof session === 'string' && UUID_RE.test(session) && session !== rt.record.sessionId) {
+      // claude started a new session (/clear), pi one (/new): the next resume must name it.
       rt.record.sessionId = session;
       void saveRecords(rosterRecords()).catch((error: unknown) => log.error('could not save the new session id', error));
+    } else if (provider === 'opencode' && typeof session === 'string' && ENGINE_SESSION_RE.test(session) && (rt.record.engineSession?.id !== session || rt.record.engineSession.for !== rt.record.sessionId)) {
+      // opencode names its own sessions: the one it runs now is the one the next start resumes, for as long as the agent keeps this sessionId
+      rt.record.engineSession = { for: rt.record.sessionId, id: session };
+      void saveRecords(rosterRecords()).catch((error: unknown) => log.error('could not save the engine session id', error));
     }
   }
 
@@ -1634,6 +1658,9 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       // Gemini CLI sends this when its confirmation opens, with a message instead of the tool call.
       const message = typeof payload.message === 'string' ? cutText(collapseWhitespace(payload.message), PERMISSION_SUMMARY_CHARS) : '';
       setState(rt, 'needs_you', { kind: 'permission', reason: message === '' ? 'permission request: waiting for approval' : `permission request: ${message}` });
+    } else if (type === 'permission_answered') {
+      // pi and opencode: the dialog of a call gonogo's gate asked about was answered (in the console, or by GO / NO-GO): the turn goes on
+      if (rt.state === 'needs_you' && rt.needsKind === 'permission') setState(rt, 'working');
     } else if (type === 'elicitation_dialog' || type === 'agent_needs_input') {
       const message = typeof payload.message === 'string' ? cutText(payload.message, INPUT_REASON_CHARS) : '';
       setState(rt, 'needs_you', {
@@ -1674,7 +1701,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     }
     // The Director's own words are only his turn when they are TYPED: a block reason is hook output. So the first Stop lets the agent go idle and the delivery check types them.
     const wanted = candidates.filter((id) => directorTurnOf(rt, id) !== undefined && !directorDeferred.has(id));
-    if (wanted.length > 0 && isClaude(rt)) {
+    if (wanted.length > 0 && typesDirector(rt)) {
       for (const id of wanted) directorDeferred.add(id);
       setState(rt, 'idle');
       scheduleDelivery(rt, DELIVERY_SETTLE_MS);
@@ -2235,6 +2262,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.remoteControl = from.remoteControl;
     if (from.permissions === undefined) delete target.permissions;
     else target.permissions = from.permissions;
+    if (from.engineSession === undefined) delete target.engineSession;
+    else target.engineSession = from.engineSession;
     if (from.autostart === undefined) delete target.autostart;
     else target.autostart = from.autostart;
     if (from.coauthor === undefined) delete target.coauthor;
@@ -2262,6 +2291,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     };
     if (engine === 'claude') delete next.provider;
     else next.provider = engine;
+    // the old engine's own session cannot be resumed by the new one
+    delete next.engineSession;
     if (!providerInfo(engine).modes && next.mode !== 'default') {
       next.mode = 'default';
       dropped.push('mode');
@@ -2737,6 +2768,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         const label = providerInfo(engine).label;
         log.info(`${next.name}: switched from ${providerInfo(from).label} to ${label}${dropped.length > 0 ? ` (dropped: ${dropped.join(', ')})` : ''}`);
         if (dropped.length > 0) io.notify?.('startup', `${next.name} now runs ${label}; settings it does not take were dropped: ${dropped.join(', ')}.`);
+        // the conversation cannot move to another CLI: its last turns are written down for the first session of the new one
+        await io.writeHandoff?.(previous, { ...current });
         // no gonogo tools on the new engine: what waits for it can never be read there
         if (!mailable(rt)) undeliverUnread(rt, `${next.name} now runs ${label} without the gonogo tools; the message went to the user`);
         if (rt.state !== 'stopped') return await restartOp(rt);

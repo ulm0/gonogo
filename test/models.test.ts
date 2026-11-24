@@ -25,6 +25,25 @@ afterEach(async () => {
 });
 
 describe('the store', () => {
+  it('keeps a model per position for each engine with a model field, apart from Claude Code\'s, and resolves each engine by its own', async () => {
+    const store = createModelDefaults({ dir: tmp });
+    await store.load();
+    await store.set('pi', 'haiku');
+    await store.setPosition('fido', 'sonnet:high', 'pi');
+    await store.setPosition('fido', 'opus');
+    expect(store.resolve('pi', 'fido')).toBe('sonnet:high');
+    expect(store.resolve('pi', 'guido')).toBe('haiku');
+    expect(store.resolve('claude', 'fido')).toBe('opus');
+    expect(store.getPosition('fido', 'pi')).toBe('sonnet:high');
+    await expect(store.setPosition('fido', 'x', 'copilot')).rejects.toMatchObject({ field: 'provider' });
+    expect(store.view()).toMatchObject({ positions: { fido: 'opus' }, enginePositions: { pi: { fido: 'sonnet:high' } } });
+    const again = createModelDefaults({ dir: tmp });
+    await again.load();
+    expect(again.resolve('pi', 'fido')).toBe('sonnet:high');
+    await again.setPosition('fido', null, 'pi');
+    expect(again.view()).not.toHaveProperty('enginePositions');
+  });
+
   it('starts empty, sets and clears a model per engine, and keeps it across a reload', async () => {
     const store = createModelDefaults({ dir: tmp });
     await store.load();
@@ -42,7 +61,7 @@ describe('the store', () => {
   it('refuses an engine with no model field, an unknown one and a bad name, and writes nothing', async () => {
     const store = createModelDefaults({ dir: tmp });
     await store.load();
-    await expect(store.set('opencode', 'x')).rejects.toMatchObject({ field: 'provider' });
+    await expect(store.set('copilot', 'x')).rejects.toMatchObject({ field: 'provider' });
     await expect(store.set('nope', 'x')).rejects.toMatchObject({ field: 'provider' });
     await expect(store.set('claude', '-rf')).rejects.toMatchObject({ field: 'model' });
     await expect(store.set('claude', 3)).rejects.toMatchObject({ field: 'model' });
@@ -55,7 +74,7 @@ describe('the store', () => {
     await broken.load();
     expect(broken.view()).toEqual({ models: {}, positions: {} });
     expect(await readFile(join(tmp, 'models.json.bad'), 'utf8')).toBe('{ not json');
-    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: { claude: 'opus', opencode: 'x', gemini: '--bad' } }));
+    await writeFile(join(tmp, 'models.json'), JSON.stringify({ version: 1, models: { claude: 'opus', copilot: 'x', gemini: '--bad' } }));
     const mixed = createModelDefaults({ dir: tmp });
     await mixed.load();
     expect(mixed.view()).toEqual({ models: { claude: 'opus' }, positions: {} });

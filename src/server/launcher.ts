@@ -9,7 +9,7 @@ import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, sym
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import type { Payload, Provider, SubagentSettings } from '../shared/protocol.js';
-import { CLEAN_ROOM_RUNTIMES, cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO } from '../shared/protocol.js';
+import { CLEAN_ROOM_RUNTIMES, cleanRoomBranch, HOOK_EVENTS, MCP_SERVER_NAME, PERMISSION_MODES, PR_FOOTER, PROVIDER_INFO, takesEffort } from '../shared/protocol.js';
 import type {
   AgentIdentity,
   AgentRecord,
@@ -68,6 +68,8 @@ import { isRecord } from './hooks.js';
 import { doorText, projectFile } from './door.js';
 import { buildProviderStart, knowsEffort, shellQuote, STATUS_LINE_SHIM } from './providers.js';
 import type { OtherProvider } from './providers.js';
+import { HANDOFF_FILE, handoffNote, handoffText, opencodeExporter, readTranscript } from './handoff.js';
+import type { GatePolicy } from './toolgate.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -596,32 +598,121 @@ export function createLauncher(options: LauncherOptions): Launcher {
   /** The keys of an agent: the room's under its own (its own of the same name wins). A Clean Room agent gets only the room keys marked for it. */
   const keysOf = (agent: AgentRecord): Record<string, string> => ({ ...options.roomKeys?.(agent.cleanRoom !== undefined), ...options.keys?.(agent.name) });
 
+  /**
+   * The tool gate of an engine that enforces it (pi, opencode): what Claude Code gets in --permission-mode, settings.json and --allowedTools.
+   * The agent's rules, else the room's (the room's deny always), gonogo's denials and the agent's own memory file, subagents off when the room says so,
+   * and gonogo's own tools allowed unless their feature is off.
+   */
+  const gatePolicy = (agent: AgentRecord, memoryPath: string, cwd: string, home: string = homedir()): GatePolicy => {
+    const rules = withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), options.subagents?.() ?? { mode: 'allow' as const, limit: 4 });
+    const memoryRule = `//${memoryPath.replace(/^\//, '')}`;
+    const off = new Set(options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`));
+    return {
+      mode: agent.mode,
+      rules: { ...rules, deny: unique([...DENIED_TOOLS, ...(rules.deny ?? [])]), allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, ...(rules.allow ?? [])]) },
+      allowed: ALLOWED_TOOLS.filter((tool) => !off.has(tool)),
+      cwd: resolve(cwd),
+      home,
+    };
+  };
+
+  /** Engine switch: the line that sends the first session of a new engine to handoff.md, when the file was written for this session. */
+  const handoffLine = async (agent: AgentRecord): Promise<string> => {
+    const path = join(agentDir(agent.name), HANDOFF_FILE);
+    const content = await readFile(path, 'utf8').catch(() => null);
+    return handoffNote(content, agent.sessionId, path) ?? '';
+  };
+
   /** What the agent starts with: the room's Payload defaults under its own payload. A Clean Room agent gets its own only: the room's servers (their env and headers hold keys) never reach a container the Director chose to keep keys out of. */
   const payloadOf = (agent: AgentRecord, provider: Provider): Payload | undefined =>
     mergePayload(agent.cleanRoom === undefined ? options.payloadDefaults?.() : undefined, agent.payload, agent.payloadOff, PROVIDER_INFO[provider].payload);
 
-  const prepareOther = async (agent: AgentRecord, provider: OtherProvider, base: string, hubUrl: string, memoryPath: string, token: string): Promise<PreparedStart> => {
-    // the room's rules and the pointer to the project's file, for an engine that takes a role (door.ts); `role` alone is what pi and agy get
-    const where = (await plainWorktree(agent, options.env ?? process.env))?.cwd ?? agent.dir;
+  const prepareOther = async (agent: AgentRecord, provider: OtherProvider, base: string, hubUrl: string, memoryPath: string, token: string, generation: number): Promise<PreparedStart> => {
+    // Clean Room (pi and opencode, as Claude Code): the same container, worktree and network; the engine's files are in the agent's folder, mounted at the same path
+    if (agent.cleanRoom !== undefined) await removals.get(agent.name);
+    const clean = agent.cleanRoom === undefined ? null : await prepareCleanRoom(agent, homeDir, base, options.env ?? process.env, options.defaultSandbox?.());
+    // the room's rules and the pointer to the project's file, for an engine that takes a role (door.ts); `role` alone is what agy gets
+    const worktree = clean === null ? await plainWorktree(agent, options.env ?? process.env) : null;
+    const where = clean?.cwd ?? worktree?.cwd ?? agent.dir;
+    const agentUrl = clean === null ? hubUrl : containerUrl(hubUrl);
+    // Egress (egress.ts), as for Claude Code: with an Anthropic API key, the container gets a placeholder and the proxy's base URL, never the key
+    let anthropicBaseUrl: string | undefined;
+    if (clean !== null && options.egress !== undefined && (agent.cleanRoom?.egress ?? options.egress.enabled())) {
+      const real = (): string | undefined => {
+        const key = keysOf(agent).ANTHROPIC_API_KEY ?? (options.env ?? process.env).ANTHROPIC_API_KEY;
+        return hasText(key) ? key : undefined;
+      };
+      if (real() !== undefined) anthropicBaseUrl = `${agentUrl}${options.egress.basePath(options.egress.issue(agent.name, real))}`;
+      else log.warn(`egress is on for ${agent.name} but it has no Anthropic API key to keep out of its container: nothing changes`);
+    }
     const door = doorText(provider, options.rules?.() ?? '', await projectFile(where));
+    const env0 = options.env ?? process.env;
+    const payload = payloadOf(agent, provider);
+    // the servers of `claude mcp add --scope user` reach every engine that takes servers, as they reach Claude Code: global, room, agent; the later name wins
+    const globals = PROVIDER_INFO[provider].payload !== null && options.globalMcp?.enabled(clean !== null) === true ? await readGlobalMcp(join(hasText(env0.CLAUDE_CONFIG_DIR) ? env0.CLAUDE_CONFIG_DIR : homedir(), CLAUDE_JSON), log.child('global mcp')) : {};
+    const servers = PROVIDER_INFO[provider].payload === null ? undefined : mergeGlobal(globals, agent.payloadOff?.mcpServers, payload?.mcpServers);
     const ctx = {
       name: agent.name,
       mode: agent.mode,
       role: agent.role.trim() + door,
-      roleText: buildRoleText(agent.name, agent.role, memoryPath) + door + ((await options.knowledge?.(agent.name)) ?? ''),
-      servers: payloadOf(agent, provider)?.mcpServers,
-      hubUrl,
+      roleText:
+        buildRoleText(agent.name, agent.role, memoryPath) +
+        door +
+        ((await options.knowledge?.(agent.name)) ?? '') +
+        (worktree === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', worktree.branch)}`) +
+        (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(agent.name))}`) +
+        // Claude Code writes the footer itself (attribution.pr); an engine with the role and no such setting is told
+        (options.coauthor?.().prFooter !== false && PROVIDER_INFO[provider].mcp ? `\n\nEnd the description of every pull request you open with this line: ${PR_FOOTER}` : '') +
+        (await handoffLine(agent)),
+      servers: servers !== undefined && Object.keys(servers).length > 0 ? servers : undefined,
+      skills: payload?.skills,
+      sessionId: agent.sessionId,
+      ...(agent.engineSession?.for === agent.sessionId ? { engineSession: agent.engineSession.id } : {}),
+      policy: gatePolicy(agent, memoryPath, where, clean?.home),
+      subagentLimit: options.subagents?.().mode === 'limit' ? (options.subagents?.().limit ?? null) : null,
+      ...(takesEffort(provider) && (agent.effort ?? options.defaultEffort?.()) ? { effort: agent.effort ?? options.defaultEffort?.() } : {}),
+      hubUrl: agentUrl,
+      ...(anthropicBaseUrl === undefined ? {} : { anthropicBaseUrl }),
       agentDir: base,
       tokenFile: join(base, AGENT_TOKEN_FILE),
       token,
       seed: options.seed,
-      model: agent.model ?? options.defaultModel?.(provider),
+      model: agent.model ?? options.defaultModel?.(provider, agent.position),
     };
     const start = buildProviderStart(provider, ctx);
+    if (start.skipped !== undefined) log.warn(`${agent.name}: ${PROVIDER_INFO[provider].label} cannot run these MCP servers (no SSE transport): ${start.skipped.join(', ')}`);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
-    const env = await withCoauthor(agent, { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: keysOf(agent), gh: await ensureGh() }), ...start.env }, where, base);
-    log.debug(`prepared ${agent.name} to run ${provider}`);
-    return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
+    const childEnv = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: keysOf(agent), gh: await ensureGh() }), ...start.env };
+    if (clean === null) {
+      const env = await withCoauthor(agent, childEnv, where, base);
+      log.debug(`prepared ${agent.name} to run ${provider}`);
+      return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
+    }
+    const uid = process.getuid?.();
+    const gid = process.getgid?.();
+    if (uid === undefined || gid === undefined) throw new Error('Clean Room needs a user id: it runs on macOS and Linux only');
+    // by name only, as for Claude Code: the container gets the variables gonogo sets, the engine's own (paths in the agent's folder) and the agent's keys
+    const keys = keysOf(agent);
+    if (anthropicBaseUrl !== undefined) {
+      childEnv.ANTHROPIC_API_KEY = `gnp_${randomBytes(16).toString('hex')}`;
+      childEnv.ANTHROPIC_BASE_URL = anthropicBaseUrl;
+      delete childEnv.CLAUDE_CODE_OAUTH_TOKEN;
+      // pi reads a provider's base URL from models.json in its own folder, which in a Clean Room is in the container's home (the agent's folder)
+      if (provider === 'pi') {
+        const piDir = join(clean.home, '.pi', 'agent');
+        await mkdir(piDir, { recursive: true, mode: DIR_MODE });
+        await writeFileAtomic(join(piDir, 'models.json'), JSON.stringify({ providers: { anthropic: { baseUrl: anthropicBaseUrl } } }, null, 2), FILE_MODE);
+      }
+    }
+    const names = [...new Set([...CLEAN_ROOM_ENV, ...CLEAN_ROOM_CREDENTIALS, ...(anthropicBaseUrl === undefined ? [] : ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL']), ...Object.keys(start.env), ...Object.keys(keys)])].filter((variable) => hasText(childEnv[variable]));
+    const flavor = cleanRoomFlavor(agent.cleanRoom ?? {}, options.defaultSandbox?.());
+    const runArgs = buildDockerArgs({ image: cleanRoomImage(agent.cleanRoom ?? {}, options.env ?? process.env), flavor, uid, gid, place: clean, agentDir: base, names, command: [PROVIDER_INFO[provider].bin, ...start.args] });
+    const runtime = CLEAN_ROOM_RUNTIMES[flavor];
+    const args = runtime === null ? runArgs : await createVerified(runArgs, runtime, clean.container, childEnv);
+    const started = byAgent.get(agent.name);
+    if (started?.generation === generation) started.container = clean.container;
+    log.debug(`prepared ${agent.name} to run ${provider} in a Clean Room`);
+    return { spec: { file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree }, flag: 'session-id', token };
   };
 
   const prepareStart = async (
@@ -659,7 +750,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const token = issue(name, opts.generation);
     try {
       await writeFileAtomic(join(base, AGENT_TOKEN_FILE), `${token}\n`, FILE_MODE);
-      if (provider !== 'claude') return await prepareOther(agent, provider, base, hubUrl, memoryPath, token);
+      if (provider !== 'claude') return await prepareOther(agent, provider, base, hubUrl, memoryPath, token, opts.generation);
       // Clean Room: a container has the worktree and the agent's own folder only, so it gets a home of its own under the agent's folder.
       if (agent.cleanRoom !== undefined) await removals.get(name);
       const clean = agent.cleanRoom === undefined ? null : await prepareCleanRoom(agent, homeDir, base, env, options.defaultSandbox?.());
@@ -711,7 +802,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const projectsRoot = join(clean === null ? configDir ?? join(homedir(), '.claude') : clean.home, 'projects');
       const flag: SessionFlag =
         opts.flag ?? ((await transcriptExists(projectsRoot, clean === null ? [startDir, realDir] : [clean.cwd], agent.sessionId)) ? 'resume' : 'session-id');
-      const roleText = buildRoleText(name, agent.role, memoryPath) + doorText('claude', options.rules?.() ?? '', await projectFile(clean?.cwd ?? startDir)) + ((await options.knowledge?.(name)) ?? '') + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`);
+      const roleText = buildRoleText(name, agent.role, memoryPath) + doorText('claude', options.rules?.() ?? '', await projectFile(clean?.cwd ?? startDir)) + ((await options.knowledge?.(name)) ?? '') + (clean === null ? '' : `\n${CLEAN_ROOM_NOTE.replace('{branch}', cleanRoomBranch(name))}`) + (plain === null ? '' : `\n${WORKTREE_NOTE.replace('{branch}', plain.branch)}`) + (await handoffLine(agent));
       const [file, ...leading] = agentCmdNow()?.length ? (agentCmdNow() as string[]) : [options.claudeBin ?? CLAUDE_BIN];
       // Effort: the console's own, else the room's. An old claude exits on an option it does not know: its own effort refuses the start (it asked for it), the room's is dropped with a warning (one setting must not stop every console). A Clean Room runs the image's claude, not the host's, so it is not asked.
       let effort = agent.effort ?? options.defaultEffort?.();
@@ -806,6 +897,21 @@ export function createLauncher(options: LauncherOptions): Launcher {
     },
     revoke,
     renameAgentFiles,
+    writeHandoff: async (from, to) => {
+      try {
+        const env = options.env ?? process.env;
+        const base = agentDir(to.name);
+        await mkdir(base, { recursive: true, mode: DIR_MODE });
+        const transcript = await readTranscript(from, { agentDir: base, exportOpencode: opencodeExporter(env, from.dir), ...(hasText(env.CLAUDE_CONFIG_DIR) ? { claudeConfigDir: env.CLAUDE_CONFIG_DIR } : {}) }).catch((error: unknown) => {
+          log.warn(`${to.name}: the transcript of its old session could not be read`, errorText(error));
+          return null;
+        });
+        await writeFileAtomic(join(base, HANDOFF_FILE), handoffText(from, to, transcript, new Date()), FILE_MODE);
+        log.info(`${to.name}: handoff written (${transcript === null ? 'no transcript' : `${transcript.turns.length} turns`})`);
+      } catch (error) {
+        log.warn(`${to.name}: no handoff for the new engine`, errorText(error));
+      }
+    },
     memoryPath: (name) => join(agentDir(name), MEMORY_FILE),
   };
 }

@@ -189,8 +189,8 @@ describe('a request', () => {
   });
 
   it('asks for another engine, which has no permission modes, and shows the mode it will really get', async () => {
-    await ask({ engine: 'opencode', mode: 'acceptEdits' });
-    expect(relief.view().requests[0]).toMatchObject({ provider: 'opencode', mode: 'default' });
+    await ask({ engine: 'copilot', mode: 'acceptEdits' });
+    expect(relief.view().requests[0]).toMatchObject({ provider: 'copilot', mode: 'default' });
   });
 
   it('uses the room\'s default engine when the request names none, and the named one wins', async () => {

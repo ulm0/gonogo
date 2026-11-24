@@ -2,6 +2,8 @@
  * The registry picker (docs/features/registry.md): the pure parts. The entries are shipped with gonogo and checked by hand (src/shared/registry.ts); the page
  * only ever fills a text box with one, which the person can still edit. Nothing here fetches, installs or runs anything.
  */
+import { providerInfo } from '../shared/protocol.js';
+import type { Provider } from '../shared/protocol.js';
 import { checkedDaysAgo, REGISTRY, REGISTRY_STALE_DAYS } from '../shared/registry.js';
 import type { RegistryEntry, RegistryServer, RegistrySkill } from '../shared/registry.js';
 
@@ -71,7 +73,7 @@ export interface SkillRow {
   room: boolean;
   /** Agents that have a skill of this name of their own. */
   own: string[];
-  /** Agents that get the room's skill: Claude Code, not in a Clean Room, and not switched off. Empty for a skill that is not the room's. */
+  /** Agents that get the room's skill: an engine that loads skills (Claude Code, pi, opencode), not in a Clean Room, and not switched off. Empty for a skill that is not the room's. */
   gets: string[];
   /** Agents that switched the room's skill off. */
   off: string[];
@@ -104,7 +106,7 @@ export function skillRows(roomSkills: ReadonlyArray<{ name: string; path: string
   }
   for (const r of rows.values()) {
     if (!r.room) continue;
-    r.gets = agents.filter((a) => (a.provider ?? 'claude') === 'claude' && !a.cleanRoom && !r.off.includes(a.name) && !r.own.includes(a.name)).map((a) => a.name);
+    r.gets = agents.filter((a) => providerInfo((a.provider ?? 'claude') as Provider).payload === 'all' && !a.cleanRoom && !r.off.includes(a.name) && !r.own.includes(a.name)).map((a) => a.name);
   }
   return [...rows.values()].sort((a, b) => Number(b.room) - Number(a.room) || a.name.localeCompare(b.name));
 }

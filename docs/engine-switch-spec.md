@@ -16,6 +16,13 @@ an agent, flight included, to another engine and keeps its name, role, folder, w
   `bypassPermissions` carried to an engine with modes needs `confirmBypass: true` again.
 - **A new session.** The record gets a new session id: a Claude Code conversation cannot go on in another CLI. A switch
   back to Claude Code starts a fresh conversation too.
+- **Handoff** (`src/server/handoff.ts`). After the switch is saved and before the new engine starts, the hub calls
+  `HubIo.writeHandoff(old record, new record)`. The launcher reads the old session's transcript (Claude Code:
+  `<config>/projects/*/<id>.jsonl`; pi: `agents/<name>/pi-sessions/*_<id>.jsonl`, the path from the last entry to the root),
+  keeps user and assistant text only (no tools, thinking, meta or subagent lines), the newest 30 turns within 24,000
+  characters (4,000 per turn), and writes `agents/<name>/handoff.md` (0600). Its first line names the new session id; a
+  start whose session id matches gets a line in its role text that tells it to read the file first. Read only, never
+  fails a switch; an engine whose transcript is not read gets a handoff that says so.
 - **When it applies:**
   - stopped: the edit is saved, nothing starts;
   - idle, needs you (not a Redline trip or a Hold), starting: saved, and the agent restarts at once on the new engine;

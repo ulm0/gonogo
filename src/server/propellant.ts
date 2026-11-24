@@ -103,6 +103,35 @@ export function lineUsage(line: string): { id: string; at: number | null; tokens
   return { id, at: Number.isFinite(at) ? at : null, tokens: split.i + split.cw + split.o, model, split };
 }
 
+/** One reply as an engine's extension reports it (pi, opencode): the same split as a transcript line. */
+export interface ReplyUsage {
+  id: string;
+  at: number | null;
+  model: string | null;
+  split: TokenSplit;
+}
+
+/** At most this many replies in one report, and these limits on each field: the report comes from an agent's own process. */
+export const USAGE_REPORT_MAX = 100;
+const USAGE_TOKENS_MAX = 100_000_000;
+
+/** The `usage` list of a hook from pi's or opencode's extension: well-formed replies only, the rest dropped. */
+export function reportedUsage(value: unknown): ReplyUsage[] {
+  if (!Array.isArray(value)) return [];
+  const out: ReplyUsage[] = [];
+  for (const item of value.slice(0, USAGE_REPORT_MAX)) {
+    if (!isRecord(item) || typeof item.id !== 'string' || item.id === '' || item.id.length > 200) continue;
+    const n = (key: string): number => {
+      const v = item[key];
+      return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(Math.round(v), USAGE_TOKENS_MAX) : 0;
+    };
+    const at = typeof item.at === 'number' && Number.isFinite(item.at) && item.at > 0 ? item.at : null;
+    const model = typeof item.model === 'string' && item.model !== '' ? item.model.slice(0, 120) : null;
+    out.push({ id: item.id, at, model, split: { i: n('i'), cw: n('cw'), o: n('o'), cr: n('cr') } });
+  }
+  return out;
+}
+
 /** Budgets from untrusted JSON: dollars in whole cents from 0.01 to BUDGET_MAX_USD per known window, or null; anything else is refused. */
 export function parseBudget(value: unknown, what: string): Budget | string {
   if (!isRecord(value)) return `${what} must be an object of windows (${FUEL_WINDOWS.join(', ')})`;
@@ -238,6 +267,11 @@ export interface Propellant {
   load(): Promise<void>;
   /** Counts what the transcript gained since the last read. Resolves with the new tokens plus new cache reads (0 when nothing or refused): a reply that only read the cache still costs money, so the caller must check the budget. */
   record(agent: string, transcriptPath: string): Promise<number>;
+  /**
+   * pi and opencode: the replies their extension reported (reportedUsage reads them), counted as a transcript's lines are. A reply id seen before is
+   * not counted again. Resolves as record does.
+   */
+  recordUsage(agent: string, usage: readonly ReplyUsage[]): Promise<number>;
   view(): PropellantView;
   /** The last `days` local calendar days (1 to 31), room and per agent and per day, by kind of token. */
   report(days: number): CostReport;
@@ -538,13 +572,56 @@ export function createPropellant(options: PropellantOptions): Propellant {
   };
   /** The size of a file when it was last read to its end: a file of the same size has nothing new, so it is not opened again. */
   const complete = new Map<string, number>();
+  /** The ledger lines of some replies (one per minute, agent and model), appended and checked: the one place a transcript and a report are counted. */
+  const ingest = async (agent: string, usages: Iterable<ReplyUsage>): Promise<{ tokens: number; reads: number }> => {
+    const on = options.attribute?.(agent) ?? {};
+    const fresh: FuelEntry[] = [];
+    const byKey = new Map<string, FuelEntry>();
+    let tokens = 0;
+    let reads = 0;
+    for (const usage of usages) {
+      const { split } = usage;
+      const used = split.i + split.cw + split.o;
+      if (used === 0 && split.cr === 0) continue;
+      const at = usage.at ?? now();
+      // one ledger line per minute, agent and model keeps the file small
+      const key = `${Math.floor(at / 60_000)}|${usage.model ?? ''}`;
+      const last = byKey.get(key);
+      if (last) {
+        last.tokens += used;
+        last.i = (last.i ?? 0) + split.i;
+        last.cw = (last.cw ?? 0) + split.cw;
+        last.o = (last.o ?? 0) + split.o;
+        last.cr = (last.cr ?? 0) + split.cr;
+      } else {
+        const entry: FuelEntry = usage.model === null ? { at, agent, tokens: used } : { at, agent, model: usage.model, i: split.i, cw: split.cw, o: split.o, cr: split.cr, tokens: used };
+        if (on.mission !== undefined && MISSION_ID_RE.test(on.mission)) entry.mission = on.mission;
+        if (on.task !== undefined && TASK_ID_RE.test(on.task)) entry.task = on.task;
+        byKey.set(key, entry);
+        fresh.push(entry);
+      }
+      tokens += used;
+      reads += split.cr;
+    }
+    const cut = now() - FUEL_KEEP_MS;
+    const kept = fresh.filter((e) => e.at >= cut);
+    entries.push(...kept);
+    if (kept.length > 0) {
+      const text = kept.map((e) => JSON.stringify(e)).join('\n') + '\n';
+      await later(() => appendFile(ledgerPath, text, { mode: FILE_MODE }));
+    }
+    return { tokens, reads };
+  };
+
+  /** Reply ids already counted from reports, per agent: a report sent twice (a retry) counts once. */
+  const reportedIds = new Map<string, Set<string>>();
+
   const readNew = async (agent: string, transcriptPath: string): Promise<number> => {
     const path = await inside(transcriptPath);
     if (path === null) {
       log.debug(`propellant ignored a transcript outside ${options.projectsRoot}`);
       return 0;
     }
-    const on = options.attribute?.(agent) ?? {};
     const handle = await open(path, 'r');
     let tokens = 0;
     let reads = 0;
@@ -561,43 +638,16 @@ export function createPropellant(options: PropellantOptions): Propellant {
       const { bytesRead } = await handle.read(buffer, 0, length, offset);
       const end = buffer.subarray(0, bytesRead).lastIndexOf(0x0a);
       if (end < 0) return 0; // no complete line yet
-      const fresh: FuelEntry[] = [];
-      const byKey = new Map<string, FuelEntry>();
+      const lines: ReplyUsage[] = [];
       for (const line of buffer.subarray(0, end).toString('utf8').split('\n')) {
         const usage = lineUsage(line);
         if (usage === null || usage.id === lastId.get(path)) continue;
         lastId.set(path, usage.id);
-        const { split } = usage;
-        if (usage.tokens === 0 && split.cr === 0) continue;
-        const at = usage.at ?? now();
-        // one ledger line per minute, agent and model keeps the file small
-        const key = `${Math.floor(at / 60_000)}|${usage.model ?? ''}`;
-        const last = byKey.get(key);
-        if (last) {
-          last.tokens += usage.tokens;
-          last.i = (last.i ?? 0) + split.i;
-          last.cw = (last.cw ?? 0) + split.cw;
-          last.o = (last.o ?? 0) + split.o;
-          last.cr = (last.cr ?? 0) + split.cr;
-        } else {
-          const entry: FuelEntry = usage.model === null ? { at, agent, tokens: usage.tokens } : { at, agent, model: usage.model, i: split.i, cw: split.cw, o: split.o, cr: split.cr, tokens: usage.tokens };
-          if (on.mission !== undefined && MISSION_ID_RE.test(on.mission)) entry.mission = on.mission;
-          if (on.task !== undefined && TASK_ID_RE.test(on.task)) entry.task = on.task;
-          byKey.set(key, entry);
-          fresh.push(entry);
-        }
-        tokens += usage.tokens;
-        reads += split.cr;
+        lines.push(usage);
       }
+      ({ tokens, reads } = await ingest(agent, lines));
       saved.cursors[path] = offset + end + 1;
       if (saved.cursors[path] >= size) complete.set(transcriptPath, size);
-      const cut = now() - FUEL_KEEP_MS;
-      const kept = fresh.filter((e) => e.at >= cut);
-      entries.push(...kept);
-      if (kept.length > 0) {
-        const text = kept.map((e) => JSON.stringify(e)).join('\n') + '\n';
-        await later(() => appendFile(ledgerPath, text, { mode: FILE_MODE }));
-      }
       await saveLimits();
       warn(false);
     } finally {
@@ -690,6 +740,19 @@ export function createPropellant(options: PropellantOptions): Propellant {
       }
       // what is already past 80 % at start was told before: remember it, do not tell again
       warn(true);
+    },
+
+    async recordUsage(agent, usage) {
+      let seen = reportedIds.get(agent);
+      if (seen === undefined) reportedIds.set(agent, (seen = new Set()));
+      const fresh = usage.filter((reply) => !seen.has(reply.id));
+      for (const reply of fresh) seen.add(reply.id);
+      // the newest few thousand ids are enough to drop a retry
+      if (seen.size > 5_000) for (const id of [...seen].slice(0, seen.size - 5_000)) seen.delete(id);
+      if (fresh.length === 0) return 0;
+      const { tokens, reads } = await ingest(agent, fresh);
+      warn(false);
+      return tokens + reads;
     },
 
     record(agent, transcriptPath) {

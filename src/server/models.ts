@@ -21,8 +21,8 @@ export interface ModelDefaultsStore {
   view(): ModelDefaults;
   /** The room's model for an engine, or undefined. */
   get(provider: Provider): string | undefined;
-  /** The model of a position (for Claude Code), or undefined. */
-  getPosition(position: string): string | undefined;
+  /** The model of a position for an engine (Claude Code when none is named), or undefined. */
+  getPosition(position: string, provider?: Provider): string | undefined;
   /** What an agent without a model of its own starts with: its position's model (Claude Code only: model names do not carry from one engine to another), else its engine's. */
   resolve(provider: Provider, position?: string): string | undefined;
   /** The room's default engine: Claude Code until one is set. */
@@ -41,8 +41,8 @@ export interface ModelDefaultsStore {
   setEngine(engine: unknown): Promise<ModelDefaults>;
   /** Sets the default effort, or clears it with null. A bad level throws a HubError (bad_request, field `effort`). */
   setEffort(effort: unknown): Promise<ModelDefaults>;
-  /** Sets the model of one position, or clears it with null (or empty text). A bad position or name throws a HubError (bad_request, field `position` or `model`). */
-  setPosition(position: unknown, model: unknown): Promise<ModelDefaults>;
+  /** Sets the model of one position for one engine (Claude Code when none is named), or clears it with null (or empty text). A bad position, engine or name throws a HubError (bad_request, field `position`, `provider` or `model`). */
+  setPosition(position: unknown, model: unknown, provider?: unknown): Promise<ModelDefaults>;
   /** Sets the model of one engine, or clears it with null (or empty text). A bad engine or name throws a HubError (bad_request, field `provider` or `model`). */
   set(provider: unknown, model: unknown): Promise<ModelDefaults>;
   close(): Promise<void>;
@@ -53,6 +53,8 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
   const path = join(options.dir, MODELS_FILE);
   let models: Partial<Record<Provider, string>> = {};
   let positions: Record<string, string> = {};
+  /** The position models of every engine but Claude Code (whose are `positions`, as before). */
+  let enginePositions: Partial<Record<Provider, Record<string, string>>> = {};
   let engine: Provider | undefined;
   let effort: Effort | undefined;
   let mode: PermissionMode | undefined;
@@ -61,12 +63,12 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
   let sandbox: CleanRoomFlavor | undefined;
   let chain: Promise<unknown> = Promise.resolve();
 
-  const view = (): ModelDefaults => ({ models: { ...models }, positions: { ...positions }, ...(engine ? { engine } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(sandbox ? { sandbox } : {}) });
+  const view = (): ModelDefaults => ({ models: { ...models }, positions: { ...positions }, ...(Object.keys(enginePositions).length > 0 ? { enginePositions: Object.fromEntries(Object.entries(enginePositions).map(([p, map]) => [p, { ...map }])) } : {}), ...(engine ? { engine } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(sandbox ? { sandbox } : {}) });
 
   /** Writes what `change` returns, or nothing when it equals what is saved; a failed write leaves the old values. */
   const save = async (change: () => void): Promise<void> => {
     const before = JSON.stringify(view());
-    const was = { models, positions, engine, effort, mode, bypassConfirmedAt, sandbox };
+    const was = { models, positions, enginePositions, engine, effort, mode, bypassConfirmedAt, sandbox };
     change();
     if (JSON.stringify(view()) === before) return;
     const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
@@ -74,7 +76,7 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
       await writeFile(temp, JSON.stringify({ version: 1, ...view(), ...(mode === 'bypassPermissions' && bypassConfirmedAt !== undefined ? { bypassConfirmedAt } : {}) }, null, 2), { flag: 'wx', mode: FILE_MODE });
       await rename(temp, path);
     } catch (error) {
-      ({ models, positions, engine, effort, mode, bypassConfirmedAt, sandbox } = was);
+      ({ models, positions, enginePositions, engine, effort, mode, bypassConfirmedAt, sandbox } = was);
       await rm(temp, { force: true }).catch(() => undefined);
       throw new Error(`could not save the default models: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -96,6 +98,13 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
         if (mode === 'bypassPermissions') bypassConfirmedAt = saved.bypassConfirmedAt as number;
         if (typeof saved.sandbox === 'string' && saved.sandbox !== 'docker' && (CLEAN_ROOM_FLAVORS as readonly string[]).includes(saved.sandbox)) sandbox = saved.sandbox as CleanRoomFlavor;
         if (isRecord(saved.positions)) positions = Object.fromEntries(Object.entries(saved.positions).filter(([id, model]) => POSITION_IDS.includes(id) && typeof model === 'string' && MODEL_RE.test(model))) as Record<string, string>;
+        if (isRecord(saved.enginePositions)) {
+          for (const [provider, map] of Object.entries(saved.enginePositions)) {
+            if (provider === 'claude' || !isRecord(map) || !usable(provider, 'x')) continue;
+            const kept = Object.fromEntries(Object.entries(map).filter(([id, model]) => POSITION_IDS.includes(id) && typeof model === 'string' && MODEL_RE.test(model))) as Record<string, string>;
+            if (Object.keys(kept).length > 0) enginePositions[provider as Provider] = kept;
+          }
+        }
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
         log.error(`${MODELS_FILE} could not be read; the room has no default models and the file is kept as ${MODELS_FILE}.bad`, error);
@@ -136,8 +145,8 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
       return run.then(view);
     },
     get: (provider) => models[provider],
-    getPosition: (position) => positions[position],
-    resolve: (provider, position) => (provider === 'claude' && position !== undefined ? positions[position] : undefined) ?? models[provider],
+    getPosition: (position, provider = 'claude') => (provider === 'claude' ? positions[position] : enginePositions[provider]?.[position]),
+    resolve: (provider, position) => (position === undefined ? undefined : provider === 'claude' ? positions[position] : enginePositions[provider]?.[position]) ?? models[provider],
     async set(provider, model) {
       if (typeof provider !== 'string' || !(PROVIDERS as readonly string[]).includes(provider)) throw new HubError('bad_request', 'unknown engine', 'provider');
       if (providerInfo(provider as Provider).model === null) throw new HubError('bad_request', `${providerInfo(provider as Provider).label} takes no model setting`, 'provider');
@@ -153,16 +162,24 @@ export function createModelDefaults(options: { dir: string; log?: Logger }): Mod
       chain = run.catch(() => undefined);
       return run.then(view);
     },
-    async setPosition(position, model) {
+    async setPosition(position, model, provider = 'claude') {
       if (typeof position !== 'string' || !POSITION_IDS.includes(position)) throw new HubError('bad_request', 'unknown position', 'position');
+      if (typeof provider !== 'string' || !(PROVIDERS as readonly string[]).includes(provider)) throw new HubError('bad_request', 'unknown engine', 'provider');
+      if (providerInfo(provider as Provider).model === null) throw new HubError('bad_request', `${providerInfo(provider as Provider).label} takes no model setting`, 'provider');
       const name = model === null || model === undefined ? '' : typeof model === 'string' ? model.trim() : null;
       if (name === null) throw new HubError('bad_request', 'model must be text or null', 'model');
       if (name !== '' && !MODEL_RE.test(name)) throw new HubError('bad_request', 'model must be 1 to 100 letters, digits or . _ : / @ + -, starting with a letter or digit', 'model');
       const run = chain.then(() => save(() => {
-        const next = { ...positions };
+        const next = { ...(provider === 'claude' ? positions : (enginePositions[provider as Provider] ?? {})) };
         if (name === '') delete next[position];
         else next[position] = name;
-        positions = next;
+        if (provider === 'claude') positions = next;
+        else {
+          const all = { ...enginePositions };
+          if (Object.keys(next).length === 0) delete all[provider as Provider];
+          else all[provider as Provider] = next;
+          enginePositions = all;
+        }
       }));
       chain = run.catch(() => undefined);
       return run.then(view);

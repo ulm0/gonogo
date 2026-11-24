@@ -6,7 +6,7 @@ import { homedir, hostname, networkInterfaces, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_URL, PROTOCOL_VERSION } from '../shared/protocol.js';
-import { MAX_AGENTS, providerInfo } from '../shared/protocol.js';
+import { MAX_AGENTS, providerInfo, reportsSpend } from '../shared/protocol.js';
 import type { AuditRecord, DownlinkNotify, Hub, HubIo, InstallKind, Logger, ServerInfo, Task, TerminalHost } from '../shared/protocol.js';
 import {
   CLAUDE_BIN,
@@ -62,7 +62,7 @@ import { TOKENS_FILE } from './ptyhostproto.js';
 import { createHoldStore, relaunch, requestReload, rotateDirectorToken, runPtyHost, spawnHostProcess } from './reload.js';
 import { createWebServer } from './web.js';
 import { createReported } from './reported.js';
-import { createPropellant } from './propellant.js';
+import { createPropellant, reportedUsage } from './propellant.js';
 import { createQuota } from './quota.js';
 import { captureFetch, parseCaptureEnv } from './telegramcapture.js';
 import { createTelegramPoll } from './telegrampoll.js';
@@ -919,7 +919,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const enforce = (name: string): void => {
       const over = propellant.over(name);
       if (over === null || !hub) return;
-      const claude = hub.views().filter((v) => v.provider === 'claude').map((v) => v.name);
+      // every console that reports its spend: Claude Code from its transcripts, pi and opencode from their extension
+      const claude = hub.views().filter((v) => reportsSpend(v.provider)).map((v) => v.name);
       // a docking link's cap holds the agents working on that one task and nothing else (a hold, not a Redline of the room or of an agent)
       if (over.scope === 'link') {
         for (const n of claude.filter((c) => workingOn(c).task === over.task)) {
@@ -984,6 +985,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         }
         terminalHost.rename(oldName, newName);
       },
+      writeHandoff: (from, to) => launcher.writeHandoff(from, to),
       keys: clearance,
       spawn: async (req) => {
         const prepared = await launcher.prepareStart(req.agent, { generation: req.generation, flag: req.flag });
@@ -1010,6 +1012,13 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       press: (name, generation, data) => {
         const info = terminalHost.info(name);
         return info !== null && info.running && info.generation === generation && terminalHost.write(name, data);
+      },
+      meterUsage: (name, _generation, usage) => {
+        void propellant.recordUsage(name, reportedUsage(usage)).then((used) => {
+          if (used === 0 || !hub) return;
+          web?.broadcast({ t: 'propellant', propellant: propellant.view() });
+          enforce(name);
+        });
       },
       meter: (name, _generation, transcriptPath) => {
         void propellant.record(name, transcriptPath).then((used) => {
@@ -1455,7 +1464,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       // a changed price or budget is checked at once, not at the next reply
       spendChanged: () => {
         propellant.recheck();
-        for (const v of hub?.views() ?? []) if (v.provider === 'claude') enforce(v.name);
+        for (const v of hub?.views() ?? []) if (reportsSpend(v.provider)) enforce(v.name);
       },
       telemetry,
       schedules: audited(schedules, audit, SCHEDULES_AUDIT),

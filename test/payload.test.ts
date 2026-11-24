@@ -108,15 +108,17 @@ describe('parsePayload', () => {
 });
 
 describe('payloadRefusal', () => {
-  it('claude takes both, gemini and kimi servers only, every other engine and the custom command nothing', () => {
+  it('claude, pi and opencode take both, gemini and kimi servers only, every other engine and the custom command nothing', () => {
     const both = { mcpServers: { f: { command: 'x' } }, skills: ['/s/a'] };
     expect(payloadRefusal(undefined, both)).toBeNull();
     expect(payloadRefusal('claude', both)).toBeNull();
+    expect(payloadRefusal('pi', both)).toBeNull();
+    expect(payloadRefusal('opencode', both)).toBeNull();
     for (const provider of ['gemini', 'kimi'] as const) {
       expect(payloadRefusal(provider, { mcpServers: both.mcpServers })).toBeNull();
       expect(payloadRefusal(provider, both)).toMatchObject({ field: 'payload.skills' });
     }
-    for (const provider of ['codex', 'opencode', 'copilot', 'pi', 'qwen', 'custom'] as const) {
+    for (const provider of ['codex', 'copilot', 'qwen', 'custom'] as const) {
       expect(payloadRefusal(provider, { mcpServers: both.mcpServers })).toMatchObject({ field: 'payload' });
     }
   });

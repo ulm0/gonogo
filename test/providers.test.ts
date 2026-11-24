@@ -113,10 +113,26 @@ describe('prepareStart for another agent CLI', () => {
     const l = launcher();
     const open = await l.prepareStart(agent('opencode'), START);
     expect(open.spec.env.OPENCODE_CONFIG).toBe(join(agentDir(), 'opencode.json'));
-    expect(open.spec.args).toStrictEqual(['--prompt', roleText()]);
-    expect(JSON.parse(await readFile(join(agentDir(), 'opencode.json'), 'utf8'))).toStrictEqual({
+    expect(open.spec.env.GONOGO_OPENCODE_CONFIG).toBe(join(agentDir(), 'gonogo-opencode.json'));
+    // the role is an instructions file, so a resumed session does not get it again as a prompt
+    expect(open.spec.args).toStrictEqual([]);
+    expect(await readFile(join(agentDir(), 'opencode-role.md'), 'utf8')).toContain(roleText());
+    const config = JSON.parse(await readFile(join(agentDir(), 'opencode.json'), 'utf8'));
+    expect(config).toMatchObject({
+      plugin: [`file://${join(agentDir(), 'gonogo-opencode.js')}`],
+      instructions: [join(agentDir(), 'opencode-role.md')],
       mcp: { gonogo: { type: 'remote', url: `${HUB}/mcp`, headers: { Authorization: 'Bearer {env:GONOGO_TOKEN}' }, enabled: true } },
     });
+    // every tool asks, so that the plugin's gate answers each call
+    expect(config.permission['*']).toBe('ask');
+    expect(config.permission.bash).toBe('ask');
+    const settings = JSON.parse(await readFile(join(agentDir(), 'gonogo-opencode.json'), 'utf8'));
+    expect(settings).toMatchObject({ hookUrl: `${HUB}/hook/ana/`, servers: ['gonogo'], policy: { mode: 'default', cwd: work } });
+    // resumed: the session opencode reported for this sessionId
+    const again = await l.prepareStart(agent('opencode', { engineSession: { for: SID, id: 'ses_abc' } }), START);
+    expect(again.spec.args).toStrictEqual(['--session', 'ses_abc']);
+    const stale = await l.prepareStart(agent('opencode', { engineSession: { for: 'another', id: 'ses_abc' } }), START);
+    expect(stale.spec.args).toStrictEqual([]);
     const kimi = await l.prepareStart(agent('kimi'), START);
     expect(kimi.spec.args).toStrictEqual(['--mcp-config-file', join(agentDir(), 'kimi-mcp.json')]);
     const kimiFile = join(agentDir(), 'kimi-mcp.json');
@@ -147,9 +163,15 @@ describe('prepareStart for another agent CLI', () => {
     expect((await readdir(agentDir())).filter((name) => name.includes('plugin'))).toEqual([]);
   });
 
-  it('pi gets the bare role in its system prompt; the screen-only CLIs are started by name alone', async () => {
+  it('pi gets gonogo\'s extension, its own session and the role with the preamble; the screen-only CLIs are started by name alone', async () => {
     const l = launcher();
-    expect((await l.prepareStart(agent('pi'), START)).spec).toMatchObject({ file: 'pi', args: ['--append-system-prompt', 'Reviews pull requests.'] });
+    const pi = (await l.prepareStart(agent('pi'), START)).spec;
+    expect(pi.file).toBe('pi');
+    expect(pi.args.slice(0, 6)).toStrictEqual(['--extension', join(agentDir(), 'gonogo-pi.ts'), '--session-dir', join(agentDir(), 'pi-sessions'), '--session-id', agent('pi').sessionId]);
+    expect(pi.args[6]).toBe('--append-system-prompt');
+    expect(pi.args[7]).toContain('Reviews pull requests.');
+    expect(pi.args[7]).toContain('send_message');
+    expect(pi.env.GONOGO_PI_CONFIG).toBe(join(agentDir(), 'gonogo-pi.json'));
     for (const provider of ['qwen', 'grok', 'crush'] as const) {
       expect((await l.prepareStart(agent(provider), START)).spec).toMatchObject({ file: provider, args: [] });
     }

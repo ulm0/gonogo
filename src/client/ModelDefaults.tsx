@@ -154,9 +154,29 @@ function SandboxPick({ saved, flavors, onSaved }: { saved: ModelDefaults['sandbo
   );
 }
 
+/** Which engine's position models the list shows: every engine with a model setting. */
+function PositionEngine({ value, onChange }: { value: Provider; onChange: (provider: Provider) => void }): ReactElement {
+  const id = useId();
+  return (
+    <p className="rules-position-engine">
+      <label className="label" htmlFor={id}>
+        ENGINE
+      </label>{' '}
+      <select id={id} className="input" value={value} onChange={(event) => onChange(event.target.value as Provider)}>
+        {MODEL_PROVIDERS.map((provider) => (
+          <option key={provider} value={provider}>
+            {providerInfo(provider).label}
+          </option>
+        ))}
+      </select>
+    </p>
+  );
+}
+
 export function ModelDefaultsBlock(): ReactElement {
   const titleId = useId();
   const [defaults, setDefaults] = useState<ModelDefaults | null>(null);
+  const [positionEngine, setPositionEngine] = useState<Provider>('claude');
   const saved = (next: ModelDefaults): void => {
     setDefaults(next);
     publishModelDefaults(next);
@@ -186,7 +206,7 @@ export function ModelDefaultsBlock(): ReactElement {
         DEFAULTS
       </h2>
       <p className="hint">
-        What a console starts with when it has none of its own: the engine of a hire that names none (the hire form, Relief and hire_agent), the model of each engine and position, and the effort of Claude Code. A console's own setting (its Edit form) wins. A model or effort applies at each console's next start; the chips of each console say which level it comes from.
+        What a console starts with when it has none of its own: the engine of a hire that names none (the hire form, Relief and hire_agent), the model of each engine and position, and the effort of the engines that take one (Claude Code, pi, opencode). A console's own setting (its Edit form) wins. A model or effort applies at each console's next start; the chips of each console say which level it comes from.
       </p>
       {problem !== null && (
         <p className="error" role="alert">
@@ -200,7 +220,7 @@ export function ModelDefaultsBlock(): ReactElement {
             <Pick label="Default engine" saved={defaults.engine ?? ''} empty="Claude Code" options={PROVIDERS.filter((p) => p !== 'custom' && p !== 'claude').map((p) => ({ value: p, text: providerInfo(p).label }))} set={(engine) => api.setDefaultEngine(engine as Provider | null)} onSaved={saved} />
             <ModePick saved={defaults.mode} onSaved={saved} />
             <SandboxPick saved={defaults.sandbox} flavors={flavors} onSaved={saved} />
-            <Pick label="Claude Code effort" saved={defaults.effort ?? ''} empty="its own" options={EFFORTS.map((e) => ({ value: e, text: e }))} set={(effort) => api.setDefaultEffort(effort as Effort | null)} onSaved={saved} />
+            <Pick label="Effort" saved={defaults.effort ?? ''} empty="its own" options={EFFORTS.map((e) => ({ value: e, text: e }))} set={(effort) => api.setDefaultEffort(effort as Effort | null)} onSaved={saved} />
           </ul>
           {defaults.engine !== undefined && (!providerInfo(defaults.engine).hooks || !providerInfo(defaults.engine).mcp) && (
             <p className="hint">
@@ -221,11 +241,19 @@ export function ModelDefaultsBlock(): ReactElement {
         <>
           <h3 className="label">BY POSITION</h3>
           <p className="hint">
-            A Claude Code console in a position starts with this model before the engine's line above. Its own model still wins. Other engines use their own line, because model names do not carry from one engine to another.
+            A console in a position starts with its engine's model for that position before the engine's line above. Its own model still wins. Each engine has its own list, because model names do not carry from one engine to another.
           </p>
+          <PositionEngine value={positionEngine} onChange={setPositionEngine} />
           <ul className="rules-model-list">
             {POSITIONS.map((p) => (
-              <Row key={p.id} label={p.callSign} names={providerInfo('claude').model ?? []} saved={defaults.positions?.[p.id] ?? ''} set={(model) => api.setPositionModel(p.id, model)} onSaved={saved} />
+              <Row
+                key={`${positionEngine}-${p.id}`}
+                label={p.callSign}
+                names={providerInfo(positionEngine).model ?? []}
+                saved={(positionEngine === 'claude' ? defaults.positions?.[p.id] : defaults.enginePositions?.[positionEngine]?.[p.id]) ?? ''}
+                set={(model) => api.setPositionModel(p.id, model, positionEngine)}
+                onSaved={saved}
+              />
             ))}
           </ul>
         </>

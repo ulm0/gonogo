@@ -10,6 +10,9 @@ import { delimiter, join } from 'node:path';
 import { DOCS_URL, MCP_SERVER_NAME, PROVIDER_INFO, PROVIDERS } from '../shared/protocol.js';
 import type { EngineCheck, HookEvent, McpServer, PermissionMode, Provider } from '../shared/protocol.js';
 import { ENGINE_VERSION_CHARS, ENGINE_VERSION_MS, HOOK_PATH_PREFIX, HOOK_TIMEOUT_S, MCP_PATH } from './constants.js';
+import { buildOpencodeConfig, buildOpencodeSettings, OPENCODE_CONFIG_FILE, OPENCODE_PLUGIN_FILE, OPENCODE_PLUGIN_SOURCE, OPENCODE_ROLE_FILE, OPENCODE_SETTINGS_ENV, OPENCODE_SETTINGS_FILE } from './opencodeplugin.js';
+import type { GatePolicy } from './toolgate.js';
+import { buildPiConfig, PI_CONFIG_ENV, PI_CONFIG_FILE, PI_EXTENSION_FILE, PI_EXTENSION_SOURCE, PI_SESSIONS_DIR } from './piextension.js';
 
 export type OtherProvider = Exclude<Provider, 'claude' | 'custom'>;
 
@@ -28,14 +31,30 @@ export interface StartContext {
   seed: boolean;
   /** Engine Bay: the model of the agent, passed as `--model`; none leaves the CLI's default. */
   model?: string;
-  /** The agent's Payload servers, for the CLIs that read Claude's mcp.json shape (Gemini, Kimi). */
+  /** The agent's Payload servers (and the global ones, for an engine that takes them), in Claude's mcp.json shape; each adapter converts them. */
   servers?: Record<string, McpServer>;
+  /** Payload skill folders, for an engine that loads skills (PROVIDER_INFO.payload 'all'). */
+  skills?: string[];
+  /** The agent's session id: an engine that can name its session resumes it at the next start. */
+  sessionId?: string;
+  /** An engine whose own session id is its own (opencode): the one to resume, recorded for this sessionId; none starts a new one. */
+  engineSession?: string;
+  /** The tool gate (toolgate.ts) for an engine whose extension enforces it (pi, opencode). */
+  policy?: GatePolicy;
+  /** Effort, for an engine that takes one (takesEffort). */
+  effort?: string;
+  /** Clean Room egress: the proxy's base URL for the Anthropic API (the container holds a placeholder key). */
+  anthropicBaseUrl?: string;
+  /** The room's subagent limit (subagents mode 'limit'), for an engine whose extension enforces it (opencode). */
+  subagentLimit?: number | null;
 }
 export interface ProviderStart {
   args: string[];
   env: Record<string, string>;
   /** File name in the agent's folder to its content, written with mode 0600 before the start. */
   files: Record<string, string>;
+  /** Payload servers the engine cannot run (a transport it lacks): the launcher says so. */
+  skipped?: string[];
 }
 
 /** Gemini CLI hook event to the hub's own hook event: the hub handles both CLIs with one set of rules. */
@@ -204,26 +223,39 @@ export function buildProviderStart(provider: OtherProvider, ctx: StartContext): 
         env: {},
         files: {},
       };
-    case 'opencode':
-      // OPENCODE_CONFIG is merged over the owner's config; {env:...} is opencode's own substitution.
+    case 'opencode': {
+      // OPENCODE_CONFIG is merged over the owner's config; {env:...} is opencode's own substitution. gonogo's plugin (opencodeplugin.ts) brings
+      // the hooks, mail at the end of a turn and the tool gate; the role is an instructions file, so a resumed session does not get it again as a prompt.
+      const { config, names, skipped } = buildOpencodeConfig({ hubUrl: ctx.hubUrl, pluginPath: file(OPENCODE_PLUGIN_FILE), rolePath: file(OPENCODE_ROLE_FILE), servers: ctx.servers, skills: ctx.skills, effort: ctx.effort, anthropicBaseUrl: ctx.anthropicBaseUrl });
+      const settings = buildOpencodeSettings({ hubUrl: ctx.hubUrl, name: ctx.name, servers: names, subagentLimit: ctx.subagentLimit ?? null, policy: ctx.policy ?? { mode: ctx.mode, rules: {}, allowed: [], cwd: '/', home: '/' } });
       return {
-        args: ['--prompt', ctx.roleText],
-        env: { OPENCODE_CONFIG: file('opencode.json') },
+        args: [...(ctx.engineSession ? ['--session', ctx.engineSession] : []), ...model],
+        env: { OPENCODE_CONFIG: file(OPENCODE_CONFIG_FILE), [OPENCODE_SETTINGS_ENV]: file(OPENCODE_SETTINGS_FILE) },
         files: {
-          'opencode.json': JSON.stringify(
-            { mcp: { [MCP_SERVER_NAME]: { type: 'remote', url: `${ctx.hubUrl}${MCP_PATH}`, headers: { Authorization: 'Bearer {env:GONOGO_TOKEN}' }, enabled: true } } },
-            null,
-            2,
-          ),
+          [OPENCODE_CONFIG_FILE]: JSON.stringify(config, null, 2),
+          [OPENCODE_PLUGIN_FILE]: OPENCODE_PLUGIN_SOURCE,
+          [OPENCODE_SETTINGS_FILE]: JSON.stringify(settings, null, 2),
+          [OPENCODE_ROLE_FILE]: ctx.roleText,
         },
+        ...(skipped.length > 0 ? { skipped } : {}),
       };
+    }
     case 'kimi':
       return { args: ['--mcp-config-file', file('kimi-mcp.json'), ...model], env: {}, files: { 'kimi-mcp.json': mcpJson(ctx) } };
     case 'copilot':
       return { args: ['--additional-mcp-config', `@${file('copilot-mcp.json')}`], env: {}, files: { 'copilot-mcp.json': mcpJson(ctx, { tools: ['*'] }) } };
-    case 'pi':
-      // pi reads MCP servers only from its own files, so it gets no gonogo tools: the role alone, without the preamble about them.
-      return { args: ['--append-system-prompt', ctx.role, ...model], env: {}, files: {} };
+    case 'pi': {
+      // pi 1.6: gonogo's own extension (piextension.ts) brings the MCP servers, the hooks and mail at the end of a turn. The role with the preamble about
+      // the gonogo tools goes in as Claude Code's does; the sessions live in the agent's folder and a session id names the one to resume.
+      const { config, skipped } = buildPiConfig({ hubUrl: ctx.hubUrl, name: ctx.name, servers: ctx.servers, policy: ctx.policy ?? { mode: ctx.mode, rules: {}, allowed: [], cwd: '/', home: '/' } });
+      const session = ctx.sessionId ? ['--session-dir', file(PI_SESSIONS_DIR), '--session-id', ctx.sessionId] : [];
+      return {
+        args: ['--extension', file(PI_EXTENSION_FILE), ...session, ...(ctx.seed ? ['--approve'] : []), '--append-system-prompt', ctx.roleText, ...(ctx.skills ?? []).flatMap((path) => ['--skill', path]), ...model, ...(ctx.effort ? ['--thinking', ctx.effort] : [])],
+        env: { [PI_CONFIG_ENV]: file(PI_CONFIG_FILE) },
+        files: { [PI_EXTENSION_FILE]: PI_EXTENSION_SOURCE, [PI_CONFIG_FILE]: JSON.stringify(config, null, 2) },
+        ...(skipped.length > 0 ? { skipped } : {}),
+      };
+    }
     case 'cursor':
       return { args: model, env: {}, files: {} };
     case 'qwen':

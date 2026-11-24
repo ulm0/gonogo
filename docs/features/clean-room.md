@@ -2,7 +2,7 @@
 
 <CleanRoomMock class="doc-mock" />
 
-The `Clean Room` box of the hire and edit form (Claude Code agents only) runs the agent in a Docker container holding a copy of the project and the agent's own files, nothing else of your machine. Design: [`docs/clean-room-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/clean-room-spec.md). Tested against real Docker with the stand-in agent, and by RSO and SIMSUP, real Claude Code consoles of the room that builds gonogo ([What was not verified](../reference/not-verified.md)).
+The `Clean Room` box of the hire and edit form (Claude Code, pi and opencode agents; the image ships all three) runs the agent in a Docker container holding a copy of the project and the agent's own files, nothing else of your machine. Design: [`docs/clean-room-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/clean-room-spec.md). Tested against real Docker with the stand-in agent, and by RSO and SIMSUP, real Claude Code consoles of the room that builds gonogo ([What was not verified](../reference/not-verified.md)).
 
 ## Needs
 

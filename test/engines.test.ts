@@ -49,7 +49,7 @@ const launcher = (extra: { env?: Record<string, string>; keys?: (name: string) =
 
 describe('PROVIDER_INFO: model, install and docs', () => {
   it('the engines with a model setting are the ones whose `--model` was checked, and custom has none', () => {
-    expect(PROVIDERS.filter((p) => PROVIDER_INFO[p].model !== null).sort()).toEqual(['antigravity', 'claude', 'codex', 'cursor', 'gemini', 'kimi', 'pi']);
+    expect(PROVIDERS.filter((p) => PROVIDER_INFO[p].model !== null).sort()).toEqual(['antigravity', 'claude', 'codex', 'cursor', 'gemini', 'kimi', 'opencode', 'pi']);
     expect(PROVIDER_INFO.custom).toMatchObject({ model: null, install: null, docs: '' });
   });
 
@@ -104,7 +104,7 @@ describe('the model on the command line', () => {
     ['gemini', ['--approval-mode', 'default', '--model', 'flash']],
     ['codex', ['--model', 'o-model']],
     ['kimi', ['--mcp-config-file', '*', '--model', 'k-model']],
-    ['pi', ['--append-system-prompt', 'Reviews pull requests.', '--model', 'sonnet:high']],
+    ['pi', ['--extension', '--append-system-prompt', 'Reviews pull requests.', '--model', 'sonnet:high']],
     ['cursor', ['--model', 'c-model']],
   ] as Array<[Provider, string[]]>)('%s takes it as one argument', async (provider, expected) => {
     const model = { gemini: 'flash', codex: 'o-model', kimi: 'k-model', pi: 'sonnet:high', cursor: 'c-model' }[provider as 'gemini'];
