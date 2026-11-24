@@ -26,8 +26,9 @@ By FIDO, 2026-11-24, task t131. Status: draft, not built. Builds on `docs/relief
 | `positions` | none until the Director picks | auto-approval is only for these roster positions; **a free-text `role` is never auto-approved** (an injected boss cannot write a persona), it asks the Director |
 | `engines` | the room default engine | custom commands and payloads are never auto-approved |
 | `models` | the room default | an allow-list of model names per engine; anything else asks |
-| `maxMode` | `acceptEdits` | the highest mode the boss may grant by rule: `default`, `acceptEdits` or **`auto`** (Claude's classifier mode; the Director's request). **`bypassPermissions` is not a choice** (see below) |
-| `bypassInCleanRoom` | off | the only way the boss may grant `bypassPermissions`: it needs this **and** a Clean Room hire (the agent runs in a container on its own worktree) **and** step-up to turn on. Without it, a request for bypass asks the Director as today. |
+| `maxMode` | `acceptEdits` | the highest mode the boss may grant by rule: `default`, `acceptEdits` or **`auto`** (Claude's classifier mode; the Director's request). **`auto` applies to Clean Room hires only (RSO F1):** on the host it needs the separate switch `autoOnHost` below. **`bypassPermissions` is not a choice** (see below) |
+| `autoOnHost` | **off** | the only way a rule hire may run in `auto` **outside a Clean Room**; step-up to turn on, with the warning "agents the boss hires can change anything your user can, without asking". One explicit click, not a side effect of `maxMode`. |
+| `bypassInCleanRoom` | off | the only way the boss may grant `bypassPermissions`: it needs this **and** a Clean Room hire (the agent runs in a container on its own worktree) **and** step-up to turn on. Without it, a request for bypass asks the Director as today. **A hire in `bypassPermissions` or in `auto` by rule must also get (RSO F2): egress ON at or above the sandbox floor (the Anthropic key stays out of the container), no global MCP servers, and no room keys except the ones marked for the Clean Room**, because such an agent calls every tool it holds without a check. |
 | `sandboxFloor` | the boss's own and the room default | the hire's Clean Room, flavor and (when it exists) egress rules are at least those; never weaker |
 | `folder` | the boss's folder or inside it (realpath) | as a Clean Room boss's rule today, for everyone |
 | `ratePerHour` | 3 | counts hires, not live agents |
@@ -35,6 +36,8 @@ By FIDO, 2026-11-24, task t131. Status: draft, not built. Builds on `docs/relief
 | `protected` | the boss and every agent the Director hired | a per-agent flag the Director can also set; protected agents are never fired by the boss or by a rule |
 
 **Why `bypassPermissions` is special.** It runs every tool with no check. By rule, the only place that is defensible is inside a Clean Room, and even then it must be an explicit Director setting. Anything else the boss asks for in bypass **still goes to the Director as a request**; nothing is refused silently.
+
+**What a rule hire may carry (RSO F3).** `keys` (Clearance), `payload`, a `payloadOff` that turns OFF a room default (a deny-type MCP server or skill), `permissions`, `remoteControl`, `command`, and any `cleanRoom` field weaker than the floor all mean **ASK, never auto**. This is the same list as the hire rule in `stepup.ts` (to be confirmed by the builder), **judged by one shared function**, so the two cannot drift. **The boss cannot reassign who the boss is**: the role move stays the Director's.
 
 **How `hire_agent` uses the settings.** Unchanged signature (plus `model?`). The server runs today's validation, then the rules: if **every** rule passes it staffs the agent immediately (through `Hub.hire`, with `hiredBy: 'boss'`) and answers `{ status: 'hired' }`; if **any** rule fails it makes a normal pending request and the note says which rule ("mode auto needs your GO: maxMode is acceptEdits"). The boss hears every outcome. Counting and the crew slot are reserved under the same lock as the request limits so two parallel hires cannot both pass the cap.
 
@@ -51,14 +54,15 @@ By FIDO, 2026-11-24, task t131. Status: draft, not built. Builds on `docs/relief
 
 - **Step-up (the Director's session, scope `full`, no agent route reads or writes it):** turning `autoApprove` on; raising `maxCrew`, `crewBudgetUsd`, `maxMode`, the allow-lists; turning `bypassInCleanRoom` on; clearing `protected`. **No step-up** to lower any of these or to set `protected`, and a **STOP CREW** key (stops every boss-hired agent and sets `autoApprove` off) needs none because it only removes power.
 - **Audit:** every hire, refusal-to-request, fire and rule change is a **Downlink line** (always, never silent) and a **Black Box** event with names, ids, which rule decided and counts, **never the role text**. The roster tile of a boss-hired agent carries a badge "hired by flight".
-- A file changed outside gonogo reverts the room to `autoApprove: off` with an alarm (the login spec's tamper rule).
+- **Tamper (H5):** the server keeps, **in memory, the record written by the last API change** and compares the file with that on every read and on a timer, as the login tamper alarm does; **never against a hash kept beside the file** (an agent that can rewrite the file could rewrite that too). A mismatch gives `autoApprove: off`, a Downlink alarm and the file renamed `.bad`.
+- **Counters survive a restart:** the crew (`hiredBy`), the day's crew spend and the hour's hire times are stored with the agents and the ledger, so a restart is not a free reset (RSO).
 
 ## 6. Threats (for RSO)
 
 | Id | Threat | Must hold |
 |---|---|---|
 | **H1** | A prompt-injected boss hires a crew to do harm. | Only the Director's presets (positions), the mode ceiling, the sandbox floor, a folder under the boss's, `maxCrew`, the daily crew budget; free text, custom commands and payloads always ask. |
-| **H2** | Mode escalation chain. | Only the boss hires; boss-hired agents cannot call `hire_agent`; the ceiling is read from the stored setting, never from the request; `bypassPermissions` only with `bypassInCleanRoom` and a Clean Room hire. |
+| **H2** | Mode escalation chain. | Only the boss hires; boss-hired agents cannot call `hire_agent`; the ceiling is read from the stored setting, never from the request; `auto` only in a Clean Room (or with `autoOnHost`); `bypassPermissions` only with `bypassInCleanRoom`, a Clean Room hire, egress on, no global MCP, no non-Clean-Room keys (F2); a rule hire never carries keys, payload, `payloadOff`, permissions, remote control or a command (F3). |
 | **H3** | A hire/fire loop to burn spend. | The rate counts hires; the crew budget is cumulative per day (fire then rehire does not reset it). |
 | **H4** | Fire used against the Director's agents or the boss. | Server-side `hiredBy` check; protected agents and the boss refused; stop only. |
 | **H5** | The settings changed by an agent. | Director session and step-up only; no MCP tool for it; the file is 0600 (same-user agents outside a Clean Room can still edit it: the known limit, answered by the tamper revert). |
@@ -73,7 +77,7 @@ By FIDO, 2026-11-24, task t131. Status: draft, not built. Builds on `docs/relief
 | **3** | `crewBudgetUsd` enforcement and the crew hold, the sandbox/egress floor, `models` | ~250 |
 | **4** | `autoFireIdleMinutes`, `bypassInCleanRoom` (after RSO is satisfied), docs | ~200 |
 
-**Tests.** Defaults leave today's behavior byte-identical; an in-rules hire staffs at once with `hiredBy`, an out-of-rules one becomes a pending request that names the rule; `auto` mode is granted only up to `maxMode` and never `bypassPermissions` without the Clean Room setting; a free-text role, a custom command, a payload, a folder outside the boss's all ask; a boss-hired agent cannot hire; settings need step-up and 404 for an agent token; rate and crew cap hold under parallel calls; fire stops (record, memory, session and worktree kept), releases its tasks, refuses the boss, a protected agent and one with a pending prompt; the Black Box row has no role text.
+**Tests.** **F1-F4:** `auto` by rule on the host is refused (asks) unless `autoOnHost` is on; in a Clean Room it is granted up to `maxMode`; a bypass or `auto` rule hire without egress on, or with a global MCP or a non-Clean-Room key, asks; each of `keys`, `payload`, `payloadOff`, `permissions`, `remoteControl`, `command` and a weak `cleanRoom` field in a request asks; the shared function is the one `stepup.ts` uses; editing `relief.json` by hand reverts to off, renames it `.bad` and raises the alarm, and a hash file beside it does not fool the check; a restart keeps the crew, the day's spend and the hire rate; the boss cannot reassign the boss role. Defaults leave today's behavior byte-identical; an in-rules hire staffs at once with `hiredBy`, an out-of-rules one becomes a pending request that names the rule; `auto` mode is granted only up to `maxMode` and never `bypassPermissions` without the Clean Room setting; a free-text role, a custom command, a payload, a folder outside the boss's all ask; a boss-hired agent cannot hire; settings need step-up and 404 for an agent token; rate and crew cap hold under parallel calls; fire stops (record, memory, session and worktree kept), releases its tasks, refuses the boss, a protected agent and one with a pending prompt; the Black Box row has no role text.
 
 ## 8. Open questions for the Director
 
