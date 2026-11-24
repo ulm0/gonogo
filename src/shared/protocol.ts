@@ -2390,6 +2390,8 @@ export interface AgentIdentity {
 
 /** Exactly what the terminal host spawns. Produced by the launcher. */
 export interface SpawnSpec {
+  /** The engine the process is: the terminal reads its input box by that engine's own screen (Claude Code's `❯`, pi's rules, opencode's bar). Absent: Claude Code. */
+  engine?: Provider;
   file: string;
   args: string[];
   /** The complete child environment (nothing else is inherited). */

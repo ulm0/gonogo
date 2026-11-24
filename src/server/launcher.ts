@@ -68,7 +68,7 @@ import { isRecord } from './hooks.js';
 import { doorText, projectFile } from './door.js';
 import { buildProviderStart, knowsEffort, shellQuote, STATUS_LINE_SHIM } from './providers.js';
 import type { OtherProvider } from './providers.js';
-import { HANDOFF_FILE, handoffNote, handoffText, opencodeExporter, readTranscript } from './handoff.js';
+import { HANDOFF_FILE, handoffNote, handoffText, opencodeExporter, opencodeLister, readTranscript } from './handoff.js';
 import type { GatePolicy } from './toolgate.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -154,6 +154,8 @@ export function buildSettings(input: {
     ];
   }
   const memoryRule = `//${input.memoryPath.replace(/^\//, '')}`;
+  // an engine switch tells the first session to read handoff.md in the agent's own folder: reading it must not wait for a GO
+  const handoffRule = `//${join(dirname(input.memoryPath), HANDOFF_FILE).replace(/^\//, '')}`;
   const settings: Record<string, unknown> = {
     hooks,
     tui: 'fullscreen',
@@ -161,7 +163,7 @@ export function buildSettings(input: {
     crossSessionInbound: 'refuse',
     permissions: {
       deny: unique([...DENIED_TOOLS, ...(input.rules?.deny ?? [])]),
-      allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, ...(input.rules?.allow ?? [])]),
+      allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, ...(input.rules?.allow ?? [])]),
       ...(input.rules?.ask?.length ? { ask: unique(input.rules.ask) } : {}),
     },
   };
@@ -606,10 +608,11 @@ export function createLauncher(options: LauncherOptions): Launcher {
   const gatePolicy = (agent: AgentRecord, memoryPath: string, cwd: string, home: string = homedir()): GatePolicy => {
     const rules = withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), options.subagents?.() ?? { mode: 'allow' as const, limit: 4 });
     const memoryRule = `//${memoryPath.replace(/^\//, '')}`;
+    const handoffRule = `//${join(dirname(memoryPath), HANDOFF_FILE).replace(/^\//, '')}`;
     const off = new Set(options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`));
     return {
       mode: agent.mode,
-      rules: { ...rules, deny: unique([...DENIED_TOOLS, ...(rules.deny ?? [])]), allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, ...(rules.allow ?? [])]) },
+      rules: { ...rules, deny: unique([...DENIED_TOOLS, ...(rules.deny ?? [])]), allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, ...(rules.allow ?? [])]) },
       allowed: ALLOWED_TOOLS.filter((tool) => !off.has(tool)),
       cwd: resolve(cwd),
       home,
@@ -686,7 +689,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     if (clean === null) {
       const env = await withCoauthor(agent, childEnv, where, base);
       log.debug(`prepared ${agent.name} to run ${provider}`);
-      return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
+      return { spec: { engine: provider, file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
     }
     const uid = process.getuid?.();
     const gid = process.getgid?.();
@@ -712,7 +715,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const started = byAgent.get(agent.name);
     if (started?.generation === generation) started.container = clean.container;
     log.debug(`prepared ${agent.name} to run ${provider} in a Clean Room`);
-    return { spec: { file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree }, flag: 'session-id', token };
+    return { spec: { engine: provider, file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree }, flag: 'session-id', token };
   };
 
   const prepareStart = async (
@@ -902,7 +905,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
         const env = options.env ?? process.env;
         const base = agentDir(to.name);
         await mkdir(base, { recursive: true, mode: DIR_MODE });
-        const transcript = await readTranscript(from, { agentDir: base, exportOpencode: opencodeExporter(env, from.dir), ...(hasText(env.CLAUDE_CONFIG_DIR) ? { claudeConfigDir: env.CLAUDE_CONFIG_DIR } : {}) }).catch((error: unknown) => {
+        const transcript = await readTranscript(from, { agentDir: base, cwd: from.dir, exportOpencode: opencodeExporter(env, from.dir), listOpencode: opencodeLister(env, from.dir), ...(hasText(env.PI_CODING_AGENT_DIR) ? { piDir: env.PI_CODING_AGENT_DIR } : {}), ...(hasText(env.CLAUDE_CONFIG_DIR) ? { claudeConfigDir: env.CLAUDE_CONFIG_DIR } : {}) }).catch((error: unknown) => {
           log.warn(`${to.name}: the transcript of its old session could not be read`, errorText(error));
           return null;
         });

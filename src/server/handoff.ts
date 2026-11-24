@@ -169,18 +169,99 @@ async function findSessionFile(root: string, sessionId: string): Promise<string 
 export interface TranscriptPlaces {
   /** The agent's own folder in the gonogo home. */
   agentDir: string;
+  /** The agent's working folder: a session that was started before gonogo named it (an older version, another place) is found by this and the time. */
+  cwd?: string;
   /** CLAUDE_CONFIG_DIR when set. */
   claudeConfigDir?: string;
+  /** pi's own folder (PI_CODING_AGENT_DIR, else ~/.pi/agent): where it keeps a session that gonogo did not name. */
+  piDir?: string;
+  /** opencode: runs `opencode session list --format json` with the agents' environment. */
+  listOpencode?: () => Promise<string>;
+  /** Sessions newer than this (ms) are not the old one (the moment of the switch); default now. */
+  until?: number;
   /** opencode: runs `opencode export <id>` and resolves with what it printed. The launcher gives one with the agents' environment. */
   exportOpencode?: (id: string) => Promise<string>;
 }
 
-/** `opencode export <id>` with that environment: no shell, at most 20 s and 64 MB. */
-export function opencodeExporter(env: Record<string, string | undefined>, cwd: string, bin = 'opencode'): (id: string) => Promise<string> {
-  return (id) =>
+/** `opencode <args>` with that environment: no shell, at most 20 s and 64 MB. */
+function opencodeRunner(env: Record<string, string | undefined>, cwd: string, bin: string): (args: string[]) => Promise<string> {
+  return (args) =>
     new Promise((done, fail) => {
-      execFile(bin, ['export', id], { env, cwd, timeout: 20_000, maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => (error === null ? done(stdout) : fail(error)));
+      execFile(bin, args, { env, cwd, timeout: 20_000, maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => (error === null ? done(stdout) : fail(error)));
     });
+}
+
+/** `opencode export <id>` with that environment. */
+export function opencodeExporter(env: Record<string, string | undefined>, cwd: string, bin = 'opencode'): (id: string) => Promise<string> {
+  const run = opencodeRunner(env, cwd, bin);
+  return (id) => run(['export', id]);
+}
+
+/** `opencode session list --format json` with that environment. */
+export function opencodeLister(env: Record<string, string | undefined>, cwd: string, bin = 'opencode'): () => Promise<string> {
+  const run = opencodeRunner(env, cwd, bin);
+  return () => run(['session', 'list', '--format', 'json']);
+}
+
+/** The id of the newest opencode session of this folder that is not newer than `until`, from the JSON of `opencode session list`; null when there is none. */
+export function newestOpencodeSession(listing: string, cwd: string, until: number): string | null {
+  const start = listing.indexOf('[');
+  if (start < 0) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(listing.slice(start));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(data)) return null;
+  const fits = data
+    .filter((s): s is { id: string; directory: string; updated: number; created: number } => isRecord(s) && typeof s.id === 'string' && typeof s.directory === 'string' && typeof s.updated === 'number' && typeof s.created === 'number' && s.directory === cwd && s.created <= until)
+    .sort((a, b) => b.updated - a.updated);
+  return fits[0]?.id ?? null;
+}
+
+/** The newest `*.jsonl` of the folders below `root` (one level) whose first line says it was started in `cwd` (pi: `{ type: 'session', cwd }`) and which was written before `until`. */
+async function newestPiSession(root: string, cwd: string, until: number): Promise<string | null> {
+  let best: { path: string; at: number } | null = null;
+  for (const folder of await readdir(root).catch(() => [] as string[])) {
+    for (const file of await readdir(join(root, folder)).catch(() => [] as string[])) {
+      if (!file.endsWith('.jsonl')) continue;
+      const path = join(root, folder, file);
+      const info = await stat(path).catch(() => null);
+      if (info === null || !info.isFile() || (best !== null && info.mtimeMs <= best.at)) continue;
+      const head = await open(path, 'r').then(async (handle) => {
+        try {
+          const buffer = Buffer.alloc(2048);
+          const { bytesRead } = await handle.read(buffer, 0, 2048, 0);
+          return buffer.toString('utf8', 0, bytesRead).split('\n')[0] ?? '';
+        } finally {
+          await handle.close();
+        }
+      }, () => '');
+      try {
+        const first: unknown = JSON.parse(head);
+        if (isRecord(first) && first.type === 'session' && first.cwd === cwd && info.mtimeMs <= until + 60_000) best = { path, at: info.mtimeMs };
+      } catch {
+        // not a session file
+      }
+    }
+  }
+  return best?.path ?? null;
+}
+
+/** Claude Code names a project folder by its path with every character that is not a letter or a digit as a dash. */
+const claudeProjectFolder = (cwd: string): string => cwd.replace(/[^A-Za-z0-9]/g, '-');
+
+/** The newest session file of the folder's Claude Code project (a session whose id gonogo did not name), written before `until`. */
+async function newestClaudeSession(root: string, cwd: string, until: number): Promise<string | null> {
+  const folder = join(root, claudeProjectFolder(cwd));
+  let best: { path: string; at: number } | null = null;
+  for (const file of await readdir(folder).catch(() => [] as string[])) {
+    if (!file.endsWith('.jsonl')) continue;
+    const info = await stat(join(folder, file)).catch(() => null);
+    if (info !== null && info.isFile() && info.mtimeMs <= until + 60_000 && (best === null || info.mtimeMs > best.at)) best = { path: join(folder, file), at: info.mtimeMs };
+  }
+  return best?.path ?? null;
 }
 
 /** Where the old engine kept the session and what it said; null when gonogo cannot read that engine's transcript or there is none. */
@@ -188,16 +269,19 @@ export async function readTranscript(side: HandoffSide, places: TranscriptPlaces
   const provider = side.provider ?? 'claude';
   if (provider === 'claude') {
     const root = join(places.claudeConfigDir ?? join(homedir(), '.claude'), 'projects');
-    const path = await findSessionFile(root, side.sessionId);
+    const path = (await findSessionFile(root, side.sessionId)) ?? (places.cwd === undefined ? null : await newestClaudeSession(root, places.cwd, places.until ?? Date.now()));
     return path === null ? null : { path, turns: claudeTurns(await tailLines(path)) };
   }
   if (provider === 'opencode') {
-    const id = side.engineSession?.for === side.sessionId ? side.engineSession.id : null;
+    let id = side.engineSession?.for === side.sessionId ? side.engineSession.id : null;
+    // a session of an older gonogo has no recorded id: the newest one of this folder is the old one
+    if (id === null && places.listOpencode !== undefined && places.cwd !== undefined) id = newestOpencodeSession(await places.listOpencode(), places.cwd, places.until ?? Date.now());
     if (id === null || places.exportOpencode === undefined) return null;
     return { path: `opencode session ${id} (opencode export ${id})`, turns: opencodeTurns(await places.exportOpencode(id)) };
   }
   if (provider === 'pi') {
-    const path = await findSessionFile(join(places.agentDir, PI_SESSIONS_DIR), side.sessionId);
+    // the session gonogo named lives in the agent's folder; one that pi started on its own (an older gonogo) lives in pi's own folder, found by the folder and the time
+    const path = (await findSessionFile(join(places.agentDir, PI_SESSIONS_DIR), side.sessionId)) ?? (places.cwd === undefined ? null : await newestPiSession(join(places.piDir ?? join(homedir(), '.pi', 'agent'), 'sessions'), places.cwd, places.until ?? Date.now()));
     return path === null ? null : { path, turns: piTurns(await tailLines(path)) };
   }
   return null;
@@ -247,5 +331,8 @@ export function handoffText(from: HandoffSide, to: HandoffSide, transcript: Tran
 /** The line the role text of the new session gets, when the handoff in `content` was written for `sessionId`; else null. */
 export function handoffNote(content: string | null, sessionId: string, path: string): string | null {
   if (content === null || !content.startsWith(handoffMarker(sessionId))) return null;
-  return `\n\nYou were moved here from another engine. Before anything else, read ${path}: it holds the last turns of your previous session.`;
+  // the recap in one line: which engine, until when, which engine now (the words of the file's own second paragraph)
+  const moved = /You were running on (.+?) until (\S+); the Director moved you to (.+?)\./.exec(content);
+  const what = moved === null ? 'from another engine' : `from ${moved[1]} (until ${moved[2]}) to ${moved[3]}`;
+  return `\n\nThe Director moved you ${what}: this is a new session, not the one you remember. Before anything else, read ${path}: it holds the last turns of your previous session.`;
 }

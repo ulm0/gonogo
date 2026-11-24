@@ -20,6 +20,7 @@ those four, and lets the owner pick the CLI in the hire form.
   detectors), `mailable` (mail, polls, the draft latch) and `isClaude` (the prompt-box, dialog and title rules,
   Propellant, the session id). A provider without hooks gets the custom command's rule: working while it prints,
   idle after 2 s of quiet.
+- **pi and opencode read their input box from the screen** (`analyzeScreen(rows, cols, engine)`: pi's box is the rows between its lowest two rules, opencode's the bar of `┃` rows above the `╹▀▀` line, its placeholder `Ask anything…` counting as empty). The draft latch of a browser keystroke ends within a second of the box being empty, as it does for Claude Code, so text typed and erased in a console no longer holds the mail for the 30 minutes of DRAFT_EXPIRY_MS. Gemini CLI's screen is still not read.
 - **Gemini CLI is hook driven through Claude's hook names.** Its per-agent settings file maps BeforeAgent to
   `UserPromptSubmit`, BeforeTool to `PreToolUse`, AfterTool to `PostToolUse`, Notification to `Notification` and
   AfterAgent to `Stop`, so the hub runs one set of rules. Gemini runs command hooks only: each hook runs

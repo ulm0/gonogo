@@ -15,6 +15,7 @@ import type {
   Attachment,
   DialogKind,
   Logger,
+  Provider,
   OutputListener,
   ScreenProbe,
   SpawnSpec,
@@ -103,12 +104,46 @@ function findDialog(lines: readonly string[]): DialogKind | null {
   return null;
 }
 
+/**
+ * The input box of pi (1.6): the lowest two rules with 1 to BOX_MAX_ROWS rows of text between them and a status line below; what the rows say is the draft.
+ * `top` and `bottom` are the rows of the rules.
+ */
+function findPiBox(rows: readonly string[]): { top: number; bottom: number; text: string } | null {
+  for (let bottom = rows.length - 2; bottom >= 1; bottom--) {
+    if (!isRule(rows[bottom])) continue;
+    for (let top = bottom - 1; top >= 0 && top >= bottom - 1 - BOX_MAX_ROWS; top--) {
+      if (!isRule(rows[top])) continue;
+      const inside = rows.slice(top + 1, bottom).map((row) => row.trim());
+      return bottom - top >= 2 && rows.slice(bottom + 1).some((row) => row.trim() !== '') ? { top, bottom, text: inside.join(' ').trim() } : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The input box of opencode (1.19): a bar of `┃` rows that ends in a row of `╹▀▀▀`; its first and its last two rows are the margin and the agent line ("Build · model"), the rows
+ * between hold what is typed, or the placeholder `Ask anything…` when nothing is.
+ */
+function findOpencodeBox(rows: readonly string[]): { top: number; bottom: number; text: string } | null {
+  for (let bottom = rows.length - 1; bottom >= 4; bottom--) {
+    if (!/^\s*╹▀/.test(rows[bottom])) continue;
+    let top = bottom - 1;
+    while (top >= 0 && /^\s*┃/.test(rows[top])) top--;
+    top += 1;
+    if (bottom - top < 4) return null;
+    const typed = rows.slice(top + 1, bottom - 2).map((row) => row.replace(/^\s*┃/, '').trim()).join(' ').trim();
+    return { top, bottom, text: /^Ask anything/.test(typed) ? '' : typed };
+  }
+  return null;
+}
+
 /** `rows` are the visible rows of the active buffer as xterm returns them (the NBSP of an empty box row must survive). */
-export function analyzeScreen(rows: readonly string[], cols: number): ScreenProbe {
-  const boxRow = findPromptBox(rows);
+export function analyzeScreen(rows: readonly string[], cols: number, engine?: Provider): ScreenProbe {
+  const other = engine === 'pi' ? findPiBox(rows) : engine === 'opencode' ? findOpencodeBox(rows) : null;
+  const boxRow = other === null ? findPromptBox(rows) : other.top;
   // The box row is left out of the dialog search: a draft or placeholder in the box must never look like a dialog.
-  const lines = rows.map((row, y) => (y === boxRow ? '' : row.trimEnd()));
-  const footer = boxRow >= 0 ? lines.slice(boxRow + 1) : lines.slice(-FOOTER_ROWS_NO_BOX);
+  const lines = rows.map((row, y) => (other === null ? y === boxRow : y >= other.top && y <= other.bottom) ? '' : row.trimEnd());
+  const footer = boxRow >= 0 ? lines.slice((other?.bottom ?? boxRow) + 1) : lines.slice(-FOOTER_ROWS_NO_BOX);
   return {
     cols,
     rows: rows.length,
@@ -120,7 +155,7 @@ export function analyzeScreen(rows: readonly string[], cols: number): ScreenProb
     // assistant's own lines quote these words all the time, and are not a state.
     signedOut: footer.some((line) => SIGNED_OUT.test(line)),
     authRejected: footer.some((line) => AUTH_REJECTED.test(line)),
-    promptText: boxRow >= 0 ? rows[boxRow].slice(BOX_PREFIX.length).trim() : null,
+    promptText: other !== null ? other.text : boxRow >= 0 ? rows[boxRow].slice(BOX_PREFIX.length).trim() : null,
   };
 }
 
@@ -269,6 +304,7 @@ interface Sink {
 
 interface Rec {
   name: string;
+  readonly engine: Provider | undefined;
   readonly generation: number;
   readonly pid: number;
   pty: IPty | null;
@@ -361,7 +397,7 @@ export function createTerminalHost(options: TerminalHostOptions = {}): TerminalH
   const probeOf = (rec: Rec): ScreenProbe => {
     let probe = rec.probe;
     if (probe === null || probe.version !== rec.version) {
-      probe = { version: rec.version, value: analyzeScreen(viewportRows(rec.mirror), rec.mirror.cols) };
+      probe = { version: rec.version, value: analyzeScreen(viewportRows(rec.mirror), rec.mirror.cols, rec.engine) };
       rec.probe = probe;
     }
     return { ...probe.value };
@@ -515,6 +551,7 @@ export function createTerminalHost(options: TerminalHostOptions = {}): TerminalH
     });
     const rec: Rec = {
       name,
+      engine: spec.engine,
       generation,
       pid: pty.pid,
       pty,
