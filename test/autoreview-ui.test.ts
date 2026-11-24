@@ -30,6 +30,10 @@ describe('the draft of a review', () => {
     expect(html).toContain('2 finding(s) dropped');
     expect(html).toContain('$0.01');
   });
+  it('says so when the review went over its cap', () => {
+    expect(renderToString(createElement(DraftView, { draft: { ...draft, overCap: true } }))).toContain('went over its cap');
+    expect(html).not.toContain('went over its cap');
+  });
   it('is text only: no link, no image and no HTML from a finding becomes an element', () => {
     const hostile = renderToString(createElement(DraftView, { draft: { ...draft, parts: [{ position: 'rso', summary: '<img src=x onerror=alert(1)> <script>x</script>', findings: [], dropped: [] }] } }));
     expect(hostile).not.toMatch(/<img|<script/);

@@ -11,6 +11,7 @@ const lines = (text: string): string[] => text.split(/[\n,]/).map((s) => s.trim(
 export function DraftView({ draft }: { draft: AutoReviewDraft }): ReactElement {
   return (
     <div className="auto-review-draft" data-testid="auto-review-draft">
+      {draft.overCap === true && <p className="error" role="status">{"This review went over its cap for a pull request, so it is not posted by itself: read it, then POST if you want it."}</p>}
       {draft.usd !== undefined && <p className="hint">{`Estimated cost so far: $${draft.usd.toFixed(2)}.`}</p>}
       {draft.parts.map((p) => (
         <div key={p.position}>
