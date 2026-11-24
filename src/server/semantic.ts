@@ -151,6 +151,8 @@ function normalized(v: ArrayLike<number>): Float32Array | null {
 export interface SemanticConfig {
   /** `managed`: gonogo starts and stops its own Ollama (ollama.ts); `remote`: the endpoint below. A saved config without a mode is a remote one. */
   mode: 'managed' | 'remote';
+  /** Where the Clean Rooms share gonogo's network the managed server is reachable by their agents: it runs only after the Director said he understands. */
+  acknowledged?: boolean;
   endpoint: string;
   model: string;
   /** The host the Director confirmed may get his notes (null for loopback). */
@@ -165,6 +167,7 @@ export interface SemanticStatus {
   mode: 'managed' | 'remote';
   /** An API key is saved for the remote endpoint (its value never leaves the server). */
   apiKeySet: boolean;
+  acknowledged: boolean;
   /** The managed server: its state, progress, memory and settings; null when this gonogo has none to offer. */
   managed: ManagedStatus | null;
   endpoint: string;
@@ -242,6 +245,8 @@ export function createSemantic(options: SemanticOptions): Semantic {
   let apiKey = '';
   const managed = options.managed;
   let stepping = false;
+  /** The managed server may run: where the Clean Rooms share gonogo's network (an agent in one can reach it) only after the Director accepted that. */
+  const managedUsable = (): boolean => managed !== undefined && (!managed.status().shared || config.acknowledged === true);
   let configured = false;
   let index = new VectorIndex(DEFAULT_MODEL, 0);
   const pending: string[] = [];
@@ -264,6 +269,7 @@ export function createSemantic(options: SemanticOptions): Semantic {
     (async (c: SemanticConfig, texts: string[], timeoutMs?: number): Promise<number[][]> => {
       if (c.mode === 'managed') {
         if (managed === undefined) throw new EmbedError('managed Ollama is not available here');
+        if (!managedUsable()) throw new EmbedError('managed Ollama waits for you to accept that a Clean Room can reach it');
         let endpoint: string;
         try {
           endpoint = await managed.acquire(c.model);
@@ -368,6 +374,7 @@ export function createSemantic(options: SemanticOptions): Semantic {
     configured,
     mode: config.mode,
     apiKeySet: apiKey !== '',
+    acknowledged: config.acknowledged === true,
     managed: managed === undefined ? null : managed.status(),
     endpoint: config.endpoint,
     model: config.model,
@@ -478,7 +485,7 @@ export function createSemantic(options: SemanticOptions): Semantic {
         const saved = JSON.parse(await readFile(configPath, 'utf8')) as Partial<SemanticConfig> & { managed?: unknown };
         const parsed = parseEndpoint(saved.endpoint ?? DEFAULT_ENDPOINT);
         if (typeof parsed === 'string' || typeof saved.model !== 'string' || !MODEL_PATTERN.test(saved.model)) throw new Error('bad config');
-        config = { mode: saved.mode === 'managed' ? 'managed' : 'remote', endpoint: endpointText(parsed), model: saved.model, confirmed: typeof saved.confirmed === 'string' ? saved.confirmed : null };
+        config = { mode: saved.mode === 'managed' ? 'managed' : 'remote', endpoint: endpointText(parsed), model: saved.model, confirmed: typeof saved.confirmed === 'string' ? saved.confirmed : null, ...(saved.acknowledged === true ? { acknowledged: true } : {}) };
         const mine = saved.managed;
         if (managed !== undefined && typeof mine === 'object' && mine !== null && !Array.isArray(mine) && settingsProblem(mine as Record<string, unknown>) === null) managed.settings(mine as Partial<ManagedSettings>);
         configured = true;
@@ -514,11 +521,15 @@ export function createSemantic(options: SemanticOptions): Semantic {
     async setConfig(input) {
       if (typeof input !== 'object' || input === null || Array.isArray(input)) throw bad('request body must be a JSON object');
       const body = input as Record<string, unknown>;
-      for (const key of Object.keys(body)) if (!['mode', 'endpoint', 'model', 'confirm', 'apiKey', 'keepAlive', 'idleMinutes', 'threads', 'memoryMb'].includes(key)) throw bad(`unknown field "${key}"`, key);
+      for (const key of Object.keys(body)) if (!['mode', 'acknowledge', 'endpoint', 'model', 'confirm', 'apiKey', 'keepAlive', 'idleMinutes', 'threads', 'memoryMb'].includes(key)) throw bad(`unknown field "${key}"`, key);
       const mode = body.mode === undefined ? config.mode : body.mode;
       if (mode !== 'managed' && mode !== 'remote') throw bad('the mode is managed (gonogo runs Ollama) or remote (an endpoint)', 'mode');
       if (mode === 'managed' && managed === undefined) throw bad('managed Ollama is not available in this gonogo', 'mode');
       if (mode === 'managed' && managed?.status().state === 'unsupported') throw bad(managed.status().reason, 'mode');
+      if (body.acknowledge !== undefined && typeof body.acknowledge !== 'boolean') throw bad('acknowledge is true or false', 'acknowledge');
+      // the Clean Rooms of a Docker setup join gonogo's network: an agent in one reaches the server on 127.0.0.1, and Ollama has no login. Managed runs there only after he said he understands.
+      const acknowledged = body.acknowledge === true || config.acknowledged === true;
+      if (mode === 'managed' && managed?.status().shared === true && !acknowledged) throw bad("the Clean Rooms of this gonogo share its network, so an agent in a Clean Room can reach the Ollama that gonogo runs (it has no login: pull, delete, chat, fill the disk). Say you understand with acknowledge, or use Remote with an Ollama outside this container", 'acknowledge');
       const model = body.model === undefined ? config.model : body.model;
       if (typeof model !== 'string' || !MODEL_PATTERN.test(model)) throw bad('the model is a name like nomic-embed-text', 'model');
       const patch: Record<string, unknown> = {};
@@ -527,7 +538,7 @@ export function createSemantic(options: SemanticOptions): Semantic {
       if (problem !== null) throw bad(problem.message, problem.field);
       if (Object.keys(patch).length > 0 && managed === undefined) throw bad('the managed settings need managed Ollama', Object.keys(patch)[0]);
       // the endpoint is checked for the remote mode only: the managed server is on this machine by construction
-      let next: SemanticConfig = { ...config, mode, model };
+      let next: SemanticConfig = { ...config, mode, model, ...(acknowledged ? { acknowledged: true } : {}) };
       let keyNext = apiKey;
       if (body.apiKey !== undefined) {
         if (body.apiKey === null || body.apiKey === '') keyNext = '';
@@ -571,13 +582,14 @@ export function createSemantic(options: SemanticOptions): Semantic {
       }
       if (leaving) await managed?.stop();
       // switched on: it starts now, so that the download and the pull show their progress without waiting for the first entry
-      if (next.mode === 'managed' && managed !== undefined && options.on()) void managed.acquire(next.model).catch(() => undefined);
+      if (next.mode === 'managed' && managedUsable() && options.on()) void managed?.acquire(next.model).catch(() => undefined);
       options.changed?.();
       return status();
     },
 
     async managedAction(action) {
       if (managed === undefined || config.mode !== 'managed') throw bad('managed Ollama is not the mode of this room', 'action');
+      if (!managedUsable()) throw bad('managed Ollama waits for you to accept that a Clean Room can reach it', 'acknowledge');
       if (action === 'start') {
         void managed.start(config.model).catch(() => undefined);
         // it answers at once: the download and the pull are in the status
@@ -621,7 +633,7 @@ export function createSemantic(options: SemanticOptions): Semantic {
       if (!options.on() || !configured || index.rows.length === 0 || query.trim() === '') return null;
       // a search never waits for a download or a start: the managed server that is not up is started for the next one, and this is a word search
       if (config.mode === 'managed' && managed !== undefined && managed.status().state !== 'ready') {
-        void managed.acquire(config.model).catch(() => undefined);
+        if (managedUsable()) void managed.acquire(config.model).catch(() => undefined);
         return null;
       }
       // one query at a time and no faster than the loop: a search that comes too soon is a word search, not a wait

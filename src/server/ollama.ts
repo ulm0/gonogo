@@ -11,10 +11,10 @@
  *   gonogo stops.
  * What it says on its output is kept (the last 200 lines) for the page; what the registry or the release server says is never shown: fixed words.
  */
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, rename, rm, stat, statfs } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { arch as osArch, platform as osPlatform } from 'node:os';
@@ -59,6 +59,9 @@ export interface ManagedSettings {
   memoryMb: number;
 }
 
+/** Do the Clean Rooms of this gonogo join its network namespace (the default Docker setup)? Then 127.0.0.1 is theirs too. */
+export const sharedNetwork = (env: NodeJS.ProcessEnv): boolean => /^container:/.test(env.GONOGO_CLEANROOM_NETWORK ?? '');
+
 export const DEFAULT_SETTINGS: ManagedSettings = { keepAlive: '5m', idleMinutes: 10, threads: 0, memoryMb: 0 };
 const KEEP_ALIVE_RE = /^(?:0|[1-9]\d{0,3}[smh])$/;
 
@@ -73,6 +76,8 @@ export interface ManagedStatus {
   progress: { done: number; total: number } | null;
   /** Memory of the server and its children, in MB, while it runs. */
   rssMb: number | null;
+  /** The Clean Rooms here share gonogo's network (GONOGO_CLEANROOM_NETWORK=container:...): an agent in one can reach this server on 127.0.0.1, which has no login. */
+  shared: boolean;
   /** How many times it was restarted after dying. */
   restarts: number;
   settings: ManagedSettings;
@@ -215,15 +220,24 @@ export function createManagedOllama(options: ManagedOptions): ManagedOllama {
   };
 
   const versionDir = (): string => join(dir, OLLAMA_VERSION);
-  /** The pinned server: an explicit one, the image's, or the downloaded one. Null when it has to be downloaded. */
+  /** The version a binary says it is (`ollama --version`), or null. Run with an environment of its own, and not for long. */
+  const versionOf = (bin: string): Promise<string | null> =>
+    new Promise((resolve) => {
+      execFile(bin, ['--version'], { timeout: 5000, env: { PATH: env.PATH ?? '/usr/local/bin:/usr/bin:/bin', HOME: join(dir, 'home') } }, (_error, stdout, stderr) => {
+        resolve(/version is (\d+\.\d+\.\d+)/.exec(`${stdout}\n${stderr}`)?.[1] ?? null);
+      });
+    });
+  /**
+   * The pinned server: the one the Director named, else the image's or the downloaded one, which must SAY it is the pinned version (an Ollama somebody else put in
+   * /opt/ollama, or a different release, is not run as the pinned one). Null when it has to be downloaded.
+   */
   async function findBin(): Promise<string | null> {
-    for (const candidate of [env.GONOGO_OLLAMA_BIN ?? '', IMAGE_OLLAMA_BIN, join(versionDir(), 'bin', 'ollama')]) {
-      if (candidate === '') continue;
-      try {
-        if ((await stat(candidate)).isFile()) return candidate;
-      } catch {
-        // not there
-      }
+    const named = env.GONOGO_OLLAMA_BIN ?? '';
+    if (named !== '' && (await stat(named).then((x) => x.isFile(), () => false))) return named;
+    for (const candidate of [IMAGE_OLLAMA_BIN, join(versionDir(), 'bin', 'ollama')]) {
+      if (!(await stat(candidate).then((x) => x.isFile(), () => false))) continue;
+      if ((await versionOf(candidate)) === OLLAMA_VERSION) return candidate;
+      log.warn(`${candidate} is not Ollama ${OLLAMA_VERSION}: it is not used`);
     }
     return null;
   }
@@ -528,7 +542,7 @@ export function createManagedOllama(options: ManagedOptions): ManagedOllama {
   };
 
   return {
-    status: () => ({ state, reason, version: OLLAMA_VERSION, port, progress, rssMb, restarts, settings: { ...settings } }),
+    status: () => ({ state, reason, version: OLLAMA_VERSION, port, progress, rssMb, restarts, shared: sharedNetwork(env), settings: { ...settings } }),
 
     async acquire(model) {
       if (!supported) throw new ManagedError(reason);
@@ -611,7 +625,7 @@ export function createManagedOllama(options: ManagedOptions): ManagedOllama {
     logs: () => [...lines],
 
     async needsDownload() {
-      return supported && (await findBin()) === null && !existsSync(versionDir());
+      return supported && (await findBin()) === null;
     },
   };
 }

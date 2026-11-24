@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createManagedOllama, DEFAULT_SETTINGS, ManagedError, settingsProblem } from '../src/server/ollama.js';
+import { createManagedOllama, DEFAULT_SETTINGS, ManagedError, settingsProblem, sharedNetwork } from '../src/server/ollama.js';
 import type { ManagedOllama } from '../src/server/ollama.js';
 import { nullLogger } from '../src/server/constants.js';
 
@@ -15,6 +15,7 @@ const FAKE = `#!/usr/bin/env node
 const http = require('node:http');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
+if (process.argv[2] === '--version') { console.log('Warning: could not connect to a running Ollama instance'); console.log('ollama version is 0.40.18'); process.exit(0); }
 const [host, port] = process.env.OLLAMA_HOST.split(':');
 const models = process.env.OLLAMA_MODELS;
 fs.mkdirSync(models, { recursive: true });
@@ -206,6 +207,27 @@ describe('managed Ollama', () => {
     expect(m.status()).toMatchObject({ state: 'unsupported' });
     await expect(m.acquire('nomic-embed-text')).rejects.toThrow(/Linux/);
     expect(hits).toBe(0);
+  });
+
+  it('does not run a downloaded copy that says it is another version, and downloads the pinned one', async () => {
+    const stale = join(work, 'ollama', '0.40.18', 'bin');
+    mkdirSync(stale, { recursive: true });
+    writeFileSync(join(stale, 'ollama'), "#!/bin/sh\necho 'ollama version is 9.9.9'\n", { mode: 0o755 });
+    const m = make();
+    expect(await m.needsDownload()).toBe(true);
+    await m.acquire('nomic-embed-text');
+    expect(hits).toBe(1);
+    expect(m.status().state).toBe('ready');
+    await m.stop();
+    // the pinned one replaced it and says so
+    expect(spawnSync(join(work, 'ollama', '0.40.18', 'bin', 'ollama'), ['--version'], { encoding: 'utf8' }).stdout).toContain('0.40.18');
+  });
+
+  it('says in its status when the Clean Rooms share gonogo\'s network', () => {
+    expect(make().status().shared).toBe(false);
+    expect(make({ env: { PATH: process.env.PATH, GONOGO_CLEANROOM_NETWORK: 'container:self' } }).status().shared).toBe(true);
+    expect(make({ env: { PATH: process.env.PATH, GONOGO_CLEANROOM_NETWORK: 'gonogo_default' } }).status().shared).toBe(false);
+    expect(sharedNetwork({})).toBe(false);
   });
 
   it('uses a binary it is given instead of downloading', async () => {

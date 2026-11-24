@@ -88,7 +88,7 @@ describe('the label of a search', () => {
   });
 
   it('the status line is counts and fixed words', () => {
-    const v = { enabled: true, configured: true, mode: 'remote' as const, apiKeySet: false, managed: null, endpoint: 'http://127.0.0.1:11434', model: 'nomic-embed-text', confirmed: null, state: 'indexing' as const, reason: '', indexed: 340, total: 1900, dimension: 768, used: 120, cap: 20000 };
+    const v = { enabled: true, configured: true, mode: 'remote' as const, apiKeySet: false, acknowledged: false, managed: null, endpoint: 'http://127.0.0.1:11434', model: 'nomic-embed-text', confirmed: null, state: 'indexing' as const, reason: '', indexed: 340, total: 1900, dimension: 768, used: 120, cap: 20000 };
     expect(semanticStatusText(v)).toBe('Indexing 340 of 1,900 chunks. nomic-embed-text, 768 numbers. 120 of 20,000 used today.');
     expect(semanticStatusText({ ...v, state: 'idle', indexed: 1900 })).toMatch(/^1,900 of 1,900 chunks indexed\./);
     expect(semanticStatusText({ ...v, state: 'error', reason: 'the endpoint answered 500' })).toMatch(/^The endpoint does not answer: the endpoint answered 500\./);
@@ -98,7 +98,7 @@ describe('the label of a search', () => {
   });
 
   it('the managed Ollama in a sentence, with the numbers of a download or a pull', () => {
-    const m = { state: 'off' as const, reason: '', version: '0.40.18', port: null, progress: null, rssMb: null, restarts: 0, settings: { keepAlive: '5m', idleMinutes: 10, threads: 0, memoryMb: 0 } };
+    const m = { state: 'off' as const, reason: '', version: '0.40.18', port: null, progress: null, rssMb: null, restarts: 0, shared: false, settings: { keepAlive: '5m', idleMinutes: 10, threads: 0, memoryMb: 0 } };
     expect(managedStatusText(m)).toBe('Not running: it starts when an entry is indexed, and stops when it is idle.');
     expect(managedStatusText({ ...m, state: 'off', reason: 'stopped after being idle' })).toBe('Not running (stopped after being idle).');
     expect(managedStatusText({ ...m, state: 'downloading', progress: { done: 412_000_000, total: 1_648_000_000 } })).toBe('Downloading Ollama 0.40.18, once. 412 MB of 1.65 GB (25%). Only the part a CPU needs is kept.');

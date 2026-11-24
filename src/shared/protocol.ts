@@ -1427,6 +1427,8 @@ export interface ManagedOllamaView {
   progress: { done: number; total: number } | null;
   rssMb: number | null;
   restarts: number;
+  /** The Clean Rooms share gonogo's network: an agent in one can reach the server on 127.0.0.1. */
+  shared: boolean;
   settings: { keepAlive: string; idleMinutes: number; threads: number; memoryMb: number };
 }
 export interface SemanticView {
@@ -1436,6 +1438,8 @@ export interface SemanticView {
   mode: 'managed' | 'remote';
   /** An API key is saved for the remote endpoint; its value never comes back. */
   apiKeySet: boolean;
+  /** The Director accepted that an agent in a Clean Room can reach the managed server (needed only when `managed.shared`). */
+  acknowledged: boolean;
   managed: ManagedOllamaView | null;
   endpoint: string;
   model: string;
@@ -1451,6 +1455,8 @@ export interface SemanticView {
 /** PUT /api/semantic: the fields given change. `confirm` is the host that may get your notes when it is not this machine. */
 export interface SemanticRequest {
   mode?: 'managed' | 'remote';
+  /** Where the Clean Rooms share gonogo's network, the managed mode needs this: the Director has read that an agent in a Clean Room can reach the server. */
+  acknowledge?: boolean;
   endpoint?: string;
   model?: string;
   confirm?: string;

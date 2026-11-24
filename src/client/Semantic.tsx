@@ -26,6 +26,7 @@ export function SemanticBlock(): ReactElement | null {
   const [confirm, setConfirm] = useState('');
   const [key, setKey] = useState('');
   const [removeKey, setRemoveKey] = useState(false);
+  const [ack, setAck] = useState(false);
   const [keepAlive, setKeepAlive] = useState('');
   const [idle, setIdle] = useState('');
   const [threads, setThreads] = useState('');
@@ -43,7 +44,9 @@ export function SemanticBlock(): ReactElement | null {
         if (!live) return;
         setView(found);
         // the first setup starts on the managed mode; a saved one shows what it is
-        setMode((was) => (view === null ? (found.configured ? found.mode : 'managed') : was));
+        // where the Clean Rooms share gonogo's network (the Docker default) the first setup starts on Remote: managed there needs him to say he understands
+        setMode((was) => (view === null ? (found.configured ? found.mode : found.managed?.shared === true ? 'remote' : 'managed') : was));
+        if (view === null) setAck(found.acknowledged);
         setEndpoint((was) => (was === '' ? found.endpoint : was));
         setModel((was) => (was === '' ? found.model : was));
         setConfirm((was) => (was === '' ? (found.confirmed ?? '') : was));
@@ -65,15 +68,18 @@ export function SemanticBlock(): ReactElement | null {
   }, [on, known, logRev]);
   if (!on) return null;
   const managed = view?.managed ?? null;
+  // the managed server has no login, and the Clean Rooms of this gonogo reach 127.0.0.1: saving managed needs his word
+  const needsAck = mode === 'managed' && managed?.shared === true && !(view?.acknowledged ?? false);
   const num = (text: string): number => (/^\d{1,7}$/.test(text.trim()) ? Number(text.trim()) : Number.NaN);
   const request = (): SemanticRequest => {
-    if (mode === 'managed') return { mode, model, keepAlive: keepAlive.trim(), idleMinutes: num(idle), threads: num(threads), memoryMb: num(memory) };
+    if (mode === 'managed') return { mode, model, keepAlive: keepAlive.trim(), idleMinutes: num(idle), threads: num(threads), memoryMb: num(memory), ...(ack ? { acknowledge: true } : {}) };
     return { mode, endpoint, model, ...(confirm.trim() === '' ? {} : { confirm: confirm.trim() }), ...(removeKey ? { apiKey: null } : key === '' ? {} : { apiKey: key }) };
   };
   const changed =
     view !== null &&
     (!view.configured ||
       mode !== view.mode ||
+      (mode === 'managed' && needsAck && ack) ||
       model !== view.model ||
       (mode === 'remote' && (endpoint !== view.endpoint || confirm !== (view.confirmed ?? '') || key !== '' || removeKey)) ||
       (mode === 'managed' &&
@@ -115,6 +121,17 @@ export function SemanticBlock(): ReactElement | null {
                 gonogo downloads Ollama {managed.version} once (the file is 1.6 GB, of which about 80 MB are kept), checks its checksum before it opens it, and runs it only on 127.0.0.1 with a port of its own.
                 It starts when an entry has to be indexed and stops after the idle time. Indexing on a CPU is slow: about half a second a piece of an entry, so a large log takes a while (the progress is below, and search by words works meanwhile).
               </p>
+              {managed.shared && (
+                <div className="hint" role="note">
+                  <p>
+                    <strong>Clean Rooms can reach this Ollama.</strong> The Clean Rooms of this gonogo share its network, so an agent in one can reach the Ollama that gonogo runs on 127.0.0.1. Ollama has no login: such an agent could
+                    pull or delete models, chat with it, and fill the disk, and a flaw in Ollama would be a way out of the Clean Room. Remote (an Ollama outside this container) does not have this problem.
+                  </p>
+                  <label>
+                    <input type="checkbox" className="check" checked={ack || view.acknowledged} disabled={view.acknowledged} onChange={(e) => setAck(e.target.checked)} /> I understand, and I want the managed Ollama anyway
+                  </label>
+                </div>
+              )}
               <p className="hint" role="status">
                 {managedStatusText(managed)}
               </p>
@@ -170,7 +187,7 @@ export function SemanticBlock(): ReactElement | null {
             {tested !== null ? ` ${tested}` : ''}
           </p>
           <div className="rules-keys">
-            <button type="button" className="btn" data-kind="primary" aria-disabled={!changed || busy || undefined} onClick={() => changed && !busy && save()}>
+            <button type="button" className="btn" data-kind="primary" aria-disabled={!changed || busy || (needsAck && !ack) || undefined} onClick={() => changed && !busy && !(needsAck && !ack) && save()}>
               Save
             </button>
             <button
@@ -195,6 +212,7 @@ export function SemanticBlock(): ReactElement | null {
               </>
             )}
           </div>
+          {/* what the server wrote is shown as plain text, never as markdown or HTML: a request path in it can be an agent's */}
           {lines !== null && mode === 'managed' && (
             <pre className="hint" aria-label="What Ollama wrote last" tabIndex={0}>
               {lines.length === 0 ? 'Nothing yet.' : lines.join('\n')}

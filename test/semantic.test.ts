@@ -514,12 +514,12 @@ describe('the managed mode and the remote key', () => {
   });
 
   /** A managed server that is a stand-in: it answers with the address of the stand-in Ollama, and notes what it was asked. */
-  function fakeManaged(): { m: import('../src/server/ollama.js').ManagedOllama; calls: string[]; state: { value: import('../src/server/ollama.js').ManagedState } } {
+  function fakeManaged(shared = false): { m: import('../src/server/ollama.js').ManagedOllama; calls: string[]; state: { value: import('../src/server/ollama.js').ManagedState } } {
     const calls: string[] = [];
     const state = { value: 'off' as import('../src/server/ollama.js').ManagedState };
     let settings = { keepAlive: '5m', idleMinutes: 10, threads: 0, memoryMb: 0 };
     const m: import('../src/server/ollama.js').ManagedOllama = {
-      status: () => ({ state: state.value, reason: '', version: '0.40.18', port: 1, progress: null, rssMb: null, restarts: 0, settings }),
+      status: () => ({ state: state.value, reason: '', version: '0.40.18', port: 1, progress: null, rssMb: null, restarts: 0, shared, settings }),
       acquire: async (model) => {
         calls.push(`acquire ${model}`);
         state.value = 'ready';
@@ -605,6 +605,44 @@ describe('the managed mode and the remote key', () => {
     await expect(s.setConfig({ mode: 'managed', model: 'nomic-embed-text', threads: -2 })).rejects.toMatchObject({ field: 'threads' });
     await expect(s.setConfig({ mode: 'managed', model: 'nomic-embed-text', apiKey: 'k' })).rejects.toMatchObject({ field: 'apiKey' });
     expect(s.status().configured).toBe(false);
+  });
+
+  it('where the Clean Rooms share the network, managed Ollama runs only after the Director said he understands', async () => {
+    const { m, calls: managedCalls } = fakeManaged(true);
+    const s = make({ embedder: undefined, managed: m });
+    await s.load();
+    const refused = await s.setConfig({ mode: 'managed', model: 'nomic-embed-text' }).then(() => null, (e: unknown) => e as { field?: string; message: string });
+    expect(refused?.field).toBe('acknowledge');
+    expect(refused?.message).toMatch(/Clean Room/);
+    expect(refused?.message).toMatch(/no login/);
+    await expect(s.setConfig({ mode: 'managed', model: 'nomic-embed-text', acknowledge: 'yes' })).rejects.toMatchObject({ field: 'acknowledge' });
+    expect(s.status()).toMatchObject({ configured: false, acknowledged: false });
+    expect(managedCalls).toEqual([]);
+    const done = await s.setConfig({ mode: 'managed', model: 'nomic-embed-text', acknowledge: true });
+    expect(done).toMatchObject({ mode: 'managed', acknowledged: true, managed: { shared: true } });
+    expect(managedCalls).toContain('acquire nomic-embed-text');
+    expect(JSON.parse(await readFile(join(dir, 'semantic', 'config.json'), 'utf8'))).toMatchObject({ mode: 'managed', acknowledged: true });
+    // later saves keep it (he is not asked again for a setting)
+    expect((await s.setConfig({ keepAlive: '1m' })).acknowledged).toBe(true);
+    // Remote never needs it
+  });
+
+  it('a saved managed setup that was never acknowledged on such a network does not start the server', async () => {
+    await mkdir(join(dir, 'semantic'), { recursive: true });
+    await writeFile(join(dir, 'semantic', 'config.json'), JSON.stringify({ mode: 'managed', endpoint: 'http://127.0.0.1:11434', model: 'nomic-embed-text', confirmed: null }));
+    const { m, calls: managedCalls } = fakeManaged(true);
+    const s = make({ embedder: undefined, managed: m });
+    await s.load();
+    expect(s.status()).toMatchObject({ mode: 'managed', acknowledged: false });
+    await s.idle();
+    expect(managedCalls).toEqual([]);
+    expect(s.status()).toMatchObject({ state: 'error', reason: expect.stringContaining('accept that a Clean Room can reach it') });
+    await expect(s.managedAction('start')).rejects.toMatchObject({ field: 'acknowledge' });
+    expect(await ask(s, 'compile')).toBeNull();
+    expect(managedCalls).toEqual([]);
+    // Remote is not asked
+    await s.setConfig({ mode: 'remote', endpoint: url, model: 'nomic-embed-text' });
+    expect(s.status().mode).toBe('remote');
   });
 
   it('sends the key of a remote Ollama as Authorization: Bearer, keeps it in its own 0600 file, and never shows it', async () => {
