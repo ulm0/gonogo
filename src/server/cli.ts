@@ -1349,7 +1349,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       const r = reliefRules.view();
       tell('relief', `Relief rules loaded from disk: automatic hires ON, maxMode ${r.maxMode}, autoOnHost ${r.autoOnHost ? 'ON' : 'off'}, mayRemove ${r.mayRemove ? 'ON' : 'off'}, bypassInCleanRoom ${r.bypassInCleanRoom ? 'ON' : 'off'}, autoscale ${r.autoscale}`);
     }
-    // Propellant holds the boss-hired crew at its daily ceiling (relief.json crewBudgetUsd); with automatic approval off there is no ceiling
+    // Propellant holds the boss-hired crew at its daily ceiling (relief.json crewBudgetUsd); with the budget empty there is no ceiling
     crewBudget = () => {
       const rules = reliefRules.view();
       // whenever a ceiling is set and the crew is not empty: turning automatic hires off does not lift the ceiling of the agents already hired
