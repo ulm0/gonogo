@@ -165,10 +165,18 @@ const setup = async (ctx) => {
     const bare = dir.replace(/[*\\/]+$/, "");
     if (bare.split("/").includes("..")) return false;
     const real = (p) => {
-      try {
-        return realpathSync(p);
-      } catch {
-        return resolve(p);
+      // a path that does not exist yet: the nearest existing parent is resolved (it may be a link) and the rest is put back
+      let rest = "";
+      let at = resolve(p);
+      for (;;) {
+        try {
+          return realpathSync(at) + rest;
+        } catch {
+          const up = resolve(at, "..");
+          if (up === at) return resolve(p);
+          rest = "/" + at.slice(up === "/" ? 1 : up.length + 1) + rest;
+          at = up;
+        }
       }
     };
     const own = real(settings.ownDir);
