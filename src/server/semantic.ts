@@ -589,8 +589,8 @@ export function createSemantic(options: SemanticOptions): Semantic {
 
     async managedAction(action) {
       if (managed === undefined || config.mode !== 'managed') throw bad('managed Ollama is not the mode of this room', 'action');
-      if (!managedUsable()) throw bad('managed Ollama waits for you to accept that a Clean Room can reach it', 'acknowledge');
       if (action === 'start') {
+        if (!managedUsable()) throw bad('managed Ollama waits for you to accept that a Clean Room can reach it', 'acknowledge');
         void managed.start(config.model).catch(() => undefined);
         // it answers at once: the download and the pull are in the status
         await new Promise((resolve) => setTimeout(resolve, 50));

@@ -638,6 +638,10 @@ describe('the managed mode and the remote key', () => {
     expect(managedCalls).toEqual([]);
     expect(s.status()).toMatchObject({ state: 'error', reason: expect.stringContaining('accept that a Clean Room can reach it') });
     await expect(s.managedAction('start')).rejects.toMatchObject({ field: 'acknowledge' });
+    // stop only does less: it is always allowed
+    await expect(s.managedAction('stop')).resolves.toMatchObject({ mode: 'managed' });
+    expect(managedCalls).toEqual(['stop']);
+    managedCalls.length = 0;
     expect(await ask(s, 'compile')).toBeNull();
     expect(managedCalls).toEqual([]);
     // Remote is not asked

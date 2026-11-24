@@ -44,12 +44,14 @@ export function bodyMatters(method: string, path: string): boolean {
  * setting, so one that does not say egress:true can end an agent's own). Only a browser session (with its step-up) or the terminal may weaken it.
  */
 export const egressChange = (method: string, path: string): boolean =>
-  (method === 'PUT' && (path === '/api/egress' || path === '/api/global-mcp')) || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
+  (method === 'PUT' && (path === '/api/egress' || path === '/api/global-mcp' || path === '/api/semantic')) || (method === 'POST' && path === '/api/agents') || ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path));
 export function weakensEgress(method: string, path: string, body: Record<string, unknown> | null): boolean {
   if (body === null) return true;
   if (path === '/api/egress') return body.anthropic !== true;
   // an API key never carries a step-up, so it may not add the user's MCP servers (and their tokens) to a Clean Room either
   if (path === '/api/global-mcp') return body.cleanRoom === true || body.host === true;
+  // Search by meaning: choosing the managed Ollama, or accepting that a Clean Room can reach it, is a decision for a session with its step-up, not for a key
+  if (path === '/api/semantic') return body.acknowledge === true || body.mode === 'managed';
   const room = body.cleanRoom;
   if (typeof room !== 'object' || room === null) return false;
   const egress = (room as Record<string, unknown>).egress;

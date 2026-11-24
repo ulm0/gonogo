@@ -8,7 +8,7 @@ import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../src/shared/protocol.js';
 import { createEgress, EGRESS_CONCURRENT_MAX, publicAddress, redirectInside } from '../src/server/egress.js';
-import { weakensEgress } from '../src/server/stepup.js';
+import { egressChange, weakensEgress } from '../src/server/stepup.js';
 import type { Egress } from '../src/server/egress.js';
 import { createEgressSettings } from '../src/server/egresssettings.js';
 
@@ -260,6 +260,13 @@ describe('what an API key may not do', () => {
     expect(weakensEgress('PUT', '/api/egress', { anthropic: false })).toBe(true);
     expect(weakensEgress('PUT', '/api/egress', {})).toBe(true);
     expect(weakensEgress('PUT', '/api/egress', null)).toBe(true);
+    // Search by meaning: a key may not choose the managed Ollama or accept that a Clean Room can reach it
+    expect(egressChange('PUT', '/api/semantic')).toBe(true);
+    expect(weakensEgress('PUT', '/api/semantic', { mode: 'managed', model: 'nomic-embed-text' })).toBe(true);
+    expect(weakensEgress('PUT', '/api/semantic', { acknowledge: true })).toBe(true);
+    expect(weakensEgress('PUT', '/api/semantic', null)).toBe(true);
+    expect(weakensEgress('PUT', '/api/semantic', { mode: 'remote', endpoint: 'http://127.0.0.1:11434', model: 'm' })).toBe(false);
+    expect(weakensEgress('PUT', '/api/semantic', { keepAlive: '5m' })).toBe(false);
     expect(weakensEgress('PUT', '/api/egress', { anthropic: true })).toBe(false);
     expect(weakensEgress('POST', '/api/agents', { cleanRoom: { egress: false } })).toBe(true);
     expect(weakensEgress('POST', '/api/agents', { cleanRoom: {} })).toBe(false);

@@ -639,6 +639,13 @@ describe('rooms proxy: the login', () => {
     expect((await get('/api/global-mcp', key)).status).toBe(200);
   });
 
+  it('an API key may not choose the managed Ollama or accept that a Clean Room can reach it (no step-up): refused for a key, not for a read or a remote setup', async () => {
+    const key = { authorization: 'Bearer gnk_full', 'content-type': 'application/json' };
+    for (const body of [{ mode: 'managed', model: 'nomic-embed-text' }, { acknowledge: true }, { mode: 'managed', acknowledge: true }]) expect((await get('/api/semantic', key, 'PUT', JSON.stringify(body))).status, JSON.stringify(body)).toBe(403);
+    for (const body of [{ mode: 'remote', endpoint: 'http://127.0.0.1:11434', model: 'm' }, { keepAlive: '5m' }, { acknowledge: false }]) expect((await get('/api/semantic', key, 'PUT', JSON.stringify(body))).status, JSON.stringify(body)).toBe(200);
+    expect((await get('/api/semantic', key)).status).toBe(200);
+  });
+
   const openAs = (path: string, headers: Record<string, string>, protocols: string[] = [WS_SUBPROTOCOL]): Promise<WebSocket> =>
     new Promise((resolve, reject) => {
       const ws = new WebSocket(`ws://127.0.0.1:${new URL(base).port}${path}`, protocols, { headers });
