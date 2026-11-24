@@ -1,1 +1,0 @@
-- **Search by meaning no longer embeds every keystroke.** The Mission Log page shows word results while you type and asks for meaning only after 600 ms without a key, or on Enter, so typing does not spend the daily budget. With the feature off, `log_search` answers exactly as before (no note, no mode).
