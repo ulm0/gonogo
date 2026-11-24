@@ -4,7 +4,7 @@
  */
 import { useId, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { AgentView, DownlinkMessage } from '../shared/protocol.js';
+import type { AgentView, DownlinkMessage, HandoffAsk, ReliefRequest } from '../shared/protocol.js';
 import { Reply } from './Activity.js';
 import * as api from './api.js';
 import { HandoffNeed } from './HandoffAsks.js';
@@ -51,8 +51,8 @@ function Ask({ item, agents }: { item: DownlinkMessage; agents: Readonly<Record<
         ) : (
           <Reply item={item} agents={agents} onSent={() => void done()} />
         )}
-        <button type="button" className="btn" data-kind="quiet" aria-label={`Not a question: ${title}`} aria-disabled={busy || undefined} onClick={() => run(done)}>
-          Not a question
+        <button type="button" className="btn" data-kind="quiet" aria-label={`Mark handled: ${title}`} aria-disabled={busy || undefined} onClick={() => run(done)}>
+          Mark handled
         </button>
         {error !== null && (
           <p className="error" role="alert">
@@ -64,20 +64,26 @@ function Ask({ item, agents }: { item: DownlinkMessage; agents: Readonly<Record<
   );
 }
 
-export function NeedsYou(): ReactElement | null {
+/** What waits on the Director, from the same state the room and COMMS draw: one place for the list and for the count of the Comms key. */
+export function useNeeds(): { consoles: AgentView[]; asks: DownlinkMessage[]; relief: ReliefRequest[]; handoffs: HandoffAsk[]; n: number } {
   const items = useStore((s) => s.downlink.items);
-  const agents = useStore((s) => s.agents);
   const relief = useStore((s) => s.relief);
   const handoffs = useHandoffAsks();
+  const consoles = needingYou(useAgentList());
+  const asks = useMemo(() => asksOf(items), [items]);
+  return { consoles, asks, relief, handoffs, n: needsCount(consoles.length, asks.length, relief.length, handoffs.length) };
+}
+
+/** `room`: drawn in the room, under the Brief box, with no gutter of its own (the room has one). */
+export function NeedsYou({ room = false }: { room?: boolean }): ReactElement | null {
+  const agents = useStore((s) => s.agents);
   const { legends } = useSeats();
   const phone = usePhone();
-  const consoles = needingYou(useAgentList());
+  const { consoles, asks, relief, handoffs, n } = useNeeds();
   const [failed, setFailed] = useState<string | null>(null);
-  const asks = useMemo(() => asksOf(items), [items]);
-  const n = needsCount(consoles.length, asks.length, relief.length, handoffs.length);
   if (n === 0 && failed === null) return null;
   return (
-    <section className="needs-you" aria-label={needsTitle(n)}>
+    <section className="needs-you" data-room={room || undefined} aria-label={needsTitle(n)}>
       <h2 className="label needs-you-title">{needsTitle(n)}</h2>
       {failed !== null && (
         <section className="flood need" data-tone="nogo" role="alert">

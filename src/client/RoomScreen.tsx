@@ -5,7 +5,8 @@ import { TerminalBar } from './TerminalBar.js';
 import { TerminalPane } from './TerminalPane.js';
 import { openConsole, useStore } from './store.js';
 import './layout.css';
-import { Consoles, ConsoleRail, Needs, SelectedConsole, YourConsole } from './RoomView.js';
+import { NeedsYou } from './NeedsYou.js';
+import { Consoles, ConsoleRail, SelectedConsole, YourConsole } from './RoomView.js';
 import { StatusStrip } from './StatusStrip.js';
 import { useRoomPrefs } from './roomPrefs.js';
 
@@ -38,7 +39,7 @@ export function RoomScreen({ phone }: { phone: boolean }): ReactElement {
     return (
       <main className="room room-phone lay-room" data-phone="true">
         <StatusStrip phone />
-        <Needs phone />
+        <NeedsYou room />
         <Commissioning />
         <Consoles phone />
         <PhoneTerminal />
@@ -56,6 +57,7 @@ export function RoomScreen({ phone }: { phone: boolean }): ReactElement {
             <Commissioning />
             <Consoles phone={false} />
             <YourConsole />
+            <NeedsYou room />
           </div>
         )}
         <SelectedConsole />
