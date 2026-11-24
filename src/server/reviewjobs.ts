@@ -18,6 +18,8 @@ import { cleanSubmission } from './reviewclean.js';
 export interface ReviewGh {
   /** `gh pr diff <n> --repo <repo>`: the diff text. */
   diff(repo: string, pr: number): Promise<string>;
+  /** `gh pr view <n> --repo <repo> --json headRefOid -q .headRefOid`: the head commit of any pull request (a post is refused when it moved). */
+  head(repo: string, pr: number): Promise<string | null>;
   /** `gh api -X POST repos/<repo>/pulls/<n>/reviews --input <file>`: the body goes in a file (0600), never in argv. Resolves with the review's address. */
   post(repo: string, pr: number, review: GhReview): Promise<string>;
 }
@@ -45,6 +47,11 @@ export function ghReview(options: { dir: string; env: NodeJS.ProcessEnv; bin?: s
       check(repo, pr);
       return run(['pr', 'diff', String(pr), '--repo', repo]);
     },
+    async head(repo, pr) {
+      check(repo, pr);
+      const sha = (await run(['pr', 'view', String(pr), '--repo', repo, '--json', 'headRefOid', '-q', '.headRefOid'])).trim();
+      return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+    },
     async post(repo, pr, review) {
       check(repo, pr);
       if (review.event !== 'COMMENT') throw new Error('only a comment is ever posted');
@@ -62,8 +69,6 @@ export function ghReview(options: { dir: string; env: NodeJS.ProcessEnv; bin?: s
 /** What the runner needs from the rest of gonogo (cli.ts wires it): the reviewers, their work item and the spend. */
 export interface ReviewOps {
   gh: ReviewGh;
-  /** The head commit of the pull request now: a post is refused when it moved. */
-  head(repo: string, pr: number): Promise<string | null>;
   /** Hires and starts a read-only reviewer. */
   hire(spec: { name: string; role: string; dir: string; model: string | null; position: string }): Promise<void>;
   /** Removes a reviewer. Never throws. With `settle` it first lets the agent finish its turn, so that its spend is counted (the cap sees it). */
@@ -116,8 +121,10 @@ export interface ReviewRunner {
   drain(): Promise<void>;
   /** `pr_review_submit` from an agent. Throws a HubError when the caller is not a reviewer of a running job. */
   submit(agent: string, input: unknown): Promise<{ accepted: number; dropped: string[] }>;
-  /** Is this agent a reviewer of a running job? */
+  /** Is this agent a reviewer of a running job that has not submitted? */
   reviews(agent: string): boolean;
+  /** Is this agent a reviewer of any job (running or not)? Its tools stay cut until it is removed. */
+  isReviewer(agent: string): boolean;
   /** The draft of a job, or null. */
   draft(id: string): Promise<AutoReviewDraft | null>;
   /** Posts a finished draft: ONE comment review. Throws a HubError when it cannot (not done, head moved). */
@@ -185,6 +192,8 @@ export function createReviewRunner(options: { dir: string; now: () => number; st
       for (const job of store.jobs().filter((j) => j.status === 'queued')) await runner.run(job);
     },
 
+    isReviewer: (agent) => store.jobs().some((j) => j.reviewers?.includes(agent) === true),
+
     reviews: (agent) => store.jobs().some((j) => j.status === 'running' && j.reviewers?.includes(agent) === true && j.submitted?.includes(agent) !== true),
 
     async submit(agent, input) {
@@ -220,7 +229,7 @@ export function createReviewRunner(options: { dir: string; now: () => number; st
       const draft = await readDraft(id);
       if (draft === null) throw new HubError('conflict', 'there is no draft');
       // the head must be the one that was reviewed: a comment on a commit that is no longer the head is stale
-      const head = await ops.head(job.repo, job.pr);
+      const head = await ops.gh.head(job.repo, job.pr);
       if (head !== job.sha) throw new HubError('conflict', 'the pull request has a new head commit since this review: it was not posted');
       const { body, comments } = reviewBody(draft);
       const url = await ops.gh.post(job.repo, job.pr, { commit_id: job.sha, event: 'COMMENT', body, comments });

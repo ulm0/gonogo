@@ -252,7 +252,7 @@ export interface WebOptions {
   /** Auto-review (docs/auto-review-spec.md): the setting, the jobs, one poll now. */
   autoReview?: Pick<AutoReview, 'view' | 'set' | 'pollNow'>;
   /** Auto-review S2: the reviewers' tool, the draft, the post and the skip. */
-  autoReviewRunner?: Pick<ReviewRunner, 'reviews' | 'submit' | 'draft' | 'post' | 'end'>;
+  autoReviewRunner?: Pick<ReviewRunner, 'reviews' | 'isReviewer' | 'submit' | 'draft' | 'post' | 'end'>;
   /** Telegram and several rooms: the key of this install and what to do with an update another room offers (telegramroute.ts). Absent outside a supervisor: the route answers 404. */
   telegramRoute?: { key: string; take(body: Record<string, unknown>): { claimed: boolean } };
   /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */

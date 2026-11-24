@@ -1541,7 +1541,6 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     }
     // Auto-review S2: the reviewers are agents of this room made for one job, read-only, with a mission that holds the per-PR cap
     const reviewGh = ghReview({ dir: home.dir, env, ...(env.GONOGO_GH_BIN?.trim() ? { bin: env.GONOGO_GH_BIN } : {}) });
-    const reviewList = ghLister({ dir: home.dir, env, ...(env.GONOGO_GH_BIN?.trim() ? { bin: env.GONOGO_GH_BIN } : {}) });
     const reviewMissionUsd = (id: string | undefined): number => (id === undefined ? 0 : (propellant.view().cost.missions?.[id]?.usd ?? 0));
     reviewRunner = createReviewRunner({
       dir: home.dir,
@@ -1550,12 +1549,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       store: { settings: () => autoReview.view().settings, jobs: () => autoReview.jobs(), mark: (id, change) => autoReview.mark(id, change) },
       ops: {
         gh: reviewGh,
-        head: async (repo, pr) => {
-          const [mine] = (await reviewList(repo, '@me')).filter((p) => p.number === pr);
-          return mine?.headRefOid ?? null;
-        },
         hire: async (spec) => {
-          await hubInstance.hire({ name: spec.name, role: spec.role, dir: spec.dir, mode: 'default', position: spec.position, autostart: false, coauthor: false, reviewOnly: true, ...(spec.model === null ? {} : { model: spec.model }) });
+          await hubInstance.hire({ name: spec.name, role: spec.role, dir: spec.dir, mode: 'default', position: spec.position, provider: 'claude', autostart: false, coauthor: false, reviewOnly: true, ...(spec.model === null ? {} : { model: spec.model }) });
         },
         fire: async (name, settle) => {
           if (settle) {
@@ -1583,7 +1578,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
           if (job.mission !== undefined) await missions.update({ kind: 'user' }, job.mission, { status: how === 'done' ? 'done' : 'aborted' }).catch(() => undefined);
         },
         spent: (job) => reviewMissionUsd(job.mission),
-        spentToday: () => autoReview.jobs().filter((j) => Date.now() - j.at < 24 * 3_600_000).reduce((s, j) => s + reviewMissionUsd(j.mission), 0),
+        // a job that is still running counts at its cap at least, so several started in one poll cannot overrun the day's cap
+        spentToday: () => autoReview.jobs().filter((j) => Date.now() - j.at < 24 * 3_600_000).reduce((s, j) => s + (j.status === 'running' ? Math.max(reviewMissionUsd(j.mission), autoReview.view().settings.maxUsdPerPr) : reviewMissionUsd(j.mission)), 0),
       },
     });
     for (const text of autoReview.startupNotices()) downlink.post('startup', text);

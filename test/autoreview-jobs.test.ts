@@ -109,6 +109,15 @@ describe('the only gh write', () => {
     // the temporary file is gone
     await expect(stat(argv[5] ?? '')).rejects.toThrow();
   });
+  it('reads the head of any pull request with `gh pr view <n> --repo <repo> --json headRefOid -q .headRefOid`, whoever wrote it', async () => {
+    const bin = join(dir, 'gh');
+    await writeFile(bin, `#!/bin/sh\nprintf '%s\\n' "$@" > "${dir}/argv"\necho ${sha(5)}\n`);
+    await chmod(bin, 0o755);
+    const gh = ghReview({ dir, env: { PATH: process.env.PATH }, bin });
+    expect(await gh.head('o/r', 7)).toBe(sha(5));
+    expect((await readFile(join(dir, 'argv'), 'utf8')).trim().split('\n')).toEqual(['pr', 'view', '7', '--repo', 'o/r', '--json', 'headRefOid', '-q', '.headRefOid']);
+    await expect(gh.head('o/r;x', 7)).rejects.toThrow();
+  });
   it('reads the diff with `gh pr diff <n> --repo <repo>` only, and refuses a bad repo, a bad number and any event but COMMENT', async () => {
     const bin = await fakeGh();
     const gh = ghReview({ dir, env: { PATH: process.env.PATH }, bin });
@@ -135,8 +144,7 @@ describe('a review job', () => {
   let opened = 0;
   let closed: string[] = [];
   const ops = (): ReviewOps => ({
-    gh: { diff: async () => DIFF, post: async (_r, _n, r) => (posted.push(r), 'https://github.com/o/r/pull/7#pullrequestreview-9') },
-    head: async () => head,
+    gh: { diff: async () => DIFF, head: async () => head, post: async (_r, _n, r) => (posted.push(r), 'https://github.com/o/r/pull/7#pullrequestreview-9') },
     hire: async (s) => void hired.push(s),
     fire: async (n, settle) => void fired.push(settle ? `${n}!` : n),
     brief: async (name, subject, body) => void briefs.push({ name, subject, body }),
@@ -196,6 +204,8 @@ describe('a review job', () => {
     const id = await start();
     expect(runner.reviews(`${id}-rso`)).toBe(true);
     expect(runner.reviews('ana')).toBe(false);
+    expect(runner.isReviewer(`${id}-rso`)).toBe(true);
+    expect(runner.isReviewer('ana')).toBe(false);
     await expect(submit('ana')).rejects.toMatchObject({ code: 'forbidden' });
     const one = await submit(`${id}-rso`, { summary: 'ping @bob', findings: [{ file: 'src/a.ts', line: 2, severity: 'high', text: 'bad' }, { file: 'src/a.ts', line: 50, severity: 'low', text: 'off' }] });
     expect(one).toMatchObject({ accepted: 1 });
@@ -204,6 +214,9 @@ describe('a review job', () => {
     await expect(submit(`${id}-rso`)).rejects.toMatchObject({ code: 'forbidden' });
     expect(review.view().jobs[0]?.status).toBe('running');
     await submit(`${id}-retro`);
+    // its tools stay cut after it has submitted, until it is gone
+    expect(runner.isReviewer(`${id}-rso`)).toBe(true);
+    expect(runner.reviews(`${id}-rso`)).toBe(false);
     expect(fired).toEqual([`${id}-rso!`, `${id}-retro!`]);
     expect(review.view().jobs[0]?.status).toBe('done');
     expect(closed).toEqual([`${id}:done`]);
@@ -302,7 +315,7 @@ describe('the reviewer agent at its start', () => {
   afterEach(() => rm(dir, { recursive: true, force: true }));
   const SID = '11111111-1111-4111-8111-111111111111';
   const record = (over: Partial<AgentRecord> = {}): AgentRecord => ({ name: 'rv1-rso', role: 'reviews', dir: join(dir, 'work'), mode: 'default', sessionId: SID, desk: 1, boss: false, createdAt: 1, ...over });
-  const prepare = async (agent: AgentRecord): Promise<{ mcp: { mcpServers: Record<string, unknown> }; settings: { permissions: { allow?: string[]; deny?: string[] } }; env: Record<string, string | undefined> }> => {
+  const prepare = async (agent: AgentRecord): Promise<{ mcp: { mcpServers: Record<string, unknown> }; settings: { permissions: { allow?: string[]; deny?: string[] } }; env: Record<string, string | undefined>; allowed: string[] }> => {
     await mkdir(join(dir, 'work'), { recursive: true });
     await writeFile(join(dir, '.claude.json'), JSON.stringify({ mcpServers: { pulsar: { type: 'http', url: 'https://gamma.pulsar.codes' } } }));
     const l = createLauncher({
@@ -319,7 +332,8 @@ describe('the reviewer agent at its start', () => {
     });
     const { spec } = await l.prepareStart(agent, { generation: 1, flag: null });
     const read = async (flag: string): Promise<string> => readFile(spec.args[spec.args.indexOf(flag) + 1] as string, 'utf8');
-    return { mcp: JSON.parse(await read('--mcp-config')), settings: JSON.parse(await read('--settings')), env: spec.env as Record<string, string | undefined> };
+    const allowed = spec.args.slice(spec.args.indexOf('--allowedTools') + 1);
+    return { mcp: JSON.parse(await read('--mcp-config')), settings: JSON.parse(await read('--settings')), env: spec.env as Record<string, string | undefined>, allowed };
   };
   it('has only gonogo\'s MCP server (no global, no room default), the write/run/fetch tools denied, one tool allowed, and no keys', async () => {
     const out = await prepare(record({ reviewOnly: true }));
@@ -330,9 +344,13 @@ describe('the reviewer agent at its start', () => {
     expect(JSON.stringify(out.settings.permissions.allow)).not.toContain('Bash(git');
     expect(out.env.SECRET_KEY).toBeUndefined();
     expect(out.env.ROOM_KEY).toBeUndefined();
+    // pre-approved: its one answer and its mailbox, not the whole gonogo set (R2)
+    expect(out.allowed).toEqual(['mcp__gonogo__pr_review_submit', 'mcp__gonogo__read_messages']);
+    expect(out.settings.permissions.allow).not.toContain('mcp__gonogo__send_message');
   });
-  it('an ordinary agent still gets the global and the room servers and its keys', async () => {
+  it('an ordinary agent still gets the global and the room servers, its keys and every gonogo tool', async () => {
     const out = await prepare(record());
+    expect(out.allowed).toEqual(expect.arrayContaining(['mcp__gonogo__send_message', 'mcp__gonogo__log_write', 'mcp__gonogo__go_nogo']));
     expect(Object.keys(out.mcp.mcpServers).sort()).toEqual(['files', 'gonogo', 'pulsar']);
     expect(out.env.SECRET_KEY).toBe('v');
   });
