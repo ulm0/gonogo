@@ -500,9 +500,26 @@ export interface AutoReviewJob {
   reason?: string;
   /** Skipped by the eligibility gate (judged again at the next poll), not by the Director or a failure. */
   gate?: boolean;
-  /** The Flight Plan task of the job, once it has one. */
+  /** The Flight Plan task of the job, once it has one, and the mission that holds its cap. */
   task?: string;
+  mission?: string;
+  /** The reviewer agents of the job (made for it, removed when they submit or the job ends). */
+  reviewers?: string[];
+  /** The reviewers that have submitted. */
+  submitted?: string[];
+  /** The review comment on GitHub, once posted. */
+  url?: string;
   at: number;
+}
+/** What the reviewers of one job wrote, cleaned: the draft the Director reads before POST. */
+export interface AutoReviewDraft {
+  job: string;
+  repo: string;
+  pr: number;
+  sha: string;
+  parts: Array<{ position: string; summary: string; findings: Array<{ file: string; line: number; severity: string; text: string }>; dropped: string[] }>;
+  /** Dollars the job's mission has spent (an estimate), when known. */
+  usd?: number;
 }
 export interface AutoReviewView {
   settings: AutoReviewSettings;
@@ -619,6 +636,8 @@ export interface AgentRecord {
   provider?: Provider;
   /** Provider 'custom' only: the command to run, a JSON array of strings or words separated by spaces (same rules as GONOGO_AGENT_CMD). */
   command?: string;
+  /** Auto-review's reviewer: read-only for the job. No global or room MCP servers, no keys, no skills, and the tools that write or reach out are denied. */
+  reviewOnly?: true;
   /** Absent means none. Never an empty object. */
   payload?: Payload;
   /** Room Payload defaults this agent switches off. Absent means none. */
@@ -1929,6 +1948,8 @@ export interface HireRequest {
   provider?: Provider;
   /** Required (non-empty, at most COMMAND_MAX_CHARS) when provider is 'custom'; refused otherwise. */
   command?: string;
+  /** Auto-review's reviewer (set by gonogo itself): see AgentRecord.reviewOnly. */
+  reviewOnly?: true;
   /** MCP servers and skills. Bad value: 400, field 'payload', 'payload.mcpServers' or 'payload.skills'. */
   payload?: Payload;
   /** Room Payload defaults to switch off for this agent (names only). Bad value: 400, field 'payloadOff'. */

@@ -2318,6 +2318,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.protected = from.protected;
     if (from.coauthor === undefined) delete target.coauthor;
     else target.coauthor = from.coauthor;
+    if (from.reviewOnly === undefined) delete target.reviewOnly;
+    else target.reviewOnly = from.reviewOnly;
     if (from.model === undefined) delete target.model;
     else target.model = from.model;
     if (from.effort === undefined) delete target.effort;
@@ -2586,6 +2588,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (permissions) record.permissions = permissions;
       if (req.autostart === false) record.autostart = false;
       if (req.coauthor === false) record.coauthor = false;
+      if (req.reviewOnly === true) record.reviewOnly = true;
       if (model) record.model = model;
       if (effort) record.effort = effort;
       if (kept?.names) record.keys = kept.names;

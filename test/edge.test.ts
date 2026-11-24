@@ -3043,6 +3043,37 @@ describe('mcp', () => {
     expect(looks).toBe(1);
   });
 
+  it('pr_review_submit exists only for the reviewer of a running auto-review job, and is checked as the caller, never a field', async () => {
+    const calls: Array<[string, unknown]> = [];
+    const runner = { reviews: (agent: string) => agent === 'ana', submit: async (agent: string, input: unknown) => (calls.push([agent, input]), { accepted: 1, dropped: [] }), draft: async () => null, post: async () => ({}) as never, end: async () => undefined };
+    const { port } = await startWeb({ autoReviewRunner: runner });
+    const ana = await connectMcp(port, ANA_TOKEN);
+    const names = (await ana.listTools()).tools.map((t) => t.name);
+    expect(names).toContain('pr_review_submit');
+    expect((await connectMcp(port, BEN_TOKEN).then((c) => c.listTools())).tools.map((t) => t.name)).not.toContain('pr_review_submit');
+    const out = await ana.callTool({ name: 'pr_review_submit', arguments: { summary: 'ok', findings: [{ file: 'a.ts', line: 3, severity: 'low', text: 'x' }] } });
+    expect(JSON.stringify(out.content)).toContain('accepted');
+    expect(calls).toEqual([['ana', { summary: 'ok', findings: [{ file: 'a.ts', line: 3, severity: 'low', text: 'x' }] }]]);
+    // a field the tool does not have, and more than 20 findings, are refused by the schema
+    const extra = await ana.callTool({ name: 'pr_review_submit', arguments: { summary: 'ok', findings: [], agent: 'ben' } }).catch((e: unknown) => e);
+    expect(JSON.stringify(extra)).toMatch(/unrecognized|Unrecognized|error|invalid/i);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('auto-review routes: the draft, POST and skip go to the runner; a bad job id is not a route; without a runner they are 404', async () => {
+    const seen: string[] = [];
+    const runner = { reviews: () => false, submit: async () => ({ accepted: 0, dropped: [] }), draft: async (id: string) => (seen.push(`draft ${id}`), { job: id, repo: 'o/r', pr: 1, sha: 'x', parts: [] }), post: async (id: string) => (seen.push(`post ${id}`), { id, status: 'posted' } as never), end: async (id: string, status: string, reason: string) => void seen.push(`end ${id} ${status} ${reason}`) };
+    const { port } = await startWeb({ autoReviewRunner: runner });
+    expect((await api(port, 'GET', '/api/auto-review/jobs/rv1')).json()).toMatchObject({ draft: { job: 'rv1' } });
+    expect((await api(port, 'POST', '/api/auto-review/jobs/rv2/post')).json()).toMatchObject({ job: { status: 'posted' } });
+    expect((await api(port, 'POST', '/api/auto-review/jobs/rv3/skip')).json()).toEqual({ ok: true });
+    expect((await api(port, 'GET', '/api/auto-review/jobs/..%2Fx')).status).toBe(404);
+    expect((await api(port, 'POST', '/api/auto-review/jobs/rv1/approve')).status).toBe(404);
+    expect(seen).toEqual(['draft rv1', 'post rv2', 'end rv3 skipped skipped by the Director']);
+    const none = await startWeb();
+    expect((await api(none.port, 'GET', '/api/auto-review/jobs/rv1')).status).toBe(404);
+  });
+
   it('survives clients that reset the connection while a tool call is being answered', async () => {
     const { port, hubCalls } = await startWeb();
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'send_message', arguments: { to: 'ben', body: 'x'.repeat(5000) } } });

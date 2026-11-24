@@ -632,6 +632,13 @@ describe('rooms proxy: the login', () => {
     expect((await send({ cookie: 'gonogo-session=s1', origin: base, 'content-type': 'application/json' }, 'PUT', '/api/egress', { anthropic: false })).status).toBe(200);
   });
 
+  it('the draft of a review and its POST or skip are the Director\'s: an API key, even a full one, is refused', async () => {
+    const key = { authorization: 'Bearer gnk_full', 'content-type': 'application/json' };
+    expect((await get('/api/auto-review/jobs/rv1', key)).status).toBe(403);
+    expect((await get('/api/auto-review/jobs/rv1/post', key, 'POST', '{}')).status).toBe(403);
+    expect((await get('/api/auto-review/jobs/rv1/skip', key, 'POST', '{}')).status).toBe(403);
+  });
+
   it('an API key may only switch auto-review off: turning it on, auto-post, or the repos it watches are refused; a read is not', async () => {
     const key = { authorization: 'Bearer gnk_full', 'content-type': 'application/json' };
     for (const body of [{ enabled: true }, { autoPost: true }, { repos: ['ulm0/gonogo'] }, {}, { enabled: false, repos: ['a/b'] }]) expect((await get('/api/auto-review', key, 'PUT', JSON.stringify(body))).status, JSON.stringify(body)).toBe(403);
