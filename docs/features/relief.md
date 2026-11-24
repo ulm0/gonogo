@@ -50,6 +50,12 @@ Off by default: every hire waits for your GO, byte for byte as above. You can tu
 
 Always a request, never by rule: a folder outside the boss's own, a Clean Room wall below the room's, a Clean Room that holds its own API key, and anything with keys, a payload, permissions, remote control or a command (the request cannot carry them; the same function that asks you for the password on the hire form judges it). Boss-hired agents cannot hire. Raising a rule needs the step-up; lowering never does. **STOP CREW** (`POST /api/relief/stop-crew`, no step-up: it only removes power) stops every boss-hired agent and turns `autoApprove` off. A hand edit of `relief.json` turns `autoApprove` off, renames the file `relief.json.bad` and raises a Downlink alarm. Design: docs/hire-fire-spec.md in the repository.
 
+## Firing: `fire_agent`
+
+Only FLIGHT is fixed: the boss can stop **any** agent but itself with `fire_agent {name, reason}`, yours included, unless you protected it (Flight Rules: *FLIGHT may stop agents*, on by default; turning it back on needs the password). It **stops** only: the process ends, the record, memory, transcript and worktree stay, the agent is not marked as stopped by you (the boss, or you, can start it again), and its open tasks go back to *todo*, unassigned, with the history line `released: <name> was stopped by flight`. Refused: the boss, a **protected** agent (mark the consoles that gate your work, a reviewer for one), one at a permission prompt or dialog, one with an open T-minus vote to cast, one with mail waiting. A few a minute at most. Every stop is its own Downlink line, never batched: who was fired, how many tasks were released and the boss's reason; the Black Box row has the name and the count only. Removing an agent stays yours.
+
+**Protected:** tick *Protect it from FLIGHT's fire_agent* in the Edit form of any agent but FLIGHT (no password); unticking asks for the password. *Flight Rules > Security > Hire on demand* has the rules, SAVE RULES and STOP CREW.
+
 ## API
 
 `GET /api/relief` -> `{ "requests": [...], "rules": {...}, "crew": [...] }` (also in state and a `relief` frame). `PUT /api/relief/rules` takes the rules that change (a bad one is 400 with the field `rules.<name>`). `POST /api/relief/:id/go` and `/no-go` take nothing, answer the list; gone id is 404.

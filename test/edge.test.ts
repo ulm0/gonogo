@@ -274,6 +274,10 @@ function makeHub(over: Partial<Hub> = {}): { hub: Hub; calls: Call[] } {
       rec('startAgent', name, by);
       return agentView(name);
     },
+    fireAgent: async (name, by) => {
+      rec('fireAgent', name, by);
+      return agentView(name);
+    },
     refreshLimits: () => rec('refreshLimits'),
     restart: async (name) => {
       rec('restart', name);
@@ -2497,6 +2501,10 @@ describe('relief', () => {
         setRules: async (body) => {
           calls.push(['setRules', body]);
           return view;
+        },
+        fire: async (by, input) => {
+          calls.push(['fire', by, input]);
+          return { name: 'g1', released: 0, note: 'ok' };
         },
         stopCrew: async () => {
           calls.push(['stopCrew']);

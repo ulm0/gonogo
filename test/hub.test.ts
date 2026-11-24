@@ -6900,6 +6900,48 @@ describe('Hub.startAgent: the boss starts a stopped agent', () => {
   });
 });
 
+describe('Hub.fireAgent: the boss stops an agent it hired by rule', () => {
+  const crewHire = async (h: Harness, name: string) => h.hub.hire({ name, role: 'does things', dir: `/work/${name}`, mode: 'default' }, { hiredBy: 'boss' });
+
+  it('stops a boss-hired agent without the Director\'s mark: the boss may start it again, the record stays', async () => {
+    const h = await started();
+    await crewHire(h, 'rt1');
+    const view = await h.hub.fireAgent('rt1', 'flight');
+    expect(view.state).toBe('stopped');
+    expect(h.hub.views().find((v) => v.name === 'rt1')).toMatchObject({ hiredBy: 'boss' });
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'rt1')?.stoppedBy).toBeUndefined();
+    expect((await h.hub.startAgent('rt1', 'flight')).state).toBe('starting');
+    // a Director's stop is another thing
+    await h.hub.stop('rt1');
+    await expectHubReject(h.hub.startAgent('rt1', 'flight'), 'forbidden', /the Director stopped rt1/);
+  });
+
+  it('refuses the boss, a protected one, one that waits for the Director, and a ghost; the Director\'s own unprotected agent is stopped (only FLIGHT is fixed)', async () => {
+    const h = await started();
+    await h.hire('ana');
+    await crewHire(h, 'rt1');
+    await expectHubReject(h.hub.fireAgent('flight', 'flight'), 'forbidden', /the boss cannot be fired/);
+    expect((await h.hub.fireAgent('ana', 'flight')).state).toBe('stopped');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.stoppedBy).toBeUndefined();
+    const edited = await h.hub.edit('rt1', { protected: true });
+    expect(edited.protected, JSON.stringify(edited)).toBe(true);
+    expect(h.view('rt1').protected).toBe(true);
+    await expectHubReject(h.hub.fireAgent('rt1', 'flight'), 'forbidden', /protected by the Director/);
+    await h.hub.edit('rt1', { protected: false });
+    expect(h.view('rt1').protected).toBeUndefined();
+    h.work('rt1');
+    h.hook('rt1', 'PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+    await expectHubReject(h.hub.fireAgent('rt1', 'flight'), 'conflict', /waits for the Director/);
+    await expectHubReject(h.hub.fireAgent('ghost', 'flight'), 'not_found', 'unknown agent');
+  });
+
+  it('protected must be a boolean and a request field cannot make an agent boss-hired', async () => {
+    const h = await started();
+    await h.hire('ana');
+    await expectHubReject(h.hub.edit('ana', { protected: 'yes' } as never), 'bad_request', /protected must be true or false/, 'protected');
+  });
+});
+
 describe('ALL STOP and ALL RESUME, and the switch of start_agent', () => {
   it('holds every agent that can be held, names the others, and resumes only the held ones', async () => {
     const h = await started();

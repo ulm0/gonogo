@@ -203,6 +203,14 @@ describe('stopping and starting rooms', () => {
   });
 });
 
+describe('protecting an agent from the boss', () => {
+  it('protecting is free; clearing the mark asks for the password', () => {
+    expect(stepUpReason('PATCH', '/api/agents/rt1', { protected: true })).toBeNull();
+    expect(stepUpReason('PATCH', '/api/agents/rt1', { protected: false })).toBe('letting the boss stop an agent');
+    expect(stepUpReason('PATCH', '/api/agents/rt1', { protected: true, mode: 'auto' })).toBe('changing what an agent may do');
+  });
+});
+
 describe('the rules of the boss\'s hires (docs/hire-fire-spec.md)', () => {
   it('turning them up asks; only autoApprove off and autoOnHost off, and STOP CREW, never do', () => {
     for (const body of [{ autoApprove: true }, { maxCrew: 5 }, { maxMode: 'auto' }, { positions: ['guido'] }, { autoApprove: false, maxCrew: 1 }, {}, { autoOnHost: true }]) {

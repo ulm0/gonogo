@@ -41,7 +41,11 @@ export type ReliefActor = { kind: 'user' } | { kind: 'agent'; name: string };
 
 export interface ReliefOptions {
   /** The parts of the hub it uses: the room, the hire of the form, and the message that tells the boss. */
-  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'> & Partial<Pick<Hub, 'stop'>>;
+  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'> & Partial<Pick<Hub, 'stop' | 'fireAgent'>>;
+  /** The Flight Plan: the open tasks of a fired agent go back to todo, unassigned. Absent: none are released. */
+  tasks?: { list(): Array<{ id: string; assignee: string | null; status: string }>; update(actor: { kind: 'agent'; name: string; generation: number }, id: string, input: unknown): Promise<unknown> };
+  /** Whether an open T-minus poll waits for this agent's vote (it is not fired then). */
+  voteWaitsFor?(name: string): boolean;
   /** The room's rules (`relief.json`). Absent: no rule hires, every request waits for the Director, as before. */
   rules?: { view(): ReliefRules; check(): Promise<void>; set?(body: unknown): Promise<ReliefRules>; off?(): Promise<ReliefRules> };
   /** Why a hire in `auto` (or bypass) must not run by rule in a Clean Room now (egress off, the global MCP servers on), or null. */
@@ -78,6 +82,8 @@ export interface Relief {
   view(): ReliefView;
   /** The Director's change of the rules (the route asked for the step-up before). Throws a bad_request that names the field. */
   setRules(body: unknown): Promise<ReliefView>;
+  /** The boss fires an agent it hired by rule: stop only (record, memory, transcript, worktree stay; it can be started again). The tasks of it go back to todo. Throws a HubError that says why not. */
+  fire(by: { agent: string; generation: number }, input: unknown): Promise<{ name: string; released: number; note: string }>;
   /** STOP CREW: every boss-hired agent is stopped (the Director's own stop: the boss cannot start it again) and autoApprove goes off. It only removes power, so it needs no step-up. */
   stopCrew(): Promise<{ stopped: string[]; view: ReliefView }>;
   /** The Director's GO (the agent is hired, as the form does it) or NO-GO. Throws the HubError of the hire when it fails. */
@@ -317,6 +323,38 @@ export function createRelief(options: ReliefOptions): Relief {
       if (moved.length > 0) notify(`Relief rules changed: ${moved.map((k) => `${k} ${JSON.stringify(after[k as keyof ReliefRules])}`).join(', ')}`);
       changed();
       return view();
+    },
+
+    async fire(by, input) {
+      const requester = hub.views().find((agent) => agent.name === by.agent);
+      if (!requester) throw new HubError('not_found', 'unknown agent');
+      if (requester.generation !== by.generation || requester.transition !== null) throw new HubError('conflict', 'this session has ended');
+      if (!requester.boss) throw new HubError('forbidden', 'only the boss can fire an agent');
+      if (!hub.fireAgent) throw new HubError('not_found', 'fire_agent is not available');
+      if (!isRecord(input)) throw bad('the request must be an object');
+      const { name, reason } = input;
+      if (typeof name !== 'string' || !NAME_RE.test(name)) throw bad('name must be the name of an agent', 'name');
+      if (typeof reason !== 'string' || reason.trim().length === 0 || reason.length > 200 || HIDDEN_RE.test(reason)) throw bad('reason is 1 to 200 plain characters: the Director reads it', 'reason');
+      await options.rules?.check();
+      if (options.rules !== undefined && !options.rules.view().mayStop) throw new HubError('forbidden', 'the Director turned off "FLIGHT may stop agents" in Flight Rules');
+      if (options.voteWaitsFor?.(name) === true) throw new HubError('conflict', `${name} has an open T-minus vote to cast: do not fire it now`);
+      // the hub decides from the stored record (boss-hired, not protected, nothing waiting for the Director) and stops it without marking it the Director's stop
+      await hub.fireAgent(name, requester.name);
+      let released = 0;
+      for (const task of options.tasks?.list() ?? []) {
+        if (task.assignee !== name || task.status === 'done') continue;
+        try {
+          await options.tasks?.update({ kind: 'agent', name: requester.name, generation: by.generation }, task.id, { status: 'todo', assignee: null, note: `released: ${name} was stopped by ${requester.name}` });
+          released += 1;
+        } catch (error) {
+          log.warn(`could not release task ${task.id} of ${name}`, error);
+        }
+      }
+      // the line names the agent and the counts; the reason is the boss's own words and stays out of the Black Box (the Downlink shows it to the Director)
+      // always its own line, never batched: a stop of an agent with a duty (a reviewer) must be seen
+      notify(`${requester.name} fired ${name} (${released} tasks released): ${reason.trim()}`);
+      changed();
+      return { name, released, note: `${name} is stopped; its record, memory and files stay and the Director or you can start it again${released > 0 ? `; ${released} of its tasks are back on the board unassigned` : ''}` };
     },
 
     async stopCrew() {
