@@ -339,6 +339,63 @@ describe('the crew budget and the models (PR3)', () => {
   });
 });
 
+describe('remove and bypass by rule (PR4)', () => {
+  const FIRE = { agent: 'flight', generation: 1 };
+  function withHub(hub: Partial<ReliefOptions['hub']>) {
+    const calls: string[] = [];
+    const r = createRelief({
+      hub: { views: () => views, hire: async (request, meta) => { const v = agent(request.name, { dir: request.dir, desk: views.length, ...(meta?.hiredBy === 'boss' ? { hiredBy: 'boss', hiredAt: now } : {}) }); views.push(v); hired.push({ request, ...(meta === undefined ? {} : { meta }) }); return v; }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }), fireAgent: async (n: string) => { calls.push('fire:' + n); return views.find((v) => v.name === n) as AgentView; }, retireAgent: async (n: string) => { calls.push('retire:' + n); return { archived: n + '.removed-1' }; }, ...hub },
+      rules, cleanRoomUnsafe: () => unsafe, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet,
+    });
+    return { r, calls };
+  }
+
+  it('remove:true needs mayRemove (off by default, on is a raise), then archives; the line says removed', async () => {
+    views.push(agent('ana'));
+    const { r, calls } = withHub({});
+    await expect(r.fire(FIRE, { name: 'ana', reason: 'idle', remove: true })).rejects.toMatchObject({ code: 'forbidden' });
+    expect(calls).toEqual([]);
+    expect(raisesPower(RELIEF_RULES_DEFAULT, { ...RELIEF_RULES_DEFAULT, mayRemove: true })).toBe(true);
+    await rules.set({ mayRemove: true });
+    const done = await r.fire(FIRE, { name: 'ana', reason: 'idle', remove: true });
+    expect(done).toMatchObject({ name: 'ana', removed: true });
+    expect(done.note).toMatch(/folder is kept as agents\/ana\.removed-\*/);
+    expect(calls).toEqual(['retire:ana']);
+    expect(events.map(([, t]) => t).join('\n')).toMatch(/flight removed ana/);
+    await expect(r.fire(FIRE, { name: 'ana', reason: 'idle', remove: 'yes' })).rejects.toMatchObject({ field: 'remove' });
+  });
+
+  it('a request for bypassPermissions waits for the Director, naming the switch, and the GO carries confirmBypass', async () => {
+    await on({ maxMode: 'auto' });
+    views[0] = agent('flight', { boss: true, desk: 0, dir: project, cleanRoom: CR });
+    const answer = await ask({ mode: 'bypassPermissions' });
+    expect(answer).toMatchObject({ status: 'pending' });
+    expect(answer.note).toMatch(/bypassInCleanRoom is off/);
+    expect(hired).toEqual([]);
+    expect(relief.view().requests[0]).toMatchObject({ mode: 'bypassPermissions' });
+  });
+
+  it('with bypassInCleanRoom on: hired by rule in a safe Clean Room only; the host, an unsafe Clean Room and a weak wall ask', async () => {
+    await on({ bypassInCleanRoom: true });
+    // the host
+    expect((await ask({ name: 'b1', mode: 'bypassPermissions' })).note).toMatch(/runs by rule in a Clean Room only/);
+    views[0] = agent('flight', { boss: true, desk: 0, dir: project, cleanRoom: CR });
+    unsafe = 'egress is off';
+    expect((await ask({ name: 'b2', mode: 'bypassPermissions' })).note).toMatch(/needs a safe Clean Room: egress is off/);
+    unsafe = null;
+    expect(await ask({ name: 'b3', mode: 'bypassPermissions' })).toMatchObject({ status: 'hired' });
+    expect(hired.at(-1)?.request).toMatchObject({ mode: 'bypassPermissions', confirmBypass: true });
+    // a Clean Room that holds its own API key asks, as every rule hire does
+    views[0] = agent('flight', { boss: true, desk: 0, dir: project, cleanRoom: { flavor: 'docker', egress: false } as unknown as CleanRoom });
+    expect((await ask({ name: 'b4', mode: 'bypassPermissions' })).note).toMatch(/holds its own API key needs your GO/);
+    // maxMode does not matter to bypass, and turning the switch off asks again
+    await rules.set({ bypassInCleanRoom: false });
+    views[0] = agent('flight', { boss: true, desk: 0, dir: project, cleanRoom: CR });
+    expect((await ask({ name: 'b5', mode: 'bypassPermissions' })).note).toMatch(/bypassInCleanRoom is off/);
+    expect(raisesPower({ ...RELIEF_RULES_DEFAULT, bypassInCleanRoom: false }, { ...RELIEF_RULES_DEFAULT, bypassInCleanRoom: true })).toBe(true);
+  });
+});
+
 describe('fire_agent through Relief', () => {
   const FIRE = { agent: 'flight', generation: 1 };
   function withFire(over: Partial<ReliefOptions> = {}, task = { id: 't7', assignee: 'g1', status: 'doing' }) {

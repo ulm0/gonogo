@@ -216,7 +216,8 @@ describe('a request', () => {
     relief = make({ defaultMode: () => 'bypassPermissions' });
     await ask();
     expect(relief.view().requests[0]).toMatchObject({ mode: 'default' });
-    await expect(ask({ name: 'guido-3', mode: 'bypassPermissions' })).rejects.toMatchObject({ field: 'mode' });
+    // a named bypass is a request now (it waits for the Director)
+    expect(await ask({ name: 'guido-3', mode: 'bypassPermissions' })).toMatchObject({ status: 'pending' });
   });
 
   it('answers a copy: changing the view does not change the request', async () => {
@@ -242,14 +243,17 @@ describe('who may ask', () => {
 });
 
 describe('the hard limits', () => {
-  it('never bypassPermissions: the most it asks for is auto, and auto always waits for the Director when no rule is on', async () => {
-    for (const mode of ['bypassPermissions', 'plan', 'BYPASSPERMISSIONS', '', 3, null]) {
+  it('bypassPermissions is a request for the Director, never granted without his GO; the other bad modes are refused', async () => {
+    for (const mode of ['plan', 'BYPASSPERMISSIONS', '', 3, null]) {
       const error = await refusal(ask({ mode }));
       expect(error.code, String(mode)).toBe('bad_request');
       expect(error.field).toBe('mode');
     }
-    expect((await refusal(ask({ mode: 'bypassPermissions' }))).message).toMatch(/default or acceptEdits or auto at most/);
+    expect((await refusal(ask({ mode: 'plan' }))).message).toMatch(/mode must be one of default, acceptEdits, auto, bypassPermissions/);
     expect(relief.view().requests).toEqual([]);
+    expect(await ask({ name: 'by-1', mode: 'bypassPermissions' })).toMatchObject({ status: 'pending' });
+    expect(hired).toEqual([]);
+    await relief.decide(relief.view().requests[0]?.id ?? '', 'no-go', { kind: 'user' });
     await ask({ mode: 'acceptEdits' });
     expect(await ask({ name: 'guido-2', mode: 'auto' })).toMatchObject({ status: 'pending' });
     expect(hired).toEqual([]);
@@ -357,7 +361,7 @@ describe('the hard limits', () => {
   });
 
   it('a refused request does not use up the rate limit', async () => {
-    for (let i = 0; i < RELIEF_RATE_MAX * 2; i += 1) await refusal(ask({ mode: 'bypassPermissions' }));
+    for (let i = 0; i < RELIEF_RATE_MAX * 2; i += 1) await refusal(ask({ mode: 'bogus' }));
     await ask();
   });
 

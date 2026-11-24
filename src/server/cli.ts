@@ -1011,6 +1011,12 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         terminalHost.rename(oldName, newName);
       },
       writeHandoff: (from, to) => launcher.writeHandoff(from, to),
+      archiveAgentFiles: async (name, record, now) => {
+        const done = await launcher.archiveAgentFiles(name, record, now);
+        // the mirror of its console goes with the name: a later agent of that name starts clean
+        terminalHost.forget?.(name);
+        return done;
+      },
       keys: clearance,
       spawn: async (req) => {
         const prepared = await launcher.prepareStart(req.agent, { generation: req.generation, flag: req.flag });
