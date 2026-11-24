@@ -36,10 +36,16 @@ if [ "$(id -u)" = 0 ]; then
   }
   heal "$HOME"
   # The same for XDG_CONFIG_HOME when it is set outside the home (a Docker setup that binds one config folder for gh, aws, opencode...): `docker exec <container> opencode models` runs as root too and
-  # leaves root's files there, which the server (uid 1000) could not write. The folder is gonogo's own, so it gets the same repair, and the same guards.
-  fix "${XDG_CONFIG_HOME:-}"
-  # only a folder on another filesystem than the image's own (a bind or a volume): a path inside the image is never touched
-  [ -n "${XDG_CONFIG_HOME:-}" ] && [ "$(stat -c %d "$XDG_CONFIG_HOME" 2>/dev/null)" != "$(stat -c %d / 2>/dev/null)" ] && heal "$XDG_CONFIG_HOME"
+  # leaves root's files there, which the server (uid 1000) could not write. It is decided BEFORE anything is changed, because a mistaken bind (a root or shared host folder) must never be chowned:
+  # the folder has to be on another filesystem than the image's own (a bind or a volume), a real directory, and its top already uid 1000's (a file root left inside is then repaired), or root's and EMPTY
+  # (Docker just made it). A root-owned folder with anything in it is left alone and the log says so.
+  x=${XDG_CONFIG_HOME:-}
+  if [ -n "$x" ] && [ -d "$x" ] && [ ! -L "$x" ] && [ "$(stat -c %d "$x" 2>/dev/null)" != "$(stat -c %d / 2>/dev/null)" ]; then
+    case "$(stat -c %u "$x")" in
+      1000) heal "$x" ;;
+      0) if [ -z "$(ls -A "$x" 2>/dev/null)" ]; then fix "${XDG_CONFIG_HOME:-}"; else echo "gonogo: XDG_CONFIG_HOME $x is root's and not empty: not repaired; chown it to 1000 yourself if it is gonogo's" >&2; fi ;;
+    esac
+  fi
   [ -n "${GONOGO_HOME:-}" ] && fix "$(dirname "$GONOGO_HOME")"
   fix "${CLAUDE_CONFIG_DIR:-}"
   fix "$PWD"

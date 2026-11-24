@@ -225,9 +225,9 @@ describe('the container starts as root only to fix a bind folder, and drops to u
     const find = /find "\$1" (.*) -execdir chown -h 1000:1000 \{\} \+/.exec(rootPart);
     expect(find?.[1]).toBeDefined();
     expect(rootPart).toMatch(/realpath -e "\$1"[^\n]*= "\$1" \]/);
-    // run for the home, and for XDG_CONFIG_HOME only on another filesystem than the image's
+    // run for the home, and for XDG_CONFIG_HOME only when it is decided first (another filesystem, top uid 1000's, or root's and empty)
     expect(rootPart).toContain('heal "$HOME"');
-    expect(rootPart).toContain('heal "$XDG_CONFIG_HOME"');
+    expect(rootPart).toContain('heal "$x"');
     for (const part of ['-xdev', '-mindepth 1', '-user 0', '\\( -type f -links 1 -o -type d \\)', '\\( -type d -exec mountpoint -q {} \\; -prune \\)']) expect(find?.[1], part).toContain(part);
     expect(rootPart).not.toMatch(/find [^\n]*(-L\b|-follow|-H\b)/);
     expect(rootPart).not.toContain('-exec chown');
