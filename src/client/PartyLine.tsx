@@ -46,8 +46,8 @@ function Said({ item, agents, now }: { item: ActivityItem; agents: Readonly<Reco
     <Message from={you ? 'user' : 'assistant'} aria-label={`${routeText(item, agents)}, ${whenText(item.at, now)}`}>
       <MessageStack>
         <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{routeText(item, agents)}</span>
-          <span className="font-mono">{whenText(item.at, now)}</span>
+          <span className="loop-route">{routeText(item, agents)}</span>
+          <span className="loop-time">{whenText(item.at, now)}</span>
           {chip.tone !== 'quiet' && (
             <span className="chip" data-tone={chip.tone}>
               {chip.text}
@@ -231,18 +231,18 @@ export function PartyLine(): ReactElement {
                     className="grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:grid-cols-[auto_96px_200px_minmax(0,1fr)_auto] sm:gap-x-4 sm:px-4"
                   >
                     <HugeiconsIcon icon={open ? ArrowDown01Icon : ArrowRight01Icon} className="mt-0.5 size-4 text-muted-foreground" aria-hidden="true" />
-                    <span className="font-mono text-xs text-muted-foreground sm:pt-0.5">{whenText(thread.last.at, now)}</span>
-                    <span className="col-start-2 truncate text-xs font-medium sm:col-start-auto sm:pt-0.5">
+                    <span className="loop-time sm:pt-0.5">{whenText(thread.last.at, now)}</span>
+                    <span className="loop-route col-start-2 truncate sm:col-start-auto sm:pt-0.5">
                       {thread.who.map((name) => legendOf(name, agents)).join(' · ')}
                     </span>
                     <span className="col-start-2 flex min-w-0 flex-col gap-1 sm:col-start-auto">
-                      <span className="font-medium break-words text-foreground">{thread.title}</span>
+                      <span className="loop-subject break-words">{thread.title}</span>
                       {link !== undefined && (
                         <span className="chip self-start" data-tone="quiet">
                           LINK · {linkLine(link as LinkItem)}
                         </span>
                       )}
-                      <span className="text-xs text-muted-foreground">{countText(thread.items.length)}</span>
+                      <span className="loop-note">{countText(thread.items.length)}</span>
                     </span>
                     {chip.tone !== 'quiet' && (
                       <span className="chip col-start-3 row-start-1 sm:col-start-auto sm:row-start-auto" data-tone={chip.tone}>

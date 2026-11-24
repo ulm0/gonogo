@@ -41,6 +41,14 @@
   --color-chart-4: var(--nogo);
   --color-chart-5: var(--muted);
   --font-sans: var(--font-ui);
+  /* the app's root is 13px, so rem sizes would come out small: the scale and the spacing are in px, on the Instrument's type */
+  --spacing: 4px;
+  --text-xs: 12px;
+  --text-xs--line-height: 1.45;
+  --text-sm: 13.5px;
+  --text-sm--line-height: 1.5;
+  --text-base: 14px;
+  --text-base--line-height: 1.5;
   --radius-sm: var(--radius-key);
   --radius-md: var(--radius-key);
   --radius-lg: var(--radius);
