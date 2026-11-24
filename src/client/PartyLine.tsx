@@ -46,8 +46,8 @@ function Said({ item, agents, now }: { item: ActivityItem; agents: Readonly<Reco
     <Message from={you ? 'user' : 'assistant'} aria-label={`${routeText(item, agents)}, ${whenText(item.at, now)}`}>
       <MessageStack>
         <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-2 text-xs text-muted-foreground">
-          <span className="loop-route">{routeText(item, agents)}</span>
-          <span className="loop-time">{whenText(item.at, now)}</span>
+          <span className="font-mono text-[11px] leading-normal font-semibold tracking-[0.04em]">{routeText(item, agents)}</span>
+          <span className="font-mono text-[11.5px] text-muted-foreground">{whenText(item.at, now)}</span>
           {chip.tone !== 'quiet' && (
             <span className="chip" data-tone={chip.tone}>
               {chip.text}
@@ -231,8 +231,8 @@ export function PartyLine(): ReactElement {
                     className="grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:grid-cols-[auto_96px_200px_minmax(0,1fr)_auto] sm:gap-x-4 sm:px-4"
                   >
                     <HugeiconsIcon icon={open ? ArrowDown01Icon : ArrowRight01Icon} className="mt-0.5 size-4 text-muted-foreground" aria-hidden="true" />
-                    <span className="loop-time sm:pt-0.5">{whenText(thread.last.at, now)}</span>
-                    <span className="loop-route col-start-2 truncate sm:col-start-auto sm:pt-0.5">
+                    <span className="font-mono text-[11.5px] text-muted-foreground pt-0.5">{whenText(thread.last.at, now)}</span>
+                    <span className="font-mono text-[11px] leading-normal font-semibold tracking-[0.04em] col-start-2 truncate sm:col-start-auto sm:pt-0.5">
                       {thread.who.map((name) => legendOf(name, agents)).join(' · ')}
                     </span>
                     <span className="col-start-2 flex min-w-0 flex-col gap-1 sm:col-start-auto">
