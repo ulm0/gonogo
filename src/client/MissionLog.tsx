@@ -12,7 +12,7 @@ import type { LogAnchorState, LogChart, LogEntry, LogHit, LogSearch } from '../s
 import * as api from './api.js';
 import { whenText } from './inbox.js';
 import { legendOf } from './loop.js';
-import { countText, emptyValues, FIELDS, newsText, requestOf, rowId, validate, valuesOf } from './log.js';
+import { countText, searchPlan, emptyValues, FIELDS, newsText, requestOf, rowId, validate, valuesOf } from './log.js';
 import type { Field, Problems, Values } from './log.js';
 import { Chart, Links } from './StarChart.js';
 import { showRoom, useFeature, useStore } from './store.js';
@@ -332,11 +332,14 @@ export function MissionLog(): ReactElement {
   // words alone, and the query is embedded only once it has settled (600 ms without a key, or Enter), so typing does not spend the budget; a frame
   // refreshes with words alone too.
   const lastQuery = useRef(query);
+  // the query whose meaning results are on screen, so that a refresh keeps them
+  const meaningShown = useRef<string | null>(null);
   const [entered, setEntered] = useState(0);
   const show = (ask: number, meaning: boolean, q: string): void => {
     api.searchLog(q, meaning).then(
       (found) => {
         if (ask !== latest.current) return;
+        meaningShown.current = found.mode === 'meaning' ? q : null;
         setSearch(found);
         setListError(null);
       },
@@ -345,10 +348,11 @@ export function MissionLog(): ReactElement {
   };
   useEffect(() => {
     const ask = ++latest.current;
-    const typed = lastQuery.current !== query;
+    const plan = searchPlan({ semanticOn, typed: lastQuery.current !== query, query, meaningShownFor: meaningShown.current });
     lastQuery.current = query;
-    const words = setTimeout(() => show(ask, !semanticOn, query), 200);
-    const settled = semanticOn && typed && query.trim() !== '' ? setTimeout(() => show(ask, true, query), 600) : null;
+    const words = setTimeout(() => show(ask, plan.first === 'meaning', query), 200);
+    // the meaning answer has its own ask: a slow words answer that comes after it is stale
+    const settled = plan.settle ? setTimeout(() => show(++latest.current, true, query), 600) : null;
     return () => {
       clearTimeout(words);
       if (settled !== null) clearTimeout(settled);
