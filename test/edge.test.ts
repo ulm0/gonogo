@@ -7725,7 +7725,7 @@ describe('seams with the real hub, launcher and terminal host', () => {
 
     const home = tmpDir();
     const launcher = launcherModule.createLauncher({ homeDir: home, hubUrl: () => 'http://127.0.0.1:1', seed: false, env: {}, log: nullLogger });
-    expect(members(launcher)).toEqual(['keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke', 'writeHandoff']);
+    expect(members(launcher)).toEqual(['archiveAgentFiles', 'keepTokens', 'memoryPath', 'prepareStart', 'renameAgentFiles', 'resolveToken', 'revoke', 'writeHandoff']);
     expect(launcher.resolveToken('f'.repeat(64))).toBeNull();
 
     const io = {

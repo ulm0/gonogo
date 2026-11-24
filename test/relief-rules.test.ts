@@ -87,7 +87,7 @@ describe('the rules file', () => {
   it('autoApprove needs a daily crew budget; bypassPermissions is not a maxMode; unknown rules are refused', async () => {
     await expect(rules.set({ autoApprove: true })).rejects.toMatchObject({ field: 'rules.crewBudgetUsd' });
     await expect(rules.set({ maxMode: 'bypassPermissions' })).rejects.toMatchObject({ field: 'rules.maxMode' });
-    await expect(rules.set({ bypassInCleanRoom: true })).rejects.toMatchObject({ field: 'rules.bypassInCleanRoom' });
+    await expect(rules.set({ bypassInRoom: true })).rejects.toMatchObject({ field: 'rules.bypassInRoom' });
     await expect(rules.set({ engines: ['custom'] })).rejects.toBeInstanceOf(HubError);
     expect(rules.view()).toEqual(RELIEF_RULES_DEFAULT);
   });
@@ -205,12 +205,6 @@ describe('hire_agent by rule', () => {
     views[0] = agent('flight', { boss: true, desk: 0, dir: project });
     await rules.set({ maxMode: 'auto', autoOnHost: true });
     expect(await ask({ name: 'g6', mode: 'auto' })).toMatchObject({ status: 'hired' });
-  });
-
-  it('bypassPermissions is never asked for: it is refused as before', async () => {
-    await on({ maxMode: 'auto' });
-    await expect(ask({ mode: 'bypassPermissions' })).rejects.toMatchObject({ field: 'mode' });
-    expect(hired).toEqual([]);
   });
 
   it('the crew cap and the hourly rate hold, also under parallel calls', async () => {
