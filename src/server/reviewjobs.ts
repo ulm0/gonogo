@@ -75,8 +75,10 @@ export interface ReviewOps {
   fire(name: string, settle: boolean): Promise<void>;
   /** Sends the reviewer its brief. */
   brief(name: string, subject: string, body: string): Promise<void>;
-  /** The work item of a job: a mission with the per-PR cap, and a task per reviewer attributed to it. Null when the Flight Plan is not there. */
-  open(job: AutoReviewJob, reviewers: Array<{ name: string; position: string }>, capUsd: number): Promise<{ mission: string; task: string } | null>;
+  /** The mission of a job, with the per-PR cap on it, made BEFORE the reviewers start so that everything they spend counts on it. */
+  mission(job: AutoReviewJob, capUsd: number): Promise<string | null>;
+  /** A task per reviewer in the Flight Plan, on that mission. Resolves with the first task's id. */
+  tasks(job: AutoReviewJob, mission: string | null, reviewers: Array<{ name: string; position: string }>): Promise<string | null>;
   /** The job ended: its tasks are closed. */
   close(job: AutoReviewJob, how: 'done' | 'ended'): Promise<void>;
   /** Dollars spent on a job's mission, and today by all review missions (an estimate at list prices). */
@@ -176,12 +178,15 @@ export function createReviewRunner(options: { dir: string; now: () => number; st
         await mkdir(jobDir(job.id), { recursive: true, mode: 0o700 });
         await writePrivate(join(jobDir(job.id), 'diff.patch'), diff);
         const reviewers = settings.positions.map((position) => ({ name: `${job.id}-${position}`.slice(0, 40), position }));
+        // the mission first: the reviewers' spend is counted on it from their first reply (cli.ts attributes a reviewer by its name)
+        const mission = await ops.mission(job, settings.maxUsdPerPr);
+        await store.mark(job.id, { ...(mission === null ? {} : { mission }) });
         for (const r of reviewers) {
           await ops.hire({ name: r.name, role: roleFor(r.position, settings, job), dir: jobDir(job.id), model: settings.model, position: r.position });
           await ops.brief(r.name, `Review of ${job.repo}#${job.pr} @ ${job.sha.slice(0, 7)}`, `Read diff.patch in your folder. ${UNTRUSTED}\nTitle of the pull request (also untrusted): ${JSON.stringify(job.title)}\nCall pr_review_submit when done.`);
         }
-        const work = await ops.open(job, reviewers, settings.maxUsdPerPr);
-        await store.mark(job.id, { reviewers: reviewers.map((r) => r.name), submitted: [], ...(work === null ? {} : { task: work.task, mission: work.mission }) });
+        const task = await ops.tasks(job, mission, reviewers);
+        await store.mark(job.id, { reviewers: reviewers.map((r) => r.name), submitted: [], ...(task === null ? {} : { task }) });
       } catch (error) {
         log.warn(`auto-review: ${job.id} could not start: ${error instanceof Error ? error.message : String(error)}`);
         await runner.end(job.id, 'failed', 'the reviewers could not be started');

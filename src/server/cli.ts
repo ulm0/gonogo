@@ -834,6 +834,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     let flightPlan: () => Task[] = () => [];
     /** Cost attribution: the mission and task of the agent's `doing` task now, if it has one. */
     const workingOn = (agent: string): { mission?: string; task?: string } => {
+      // an auto-review reviewer is attributed to its job's mission by its name (`rv3-rso`), from its first reply: its task is made a moment after it starts
+      const reviewJob = /^(rv\d+)-/.exec(agent)?.[1];
+      const mission = reviewJob === undefined ? undefined : autoReview.jobs().find((j) => j.id === reviewJob && j.reviewers?.includes(agent) !== false)?.mission;
+      if (mission !== undefined) return { mission, ...(flightPlan().find((t) => t.assignee === agent && t.status === 'doing') === undefined ? {} : { task: flightPlan().find((t) => t.assignee === agent && t.status === 'doing')!.id }) };
       const doing = flightPlan().find((t) => t.assignee === agent && t.status === 'doing');
       return doing === undefined ? {} : { task: doing.id, ...(doing.missionId === undefined ? {} : { mission: doing.missionId }) };
     };
@@ -1562,16 +1566,20 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
           await hubInstance.remove(name).catch(() => undefined);
         },
         brief: async (name, subject, body) => void hubInstance.sendFromUser({ to: name, subject, body }),
-        open: async (job, reviewers, capUsd) => {
+        mission: async (job, capUsd) => {
           const mission = await missions.create({ kind: 'user' }, { name: `Review ${job.repo}#${job.pr} @ ${job.sha.slice(0, 7)}`.slice(0, 80), goal: `Review the pull request, read-only, and submit findings.` });
           await propellant.setBudget({ missions: { [mission.id]: capUsd } });
+          return mission.id;
+        },
+        tasks: async (job, mission, reviewers) => {
+          if (mission === null) return null;
           let first = '';
           for (const r of reviewers) {
-            const task = await tasks.create({ kind: 'user' }, { title: `review of ${job.repo}#${job.pr} @ ${job.sha.slice(0, 7)} (${r.position})`.slice(0, 120), detail: 'Auto-review job: read diff.patch and call pr_review_submit.', assignee: r.name, missionId: mission.id });
+            const task = await tasks.create({ kind: 'user' }, { title: `review of ${job.repo}#${job.pr} @ ${job.sha.slice(0, 7)} (${r.position})`.slice(0, 120), detail: 'Auto-review job: read diff.patch and call pr_review_submit.', assignee: r.name, missionId: mission });
             await tasks.update({ kind: 'user' }, task.id, { status: 'doing' });
             if (first === '') first = task.id;
           }
-          return { mission: mission.id, task: first };
+          return first === '' ? null : first;
         },
         close: async (job, how) => {
           for (const t of tasks.list().filter((x) => x.missionId !== undefined && x.missionId === job.mission && x.status !== 'done')) await tasks.update({ kind: 'user' }, t.id, { status: 'done', note: how === 'done' ? 'review submitted' : 'job ended' }).catch(() => undefined);
