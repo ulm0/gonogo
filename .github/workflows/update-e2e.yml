@@ -5,12 +5,11 @@ name: Update e2e
 # asserted to run, then UNDOne back. scripts/update-e2e.sh does the work; this file only picks the two versions and gives it the token.
 #
 # Only images of this repository on ghcr.io are pulled, and the only credential is the job's own GITHUB_TOKEN (read access to the attestations).
-# The update takes the container's moving tag, so TO must be what `ghcr.io/ulm0/gonogo:latest` is: the job runs after the Image workflow has
-# pushed a release (workflow_run) and picks the newest stable release and the one before it; by hand, both can be given.
+# The update takes the container's moving tag, so TO must be what `ghcr.io/ulm0/gonogo:latest` is: image.yml calls this (workflow_call) as its
+# last job, after it pushed and attested a stable release (a v* tag without a pre-release suffix), and TO is that tag; FROM is the stable release
+# before it. By hand, both can be given. (It used to be triggered by every Image run and skipped all but the tag runs: about 360 a month.)
 on:
-  workflow_run:
-    workflows: [Image]
-    types: [completed]
+  workflow_call:
   workflow_dispatch:
     inputs:
       from:
@@ -34,8 +33,6 @@ concurrency:
 
 jobs:
   update:
-    # an Image run on a pushed v* tag that succeeded, a run by hand, or a change of the script
-    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') && !contains(github.event.workflow_run.head_branch, '-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -52,13 +49,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           INPUT_FROM: ${{ inputs.from }}
           INPUT_TO: ${{ inputs.to }}
-          # set only when the Image run of a pushed tag started this: the tag IS the release that was just built
-          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
+          # set only when image.yml called this for a pushed tag (its event is that push): the tag IS the release that was just built
+          RUN_TAG: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
           set -euo pipefail
           # the stable releases of this repository, newest first (x.y.z only; a pre-release has a suffix)
           gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name | ltrimstr("v")' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' > "$RUNNER_TEMP/releases.txt"
-          # TO: what was asked; else the tag of the Image run that triggered this (the GitHub Release may not be marked yet when the image is
+          # TO: what was asked; else the tag image.yml was run for (the GitHub Release may not be marked yet when the image is
           # pushed, and :latest is already the new one); else the newest stable release
           to=${INPUT_TO:-${RUN_TAG#v}}
           to=${to:-$(sed -n 1p "$RUNNER_TEMP/releases.txt")}
