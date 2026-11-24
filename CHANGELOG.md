@@ -4,6 +4,13 @@ All notable changes to gonogo. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## 0.18.0 (2026-11-24)
+
+pi and opencode work like Claude Code: mail, state, permission modes and tool rules, MCP servers, skills, effort, Propellant and cost, Clean Room and a resumed session, from gonogo's own extension and plugin; an engine switch hands the new engine the last turns of the old one. Not verified: Claude Code as the target of a live switch, pi's plan quota on a subscription, egress with a real key (see What was not verified).
+
+- **pi and opencode work like Claude Code.** Each starts with gonogo's own extension or plugin: the gonogo tools (mail, votes, Telegram), state from hooks (Max Q, Redline, Hold, telemetry), mail at the end of a turn, the permission modes and tool rules (GO and NO-GO from the page and the phone included), Payload and global MCP servers, skills, effort, model by position, Propellant and cost, Clean Room with egress, and a session that a restart resumes. opencode's subagents are shown, counted and limited too.
+- **An engine switch keeps the thread.** The first session of the new engine is handed the last turns of the old one (`handoff.md`, read from Claude Code, pi and opencode), and a switch among Claude Code, pi and opencode keeps the mode, effort, rules, Clean Room and Payload.
+
 ## 0.17.1 (2026-11-24)
 
 Engine switch: any console, flight included, can move to another engine from its edit form without being removed and hired again, and the container image ships pi, opencode and the buildx plugin. Not verified: no real CLI was run after a switch, and whether Claude Code fires StopFailure when the plan's quota runs out was not checked (see What was not verified).
