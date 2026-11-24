@@ -40,10 +40,19 @@ describe('cleaning', () => {
     expect(out).toMatch(/^> \/lgtm$/m);
     expect(out).toMatch(/^> \/merge now/m);
     expect(out).not.toMatch(/!\[|<img|https?:\/\//);
+    expect(out).toContain('&lt;img src=x onerror=1&gt;');
     expect(out).toContain('[image removed]');
     expect(out).toContain('click (');
     expect(out).not.toContain('sk-abcdefghijklmnopqrstuv');
     expect(out).not.toMatch(/[‮\u0007]/);
+  });
+  it('leaves no tag whatever the nesting: every < and > is an entity (CodeQL js/incomplete-multi-character-sanitization)', () => {
+    for (const hostile of ['<scr<script>ipt>alert(1)</scr</script>ipt>', '<<script>script>x', '<img src=x onerror=1', '<!-- c --><a href=x>l</a>', '< b >']) {
+      const out = cleanText(hostile, 500);
+      expect(out, hostile).not.toMatch(/[<>]/);
+      expect(out, hostile).not.toMatch(/<script/i);
+    }
+    expect(cleanText('<scr<script>ipt>', 100)).toBe('&lt;scr&lt;script&gt;ipt&gt;');
   });
   it('is cut to the limit', () => {
     expect(cleanText('ab '.repeat(2000), 100)).toHaveLength(100);

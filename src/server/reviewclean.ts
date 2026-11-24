@@ -22,8 +22,8 @@ export type Severity = (typeof SEVERITIES)[number];
 /** One piece of text, cleaned; `max` characters at most. */
 export function cleanText(input: string, max: number): string {
   let text = String(input).replace(UNSAFE, ' ').replace(/\r\n?/g, '\n');
-  // images and raw HTML: an image URL is a way out for data, a tag can hide text or run in some renderers
-  text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '[image removed]').replace(/<\/?[A-Za-z!][^>]*>/g, '');
+  // images: an image URL is a way out for data. Raw HTML is not stripped (a pattern that removes tags can be fooled by `<scr<script>ipt>`): every < and > is escaped below, so a tag is only text
+  text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '[image removed]');
   // a link shows as its text, then its address as plain text without the scheme (a bare URL autolinks; this does not)
   text = text.replace(/\[([^\]]*)\]\(\s*<?([^)>\s]*)>?[^)]*\)/g, (_m, label: string, url: string) => `${label} (${url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\./g, `.${ZWSP}`)})`);
   text = text.replace(/\bhttps?:\/\/\S+/gi, (url) => url.replace(/^https?:\/\//i, '').replace(/\./g, `.${ZWSP}`));
@@ -31,6 +31,8 @@ export function cleanText(input: string, max: number): string {
   text = redactSecrets(text);
   // mentions and references: `@user` `@org/team`, `#12`, `owner/repo#12`, and a commit sha is left alone
   text = text.replace(/(^|[^A-Za-z0-9_`])@([A-Za-z0-9_-])/g, `$1@${ZWSP}$2`).replace(/\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d+)/g, `$1#${ZWSP}$2`).replace(/(^|[^A-Za-z0-9_&])#(\d+)/g, `$1#${ZWSP}$2`);
+  // no markup at all: < and > become entities, so there is no tag to hide in, whatever the nesting
+  text = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // a line that starts with a slash is a command to a bot (/lgtm, /approve, /merge, /retest): quote it
   text = text
     .split('\n')
