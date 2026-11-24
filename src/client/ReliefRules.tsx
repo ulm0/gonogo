@@ -92,6 +92,14 @@ export function ReliefRulesBlock(): ReactElement {
         FLIGHT may stop agents with fire_agent (not itself, and not the ones you protect). Protect the consoles that gate your work, a reviewer for one, in their Edit form.
       </label>
       <label className="staff-check">
+        <input type="checkbox" className="check" checked={draft.mayRemove} onChange={(event) => set({ mayRemove: event.target.checked })} />
+        FLIGHT may also remove agents (their record goes; their folder is kept renamed, and an agent with keys of its own is never removed)
+      </label>
+      <label className="staff-check">
+        <input type="checkbox" className="check" checked={draft.bypassInCleanRoom} onChange={(event) => set({ bypassInCleanRoom: event.target.checked })} />
+        Allow bypassPermissions by rule in a Clean Room (egress on, no global MCP; the agent runs every tool without asking)
+      </label>
+      <label className="staff-check">
         <input type="checkbox" className="check" checked={draft.autoOnHost} onChange={(event) => set({ autoOnHost: event.target.checked })} />
         Allow auto mode outside a Clean Room (agents the boss hires can then change anything your user can, without asking)
       </label>

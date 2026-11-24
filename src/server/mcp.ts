@@ -551,7 +551,7 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
 
     server.registerTool(
       'fire_agent',
-      { description: MCP_DESCRIPTIONS.fire_agent, inputSchema: z.strictObject({ name: z.string().min(1).max(AGENT_NAME_MAX), reason: z.string().min(1).max(200) }) },
+      { description: MCP_DESCRIPTIONS.fire_agent, inputSchema: z.strictObject({ name: z.string().min(1).max(AGENT_NAME_MAX), reason: z.string().min(1).max(200), remove: z.boolean().optional() }) },
       (args) =>
         guarded('fire_agent', async () => {
           if (!isBoss()) return toolResult({ ok: false, error: 'only the boss may fire an agent' }, true);

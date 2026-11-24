@@ -2135,13 +2135,29 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     return buildView(rt);
   }
 
-  async function removeOp(rt: Rt): Promise<void> {
+  async function removeOp(rt: Rt, archive = false): Promise<{ archived: string } | null> {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
     if (rt.state !== 'stopped') {
       rt.transition = 'removing';
       flush(rt);
       await stopProcess(rt);
+    }
+    // the boss's removal keeps the folder: renamed with a record of the agent (no keys), before the roster forgets it; a failure leaves the agent stopped and in place
+    let archived: { archived: string } | null = null;
+    if (archive) {
+      try {
+        archived = (await io.archiveAgentFiles?.(rt.record.name, { ...rt.record }, io.now())) ?? null;
+      } catch (error) {
+        rt.transition = null;
+        flush(rt);
+        throw new HubError('conflict', `could not archive the files of ${rt.record.name}: ${errorMessage(error)}`);
+      }
+      if (archived === null) {
+        rt.transition = null;
+        flush(rt);
+        throw new HubError('conflict', 'this server cannot archive an agent: only the Director removes it');
+      }
     }
     try {
       await saveRecords(rosterRecords().filter((record) => record.name !== rt.record.name));
@@ -2173,6 +2189,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     } catch (error) {
       log.warn(`could not free the terminal of ${rt.record.name}`, error);
     }
+    return archived;
   }
 
   /** Stops what runs when the server shuts down. It queues behind a running operation, so a spawn finishes first. */
@@ -3603,6 +3620,20 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       const rt = lookup(name);
       return enqueue(rt, 'stop', () => stopOp(rt), true);
     },
+    retireAgent: async (name, by) => {
+      assertOpen();
+      const rt = lookup(name);
+      const { record } = rt;
+      if (record.boss) throw new HubError('forbidden', 'the boss cannot be removed');
+      if (record.protected === true) throw new HubError('forbidden', `${record.name} is protected by the Director`);
+      if (record.keys !== undefined && Object.keys(record.keys).length > 0) throw new HubError('forbidden', `${record.name} has keys of its own: only the Director removes it`);
+      if (rt.transition !== null) throw new HubError('conflict', `${record.name} is changing already`);
+      if (rt.needsKind !== null) throw new HubError('conflict', `${record.name} waits for the Director (${rt.needsKind}): do not remove it now`);
+      if (rt.queue.length > 0) throw new HubError('conflict', `${record.name} has mail waiting: let it read it first`);
+      log.info(`${by} removes ${record.name}`);
+      const done = await enqueue(rt, 'remove', () => removeOp(rt, true), true);
+      return done ?? { archived: '' };
+    },
     fireAgent: async (name, by) => {
       assertOpen();
       const rt = lookup(name);
@@ -3620,7 +3651,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       assertOpen();
       const rt = lookup(name);
       if (rt.record.boss) throw new HubError('conflict', 'the boss cannot be removed');
-      return enqueue(rt, 'remove', () => removeOp(rt), true);
+      await enqueue(rt, 'remove', () => removeOp(rt), true);
     },
     sendFromUser,
     sendFromDirector,

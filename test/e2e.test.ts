@@ -2347,14 +2347,14 @@ describe('end to end with the stand-in agent', () => {
     const inbox = (await api<DownlinkView>(h, 'GET', '/api/downlink')).body;
     expect(inbox.items.find((item) => item.type === 'event' && item.kind === 'relief')).toMatchObject({ text: `flight asks to hire guido-1 as GUIDO: claude, acceptEdits, ${h.work}`, read: false });
 
-    // the limits: nothing above auto, and no bypassPermissions, no field of the tool's own beyond its six, no custom command, a free valid name, a folder that is there
+    // the limits: no mode but default, acceptEdits, auto and bypassPermissions (that one only ever waits for the Director), no field of the tool's own beyond its six, no custom command, a free valid name, a folder that is there
     const refused = async (who: string, request: Record<string, unknown>): Promise<unknown> => {
       await tell(who, request);
       const call = tools(h, who, 'hire_agent').at(-1);
       expect(call?.isError, JSON.stringify(request)).toBe(true);
       return call?.result;
     };
-    expect(await refused('flight', { ...asked, name: 'x1', mode: 'bypassPermissions' })).toMatchObject({ ok: false, error: expect.stringMatching(/default or acceptEdits or auto at most/) });
+    expect(await refused('flight', { ...asked, name: 'x1', mode: 'plan' })).toMatchObject({ ok: false, error: expect.stringMatching(/mode must be one of default, acceptEdits, auto, bypassPermissions/) });
     await refused('flight', { ...asked, name: 'x2', mode: 'plan' });
     await refused('flight', { ...asked, name: 'x3', confirmBypass: true });
     await refused('flight', { ...asked, name: 'x4', command: 'sh' });

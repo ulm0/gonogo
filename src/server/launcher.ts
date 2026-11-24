@@ -904,8 +904,23 @@ export function createLauncher(options: LauncherOptions): Launcher {
     await rename(from, to);
   };
 
+  /** The boss's removal (hub.retireAgent): the agent's folder is renamed, with a record of the agent in it, and never deleted. */
+  const archiveAgentFiles = async (name: string, record: AgentRecord, now: number): Promise<{ archived: string }> => {
+    const from = agentDir(name);
+    const archived = `${name}.removed-${now}`;
+    const to = join(homeDir, AGENTS_DIR, archived);
+    if (await lstat(to).then(() => true, () => false)) throw new Error('an archive of that name exists already');
+    if (await lstat(from).then(() => true, () => false)) await rename(from, to);
+    else await mkdir(to, { recursive: true, mode: DIR_MODE });
+    // what the Director needs to hire it again; never the keys, which are secrets that are not kept anywhere else
+    const { keys: _keys, ...kept } = record;
+    await writeFile(join(to, 'removed-record.json'), JSON.stringify({ version: 1, removedAt: now, agent: kept }, null, 2), { mode: FILE_MODE });
+    return { archived };
+  };
+
   return {
     prepareStart,
+    archiveAgentFiles,
     resolveToken: (token) => (typeof token === 'string' ? (byToken.get(hashOf(token)) ?? null) : null),
     keepTokens: (live) => {
       for (const [name, v] of [...byAgent.entries()]) {

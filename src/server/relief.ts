@@ -14,7 +14,7 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { positionById, POSITION_IDS } from '../shared/positions.js';
-import { MODEL_PATTERN, AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
+import { MODEL_PATTERN, AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_ASK_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
 import type { AgentView, CleanRoom, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
 import { providerInfo, takesCleanRoom } from '../shared/protocol.js';
 import type { ReliefRules } from '../shared/protocol.js';
@@ -41,7 +41,7 @@ export type ReliefActor = { kind: 'user' } | { kind: 'agent'; name: string };
 
 export interface ReliefOptions {
   /** The parts of the hub it uses: the room, the hire of the form, and the message that tells the boss. */
-  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'> & Partial<Pick<Hub, 'stop' | 'fireAgent'>>;
+  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'> & Partial<Pick<Hub, 'stop' | 'fireAgent' | 'retireAgent'>>;
   /** The Flight Plan: the open tasks of a fired agent go back to todo, unassigned. Absent: none are released. */
   tasks?: { list(): Array<{ id: string; assignee: string | null; status: string }>; update(actor: { kind: 'agent'; name: string; generation: number }, id: string, input: unknown): Promise<unknown> };
   /** Whether an open T-minus poll waits for this agent's vote (it is not fired then). */
@@ -85,7 +85,7 @@ export interface Relief {
   /** The Director's change of the rules (the route asked for the step-up before). Throws a bad_request that names the field. */
   setRules(body: unknown): Promise<ReliefView>;
   /** The boss fires an agent it hired by rule: stop only (record, memory, transcript, worktree stay; it can be started again). The tasks of it go back to todo. Throws a HubError that says why not. */
-  fire(by: { agent: string; generation: number }, input: unknown): Promise<{ name: string; released: number; note: string }>;
+  fire(by: { agent: string; generation: number }, input: unknown): Promise<{ name: string; released: number; removed: boolean; note: string }>;
   /** STOP CREW: every boss-hired agent is stopped (the Director's own stop: the boss cannot start it again) and autoApprove goes off. It only removes power, so it needs no step-up. */
   stopCrew(): Promise<{ stopped: string[]; view: ReliefView }>;
   /** The Director's GO (the agent is hired, as the form does it) or NO-GO. Throws the HubError of the hire when it fails. */
@@ -168,6 +168,7 @@ export function createRelief(options: ReliefOptions): Relief {
   const hireOf = (r: ReliefRequest): HireRequest => {
     const hire: HireRequest = { name: r.name, role: r.role, dir: r.dir, mode: r.mode, provider: r.provider };
     if (r.position !== null) hire.position = r.position;
+    if (r.mode === 'bypassPermissions') hire.confirmBypass = true; // the Director's GO (with his password) is the confirmation
     if (r.cleanRoom !== null) hire.cleanRoom = r.cleanRoom;
     if (r.model !== undefined) hire.model = r.model;
     if (r.worktree !== undefined && r.worktree !== null) hire.worktree = { ...r.worktree };
@@ -201,7 +202,13 @@ export function createRelief(options: ReliefOptions): Relief {
     if (!engines.includes(r.provider)) return `the engine ${r.provider} is not in the rules`;
     if (r.model !== undefined && !(rules.models[r.provider] ?? []).includes(r.model)) return `the model ${r.model} is not in the rules for ${r.provider}`;
     if (!r.insideBoss) return "the folder is not the boss's own or inside it";
-    if (modeRank(r.mode) < 0 || modeRank(r.mode) > modeRank(rules.maxMode)) return `mode ${r.mode} is above maxMode (${rules.maxMode})`;
+    // bypassPermissions: never by maxMode; only by its own switch, and only in a safe Clean Room (docs/hire-fire-spec.md F2)
+    if (r.mode === 'bypassPermissions') {
+      if (!rules.bypassInCleanRoom) return 'mode bypassPermissions needs your GO (bypassInCleanRoom is off)';
+      if (r.cleanRoom === null) return 'mode bypassPermissions runs by rule in a Clean Room only';
+      const unsafe = options.cleanRoomUnsafe?.() ?? null;
+      if (unsafe !== null) return `mode bypassPermissions needs a safe Clean Room: ${unsafe}`;
+    } else if (modeRank(r.mode) < 0 || modeRank(r.mode) > modeRank(rules.maxMode)) return `mode ${r.mode} is above maxMode (${rules.maxMode})`;
     if (r.mode === 'auto') {
       if (r.cleanRoom === null && !rules.autoOnHost) return 'mode auto on the host needs autoOnHost';
       const unsafe = r.cleanRoom === null ? null : (options.cleanRoomUnsafe?.() ?? null);
@@ -237,9 +244,8 @@ export function createRelief(options: ReliefOptions): Relief {
 
       const room = options.defaultMode?.();
       const asked = input.mode === undefined ? (room === undefined || room === 'bypassPermissions' ? 'default' : room) : input.mode;
-      if (typeof asked !== 'string' || !(PERMISSION_MODES as readonly string[]).includes(asked)) throw bad(`mode must be one of ${RELIEF_MODES.join(', ')}`, 'mode');
-      // the room's own default is the Director's choice; only what the agent asks is held to the most an agent can ask for
-      if (input.mode !== undefined && !(RELIEF_MODES as readonly string[]).includes(asked)) throw bad(`a request can ask for ${RELIEF_MODES.join(' or ')} at most, not ${asked}: only the Director can give more`, 'mode');
+      if (typeof asked !== 'string' || !(PERMISSION_MODES as readonly string[]).includes(asked)) throw bad(`mode must be one of ${RELIEF_ASK_MODES.join(', ')}`, 'mode');
+      if (input.mode !== undefined && !(RELIEF_ASK_MODES as readonly string[]).includes(asked)) throw bad(`a request can ask for ${RELIEF_ASK_MODES.join(', ')}, not ${asked}`, 'mode');
       // an engine without permission modes is started in default whatever is asked, and the Director is shown what will happen
       const mode: PermissionMode = providerInfo(provider).modes ? (asked as PermissionMode) : 'default';
       // the Director is told when the mode is the room's default and not something the boss asked for
@@ -299,7 +305,7 @@ export function createRelief(options: ReliefOptions): Relief {
       if (rules?.autoApprove === true && asks === null) {
         made.push(now());
         staffing.add(name);
-        const hire: HireRequest = { name, role: roleText, dir: checked.path, mode, provider, position: position as string, ...(model === undefined ? {} : { model }) };
+        const hire: HireRequest = { name, role: roleText, dir: checked.path, mode, provider, position: position as string, ...(mode === 'bypassPermissions' ? { confirmBypass: true } : {}), ...(model === undefined ? {} : { model }) };
         if (cleanRoom !== null) hire.cleanRoom = cleanRoom;
         if (wantsWorktree) hire.worktree = {};
         try {
@@ -349,13 +355,18 @@ export function createRelief(options: ReliefOptions): Relief {
       if (!hub.fireAgent) throw new HubError('not_found', 'fire_agent is not available');
       if (!isRecord(input)) throw bad('the request must be an object');
       const { name, reason } = input;
+      if (input.remove !== undefined && typeof input.remove !== 'boolean') throw bad('remove is true or false', 'remove');
+      const remove = input.remove === true;
       if (typeof name !== 'string' || !NAME_RE.test(name)) throw bad('name must be the name of an agent', 'name');
       if (typeof reason !== 'string' || reason.trim().length === 0 || reason.length > 200 || HIDDEN_RE.test(reason)) throw bad('reason is 1 to 200 plain characters: the Director reads it', 'reason');
       await options.rules?.check();
       if (options.rules !== undefined && !options.rules.view().mayStop) throw new HubError('forbidden', 'the Director turned off "FLIGHT may stop agents" in Flight Rules');
+      if (remove && (options.rules === undefined || !options.rules.view().mayRemove)) throw new HubError('forbidden', 'removing an agent is off: the Director turns on "FLIGHT may remove agents" in Flight Rules');
+      if (remove && !hub.retireAgent) throw new HubError('not_found', 'removing an agent is not available');
       if (options.voteWaitsFor?.(name) === true) throw new HubError('conflict', `${name} has an open T-minus vote to cast: do not fire it now`);
       // the hub decides from the stored record (boss-hired, not protected, nothing waiting for the Director) and stops it without marking it the Director's stop
-      await hub.fireAgent(name, requester.name);
+      if (remove) await hub.retireAgent?.(name, requester.name);
+      else await hub.fireAgent(name, requester.name);
       let released = 0;
       for (const task of options.tasks?.list() ?? []) {
         if (task.assignee !== name || task.status === 'done') continue;
@@ -368,9 +379,10 @@ export function createRelief(options: ReliefOptions): Relief {
       }
       // the line names the agent and the counts; the reason is the boss's own words and stays out of the Black Box (the Downlink shows it to the Director)
       // always its own line, never batched: a stop of an agent with a duty (a reviewer) must be seen
-      notify(`${requester.name} fired ${name} (${released} tasks released): ${reason.trim()}`);
+      notify(`${requester.name} ${remove ? 'removed' : 'fired'} ${name} (${released} tasks released): ${reason.trim()}`);
       changed();
-      return { name, released, note: `${name} is stopped; its record, memory and files stay and the Director or you can start it again${released > 0 ? `; ${released} of its tasks are back on the board unassigned` : ''}` };
+      if (remove) return { name, released, removed: true, note: `${name} is removed: its folder is kept as agents/${name}.removed-* with a record of it, and its worktree is left where it is. Its name is not used again by a hire of yours${released > 0 ? `; ${released} of its tasks are back on the board unassigned` : ''}` };
+      return { name, released, removed: false, note: `${name} is stopped; its record, memory and files stay and the Director or you can start it again${released > 0 ? `; ${released} of its tasks are back on the board unassigned` : ''}` };
     },
 
     async stopCrew() {

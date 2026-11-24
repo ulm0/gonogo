@@ -1761,6 +1761,8 @@ export interface Envelope {
  * then does the hub staff the agent, as the hire form does. `mode` is never above acceptEdits.
  */
 export const RELIEF_MODES = ['default', 'acceptEdits', 'auto'] as const;
+/** What a request may ask for: the modes above, and bypassPermissions, which only ever runs by rule in a Clean Room with `bypassInCleanRoom` on, and otherwise waits for the Director's GO (with his password). */
+export const RELIEF_ASK_MODES = [...RELIEF_MODES, 'bypassPermissions'] as const;
 /** The rules of the room for the boss's hires (docs/hire-fire-spec.md, `<home>/relief.json`). Everything is off or lowest by default; a bad or missing file reads as the defaults. */
 export interface ReliefRules {
   /** Off: every hire waits for the Director's GO, as before. */
@@ -1781,10 +1783,14 @@ export interface ReliefRules {
   ratePerHour: number;
   /** The boss may stop any agent that is not the boss and not `protected` (the Director: only FLIGHT is fixed). Off: `fire_agent` is refused. Turning it off needs no step-up. */
   mayStop: boolean;
+  /** The boss may remove an agent with `fire_agent remove:true` (the record goes, the folder is archived). Off by default; turning it on needs the step-up. */
+  mayRemove: boolean;
+  /** The only way the boss may grant `bypassPermissions` by rule: it also needs a Clean Room hire with egress on and no global MCP. Off by default; turning it on needs the step-up. */
+  bypassInCleanRoom: boolean;
   /** Per engine, the model names a rule hire may name. A hire that names none follows the room's default model; one that names a model not listed here asks. */
   models: Partial<Record<Provider, string[]>>;
 }
-export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3, mayStop: true, models: {} };
+export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3, mayStop: true, mayRemove: false, bypassInCleanRoom: false, models: {} };
 export interface ReliefRequest {
   /** `h1`, `h2`, ...; never used twice in one run. */
   id: string;
@@ -2707,6 +2713,11 @@ export interface Launcher {
   revoke(name: string, generation: number): void;
   /** Rename <home>/agents/<old> to <new>. Rejects when <new> exists. Resolves when <old> does not exist. */
   renameAgentFiles(oldName: string, newName: string): Promise<void>;
+  /**
+   * The boss's removal: renames <home>/agents/<name> to `<name>.removed-<now>` and writes `removed-record.json` in it (the record without its keys: the Director can rebuild
+   * the agent from it). Never deletes. A name with no folder gets an empty one. Rejects when it cannot. Absent: the hub refuses the boss's removal.
+   */
+  archiveAgentFiles(name: string, record: AgentRecord, now: number): Promise<{ archived: string }>;
   /** Engine switch: write agents/<name>/handoff.md from the old engine's transcript, for the new session (handoff.ts). Never rejects. */
   writeHandoff(from: AgentRecord, to: AgentRecord): Promise<void>;
   /** Absolute path of agents/<name>/memory.md. */
@@ -2811,6 +2822,11 @@ export interface HubIo {
   logMessage(record: MessageRecord): void;
   /** The launcher renames agents/<old>; the glue in cli.ts also moves the terminal host's finished record (TerminalHost.rename) and the agent's keys. */
   renameAgentFiles(oldName: string, newName: string): Promise<void>;
+  /**
+   * The boss's removal: renames <home>/agents/<name> to `<name>.removed-<now>` and writes `removed-record.json` in it (the record without its keys: the Director can rebuild
+   * the agent from it). Never deletes. A name with no folder gets an empty one. Rejects when it cannot. Absent: the hub refuses the boss's removal.
+   */
+  archiveAgentFiles?(name: string, record: AgentRecord, now: number): Promise<{ archived: string }>;
   /** Engine switch: the last turns of the old engine, written for the new session (Launcher.writeHandoff). Optional for fakes. Never rejects. */
   writeHandoff?(from: AgentRecord, to: AgentRecord): Promise<void>;
   /** Clearance: where the values of an agent's keys are kept. The hub holds names only. Optional for fakes: without it keys are refused. */
@@ -2961,6 +2977,11 @@ export interface Hub {
    * Refused: the boss, a protected one, one at a permission prompt or dialog, one with mail waiting.
    */
   fireAgent(name: string, by: string): Promise<AgentView>;
+  /**
+   * The boss removes an agent (docs/hire-fire-spec.md 9.2): the same refusals as fireAgent, and also an agent with keys of its own. A running one is stopped first. Its folder in
+   * agents/ is renamed to `<name>.removed-<ms>` with a record of it (no keys), never deleted; its worktree and branch are left where they are. The Director's own remove is Hub.remove.
+   */
+  retireAgent(name: string, by: string): Promise<{ archived: string }>;
   /** ALL STOP: holds every agent that can be held (as `hold` does, one by one); the others are named in `skipped`. */
   holdAll(): HoldAllResult;
   /** ALL RESUME: resumes every agent that is on hold (a Redline trip is left for its own Resume). */
