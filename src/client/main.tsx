@@ -9,6 +9,7 @@ import '@fontsource/geist-mono/latin-600.css';
 import './tokens.css';
 import './base.css';
 import './primitives.css';
+import './shadcn.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';

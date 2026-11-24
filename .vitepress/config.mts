@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitepress';
+import tailwindcss from '@tailwindcss/vite';
 import { BUILTIN_LIVERIES, schemeOf } from '../src/shared/livery.ts';
 import { ogHead } from './og.ts';
 
@@ -37,7 +38,8 @@ export default defineConfig({
     'superpowers/**',
   ],
   // The logo and the favicon are served from docs/brand as they are, not copied.
-  vite: { publicDir: 'brand', define: { __GONOGO_VERSION__: JSON.stringify(version) } },
+  // tailwindcss: shadcn.css (the shadcn aliases of the Livery tokens) is built here as in the app
+  vite: { publicDir: 'brand', plugins: [tailwindcss()], define: { __GONOGO_VERSION__: JSON.stringify(version) } },
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
