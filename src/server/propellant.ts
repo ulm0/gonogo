@@ -14,7 +14,7 @@
 import { appendFile, open, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { AGENT_NAME_PATTERN, FUEL_WINDOWS } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, FUEL_WINDOWS, reportsSpend } from '../shared/protocol.js';
 import type {
   PlanQuota,
   SpendOf,
@@ -78,7 +78,7 @@ const WINDOW_NAME: Record<FuelWindow, string> = { '5h': '5-hour', day: 'day', we
 interface Saved {
   room: FuelLimits;
   agents: Record<string, FuelLimits>;
-  budget: { room: Budget; agents: Record<string, Budget>; /** Mission id to dollars in all. */ missions: Record<string, number>; /** Docking link id to dollars on its one linked task. */ links: Record<string, number> };
+  budget: { room: Budget; agents: Record<string, Budget>; /** Mission id to dollars in all. */ missions: Record<string, number>; /** Docking link id to dollars on its one linked task. */ links: Record<string, number>; /** `engine:<name>` or `provider:<name>` to its budget: the use of that engine or provider, whoever ran it. */ groups: Record<string, Budget> };
   /** Transcript path to the byte offset already counted, so a restart of gonogo does not count a turn twice. */
   cursors: Record<string, number>;
 }
@@ -202,7 +202,7 @@ export function parsePropellantRequest(body: Record<string, unknown>): { ok: tru
   if (body.budget !== undefined) {
     if (!isRecord(body.budget)) return { ok: false, error: 'budget must be an object with room and agents', field: 'budget' };
     for (const key of Object.keys(body.budget)) {
-      if (key !== 'room' && key !== 'agents' && key !== 'missions' && key !== 'links') return { ok: false, error: `budget: unknown field "${key}"`, field: 'budget' };
+      if (key !== 'room' && key !== 'agents' && key !== 'missions' && key !== 'links' && key !== 'engines' && key !== 'providers') return { ok: false, error: `budget: unknown field "${key}"`, field: 'budget' };
     }
     const budget: NonNullable<PropellantRequest['budget']> = {};
     if (body.budget.room !== undefined) {
@@ -219,6 +219,21 @@ export function parsePropellantRequest(body: Record<string, unknown>): { ok: tru
         if (typeof b === 'string') return { ok: false, error: b, field: 'budget' };
         budget.agents[name] = b;
       }
+    }
+    for (const kind of ['engines', 'providers'] as const) {
+      const raw = body.budget[kind];
+      if (raw === undefined) continue;
+      if (!isRecord(raw)) return { ok: false, error: `budget.${kind} must be an object of ${kind === 'engines' ? 'engine' : 'provider'} names`, field: 'budget' };
+      const out: Record<string, Budget> = {};
+      for (const [name, one] of Object.entries(raw)) {
+        if (!LABEL_RE.test(name)) return { ok: false, error: `budget.${kind}: invalid name "${name}"`, field: 'budget' };
+        const b = parseBudget(one, `budget.${kind}.${name}`);
+        if (typeof b === 'string') return { ok: false, error: b, field: 'budget' };
+        // an engine that does not report its spend (Gemini CLI, agy, custom) never fills the ledger: a budget on it could never trip, so it is refused rather than looking like a guard
+        if (kind === 'engines' && Object.keys(b).length > 0 && !reportsSpend(name as never)) return { ok: false, error: `budget.engines: ${name} does not report its spend (only claude, pi and opencode do), so a budget on it could never trip`, field: 'budget' };
+        out[name] = b;
+      }
+      budget[kind] = out;
     }
     if (body.budget.missions !== undefined) {
       if (!isRecord(body.budget.missions)) return { ok: false, error: 'budget.missions must be an object of mission ids', field: 'budget' };
@@ -292,7 +307,9 @@ export interface Propellant {
   /** Replaces the dollar budget of each scope given ({} clears it); posts the 80 % warning when a new budget is already past it. */
   setBudget(budget: NonNullable<PropellantRequest['budget']>): Promise<PropellantView>;
   /** Why this agent must stop, or null: its own limit first, then the room's. */
-  over(agent: string): { scope: 'agent' | 'room' | 'mission' | 'link'; reason: string; /** For scope 'mission': its id. */ mission?: string; /** For scope 'link': the link, and the one task it caps. */ link?: string; task?: string } | null;
+  over(agent: string): { scope: 'agent' | 'room' | 'mission' | 'link' | 'group'; /** For scope 'group': `engine:<name>` or `provider:<name>`. */ group?: string; reason: string; /** For scope 'mission': its id. */ mission?: string; /** For scope 'link': the link, and the one task it caps. */ link?: string; task?: string } | null;
+  /** Whether an agent belongs to a group budget key (`engine:pi`, `provider:openai`) now. */
+  inGroup(agent: string, key: string): boolean;
   close(): Promise<void>;
 }
 
@@ -303,7 +320,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
   const ledgerPath = join(dir, LEDGER_FILE);
   const limitsPath = join(dir, LIMITS_FILE);
   let entries: FuelEntry[] = [];
-  const saved: Saved = { room: {}, agents: {}, budget: { room: {}, agents: {}, missions: {}, links: {} }, cursors: {} };
+  const saved: Saved = { room: {}, agents: {}, budget: { room: {}, agents: {}, missions: {}, links: {}, groups: {} }, cursors: {} };
   const priceTable = options.prices ?? ((): Record<string, ModelPrice> => mergePrices());
   /** Scopes (agent or room, and window) that already told Downlink they are at 80 %; cleared when the window drops below it. */
   const warned = new Set<string>();
@@ -355,12 +372,22 @@ export function createPropellant(options: PropellantOptions): Propellant {
     return { usd: costOf({ i: e.i ?? 0, cw: e.cw ?? 0, o: e.o ?? 0, cr: e.cr ?? 0 }, price), unpriced: 0 };
   };
 
-  const costGauge = (agent: string | null, budget: Budget, table: Record<string, ModelPrice>): CostGauge => {
+  /** Whether a ledger line belongs to a group (`engine:pi`, `provider:openai`). A line from before the engine was written belongs to none. */
+  const inGroupLine = (e: FuelEntry, key: string): boolean => (key.startsWith('engine:') ? e.engine === key.slice(7) : e.provider === key.slice(9));
+  /** Whether an agent is in a group now: its engine, or the provider of its latest reply. */
+  const inGroup = (agent: string, key: string): boolean => {
+    if (key.startsWith('engine:')) return options.engineOf?.(agent) === key.slice(7);
+    for (let k = entries.length - 1; k >= 0; k--) if (entries[k]!.agent === agent && entries[k]!.provider !== undefined) return entries[k]!.provider === key.slice(9);
+    return false;
+  };
+
+  const costGauge = (agent: string | null, budget: Budget, table: Record<string, ModelPrice>, group?: string): CostGauge => {
     const t = now();
     const usd = { '5h': 0, day: 0, week: 0, month: 0 } as Record<FuelWindow, number>;
     const unpriced = { '5h': 0, day: 0, week: 0, month: 0 } as Record<FuelWindow, number>;
     for (const e of entries) {
       if (agent !== null && e.agent !== agent) continue;
+      if (group !== undefined && !inGroupLine(e, group)) continue;
       const p = priced(e, table);
       for (const w of FUEL_WINDOWS) {
         if (t - e.at >= WINDOW_MS[w]) continue;
@@ -463,6 +490,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
       links,
       days: days(table),
       pricedSince: modelled.length === 0 ? null : Math.min(...modelled),
+      groups: Object.fromEntries(Object.entries(saved.budget.groups).map(([key, b]) => [key, costGauge(null, b, table, key)])),
       breakdown: Object.fromEntries(FUEL_WINDOWS.map((w) => [w, breakdownSince(now() - WINDOW_MS[w], Infinity, table)])) as Record<FuelWindow, FuelBreakdownRow[]>,
     };
   };
@@ -558,6 +586,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
     const out: { key: string; text: string; share: number }[] = [];
     const scopes: [string, string, CostGauge][] = [['room', 'the room', costGauge(null, saved.budget.room, table)]];
     for (const name of Object.keys(saved.budget.agents)) scopes.push([`agent:${name}`, name, costGauge(name, saved.budget.agents[name] ?? {}, table)]);
+    for (const key of Object.keys(saved.budget.groups)) scopes.push([key, key.replace(':', ' '), costGauge(null, saved.budget.groups[key] ?? {}, table, key)]);
     for (const [scope, who, g] of scopes) {
       for (const w of FUEL_WINDOWS) {
         const limit = g.budget[w];
@@ -733,6 +762,12 @@ export function createPropellant(options: PropellantOptions): Propellant {
                 if (NAME_RE.test(name) && typeof b !== 'string') saved.budget.agents[name] = b;
               }
             }
+            if (isRecord(data.budget.groups)) {
+              for (const [key, raw] of Object.entries(data.budget.groups)) {
+                const b = parseBudget(raw, key);
+                if (/^(engine|provider):/.test(key) && LABEL_RE.test(key.replace(/^(engine|provider):/, '')) && typeof b !== 'string') saved.budget.groups[key] = b;
+              }
+            }
             if (isRecord(data.budget.links)) {
               for (const [id, raw] of Object.entries(data.budget.links)) {
                 const usd = parseMissionBudget(raw, id);
@@ -850,6 +885,13 @@ export function createPropellant(options: PropellantOptions): Propellant {
         if (Object.keys(b).length === 0) delete saved.budget.agents[name];
         else saved.budget.agents[name] = { ...b };
       }
+      for (const kind of ['engines', 'providers'] as const) {
+        for (const [name, b] of Object.entries(budget[kind] ?? {})) {
+          const key = `${kind === 'engines' ? 'engine' : 'provider'}:${name}`;
+          if (Object.keys(b).length === 0) delete saved.budget.groups[key];
+          else saved.budget.groups[key] = { ...b };
+        }
+      }
       for (const [id, usd] of Object.entries(budget.missions ?? {})) {
         if (usd === null) delete saved.budget.missions[id];
         else saved.budget.missions[id] = usd;
@@ -874,6 +916,11 @@ export function createPropellant(options: PropellantOptions): Propellant {
       const ownCost = budgetOver(costGauge(agent, saved.budget.agents[agent] ?? {}, table));
       if (ownCost !== null) {
         return { scope: 'agent', reason: `out of propellant: ${agent} spent ${moneyText(ownCost.spent)} of ${moneyText(ownCost.limit)} in ${WINDOW_LABEL[ownCost.window]}` };
+      }
+      for (const [key, b] of Object.entries(saved.budget.groups)) {
+        if (!inGroup(agent, key)) continue;
+        const over = budgetOver(costGauge(null, b, table, key));
+        if (over !== null) return { scope: 'group', group: key, reason: `out of propellant: ${key.replace(':', ' ')} spent ${moneyText(over.spent)} of ${moneyText(over.limit)} in ${WINDOW_LABEL[over.window]}` };
       }
       // a docking link's cap holds the one task it names, and nothing else: no room or agent scope
       const doing = options.attribute?.(agent).task;
@@ -903,6 +950,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
       return null;
     },
 
+    inGroup,
     close() {
       return chain.then(() => undefined);
     },

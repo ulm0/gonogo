@@ -940,7 +940,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         }
         return;
       }
-      const names = over.scope === 'room' ? claude : over.scope === 'mission' ? claude.filter((n) => workingOn(n).mission === over.mission) : [name];
+      const names = over.scope === 'room' ? claude : over.scope === 'group' && over.group !== undefined ? claude.filter((n) => propellant.inGroup(n, over.group!)) : over.scope === 'mission' ? claude.filter((n) => workingOn(n).mission === over.mission) : [name];
       for (const n of names) {
         try {
           hub.trip(n, over.reason);

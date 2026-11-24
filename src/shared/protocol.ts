@@ -919,6 +919,8 @@ export interface CostView {
   pricedSince: number | null;
   /** By window: the use by engine, provider and model, each with its agents. The room total is their sum. */
   breakdown?: Record<FuelWindow, FuelBreakdownRow[]>;
+  /** The gauges of the engine and provider budgets, by `engine:<name>` / `provider:<name>`. */
+  groups?: Record<string, CostGauge>;
 }
 
 /** The history of triggers (docs/features/triggers.md): what fired by itself or came in from outside. `uplink` is a webhook delivery, `telegram` an update read by long polling, `schedule` a Launch Window run, `docking` a hand-off to or a call from a station. */
@@ -1948,7 +1950,7 @@ export interface PropellantRequest {
   room?: FuelLimits;
   agents?: Record<string, FuelLimits>;
   /** Dollar budgets; same rules as the limits. */
-  budget?: { room?: Budget; agents?: Record<string, Budget>; /** Mission id to dollars in all, or null to clear. */ missions?: Record<string, number | null>; /** Docking link id to dollars on that one linked task, or null to clear: held at the cap, never a Redline of the room or an agent. */ links?: Record<string, number | null> };
+  budget?: { room?: Budget; agents?: Record<string, Budget>; /** Engine name (claude, pi, opencode) to its budget: the use of that engine; Redline holds only its agents. An empty budget clears it. */ engines?: Record<string, Budget>; /** Provider name (anthropic, opencode, openai) to its budget; Redline holds the agents whose latest reply used it. */ providers?: Record<string, Budget>; /** Mission id to dollars in all, or null to clear. */ missions?: Record<string, number | null>; /** Docking link id to dollars on that one linked task, or null to clear: held at the cap, never a Redline of the room or an agent. */ links?: Record<string, number | null> };
 }
 /** POST /api/schedules. */
 export interface ScheduleRequest {
