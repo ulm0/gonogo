@@ -395,6 +395,9 @@ export function createRelief(options: ReliefOptions): Relief {
       if (!rules.mayStop || (how === 'remove' && !rules.mayRemove)) throw new HubError('forbidden', how === 'remove' ? 'removing is off' : 'stopping is off');
       // only what FLIGHT hired by rule: autoscale never touches an agent the Director hired
       if (hub.views().find((a) => a.name === name)?.hiredBy !== 'boss') throw new HubError('forbidden', `${name} was not hired by rule`);
+      // an agent that owes a T-minus vote is not stopped or removed, as for the boss's own fire_agent
+      if (options.voteWaitsFor?.(name) === true) throw new HubError('conflict', `${name} has an open T-minus vote to cast`);
+      if (how === 'remove' ? hub.retireAgent === undefined : hub.fireAgent === undefined) throw new HubError('not_found', 'stopping or removing an agent is not available');
       if (how === 'remove') await hub.retireAgent?.(name, requester.name);
       else await hub.fireAgent?.(name, requester.name);
       notify(`autoscale ${how === 'remove' ? 'removed' : 'stopped'} ${name}: ${reason}`);

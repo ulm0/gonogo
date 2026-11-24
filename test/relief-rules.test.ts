@@ -474,6 +474,13 @@ describe('autoscale: the rules and Relief staff and retire (PR5)', () => {
     await expect(sr.retire(BOSSID, 'ana', 'stop', 'x')).rejects.toMatchObject({ code: 'forbidden' });
     expect(done).toEqual(['fire:crew-1', 'retire:crew-1']);
     expect(events.map(([, t]) => t).join('\n')).toMatch(/autoscale stopped crew-1: idle for 60 minutes[\s\S]*autoscale removed crew-1/);
+    // a vote to cast, and a hub that cannot do it: refused, and no line says it was done
+    const voting = createRelief({ hub: { views: () => views, hire: async () => { throw new Error('no'); }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }), fireAgent: async () => agent('crew-1') }, rules, voteWaitsFor: () => true, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    await expect(voting.retire(BOSSID, 'crew-1', 'stop', 'x')).rejects.toMatchObject({ code: 'conflict' });
+    const bare = createRelief({ hub: { views: () => views, hire: async () => { throw new Error('no'); }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }) }, rules, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    const before = events.length;
+    await expect(bare.retire(BOSSID, 'crew-1', 'remove', 'x')).rejects.toMatchObject({ code: 'not_found' });
+    expect(events.length).toBe(before);
     await rules.set({ mayRemove: false });
     await expect(sr.retire(BOSSID, 'crew-1', 'remove', 'x')).rejects.toMatchObject({ code: 'forbidden' });
     await rules.set({ mayStop: false });
