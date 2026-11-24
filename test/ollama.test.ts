@@ -151,15 +151,20 @@ describe('managed Ollama', () => {
     expect(alive(pid)).toBe(false);
   });
 
-  it('starts it again after it dies, with a backoff, on another port', async () => {
+  it('starts it again after it dies, with a backoff, on another port, and does not leave the process it had started', async () => {
     const m = make();
     const url = await m.acquire('nomic-embed-text');
     const first = m.status().port;
+    const orphan = Number((await import('node:fs')).readFileSync(join(work, 'ollama', 'models', 'runner.pid'), 'utf8'));
+    expect(alive(orphan)).toBe(true);
     await fetch(`${url}/crash`).catch(() => undefined);
     for (let i = 0; i < 200 && !(m.status().restarts >= 1 && m.status().state === 'ready'); i += 1) await new Promise((r) => setTimeout(r, 50));
     expect(m.status()).toMatchObject({ state: 'ready', restarts: 1 });
     expect(m.status().port).not.toBeNull();
     expect(m.status().port).not.toBe(first);
+    // the runner of the dead server went with its group (it would hold the model in memory for ever)
+    for (let i = 0; i < 100 && alive(orphan); i += 1) await new Promise((r) => setTimeout(r, 20));
+    expect(alive(orphan)).toBe(false);
     await m.stop();
   });
 

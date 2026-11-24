@@ -342,6 +342,14 @@ export function createManagedOllama(options: ManagedOptions): ManagedOllama {
       port = null;
       rssMb = null;
       if (stopping) return;
+      // it died by itself: the runner it started is still in its group, holding the model in memory: the whole group goes
+      if (child1.pid !== undefined) {
+        try {
+          process.kill(-child1.pid, 'SIGKILL');
+        } catch {
+          // nothing left
+        }
+      }
       note(`exited (${signal ?? code})`);
       crashed();
     });
