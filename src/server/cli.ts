@@ -837,6 +837,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       dir: home.dir,
       plan: () => quota.view(),
       attribute: workingOn,
+      engineOf: (agent) => hub?.views().find((v) => v.name === agent)?.provider,
       linkTask: (linkId) => dockingRef?.linkTask(linkId),
       prices: () => prices.table(),
       // the 80 % budget warning: the inbox and Relay, not the Black Box (it is not a trip)

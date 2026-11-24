@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactElement } from 'react';
 import { FUEL_WINDOWS } from '../shared/protocol.js';
-import type { Budget, CostGauge, CostReport, CostView, DayCost, FuelGauge, FuelLimits, FuelWindow, PlanQuota } from '../shared/protocol.js';
+import type { Budget, CostGauge, FuelBreakdownRow, CostReport, CostView, DayCost, FuelGauge, FuelLimits, FuelWindow, PlanQuota } from '../shared/protocol.js';
 import { ageText, NO_PLAN_TEXT, PLAN_LABEL, planRows } from './quota.js';
 import { moneyText } from '../shared/prices.js';
 import type { ModelPrice, PricesView } from '../shared/prices.js';
@@ -176,8 +176,71 @@ export function RoomFuel(): ReactElement {
         <CostDays cost={cost} />
         <CostByKind spent={cost.room.usd.day + cost.room.usd.month} />
       </details>
+      <BreakdownFold breakdown={cost.breakdown} />
       <PricesFold since={cost.pricedSince} />
     </>
+  );
+}
+
+/** The use by engine, provider and model, with the agents of each row; `caption` says which days. The last row is the sum: the room total. */
+export function BreakdownTable({ rows, caption }: { rows: FuelBreakdownRow[]; caption: string }): ReactElement {
+  if (rows.length === 0) return <p className="hint">No use in this window.</p>;
+  const sum = (pick: (r: FuelBreakdownRow) => number): number => rows.reduce((s, r) => s + pick(r), 0);
+  const dollars = (r: Pick<FuelBreakdownRow, 'usd' | 'unpriced' | 'free'>): string => (r.free ? 'free' : r.unpriced > 0 && r.usd === 0 ? `no price (${tokenText(r.unpriced)})` : moneyText(r.usd) + (r.unpriced > 0 ? ` + ${tokenText(r.unpriced)} unpriced` : ''));
+  return (
+    <table className="fuel-table" data-testid="fuel-breakdown">
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Engine</th>
+          <th scope="col">Provider</th>
+          <th scope="col">Model</th>
+          <th scope="col">Tokens</th>
+          <th scope="col">Estimate</th>
+          <th scope="col">Counts against</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={`${r.engine}|${r.provider}|${r.model}`}>
+            <td>{r.engine}</td>
+            <td>{r.provider}</td>
+            <th scope="row" title={Object.entries(r.agents).map(([name, a]) => `${name}: ${tokenText(a.tokens)}`).join(', ')}>{r.model}</th>
+            <td>{tokenText(r.tokens)}</td>
+            <td data-free={r.free || undefined}>{dollars(r)}</td>
+            <td>{r.claudePlan ? 'Claude plan' : r.engine === 'unknown' ? 'unknown' : 'API or other'}</td>
+          </tr>
+        ))}
+        <tr>
+          <th scope="row" colSpan={3}>the room</th>
+          <td>{tokenText(sum((r) => r.tokens))}</td>
+          <td>{moneyText(sum((r) => r.usd))}</td>
+          <td />
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+/** The wall: the same use by engine, provider and model, per window. */
+export function BreakdownFold({ breakdown }: { breakdown: CostView['breakdown'] }): ReactElement {
+  const [window, setWindow] = useState<FuelWindow>('day');
+  const rows = breakdown?.[window] ?? [];
+  return (
+    <details className="fuel-fold" id="fuel-engines">
+      <summary className="label">BY ENGINE AND MODEL</summary>
+      <div role="group" aria-label="Window" className="fuel-windows">
+        {FUEL_WINDOWS.map((w) => (
+          <button key={w} type="button" className="btn" data-kind="quiet" aria-pressed={w === window} onClick={() => setWindow(w)}>
+            {WINDOW_WORDS[w]}
+          </button>
+        ))}
+      </div>
+      <BreakdownTable rows={rows} caption={`Use in the last ${WINDOW_WORDS[window].toLowerCase()}, by engine, provider and model`} />
+      <p className="hint">
+        Estimates at list prices, not a bill. <strong>Free</strong> is a model with a price of $0 (such as opencode&apos;s big-pickle); <strong>no price</strong> is a model gonogo has no row for (add one in PRICES). Hover a model for its agents. Old lines from before this table say unknown. Only Claude Code on a claude.ai login counts against the plan quota; pi, opencode and API-key use do not.
+      </p>
+    </details>
   );
 }
 
@@ -239,6 +302,7 @@ export function CostKindsTable({ report }: { report: CostReport }): ReactElement
           </tr>
         </tbody>
       </table>
+      {report.breakdown !== undefined && report.breakdown.length > 0 && <BreakdownTable rows={report.breakdown} caption={`Use ${report.from} to ${report.to}, by engine, provider and model`} />}
       <p className="hint">
         Total, Input, Output and Cache are <strong>estimates</strong> at list prices (tokens times price), not a bill, and are what the budgets use. Reported is what Claude Code says its sessions cost, shown beside them and never added to them: at least that much, and for a claude.ai subscription it is an equivalent, not a charge. Other engines have no reported figure. Prices as of {report.priceAsOf} unless you changed them.
         {report.unpricedModels.length > 0 ? ` No price for: ${report.unpricedModels.join(', ')}.` : ''}

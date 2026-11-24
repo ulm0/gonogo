@@ -25,6 +25,7 @@ import type {
   CostReport,
   CostScope,
   CostView,
+  FuelBreakdownRow,
   DayCost,
   DownlinkNotify,
   FuelGauge,
@@ -35,7 +36,7 @@ import type {
   PropellantView,
 } from '../shared/protocol.js';
 import type { Reported } from './reported.js';
-import { moneyText, costOf, costSplit, mergePrices, priceFor, PRICES_AS_OF } from '../shared/prices.js';
+import { moneyText, costOf, costSplit, isFree, mergePrices, priceFor, PRICES_AS_OF } from '../shared/prices.js';
 import type { ModelPrice, TokenSplit } from '../shared/prices.js';
 import { tokenText } from '../shared/fuel.js';
 import { BUDGET_MAX_USD, FILE_MODE, FUEL_KEEP_MS, FUEL_LIMIT_MAX, METER_READ_MAX_BYTES, PROPELLANT_FILE as LIMITS_FILE } from './constants.js';
@@ -55,10 +56,15 @@ export interface FuelEntry {
   cw?: number;
   o?: number;
   cr?: number;
+  /** The engine that ran the reply (claude, pi, opencode, ...) and the provider as the engine reported it (anthropic, opencode, openai, ...). Old lines have neither. */
+  engine?: string;
+  provider?: string;
   /** The mission and the task the agent was on when the reply was counted (its `doing` task in the Flight Plan), when it had one. */
   mission?: string;
   task?: string;
 }
+/** An engine or provider name in the ledger: short and plain, from an agent's own process or a file. */
+const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
 const MISSION_ID_RE = /^ms[1-9]\d{0,5}$/;
 const LINK_ID_RE = /^dl_[0-9a-f]{16}$/;
 const TASK_ID_RE = /^t[1-9]\d{0,5}$/;
@@ -108,6 +114,8 @@ export interface ReplyUsage {
   id: string;
   at: number | null;
   model: string | null;
+  /** The provider the engine says it called, when it says. */
+  provider?: string | null;
   split: TokenSplit;
 }
 
@@ -127,7 +135,8 @@ export function reportedUsage(value: unknown): ReplyUsage[] {
     };
     const at = typeof item.at === 'number' && Number.isFinite(item.at) && item.at > 0 ? item.at : null;
     const model = typeof item.model === 'string' && item.model !== '' ? item.model.slice(0, 120) : null;
-    out.push({ id: item.id, at, model, split: { i: n('i'), cw: n('cw'), o: n('o'), cr: n('cr') } });
+    const provider = typeof item.provider === 'string' && LABEL_RE.test(item.provider) ? item.provider : null;
+    out.push({ id: item.id, at, model, provider, split: { i: n('i'), cw: n('cw'), o: n('o'), cr: n('cr') } });
   }
   return out;
 }
@@ -257,6 +266,8 @@ export interface PropellantOptions {
   notify?: DownlinkNotify;
   /** What the engines reported themselves (src/server/reported.ts): shown beside the estimate in GET /api/cost. */
   reported?: Pick<Reported, 'window'>;
+  /** The engine an agent runs on (its provider in the hub: claude, pi, opencode, ...), written on each new ledger line. */
+  engineOf?: (agent: string) => string | undefined;
   /** The mission and task an agent is on now (its `doing` task). Read when its replies are counted and when a mission budget is checked. */
   attribute?: (agent: string) => { mission?: string; task?: string };
   /** The task a docking link is bound to here (a link budget caps that task only). */
@@ -339,7 +350,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
 
   /** Dollars and unpriced tokens of one ledger line at the current prices. */
   const priced = (e: FuelEntry, table: Record<string, ModelPrice>): { usd: number; unpriced: number } => {
-    const price = e.model === undefined ? null : priceFor(table, e.model);
+    const price = e.model === undefined ? null : priceFor(table, e.model, e.provider);
     if (price === null) return { usd: 0, unpriced: e.tokens };
     return { usd: costOf({ i: e.i ?? 0, cw: e.cw ?? 0, o: e.o ?? 0, cr: e.cr ?? 0 }, price), unpriced: 0 };
   };
@@ -397,6 +408,35 @@ export function createPropellant(options: PropellantOptions): Propellant {
     return { usd, unpriced };
   };
 
+  /** The use by engine, provider and model (an old line: `unknown`), each with its agents. `from` is the oldest line counted. A free model is priced at $0 and counted as free, not as unpriced. */
+  const breakdownSince = (from: number, to: number, table: Record<string, ModelPrice>): FuelBreakdownRow[] => {
+    const rows = new Map<string, FuelBreakdownRow>();
+    const plan = options.plan?.() != null;
+    for (const e of entries) {
+      if (e.at < from || e.at >= to) continue;
+      const engine = e.engine ?? 'unknown';
+      const provider = e.provider ?? 'unknown';
+      const model = e.model ?? 'unknown';
+      const key = `${engine}\0${provider}\0${model}`;
+      let row = rows.get(key);
+      if (row === undefined) {
+        const price = e.model === undefined ? null : priceFor(table, e.model, e.provider);
+        row = { engine, provider, model, tokens: 0, cacheRead: 0, usd: 0, unpriced: 0, free: price !== null && isFree(price), claudePlan: plan && engine === 'claude', agents: {} };
+        rows.set(key, row);
+      }
+      const p = priced(e, table);
+      row.tokens += e.tokens;
+      row.cacheRead += e.cr ?? 0;
+      row.usd += p.usd;
+      row.unpriced += p.unpriced;
+      const a = (row.agents[e.agent] ??= { tokens: 0, usd: 0, unpriced: 0 });
+      a.tokens += e.tokens;
+      a.usd += p.usd;
+      a.unpriced += p.unpriced;
+    }
+    return [...rows.values()].sort((x, y) => y.usd - x.usd || y.tokens - x.tokens);
+  };
+
   const costView = (): CostView => {
     const table = priceTable();
     const agents: Record<string, CostGauge> = {};
@@ -423,12 +463,13 @@ export function createPropellant(options: PropellantOptions): Propellant {
       links,
       days: days(table),
       pricedSince: modelled.length === 0 ? null : Math.min(...modelled),
+      breakdown: Object.fromEntries(FUEL_WINDOWS.map((w) => [w, breakdownSince(now() - WINDOW_MS[w], Infinity, table)])) as Record<FuelWindow, FuelBreakdownRow[]>,
     };
   };
 
   const emptyScope = (): CostScope => ({ usd: 0, usdSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, unpriced: 0 });
   const addTo = (scope: CostScope, e: FuelEntry, table: Record<string, ModelPrice>): void => {
-    const price = e.model === undefined ? null : priceFor(table, e.model);
+    const price = e.model === undefined ? null : priceFor(table, e.model, e.provider);
     if (price === null) {
       scope.unpriced += e.tokens;
       return;
@@ -463,7 +504,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
     for (const e of entries) {
       const day = byDate.get(dayKey(e.at));
       if (day === undefined) continue;
-      if (e.model !== undefined && priceFor(table, e.model) === null) unpricedModels.add(e.model);
+      if (e.model !== undefined && priceFor(table, e.model, e.provider) === null) unpricedModels.add(e.model);
       addTo(room, e, table);
       addTo((scopes[e.agent] ??= emptyScope()), e, table);
       const before = day.usd;
@@ -498,6 +539,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
       sessions: have.reduce((s, a) => s + a.sessions, 0),
       pricedSince: modelled.length === 0 ? null : Math.min(...modelled),
       priceAsOf: PRICES_AS_OF,
+      breakdown: breakdownSince(startMs, Infinity, table),
     };
   };
 
@@ -575,6 +617,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
   /** The ledger lines of some replies (one per minute, agent and model), appended and checked: the one place a transcript and a report are counted. */
   const ingest = async (agent: string, usages: Iterable<ReplyUsage>): Promise<{ tokens: number; reads: number }> => {
     const on = options.attribute?.(agent) ?? {};
+    const engine = options.engineOf?.(agent);
     const fresh: FuelEntry[] = [];
     const byKey = new Map<string, FuelEntry>();
     let tokens = 0;
@@ -585,7 +628,7 @@ export function createPropellant(options: PropellantOptions): Propellant {
       if (used === 0 && split.cr === 0) continue;
       const at = usage.at ?? now();
       // one ledger line per minute, agent and model keeps the file small
-      const key = `${Math.floor(at / 60_000)}|${usage.model ?? ''}`;
+      const key = `${Math.floor(at / 60_000)}|${usage.model ?? ''}|${usage.provider ?? ''}`;
       const last = byKey.get(key);
       if (last) {
         last.tokens += used;
@@ -595,6 +638,8 @@ export function createPropellant(options: PropellantOptions): Propellant {
         last.cr = (last.cr ?? 0) + split.cr;
       } else {
         const entry: FuelEntry = usage.model === null ? { at, agent, tokens: used } : { at, agent, model: usage.model, i: split.i, cw: split.cw, o: split.o, cr: split.cr, tokens: used };
+        if (engine !== undefined && LABEL_RE.test(engine)) entry.engine = engine;
+        if (usage.provider != null && LABEL_RE.test(usage.provider)) entry.provider = usage.provider;
         if (on.mission !== undefined && MISSION_ID_RE.test(on.mission)) entry.mission = on.mission;
         if (on.task !== undefined && TASK_ID_RE.test(on.task)) entry.task = on.task;
         byKey.set(key, entry);
@@ -724,6 +769,8 @@ export function createPropellant(options: PropellantOptions): Propellant {
           const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
           if (typeof e.model === 'string' && e.model !== '') {
             const entry: FuelEntry = { at: e.at, agent: e.agent, tokens: count(e.tokens), model: e.model, i: count(e.i), cw: count(e.cw), o: count(e.o), cr: count(e.cr) };
+            if (typeof e.engine === 'string' && LABEL_RE.test(e.engine)) entry.engine = e.engine;
+            if (typeof e.provider === 'string' && LABEL_RE.test(e.provider)) entry.provider = e.provider;
             if (typeof e.mission === 'string' && MISSION_ID_RE.test(e.mission)) entry.mission = e.mission;
             if (typeof e.task === 'string' && TASK_ID_RE.test(e.task)) entry.task = e.task;
             if (entry.tokens > 0 || (entry.cr ?? 0) > 0) entries.push(entry);

@@ -1,9 +1,9 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { CostByKind, CostDays, CostKindsTable, FuelMeter } from '../src/client/Propellant.js';
+import { BreakdownTable, CostByKind, CostDays, CostKindsTable, FuelMeter } from '../src/client/Propellant.js';
 import { commands } from '../src/client/shell.js';
-import type { CostReport, CostView } from '../src/shared/protocol.js';
+import type { CostReport, CostView, FuelBreakdownRow } from '../src/shared/protocol.js';
 
 const W = { '5h': 0, day: 0, week: 0, month: 0 };
 const cost: CostView = {
@@ -80,5 +80,34 @@ describe('the cost screens', () => {
   it('puts two Propellant lines in the Patch Panel', () => {
     const lines = commands({ agents: [], legends: {}, poll: null, unread: 0, livery: { current: '', liveries: [] } as never });
     expect(lines.filter((c) => c.label.startsWith('Propellant:')).map((c) => c.label)).toEqual(['Propellant: prices', 'Propellant: budget']);
+  });
+});
+
+describe('use by engine, provider and model', () => {
+  const row = (over: Partial<FuelBreakdownRow>): FuelBreakdownRow => ({ engine: 'claude', provider: 'anthropic', model: 'claude-opus-5-5', tokens: 2000, cacheRead: 0, usd: 3, unpriced: 0, free: false, claudePlan: false, agents: { ana: { tokens: 2000, usd: 3, unpriced: 0 } }, ...over });
+  const html = renderToString(
+    createElement(BreakdownTable, {
+      caption: 'c',
+      rows: [
+        row({}),
+        row({ engine: 'pi', claudePlan: false }),
+        row({ engine: 'opencode', provider: 'opencode', model: 'big-pickle', usd: 0, free: true, tokens: 5000 }),
+        row({ engine: 'unknown', provider: 'unknown', model: 'mystery', usd: 0, unpriced: 40, tokens: 40 }),
+        row({ engine: 'claude', model: 'claude-sonnet-5-5', claudePlan: true, usd: 1, tokens: 100 }),
+      ],
+    }),
+  );
+  it('says free for a free model and no price for an unpriced one, and sums the room', () => {
+    expect(html).toContain('big-pickle');
+    expect(html).toMatch(/data-free="true"[^>]*>free</);
+    expect(html).toMatch(/no price \(40\)/);
+    expect(html).toContain('$7.00'); // 3 + 3 + 0 + 0 + 1
+  });
+  it('tells the plan use from the API use', () => {
+    expect(html).toContain('Claude plan');
+    expect(html).toContain('API or other');
+  });
+  it('says so when there is no use', () => {
+    expect(renderToString(createElement(BreakdownTable, { caption: 'c', rows: [] }))).toContain('No use in this window');
   });
 });

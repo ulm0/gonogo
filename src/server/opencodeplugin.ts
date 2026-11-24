@@ -117,6 +117,7 @@ const setup = async (ctx) => {
   const usage = [];
   const totals = new Map();
   let model = null;
+  let provider = null;
   const post = async (event, body) => {
     if (usage.length > 0 && (event === "Stop" || event === "StopFailure" || event === "PostToolUse" || event === "PostToolUseFailure")) body = { ...body, usage: usage.splice(0, 100) };
     try {
@@ -204,6 +205,8 @@ const setup = async (ctx) => {
 
   ctx.session.hook("model.request", (input) => {
     if (typeof input?.model?.id === "string") model = input.model.id;
+    const p = input?.model?.providerID ?? input?.model?.provider?.id ?? input?.model?.provider;
+    provider = typeof p === "string" ? p : null;
   });
   ctx.session.hook("prompt", async (input) => {
     if (await isChild(input?.sessionID)) return;
@@ -275,7 +278,7 @@ const setup = async (ctx) => {
         const now = { input: d.tokens.input ?? 0, output: d.tokens.output ?? 0, reasoning: d.tokens.reasoning ?? 0, read: d.tokens.cache?.read ?? 0, write: d.tokens.cache?.write ?? 0 };
         totals.set(d.sessionID, now);
         const delta = { i: now.input - before.input, cw: now.write - before.write, o: now.output + now.reasoning - before.output - before.reasoning, cr: now.read - before.read };
-        if (delta.i + delta.cw + delta.o + delta.cr > 0) usage.push({ id: d.sessionID + ":" + (event.id ?? usage.length), at: event.created ?? Date.now(), model, ...delta });
+        if (delta.i + delta.cw + delta.o + delta.cr > 0) usage.push({ id: d.sessionID + ":" + (event.id ?? usage.length), at: event.created ?? Date.now(), model, provider, ...delta });
         if (usage.length > 500) usage.splice(0, usage.length - 500);
       } else if (event?.type === "session.execution.interrupted" && typeof d.sessionID === "string") {
         // the Director said no (or stopped the turn): the idle hook does not run after an interruption, so the turn ends here; the hub hands any mail over itself
