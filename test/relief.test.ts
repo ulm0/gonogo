@@ -242,15 +242,17 @@ describe('who may ask', () => {
 });
 
 describe('the hard limits', () => {
-  it('never bypassPermissions, nor auto: the most it asks for is acceptEdits', async () => {
-    for (const mode of ['bypassPermissions', 'auto', 'plan', 'BYPASSPERMISSIONS', '', 3, null]) {
+  it('never bypassPermissions: the most it asks for is auto, and auto always waits for the Director when no rule is on', async () => {
+    for (const mode of ['bypassPermissions', 'plan', 'BYPASSPERMISSIONS', '', 3, null]) {
       const error = await refusal(ask({ mode }));
       expect(error.code, String(mode)).toBe('bad_request');
       expect(error.field).toBe('mode');
     }
-    expect((await refusal(ask({ mode: 'bypassPermissions' }))).message).toMatch(/default or acceptEdits at most/);
+    expect((await refusal(ask({ mode: 'bypassPermissions' }))).message).toMatch(/default or acceptEdits or auto at most/);
     expect(relief.view().requests).toEqual([]);
     await ask({ mode: 'acceptEdits' });
+    expect(await ask({ name: 'guido-2', mode: 'auto' })).toMatchObject({ status: 'pending' });
+    expect(hired).toEqual([]);
   });
 
   it('refuses a field that would widen it: confirmBypass, command, payload, cleanRoom, provider, desk', async () => {

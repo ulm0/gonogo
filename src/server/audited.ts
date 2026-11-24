@@ -85,6 +85,10 @@ export const HUB_AUDIT: Table = {
 /** Relief: the Director's go or no-go to a hire request, by the request's id (never the name, role, directory or text of the request). */
 export const RELIEF_AUDIT: Table = {
   decide: ['answer', (args) => `Director answered hire request ${plain(args[0]) ?? '?'}: ${args[1] === 'go' ? 'go' : 'no-go'}`],
+  // the boss's hire: who, which name, which rule sent it to the Director; never the role text
+  request: ['crew', (args, result) => (isRecord(result) && result.status === 'hired' ? `boss hired ${plain(result.name) ?? '?'} by rule` : isRecord(result) ? `boss asked to hire an agent: waits for the Director (${plain(result.id) ?? '?'})` : null)],
+  setRules: ['config', 'Director changed the Relief rules'],
+  stopCrew: ['crew', (_args, result) => (isRecord(result) && Array.isArray(result.stopped) ? `STOP CREW: ${result.stopped.length} agents stopped, automatic hires off` : 'STOP CREW')],
 };
 
 /** Room editor: that the layout was saved or reset, and which part; never a number of it. */

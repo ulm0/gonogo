@@ -386,7 +386,7 @@ describe('the pages say what the command prints', () => {
       expect(page, provider).toContain(`gonogo ${plan.gonogo.join(' ')}`);
       expect(page, provider).toContain('<ExposeMock provider="' + provider + '"');
       expect(page, provider).toContain('**Tried:**');
-      for (const step of plan.steps) if (!step.startsWith('Then,') && !step.startsWith('Check ') && !/^tailscale serve status|^tailscale funnel status/.test(step)) expect(page, `${provider}: ${step}`).toContain(step.replace(/^gonogo expose check$/, 'gonogo expose check'));
+      for (const step of plan.steps) if (!step.startsWith('Then,') && !step.startsWith('Check ') && !/^tailscale serve status|^tailscale funnel status/.test(step)) expect(page, `${provider}: ${step}`).toContain(step);
       for (const content of Object.values(plan.files)) for (const line of content.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('# gonogo expose'))) expect(page, `${provider}: ${line}`).toContain(line.trimEnd());
     }
   });

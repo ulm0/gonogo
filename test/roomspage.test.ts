@@ -90,7 +90,7 @@ function run(options: { token?: string; rooms: unknown[]; layout?: unknown; live
   const sent: Array<Record<string, string>> = [];
   const calls: Call[] = [];
   const html = roomsPage(null, '1.2.3');
-  const scripts = [...html.matchAll(/<script>([^]*?)<\/script>/g)].map((m) => m[1] ?? '');
+  const scripts = html.split('<script>').slice(1).map((part) => part.split('</script>')[0] ?? '');
   const byId: Record<string, Node> = {};
   for (const id of ['rooms', 'move', 'note', 'add', 'gate', 'sum', 'live', 'title', 'loading', 'new', 'cancel', 'dirnote']) byId[id] = make(id === 'add' ? 'form' : 'div');
   byId.gate?.append(make('h2'), make('p'));

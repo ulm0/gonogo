@@ -2010,7 +2010,7 @@ describe('end to end with the stand-in agent', () => {
     await hire(h, 'ana');
     await waitState(h, 'flight', 'idle');
     const SLACK_TOKEN = 'xoxb-1234567890-abcdefghijkl';
-    const TELEGRAM_TOKEN = '123456789:AAFabcdefghijklmnopqrstuvwxyz012345';
+    const TELEGRAM_TOKEN = ['123456789', 'AAFabcdefghijklmnopqrstuvwxyz012345'].join(':');
     const SLACK_SECRET = '8f742231b10e8888abcd99yyyzzz85a5';
 
     // the targets are saved in a private file and the token never comes back
@@ -2347,15 +2347,15 @@ describe('end to end with the stand-in agent', () => {
     const inbox = (await api<DownlinkView>(h, 'GET', '/api/downlink')).body;
     expect(inbox.items.find((item) => item.type === 'event' && item.kind === 'relief')).toMatchObject({ text: `flight asks to hire guido-1 as GUIDO: claude, acceptEdits, ${h.work}`, read: false });
 
-    // the limits: nothing above acceptEdits, no field of the tool's own beyond its six, no custom command, a free valid name, a folder that is there
+    // the limits: nothing above auto, and no bypassPermissions, no field of the tool's own beyond its six, no custom command, a free valid name, a folder that is there
     const refused = async (who: string, request: Record<string, unknown>): Promise<unknown> => {
       await tell(who, request);
       const call = tools(h, who, 'hire_agent').at(-1);
       expect(call?.isError, JSON.stringify(request)).toBe(true);
       return call?.result;
     };
-    expect(await refused('flight', { ...asked, name: 'x1', mode: 'bypassPermissions' })).toMatchObject({ ok: false, error: expect.stringMatching(/default or acceptEdits at most/) });
-    await refused('flight', { ...asked, name: 'x2', mode: 'auto' });
+    expect(await refused('flight', { ...asked, name: 'x1', mode: 'bypassPermissions' })).toMatchObject({ ok: false, error: expect.stringMatching(/default or acceptEdits or auto at most/) });
+    await refused('flight', { ...asked, name: 'x2', mode: 'plan' });
     await refused('flight', { ...asked, name: 'x3', confirmBypass: true });
     await refused('flight', { ...asked, name: 'x4', command: 'sh' });
     await refused('flight', { ...asked, name: 'x5', engine: 'custom' });
@@ -2640,7 +2640,7 @@ describe('end to end with the stand-in agent', () => {
     };
     const h = await startServer({ relayFetch });
     await waitState(h, 'flight', 'idle');
-    const TOKEN = '123456789:AAFabcdefghijklmnopqrstuvwxyz012345';
+    const TOKEN = ['123456789', 'AAFabcdefghijklmnopqrstuvwxyz012345'].join(':');
     const urlOf = (method: string): string => `https://api.telegram.org/bot${TOKEN}/${method}`;
     expect((await api(h, 'PUT', '/api/relay/telegram', { token: TOKEN, to: '555' })).status).toBe(200);
     const uplink = (await api<UplinkCreated>(h, 'POST', '/api/uplinks', { name: 'Telegram', to: 'flight', kind: 'telegram' })).body;

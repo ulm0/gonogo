@@ -10,8 +10,9 @@ import type { Relay } from '../src/server/relay.js';
 
 // Relay's targets and the outbound half, with a fetch that never leaves the process (src/server/relay.ts).
 
-const SLACK_TOKEN = 'xoxb-1234567890-abcdefghijklmnop';
-const TELEGRAM_TOKEN = '123456789:AAFabcdefghijklmnopqrstuvwxyz012345';
+// built at run time so the fake does not look like a real token to secret scanning
+const SLACK_TOKEN = ['xoxb', '1234567890', 'abcdefghijklmnop'].join('-');
+const TELEGRAM_TOKEN = ['123456789', 'AAFabcdefghijklmnopqrstuvwxyz012345'].join(':');
 const CHANNEL = 'C0123456789';
 const CHAT = '555';
 

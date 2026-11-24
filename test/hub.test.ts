@@ -2955,6 +2955,18 @@ describe('hire (4.9)', () => {
   const hireWith = (h: Harness, patch: Record<string, unknown>): Promise<AgentView> =>
     h.hub.hire({ ...good, ...patch } as unknown as HireRequest);
 
+  it('hiredBy boss is set by the second argument only (Relief\'s own call), never by a field of the request, and it is in the view and the saved record', async () => {
+    const h = await started();
+    const forged = await hireWith(h, { name: 'forged', hiredBy: 'boss' });
+    expect(forged.hiredBy).toBeUndefined();
+    const view = await h.hub.hire({ ...good, name: 'crew1' } as unknown as HireRequest, { hiredBy: 'boss' });
+    expect(view.hiredBy).toBe('boss');
+    expect(view.hiredAt).toBe(T0);
+    expect(h.hub.views().find((v) => v.name === 'crew1')?.hiredBy).toBe('boss');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'crew1')?.hiredBy).toBe('boss');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'forged')?.hiredBy).toBeUndefined();
+  });
+
   it('creates the record, saves the roster and starts the process; the view is starting', async () => {
     const h = await started();
     const saves = h.saves.length;

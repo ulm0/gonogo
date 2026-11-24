@@ -665,11 +665,13 @@ describe('terminal host with a real pty', () => {
     it('fires exactly once per generation, however often the box is drawn again, and again for the next generation', async () => {
       const host = makeHost();
       const events = collect(host);
-      const script = `process.stdout.write(${JSON.stringify(PASTE_MODE_ON + BOX)}); setTimeout(() => process.stdout.write(${JSON.stringify(BOX)}), 80); setTimeout(() => process.exit(0), 250);`;
-      host.spawn('a', 1, nodeSpec(script));
+      // the text goes in by environment, not spliced into the code
+      const script = 'process.stdout.write(process.env.FIRST); setTimeout(() => process.stdout.write(process.env.BOX), 80); setTimeout(() => process.exit(0), 250);';
+      const env = { FIRST: PASTE_MODE_ON + BOX, BOX };
+      host.spawn('a', 1, nodeSpec(script, env));
       await until(() => events.some((event) => event.kind === 'exit'), 'exit');
       expect(events.filter((event) => event.kind === 'ready')).toHaveLength(1);
-      host.spawn('a', 2, nodeSpec(script));
+      host.spawn('a', 2, nodeSpec(script, env));
       await until(() => events.filter((event) => event.kind === 'exit').length === 2, 'second exit');
       expect(events.filter((event) => event.kind === 'ready').map((event) => event.generation)).toEqual([1, 2]);
     });
