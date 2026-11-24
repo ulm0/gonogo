@@ -183,3 +183,34 @@ export function opencodeKeyWarning(model: string, keys: readonly string[], egres
   const which = wanted === undefined ? `the API key of ${provider}` : wanted.length === 1 ? (wanted[0] ?? '') : `one of ${wanted.join(', ')}`;
   return `${model} needs ${which} for this agent, and it has none among its keys or the room's${provider === 'anthropic' ? ' (a Clean Room with egress also works)' : ''}. Without it the agent stops at its first turn and asks you (unless gonogo's own environment has the key): opencode's free models stay off unless one is picked.`;
 }
+
+/** The AWS settings that give pi's and opencode's `amazon-bedrock` provider a credential (pi 1.6.0 `--help`, opencode's provider docs). */
+const AWS_CREDENTIAL_KEYS = ['AWS_PROFILE', 'AWS_ACCESS_KEY_ID', 'AWS_BEARER_TOKEN_BEDROCK'] as const;
+/** A credential that works without the host's `~/.aws` (a Clean Room has none): a key pair or a Bedrock API key. */
+const AWS_SELF_CONTAINED_KEYS = ['AWS_ACCESS_KEY_ID', 'AWS_BEARER_TOKEN_BEDROCK'] as const;
+
+/**
+ * Amazon Bedrock with pi or opencode (t144): both read the AWS settings only for their `amazon-bedrock` provider, so a room set up for Bedrock
+ * (AWS_PROFILE and AWS_REGION as room keys) with an `anthropic/...` model fails with "No API key found for anthropic" (pi 1.6.0, seen by the
+ * Director). A warning for the model an agent starts with, or null: `keys` are the key names it gets (its own and the room's that reach it);
+ * gonogo's own environment is not seen here. opencode's other cases (no key at all) are opencodeKeyWarning's.
+ */
+export function bedrockModelWarning(provider: Provider, model: string, keys: readonly string[], cleanRoom: boolean): string | null {
+  if (provider !== 'pi' && provider !== 'opencode') return null;
+  const label = providerInfo(provider).label;
+  const slash = model.indexOf('/');
+  const vendor = slash > 0 ? model.slice(0, slash) : '';
+  const aws = AWS_CREDENTIAL_KEYS.filter((name) => keys.includes(name));
+  if (model === '' && aws.length > 0 && !keys.includes('ANTHROPIC_API_KEY')) return `The keys set up Amazon Bedrock (${aws.join(', ')}), and with no model ${label} picks its own default, which may not be one of Bedrock's: pick an amazon-bedrock/... model from the list.`;
+  if (vendor === 'anthropic' && aws.length > 0 && !keys.includes('ANTHROPIC_API_KEY') && !keys.includes('ANTHROPIC_OAUTH_TOKEN')) {
+    return `The keys set up Amazon Bedrock (${aws.join(', ')}), but ${model} is Anthropic's own API: ${label} reads the AWS settings only for its amazon-bedrock provider. Pick an amazon-bedrock/... model from the list (for example amazon-bedrock/anthropic.claude-...); with ${model} the agent needs its own Anthropic sign-in or ANTHROPIC_API_KEY, or it stops with "No API key found for anthropic".`;
+  }
+  if (vendor !== 'amazon-bedrock') return null;
+  if (cleanRoom && aws.length > 0 && !AWS_SELF_CONTAINED_KEYS.some((name) => keys.includes(name))) {
+    return 'In a Clean Room AWS_PROFILE does not work: the container has no ~/.aws (on purpose). Give this agent AWS_BEARER_TOKEN_BEDROCK (a short-term Bedrock API key) or AWS_ACCESS_KEY_ID with AWS_SECRET_ACCESS_KEY (and AWS_SESSION_TOKEN).';
+  }
+  if (provider === 'pi' && aws.length === 0) {
+    return `${model} needs an AWS credential for this agent: AWS_PROFILE, AWS_ACCESS_KEY_ID with AWS_SECRET_ACCESS_KEY, or AWS_BEARER_TOKEN_BEDROCK, with AWS_REGION, among its keys or the room's (unless gonogo's own environment has them).`;
+  }
+  return null;
+}

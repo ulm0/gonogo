@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PROVIDER_INFO } from '../src/shared/protocol.js';
-import { createEngineModelLists, listEnv, MODEL_LIST_RETRY_MS, parseOpencodeModels, parsePiModels, runListing } from '../src/server/enginemodels.js';
+import { AWS_LIST_PLACEHOLDER, createEngineModelLists, listEnv, MODEL_LIST_RETRY_MS, parseOpencodeModels, parsePiModels, runListing } from '../src/server/enginemodels.js';
 
 const fixture = (name: string): Promise<string> => readFile(join(import.meta.dirname, 'fixtures', 'engine-models', name), 'utf8');
 const SECRET = 'sk-test-secret-value-1234';
@@ -119,4 +119,40 @@ describe('runListing', () => {
     // the background child was in the killed process group: it never touched its marker
     await expect(readFile(marker)).rejects.toThrow();
   }, 10_000);
+});
+
+describe('Amazon Bedrock in the lists (t144)', () => {
+  it('the listing gets the AWS settings of gonogo and of the room (the room wins): profile, region and files as they are, a secret only as a placeholder', () => {
+    const env = listEnv({ PATH: '/b', HOME: '/h', AWS_REGION: 'eu-west-1', AWS_ACCESS_KEY_ID: 'AKIAREALKEY', OTHER: 'x' }, { AWS_PROFILE: 'work', AWS_REGION: 'us-west-2', AWS_BEARER_TOKEN_BEDROCK: SECRET });
+    expect(env).toEqual({ PATH: '/b', HOME: '/h', NO_COLOR: '1', AWS_PROFILE: 'work', AWS_REGION: 'us-west-2', AWS_ACCESS_KEY_ID: AWS_LIST_PLACEHOLDER, AWS_BEARER_TOKEN_BEDROCK: AWS_LIST_PLACEHOLDER });
+    expect(JSON.stringify(env)).not.toContain(SECRET);
+    expect(JSON.stringify(env)).not.toContain('AKIAREALKEY');
+  });
+
+  it('pi lists its amazon-bedrock models once the room has an AWS setting, and lists again when the room keys change', async () => {
+    await program('pi', '1.6.0', `printf 'provider model\\nanthropic claude-opus-5-5\\n'\n[ -n "$AWS_PROFILE$AWS_BEARER_TOKEN_BEDROCK" ] && printf 'amazon-bedrock anthropic.claude-fable-5\\n'\nexit 0`);
+    let room: Record<string, string> = {};
+    const lists = createEngineModelLists({ env: { PATH: `${bin}:/usr/bin:/bin`, HOME: tmp }, room: () => room });
+    expect((await lists.get('pi')).models).toEqual(['anthropic/claude-opus-5-5']);
+    room = { AWS_PROFILE: 'work', AWS_REGION: 'us-west-2' };
+    expect((await lists.get('pi')).models).toEqual(['anthropic/claude-opus-5-5', 'amazon-bedrock/anthropic.claude-fable-5']);
+    expect(await calls('pi')).toBe(2);
+    // the same keys: remembered
+    await lists.get('pi');
+    expect(await calls('pi')).toBe(2);
+  });
+
+  it('the real output of pi 1.6.0 with AWS_PROFILE set: amazon-bedrock/<id> names the model field takes', async () => {
+    const names = parsePiModels(await fixture('pi-1.6.0-aws-profile.txt'));
+    expect(names.length).toBeGreaterThan(100);
+    expect(names).toContain('amazon-bedrock/anthropic.claude-fable-5');
+    expect(names.every((n) => n.startsWith('amazon-bedrock/'))).toBe(true);
+  });
+});
+
+describe('opencode with AWS_PROFILE set (real output of 2.4.1)', () => {
+  it('lists amazon-bedrock/<id> names', async () => {
+    const names = parseOpencodeModels(await fixture('opencode-2.4.1-aws-profile.txt'));
+    expect(names.filter((n) => n.startsWith('amazon-bedrock/')).length).toBeGreaterThan(100);
+  });
 });

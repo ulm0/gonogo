@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { effectiveModel, MODEL_PROVIDERS, modelListText, modelNames, modelNote, OPENCODE_KEY_NOTE, opencodeKeyWarning, publishEngineModels, resetEngineModels } from '../src/client/models.js';
+import { bedrockModelWarning, effectiveModel, MODEL_PROVIDERS, modelListText, modelNames, modelNote, OPENCODE_KEY_NOTE, opencodeKeyWarning, publishEngineModels, resetEngineModels } from '../src/client/models.js';
 import { ModelListStatus } from '../src/client/EngineModelList.js';
 import { HireForm } from '../src/client/HireForm.js';
 import { emptyState, store } from '../src/client/store.js';
@@ -102,5 +102,30 @@ describe('opencode: a model of another provider needs its key for the agent', ()
     const html = renderToString(createElement(HireForm));
     expect(html).toContain('Written into its config as its model (provider/model).');
     expect(html).not.toContain('Passed to opencode as --model');
+  });
+});
+
+describe('Amazon Bedrock with pi and opencode (t144)', () => {
+  it('an anthropic/ model in a room set up for Bedrock: pick an amazon-bedrock/ model, or the agent stops with "No API key found for anthropic"', () => {
+    const text = bedrockModelWarning('pi', 'anthropic/claude-opus-5-5', ['AWS_PROFILE', 'AWS_REGION'], false);
+    expect(text).toContain('The keys set up Amazon Bedrock (AWS_PROFILE)');
+    expect(text).toContain('Pick an amazon-bedrock/... model');
+    expect(text).toContain('No API key found for anthropic');
+    expect(bedrockModelWarning('opencode', 'anthropic/claude-opus-5-5', ['AWS_BEARER_TOKEN_BEDROCK'], false)).toContain('opencode reads the AWS settings only for its amazon-bedrock provider');
+    // its own Anthropic key: no warning; no AWS setting: no warning
+    expect(bedrockModelWarning('pi', 'anthropic/claude-opus-5-5', ['AWS_PROFILE', 'ANTHROPIC_API_KEY'], false)).toBeNull();
+    expect(bedrockModelWarning('pi', 'anthropic/claude-opus-5-5', [], false)).toBeNull();
+    // no model at all: pi picks its own default
+    expect(bedrockModelWarning('pi', '', ['AWS_PROFILE'], false)).toContain('with no model pi picks its own default');
+  });
+
+  it('an amazon-bedrock/ model: a credential among the keys, and in a Clean Room not a profile alone', () => {
+    expect(bedrockModelWarning('pi', 'amazon-bedrock/anthropic.claude-fable-5', ['AWS_PROFILE', 'AWS_REGION'], false)).toBeNull();
+    expect(bedrockModelWarning('pi', 'amazon-bedrock/anthropic.claude-fable-5', [], false)).toContain('needs an AWS credential for this agent');
+    expect(bedrockModelWarning('pi', 'amazon-bedrock/anthropic.claude-fable-5', ['AWS_PROFILE'], true)).toContain('In a Clean Room AWS_PROFILE does not work');
+    expect(bedrockModelWarning('opencode', 'amazon-bedrock/anthropic.claude-fable-5', ['AWS_PROFILE', 'AWS_BEARER_TOKEN_BEDROCK'], true)).toBeNull();
+    // other engines and other models are not this check's
+    expect(bedrockModelWarning('claude', 'anthropic/x', ['AWS_PROFILE'], false)).toBeNull();
+    expect(bedrockModelWarning('pi', 'openai/gpt-x', ['AWS_PROFILE'], false)).toBeNull();
   });
 });

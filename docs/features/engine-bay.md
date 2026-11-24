@@ -103,13 +103,14 @@ No Bedrock switch: an engine uses Bedrock when its own settings say so, and gono
 | Engine | Bedrock | What to set |
 |---|---|---|
 | Claude Code | expected to work with keys (not run against AWS) | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and `AWS_BEARER_TOKEN_BEDROCK` (Bedrock API key) or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN`), or `AWS_PROFILE`. Model: the agent's model field with a Bedrock id, or key `ANTHROPIC_MODEL` |
-| opencode | needs its own setup | the same AWS variables; pick the Bedrock model inside opencode |
+| opencode | the AWS variables plus an `amazon-bedrock/<id>` model (not run against AWS) | `AWS_PROFILE` (host only), `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, or `AWS_BEARER_TOKEN_BEDROCK`, and `AWS_REGION`; pick an `amazon-bedrock/...` model from the list (it shows them once a room key or gonogo's environment has an AWS setting) |
 | Codex | needs a config line | `model_provider = "amazon-bedrock"` in `~/.codex/config.toml`, plus `AWS_PROFILE` or keys |
-| pi | needs setup in pi | the AWS variables; provider picked in pi (`--model amazon-bedrock/<id>` likely, not verified) |
+| pi | the AWS variables plus an `amazon-bedrock/<id>` model (not run against AWS) | the same variables; the model must be `amazon-bedrock/<id>` (`pi --model amazon-bedrock/<id>` picks pi's Bedrock provider, checked with pi 1.6.0): with `anthropic/...` pi ignores the AWS settings and stops with "No API key found for anthropic" |
 | Crush | needs setup in Crush | the AWS variables; gonogo starts it with no arguments |
 | Gemini, Antigravity | unsupported | Google models only |
 | Qwen, Grok, Kimi, Copilot, Cursor | not found | no Bedrock provider found |
 
+- **pi and opencode:** both read the AWS settings only for their `amazon-bedrock` provider. The model list offers the `amazon-bedrock/...` models when the room keys (or gonogo's environment) hold an AWS setting, and the hire and Edit form warn when the keys set up Bedrock but the model is `anthropic/...`, when there is no model, when an `amazon-bedrock/...` model has no AWS credential among the keys (pi), and when a Clean Room agent has only `AWS_PROFILE`.
 - **Clean Room:** the container gets only the agent's keys by name; `~/.aws` is not mounted, so profiles and SSO do not work. Use keys, best a short-term Bedrock API key.
 - **Models:** Bedrock ids (`us.anthropic.claude-sonnet-4-6`) and application-inference-profile ARNs fit the model field; a longer ARN goes in as key `ANTHROPIC_MODEL`.
 - **Cost:** tokens count as usual; dollars show unpriced until you add a price row for the Bedrock id (Propellant, DOLLARS, prices).
