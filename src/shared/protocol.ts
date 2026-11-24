@@ -1814,8 +1814,10 @@ export interface ReliefRules {
   ratePerHour: number;
   /** The boss may stop any agent that is not the boss and not `protected` (the Director: only FLIGHT is fixed). Off: `fire_agent` is refused. Turning it off needs no step-up. */
   mayStop: boolean;
+  /** Per engine, the model names a rule hire may name. A hire that names none follows the room's default model; one that names a model not listed here asks. */
+  models: Partial<Record<Provider, string[]>>;
 }
-export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3, mayStop: true };
+export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3, mayStop: true, models: {} };
 export interface ReliefRequest {
   /** `h1`, `h2`, ...; never used twice in one run. */
   id: string;
@@ -1842,6 +1844,8 @@ export interface ReliefRequest {
   flavorBelowRoom?: boolean;
   /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */
   worktree?: Worktree | null;
+  /** The model the boss named (Engine Bay), or absent: the engine's own default. */
+  model?: string;
   /** The rule that sent this request to the Director instead of staffing it at once ("mode auto needs your GO: maxMode is acceptEdits"). Absent when autoApprove is off. */
   asks?: string;
 }

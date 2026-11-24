@@ -35,7 +35,7 @@ Enforced on the server.
 
 ## Hires by rule (automatic hires)
 
-Off by default: every hire waits for your GO, byte for byte as above. You can turn on `autoApprove` in `<home>/relief.json` through `PUT /api/relief/rules` (a browser session with the password again; no agent route reads or writes it). **Turning it on is refused in this version** ("the crew budget is not enforced yet"): the dollar ceiling arrives with the next step, and until then every hire waits for your GO. A GO on a request in a mode that works without asking (`auto`) asks for the password again, as the hire form does. Then a request that fits **every** rule is staffed at once: the answer is `status: hired`, the agent carries `hiredBy: boss` (its tile shows *hired by flight*), and the Downlink and the Black Box say who, which name and the crew count, never the role text. A request that breaks a rule becomes the request above, and its note and card name the rule ("mode auto is above maxMode (acceptEdits)").
+Off by default: every hire waits for your GO, byte for byte as above. You can turn on `autoApprove` in `<home>/relief.json` through `PUT /api/relief/rules` (a browser session with the password again; no agent route reads or writes it). A GO on a request in a mode that works without asking (`auto`) asks for the password again, as the hire form does. Then a request that fits **every** rule is staffed at once: the answer is `status: hired`, the agent carries `hiredBy: boss` (its tile shows *hired by flight*), and the Downlink and the Black Box say who, which name and the crew count, never the role text. A request that breaks a rule becomes the request above, and its note and card name the rule ("mode auto is above maxMode (acceptEdits)").
 
 | Rule | Default | Meaning |
 |---|---|---|
@@ -46,7 +46,8 @@ Off by default: every hire waits for your GO, byte for byte as above. You can tu
 | `engines` | the room's default engine | never a custom command |
 | `maxMode` | `acceptEdits` | `default`, `acceptEdits` or `auto`; `bypassPermissions` is not a choice |
 | `autoOnHost` | off | without it `auto` by rule runs in a Clean Room only; a Clean Room hire in `auto` also needs egress on and no global MCP server |
-| `crewBudgetUsd` | none | dollars per day for the crew (stored now; enforced in a later step) |
+| `crewBudgetUsd` | none | required to turn `autoApprove` on: dollars per **local day** for the whole boss-hired crew together (a stopped member still counts, so fire and rehire does not reset it). At the ceiling Propellant **holds the crew** (not the room, not your own agents) with a Downlink line, and no hire by rule is made: the request waits for your GO and says so |
+| `models` | none | per engine, the model names a rule hire may name; a hire with no model follows the default, one naming another model asks you. `hire_agent` takes a `model` for an engine that has one |
 
 Always a request, never by rule: a folder outside the boss's own, a Clean Room wall below the room's, a Clean Room that holds its own API key, and anything with keys, a payload, permissions, remote control or a command (the request cannot carry them; the same function that asks you for the password on the hire form judges it). Boss-hired agents cannot hire. Raising a rule needs the step-up; lowering never does. **STOP CREW** (`POST /api/relief/stop-crew`, no step-up: it only removes power) stops every boss-hired agent and turns `autoApprove` off. A hand edit of `relief.json` turns `autoApprove` off, renames the file `relief.json.bad` and raises a Downlink alarm. Design: docs/hire-fire-spec.md in the repository.
 
