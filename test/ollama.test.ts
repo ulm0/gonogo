@@ -81,7 +81,7 @@ afterEach(async () => {
 });
 
 const make = (extra: Partial<Parameters<typeof createManagedOllama>[0]> = {}): ManagedOllama =>
-  createManagedOllama({ dir: join(work, 'ollama'), log: nullLogger, now: () => Date.now(), arch: 'x64', platform: 'linux', releaseUrl: () => releaseUrl, sha256: sha, env: { PATH: process.env.PATH, GONOGO_TOKEN: 'secret-token' }, backoffMs: 20, tickMs: 20, ...extra });
+  createManagedOllama({ dir: join(work, 'ollama'), log: nullLogger, now: () => Date.now(), arch: 'x64', platform: 'linux', releaseUrl: () => releaseUrl, sha256: sha, imageBin: join(work, 'no-image', 'bin', 'ollama'), env: { PATH: process.env.PATH, GONOGO_TOKEN: 'secret-token' }, backoffMs: 20, tickMs: 20, ...extra });
 
 const alive = (pid: number): boolean => {
   try {
