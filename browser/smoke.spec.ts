@@ -184,7 +184,7 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     const text = `A log from the other session\n${'2026-11-24 18:30:01 INFO a line of the log\n'.repeat(1000)}`;
     await box.fill(text);
     await expect(box).toHaveValue(text);
-    await expect(page.locator('.brief-long')).toContainText('Long text: 43,029 characters');
+    await expect(page.locator('.brief-long')).toContainText('Long text: 43,028 characters') // the box counts the text it sends: trimmed, so without the last newline;
     await box.press('Enter');
     await expect(page.locator('.brief-note[role=status]')).toContainText('saved as a file', { timeout: 15_000 });
     await expect(box).toHaveValue('');
