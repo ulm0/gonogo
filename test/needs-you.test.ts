@@ -1,6 +1,7 @@
 // COMMS "Needs you": which messages wait on the Director, and the strip that answers them in one place.
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { asksOf, isAsk, needsCount, needsTitle, wantsGoNoGo } from '../src/client/needsModel.js';
 import { NeedsYou } from '../src/client/NeedsYou.js';
@@ -25,9 +26,9 @@ describe('which messages ask', () => {
     expect(isAsk({ type: 'event', id: 'e1', at: 1, kind: 'relief', text: 'Hire request?', read: false, archived: false } as DownlinkItem)).toBe(false);
     expect(isAsk(msg('m3', { body: `${'x'.repeat(500)} really?` }))).toBe(false);
   });
-  it('lists the oldest first, and says go/no-go only for those', () => {
+  it('lists the newest first, and says go/no-go only for those', () => {
     const list = asksOf([msg('m9', { subject: 'new?' }), msg('m2', { subject: 'old?' }), msg('m5')]);
-    expect(list.map((i) => i.id)).toEqual(['m2', 'm9']);
+    expect(list.map((i) => i.id)).toEqual(['m9', 'm2']);
     expect(wantsGoNoGo(msg('m1', { subject: 'GO / NO-GO' }))).toBe(true);
     expect(wantsGoNoGo(msg('m1', { subject: 'Which?' }))).toBe(false);
   });
@@ -59,6 +60,34 @@ describe('the strip', () => {
     expect(out).toContain('Reply to');
     expect(out).toContain('GO: Go/no-go: release 0.18');
     expect(out).toContain('NO-GO: Go/no-go: release 0.18');
-    expect(out).toContain('Not a question: Which branch?');
+    expect(out).toContain('Mark handled: Which branch?');
+  });
+});
+
+describe('the room and the Comms key', () => {
+  it('draws the list in the room with no gutter of its own', () => {
+    store.setState((s) => ({ ...s, downlink: { unread: 1, items: [msg('m1', { subject: 'Which branch?' })] } }) as never);
+    const out = renderToString(createElement(NeedsYou, { room: true }));
+    expect(out).toContain('data-room="true"');
+    expect(renderToString(createElement(NeedsYou))).not.toContain('data-room');
+  });
+  it('puts the list under the Brief box on a desktop and at the top on a phone, and no longer docks floods in the room', () => {
+    const screen = readFileSync('src/client/RoomScreen.tsx', 'utf8');
+    expect(screen.indexOf('<YourConsole />')).toBeGreaterThan(-1);
+    expect(screen.lastIndexOf('<NeedsYou room />')).toBeGreaterThan(screen.indexOf('<YourConsole />'));
+    expect(screen).toContain('<StatusStrip phone />\n        <NeedsYou room />');
+    expect(readFileSync('src/client/RoomView.tsx', 'utf8')).not.toContain('needs-dock');
+  });
+  it('names the Comms key with what needs you first, then what is unread', async () => {
+    const { commsName } = await import('../src/client/inbox.js');
+    expect(commsName(0)).toBe('Comms');
+    expect(commsName(3)).toBe('Comms, 3 unread');
+    expect(commsName(3, 1)).toBe('Comms, 1 needs you, 3 unread');
+    expect(commsName(0, 2)).toBe('Comms, 2 need you');
+  });
+  it('counts every kind in the badge, from the same state as the list', () => {
+    const ben = { name: 'ben', role: 'r', dir: '/w', mode: 'default', provider: 'claude', boss: false, state: 'needs_you', needsKind: 'permission', needsReason: 'Run: git push', transition: null } as never;
+    store.setState((s) => ({ ...s, agents: { ben }, order: ['ben'], downlink: { unread: 1, items: [msg('m1', { subject: 'Which?' })] }, relief: [{ id: 'h1', by: 'flight', at: 1, expiresAt: 2, name: 'cara', position: null, role: 'r', dir: '/w', provider: 'claude', mode: 'default', cleanRoom: null }] }) as never);
+    expect(renderToString(createElement(NeedsYou, { room: true }))).toContain('Needs you: 3 answers');
   });
 });

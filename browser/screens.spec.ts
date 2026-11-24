@@ -304,6 +304,8 @@ async function needsYou(page: Page, group: string): Promise<void> {
   await page.route('**/api/handoff-requests', (route) => route.fulfill({ json: { requests: [{ id: 'ha9', dock: 'dk1', dockName: 'lab', task: 't4', assignee: 'cara', title: 'Fix the login token', detail: 'The token expires after five minutes instead of an hour.', due: null, priority: 'normal', onward: false, budget: null, at: Date.now() }] } }));
   await page.goto(`${base}/r/main/`);
   await page.locator('.topbar').waitFor({ timeout: 30_000 });
+  await view(page, group, 'room: needs you under the Brief box', () => page.locator('.needs-you[data-room]').waitFor({ timeout: 10_000 }), true);
+  await measure(page, group, 'room: needs you under the Brief box', '.room');
   await view(page, group, 'comms: needs you', async () => {
     await open(page, 'Comms');
     await page.locator('.needs-you').waitFor({ timeout: 10_000 });

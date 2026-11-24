@@ -11,12 +11,12 @@ export const wantsGoNoGo = (item: DownlinkMessage): boolean => GO_NOGO.test(askT
 
 /**
  * shortcut: a message "asks" when it is unread, not archived, and says go/no-go or has a question mark in its subject or its first 400 characters. There is no field for it on the
- * message yet; a flag set by send_message would be exact, and this reads it from the words until the server has one. A message that only looks like a question leaves with "Not a question".
+ * message yet; a flag set by send_message would be exact, and this reads it from the words until the server has one. A message that only looks like a question, or that needs no answer, leaves with "Mark handled".
  */
 export const isAsk = (item: DownlinkItem): item is DownlinkMessage => item.type === 'message' && !item.read && !item.archived && (wantsGoNoGo(item) || askText(item).includes('?'));
 
-/** The messages that wait for an answer, the one that has waited longest first (an old question is the one forgotten). */
-export const asksOf = (items: readonly DownlinkItem[]): DownlinkMessage[] => items.filter(isAsk).sort((a, b) => a.at - b.at);
+/** The messages that wait for an answer, the newest first, like the inbox. */
+export const asksOf = (items: readonly DownlinkItem[]): DownlinkMessage[] => items.filter(isAsk).sort((a, b) => b.at - a.at);
 
 /** What the strip counts: consoles that wait on you (a permission or a go), messages, hire requests and handoffs. */
 export const needsCount = (consoles: number, asks: number, relief: number, handoffs: number): number => consoles + asks + relief + handoffs;

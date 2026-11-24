@@ -9,7 +9,8 @@ import * as api from './api.js';
 import { CheckNow } from './CheckNow.js';
 import { Pop } from './Pop.js';
 import { MAIN_PATH, ROOMS_PATH, setPublicOrigin } from './base.js';
-import { unreadText } from './inbox.js';
+import { commsName, unreadText } from './inbox.js';
+import { useNeeds } from './NeedsYou.js';
 import { CHANGELOG_URL, inMain, ROLLOUT_SHOW, useNewer, useRolloutDismissed } from './newer.js';
 import { activeOf, activeText } from './plan.js';
 import { showComms, showLivery, showLog, showLoop, showMissions, showPlan, showRoom, showRules, showWindow, useStore } from './store.js';
@@ -40,19 +41,22 @@ function PlanCount(): ReactElement | null {
   );
 }
 
-/** The small count of the Comms key: what the Director has not read. The server keeps it, so the phone and the desk show the same. */
+/**
+ * The small count of the Comms key, from any page: what waits on the Director first (a console asking, a hire request, a handoff, a message that asks: the Needs you list), else what he has
+ * not read. The server keeps the unread count, so the phone and the desk show the same. The words are in the name of the key, so the number is not read twice.
+ */
 function UnreadCount(): ReactElement | null {
   const unread = useStore((s) => s.downlink.unread);
-  if (unread === 0) return null;
-  // the words are in the name of the key, so the number is not read twice
+  const { n } = useNeeds();
+  const shown = n > 0 ? n : unread;
+  if (shown === 0) return null;
   return (
     <span className="chip" data-tone="amber" aria-hidden="true">
-      {unread}
+      {shown}
     </span>
   );
 }
 
-const commsName = (unread: number): string => (unread === 0 ? 'Comms' : `Comms, ${unreadText(unread)}`);
 
 /** The version, as a key: whether this install is current, CHECK NOW, and what is out. In another room Update is main's, so it links there. */
 function VersionButton({ phone }: { phone: boolean }): ReactElement | null {
@@ -224,6 +228,7 @@ function MoreMenu({ up = false }: { up?: boolean }): ReactElement {
 
 export function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }): ReactElement {
   const unread = useStore((s) => s.downlink.unread);
+  const { n: needs } = useNeeds();
   const view = useStore((s) => s.view);
   return (
     <header className="topbar lay-topbar">
@@ -243,7 +248,7 @@ export function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }):
           <a className="btn" data-kind="quiet" href={ROOMS_PATH}>
             Rooms
           </a>
-          <button type="button" className="btn" data-kind="quiet" aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
+          <button type="button" className="btn" data-kind="quiet" aria-label={commsName(unread, needs)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
             Comms
             <UnreadCount />
           </button>
@@ -264,12 +269,13 @@ export function TopBar({ phone, onPanel }: { phone: boolean; onPanel(): void }):
 export function PhoneBar(): ReactElement {
   const view = useStore((s) => s.view);
   const unread = useStore((s) => s.downlink.unread);
+  const { n: needs } = useNeeds();
   return (
     <nav className="phone-bar lay-phone-bar" aria-label="Sections">
       <button type="button" className="btn" data-kind={view === 'room' ? 'primary' : undefined} aria-current={view === 'room' ? 'page' : undefined} onClick={showRoom}>
         Room
       </button>
-      <button type="button" className="btn" data-kind={view === 'comms' ? 'primary' : undefined} aria-label={commsName(unread)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
+      <button type="button" className="btn" data-kind={view === 'comms' ? 'primary' : undefined} aria-label={commsName(unread, needs)} aria-current={view === 'comms' ? 'page' : undefined} onClick={() => showComms()}>
         Comms
         <UnreadCount />
       </button>

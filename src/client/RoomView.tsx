@@ -24,7 +24,6 @@ import {
   holdable,
   ledOf,
   legendsOf,
-  needingYou,
   onHold,
   panelDetails,
   reasonText,
@@ -39,8 +38,6 @@ import {
   voteOf,
 } from './room.js';
 import type { Cell, TileKind } from './room.js';
-import { HandoffNeed } from './HandoffAsks.js';
-import { useHandoffAsks } from './linksData.js';
 import { reliefFailure, reliefRows, reliefTitle, roleLabel } from './relief.js';
 import { closeConsole, openConsole, openEdit, openHangar, openHire, openRecorder, showTraffic, useFeature, useNow, useStore } from './store.js';
 import { TerminalPane } from './TerminalPane.js';
@@ -285,7 +282,7 @@ export function ReliefNeed({ request, legend, onFail }: { request: ReliefRequest
   const now = useNow();
   const { busy, run } = useRun();
   const title = reliefTitle(request, legend);
-  // the request leaves the list before the hire runs, so this block is gone when a GO fails: the failure is told by `Needs`, which stays
+  // the request leaves the list before the hire runs, so this block is gone when a GO fails: the failure is told by the Needs you list, which stays
   const answer = (go: boolean): void => run(() => api.answerRelief(request.id, go).catch((e: unknown) => onFail(reliefFailure(request.name, go, e))));
   return (
     <section className="flood need relief-need" data-tone="amber" aria-label={title}>
@@ -320,49 +317,13 @@ export function ReliefNeed({ request, legend, onFail }: { request: ReliefRequest
   );
 }
 
-/** One amber flood per console that needs the Director, then one per hire request that waits. Nothing is drawn when none does. */
-export function Needs({ phone }: { phone: boolean }): ReactElement | null {
-  const list = useAgentList();
-  const { legends } = useSeats();
-  const relief = useStore((s) => s.relief);
-  const asks = useHandoffAsks();
-  const [failed, setFailed] = useState<string | null>(null);
-  const needing = needingYou(list);
-  if (needing.length === 0 && relief.length === 0 && asks.length === 0 && failed === null) return null;
-  return (
-    // On a wide page the floods dock at the foot of the viewport while the matrix is on screen: the wall is tall and the floods sit below the matrix.
-    <div className={phone ? 'needs' : 'needs needs-dock'}>
-      {failed !== null && (
-        <section className="flood need" data-tone="nogo" role="alert">
-          <p className="need-text relief-failed">{failed}</p>
-          <button type="button" className="btn" data-size="big" onClick={() => setFailed(null)}>
-            DISMISS
-          </button>
-        </section>
-      )}
-      {needing.map((agent) => (
-        <Need key={agent.name} agent={agent} legend={legendOf(legends, agent.name)} phone={phone} />
-      ))}
-      {relief.map((request) => (
-        <ReliefNeed key={request.id} request={request} legend={legendOf(legends, request.by)} onFail={setFailed} />
-      ))}
-      {asks.map((ask) => (
-        <HandoffNeed key={ask.id} ask={ask} legend="FLIGHT" />
-      ))}
-    </div>
-  );
-}
-
 export function YourConsole(): ReactElement {
   const list = useAgentList();
   const boss = list.find((a) => a.boss) ?? null;
   return (
-    <>
-      <Needs phone={false} />
-      <section className="your-console" aria-label="Your console">
-        <Brief boss={boss} />
-      </section>
-    </>
+    <section className="your-console" aria-label="Your console">
+      <Brief boss={boss} />
+    </section>
   );
 }
 

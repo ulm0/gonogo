@@ -53,6 +53,9 @@ export const EVENT_CHIPS: Readonly<Record<DownlinkEventKind, { text: string; ton
 
 export const unreadText = (n: number): string => `${n} unread`;
 
+/** The name of the Comms key: what needs the Director first, then what is unread. */
+export const commsName = (unread: number, needs = 0): string => [needs > 0 ? `${needs} ${needs === 1 ? 'needs' : 'need'} you` : '', unread > 0 ? unreadText(unread) : ''].filter((p) => p !== '').reduce((name, part) => `${name}, ${part}`, 'Comms');
+
 /** The id of the row that carries the keyboard, in the page. */
 export const rowId = (id: string): string => `dl-${id}`;
 

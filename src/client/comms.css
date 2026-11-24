@@ -39,9 +39,19 @@
   padding: 12px 24px 0;
 }
 
+/* in the room, under the Brief box: the room's own gutter is enough */
+.needs-you[data-room] {
+  padding: 0;
+}
+
 @media (max-width: 760px) {
-  .needs-you {
+  .needs-you:not([data-room]) {
     padding: 8px 12px 0;
+  }
+
+  /* in the room on a phone the floods keep the room's 12 px; the label does too */
+  .needs-you[data-room] .needs-you-title {
+    padding: 0 12px;
   }
 }
 
