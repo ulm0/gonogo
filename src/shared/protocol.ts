@@ -607,7 +607,7 @@ export interface AgentRecord {
   engineSession?: { for: string; id: string };
   /** Hired by the boss on its own, inside the Relief rules (docs/hire-fire-spec.md), not by the Director's hand or GO. Set by Relief's call only, never by a request. */
   hiredBy?: 'boss';
-  /** The Director marked it: the boss's `fire_agent` and a rule never stop it. Absent means the default (an agent the boss hired by rule can be fired, any other cannot). */
+  /** The Director marked it: the boss's `fire_agent` never stops it. Absent: it can be stopped (only the boss is fixed). */
   protected?: true;
 }
 export interface RosterFile {
@@ -672,7 +672,7 @@ export interface AgentView {
   /** `boss` when FLIGHT hired it by rule (the roster tile shows "hired by flight"), and when (ms epoch). */
   hiredBy?: 'boss';
   hiredAt?: number;
-  /** The Director protected it from `fire_agent`. */
+  /** The Director protected it from `fire_agent` (FLIGHT is always protected). */
   protected?: boolean;
   state: AgentState;
   /** ms epoch of the last state change. */
@@ -1779,8 +1779,10 @@ export interface ReliefRules {
   autoOnHost: boolean;
   /** Hires (not live agents) in the last hour. */
   ratePerHour: number;
+  /** The boss may stop any agent that is not the boss and not `protected` (the Director: only FLIGHT is fixed). Off: `fire_agent` is refused. Turning it off needs no step-up. */
+  mayStop: boolean;
 }
-export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3 };
+export const RELIEF_RULES_DEFAULT: ReliefRules = { autoApprove: false, maxCrew: 3, crewBudgetUsd: null, positions: [], engines: [], maxMode: 'acceptEdits', autoOnHost: false, ratePerHour: 3, mayStop: true };
 export interface ReliefRequest {
   /** `h1`, `h2`, ...; never used twice in one run. */
   id: string;
@@ -2952,7 +2954,7 @@ export interface Hub {
   startAgent(name: string, by: string): Promise<AgentView>;
   /**
    * The boss stops an agent it hired by rule (docs/hire-fire-spec.md): the process ends, the record, memory and worktree stay, and it can be started again (it is NOT marked stopped by the Director).
-   * Refused: the boss, an agent the Director hired, a protected one, one at a permission prompt or dialog, one with mail waiting.
+   * Refused: the boss, a protected one, one at a permission prompt or dialog, one with mail waiting.
    */
   fireAgent(name: string, by: string): Promise<AgentView>;
   /** ALL STOP: holds every agent that can be held (as `hold` does, one by one); the others are named in `skipped`. */

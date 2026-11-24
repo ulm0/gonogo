@@ -340,7 +340,20 @@ describe('fire_agent through Relief', () => {
     expect(fired).toEqual([]);
   });
 
-  it('the hub\'s refusal (the Director\'s own agent, protected) stops it with no task released', async () => {
+  it('mayStop off: fire_agent is refused before anything stops; turning it on again needs the step-up, turning it off does not', async () => {
+    views.push(agent('g1', { hiredBy: 'boss' }));
+    await on();
+    await rules.set({ mayStop: false });
+    const { r, fired } = withFire({ rules });
+    await expect(r.fire(FIRE, { name: 'g1', reason: 'x' })).rejects.toMatchObject({ code: 'forbidden' });
+    expect(fired).toEqual([]);
+    expect(raisesPower({ ...RELIEF_RULES_DEFAULT, mayStop: false }, { ...RELIEF_RULES_DEFAULT, mayStop: true })).toBe(true);
+    expect(raisesPower({ ...RELIEF_RULES_DEFAULT, mayStop: true }, { ...RELIEF_RULES_DEFAULT, mayStop: false })).toBe(false);
+    await rules.set({ mayStop: true });
+    expect((await r.fire(FIRE, { name: 'g1', reason: 'x' })).name).toBe('g1');
+  });
+
+  it('the hub\'s refusal (a protected agent) stops it with no task released', async () => {
     views.push(agent('ana'));
     const { r, updates } = withFire({ hub: { views: () => views, hire: async () => { throw new Error('no'); }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }), fireAgent: async () => { throw new HubError('forbidden', 'ana was not hired by you by rule'); } } });
     await expect(r.fire(FIRE, { name: 'ana', reason: 'x' })).rejects.toMatchObject({ code: 'forbidden' });

@@ -36,6 +36,7 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
   };
   if (raw.autoApprove !== undefined) out.autoApprove = flag(raw.autoApprove, 'autoApprove');
   if (raw.autoOnHost !== undefined) out.autoOnHost = flag(raw.autoOnHost, 'autoOnHost');
+  if (raw.mayStop !== undefined) out.mayStop = flag(raw.mayStop, 'mayStop');
   if (raw.maxCrew !== undefined) out.maxCrew = whole(raw.maxCrew, 'maxCrew', 1, MAX_AGENTS);
   if (raw.ratePerHour !== undefined) out.ratePerHour = whole(raw.ratePerHour, 'ratePerHour', 1, 60);
   if (raw.crewBudgetUsd !== undefined) {
@@ -70,6 +71,7 @@ export function raisesPower(now: ReliefRules, next: ReliefRules): boolean {
   return (
     (!now.autoApprove && next.autoApprove) ||
     (!now.autoOnHost && next.autoOnHost) ||
+    (!now.mayStop && next.mayStop) ||
     next.maxCrew > now.maxCrew ||
     next.ratePerHour > now.ratePerHour ||
     (next.crewBudgetUsd !== null && (now.crewBudgetUsd === null || next.crewBudgetUsd > now.crewBudgetUsd)) ||

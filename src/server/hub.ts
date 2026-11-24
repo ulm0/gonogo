@@ -3607,9 +3607,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       assertOpen();
       const rt = lookup(name);
       const { record } = rt;
-      // decided here from the stored record, never from the request: only the boss's own hires, only unprotected ones, never the boss
+      // decided here from the stored record, never from the request: only FLIGHT is fixed; the Director's own agents can be stopped unless he protected them
       if (record.boss) throw new HubError('forbidden', 'the boss cannot be fired');
-      if (record.hiredBy !== 'boss') throw new HubError('forbidden', `${record.name} was not hired by you by rule: only the Director stops it`);
       if (record.protected === true) throw new HubError('forbidden', `${record.name} is protected by the Director`);
       if (rt.state === 'stopped' || rt.transition !== null) throw new HubError('conflict', `${record.name} is stopped or changing already`);
       if (rt.needsKind !== null) throw new HubError('conflict', `${record.name} waits for the Director (${rt.needsKind}): do not fire it now`);

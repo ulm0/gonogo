@@ -69,6 +69,10 @@ export function ReliefRulesBlock(): ReactElement {
         {ENGINES.map((p) => <label key={p} className="staff-check"><input type="checkbox" className="check" checked={draft.engines.includes(p)} onChange={(event) => set({ engines: toggle(draft.engines, p, event.target.checked) })} />{p}</label>)}
       </fieldset>
       <label className="staff-check">
+        <input type="checkbox" className="check" checked={draft.mayStop} onChange={(event) => set({ mayStop: event.target.checked })} />
+        FLIGHT may stop agents with fire_agent (not itself, and not the ones you protect). Protect the consoles that gate your work, a reviewer for one, in their Edit form.
+      </label>
+      <label className="staff-check">
         <input type="checkbox" className="check" checked={draft.autoOnHost} onChange={(event) => set({ autoOnHost: event.target.checked })} />
         Allow auto mode outside a Clean Room (agents the boss hires can then change anything your user can, without asking)
       </label>
@@ -85,7 +89,7 @@ export function ReliefRulesBlock(): ReactElement {
         <div className="rules-crew">
           <h3 className="label">Boss-hired agents</h3>
           <ul>{crew.map((name) => <li key={name}>{name}</li>)}</ul>
-          <p className="hint">The boss may stop these with fire_agent. Protect one from the Edit form of its console (it is never stopped by the boss then).</p>
+          <p className="hint">Hired by FLIGHT by rule. Any agent but FLIGHT can be stopped by it unless you protect it in its Edit form.</p>
         </div>
       )}
       {note !== null && <p className="hint" role="status">{note}</p>}

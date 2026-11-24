@@ -241,12 +241,13 @@ describe('the bypass confirmation', () => {
     expect(editRequest({ ...same, role: 'new' }, bypassing, true)).toEqual({ role: 'new' });
   });
 
-  it('protects an agent the boss hired by rule from fire_agent, and only that one', () => {
+  it('protects an agent from fire_agent: any agent but the boss', () => {
     const hired = { ...bypassing, hiredBy: 'boss' as const };
     const form = { ...same, name: 'ana' };
     expect(editRequest({ ...form, protectedAgent: true }, hired, true)).toEqual({ protected: true });
     expect(editRequest({ ...form, protectedAgent: false }, { ...hired, protected: true }, true)).toEqual({ protected: false });
-    expect(editRequest({ ...form, protectedAgent: true }, bypassing, true)).toBeNull();
+    expect(editRequest({ ...form, protectedAgent: true }, bypassing, true)).toEqual({ protected: true });
+    expect(editRequest({ ...form, protectedAgent: true }, { ...bypassing, boss: true }, true)).toBeNull();
   });
 
   it('is not needed for auto, which sends no confirmBypass either', () => {

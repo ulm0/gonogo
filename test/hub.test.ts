@@ -6883,12 +6883,13 @@ describe('Hub.fireAgent: the boss stops an agent it hired by rule', () => {
     await expectHubReject(h.hub.startAgent('rt1', 'flight'), 'forbidden', /the Director stopped rt1/);
   });
 
-  it('refuses the boss, an agent the Director hired, a protected one, one that waits for the Director, one with mail, and one stopped already', async () => {
+  it('refuses the boss, a protected one, one that waits for the Director, and a ghost; the Director\'s own unprotected agent is stopped (only FLIGHT is fixed)', async () => {
     const h = await started();
     await h.hire('ana');
     await crewHire(h, 'rt1');
     await expectHubReject(h.hub.fireAgent('flight', 'flight'), 'forbidden', /the boss cannot be fired/);
-    await expectHubReject(h.hub.fireAgent('ana', 'flight'), 'forbidden', /not hired by you by rule/);
+    expect((await h.hub.fireAgent('ana', 'flight')).state).toBe('stopped');
+    expect(h.saves.at(-1)?.agents.find((r) => r.name === 'ana')?.stoppedBy).toBeUndefined();
     const edited = await h.hub.edit('rt1', { protected: true });
     expect(edited.protected, JSON.stringify(edited)).toBe(true);
     expect(h.view('rt1').protected).toBe(true);

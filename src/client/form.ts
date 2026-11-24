@@ -541,7 +541,7 @@ export function editRequest(values: Values, original: AgentView, nameLocked: boo
   }
   if (values.autostart !== (original.autostart !== false)) changes.autostart = values.autostart;
   if (values.coauthor !== (original.coauthor !== false)) changes.coauthor = values.coauthor;
-  if (original.hiredBy === 'boss' && values.protectedAgent !== (original.protected === true)) changes.protected = values.protectedAgent;
+  if (!original.boss && values.protectedAgent !== (original.protected === true)) changes.protected = values.protectedAgent;
   if (JSON.stringify(remoteControlOf(values)) !== JSON.stringify(original.remoteControl ?? null)) changes.remoteControl = remoteControlOf(values);
   if (JSON.stringify(worktreeOf(values)) !== JSON.stringify(original.worktree ?? null)) changes.worktree = worktreeOf(values);
   const keys = keysOf(values, Object.keys(original.keys ?? {}));

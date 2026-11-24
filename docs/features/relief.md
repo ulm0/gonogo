@@ -52,9 +52,9 @@ Always a request, never by rule: a folder outside the boss's own, a Clean Room w
 
 ## Firing: `fire_agent`
 
-The boss can stop an agent it hired by rule: `fire_agent {name, reason}`. It **stops** only: the process ends, the record, memory, transcript and worktree stay, the agent is not marked as stopped by you (the boss, or you, can start it again), and its open tasks go back to *todo*, unassigned, with the history line `released: <name> was stopped by flight`. Refused: the boss, any agent you hired, a **protected** agent, one at a permission prompt or dialog, one with an open T-minus vote to cast, one with mail waiting. A few a minute at most. The Downlink says who was fired and how many tasks were released (with the boss's reason); the Black Box row has the name and the count only. Removing an agent stays yours.
+Only FLIGHT is fixed: the boss can stop **any** agent but itself with `fire_agent {name, reason}`, yours included, unless you protected it (Flight Rules: *FLIGHT may stop agents*, on by default; turning it back on needs the password). It **stops** only: the process ends, the record, memory, transcript and worktree stay, the agent is not marked as stopped by you (the boss, or you, can start it again), and its open tasks go back to *todo*, unassigned, with the history line `released: <name> was stopped by flight`. Refused: the boss, a **protected** agent (mark the consoles that gate your work, a reviewer for one), one at a permission prompt or dialog, one with an open T-minus vote to cast, one with mail waiting. A few a minute at most. Every stop is its own Downlink line, never batched: who was fired, how many tasks were released and the boss's reason; the Black Box row has the name and the count only. Removing an agent stays yours.
 
-**Protected:** tick *Protect it from FLIGHT's fire_agent* in the Edit form of a boss-hired agent (no password); unticking asks for the password. *Flight Rules > Security > Hire on demand* has the rules, SAVE RULES and STOP CREW.
+**Protected:** tick *Protect it from FLIGHT's fire_agent* in the Edit form of any agent but FLIGHT (no password); unticking asks for the password. *Flight Rules > Security > Hire on demand* has the rules, SAVE RULES and STOP CREW.
 
 ## API
 

@@ -813,14 +813,14 @@ function Staff({ form }: { form: Target }): ReactElement {
       </p>
     </div>
   );
-  const protectBox = editing && original?.hiredBy === 'boss' && (
+  const protectBox = editing && original !== null && !original.boss && (
     <div className="staff-clean">
       <div className="staff-check">
         <input id={`${id}-protected`} type="checkbox" className="check" checked={values.protectedAgent} onChange={(event) => change({ protectedAgent: event.target.checked }, 'coauthor')} aria-describedby={`${id}-protected-hint`} />
         <label htmlFor={`${id}-protected`}>Protect it from FLIGHT's fire_agent</label>
       </div>
       <p className="hint" id={`${id}-protected-hint`}>
-        FLIGHT hired this console by rule and may stop it. Ticked: it never will. Unticking asks for the password again.
+        FLIGHT may stop this console (only FLIGHT is fixed). Ticked: it never will; mark the consoles that gate your work (a reviewer, say) protected. Unticking asks for the password again.
       </p>
     </div>
   );

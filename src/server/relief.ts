@@ -335,6 +335,8 @@ export function createRelief(options: ReliefOptions): Relief {
       const { name, reason } = input;
       if (typeof name !== 'string' || !NAME_RE.test(name)) throw bad('name must be the name of an agent', 'name');
       if (typeof reason !== 'string' || reason.trim().length === 0 || reason.length > 200 || HIDDEN_RE.test(reason)) throw bad('reason is 1 to 200 plain characters: the Director reads it', 'reason');
+      await options.rules?.check();
+      if (options.rules !== undefined && !options.rules.view().mayStop) throw new HubError('forbidden', 'the Director turned off "FLIGHT may stop agents" in Flight Rules');
       if (options.voteWaitsFor?.(name) === true) throw new HubError('conflict', `${name} has an open T-minus vote to cast: do not fire it now`);
       // the hub decides from the stored record (boss-hired, not protected, nothing waiting for the Director) and stops it without marking it the Director's stop
       await hub.fireAgent(name, requester.name);
@@ -349,6 +351,7 @@ export function createRelief(options: ReliefOptions): Relief {
         }
       }
       // the line names the agent and the counts; the reason is the boss's own words and stays out of the Black Box (the Downlink shows it to the Director)
+      // always its own line, never batched: a stop of an agent with a duty (a reviewer) must be seen
       notify(`${requester.name} fired ${name} (${released} tasks released): ${reason.trim()}`);
       changed();
       return { name, released, note: `${name} is stopped; its record, memory and files stay and the Director or you can start it again${released > 0 ? `; ${released} of its tasks are back on the board unassigned` : ''}` };
