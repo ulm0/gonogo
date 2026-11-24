@@ -89,29 +89,6 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
   return out;
 }
 
-/** Does `next` give the boss more than `now` does? Only that needs the Director's step-up (lowering a rule never does). */
-export function raisesPower(now: ReliefRules, next: ReliefRules): boolean {
-  const more = (a: readonly unknown[], b: readonly unknown[]): boolean => b.some((x) => !a.includes(x));
-  return (
-    (!now.autoApprove && next.autoApprove) ||
-    (!now.autoOnHost && next.autoOnHost) ||
-    (!now.mayStop && next.mayStop) ||
-    (!now.mayRemove && next.mayRemove) ||
-    (now.autoscale !== 'on' && next.autoscale === 'on') ||
-    next.scaleUpTodo < now.scaleUpTodo ||
-    (next.removeStoppedHours !== null && (now.removeStoppedHours === null || next.removeStoppedHours < now.removeStoppedHours)) ||
-    (!now.bypassInCleanRoom && next.bypassInCleanRoom) ||
-    next.maxCrew > now.maxCrew ||
-    next.ratePerHour > now.ratePerHour ||
-    // no ceiling is the most power: lifting an existing one is a raise, and so is a higher one; setting a first ceiling takes power away
-    (now.crewBudgetUsd !== null && (next.crewBudgetUsd === null || next.crewBudgetUsd > now.crewBudgetUsd)) ||
-    modeRank(next.maxMode) > modeRank(now.maxMode) ||
-    more(now.positions, next.positions) ||
-    more(now.engines, next.engines) ||
-    Object.entries(next.models).some(([engine, list]) => more(now.models[engine as Provider] ?? [], list))
-  );
-}
-
 export interface ReliefRulesStore {
   load(): Promise<void>;
   /** The rules in force. Compares the file with the last record this process wrote first (see the header): a mismatch is a tamper. */
