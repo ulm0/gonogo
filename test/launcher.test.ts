@@ -211,7 +211,7 @@ function expectedSettings(hubUrl: string, name: string, memoryPath: string, extr
     crossSessionInbound: 'refuse',
     permissions: {
       deny: ['SendMessage', 'ListAgents'],
-      allow: [`Read(//${memoryPath.slice(1)})`, `Edit(//${memoryPath.slice(1)})`],
+      allow: [`Read(//${memoryPath.slice(1)})`, `Edit(//${memoryPath.slice(1)})`, `Read(//${memoryPath.slice(1).replace(/memory.md$/, "handoff.md")})`],
     },
     ...extra,
   };
@@ -610,7 +610,7 @@ describe('prepareStart', () => {
       settingsText.includes(
         '  },\n  "tui": "fullscreen",\n  "promptSuggestionEnabled": false,\n  "crossSessionInbound": "refuse",\n' +
           '  "permissions": {\n    "deny": [\n      "SendMessage",\n      "ListAgents"\n    ],\n    "allow": [\n' +
-          `      "Read(//${memory.slice(1)})",\n      "Edit(//${memory.slice(1)})"\n    ]\n  },\n`,
+          `      "Read(//${memory.slice(1)})",\n      "Edit(//${memory.slice(1)})",\n      "Read(//${memory.slice(1).replace(/memory.md$/, 'handoff.md')})"\n    ]\n  },\n`,
       ),
     ).toBe(true);
     expect(await text(join(base, 'mcp.json'))).toBe(

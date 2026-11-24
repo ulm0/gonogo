@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { claudeTurns, HANDOFF_CHARS, HANDOFF_TURNS, handoffMarker, handoffNote, handoffText, lastTurns, opencodeTurns, piTurns, readTranscript } from '../src/server/handoff.js';
+import { newestOpencodeSession, claudeTurns, HANDOFF_CHARS, HANDOFF_TURNS, handoffMarker, handoffNote, handoffText, lastTurns, opencodeTurns, piTurns, readTranscript } from '../src/server/handoff.js';
 
 let tmp: string;
 beforeEach(async () => {
@@ -79,6 +79,70 @@ describe('reading transcripts', () => {
   });
 });
 
+describe('sessions that gonogo did not name (an older version): found by the folder and the time', () => {
+  const NOW = Date.parse('2026-11-24T12:00:00Z');
+  const piLine = (cwd: string): string => j({ type: 'session', version: 3, id: 'x', cwd });
+  const piMsg = (text: string): string => j({ type: 'message', id: 'a', parentId: null, message: { role: 'user', content: text } });
+  const at = async (path: string, ms: number): Promise<void> => (await import('node:fs/promises')).utimes(path, new Date(ms), new Date(ms));
+
+  it('pi: the newest session in its own folder that was started in this working folder, not after the switch; a session of another folder is not it', async () => {
+    const piDir = join(tmp, 'pi');
+    await mkdir(join(piDir, 'sessions', '--w--'), { recursive: true });
+    await mkdir(join(piDir, 'sessions', '--other--'), { recursive: true });
+    const old = join(piDir, 'sessions', '--w--', 'a.jsonl');
+    const newer = join(piDir, 'sessions', '--w--', 'b.jsonl');
+    const later = join(piDir, 'sessions', '--w--', 'c.jsonl');
+    const foreign = join(piDir, 'sessions', '--other--', 'd.jsonl');
+    await writeFile(old, [piLine('/w'), piMsg('first')].join('\n'));
+    await writeFile(newer, [piLine('/w'), piMsg('second')].join('\n'));
+    await writeFile(later, [piLine('/w'), piMsg('after the switch')].join('\n'));
+    await writeFile(foreign, [piLine('/elsewhere'), piMsg('not mine')].join('\n'));
+    await at(old, NOW - 3_600_000);
+    await at(newer, NOW - 600_000);
+    await at(later, NOW + 3_600_000);
+    await at(foreign, NOW - 10_000);
+    const side = { name: 'ana', provider: 'pi' as const, sessionId: 'not-in-the-agents-folder' };
+    const found = await readTranscript(side, { agentDir: join(tmp, 'agent'), cwd: '/w', piDir, until: NOW });
+    expect(found?.path).toBe(newer);
+    expect(found?.turns).toStrictEqual([{ role: 'user', text: 'second' }]);
+    // the session gonogo named wins over the guess
+    await mkdir(join(tmp, 'agent', 'pi-sessions'), { recursive: true });
+    await writeFile(join(tmp, 'agent', 'pi-sessions', '2026_not-in-the-agents-folder.jsonl'), [piLine('/w'), piMsg('named')].join('\n'));
+    expect((await readTranscript(side, { agentDir: join(tmp, 'agent'), cwd: '/w', piDir, until: NOW }))?.turns).toStrictEqual([{ role: 'user', text: 'named' }]);
+    // no working folder or no folder of pi's: nothing is guessed
+    expect(await readTranscript({ ...side, sessionId: 'x' }, { agentDir: join(tmp, 'agent2'), piDir })).toBeNull();
+  });
+
+  it('Claude Code: the newest session of the folder\'s project when the session id has no file', async () => {
+    const claude = join(tmp, 'claude');
+    await mkdir(join(claude, 'projects', '-w-proj'), { recursive: true });
+    const file = join(claude, 'projects', '-w-proj', 'other-id.jsonl');
+    await writeFile(file, CLAUDE.join('\n'));
+    await at(file, NOW - 1000);
+    const found = await readTranscript({ name: 'ana', sessionId: 'unknown-id' }, { agentDir: tmp, claudeConfigDir: claude, cwd: '/w/proj', until: NOW });
+    expect(found?.path).toBe(file);
+    expect(found?.turns).toHaveLength(3);
+    expect(await readTranscript({ name: 'ana', sessionId: 'unknown-id' }, { agentDir: tmp, claudeConfigDir: claude, cwd: '/w/other', until: NOW })).toBeNull();
+  });
+
+  it('opencode: with no recorded id, the newest session of this folder created before the switch, from `opencode session list`', async () => {
+    const listing = 'noise\n' + JSON.stringify([
+      { id: 'ses_new', updated: 3000, created: 2000, directory: '/w' },
+      { id: 'ses_other', updated: 9000, created: 8000, directory: '/elsewhere' },
+      { id: 'ses_old', updated: 1500, created: 1000, directory: '/w' },
+      { id: 'ses_future', updated: 99_000, created: 98_000, directory: '/w' },
+    ]);
+    expect(newestOpencodeSession(listing, '/w', 5000)).toBe('ses_new');
+    expect(newestOpencodeSession(listing, '/nowhere', 5000)).toBeNull();
+    expect(newestOpencodeSession('not json', '/w', 5000)).toBeNull();
+    const exported = JSON.stringify({ messages: [{ info: { role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }] });
+    const asked: string[] = [];
+    const found = await readTranscript({ name: 'ana', provider: 'opencode', sessionId: 's' }, { agentDir: tmp, cwd: '/w', until: 5000, listOpencode: async () => listing, exportOpencode: async (id) => (asked.push(id), exported) });
+    expect(found?.turns).toStrictEqual([{ role: 'user', text: 'hi' }]);
+    expect(asked).toStrictEqual(['ses_new']);
+  });
+});
+
 describe('the handoff file', () => {
   it('keeps the newest turns within the limits, oldest first, and cuts a long one', () => {
     const many = Array.from({ length: HANDOFF_TURNS + 10 }, (_, i) => ({ role: 'user' as const, text: `t${i}` }));
@@ -99,6 +163,8 @@ describe('the handoff file', () => {
     expect(text).toContain('## User\n\nFix the login bug.');
     expect(text).toContain('## You\n\nFixed: the token expired early.');
     expect(handoffNote(text, 'new', '/a/handoff.md')).toContain('/a/handoff.md');
+    // the recap names the engines and the time, in one line
+    expect(handoffNote(text, 'new', '/a/handoff.md')).toContain('moved you from Claude Code (until 1970-01-01T00:00:00.000Z) to pi: this is a new session');
     expect(handoffNote(text, 'other', '/a/handoff.md')).toBeNull();
     expect(handoffNote(null, 'new', '/a/handoff.md')).toBeNull();
   });

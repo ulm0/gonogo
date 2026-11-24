@@ -1804,6 +1804,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         } else if (isClaude(rt)) reconcile(rt, now);
         else {
           // Gemini CLI: its hooks alone move the state; the sweep ends a stale draft and retries the mail.
+          // pi and opencode: their input box is read from the screen too (terminal.ts), so a draft that was erased ends at once, not after DRAFT_EXPIRY_MS.
+          if (rt.record.provider === 'pi' || rt.record.provider === 'opencode') screenProof(rt, now, screenOf(rt));
           expireDraft(rt, now);
           if (rt.queue.length > 0) deliveryCheck(rt);
         }

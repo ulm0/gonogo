@@ -351,6 +351,36 @@ describe('analyzeScreen', () => {
   });
 });
 
+describe('analyzeScreen for pi and opencode (rows as the real engines drew them in a gonogo of this branch)', () => {
+  const rule = '─'.repeat(100);
+  const pad = (rows: string[], total = 30): string[] => [...rows, ...Array.from({ length: total - rows.length }, () => '')];
+  const pi = (typed: string, below = ['/tmp/par-proj (master)', '↑28 ↓613 R1.3M W143k CH99.9% $0.980 14.3%/1.0M (auto)   claude-opus-5-5 • medium']): string[] => pad([' I sent "PONG-MAIL" to you in reply to your message, and it was delivered.', '', rule, typed, rule, ...below]);
+  const opencode = (typed: string): string[] =>
+    pad(['', '', '                                ▄', '', '             ┃', `             ┃  ${typed}`, '             ┃', '             ┃  Build · Big Pickle OpenCode', '             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀', '                                                tab agents  ctrl+p commands', '', '  /tmp/par-proj:master  ⊙ 2 MCP /status      1.19.6']);
+
+  it('pi: the box is the rows between the lowest two rules; empty is empty, a draft is its text; Claude Code reads the same rows as no box', () => {
+    expect(analyzeScreen(pi(''), 100, 'pi')).toMatchObject({ promptBox: true, promptText: '', dialog: null });
+    expect(analyzeScreen(pi('hello draft'), 100, 'pi')).toMatchObject({ promptBox: true, promptText: 'hello draft' });
+    expect(analyzeScreen(pi(''), 100)).toMatchObject({ promptBox: false, promptText: null });
+    // a rule in the transcript above the box is not the box
+    expect(analyzeScreen([rule, 'text', rule, ...pi('')], 100, 'pi')).toMatchObject({ promptBox: true, promptText: '' });
+    // no status line below the box: not a box that is drawn yet
+    expect(analyzeScreen(pad([rule, '', rule]), 100, 'pi')).toMatchObject({ promptBox: false });
+  });
+
+  it('opencode: the bar of ┃ rows above the ╹▀▀ line; the placeholder is empty, a draft is its text', () => {
+    expect(analyzeScreen(opencode('Ask anything… "Fix a TODO in the codebase"'), 100, 'opencode')).toMatchObject({ promptBox: true, promptText: '' });
+    expect(analyzeScreen(opencode('hello draft'), 100, 'opencode')).toMatchObject({ promptBox: true, promptText: 'hello draft' });
+    expect(analyzeScreen(opencode('hello draft'), 100)).toMatchObject({ promptBox: false });
+    expect(analyzeScreen(pad(['┃', '┃  x']), 100, 'opencode')).toMatchObject({ promptBox: false });
+  });
+
+  it('the text of the box is never read as a dialog', () => {
+    expect(analyzeScreen(pi('Do you want to proceed?'), 100, 'pi').dialog).toBeNull();
+    expect(analyzeScreen(opencode('1. Yes  2. No'), 100, 'opencode').dialog).toBeNull();
+  });
+});
+
 describe('classifyTitle', () => {
   it.each([
     ['✳ Claude Code', 'idle'],

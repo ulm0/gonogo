@@ -59,7 +59,7 @@ export const ROOM_STATE_FILES: readonly string[] = [
 /** The supervisor's own files and folders: they stay at the root whatever the layout, and never say where main is. */
 export const SUPERVISOR_FILES: readonly string[] = ['auth.json', 'exposure-dismissed.json', 'runtime-settings-global.json', 'push.json', 'rooms.json', 'rooms-supervisor.json', 'setup-token', 'token', 'supervisor.lock', 'rooms', 'run', 'main-migration.json', 'knowledge'];
 /** Names that only exist inside another folder (an agent's, or `run/`): never at a home's root, so they say nothing about the layout. */
-export const NESTED_FILES: readonly string[] = ['.seq', 'agy-hooks.json', 'gemini-settings.json', 'gonogo-opencode.js', 'gonogo-opencode.json', 'gonogo-pi.json', 'gonogo-pi.ts', 'handoff.md', 'inbox-files', 'mcp.json', 'memory.md', 'opencode-role.md', 'opencode.json', 'pi-sessions', 'ptyhost.key', 'ptyhost.log', 'ptyhost.sock', 'settings.json', 'tokens.json', 'update.json'];
+export const NESTED_FILES: readonly string[] = ['.seq', 'opencode-data', 'agy-hooks.json', 'gemini-settings.json', 'gonogo-opencode.js', 'gonogo-opencode.json', 'gonogo-pi.json', 'gonogo-pi.ts', 'handoff.md', 'inbox-files', 'mcp.json', 'memory.md', 'opencode-role.md', 'opencode.json', 'pi-sessions', 'ptyhost.key', 'ptyhost.log', 'ptyhost.sock', 'settings.json', 'tokens.json', 'update.json'];
 /** Where a room that is running has put something besides those: its socket and token. */
 const ROOM_STATE_AT_ROOT: readonly string[] = [...ROOM_STATE_FILES, join('run', 'room.sock'), join('run', 'room-token')];
 

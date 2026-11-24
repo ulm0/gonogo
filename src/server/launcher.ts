@@ -6,6 +6,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import type { Payload, Provider, SubagentSettings } from '../shared/protocol.js';
@@ -68,7 +69,8 @@ import { isRecord } from './hooks.js';
 import { doorText, projectFile } from './door.js';
 import { buildProviderStart, knowsEffort, shellQuote, STATUS_LINE_SHIM } from './providers.js';
 import type { OtherProvider } from './providers.js';
-import { HANDOFF_FILE, handoffNote, handoffText, opencodeExporter, readTranscript } from './handoff.js';
+import { OPENCODE_DATA_DIR } from './opencodeplugin.js';
+import { HANDOFF_FILE, handoffNote, handoffText, opencodeExporter, opencodeLister, readTranscript } from './handoff.js';
 import type { GatePolicy } from './toolgate.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
@@ -154,6 +156,8 @@ export function buildSettings(input: {
     ];
   }
   const memoryRule = `//${input.memoryPath.replace(/^\//, '')}`;
+  // an engine switch tells the first session to read handoff.md in the agent's own folder: reading it must not wait for a GO
+  const handoffRule = `//${join(dirname(input.memoryPath), HANDOFF_FILE).replace(/^\//, '')}`;
   const settings: Record<string, unknown> = {
     hooks,
     tui: 'fullscreen',
@@ -161,7 +165,7 @@ export function buildSettings(input: {
     crossSessionInbound: 'refuse',
     permissions: {
       deny: unique([...DENIED_TOOLS, ...(input.rules?.deny ?? [])]),
-      allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, ...(input.rules?.allow ?? [])]),
+      allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, ...(input.rules?.allow ?? [])]),
       ...(input.rules?.ask?.length ? { ask: unique(input.rules.ask) } : {}),
     },
   };
@@ -315,6 +319,17 @@ async function writeFileAtomic(path: string, data: string, mode: number): Promis
     await rm(temp, { force: true }).catch(() => undefined);
     throw error;
   }
+}
+
+/** opencode's own data folder for this agent (its database and sessions), with the owner's logins linked in so a paid provider still works. */
+async function prepareOpencodeData(base: string, env: Record<string, string | undefined>): Promise<void> {
+  const dir = join(base, OPENCODE_DATA_DIR, 'opencode');
+  await mkdir(dir, { recursive: true, mode: DIR_MODE });
+  const mine = join(dir, 'auth.json');
+  if ((await lstat(mine).catch(() => null)) !== null) return;
+  const data = hasText(env.XDG_DATA_HOME) && isAbsolute(env.XDG_DATA_HOME) ? env.XDG_DATA_HOME : join(homedir(), '.local', 'share');
+  const theirs = join(data, 'opencode', 'auth.json');
+  if ((await stat(theirs).catch(() => null)) !== null) await symlink(theirs, mine).catch(() => undefined);
 }
 
 /**
@@ -606,10 +621,11 @@ export function createLauncher(options: LauncherOptions): Launcher {
   const gatePolicy = (agent: AgentRecord, memoryPath: string, cwd: string, home: string = homedir()): GatePolicy => {
     const rules = withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), options.subagents?.() ?? { mode: 'allow' as const, limit: 4 });
     const memoryRule = `//${memoryPath.replace(/^\//, '')}`;
+    const handoffRule = `//${join(dirname(memoryPath), HANDOFF_FILE).replace(/^\//, '')}`;
     const off = new Set(options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`));
     return {
       mode: agent.mode,
-      rules: { ...rules, deny: unique([...DENIED_TOOLS, ...(rules.deny ?? [])]), allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, ...(rules.allow ?? [])]) },
+      rules: { ...rules, deny: unique([...DENIED_TOOLS, ...(rules.deny ?? [])]), allow: unique([`Read(${memoryRule})`, `Edit(${memoryRule})`, `Read(${handoffRule})`, ...(rules.allow ?? [])]) },
       allowed: ALLOWED_TOOLS.filter((tool) => !off.has(tool)),
       cwd: resolve(cwd),
       home,
@@ -667,7 +683,8 @@ export function createLauncher(options: LauncherOptions): Launcher {
       servers: servers !== undefined && Object.keys(servers).length > 0 ? servers : undefined,
       skills: payload?.skills,
       sessionId: agent.sessionId,
-      ...(agent.engineSession?.for === agent.sessionId ? { engineSession: agent.engineSession.id } : {}),
+      // opencode keeps its sessions in the agent's own database: an id recorded before that folder existed (the owner's shared one) is not there to resume
+      ...(agent.engineSession?.for === agent.sessionId && (provider !== 'opencode' || existsSync(join(base, OPENCODE_DATA_DIR, 'opencode', 'opencode.db'))) ? { engineSession: agent.engineSession.id } : {}),
       policy: gatePolicy(agent, memoryPath, where, clean?.home),
       subagentLimit: options.subagents?.().mode === 'limit' ? (options.subagents?.().limit ?? null) : null,
       ...(takesEffort(provider) && (agent.effort ?? options.defaultEffort?.()) ? { effort: agent.effort ?? options.defaultEffort?.() } : {}),
@@ -682,11 +699,12 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const start = buildProviderStart(provider, ctx);
     if (start.skipped !== undefined) log.warn(`${agent.name}: ${PROVIDER_INFO[provider].label} cannot run these MCP servers (no SSE transport): ${start.skipped.join(', ')}`);
     for (const [file, content] of Object.entries(start.files)) await writeFileAtomic(join(base, file), content, FILE_MODE);
+    if (provider === 'opencode') await prepareOpencodeData(base, options.env ?? process.env);
     const childEnv = { ...buildChildEnv({ base: options.env ?? process.env, token, seed: false, keys: keysOf(agent), gh: await ensureGh() }), ...start.env };
     if (clean === null) {
       const env = await withCoauthor(agent, childEnv, where, base);
       log.debug(`prepared ${agent.name} to run ${provider}`);
-      return { spec: { file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
+      return { spec: { engine: provider, file: PROVIDER_INFO[provider].bin, args: start.args, env, cwd: where }, flag: 'session-id', token };
     }
     const uid = process.getuid?.();
     const gid = process.getgid?.();
@@ -712,7 +730,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
     const started = byAgent.get(agent.name);
     if (started?.generation === generation) started.container = clean.container;
     log.debug(`prepared ${agent.name} to run ${provider} in a Clean Room`);
-    return { spec: { file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree }, flag: 'session-id', token };
+    return { spec: { engine: provider, file: DOCKER_BIN, args, env: childEnv, cwd: clean.worktree }, flag: 'session-id', token };
   };
 
   const prepareStart = async (
@@ -902,7 +920,15 @@ export function createLauncher(options: LauncherOptions): Launcher {
         const env = options.env ?? process.env;
         const base = agentDir(to.name);
         await mkdir(base, { recursive: true, mode: DIR_MODE });
-        const transcript = await readTranscript(from, { agentDir: base, exportOpencode: opencodeExporter(env, from.dir), ...(hasText(env.CLAUDE_CONFIG_DIR) ? { claudeConfigDir: env.CLAUDE_CONFIG_DIR } : {}) }).catch((error: unknown) => {
+        // the old opencode session is in the agent's own database, or (an older gonogo) in the owner's shared one
+        const own = { ...env, XDG_DATA_HOME: join(agentDir(from.name), OPENCODE_DATA_DIR) };
+        const firstOwn = <T>(ask: (e: Record<string, string | undefined>) => Promise<T>, empty: (value: T) => boolean) => async (): Promise<T> => {
+          const mine = await ask(own).catch(() => null);
+          return mine !== null && !empty(mine) ? mine : ask(env);
+        };
+        const exportOpencode = (id: string): Promise<string> => firstOwn((e) => opencodeExporter(e, from.dir)(id), (out) => !out.includes('{'))();
+        const listOpencode = (): Promise<string> => firstOwn((e) => opencodeLister(e, from.dir)(), (out) => !out.includes('"id"'))();
+        const transcript = await readTranscript(from, { agentDir: base, cwd: from.dir, exportOpencode, listOpencode, ...(hasText(env.PI_CODING_AGENT_DIR) ? { piDir: env.PI_CODING_AGENT_DIR } : {}), ...(hasText(env.CLAUDE_CONFIG_DIR) ? { claudeConfigDir: env.CLAUDE_CONFIG_DIR } : {}) }).catch((error: unknown) => {
           log.warn(`${to.name}: the transcript of its old session could not be read`, errorText(error));
           return null;
         });

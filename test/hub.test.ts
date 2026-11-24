@@ -2114,6 +2114,26 @@ describe('the draft latch (4.6)', () => {
       expect(h.msg('m1')).toMatchObject({ status: 'queued', note: 'waiting: ana is working' });
     });
 
+    it.each(['pi', 'opencode'] as const)('%s: its input box is read from the screen too, so a draft that was erased frees the mail by itself (Gemini CLI is not read: its latch waits for Enter or the clock)', async (provider) => {
+      const h = await started();
+      await h.hub.hire({ name: 'peer', role: 'a peer', dir: '/work/peer', mode: 'default', provider });
+      h.ready('peer');
+      await h.hub.hire({ name: 'gem', role: 'a gem', dir: '/work/gem', mode: 'default', provider: 'gemini' });
+      h.ready('gem');
+      for (const name of ['peer', 'gem']) {
+        h.type(name, 'abc');
+        h.setScreen(name, { promptBox: true, promptText: '' });
+      }
+      await h.advance(DRAFT_SCREEN_CLEAR_MS + 3000);
+      expect(h.view('peer').draft).toBe(false);
+      expect(h.view('gem').draft).toBe(true);
+      // a draft that is still in the box stays
+      h.type('peer', 'abc');
+      h.setScreen('peer', { promptBox: true, promptText: 'abc' });
+      await h.advance(DRAFT_SCREEN_CLEAR_MS + 3000);
+      expect(h.view('peer').draft).toBe(true);
+    });
+
     it('counts from the last input of any kind, a focus report included', async () => {
       const h = await withAna();
       h.type('ana', 'abc');
