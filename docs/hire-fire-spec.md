@@ -84,3 +84,57 @@ By FIDO, 2026-11-24, task t131. Status: PR1 built (rules file and API with step-
 1. Default `autoApprove: off` (one switch and a few limits to turn on) or on with the defaults above? I recommend off, since the first click is the one that changes who decides.
 2. May the boss ever grant `bypassPermissions`? My proposal: only inside a Clean Room and only with its own switch.
 3. Is the boss's fire **stop only** enough, with removal yours?
+
+## 9. Addendum (Director, 2026-11-24, m4017): autoscale; only FLIGHT is fixed
+
+By guido, for RSO. The Director's words: only FLIGHT is fixed; every other agent may appear and disappear by demand under rules, and FLIGHT stops and/or removes them as it sees fit. This changes three things above; the rest (§3 rules, F1-F4, step-up, tamper, audit) stands.
+
+### 9.1 `protected` default is the boss only (changes §3 `protected`, §4 "Not allowed", H4)
+
+`fire_agent` may stop **any** agent except: the boss, an agent the Director marked `protected`, one at a permission prompt or dialog, one with an open T-minus vote, one with mail waiting. The "hired by flight" check of PR2 goes away for a **manual** `fire_agent`. New room rule `mayStop` (default **on**, as the Director asked; turning it off needs no step-up). **Autoscale never touches an agent the Director hired** (9.3), only boss-hired ones: the rule-driven loop cannot reach the Director's agents, only FLIGHT's own judgement can.
+
+H4 becomes: a prompt-injected boss can stop the Director's agents (no data is lost: record, memory, transcript, worktree stay, and the Director starts them again); the Director marks the ones that matter `protected`.
+
+### 9.2 `fire_agent { name, reason, remove?: true }` (adds remove for the boss)
+
+`remove: true` removes the agent. New room rule `mayRemove` (default **off**; turning it on needs the step-up). Guards, all server-side, from the stored record:
+
+| Guard | Why |
+|---|---|
+| the agent is **already stopped** (fire it first; one call does stop then remove only when every other guard holds) | nothing running is removed |
+| not the boss, not `protected`, nothing waits for the Director | as for stop |
+| **no keys of its own** (`record.keys` empty) | Clearance values are secrets the Director typed: a removal would delete them for good; an agent with keys is refused and the answer says so |
+| a **clean worktree**: a worktree or Clean Room agent is removed with `git worktree remove` **without `--force`** (git itself refuses a dirty folder); the branch stays | no uncommitted work is lost |
+| `agents/<name>/` is **renamed** to `agents/<name>.removed-<unix ms>`, not deleted; its egress token and hook token are revoked | memory and transcripts are kept for the Director |
+| its open tasks go back to `todo`, unassigned (as for stop) | |
+| rate: the same few a minute as stop; the crew count drops, the hourly **hire** rate does not (H3) | fire then rehire does not reset the budget |
+
+Downlink line (always) and a Black Box `crew` row with the name and counts only. The Director can still remove anyone by hand with his own click.
+
+### 9.3 Autoscale (new PR5, rules in `relief.json`, off by default)
+
+| Rule | Default | Meaning |
+|---|---|---|
+| `autoscale` | `off` | `off`, `dry-run` (only writes what it would do to the Downlink) or `on`; going to `on` needs the step-up and `autoApprove` on |
+| `scaleUpTodo` | 3 | hire one agent of position P when at least this many **unassigned** `todo` tasks name P and no boss-hired agent of P is running |
+| `idleStopMinutes` | off | stop a **boss-hired** agent with no open task assigned and no activity for this long (this is the old `autoFireIdleMinutes`) |
+| `removeStoppedHours` | off | remove a **boss-hired** agent stopped for this long (needs `mayRemove`) |
+
+How a task names a position (today a task has none): a new optional `position` on the Flight Plan task, set by the boss or the Director with `task_create` and `task_update` (validated against the roster positions, shown on the board). Unassigned tasks with no position never trigger a hire.
+
+The loop runs on the server every 60 s, **one hire or one stop per tick**, and uses the **same code** as `hire_agent` by rule: the same shared judge (`hireStepUpReason`), the same `maxCrew`, `ratePerHour`, positions, engines, `maxMode`, folder (the boss's), Clean Room and sandbox floor, and the crew budget hold. A hire is named `<position>-<n>` (lowest free). A hire it makes counts like one FLIGHT made (`hiredBy: boss`). Scale-down never stops an agent within 10 minutes of its start (no hire/stop flapping), and uses the same exclusions as `fire_agent`. STOP CREW also sets `autoscale` to `off`. The tamper check covers the new fields. Dry run writes e.g. "autoscale (dry run): would hire guido-3 for 4 unassigned tasks" and does nothing else; the Director can leave it on for a week to see what it would do before `on`.
+
+### 9.4 New threats and tests (for RSO)
+
+| Id | Threat | Must hold |
+|---|---|---|
+| **A1** | A boss writes tasks for a position to make the loop hire a crew. | Same caps as `hire_agent`: `maxCrew`, rate, budget, positions allow-list; one hire per tick; the Director sees every hire in the Downlink; STOP CREW. |
+| **A2** | The loop (or the boss) stops or removes the Director's agents. | The loop touches only `hiredBy: boss`; the boss's own `fire_agent` skips `protected`, the boss, and anything waiting; `mayRemove` is off until the Director turns it on. |
+| **A3** | Removal destroys secrets or work. | No keys of its own, clean worktree (no `--force`), folder renamed and kept. |
+| **A4** | A flapping hire/stop loop burns spend. | One action per tick, 10 minutes of grace, hires counted by the hourly rate and the daily crew budget whatever is fired. |
+
+Tests: a manual fire of a Director-hired agent works and a protected one is refused; `remove` refuses a running agent, one with keys, one with a dirty worktree (real git), and keeps `agents/<name>.removed-*`; `mayRemove` off refuses; dry-run changes nothing and writes the Downlink line; `on` hires once per tick up to `maxCrew`; scale-up never names a position outside `positions`; the loop never stops a Director-hired agent; a task's `position` is validated.
+
+### 9.5 Phases now
+
+PR3 (budget hold, which lifts the M2 guard, sandbox floor, models) -> PR4 (`remove` for the boss, `mayStop`/`mayRemove`, `protected` default, `bypassInCleanRoom`) -> PR5 (task `position`, autoscale loop with dry run, idle stop, stopped-removal, docs).
