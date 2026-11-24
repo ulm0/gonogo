@@ -35,7 +35,7 @@ Enforced on the server.
 
 ## Hires by rule (automatic hires)
 
-Off by default: every hire waits for your GO, byte for byte as above. You can turn on `autoApprove` in `<home>/relief.json` through `PUT /api/relief/rules` (a browser session with the password again; no agent route reads or writes it). Then a request that fits **every** rule is staffed at once: the answer is `status: hired`, the agent carries `hiredBy: boss` (its tile shows *hired by flight*), and the Downlink and the Black Box say who, which name and the crew count, never the role text. A request that breaks a rule becomes the request above, and its note and card name the rule ("mode auto is above maxMode (acceptEdits)").
+Off by default: every hire waits for your GO, byte for byte as above. You can turn on `autoApprove` in `<home>/relief.json` through `PUT /api/relief/rules` (a browser session with the password again; no agent route reads or writes it). **Turning it on is refused in this version** ("the crew budget is not enforced yet"): the dollar ceiling arrives with the next step, and until then every hire waits for your GO. A GO on a request in a mode that works without asking (`auto`) asks for the password again, as the hire form does. Then a request that fits **every** rule is staffed at once: the answer is `status: hired`, the agent carries `hiredBy: boss` (its tile shows *hired by flight*), and the Downlink and the Black Box say who, which name and the crew count, never the role text. A request that breaks a rule becomes the request above, and its note and card name the rule ("mode auto is above maxMode (acceptEdits)").
 
 | Rule | Default | Meaning |
 |---|---|---|

@@ -22,7 +22,7 @@ const MODE_RANK: readonly string[] = RELIEF_MODES;
 export const modeRank = (mode: string): number => MODE_RANK.indexOf(mode);
 
 /** The rules from untrusted JSON, every field checked: only the known fields, each of its own kind. `base` is what an absent field keeps. A bad one throws a bad_request (field `rules.<name>`). */
-export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT): ReliefRules {
+export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT, budgetEnforced = false): ReliefRules {
   if (!isRecord(raw)) throw bad('the rules are an object', 'rules');
   for (const key of Object.keys(raw)) if (!FIELDS.includes(key)) throw bad(`unknown rule "${key}"`, `rules.${key}`);
   const out: ReliefRules = { ...base, positions: [...base.positions], engines: [...base.engines] };
@@ -58,6 +58,8 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
     if (typeof raw.maxMode !== 'string' || !MODE_RANK.includes(raw.maxMode)) throw bad(`maxMode is one of ${RELIEF_MODES.join(', ')} (bypassPermissions is not a choice)`, 'rules.maxMode');
     out.maxMode = raw.maxMode as ReliefRules['maxMode'];
   }
+  // shortcut: the crew budget is stored but not enforced until the hold of PR3; automatic approval without a ceiling on spend is refused until then (PR3 passes budgetEnforced)
+  if (out.autoApprove && !budgetEnforced) throw bad('automatic approval is not available yet: the crew budget is not enforced yet', 'rules.autoApprove');
   if (out.autoApprove && out.crewBudgetUsd === null) throw bad('crewBudgetUsd is needed when autoApprove is on: the dollars per day the boss-hired crew may spend', 'rules.crewBudgetUsd');
   return out;
 }
@@ -90,7 +92,8 @@ export interface ReliefRulesStore {
   close(): Promise<void>;
 }
 
-export function createReliefRules(options: { dir: string; log?: Logger; alarm?: (text: string) => void }): ReliefRulesStore {
+export function createReliefRules(options: { dir: string; log?: Logger; alarm?: (text: string) => void; /** True once the crew budget is enforced (docs/hire-fire-spec.md, PR3): until then autoApprove cannot be turned on. */ budgetEnforced?: boolean }): ReliefRulesStore {
+  const enforced = options.budgetEnforced === true;
   const log = options.log ?? nullLogger;
   const path = join(options.dir, RELIEF_FILE);
   let current: ReliefRules = { ...RELIEF_RULES_DEFAULT };
@@ -142,7 +145,7 @@ export function createReliefRules(options: { dir: string; log?: Logger; alarm?: 
         const saved: unknown = JSON.parse(await readFile(path, 'utf8'));
         if (!isRecord(saved) || saved.version !== 1) throw new Error('not a version 1 relief file');
         const { version: _version, ...rest } = saved;
-        current = readRules(rest);
+        current = readRules(rest, RELIEF_RULES_DEFAULT, enforced);
         record = text(current);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('relief.json is unreadable: the defaults apply (every hire waits for a GO)', error);
@@ -156,7 +159,7 @@ export function createReliefRules(options: { dir: string; log?: Logger; alarm?: 
     set: (body) =>
       queue(async () => {
         await compare();
-        const next = readRules(body, current);
+        const next = readRules(body, current, enforced);
         await write(next);
         return copy();
       }),

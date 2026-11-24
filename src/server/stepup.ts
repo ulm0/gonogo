@@ -21,7 +21,12 @@ const given = (value: unknown): boolean => value !== undefined && value !== null
 /** The hire is where the room's default sandbox matters: the proxy asks the room for it before it decides. */
 export const needsRoomSandbox = (method: string, path: string, body: Record<string, unknown> | null): boolean => method === 'POST' && path === '/api/agents' && typeof body?.cleanRoom === 'object' && body.cleanRoom !== null && typeof (body.cleanRoom as Record<string, unknown>).flavor === 'string';
 
+/** The GO on a hire request of the boss: the mode of the request decides, and only the room knows it (the proxy asks it for the request by id). */
+const RELIEF_GO = /^\/api\/relief\/(h[1-9]\d{0,9})\/go$/;
+export const reliefGoId = (method: string, path: string): string | null => (method === 'POST' ? (RELIEF_GO.exec(path)?.[1] ?? null) : null);
+
 export function bodyMatters(method: string, path: string): boolean {
+  if (reliefGoId(method, path) !== null) return true;
   if (method === 'PUT' && path === '/api/autoupdate') return true;
   if (method === 'POST' && path === '/api/rooms/main/migrate') return true;
   if (method === 'POST' && /^\/api\/knowledge\/[^/]+\/move$/.test(path)) return true;
@@ -56,6 +61,8 @@ const FLAVOR_RANK = ['docker', 'gvisor', 'microvm'];
 /** What the proxy knows of the room for the rule: its default sandbox flavor (`docker` when none). */
 export interface StepUpContext {
   roomSandbox?: string;
+  /** The mode of the pending hire request a GO answers (the room says; unknown is read as `auto`). */
+  reliefMode?: string;
 }
 
 /**
@@ -83,6 +90,8 @@ export function hireStepUpReason(body: Record<string, unknown> | null, context: 
 /** Why this change needs a fresh check, or null when it does not. `body` is the parsed JSON object, or null when there is none or it is not one. */
 export function stepUpReason(method: string, path: string, body: Record<string, unknown> | null, context: StepUpContext = {}): string | null {
   if (!CHANGES.has(method)) return null;
+  // a GO on a hire request in a mode that works without asking is the hire form's step-up too (the form asks it for the same mode)
+  if (reliefGoId(method, path) !== null) return context.reliefMode !== undefined && UNATTENDED.has(context.reliefMode) ? 'hiring an agent that works without asking' : null;
   if (method === 'POST' && path === '/api/agents') return hireStepUpReason(body, context);
   if ((method === 'PATCH' || method === 'PUT') && /^\/api\/agents\/[^/]+$/.test(path)) {
     if (body === null) return 'editing an agent';

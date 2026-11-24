@@ -8,10 +8,12 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRoomProxy } from '../src/server/roomproxy.js';
-import { bodyMatters, needsRoomSandbox, stepUpReason } from '../src/server/stepup.js';
+import { bodyMatters, needsRoomSandbox, reliefGoId, stepUpReason } from '../src/server/stepup.js';
 
 /** What the fake rooms answer for the room's default sandbox (GET /api/models); `broken` is an answer that is not JSON. */
 let roomSandbox: string | null | 'broken' = null;
+/** The mode of the pending hire request h1 the fake room reports (null: no such request, 'broken': an answer nobody can read). */
+let reliefMode: string | null | 'broken' = null;
 import { validRoomId } from '../src/server/rooms.js';
 import { WS_SUBPROTOCOL, WS_TOKEN_PROTOCOL_PREFIX } from '../src/shared/protocol.js';
 
@@ -50,6 +52,10 @@ async function fakeRoom(name: string): Promise<Fake> {
       if (req.url === '/api/models') {
         res.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
         return res.end(roomSandbox === 'broken' ? 'not json' : JSON.stringify({ models: {}, positions: {}, ...(roomSandbox === null ? {} : { sandbox: roomSandbox }) }));
+      }
+      if (req.url === '/api/relief') {
+        res.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
+        return res.end(reliefMode === 'broken' ? 'not json' : JSON.stringify({ requests: reliefMode === null ? [] : [{ id: 'h1', mode: reliefMode }] }));
       }
       if (req.url === '/redirect') {
         res.writeHead(302, { Location: '/elsewhere' });
@@ -113,8 +119,8 @@ const fakeAuth = {
   pageHeaders: () => ({ 'content-security-policy': "default-src 'self'", 'x-content-type-options': 'nosniff' }),
   // session s2 has not been checked for a while: the step-up asks about it
   stepUpBody: bodyMatters,
-  stepUpWantsRoom: needsRoomSandbox,
-  stepUpNeeded: (grant: { kind: string; sessionId?: string }, method: string, path: string, body: Record<string, unknown> | null, context?: { roomSandbox?: string }) => (grant.kind === 'session' && grant.sessionId === 's2' ? stepUpReason(method, path, body, context) : null),
+  stepUpWantsRoom: (method: string, path: string, body: Record<string, unknown> | null) => needsRoomSandbox(method, path, body) || reliefGoId(method, path) !== null,
+  stepUpNeeded: (grant: { kind: string; sessionId?: string }, method: string, path: string, body: Record<string, unknown> | null, context?: { roomSandbox?: string; reliefMode?: string }) => (grant.kind === 'session' && grant.sessionId === 's2' ? stepUpReason(method, path, body, context) : null),
   stepUpDenied: (_req: http.IncomingMessage, res: http.ServerResponse, reason: string) => void res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ stepUp: true, reason })),
   alive: (id: string) => aliveSessions.has(id),
   touchSession: (id: string) => void touched.push(id),
@@ -558,6 +564,17 @@ describe('rooms proxy: the login', () => {
     roomSandbox = 'broken';
     expect((await send(stale, 'POST', '/api/agents', { name: 'x', cleanRoom: { flavor: 'gvisor' } })).status).toBe(403);
     roomSandbox = null;
+    // the GO on a hire request: the room says its mode; auto asks, acceptEdits does not, a room that cannot say is read as auto, a gone request is the room's 404
+    reliefMode = 'auto';
+    expect((await send(stale, 'POST', '/api/relief/h1/go', undefined)).status).toBe(403);
+    expect((await send(fresh, 'POST', '/api/relief/h1/go', undefined)).status).toBe(200);
+    reliefMode = 'acceptEdits';
+    expect((await send(stale, 'POST', '/api/relief/h1/go', undefined)).status).toBe(200);
+    expect((await send(stale, 'POST', '/api/relief/h1/no-go', undefined)).status).toBe(200);
+    reliefMode = 'broken';
+    expect((await send(stale, 'POST', '/api/relief/h1/go', undefined)).status).toBe(403);
+    reliefMode = null;
+    expect((await send(stale, 'POST', '/api/relief/h1/go', undefined)).status).toBe(200);
     // the body that went through reached the room whole
     expect(main.seen.filter((x) => x.method === 'PATCH').at(-1)?.body).toBe('{"model":"x"}');
     for (const [method, path] of [['PUT', '/api/permissions'], ['PUT', '/api/payload-defaults/servers/x'], ['PUT', '/api/features/relay'], ['POST', '/api/uplinks'], ['PUT', '/api/relay'], ['POST', '/api/docking/pair'], ['PUT', '/api/agents/ana/file'], ['POST', '/api/agents/ana/git/commit'], ['POST', '/api/update'], ['PUT', '/api/engines/claude']] as const) expect((await send(stale, method, path, {})).status, `${method} ${path}`).toBe(403);

@@ -187,7 +187,7 @@ export function createRelief(options: ReliefOptions): Relief {
     const engines = rules.engines.length > 0 ? rules.engines : [options.defaultEngine?.() ?? 'claude'];
     if (!engines.includes(r.provider)) return `the engine ${r.provider} is not in the rules`;
     if (!r.insideBoss) return "the folder is not the boss's own or inside it";
-    if (modeRank(r.mode) > modeRank(rules.maxMode)) return `mode ${r.mode} is above maxMode (${rules.maxMode})`;
+    if (modeRank(r.mode) < 0 || modeRank(r.mode) > modeRank(rules.maxMode)) return `mode ${r.mode} is above maxMode (${rules.maxMode})`;
     if (r.mode === 'auto') {
       if (r.cleanRoom === null && !rules.autoOnHost) return 'mode auto on the host needs autoOnHost';
       const unsafe = r.cleanRoom === null ? null : (options.cleanRoomUnsafe?.() ?? null);

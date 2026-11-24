@@ -68,7 +68,7 @@ beforeEach(async () => {
   hired = [];
   events = [];
   unsafe = null;
-  rules = createReliefRules({ dir: root, log: quiet, alarm: (text) => void events.push(['alarm', text]) });
+  rules = createReliefRules({ dir: root, log: quiet, budgetEnforced: true, alarm: (text) => void events.push(['alarm', text]) });
   await rules.load();
   relief = make();
 });
@@ -129,9 +129,22 @@ describe('the rules file', () => {
 
   it('a restart keeps the rules; the crew and the hire rate come from the hired agents, which the record stores', async () => {
     await on({ maxCrew: 1 });
-    const again = createReliefRules({ dir: root, log: quiet });
+    const again = createReliefRules({ dir: root, log: quiet, budgetEnforced: true });
     await again.load();
     expect(again.view()).toMatchObject({ autoApprove: true, maxCrew: 1, crewBudgetUsd: 5 });
+  });
+});
+
+describe('automatic approval waits for the budget (RSO M2)', () => {
+  it('is refused until the crew budget is enforced, by the API and by a file on disk', async () => {
+    const early = createReliefRules({ dir: join(root, 'early'), log: quiet });
+    await mkdir(join(root, 'early'));
+    await early.load();
+    await expect(early.set({ autoApprove: true, crewBudgetUsd: 5 })).rejects.toMatchObject({ field: 'rules.autoApprove' });
+    expect(early.view().autoApprove).toBe(false);
+    await writeFile(join(root, 'early', 'relief.json'), JSON.stringify({ version: 1, autoApprove: true, crewBudgetUsd: 5 }));
+    await early.load();
+    expect(early.view().autoApprove).toBe(false);
   });
 });
 

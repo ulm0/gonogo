@@ -1,6 +1,6 @@
 // Which changes ask for the password again (docs/login-spec.md, step-up): an ALLOW-list for an edit, so a field added later is asked about by default.
 import { describe, expect, it } from 'vitest';
-import { bodyMatters, needsRoomSandbox, stepUpReason } from '../src/server/stepup.js';
+import { bodyMatters, needsRoomSandbox, reliefGoId, stepUpReason } from '../src/server/stepup.js';
 
 describe('auto-update (it runs code of the publisher unattended)', () => {
   const put = (body: Record<string, unknown> | null) => stepUpReason('PUT', '/api/autoupdate', body);
@@ -213,5 +213,19 @@ describe('the rules of the boss\'s hires (docs/hire-fire-spec.md)', () => {
     expect(stepUpReason('PUT', '/api/relief/rules', { autoApprove: false, autoOnHost: false })).toBeNull();
     expect(stepUpReason('POST', '/api/relief/stop-crew', null)).toBeNull();
     expect(bodyMatters('PUT', '/api/relief/rules')).toBe(true);
+  });
+});
+
+describe('the GO on a hire request (RSO M1)', () => {
+  it('asks for the password when the request is in a mode that works without asking, like the hire form', () => {
+    expect(reliefGoId('POST', '/api/relief/h12/go')).toBe('h12');
+    expect(reliefGoId('POST', '/api/relief/h12/no-go')).toBeNull();
+    expect(reliefGoId('GET', '/api/relief/h12/go')).toBeNull();
+    expect(bodyMatters('POST', '/api/relief/h1/go')).toBe(true);
+    expect(stepUpReason('POST', '/api/relief/h1/go', null, { reliefMode: 'auto' })).toBe('hiring an agent that works without asking');
+    expect(stepUpReason('POST', '/api/relief/h1/go', null, { reliefMode: 'bypassPermissions' })).toBe('hiring an agent that works without asking');
+    expect(stepUpReason('POST', '/api/relief/h1/go', null, { reliefMode: 'acceptEdits' })).toBeNull();
+    expect(stepUpReason('POST', '/api/relief/h1/go', null, { reliefMode: 'default' })).toBeNull();
+    expect(stepUpReason('POST', '/api/relief/h1/no-go', null, { reliefMode: 'auto' })).toBeNull();
   });
 });

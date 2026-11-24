@@ -1281,6 +1281,11 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the rules of the boss's hires (docs/hire-fire-spec.md): off by default; the file is checked against the last change this process wrote, on every decision and on a timer
     const reliefRules = createReliefRules({ dir: home.dir, log: log.child('relief rules'), alarm: (text) => tell('relief', text) });
     await reliefRules.load();
+    // the rules come back from disk: when they say automatic hires are ON, the Director is told at once (a file nobody of ours wrote would otherwise switch it on silently)
+    if (reliefRules.view().autoApprove) {
+      const r = reliefRules.view();
+      tell('relief', `Relief rules loaded from disk: automatic hires ON, maxMode ${r.maxMode}, autoOnHost ${r.autoOnHost ? 'ON' : 'off'}`);
+    }
     const reliefRulesTimer = setInterval(() => void reliefRules.check().catch((error: unknown) => log.error('relief rules check failed', error)), 30_000);
     reliefRulesTimer.unref();
     const relief = createRelief({
