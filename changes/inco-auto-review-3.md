@@ -1,0 +1,1 @@
+- **Auto-review has a page.** Flight Rules, AUTO-REVIEW: the switch, auto-post, the repos and authors, a Look now key, the jobs with their status and skip reasons, the draft of each finished review (every reviewer's summary and findings by file) and POST or SKIP.

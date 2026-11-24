@@ -22,6 +22,8 @@ export type Severity = (typeof SEVERITIES)[number];
 /** One piece of text, cleaned; `max` characters at most. */
 export function cleanText(input: string, max: number): string {
   let text = String(input).replace(UNSAFE, ' ').replace(/\r\n?/g, '\n');
+  // & first: GitHub decodes an entity before its mention and reference filters run, so `&#64;someone` would ping and `&#35;12` would link; with the & itself escaped no entity can be built
+  text = text.replace(/&/g, '&amp;');
   // images: an image URL is a way out for data. Raw HTML is not stripped (a pattern that removes tags can be fooled by `<scr<script>ipt>`): every < and > is escaped below, so a tag is only text
   text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '[image removed]');
   // a link shows as its text, then its address as plain text without the scheme (a bare URL autolinks; this does not)
