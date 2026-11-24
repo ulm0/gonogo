@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { effectiveModel, MODEL_PROVIDERS, modelListText, modelNames, modelNote, publishEngineModels, resetEngineModels } from '../src/client/models.js';
+import { effectiveModel, MODEL_PROVIDERS, modelListText, modelNames, modelNote, OPENCODE_KEY_NOTE, opencodeKeyWarning, publishEngineModels, resetEngineModels } from '../src/client/models.js';
 import { ModelListStatus } from '../src/client/EngineModelList.js';
 import { HireForm } from '../src/client/HireForm.js';
 import { emptyState, store } from '../src/client/store.js';
@@ -73,5 +73,34 @@ describe('Model lists on the page', () => {
     const html = renderToString(createElement(ModelListStatus, { provider: 'opencode', state: { state: 'loading' } }));
     expect(html).toContain('Loading the models of opencode…');
     expect(html).toContain('aria-disabled="true"');
+  });
+});
+
+describe('opencode: a model of another provider needs its key for the agent', () => {
+  it('warns when the provider\'s key is not among the agent\'s or the room\'s keys, and not for opencode\'s own models', () => {
+    expect(opencodeKeyWarning('anthropic/claude-opus-5-5', [], false)).toContain('anthropic/claude-opus-5-5 needs ANTHROPIC_API_KEY for this agent');
+    expect(opencodeKeyWarning('anthropic/claude-opus-5-5', [], false)).toContain('falls back to its free default model');
+    expect(opencodeKeyWarning('anthropic/claude-opus-5-5', ['ANTHROPIC_API_KEY'], false)).toBeNull();
+    // a Clean Room with egress holds the Anthropic key in gonogo's proxy
+    expect(opencodeKeyWarning('anthropic/claude-opus-5-5', [], true)).toBeNull();
+    expect(opencodeKeyWarning('openai/gpt-x', [], true)).toContain('needs OPENAI_API_KEY');
+    expect(opencodeKeyWarning('google/gemini-x', ['GEMINI_API_KEY'], false)).toBeNull();
+    expect(opencodeKeyWarning('google/gemini-x', [], false)).toContain('one of GOOGLE_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, GEMINI_API_KEY');
+    expect(opencodeKeyWarning('someone/model', [], false)).toContain('the API key of someone');
+    for (const model of ['opencode/big-pickle', 'sonnet', '']) expect(opencodeKeyWarning(model, [], false), model).toBeNull();
+  });
+
+  it('the opencode list says that its other providers need a key for the agent; pi\'s list does not', () => {
+    const oc: EngineModels = { provider: 'opencode', source: 'cli', models: ['anthropic/claude-opus-5-5', 'opencode/big-pickle'], command: 'opencode models --standalone', version: 'opencode v2.4.1', at: 1 };
+    expect(modelListText('opencode', { state: 'ready', list: oc })).toContain(OPENCODE_KEY_NOTE);
+    expect(modelListText('pi', { state: 'ready', list: { ...oc, provider: 'pi', command: 'pi --list-models' } })).not.toContain(OPENCODE_KEY_NOTE);
+  });
+
+  it('the opencode model field says the model goes into its config, not --model', () => {
+    resetEngineModels();
+    store.setState({ ...emptyState(), agents: { oc: { name: 'oc', role: 'r', dir: '/w', mode: 'default', desk: 1, boss: false, state: 'idle', provider: 'opencode', model: 'anthropic/claude-opus-5-5', effort: null, position: null, command: null, payload: null, payloadOff: null, cleanRoom: null, worktree: null, history: [], keys: {} } as never }, form: { mode: 'edit', name: 'oc' } });
+    const html = renderToString(createElement(HireForm));
+    expect(html).toContain('Written into its config as its model (provider/model).');
+    expect(html).not.toContain('Passed to opencode as --model');
   });
 });
