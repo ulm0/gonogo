@@ -49,10 +49,11 @@ describe('reading transcripts', () => {
     ]);
   });
 
-  it('opencode: the export after its own lines, text parts only, synthetic ones and tool parts left out; only a session recorded for this sessionId', async () => {
+  it('opencode 2: the export of `session export`, the text of the user and the assistant only (reasoning, tools and synthetic notes left out); only a session recorded for this sessionId', async () => {
     const exported = 'Exporting session: ses_1\n' + JSON.stringify({ info: { id: 'ses_1' }, messages: [
-      { info: { role: 'user' }, parts: [{ type: 'text', text: 'go' }, { type: 'text', text: 'context', synthetic: true }] },
-      { info: { role: 'assistant' }, parts: [{ type: 'tool', tool: 'bash' }, { type: 'text', text: 'done' }] },
+      { type: 'user', text: 'go', files: [] },
+      { type: 'synthetic', payload: { text: 'a note' } },
+      { type: 'assistant', content: [{ type: 'reasoning', text: 'hmm' }, { type: 'tool', name: 'shell' }, { type: 'text', text: 'done' }] },
     ] });
     expect(opencodeTurns(exported)).toStrictEqual([{ role: 'user', text: 'go' }, { role: 'assistant', text: 'done' }]);
     expect(opencodeTurns('no json')).toStrictEqual([]);
@@ -135,7 +136,7 @@ describe('sessions that gonogo did not name (an older version): found by the fol
     expect(newestOpencodeSession(listing, '/w', 5000)).toBe('ses_new');
     expect(newestOpencodeSession(listing, '/nowhere', 5000)).toBeNull();
     expect(newestOpencodeSession('not json', '/w', 5000)).toBeNull();
-    const exported = JSON.stringify({ messages: [{ info: { role: 'user' }, parts: [{ type: 'text', text: 'hi' }] }] });
+    const exported = JSON.stringify({ messages: [{ type: 'user', text: 'hi' }] });
     const asked: string[] = [];
     const found = await readTranscript({ name: 'ana', provider: 'opencode', sessionId: 's' }, { agentDir: tmp, cwd: '/w', until: 5000, listOpencode: async () => listing, exportOpencode: async (id) => (asked.push(id), exported) });
     expect(found?.turns).toStrictEqual([{ role: 'user', text: 'hi' }]);

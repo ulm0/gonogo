@@ -4,7 +4,7 @@ description: "Run gonogo from the official Docker image: compose file, the data 
 
 # Running in Docker
 
-The image runs gonogo as user `node` (uid 1000, so `bypassPermissions` works: it refuses root) on Debian bookworm, with git, tini, `gh`, the Docker CLI client with its buildx plugin (BuildKit), Claude Code 2.1.325, pi 1.6.0, opencode 1.19.6 and gonogo. Build arguments `CLAUDE_CODE_VERSION`, `PI_VERSION` and `OPENCODE_VERSION` pick other releases.
+The image runs gonogo as user `node` (uid 1000, so `bypassPermissions` works: it refuses root) on Debian bookworm, with git, tini, `gh`, the Docker CLI client with its buildx plugin (BuildKit), Claude Code 2.1.325, pi 1.6.0, opencode 2.4.1 (the package `@opencode/cli`) and gonogo. Build arguments `CLAUDE_CODE_VERSION`, `PI_VERSION` and `OPENCODE_VERSION` pick other releases.
 
 <DockerRunMock class="doc-mock" />
 

@@ -17,7 +17,10 @@ import { HOOK_PATH_PREFIX, HOOK_TIMEOUT_S, MCP_PATH } from './constants.js';
 import { GATE_SOURCE } from './toolgate.js';
 import type { GatePolicy } from './toolgate.js';
 
-export const OPENCODE_PLUGIN_FILE = 'gonogo-opencode.js';
+/** The plugin is a directory of the agent's folder (opencode 2 loads a plugin as a package): its package.json and its index.js. */
+export const OPENCODE_PLUGIN_DIR = 'gonogo-opencode';
+export const OPENCODE_PLUGIN_FILE = `${OPENCODE_PLUGIN_DIR}/index.js`;
+export const OPENCODE_PLUGIN_PACKAGE_FILE = `${OPENCODE_PLUGIN_DIR}/package.json`;
 export const OPENCODE_CONFIG_FILE = 'opencode.json';
 export const OPENCODE_SETTINGS_FILE = 'gonogo-opencode.json';
 export const OPENCODE_ROLE_FILE = 'opencode-role.md';
@@ -34,6 +37,8 @@ export interface OpencodeSettings {
   policy: GatePolicy;
   /** The room's subagent setting: with `limit`, at most that many `task` calls run at once (Claude Code's CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS). */
   subagentLimit: number | null;
+  /** The agent's own folder (its memory, the handoff, its role): a question about a folder outside the project is answered yes for this one. */
+  ownDir: string;
 }
 
 /** opencode's own `mcp` entries: `local` with the command as one list, `remote` with url and headers. SSE is not one of its transports. */
@@ -66,7 +71,7 @@ export function buildOpencodeConfig(input: { hubUrl: string; pluginPath: string;
   return {
     config: {
       $schema: 'https://opencode.ai/config.json',
-      plugin: [`file://${input.pluginPath}`],
+      plugin: [input.pluginPath],
       instructions: [input.rolePath],
       mcp,
       permission: Object.fromEntries(ASKED.map((tool) => [tool, 'ask'])),
@@ -82,33 +87,35 @@ export function buildOpencodeConfig(input: { hubUrl: string; pluginPath: string;
   };
 }
 
-export function buildOpencodeSettings(input: { hubUrl: string; name: string; servers: string[]; policy: GatePolicy; subagentLimit?: number | null }): OpencodeSettings {
-  return { hookUrl: `${input.hubUrl}${HOOK_PATH_PREFIX}${input.name}/`, timeoutMs: HOOK_TIMEOUT_S * 1000, servers: input.servers, policy: input.policy, subagentLimit: input.subagentLimit ?? null };
+export function buildOpencodeSettings(input: { hubUrl: string; name: string; servers: string[]; policy: GatePolicy; subagentLimit?: number | null; ownDir?: string }): OpencodeSettings {
+  return { hookUrl: `${input.hubUrl}${HOOK_PATH_PREFIX}${input.name}/`, timeoutMs: HOOK_TIMEOUT_S * 1000, servers: input.servers, policy: input.policy, subagentLimit: input.subagentLimit ?? null, ownDir: input.ownDir ?? '' };
 }
 
 /**
- * The plugin: an ES module of plain JavaScript (opencode runs it with Bun), node's own modules only. Tool names reach the hub and the gate as
- * Claude Code's (bash is Bash, an MCP tool `files_read` is `mcp__files__read`).
+ * The plugin, for opencode 2 (@opencode/cli): a directory with a package.json and an index.js, an ES module of plain JavaScript (node's own modules
+ * only; opencode hands it the plugin context). Its default export is what Plugin.define returns (the object itself). Tool names reach the hub and the
+ * gate as Claude Code's (shell is Bash, an MCP tool \`files_read\` is \`mcp__files__read\`).
  */
 export const OPENCODE_PLUGIN_SOURCE = `// Written by gonogo at every start of this agent: an edit is lost at the next start.
 import { readFileSync } from "node:fs";
 
 ${GATE_SOURCE}
 
-const TOOLS = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", patch: "Edit", multiedit: "MultiEdit", glob: "Glob", grep: "Grep", list: "LS", webfetch: "WebFetch", websearch: "WebSearch", task: "Task", todowrite: "TodoWrite", todoread: "TodoRead", skill: "Skill" };
+const TOOLS = { shell: "Bash", read: "Read", edit: "Edit", write: "Write", patch: "Edit", glob: "Glob", grep: "Grep", list: "LS", webfetch: "WebFetch", websearch: "WebSearch", subagent: "Task", task: "Task", todowrite: "TodoWrite", skill: "Skill" };
 
-export const Gonogo = async ({ client }) => {
+const setup = async (ctx) => {
   let settings;
   try {
     settings = JSON.parse(readFileSync(process.env.${OPENCODE_SETTINGS_ENV} ?? "", "utf8"));
   } catch (error) {
     console.error("gonogo: no settings for this agent, so it runs without gonogo: " + String(error));
-    return {};
+    return;
   }
   const token = process.env.GONOGO_TOKEN ?? "";
-  // Propellant: each finished reply's usage waits here and goes with the next tool or end-of-turn hook
+  // Propellant: the usage of each reply waits here (the session's running totals, as the difference since the last time) and goes with the next tool or end-of-turn hook
   const usage = [];
-  const counted = new Set();
+  const totals = new Map();
+  let model = null;
   const post = async (event, body) => {
     if (usage.length > 0 && (event === "Stop" || event === "StopFailure" || event === "PostToolUse" || event === "PostToolUseFailure")) body = { ...body, usage: usage.splice(0, 100) };
     try {
@@ -129,120 +136,122 @@ export const Gonogo = async ({ client }) => {
     for (const server of settings.servers) if (name.startsWith(server + "_")) return "mcp__" + server + "__" + name.slice(server.length + 1);
     return name;
   };
-  const callOf = (tool, args) => {
-    const a = args && typeof args === "object" ? args : {};
-    const path = typeof a.filePath === "string" ? a.filePath : typeof a.path === "string" ? a.path : undefined;
-    return { tool, command: typeof a.command === "string" ? a.command : undefined, path, url: typeof a.url === "string" ? a.url : undefined };
+  // what the gate reads of a call: the command, the path or the address, from the permission question (resources and metadata) or the tool's input
+  const callOf = (tool, resources, meta) => {
+    const m = meta && typeof meta === "object" ? meta : {};
+    const first = Array.isArray(resources) && typeof resources[0] === "string" ? resources[0] : undefined;
+    const path = typeof m.path === "string" ? m.path : typeof m.filePath === "string" ? m.filePath : tool === "Read" || tool === "Edit" || tool === "Write" || tool === "Glob" || tool === "Grep" ? first : undefined;
+    return { tool, command: typeof m.command === "string" ? m.command : tool === "Bash" ? first : undefined, path, url: typeof m.url === "string" ? m.url : tool === "WebFetch" ? first : undefined };
   };
-  const decide = (tool, args) => {
+  const decide = (tool, resources, meta) => {
     try {
-      return gateDecision(settings.policy, callOf(tool, args));
+      return gateDecision(settings.policy, callOf(tool, resources, meta));
     } catch (error) {
       return { permission: "ask", reason: "the gate failed: " + String(error) };
     }
   };
-  // what the gate said about each call, for the permission question opencode asks after tool.execute.before
-  const calls = new Map();
-  // prompts the plugin sent itself (mail): not the Director's words
-  const sent = new Set();
-  // the sessions of subagents (a task call makes one, with a parentID): their prompts and their end are not the agent's turn
-  const children = new Set();
-  const running = new Map();
-  const isChild = (id) => typeof id === "string" && children.has(id);
+  // the sessions of subagents (they have a parent): their prompts and their end are not the agent's turn
+  const children = new Map();
+  const isChild = async (id) => {
+    if (typeof id !== "string") return false;
+    if (children.has(id)) return children.get(id);
+    let child = false;
+    try {
+      const session = await ctx.session.get({ sessionID: id });
+      child = typeof session?.parentID === "string";
+    } catch {
+      child = false;
+    }
+    children.set(id, child);
+    return child;
+  };
+  const running = new Set();
 
   void post("Notification", { notification_type: "session_start" });
 
-  const reply = async (asked, response) => {
-    try {
-      await client.postSessionIdPermissionsPermissionId({ path: { id: asked.sessionID, permissionID: asked.id }, body: { response } });
-    } catch (error) {
-      console.error("gonogo: could not answer a permission question: " + String(error));
+  ctx.session.hook("model.request", (input) => {
+    if (typeof input?.model?.id === "string") model = input.model.id;
+  });
+  ctx.session.hook("prompt", async (input) => {
+    if (await isChild(input?.sessionID)) return;
+    const text = typeof input?.prompt?.text === "string" ? input.prompt.text : "";
+    await post("UserPromptSubmit", { prompt: text, session_id: input?.sessionID });
+  });
+  ctx.tool.hook("execute.before", async (input) => {
+    const tool = toolName(input?.tool);
+    const helper = (await isChild(input?.sessionID)) ? { agent_id: input.sessionID } : {};
+    await post("PreToolUse", { tool_name: tool, tool_input: input?.input, ...helper });
+    if (tool === "Task" && typeof input?.id === "string") {
+      running.add(input.id);
+      await post("SubagentStart", { agent_id: input.id, agent_type: typeof input?.input?.agent === "string" ? input.input.agent : "task" });
     }
-  };
-
-  return {
-    "chat.message": async (input, output) => {
-      if (isChild(input?.sessionID)) return;
-      const text = (output?.parts ?? []).filter((part) => part?.type === "text" && typeof part.text === "string" && part.synthetic !== true).map((part) => part.text).join("\\n");
-      if (sent.delete(text)) return;
-      await post("UserPromptSubmit", { prompt: text, session_id: input?.sessionID });
-    },
-    "tool.execute.before": async (input, output) => {
-      const tool = toolName(input?.tool);
-      let answer = decide(tool, output?.args);
-      if (tool === "Task" && answer.permission !== "deny" && settings.subagentLimit !== null && running.size >= settings.subagentLimit) {
-        answer = { permission: "deny", reason: "the room allows " + settings.subagentLimit + " subagents at once; wait for one to finish" };
+  });
+  ctx.tool.hook("execute.after", async (input) => {
+    const tool = toolName(input?.tool);
+    if (tool === "Task" && typeof input?.id === "string" && running.delete(input.id)) await post("SubagentStop", { agent_id: input.id });
+    await post(input?.status === "error" ? "PostToolUseFailure" : "PostToolUse", { tool_name: tool, tool_input: input?.input, ...((await isChild(input?.sessionID)) ? { agent_id: input.sessionID } : {}) });
+  });
+  // the tool gate: allow and deny at once, ask is left to opencode's own question (the console, the page or the phone answer it)
+  ctx.permission.hook("evaluate", async (input) => {
+    // a folder outside the project: the agent's own (memory, handoff, role) is its own; any other is asked
+    if (input?.action === "external_directory") {
+      const dirs = Array.isArray(input.resources) ? input.resources : [];
+      const own = settings.ownDir !== "" && dirs.length > 0 && dirs.every((d) => typeof d === "string" && (d.replace(/[*/]+$/, "") + "/").startsWith(settings.ownDir + "/"));
+      input.effect = own ? "allow" : "ask";
+      if (!own) await post("PermissionRequest", { tool_name: "external_directory", tool_input: { resources: dirs } });
+      return;
+    }
+    const tool = toolName(input?.action);
+    let answer = decide(tool, input?.resources, input?.metadata);
+    if (tool === "Task" && answer.permission !== "deny" && settings.subagentLimit !== null && running.size >= settings.subagentLimit) {
+      answer = { permission: "deny", reason: "the room allows " + settings.subagentLimit + " subagents at once; wait for one to finish" };
+    }
+    if (answer.permission === "allow") {
+      input.effect = "allow";
+    } else if (answer.permission === "deny") {
+      input.effect = "deny";
+      input.message = "gonogo: " + answer.reason;
+      await post("PostToolUseFailure", { tool_name: tool, tool_input: input?.metadata ?? {} });
+    } else {
+      input.effect = "ask";
+      await post("PermissionRequest", { tool_name: tool, tool_input: input?.metadata ?? { resources: input?.resources } });
+    }
+  });
+  ctx.session.hook("experimental.idle", async (input) => {
+    if (await isChild(input?.sessionID)) return;
+    const answer = await post("Stop", { session_id: input?.sessionID });
+    if (answer.decision !== "block" || typeof answer.reason !== "string" || answer.reason === "") return;
+    // the mail goes into the same session and the turn goes on
+    try {
+      await ctx.session.synthetic({ sessionID: input.sessionID, text: answer.reason });
+    } catch (error) {
+      console.error("gonogo: could not hand the mail over: " + String(error));
+    }
+  });
+  void (async () => {
+    for await (const event of ctx.event.subscribe()) {
+      const d = event?.data ?? {};
+      if (event?.type === "session.usage.updated" && typeof d.sessionID === "string" && d.tokens) {
+        const before = totals.get(d.sessionID) ?? { input: 0, output: 0, reasoning: 0, read: 0, write: 0 };
+        const now = { input: d.tokens.input ?? 0, output: d.tokens.output ?? 0, reasoning: d.tokens.reasoning ?? 0, read: d.tokens.cache?.read ?? 0, write: d.tokens.cache?.write ?? 0 };
+        totals.set(d.sessionID, now);
+        const delta = { i: now.input - before.input, cw: now.write - before.write, o: now.output + now.reasoning - before.output - before.reasoning, cr: now.read - before.read };
+        if (delta.i + delta.cw + delta.o + delta.cr > 0) usage.push({ id: d.sessionID + ":" + (event.id ?? usage.length), at: event.created ?? Date.now(), model, ...delta });
+        if (usage.length > 500) usage.splice(0, usage.length - 500);
+      } else if (event?.type === "session.execution.interrupted" && typeof d.sessionID === "string") {
+        // the Director said no (or stopped the turn): the idle hook does not run after an interruption, so the turn ends here; the hub hands any mail over itself
+        if (!(await isChild(d.sessionID))) await post("Stop", { session_id: d.sessionID });
+      } else if (event?.type === "session.execution.failed" && typeof d.sessionID === "string") {
+        if (!(await isChild(d.sessionID))) await post("StopFailure", { error: "session.execution.failed" });
+      } else if (typeof event?.type === "string" && event.type.startsWith("permission.") && event.type.endsWith("replied")) {
+        await post("Notification", { notification_type: "permission_answered" });
       }
-      const helper = isChild(input?.sessionID) ? { agent_id: input.sessionID } : {};
-      if (typeof input?.callID === "string") {
-        calls.set(input.callID, { tool, args: output?.args, answer });
-        if (calls.size > 200) calls.delete(calls.keys().next().value);
-      }
-      await post("PreToolUse", { tool_name: tool, tool_input: output?.args, ...helper });
-      if (answer.permission === "deny") {
-        await post("PostToolUseFailure", { tool_name: tool, tool_input: output?.args, ...helper });
-        throw new Error("gonogo: " + answer.reason);
-      }
-      if (tool === "Task" && typeof input?.callID === "string") {
-        running.set(input.callID, true);
-        await post("SubagentStart", { agent_id: input.callID, agent_type: typeof output?.args?.subagent_type === "string" ? output.args.subagent_type : "task" });
-      }
-    },
-    "tool.execute.after": async (input, output) => {
-      if (typeof input?.callID === "string") calls.delete(input.callID);
-      const tool = toolName(input?.tool);
-      if (tool === "Task" && typeof input?.callID === "string" && running.delete(input.callID)) await post("SubagentStop", { agent_id: input.callID });
-      const failed = output?.metadata?.error !== undefined && output?.metadata?.error !== null && output?.metadata?.error !== false;
-      await post(failed ? "PostToolUseFailure" : "PostToolUse", { tool_name: tool, tool_input: input?.args, ...(isChild(input?.sessionID) ? { agent_id: input.sessionID } : {}) });
-    },
-    event: async ({ event }) => {
-      const p = event?.properties ?? {};
-      switch (event?.type) {
-        case "session.created": {
-          if (typeof p.info?.parentID === "string" && typeof p.info?.id === "string") children.add(p.info.id);
-          return;
-        }
-        case "message.updated": {
-          const info = p.info;
-          const t = info?.tokens;
-          if (info?.role !== "assistant" || typeof info.id !== "string" || !info.time?.completed || t === undefined || counted.has(info.id)) return;
-          counted.add(info.id);
-          if (counted.size > 2000) counted.delete(counted.values().next().value);
-          usage.push({ id: info.id, at: info.time.completed, model: typeof info.modelID === "string" ? info.modelID : null, i: t.input, cw: t.cache?.write, o: (t.output ?? 0) + (t.reasoning ?? 0), cr: t.cache?.read });
-          if (usage.length > 500) usage.splice(0, usage.length - 500);
-          return;
-        }
-        case "permission.asked": {
-          const known = typeof p.tool?.callID === "string" ? calls.get(p.tool.callID) : undefined;
-          const tool = known?.tool ?? toolName(p.permission);
-          const answer = known?.answer ?? (p.permission === "external_directory" || p.permission === "doom_loop" ? { permission: "ask" } : decide(tool, p.metadata));
-          if (answer.permission === "allow") return reply(p, "once");
-          if (answer.permission === "deny") return reply(p, "reject");
-          await post("PermissionRequest", { tool_name: tool, tool_input: known?.args ?? p.metadata ?? {} });
-          return;
-        }
-        case "permission.replied":
-          await post("Notification", { notification_type: "permission_answered" });
-          return;
-        case "session.error":
-          if (isChild(p.sessionID)) return;
-          await post("StopFailure", { error: "session.error" });
-          return;
-        case "session.idle": {
-          if (typeof p.sessionID !== "string" || isChild(p.sessionID)) return;
-          const answer = await post("Stop", { session_id: p.sessionID });
-          if (answer.decision !== "block" || typeof answer.reason !== "string" || answer.reason === "") return;
-          sent.add(answer.reason);
-          try {
-            await client.session.promptAsync({ path: { id: p.sessionID }, body: { parts: [{ type: "text", text: answer.reason }] } });
-          } catch (error) {
-            sent.delete(answer.reason);
-            console.error("gonogo: could not hand the mail over: " + String(error));
-          }
-          return;
-        }
-      }
-    },
-  };
+    }
+  })().catch((error) => console.error("gonogo: the event stream ended: " + String(error)));
 };
+
+export default { id: "gonogo", setup };
 `;
+
+/** The plugin directory opencode loads (the config's `plugin` names it): a package.json and the index.js above, in the agent's folder. */
+export const OPENCODE_PLUGIN_PACKAGE = JSON.stringify({ name: 'gonogo-opencode', version: '0.0.0', private: true, type: 'module', main: 'index.js' }, null, 2);
