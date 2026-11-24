@@ -328,21 +328,36 @@ export function MissionLog(): ReactElement {
   // The page replaces the room: the keyboard starts at its title, not on a button that is gone.
   useEffect(() => heading.current?.focus(), []);
 
-  // The list: asked again a moment after the last key, and at once when a frame says something changed.
+  // The list: asked again a moment after the last key, and at once when a frame says something changed. With Search by meaning on, the first answer is
+  // words alone, and the query is embedded only once it has settled (600 ms without a key, or Enter), so typing does not spend the budget; a frame
+  // refreshes with words alone too.
+  const lastQuery = useRef(query);
+  const [entered, setEntered] = useState(0);
+  const show = (ask: number, meaning: boolean, q: string): void => {
+    api.searchLog(q, meaning).then(
+      (found) => {
+        if (ask !== latest.current) return;
+        setSearch(found);
+        setListError(null);
+      },
+      (e: unknown) => ask === latest.current && setListError(messageOf(e)),
+    );
+  };
   useEffect(() => {
     const ask = ++latest.current;
-    const timer = setTimeout(() => {
-      api.searchLog(query).then(
-        (found) => {
-          if (ask !== latest.current) return;
-          setSearch(found);
-          setListError(null);
-        },
-        (e: unknown) => ask === latest.current && setListError(messageOf(e)),
-      );
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [query, news.rev]);
+    const typed = lastQuery.current !== query;
+    lastQuery.current = query;
+    const words = setTimeout(() => show(ask, !semanticOn, query), 200);
+    const settled = semanticOn && typed && query.trim() !== '' ? setTimeout(() => show(ask, true, query), 600) : null;
+    return () => {
+      clearTimeout(words);
+      if (settled !== null) clearTimeout(settled);
+    };
+  }, [query, news.rev, semanticOn]);
+  // Enter asks for meaning at once
+  useEffect(() => {
+    if (entered > 0 && semanticOn && query.trim() !== '') show(++latest.current, true, query);
+  }, [entered]);
 
   // The Star Chart: asked when it is shown and again when a frame says something changed.
   useEffect(() => {
@@ -459,7 +474,14 @@ export function MissionLog(): ReactElement {
           )}
           {lens === 'entries' && (
             <>
-              <form className="log-search module" role="search" onSubmit={(e) => e.preventDefault()}>
+              <form
+                className="log-search module"
+                role="search"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setEntered((n) => n + 1);
+                }}
+              >
                 <div className="field">
                   <label htmlFor={`${titleId}-q`}>Search the log</label>
                   <input

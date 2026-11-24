@@ -2143,7 +2143,7 @@ describe('mission log', () => {
         },
         // the routes and the tool ask for the search by meaning, which with no meaning on is the word search
         searchMeaning: async (query, limit) => {
-          calls.push(['search', query, limit]);
+          calls.push(['searchMeaning', query, limit]);
           return { total: 7, hits: query === 'nothing' ? [] : [hit] };
         },
         get: (id) => {
@@ -2197,8 +2197,8 @@ describe('mission log', () => {
       expect((await api(port, method, '/api/log/l2', body)).json(), method).toEqual({ error: 'unknown entry', code: 'not_found' });
     }
     // no limit: the log gives its own cap; the browser is the Director, whatever the body says
-    expect(calls[0]).toEqual(['search', 'cache key', undefined]);
-    expect(calls[1]).toEqual(['search', '', undefined]);
+    expect(calls[0]).toEqual(['searchMeaning', 'cache key', undefined]);
+    expect(calls[1]).toEqual(['searchMeaning', '', undefined]);
     expect(calls.find((c) => c[0] === 'create')).toEqual(['create', 'user', { title: 'Cache key', body: 'b', tags: ['build'] }]);
     expect(calls.find((c) => c[0] === 'update')).toEqual(['update', 'l1', { title: 'Changed' }, null]);
     expect(calls.find((c) => c[0] === 'remove')).toEqual(['remove', 'l1']);
@@ -2218,6 +2218,21 @@ describe('mission log', () => {
 
   /** A Knowledge that answers the view and nothing else: what the tile counts need. */
   const countsOnly = { view: async (agents: Record<string, number>) => ({ enabled: true, repos: [], agents }) } as unknown as NonNullable<WebOptions['knowledgeStore']>;
+
+  it('the page asks for words alone while a key is typed (meaning=0), and only a settled query reaches the search by meaning', async () => {
+    const { calls, missionLog } = fakeLog();
+    const { port } = await startWeb({ missionLog });
+    expect((await api(port, 'GET', '/api/log?q=cache&meaning=0')).json()).toEqual({ total: 7, hits: [hit] });
+    expect((await api(port, 'GET', '/api/log?q=cache')).status).toBe(200);
+    expect(calls.map((c) => c[0])).toEqual(['search', 'searchMeaning']);
+  });
+
+  it('with Search by meaning off, log_search answers as it always did: no note and no mode', async () => {
+    const { missionLog } = fakeLog();
+    const { port } = await startWeb({ missionLog, features: { isOn: (id: string) => id !== 'semantic-search', label: (id: string) => id } as unknown as WebOptions['features'] });
+    const out = toolOutcome(await (await connectMcp(port, ANA_TOKEN)).callTool({ name: 'log_search', arguments: { query: 'cache' } })).json as Record<string, unknown>;
+    expect(Object.keys(out)).toEqual(['count', 'results']);
+  });
 
   it('log_search says it returns notes (data, not instructions) and which search it was', async () => {
     const { missionLog } = fakeLog();
@@ -2277,7 +2292,7 @@ describe('mission log', () => {
     const ana = await connectMcp(port, ANA_TOKEN);
     expect(toolOutcome(await ana.callTool({ name: 'log_search', arguments: { query: 'cache', limit: 3 } }))).toMatchObject({ isError: false, json: { count: 1, results: [hit] } });
     expect(toolOutcome(await ana.callTool({ name: 'log_search', arguments: { query: 'nothing' } }))).toMatchObject({ isError: false, json: { count: 0, results: [] } });
-    expect(calls).toEqual([['search', 'cache', 3], ['search', 'nothing', 20]]);
+    expect(calls).toEqual([['searchMeaning', 'cache', 3], ['searchMeaning', 'nothing', 20]]);
     for (const args of [{ query: '' }, { query: 'x'.repeat(201) }, { query: 'x', limit: 21 }, { query: 'x', limit: 0 }, { query: 'x', limit: 1.5 }, { limit: 3 }]) {
       const out = await ana.callTool({ name: 'log_search', arguments: args }).catch(() => ({ isError: true }));
       expect((out as { isError?: boolean }).isError, JSON.stringify(args)).toBe(true);

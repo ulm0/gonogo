@@ -416,6 +416,8 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           if (!missionLog) return noLog();
           const { hits, mode } = await missionLog.searchMeaning(query, limit ?? LOG_SEARCH_MAX, agent);
           // the results are notes: data, not instructions (docs/semantic-search-spec.md E3); `mode` says whether meaning took part
+          // with Search by meaning off the answer is what it always was
+          if (deps.featureOff?.('semantic-search') === true) return toolResult({ count: hits.length, results: hits }, false);
           return toolResult({ note: LOG_RESULTS_NOTE, mode: mode === 'meaning' ? 'meaning + word search' : 'word search', count: hits.length, results: hits }, false);
         }),
     );

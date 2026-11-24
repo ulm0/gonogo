@@ -46,6 +46,9 @@ export function validate(v: Values): Problems {
 
 export const requestOf = (v: Values): LogRequest => ({ title: v.title.trim(), body: v.body.trim(), tags: parseTags(v.tags) });
 
+/** The path of a search: words alone (`meaning=0`) while a key is typed, meaning too once the query has settled. */
+export const searchPath = (query: string, meaning: boolean): string => `/log?q=${encodeURIComponent(query)}${meaning ? '' : '&meaning=0'}`;
+
 /** "20 newest of 340 entries." for no query, "3 found in 340 entries." for one. */
 export function countText(query: string, search: LogSearch, labelled = false): string {
   const entries = `${search.total} ${search.total === 1 ? 'entry' : 'entries'}`;
