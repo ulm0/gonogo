@@ -836,7 +836,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const workingOn = (agent: string): { mission?: string; task?: string } => {
       // an auto-review reviewer is attributed to its job's mission by its name (`rv3-rso`), from its first reply: its task is made a moment after it starts
       const reviewJob = /^(rv\d+)-/.exec(agent)?.[1];
-      const mission = reviewJob === undefined ? undefined : autoReview.jobs().find((j) => j.id === reviewJob && j.reviewers?.includes(agent) !== false)?.mission;
+      const mission = reviewJob === undefined ? undefined : autoReview.jobs().find((j) => j.id === reviewJob && autoReview.view().settings.positions.some((position) => agent === `${j.id}-${position}`))?.mission;
       if (mission !== undefined) return { mission, ...(flightPlan().find((t) => t.assignee === agent && t.status === 'doing') === undefined ? {} : { task: flightPlan().find((t) => t.assignee === agent && t.status === 'doing')!.id }) };
       const doing = flightPlan().find((t) => t.assignee === agent && t.status === 'doing');
       return doing === undefined ? {} : { task: doing.id, ...(doing.missionId === undefined ? {} : { mission: doing.missionId }) };

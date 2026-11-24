@@ -259,6 +259,17 @@ describe('a review job', () => {
     expect(review.view().jobs[0]?.status).toBe('posted');
   });
 
+  it('autoPost leaves a job that went over its per-PR cap for the click', async () => {
+    await make({ autoPost: true, maxUsdPerPr: 0.1 });
+    const id = await start();
+    // spent() answers 0.42 in this harness: over the cap
+    await submit(`${id}-rso`);
+    await submit(`${id}-retro`);
+    expect(posted).toHaveLength(0);
+    expect(review.view().jobs[0]?.status).toBe('done');
+    expect((await runner.post(id)).status).toBe('posted');
+  });
+
   it('a reached day cap leaves the job queued, and the next try runs it; ignorePaths and an empty diff are honoured', async () => {
     await make({ maxUsdPerDay: 5 });
     spentToday = 5;

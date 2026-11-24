@@ -217,7 +217,8 @@ export function createReviewRunner(options: { dir: string; now: () => number; st
       void ops.fire(agent, true);
       if (finished) {
         await ops.close(job, 'done');
-        if (store.settings().autoPost) await runner.post(job.id).catch((error: unknown) => log.warn(`auto-review: ${job.id} could not be posted: ${error instanceof Error ? error.message : String(error)}`));
+        // a job over its per-PR cap is left for the Director's click: the cap is soft (a trip does not end a turn in flight), so what it cost is a reason to look first
+        if (store.settings().autoPost && ops.spent(job) <= store.settings().maxUsdPerPr) await runner.post(job.id).catch((error: unknown) => log.warn(`auto-review: ${job.id} could not be posted: ${error instanceof Error ? error.message : String(error)}`));
       }
       return { accepted: cleaned.findings.length, dropped: cleaned.dropped };
     },
