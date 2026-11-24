@@ -77,6 +77,8 @@ describe('the gate of the plugin (opencode 2): what RSO asked of #286', () => {
     expect(await ask(`${own()}/../../etc/*`)).toBe('ask');
     expect(await ask(`${own()}/sub/../../..`)).toBe('ask');
     expect(await ask(`${own()}/link/*`)).toBe('ask');
+    expect(await ask(`${own()}/link/newdir/*`)).toBe('ask');
+    expect(await ask(`${own()}/sub/newdir/*`)).toBe('allow');
     expect(await ask('/etc/*')).toBe('ask');
     expect(await ask(`${own()}-other/*`)).toBe('ask');
   });
