@@ -65,7 +65,19 @@ export function opencodeServers(servers: Record<string, McpServer> | undefined):
 /** opencode's tools, each asked about, so that the gate answers every call whatever the owner's own config allows. */
 const ASKED = ['*', 'bash', 'edit', 'write', 'patch', 'read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'codesearch', 'task', 'todowrite', 'todoread', 'skill', 'external_directory', 'doom_loop'];
 
-export function buildOpencodeConfig(input: { hubUrl: string; pluginPath: string; rolePath: string; servers?: Record<string, McpServer>; skills?: readonly string[]; effort?: string; anthropicBaseUrl?: string }): { config: Record<string, unknown>; names: string[]; skipped: string[] } {
+/**
+ * The model and effort of an opencode 2 agent (2.4.1): its CLI has no `--model` ("Unrecognized flag: --model": the agent exited at once), so the model
+ * is the config's `model`, as `{ providerID, model, variant }`, the object form of the `provider/model#variant` its schema takes. The effort is that
+ * `variant`, and a variant goes with a model: without one there is nothing to put it on (2.4.1 turns the old `agent.build.variant` into nothing), so
+ * an effort alone is not passed. A name without `provider/` is not passed either (opencode drops it); the hire refuses one (`modelFormProblem`).
+ */
+export function opencodeModel(model: string | undefined, effort: string | undefined): { model?: { providerID: string; model: string; variant?: string } } {
+  const slash = model === undefined ? -1 : model.indexOf('/');
+  if (model === undefined || slash <= 0 || slash === model.length - 1) return {};
+  return { model: { providerID: model.slice(0, slash), model: model.slice(slash + 1), ...(effort ? { variant: effort } : {}) } };
+}
+
+export function buildOpencodeConfig(input: { hubUrl: string; pluginPath: string; rolePath: string; servers?: Record<string, McpServer>; skills?: readonly string[]; model?: string; effort?: string; anthropicBaseUrl?: string }): { config: Record<string, unknown>; names: string[]; skipped: string[] } {
   const { servers, skipped } = opencodeServers(input.servers);
   const mcp = { ...servers, [MCP_SERVER_NAME]: { type: 'remote', url: `${input.hubUrl}${MCP_PATH}`, headers: { Authorization: 'Bearer {env:GONOGO_TOKEN}' }, enabled: true } };
   return {
@@ -77,8 +89,7 @@ export function buildOpencodeConfig(input: { hubUrl: string; pluginPath: string;
       permission: Object.fromEntries(ASKED.map((tool) => [tool, 'ask'])),
       // a skill folder holds its SKILL.md; opencode scans each path for **/SKILL.md, so the folder itself is the path
       ...(input.skills !== undefined && input.skills.length > 0 ? { skills: { paths: [...input.skills] } } : {}),
-      // effort is the variant of opencode's two primary agents
-      ...(input.effort ? { agent: { build: { variant: input.effort }, plan: { variant: input.effort } } } : {}),
+      ...opencodeModel(input.model, input.effort),
       // Clean Room egress: the Anthropic provider talks to gonogo's proxy (its base URL ends in /v1) with the placeholder key
       ...(input.anthropicBaseUrl ? { provider: { anthropic: { options: { baseURL: `${input.anthropicBaseUrl}/v1`, apiKey: '{env:ANTHROPIC_API_KEY}' } } } } : {}),
     },

@@ -194,7 +194,7 @@ function mcpJson(ctx: StartContext, extra: Record<string, unknown> = {}): string
  */
 export function buildProviderStart(provider: OtherProvider, ctx: StartContext): ProviderStart {
   const file = (name: string): string => join(ctx.agentDir, name);
-  // Every engine with a model setting takes `--model <name>` (PROVIDER_INFO.model); the name is one argument, never a shell word.
+  // Every engine with a model setting but opencode takes `--model <name>` (PROVIDER_INFO.model); the name is one argument, never a shell word. opencode 2 has no such flag: its model goes in its config.
   const model = ctx.model ? ['--model', ctx.model] : [];
   switch (provider) {
     case 'gemini':
@@ -226,11 +226,12 @@ export function buildProviderStart(provider: OtherProvider, ctx: StartContext): 
     case 'opencode': {
       // OPENCODE_CONFIG is merged over the owner's config; {env:...} is opencode's own substitution. gonogo's plugin (opencodeplugin.ts) brings
       // the hooks, mail at the end of a turn and the tool gate; the role is an instructions file, so a resumed session does not get it again as a prompt.
-      const { config, names, skipped } = buildOpencodeConfig({ hubUrl: ctx.hubUrl, pluginPath: file(OPENCODE_PLUGIN_DIR), rolePath: file(OPENCODE_ROLE_FILE), servers: ctx.servers, skills: ctx.skills, effort: ctx.effort, anthropicBaseUrl: ctx.anthropicBaseUrl });
+      const { config, names, skipped } = buildOpencodeConfig({ hubUrl: ctx.hubUrl, pluginPath: file(OPENCODE_PLUGIN_DIR), rolePath: file(OPENCODE_ROLE_FILE), servers: ctx.servers, skills: ctx.skills, model: ctx.model, effort: ctx.effort, anthropicBaseUrl: ctx.anthropicBaseUrl });
       const settings = buildOpencodeSettings({ ownDir: ctx.agentDir ?? '', hubUrl: ctx.hubUrl, name: ctx.name, servers: names, subagentLimit: ctx.subagentLimit ?? null, policy: ctx.policy ?? { mode: ctx.mode, rules: {}, allowed: [], cwd: '/', home: '/' } });
       return {
         // --standalone: a server of its own for this agent, not the shared background service (which would serve every agent with one environment)
-        args: ['--standalone', ...(ctx.engineSession ? ['--session', ctx.engineSession] : []), ...model],
+        args: ['--standalone', ...(ctx.engineSession ? ['--session', ctx.engineSession] : [])],
+        // no --model: opencode 2 has none; the model is in the config (opencodeModel)
         env: { OPENCODE_CONFIG: file(OPENCODE_CONFIG_FILE), [OPENCODE_SETTINGS_ENV]: file(OPENCODE_SETTINGS_FILE), XDG_DATA_HOME: file(OPENCODE_DATA_DIR), OPENCODE_DISABLE_AUTOUPDATE: '1' },
         files: {
           [OPENCODE_CONFIG_FILE]: JSON.stringify(config, null, 2),

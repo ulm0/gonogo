@@ -2,6 +2,8 @@
 
 <GatesMock class="doc-mock" />
 
+Found a vulnerability? Report it privately, never in a public issue: see the [security policy](https://github.com/ulm0/gonogo/security/policy).
+
 ## Network and tokens
 
 - gonogo listens on `127.0.0.1` unless you pass `--host`. No TLS: to reach it from elsewhere, see [Reverse proxy](#reverse-proxy).

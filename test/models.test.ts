@@ -36,6 +36,11 @@ describe('the store', () => {
     expect(store.resolve('claude', 'fido')).toBe('opus');
     expect(store.getPosition('fido', 'pi')).toBe('sonnet:high');
     await expect(store.setPosition('fido', 'x', 'copilot')).rejects.toMatchObject({ field: 'provider' });
+    // opencode 2 takes its model only as provider/model
+    await expect(store.setPosition('fido', 'sonnet', 'opencode')).rejects.toMatchObject({ field: 'model' });
+    await expect(store.set('opencode', 'sonnet')).rejects.toMatchObject({ field: 'model' });
+    await store.set('opencode', 'anthropic/claude-opus-5-5');
+    expect(store.resolve('opencode')).toBe('anthropic/claude-opus-5-5');
     expect(store.view()).toMatchObject({ positions: { fido: 'opus' }, enginePositions: { pi: { fido: 'sonnet:high' } } });
     const again = createModelDefaults({ dir: tmp });
     await again.load();
