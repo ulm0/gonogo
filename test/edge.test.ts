@@ -2739,12 +2739,12 @@ describe('mcp', () => {
     expect(list?.inputSchema.required ?? []).toEqual([]);
     expect(list?.inputSchema.properties?.status).toMatchObject({ enum: ['todo', 'doing', 'review', 'done', 'blocked'] });
     const create = tools.find((t) => t.name === 'task_create');
-    expect(Object.keys(create?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'detail', 'missionId', 'title']);
+    expect(Object.keys(create?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'detail', 'missionId', 'position', 'title']);
     expect([...(create?.inputSchema.required ?? [])]).toEqual(['title']);
     expect(create?.inputSchema.properties?.title).toMatchObject({ maxLength: 200 });
     expect(create?.inputSchema.properties?.detail).toMatchObject({ maxLength: 4000 });
     const update = tools.find((t) => t.name === 'task_update');
-    expect(Object.keys(update?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'attachments', 'id', 'localNotes', 'missionId', 'note', 'status']);
+    expect(Object.keys(update?.inputSchema.properties ?? {}).sort()).toEqual(['assignee', 'attachments', 'id', 'localNotes', 'missionId', 'note', 'position', 'status']);
     expect([...(update?.inputSchema.required ?? [])]).toEqual(['id']);
     for (const name of ['task_list', 'task_create', 'task_update'] as const) expect(tools.find((t) => t.name === name)?.description).toBe(MCP_DESCRIPTIONS[name]);
     const write = tools.find((t) => t.name === 'log_write');
