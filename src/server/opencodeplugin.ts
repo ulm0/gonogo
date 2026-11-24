@@ -77,6 +77,14 @@ export function opencodeModel(model: string | undefined, effort: string | undefi
   return { model: { providerID: model.slice(0, slash), model: model.slice(slash + 1), ...(effort ? { variant: effort } : {}) } };
 }
 
+/**
+ * Whether an opencode agent may use opencode's own free models: only when the model it starts with is one of opencode's (`opencode/...`),
+ * chosen by the Director. Otherwise it starts with OPENCODE_DISABLE_FREE_MODELS=1 (2.4.1), so a model whose provider has no credential for
+ * the agent fails (`provider.no-route`, "No model is available") instead of quietly running on a free third-party model, and no model at all
+ * means opencode picks among the providers the agent is signed in to.
+ */
+export const opencodeFreeModels = (model: string | undefined): boolean => model !== undefined && model.startsWith('opencode/');
+
 export function buildOpencodeConfig(input: { hubUrl: string; pluginPath: string; rolePath: string; servers?: Record<string, McpServer>; skills?: readonly string[]; model?: string; effort?: string; anthropicBaseUrl?: string }): { config: Record<string, unknown>; names: string[]; skipped: string[] } {
   const { servers, skipped } = opencodeServers(input.servers);
   const mcp = { ...servers, [MCP_SERVER_NAME]: { type: 'remote', url: `${input.hubUrl}${MCP_PATH}`, headers: { Authorization: 'Bearer {env:GONOGO_TOKEN}' }, enabled: true } };
@@ -295,7 +303,9 @@ const setup = async (ctx) => {
         // the Director said no (or stopped the turn): the idle hook does not run after an interruption, so the turn ends here; the hub hands any mail over itself
         if (!(await isChild(d.sessionID))) await post("Stop", { session_id: d.sessionID });
       } else if (event?.type === "session.execution.failed" && typeof d.sessionID === "string") {
-        if (!(await isChild(d.sessionID))) await post("StopFailure", { error: "session.execution.failed" });
+        // opencode's own error ({ type, message }, e.g. provider.no-route: no credential for the model's provider), for the hub to show
+        const error = typeof d.error?.type === "string" ? { type: String(d.error.type), message: String(d.error.message ?? "").slice(0, 300) } : "session.execution.failed";
+        if (!(await isChild(d.sessionID))) await post("StopFailure", { error });
       } else if (typeof event?.type === "string" && event.type.startsWith("permission.") && event.type.endsWith("replied")) {
         await post("Notification", { notification_type: "permission_answered" });
       }

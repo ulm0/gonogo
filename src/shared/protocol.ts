@@ -2509,6 +2509,8 @@ export interface ScreenProbe {
   signedOut?: boolean;
   /** Claude Code's screen says its credential was rejected ("authentication rejected (401)"). Absent from an older pty host. */
   authRejected?: boolean;
+  /** opencode (2.4.1) says "No provider selected" or shows "Connect an integration": it has no model it may use. Absent from an older pty host. */
+  noModel?: boolean;
 }
 export interface TitleInfo {
   glyph: TitleGlyph;

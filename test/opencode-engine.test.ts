@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildOpencodeConfig, buildOpencodeSettings, OPENCODE_CONFIG_FILE, OPENCODE_PLUGIN_SOURCE, opencodeModel, opencodeServers } from '../src/server/opencodeplugin.js';
+import { buildOpencodeConfig, buildOpencodeSettings, OPENCODE_CONFIG_FILE, OPENCODE_PLUGIN_SOURCE, opencodeFreeModels, opencodeModel, opencodeServers } from '../src/server/opencodeplugin.js';
 import { buildProviderStart } from '../src/server/providers.js';
 import { modelFormProblem } from '../src/shared/protocol.js';
 import type { GatePolicy } from '../src/server/toolgate.js';
@@ -211,6 +211,8 @@ describe('the plugin against a hook server (opencode 2: the plugin context is a 
       // a turn the Director stopped (a NO-GO) ends the turn for the hub too; a failed one is a StopFailure
       await event('session.execution.interrupted', { sessionID: 'ses_main' });
       await event('session.execution.failed', { sessionID: 'ses_main' });
+      // opencode with no credential for the model's provider (free models off): its own error goes up as it is
+      await event('session.execution.failed', { sessionID: 'ses_main', error: { type: 'provider.no-route', message: 'No model is available for session ses_main' } });
       await event('session.execution.interrupted', { sessionID: 'ses_child' });
 
       expect(posts.map((post) => post.url)).toStrictEqual([
@@ -232,7 +234,10 @@ describe('the plugin against a hook server (opencode 2: the plugin context is a 
         'Stop',
         'Stop',
         'StopFailure',
+        'StopFailure',
       ]);
+      expect(posts.at(-2)?.body).toStrictEqual({ error: 'session.execution.failed' });
+      expect(posts.at(-1)?.body).toStrictEqual({ error: { type: 'provider.no-route', message: 'No model is available for session ses_main' } });
       expect(posts[1]?.body).toStrictEqual({ prompt: 'hello', session_id: 'ses_main' });
       expect(posts[3]?.body).toStrictEqual({ tool_name: 'Bash', tool_input: {} });
       expect(posts[4]?.body).toStrictEqual({ notification_type: 'permission_answered' });
@@ -275,5 +280,16 @@ describe('the model and effort of an opencode 2 agent (2.4.1 has no --model)', (
     expect(modelFormProblem('opencode', 'anthropic/claude-opus-5-5')).toBeNull();
     expect(modelFormProblem('pi', 'sonnet')).toBeNull();
     expect(modelFormProblem('claude', 'opus')).toBeNull();
+  });
+});
+
+describe('no silent free model (RSO on #296)', () => {
+  const ctx = (model?: string) => ({ name: 'ana', mode: 'default', role: 'r', roleText: 'r', hubUrl: 'http://h', agentDir: '/a', tokenFile: '/a/t', token: 't', ...(model ? { model } : {}) }) as never;
+  it("opencode's free models stay off unless the Director chose one of opencode's own models", () => {
+    expect(opencodeFreeModels('opencode/big-pickle')).toBe(true);
+    for (const model of ['anthropic/claude-opus-5-5', 'sonnet', undefined]) expect(opencodeFreeModels(model), String(model)).toBe(false);
+    expect(buildProviderStart('opencode', ctx('anthropic/claude-opus-5-5')).env).toMatchObject({ OPENCODE_DISABLE_FREE_MODELS: '1' });
+    expect(buildProviderStart('opencode', ctx()).env).toMatchObject({ OPENCODE_DISABLE_FREE_MODELS: '1' });
+    expect(buildProviderStart('opencode', ctx('opencode/big-pickle')).env).not.toHaveProperty('OPENCODE_DISABLE_FREE_MODELS');
   });
 });
