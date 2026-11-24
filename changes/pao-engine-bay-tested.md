@@ -1,1 +1,2 @@
 - **Engine Bay page says what was tested.** Each engine is marked [tested], [partly] or [not run] with its version and date, and the pi and opencode feature table marks each cell [tested], [tests only] or [not run]. pi 1.6.0 and opencode 2.4.1 ran in a real room on 0.19.0; the permission gate, Clean Room and end-of-turn mail were not seen.
+- **Not-verified page brought up to date for pi, opencode, cost by engine and the Docker config repair.**

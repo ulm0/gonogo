@@ -18,7 +18,7 @@ The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PAT
 
 **Tested:** [tested] in a real room and works; [partly] (what is said); [not run] with a model (its `--help` or the vendor docs only). Nothing is marked [tested] without a run in the room that builds gonogo.
 
-- [partly] **pi 1.6.0 and opencode 2.4.1** ran as agents on 2026-11-24 (gonogo 0.19.0; pi on `claude-opus-5-5`, opencode on `big-pickle`). **Worked:** the gonogo tools, mail (read within the turn), editing the memory file, a T-minus vote counted, an engine switch that kept the context (Claude Code to pi; opencode to pi and back), opencode's own subagent (`task` tool) returning output, text from the Brief box reaching pi, and a model change inside opencode to `anthropic/claude-opus-5-5`. **Not seen:** mail handed over at the end of a turn (the pointer), the GO / NO-GO permission gate (the room allows Bash), Clean Room, pi's plan quota, Remote Control. **Known bug:** opencode 2.4.1 has no `--model` flag, so an opencode agent hired *with a model* exits at start: hire it without one.
+- [partly] **pi 1.6.0 and opencode 2.4.1** ran as agents on 2026-11-24 (gonogo 0.19.0; pi on `claude-opus-5-5`, opencode on `big-pickle`). **Worked:** the gonogo tools, mail (read within the turn), editing the memory file, a T-minus vote counted, an engine switch that kept the context (Claude Code to pi; opencode to pi and back), opencode's own subagent (`task` tool) returning output, text from the Brief box reaching pi, and a model change made inside opencode's own UI to `anthropic/claude-opus-5-5` (not a hire with a model: see the bug below). **Not seen:** mail handed over at the end of a turn (the pointer), the GO / NO-GO permission gate (the room allows Bash), Clean Room, pi's plan quota, Remote Control. **Known bug:** opencode 2.4.1 has no `--model` flag, so an opencode agent hired *with a model* exits at start: hire it without one.
 - Cost by engine, provider and model: [tested] for opencode (a real run), [tests only] for pi and Claude Code.
 
 <AgyMock class="doc-mock" />
@@ -44,7 +44,7 @@ pi (1.6) and opencode (2.4, the package `@opencode/cli`; 1.x is not supported) w
 | Skills | `--plugin-dir` | `--skill` [tests only] | `skills.paths` [tests only] |
 | Session resumed at a restart | `--resume` | `--session-id` (in `agents/<name>/pi-sessions`) [tests only] | `--session` (the id its plugin reported) [tests only] |
 | Effort | `--effort` | `--thinking` [not run] | the variant of its agents [tests only] |
-| Model by engine and by position | yes | yes [tested] model on hire; [tests only] by position | yes [tested] model change to `anthropic/claude-opus-5-5`; [tests only] by position |
+| Model by engine and by position | yes | yes [tests only] | yes, but **hiring or editing an opencode agent with a model exits at start** (2.4.1 has no `--model`; known bug, hire without one); [tested] changing the model inside opencode's own UI to `anthropic/claude-opus-5-5`; by position [tests only] |
 | Subagents shown, counted, limited or off | yes | pi has no subagents | its `task` tool [tested] returns output; [tests only] shown, counted, limited, off |
 | Propellant, budgets, cost | from its transcripts | each reply's usage, sent with the hooks [tests only] | each reply's usage, sent with the hooks [tested] cost by provider and model |
 | Plan quota | status line | Anthropic's subscription headers (not checked against a subscription) [not run] | not available (the plugin does not see responses) |
