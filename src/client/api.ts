@@ -1,3 +1,4 @@
+import { searchPath } from './log.js';
 import { creationOptions, credentialJson, requestOptions } from './passkey.js';
 import type { FeaturePlan } from '../shared/features.js';
 import type {
@@ -1132,8 +1133,8 @@ export async function designLivery(request: LiveryDesignRequest): Promise<SendRe
 }
 
 /** Mission Log: the shared memory. A `log` frame says that something changed; the entries are asked for. An empty query lists the newest. */
-export async function searchLog(query: string): Promise<LogSearch> {
-  return toLogSearch(await call('GET', `/log?q=${encodeURIComponent(query)}`));
+export async function searchLog(query: string, meaning = true): Promise<LogSearch> {
+  return toLogSearch(await call('GET', searchPath(query, meaning)));
 }
 
 export async function readLogEntry(id: string): Promise<LogEntry> {

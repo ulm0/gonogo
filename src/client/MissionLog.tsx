@@ -12,7 +12,7 @@ import type { LogAnchorState, LogChart, LogEntry, LogHit, LogSearch } from '../s
 import * as api from './api.js';
 import { whenText } from './inbox.js';
 import { legendOf } from './loop.js';
-import { countText, emptyValues, FIELDS, newsText, requestOf, rowId, validate, valuesOf } from './log.js';
+import { countText, searchPlan, emptyValues, FIELDS, newsText, requestOf, rowId, validate, valuesOf } from './log.js';
 import type { Field, Problems, Values } from './log.js';
 import { Chart, Links } from './StarChart.js';
 import { showRoom, useFeature, useStore } from './store.js';
@@ -328,21 +328,40 @@ export function MissionLog(): ReactElement {
   // The page replaces the room: the keyboard starts at its title, not on a button that is gone.
   useEffect(() => heading.current?.focus(), []);
 
-  // The list: asked again a moment after the last key, and at once when a frame says something changed.
+  // The list: asked again a moment after the last key, and at once when a frame says something changed. With Search by meaning on, the first answer is
+  // words alone, and the query is embedded only once it has settled (600 ms without a key, or Enter), so typing does not spend the budget; a frame
+  // refreshes with words alone too.
+  const lastQuery = useRef(query);
+  // the query whose meaning results are on screen, so that a refresh keeps them
+  const meaningShown = useRef<string | null>(null);
+  const [entered, setEntered] = useState(0);
+  const show = (ask: number, meaning: boolean, q: string): void => {
+    api.searchLog(q, meaning).then(
+      (found) => {
+        if (ask !== latest.current) return;
+        meaningShown.current = found.mode === 'meaning' ? q : null;
+        setSearch(found);
+        setListError(null);
+      },
+      (e: unknown) => ask === latest.current && setListError(messageOf(e)),
+    );
+  };
   useEffect(() => {
     const ask = ++latest.current;
-    const timer = setTimeout(() => {
-      api.searchLog(query).then(
-        (found) => {
-          if (ask !== latest.current) return;
-          setSearch(found);
-          setListError(null);
-        },
-        (e: unknown) => ask === latest.current && setListError(messageOf(e)),
-      );
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [query, news.rev]);
+    const plan = searchPlan({ semanticOn, typed: lastQuery.current !== query, query, meaningShownFor: meaningShown.current });
+    lastQuery.current = query;
+    const words = setTimeout(() => show(ask, plan.first === 'meaning', query), 200);
+    // the meaning answer has its own ask: a slow words answer that comes after it is stale
+    const settled = plan.settle ? setTimeout(() => show(++latest.current, true, query), 600) : null;
+    return () => {
+      clearTimeout(words);
+      if (settled !== null) clearTimeout(settled);
+    };
+  }, [query, news.rev, semanticOn]);
+  // Enter asks for meaning at once
+  useEffect(() => {
+    if (entered > 0 && semanticOn && query.trim() !== '') show(++latest.current, true, query);
+  }, [entered]);
 
   // The Star Chart: asked when it is shown and again when a frame says something changed.
   useEffect(() => {
@@ -459,7 +478,14 @@ export function MissionLog(): ReactElement {
           )}
           {lens === 'entries' && (
             <>
-              <form className="log-search module" role="search" onSubmit={(e) => e.preventDefault()}>
+              <form
+                className="log-search module"
+                role="search"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setEntered((n) => n + 1);
+                }}
+              >
                 <div className="field">
                   <label htmlFor={`${titleId}-q`}>Search the log</label>
                   <input

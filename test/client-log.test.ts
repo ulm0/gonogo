@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LOG_BODY_MAX_CHARS, LOG_TAGS_MAX, LOG_TITLE_MAX_CHARS } from '../src/shared/protocol.js';
 import type { LogEntry, LogSearch } from '../src/shared/protocol.js';
 import { semanticStatusText } from '../src/client/semanticview.js';
-import { countText, emptyValues, FIELDS, newsText, NO_LOG_NEWS, parseTags, requestOf, rowId, validate, valuesOf } from '../src/client/log.js';
+import { countText, searchPath, searchPlan, emptyValues, FIELDS, newsText, NO_LOG_NEWS, parseTags, requestOf, rowId, validate, valuesOf } from '../src/client/log.js';
 
 const entry: LogEntry = { id: 'l1', title: 'Cache key', body: 'The cache key has the node version.', tags: ['build', 'cache'], author: 'ana', createdAt: 1, updatedAt: 2 };
 const search = (total: number, hits: number): LogSearch => ({
@@ -46,6 +46,36 @@ describe('the form', () => {
   it('is sent trimmed, with its tags as a list', () => {
     expect(requestOf({ title: ' Cache key ', tags: 'Build, cache', body: '\n text \n' })).toEqual({ title: 'Cache key', body: 'text', tags: ['build', 'cache'] });
     expect(requestOf({ title: 'T', tags: '', body: 'b' }).tags).toEqual([]);
+  });
+});
+
+describe('the path of a search', () => {
+  it('asks for words alone while a key is typed, for meaning once the query has settled', () => {
+    expect(searchPath('cache key', true)).toBe('/log?q=cache%20key');
+    expect(searchPath('cache key', false)).toBe('/log?q=cache%20key&meaning=0');
+    expect(searchPath('', false)).toBe('/log?q=&meaning=0');
+    expect(searchPath('a&meaning=0', true)).toBe('/log?q=a%26meaning%3D0');
+  });
+});
+
+describe('what the search box asks for', () => {
+  const base = { semanticOn: true, typed: true, query: 'cache', meaningShownFor: null };
+  it('words first and meaning once a typed query has settled; nothing to settle for a blank query', () => {
+    expect(searchPlan(base)).toEqual({ first: 'words', settle: true });
+    expect(searchPlan({ ...base, query: '  ' })).toEqual({ first: 'words', settle: false });
+  });
+
+  it('a refresh by a log frame keeps meaning when meaning is on screen for that query, and asks nothing to settle', () => {
+    expect(searchPlan({ ...base, typed: false, meaningShownFor: 'cache' })).toEqual({ first: 'meaning', settle: false });
+    expect(searchPlan({ ...base, typed: false, meaningShownFor: 'other' })).toEqual({ first: 'words', settle: false });
+    expect(searchPlan({ ...base, typed: false, meaningShownFor: null })).toEqual({ first: 'words', settle: false });
+    // a typed key drops back to words, whatever was on screen
+    expect(searchPlan({ ...base, meaningShownFor: 'cache' })).toEqual({ first: 'words', settle: true });
+  });
+
+  it('with the feature off there is only the plain request', () => {
+    expect(searchPlan({ ...base, semanticOn: false })).toEqual({ first: 'meaning', settle: false });
+    expect(searchPlan({ ...base, semanticOn: false, typed: false, meaningShownFor: 'cache' })).toEqual({ first: 'meaning', settle: false });
   });
 });
 

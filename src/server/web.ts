@@ -1556,7 +1556,10 @@ export function createWebServer(options: WebOptions): WebServer {
           allow: ['GET', 'POST'],
           run: async (req, res) => {
             if (req.method === 'GET') {
-              sendJson(res, 200, await missionLog.searchMeaning(new URL(req.url ?? '/', 'http://localhost').searchParams.get('q') ?? '', undefined, 'user'));
+              const params = new URL(req.url ?? '/', 'http://localhost').searchParams;
+              const q = params.get('q') ?? '';
+              // the page asks for words alone while a key is typed (`meaning=0`): only a settled query is sent to the embedding endpoint
+              sendJson(res, 200, params.get('meaning') === '0' ? missionLog.search(q) : await missionLog.searchMeaning(q, undefined, 'user'));
               return;
             }
             const body = await jsonObject(req, res);
