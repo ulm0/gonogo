@@ -1,9 +1,9 @@
 # UI library assessment: shadcn/ui, motion-primitives, Hugeicons, Nexus UI
 
-Task t149, FIDO, 2026-11-24. An assessment only: no app code changes.
+Task t149, FIDO, 2026-11-24. An assessment and a migration plan; no app code changes.
 
-**Verdict: do not adopt shadcn/ui as the base of the app. Borrow instead: take Hugeicons (free set) as the icon set, and
-take one headless primitive library only where our own component is weak. Skip motion-primitives and Nexus UI.**
+**Decision: the Director said GO to adopt all four (m4274), Hugeicons free icons only. Section 3 is the plan. The pilot
+page is Party Line (the THREADS tab of COMMS), built in 2 PRs, with a Director go/no-go before the rest (about 15 PRs).**
 
 ## 1. What each one really is
 
@@ -35,12 +35,11 @@ side until the last of the 29 files is gone. Replacing our CSS outright is the f
 
 **Livery / tokens to shadcn variables.** shadcn reads `--background --foreground --card --popover --primary --secondary
 --muted --accent --destructive --border --input --ring` (each with a `-foreground`). Most map in one block
-(`--background: var(--body)`, `--card: var(--panel)`, `--input: var(--key)`, `--border: var(--edge)`,
-`--foreground: var(--text)`, `--destructive: var(--nogo)`, `--primary: var(--work)`...). One real clash: **`--muted`**. In
-gonogo it is a text colour (51 uses); in shadcn it is a background and `--muted-foreground` is the text. Both can't hold
-the same name, so either our token is renamed in every file, Livery and `src/shared/livery.ts` (and its contrast test), or
-shadcn's files are edited. Our LCD, saffron "you", go/no-go tints have no shadcn slot and stay ours. Livery's contrast
-checks keep working only if every shadcn variable is derived from our tokens, never set on its own.
+(`--background: var(--body)`, `--card: var(--panel)`, `--input: var(--edge)` (the input's border), `--border: var(--edge)`,
+`--foreground: var(--text)`, `--destructive: var(--nogo-tint)`, `--primary: var(--text)`...; the full table is in section 3). One apparent clash: **`--muted`**. In gonogo it is a text colour (51 uses); in shadcn it is a background and
+`--muted-foreground` is the text. Tailwind utilities read `--color-muted`, not `--muted`, so mapping `--color-*` straight
+to our tokens (section 3) avoids it with no rename. Our LCD, saffron "you" and go/no-go tints have no shadcn slot and stay
+ours. Livery's contrast checks keep working only if every shadcn variable is derived from our tokens, never set on its own.
 
 **Dark mode.** shadcn uses a `.dark` class. Liveries already switch colour by `[data-livery]`, Night Shift included, so we
 map variables per livery and never use `.dark`. No gain here.
@@ -71,31 +70,99 @@ leaves us with its structure and none of its look. Nexus UI is a chat UI for the
 terminals, not a chat stream, so none of its 15 items has a place (and `message`/`tool` pull mermaid, shiki and streamdown).
 motion-primitives is decorative motion; our CSS transitions do the same work at 0 KB.
 
-## 3. Options
+## 3. Decision and migration plan
 
-**(a) Adopt incrementally.** Add Tailwind v4 (no Preflight), `components.json`, `cn`, Radix (not Base UI: half the size);
-map shadcn variables to our tokens per livery; rename our `--muted`. Pilot: replace `Pop.tsx` (the one primitive behind
-menus, popovers and strip chips) with shadcn `popover` + `dropdown-menu` restyled to the Instrument. Then page by page.
-Cost: pilot 2 PRs (setup + tokens/`--muted` rename; `Pop` swap). Full migration: about **14 to 18 PRs** (one per area:
-shell/top bar, Comms, Flight Plan, Rules pages, Hangar, Docking, forms, design-system docs, removal of the last CSS file),
-+110 KB gzip, two styling systems for the whole period, and every Livery screen re-checked for contrast.
+FIDO first advised against adoption, because of the +50% JS and the restyling it needs. The Director said GO to all four
+(m4274), so this section is the plan for doing it. Hugeicons: **free icons only**, no Pro licence.
 
-**(b) Don't adopt; borrow.** 1 PR: add `@hugeicons/react` + `@hugeicons/core-free-icons` (MIT, free Stroke Rounded set,
-about +0.3 KB per icon), an `<Icon>` wrapper for new glyphs and the 2 inline `<svg>` of `src/client` today, `currentColor` so Liveries colour
-them. Optional later, 1 PR each, only where ours is weak: put a Radix primitive (`radix-ui` Popover / DropdownMenu) under
-our own `Pop.tsx`, styled by our CSS, no Tailwind. Borrow ideas, not code, from shadcn (variant naming, `asChild`). Cost:
-1 to 3 PRs, +3 to +25 KB gzip.
+### Design choices
 
-**Recommendation: (b).** The app's value is its own Instrument look and Livery theming; shadcn's value is a default look
-and speed of starting, which we no longer need. (a) costs about 16 PRs and +50% JS to land where we are, with one gain
-(menu keyboard and positioning) that (b) gets in one PR. Do not take Hugeicons Pro: the free set covers an app of this
-size, and Pro needs a licence key in CI and a private registry for every contributor.
+1. **Radix, not Base UI.** Use `components.json` style `new-york-v4` (Radix), not the `init` default `base-nova` (Base UI).
+   Radix costs half the bytes (+46 KB against +96 KB for the same six primitives), and Nexus UI items already depend on
+   `radix-ui`, so we would otherwise ship both. Set `iconLibrary: "hugeicons"` so `shadcn add` writes Hugeicons, not lucide.
+   motion-primitives items that import `lucide-react` get their icon swapped to Hugeicons when they are copied.
+2. **Tailwind v4 next to our CSS, without Preflight.** Add `@tailwindcss/vite`, and load only the theme and utility layers:
+   `@import "tailwindcss/theme.css" layer(theme); @import "tailwindcss/utilities.css" layer(utilities);`. Our CSS stays
+   unlayered, so it wins wherever both style the same element, and no existing screen changes until its own PR. The few
+   resets shadcn files need (border-style, box-sizing) go in one small rule scoped to `[data-slot]`, which every shadcn v4
+   component sets.
+3. **Livery stays the one source of colour.** shadcn's variables are aliases of our tokens, declared once in
+   `src/client/shadcn.css` with `@theme inline`. They never hold their own colour values, so every livery (shipped, custom,
+   Night Shift) recolours shadcn components with no new code. Tailwind utilities read `--color-*`, so we write
+   `--color-muted: var(--well)` directly and never declare shadcn's bare `--muted`. **That removes the `--muted` clash
+   noted in section 2: no rename of our token.**
 
-## First step
+   | shadcn colour (bg / fg) | our tokens | already a checked pair? |
+   |---|---|---|
+   | background / foreground | `--body` / `--text` | yes |
+   | card, popover / -foreground | `--panel` / `--text` | yes |
+   | primary / -foreground | `--text` / `--panel` (the dark key) | yes (`--panel` on `--text`) |
+   | secondary / -foreground | `--key` / `--text` | yes |
+   | muted / -foreground | `--well` / `--muted` | yes |
+   | accent / -foreground | `--you-tint` / `--you-ink` | yes |
+   | destructive / -foreground | `--nogo-tint` / `--nogo-text` | yes |
+   | border, input | `--edge` | not text |
+   | ring | `--work` | not text |
+   | chart-1..5 | `--work --go --you --nogo --muted` | not text |
+   | radius | `--radius` | not a colour |
 
-One PR on (b): Hugeicons free set behind a tiny `Icon` wrapper, used first in the top bar and status strip, shown in
-docs/design-system.md under every Livery. Then decide on the Radix-under-`Pop` PR after an a11y check of `Pop` menus with
-a screen reader.
+   Every foreground/background pair is already in `CONTRAST_PAIRS` (`src/shared/livery.ts`), so the contrast check needs no
+   change: a livery that passes today passes with shadcn. A new test enforces this: it parses `shadcn.css`, checks that each
+   `--color-*` is a `var()` of a livery token, and checks that each fg/bg pair is in `CONTRAST_PAIRS`.
+4. **Dark mode by livery only.** No `.dark` class and no `dark:` variants. Delete the `dark` block that motion-primitives and
+   shadcn items carry when they are copied.
+5. **Files.** shadcn base items go in `src/client/ui/`, Nexus UI items in `src/client/ui/nexus/`, motion-primitives items in
+   `src/client/ui/motion/`, and `cn` in `src/client/lib/utils.ts`. The `@/` alias points at `src/client` (in tsconfig and
+   vite.config). Copied files are ours: lint and typecheck them like the rest, and add a header line with their source URL.
+6. **Weight goes to where it is used.** Load the pilot tab with `React.lazy`, so the main chunk only grows by Tailwind's CSS
+   and `cn`. Nexus `message`: drop streamdown, mermaid, math and cjk, and render bodies as plain text as today. Agent text is
+   untrusted, and markdown would bring links and HTML into the room. `tool`/shiki are not taken.
+7. **Budget, checked in every PR:** main JS chunk at most +15 KB gzip, CSS at most +10 KB gzip, each lazy chunk reported. The
+   PR body gives the `vite build` numbers before and after.
+
+### Pilot page: Party Line (the THREADS tab of COMMS)
+
+Why this page: it is the one place where all four libraries do real work. Nexus `Thread` (stick-to-bottom scroll) and
+`Message` show the conversation, Nexus `PromptInput` is the Director's reply box, shadcn `ScrollArea`/`Tooltip`/`Button`
+fill in, Hugeicons supply the icons, and motion-primitives `TextShimmer` shows "sending". It is small (`PartyLine.tsx`,
+154 lines), sits behind one tab (easy to lazy-load and to roll back), and its data comes from the existing routes
+(`threads.ts`, the comm loop's reply route), so it needs no server change. Settings pages would test only forms, and
+`Pop.tsx` would test only primitives.
+
+### PR slices (about 15)
+
+| # | PR | Size | Notes |
+|---|---|---|---|
+| 1 | Foundation: Tailwind v4 without Preflight, `components.json` (new-york-v4, hugeicons), `@/` alias, `lib/utils.ts`, `shadcn.css` alias block, the alias/contrast test, docs site imports `shadcn.css` | S | no visible change; check:pack, typecheck, docs:build |
+| 2 | **Pilot:** Party Line on Nexus Thread/Message/PromptInput + shadcn + Hugeicons + TextShimmer, lazy tab, delete its CSS | M | real screenshots under every shipped livery and on a phone (l80); bundle numbers; **Director go/no-go before PR 3** |
+| 3 | `Pop.tsx` on shadcn Popover/DropdownMenu (5 callers: TopBar, StatusStrip, TerminalBar, RoomView, LayoutPop) | M | keep the props of `Pop`, so the callers don't change |
+| 4 | Dialogs: `StepUpDialog`, PatchPanel/TerminalBar dialogs on shadcn Dialog/AlertDialog | S | keyboard and Escape tests stay green |
+| 5 | Form controls (`forms.css`, 824 lines): Input, Select, Switch, Checkbox, Label | M | `CONTROL_PAIRS` (`--go-ink` on `--key`) is the check mark's colour |
+| 6 | Icons: Hugeicons in place of text glyphs and the 2 inline SVGs | S | `currentColor` |
+| 7–13 | One per area: top bar + status strip; rest of COMMS (Inbox, Traffic); Flight Plan; Mission Log + Knowledge; Rules pages; Hangar + Docking; Settings + Livery page | M each | each deletes the CSS it replaced |
+| 14 | `shell.css` (2,225 lines): layout to utilities; remove dead CSS files | M | |
+| 15 | `docs/design-system.md`: every element shown again from the new components (l11) | S | |
+
+The terminal (xterm), the LCD and the Doto type stay ours. They are the Instrument look, and shadcn has nothing in their
+place.
+
+### Guards for every PR
+
+- No colour literal (hex, `oklch`, `rgb`) in `src/client/ui/**`; enforced by a grep in the PR 1 test.
+- No `@hugeicons-pro` package and no `.npmrc` registry entry for it.
+- No `dark:` class and no `.dark` selector.
+- The livery tests (`test/livery.test.ts`, `test/client-look.test.ts`) stay green and unchanged.
+- Each PR deletes the CSS it replaces, so we never keep two styles of the same element.
+- Third-party notices: Vite's `license` output already collects the notices; check:pack confirms the new packages appear.
+
+### Cost
+
+About 15 PRs; the pilot is 2 (PR 1 and 2). JS: about +110 KB gzip in total if everything is eventually used, less on the
+first screen thanks to lazy tabs. Two styling systems live side by side until PR 14.
+
+### First step
+
+CONTROL builds PR 1 and PR 2. The Director sees the pilot screenshots and gives a go/no-go before PR 3.
 
 ## How the numbers were taken
 
