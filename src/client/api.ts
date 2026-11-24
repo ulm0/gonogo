@@ -100,6 +100,9 @@ import type {
   CoauthorSettings,
   EgressSettings,
   GlobalMcpView,
+  AutoReviewDraft,
+  AutoReviewSettings,
+  AutoReviewView,
   RulesView,
   HoldAllResult,
   ResumeAllResult,
@@ -747,6 +750,32 @@ export async function globalMcp(): Promise<GlobalMcpView> {
 }
 export async function setGlobalMcp(patch: { host?: boolean; cleanRoom?: boolean }): Promise<GlobalMcpView> {
   return globalMcpOf(await call('PUT', '/global-mcp', patch));
+}
+
+/** Auto-review (docs/features/auto-review.md): the setting and the jobs, the draft of a job, its POST and its skip. Turning it on asks for a step-up. */
+const autoReviewOf = (value: unknown): AutoReviewView => {
+  const record = asRecord(value);
+  if (record === null || asRecord(record.settings) === null || !Array.isArray(record.jobs)) throw failure('The server sent an answer gonogo does not understand.');
+  return record as unknown as AutoReviewView;
+};
+export async function getAutoReview(): Promise<AutoReviewView> {
+  return autoReviewOf(await call('GET', '/auto-review'));
+}
+export async function setAutoReview(patch: Partial<AutoReviewSettings>): Promise<AutoReviewView> {
+  return autoReviewOf(await call('PUT', '/auto-review', patch));
+}
+export async function pollAutoReview(): Promise<AutoReviewView> {
+  return autoReviewOf(await call('POST', '/auto-review/poll'));
+}
+export async function getReviewDraft(job: string): Promise<AutoReviewDraft | null> {
+  const record = asRecord(await call('GET', `/auto-review/jobs/${encodeURIComponent(job)}`));
+  return record === null || record.draft === null ? null : (record.draft as AutoReviewDraft);
+}
+export async function postReview(job: string): Promise<void> {
+  await call('POST', `/auto-review/jobs/${encodeURIComponent(job)}/post`);
+}
+export async function skipReview(job: string): Promise<void> {
+  await call('POST', `/auto-review/jobs/${encodeURIComponent(job)}/skip`);
 }
 
 /** Egress: whether a Clean Room agent holds the Anthropic API key (docs/features/egress.md). A change asks for a step-up. */

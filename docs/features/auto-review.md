@@ -4,11 +4,11 @@
 
 An optional room setting that watches GitHub repos you link and makes **one review job per open pull request head**. The reviewers (RSO for security, RETRO for correctness by default) read the diff and write findings; **you click POST** (or turn on auto-post) and gonogo comments on the pull request under your own `gh` login, headed "Review by gonogo". It only comments: it never approves, requests changes, merges or sets a status. The full design and the threats are in [`docs/auto-review-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/auto-review-spec.md).
 
-> **Built in slices.** **Slice 1: the setting, the poller, the gate and the job list. Slice 2 (this page): the reviewers, the findings, the cleaning and the post, through the API.** The Flight Rules block and the draft view of the page (slice 3) are not built yet: until then the setting, the draft and the POST are used with the API.
+> **Built in three slices, all in now:** the setting, the poller and the gate; the reviewers, the cleaning and the post; and **the page**: Flight Rules, AUTO-REVIEW has the switches, the lists of repos and authors, the jobs with their status, and the draft (each reviewer's summary and findings) with POST and SKIP. The same things are in the API.
 
 ## The setting
 
-Off by default. `GET` / `PUT /api/auto-review` (the page's block comes in slice 3). **Turning it on, auto-post, and changing the repos or authors ask for your password** (a step-up); turning it off does not. An **API key may only turn it off**.
+Off by default. `GET` / `PUT /api/auto-review`, and the AUTO-REVIEW block of Flight Rules. **Turning it on, auto-post, and changing the repos or authors ask for your password** (a step-up); turning it off does not. An **API key may only turn it off**.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -24,7 +24,7 @@ Off by default. `GET` / `PUT /api/auto-review` (the page's block comes in slice 
 
 ## What the poller does
 
-Every 3 minutes (no webhook in v1), for each linked repo, it runs `gh pr list` with the room's own `gh` login (the `gh` folder of the room's home, or your `GH_CONFIG_DIR`). That is the **only** gh call in this slice, with a fixed argument list: the repo name must match `owner/repo`, the author a GitHub login or `@me`, and nothing else from a request reaches gh.
+Every 3 minutes (no webhook in v1), for each linked repo, it runs `gh pr list` with the room's own `gh` login (the `gh` folder of the room's home, or your `GH_CONFIG_DIR`). That is the poller's **only** gh call, with a fixed argument list (the reviewers add `gh pr diff` and the one post, below): the repo name must match `owner/repo`, the author a GitHub login or `@me`, and nothing else from a request reaches gh.
 
 A pull request becomes a **job** only when all of this holds, and otherwise it is listed as **skipped** with the reason (once per head commit):
 

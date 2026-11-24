@@ -23,6 +23,7 @@ import { ReliefRulesBlock } from './ReliefRules.js';
 import { AllStopBlock, CoauthorBlock, StartupBlock, SubagentsBlock } from './StartupRules.js';
 import { EgressBlock } from './EgressRules.js';
 import { GlobalMcpBlock } from './GlobalMcp.js';
+import { AutoReviewBlock } from './AutoReview.js';
 import { AutoUpdateBlock } from './AutoUpdateRules.js';
 import { VersionCheckBlock } from './CheckNow.js';
 import { PushBlock } from './PushBlock.js';
@@ -213,6 +214,7 @@ export function FlightRules(): ReactElement {
   const payload = useValue(() => api.payloadDefaults().then((p) => `${p.mcpServers.length} servers, ${p.skills.length} skills`));
   const sub = useValue(() => api.subagentSettings().then((x) => (x.mode === 'limit' ? `at most ${x.limit}` : x.mode)));
   const coauthor = useValue(() => api.coauthorSettings().then((c) => (c.enabled ? 'co-author line on' : 'co-author line off') + (c.prFooter ? ', PR footer on' : '')));
+  const reviewNow = useValue(() => api.getAutoReview().then((r) => (r.settings.enabled ? `on, ${r.settings.repos.length} repos, ${r.jobs.filter((j) => j.status === 'done').length} drafts` : 'off')));
   const globalNow = useValue(() => api.globalMcp().then((g) => `${g.servers.length} found, ${g.host ? 'on' : 'off'} for agents${g.cleanRoom ? ', on for Clean Room' : ''}`));
   const egress = useValue(() => api.egressSettings().then((e) => (e.anthropic ? 'kept out of containers' : 'in the container')));
   const auto = useValue(() => api.autoUpdate().then((a) => (a.enabled ? 'on' : 'off')));
@@ -323,6 +325,7 @@ export function FlightRules(): ReactElement {
         <Row name="Tool permissions" now={perms}><PermissionDefaultsBlock /></Row>
         <Row name="Payload: servers and skills" now={payload}><PayloadDefaultsBlock /></Row>
         <Row name="Global MCP servers" now={globalNow}><GlobalMcpBlock /></Row>
+        <Row name="Auto-review" now={reviewNow}><AutoReviewBlock /></Row>
         <Row name="Skills registry" now="see Edit"><SkillsBlock /></Row>
         <Row name="Subagents" now={sub}><SubagentsBlock /></Row>
         <Row name="Co-author and PR footer" now={coauthor}><CoauthorBlock /></Row>
