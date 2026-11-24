@@ -10,6 +10,7 @@
 # Build, from the repository root:
 #   docker build -t gonogo:<tag> .
 #   (optional) --build-arg CLAUDE_CODE_VERSION=<x.y.z>   the Claude Code release baked into the image, default below
+#   (optional) --build-arg PI_VERSION=<x.y.z> --build-arg OPENCODE_VERSION=<x.y.z>   the pi and opencode releases (Engine Bay)
 #
 # Run. One credential only: CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY, never both.
 # `-e NAME` without a value forwards the variable from your shell, so the secret is not typed into the command line.
@@ -92,6 +93,8 @@ RUN mkdir /app \
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 ARG CLAUDE_CODE_VERSION=2.1.325
+ARG PI_VERSION=1.6.0
+ARG OPENCODE_VERSION=1.19.6
 ARG PNPM_VERSION
 
 # The base image has neither git nor a CA bundle. tini reaps the orphans that agents' tools leave behind and forwards
@@ -121,6 +124,17 @@ RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global
  && claude --version \
  && rm -rf /root/.cache /root/.local/share/pnpm
 
+# Two more engines (Engine Bay), so an agent can move off Claude Code when its quota runs out: pi and opencode, pinned, the same way and in
+# a layer of their own after Claude Code's. pi is plain JavaScript (no build step). opencode-ai's postinstall links the binary of its
+# platform package (opencode-linux-x64 or -arm64, an optional dependency pnpm picks for the build's architecture), hence --allow-build.
+# Each brings its own login: an API key set as a Clearance key of the agent, or a login stored under HOME (the /home/node volume).
+RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@${PNPM_VERSION} add --global \
+      --config.global-dir=/usr/local/share/pnpm --config.global-bin-dir=/usr/local/bin --config.enable-global-virtual-store=false \
+      --allow-build=opencode-ai @earendil-works/pi-coding-agent@${PI_VERSION} opencode-ai@${OPENCODE_VERSION} \
+ && pi --version \
+ && opencode --version \
+ && rm -rf /root/.cache /root/.local/share/pnpm
+
 COPY --from=build /app /opt/gonogo
 # The scripts of packaging/docker are not in the npm tarball (/app), so they come from the build stage's source. `gonogo` is a small script that
 # drops from root to uid 1000 (docker exec starts as root, see below); gonogo-drop does the dropping (setpriv, from util-linux).
@@ -142,6 +156,7 @@ ENV HOME=/home/node \
     GONOGO_HOME=/state/gonogo \
     GONOGO_SEED_CLAUDE=1 \
     DISABLE_AUTOUPDATER=1 \
+    OPENCODE_DISABLE_AUTOUPDATE=1 \
     LANG=C.UTF-8
 
 # uid 1000: Claude Code refuses bypassPermissions as root. The boss starts in /projects. The build-time proof below runs as node;
@@ -153,6 +168,8 @@ WORKDIR /projects
 # Build-time proof as the non-root user. `gonogo --version` imports the whole compiled server, so a missing
 # platform package of the pty library, a CommonJS import that only fails in plain Node or a bad bin fails here.
 RUN claude --version \
+ && pi --version \
+ && opencode --version \
  && docker --version \
  && gh --version \
  && gonogo --version \

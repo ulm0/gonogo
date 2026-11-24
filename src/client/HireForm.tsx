@@ -15,6 +15,7 @@ import {
   callOf,
   chooseCustom,
   chooseEngine,
+  chooseEngineAgain,
   withRoomDefaults,
   choosePosition,
   editRequest,
@@ -240,6 +241,8 @@ function Staff({ form }: { form: Target }): ReactElement {
   if (current !== null) lastSeen.current = current;
 
   const [values, setValues] = useState<Values>(() => initialValues(form, current, agents, info?.cwd ?? ''));
+  // what the form opened with: an edit that picks the engine back gets its settings back
+  const [opened] = useState<Values>(values);
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [busy, setBusy] = useState(false);
   const [topError, setTopError] = useState<string | null>(null);
@@ -347,7 +350,8 @@ function Staff({ form }: { form: Target }): ReactElement {
     bypassTile.current?.focus();
   };
 
-  async function submit(restart: boolean): Promise<void> {
+  async function submit(restartAsked: boolean): Promise<void> {
+    let restart = restartAsked;
     if (busy) return;
     if (!valid) {
       setTouched(ALL_TOUCHED);
@@ -366,6 +370,10 @@ function Staff({ form }: { form: Target }): ReactElement {
       } else {
         // Only what changed: the server answers 400 to an edit with nothing in it, and a name is a rename.
         const changes = editRequest(values, original, nameLocked);
+        // a switch of engine restarts the console itself: now with SAVE AND RESTART, else when its turn ends
+        const switching = changes?.provider !== undefined;
+        if (changes !== null && switching && restart) changes.switchNow = true;
+        if (switching) restart = false;
         if (changes === null) {
           if (!restart) {
             closeForm();
@@ -389,6 +397,20 @@ function Staff({ form }: { form: Target }): ReactElement {
       if (field !== undefined && FIELDS.includes(field)) setServerProblems({ [field]: messageOf(e) });
       if (field?.startsWith('payload')) setFoldOpen(true);
       if (field === 'keys') setKeysOpen(true);
+      setBusy(false);
+    }
+  }
+
+  /** The engine switch that waits for the end of a turn: now (switchNow) or not at all (the engine it runs on). */
+  async function switchPending(now: boolean): Promise<void> {
+    if (busy || original === null) return;
+    setBusy(true);
+    setTopError(null);
+    try {
+      await api.edit(original.name, now ? { switchNow: true } : { provider: original.provider });
+      store.setState((s) => ({ ...s, form: null, selected: original.name }));
+    } catch (e) {
+      setTopError(messageOf(e));
       setBusy(false);
     }
   }
@@ -523,7 +545,7 @@ function Staff({ form }: { form: Target }): ReactElement {
       />
     </Control>
   );
-  const engineField = !custom && !editing && (
+  const engineField = !custom && (
     <>
       <Control id={`${id}-engine`} label="Engine" hint={engineHint(values.provider)}>
         <select
@@ -531,7 +553,7 @@ function Staff({ form }: { form: Target }): ReactElement {
           className="input staff-engine"
           value={values.provider}
           aria-describedby={`${id}-engine-hint ${id}-engine-note`}
-          onChange={(event) => pick((v) => chooseEngine(v, event.target.value as Provider))}
+          onChange={(event) => pick((v) => (editing ? chooseEngineAgain(v, event.target.value as Provider, opened) : chooseEngine(v, event.target.value as Provider)))}
         >
           {engineOptions(info?.installed ?? []).map((option) => (
             <option key={option.provider} value={option.provider}>
@@ -1006,7 +1028,21 @@ function Staff({ form }: { form: Target }): ReactElement {
             {running && (
               <p className="staff-notice" data-lit="">
                 <span className="led" data-on="true" data-blink="true" aria-hidden="true" />
-                <span>{legendOf(original.name, agents)} is running. Changes apply at its next start.</span>
+                <span>
+                  {legendOf(original.name, agents)} is running. Changes apply at its next start.
+                  {values.provider !== original.provider && ` Saving moves it to ${providerInfo(values.provider).label}: it restarts when its turn ends, in a new session.`}
+                </span>
+              </p>
+            )}
+            {original.pendingEngine != null && (
+              <p className="staff-notice" data-lit="">
+                <span>{`Switches to ${providerInfo(original.pendingEngine).label} when its turn ends; its mail waits until then.`}</span>
+                <button type="button" className="btn" disabled={busy} onClick={() => void switchPending(true)}>
+                  SWITCH NOW
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => void switchPending(false)}>
+                  CANCEL SWITCH
+                </button>
               </p>
             )}
             <fieldset className="staff-fields" disabled={busy}>
@@ -1014,6 +1050,7 @@ function Staff({ form }: { form: Target }): ReactElement {
               {commandField}
               {roleUp && roleField}
               {dirField}
+              {engineField}
               {more(
                 <>
                   {!roleUp && roleField}

@@ -2975,6 +2975,7 @@ describe('hire (4.9)', () => {
       doing: null,
       subagents: { running: 0, started: 0, types: {} },
       history: [{ state: 'starting', at: T0 }],
+      pendingEngine: null,
     });
     expect(h.saves).toHaveLength(saves + 1);
     const saved = h.saves[h.saves.length - 1]?.agents ?? [];
@@ -4510,7 +4511,7 @@ describe('position, provider and command (hire and edit)', () => {
     expect(h.spawns.at(-1)?.agent).toMatchObject({ provider: 'custom', command: 'htop -d 5' });
   });
 
-  it('editing the command of a custom agent makes it dirty until the restart; the provider cannot be edited', async () => {
+  it('editing the command of a custom agent makes it dirty until the restart; it cannot switch engine', async () => {
     const h = await started();
     await hireCustom(h);
     expect(h.view('tail').dirty).toBe(false);
@@ -4520,7 +4521,7 @@ describe('position, provider and command (hire and edit)', () => {
     await h.hub.restart('tail');
     expect(h.view('tail').dirty).toBe(false);
     expect(h.spawns.at(-1)?.agent.command).toBe('top');
-    await expectHubReject(h.hub.edit('tail', { provider: 'claude' } as unknown as EditRequest), 'bad_request', /^nothing to change/);
+    await expectHubReject(h.hub.edit('tail', { provider: 'claude' }), 'bad_request', /^a custom command has no engine to switch/, 'provider');
     expect(h.view('tail').provider).toBe('custom');
   });
 
@@ -7298,5 +7299,160 @@ describe("the Director's words as a user turn (docs/features/relay.md)", () => {
       await h.advance(DELIVERY_SETTLE_MS + DELIVERY_COALESCE_MS * 3);
       for (const entry of h.typed.slice(1)) expect(entry.text).not.toContain('[Director via');
     });
+  });
+});
+
+describe('Engine switch: an agent moves to another engine (docs/engine-switch-spec.md)', () => {
+  const record = (h: Harness, name: string): AgentRecord | undefined => h.saves.at(-1)?.agents.find((a) => a.name === name);
+
+  it('a stopped agent just saves: the new engine, a new session, and what it does not take dropped', async () => {
+    const h = await started();
+    await h.hub.hire({ name: 'ana', role: 'r', dir: '/work/ana', mode: 'acceptEdits', model: 'opus', effort: 'high', permissions: { allow: ['Bash(git:*)'] }, remoteControl: {} });
+    h.ready('ana');
+    await h.hub.stop('ana');
+    const session = record(h, 'ana')?.sessionId;
+    const spawns = h.spawns.length;
+    const view = await h.hub.edit('ana', { provider: 'pi' });
+    expect(view).toMatchObject({ provider: 'pi', state: 'stopped', mode: 'default', model: null, effort: null, permissions: null, remoteControl: null, pendingEngine: null });
+    const saved = record(h, 'ana');
+    expect(saved).toMatchObject({ provider: 'pi', mode: 'default' });
+    expect(saved?.sessionId).not.toBe(session);
+    expect(saved).not.toHaveProperty('model');
+    expect(h.spawns).toHaveLength(spawns);
+    expect(h.notices.at(-1)?.[1]).toBe('ana now runs pi; settings it does not take were dropped: mode, model, effort, remoteControl, permissions.');
+    // and back: Claude Code is the absent provider again
+    await h.hub.edit('ana', { provider: 'claude', model: 'sonnet' });
+    expect(record(h, 'ana')).not.toHaveProperty('provider');
+    expect(h.view('ana')).toMatchObject({ provider: 'claude', model: 'sonnet' });
+  });
+
+  it('an idle agent restarts on the new engine at once', async () => {
+    const h = await withAna();
+    const stops = h.stops.length;
+    const view = await h.hub.edit('ana', { provider: 'opencode' });
+    expect(view).toMatchObject({ provider: 'opencode', state: 'starting', generation: 2 });
+    expect(h.stops).toHaveLength(stops + 1);
+    expect(h.spawns.at(-1)?.agent).toMatchObject({ name: 'ana', provider: 'opencode' });
+  });
+
+  it('a working agent keeps its engine until the turn ends; its mail waits, then the switch restarts it', async () => {
+    const h = await withAna();
+    h.work('ana');
+    const view = await h.hub.edit('ana', { provider: 'opencode', role: 'new role' });
+    expect(view).toMatchObject({ provider: 'claude', role: 'ana does the ana work', pendingEngine: 'opencode', state: 'working', generation: 1 });
+    expect(h.frames('ana').at(-1)?.pendingEngine).toBe('opencode');
+    const sent = h.send('user', 'ana');
+    // the end of the turn hands nothing over: the next turn belongs to the new engine
+    expect(h.hook('ana', 'Stop')).toEqual({});
+    expect(h.msg(sent.id).status).toBe('queued');
+    await settle();
+    await settle();
+    expect(h.view('ana')).toMatchObject({ provider: 'opencode', role: 'new role', pendingEngine: null, generation: 2 });
+    expect(h.spawns.at(-1)?.agent).toMatchObject({ provider: 'opencode', role: 'new role' });
+    // opencode has the gonogo tools: the message still waits for it
+    expect(h.msg(sent.id).status).toBe('queued');
+  });
+
+  it('while a switch is pending, the mail says why it waits and no pointer is typed', async () => {
+    const h = await withAna();
+    h.work('ana');
+    await h.hub.edit('ana', { provider: 'opencode' });
+    const sent = h.send('user', 'ana');
+    await h.advance(DELIVERY_COALESCE_MS);
+    expect(h.typed.filter((t) => t.name === 'ana')).toHaveLength(0);
+    expect(h.msg(sent.id).note).toBe('waiting: ana is switching to opencode');
+  });
+
+  it('a new engine without the gonogo tools gets no mail: what waited goes back to the user', async () => {
+    const h = await withAna();
+    h.work('ana');
+    await h.hub.edit('ana', { provider: 'pi' });
+    const sent = h.send('user', 'ana');
+    h.hook('ana', 'Stop');
+    await settle();
+    await settle();
+    expect(h.view('ana').provider).toBe('pi');
+    expect(h.msg(sent.id)).toMatchObject({ status: 'undelivered', note: 'ana now runs pi without the gonogo tools; the message went to the user' });
+  });
+
+  it('the current engine cancels a pending switch, and the Stop hands the mail over as before', async () => {
+    const h = await withAna();
+    h.work('ana');
+    await h.hub.edit('ana', { provider: 'pi' });
+    const view = await h.hub.edit('ana', { provider: 'claude' });
+    expect(view).toMatchObject({ provider: 'claude', pendingEngine: null });
+    h.send('user', 'ana');
+    expect(h.hook('ana', 'Stop')).toMatchObject({ decision: 'block' });
+    expect(h.view('ana')).toMatchObject({ provider: 'claude', generation: 1 });
+  });
+
+  it('a later switch replaces the pending one; switchNow alone applies it in the middle of the turn', async () => {
+    const h = await withAna();
+    h.work('ana');
+    await h.hub.edit('ana', { provider: 'pi' });
+    await h.hub.edit('ana', { provider: 'opencode' });
+    expect(h.view('ana').pendingEngine).toBe('opencode');
+    const view = await h.hub.edit('ana', { switchNow: true });
+    expect(view).toMatchObject({ provider: 'opencode', pendingEngine: null, generation: 2 });
+    await expectHubReject(h.hub.edit('ana', { switchNow: true }), 'bad_request', 'no engine switch is pending', 'switchNow');
+  });
+
+  it('a working agent asked with switchNow restarts at once', async () => {
+    const h = await withAna();
+    h.work('ana');
+    expect(await h.hub.edit('ana', { provider: 'pi', switchNow: true })).toMatchObject({ provider: 'pi', generation: 2, pendingEngine: null });
+  });
+
+  it('an agent that stops while a switch is pending gets it without a start', async () => {
+    const h = await withAna();
+    h.work('ana');
+    await h.hub.edit('ana', { provider: 'pi' });
+    const spawns = h.spawns.length;
+    h.exit('ana');
+    await settle();
+    await settle();
+    expect(h.view('ana')).toMatchObject({ provider: 'pi', state: 'stopped', pendingEngine: null });
+    expect(h.spawns).toHaveLength(spawns);
+  });
+
+  it('a switch that cannot be applied when the turn ends is dropped and the Director is told', async () => {
+    const h = await withAna();
+    h.work('ana');
+    await h.hub.edit('ana', { provider: 'pi', dir: '/work/gone' });
+    h.script.missingDirs.add('/work/gone');
+    h.hook('ana', 'Stop');
+    await settle();
+    await settle();
+    expect(h.view('ana')).toMatchObject({ provider: 'claude', pendingEngine: null, state: 'idle', generation: 1 });
+    expect(h.notices.at(-1)).toEqual(['startup', 'ana could not switch to pi: directory does not exist: /work/gone']);
+  });
+
+  it('the request is checked against the new engine, and custom is never one end of a switch', async () => {
+    const h = await withAna();
+    await expectHubReject(h.hub.edit('ana', { provider: 'opencode', model: 'opus' }), 'bad_request', 'opencode takes no model setting', 'model');
+    await expectHubReject(h.hub.edit('ana', { provider: 'pi', effort: 'high' }), 'bad_request', 'pi takes no effort setting', 'effort');
+    await expectHubReject(h.hub.edit('ana', { provider: 'custom' }), 'bad_request', /cannot become a custom command/, 'provider');
+    await expectHubReject(h.hub.edit('ana', { provider: 'nope' as Provider }), 'bad_request', /^provider must be one of/, 'provider');
+    await h.hub.hire({ name: 'cmd', role: 'r', dir: '/work/cmd', mode: 'default', provider: 'custom', command: 'bash' });
+    await expectHubReject(h.hub.edit('cmd', { provider: 'claude' }), 'bad_request', /custom command has no engine/, 'provider');
+    expect(h.view('ana').provider).toBe('claude');
+  });
+
+  it('flight, the boss, switches like any agent: to any engine, with any model it takes, and stays the boss', async () => {
+    const h = await started();
+    expect(h.view('flight')).toMatchObject({ boss: true, provider: 'claude' });
+    const view = await h.hub.edit('flight', { provider: 'pi', model: 'anthropic/claude-sonnet' });
+    expect(view).toMatchObject({ name: 'flight', boss: true, provider: 'pi', model: 'anthropic/claude-sonnet', generation: 2 });
+    expect(h.spawns.at(-1)?.agent).toMatchObject({ name: 'flight', boss: true, provider: 'pi', model: 'anthropic/claude-sonnet' });
+    expect(await h.hub.edit('flight', { provider: 'gemini', model: 'pro' })).toMatchObject({ boss: true, provider: 'gemini', model: 'pro' });
+    expect(await h.hub.edit('flight', { provider: 'claude', model: 'haiku' })).toMatchObject({ boss: true, provider: 'claude', model: 'haiku' });
+  });
+
+  it('bypassPermissions carried to another engine with modes needs confirmBypass', async () => {
+    const h = await withAna();
+    await h.hub.edit('ana', { mode: 'bypassPermissions', confirmBypass: true });
+    await h.hub.stop('ana');
+    await expectHubReject(h.hub.edit('ana', { provider: 'gemini' }), 'bad_request', 'bypassPermissions on Gemini CLI needs confirmBypass: true', 'confirmBypass');
+    expect(await h.hub.edit('ana', { provider: 'gemini', confirmBypass: true })).toMatchObject({ provider: 'gemini', mode: 'bypassPermissions' });
   });
 });

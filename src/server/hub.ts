@@ -507,6 +507,10 @@ interface Rt {
   sentTo: Map<string, number[]>;
   /** When Propellant last read this agent's transcript on a tool hook. */
   meteredAt: number;
+  /** Engine switch: the edit that changes the engine, held while the agent works; applied when its turn ends. Memory only. */
+  pendingEdit: EditRequest | null;
+  /** The pending edit is queued to be applied: it is queued once. */
+  switchQueued: boolean;
 }
 
 export function createHub(io: HubIo, options: HubOptions): Hub {
@@ -695,6 +699,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       apiErrorAt: [],
       sentTo: new Map(),
       meteredAt: 0,
+      pendingEdit: null,
+      switchQueued: false,
     };
   }
 
@@ -767,6 +773,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       doing: rt.doing,
       subagents: subagentsOf(rt),
       history: trimHistory(rt.history, io.now()),
+      pendingEngine: rt.pendingEdit?.provider ?? null,
     };
   }
 
@@ -951,6 +958,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     rt.needsKind = state === 'needs_you' && needs ? needs.kind : null;
     rt.needsReason = state === 'needs_you' && needs ? needs.reason : null;
     markRun(rt);
+    if (rt.pendingEdit !== null) queueSwitch(rt);
   }
 
   /**
@@ -1358,6 +1366,11 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       syncHolds(rt);
       return;
     }
+    // an engine switch waits for this turn to end: a pointer typed now would start the next one on the old engine
+    if (rt.pendingEdit !== null) {
+      setWaitNotes(rt, `waiting: ${name} is switching to ${providerInfo(rt.pendingEdit.provider).label}`);
+      return;
+    }
     if (rt.state === 'starting' || rt.state === 'needs_you' || rt.state === 'working') {
       setWaitNotes(rt, waitNote(rt));
       return;
@@ -1636,7 +1649,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     redeliver(rt);
     // The state is written once, at the end, so a block never shows a transient idle.
     const candidates = rt.queue.filter((id) => !inFlight(rt, id));
-    if (candidates.length === 0 || rt.redline !== null) {
+    // a pending engine switch: no block, the turn ends and the switch restarts the agent (the mail goes to the new engine)
+    if (candidates.length === 0 || rt.redline !== null || rt.pendingEdit !== null) {
       syncHolds(rt);
       setState(rt, 'idle');
       return {};
@@ -2231,6 +2245,65 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     else target.effort = from.effort;
     if (from.keys === undefined) delete target.keys;
     else target.keys = from.keys;
+    if (from.provider === undefined) delete target.provider;
+    else target.provider = from.provider;
+    target.sessionId = from.sessionId;
+  }
+
+  /**
+   * Engine switch: `next` runs on `engine`. What the request did not set and the new engine does not take is dropped, and the model
+   * is a name of the old engine's, so it goes unless the request names one. A CLI without modes runs `default`. Returns what was dropped.
+   */
+  function switchEngine(next: AgentRecord, engine: Provider, req: Record<string, unknown>): string[] {
+    const dropped: string[] = [];
+    const drop = (field: 'model' | 'effort' | 'payload' | 'payloadOff' | 'cleanRoom' | 'remoteControl' | 'permissions'): void => {
+      delete next[field];
+      dropped.push(field);
+    };
+    if (engine === 'claude') delete next.provider;
+    else next.provider = engine;
+    if (!providerInfo(engine).modes && next.mode !== 'default') {
+      next.mode = 'default';
+      dropped.push('mode');
+    }
+    if (req.model === undefined && next.model !== undefined) drop('model');
+    if (req.effort === undefined && next.effort !== undefined && !takesEffort(engine)) drop('effort');
+    if (req.payload === undefined && next.payload !== undefined && payloadRefusal(engine, next.payload) !== null) drop('payload');
+    if (req.payloadOff === undefined && next.payloadOff !== undefined && providerInfo(engine).payload === null) drop('payloadOff');
+    if (req.cleanRoom === undefined && next.cleanRoom !== undefined && !parseCleanRoom(next.cleanRoom, engine).ok) drop('cleanRoom');
+    if (req.remoteControl === undefined && next.remoteControl !== undefined && !parseRemoteControl(next.remoteControl, engine, next.cleanRoom !== undefined).ok) drop('remoteControl');
+    if (req.permissions === undefined && next.permissions !== undefined && !parsePermissions(next.permissions, engine).ok) drop('permissions');
+    return dropped;
+  }
+
+  /**
+   * Engine switch: the pending edit is applied once the agent is out of its turn (idle, stopped, or waiting for the Director, not
+   * on a Redline trip or a Hold, which wait for him). Queued behind whatever the agent's queue holds, never run inside a state change.
+   */
+  function queueSwitch(rt: Rt): void {
+    if (rt.pendingEdit === null || rt.switchQueued || rt.removed || closing) return;
+    if (rt.state === 'working' || rt.state === 'starting' || rt.redline !== null) return;
+    rt.switchQueued = true;
+    void Promise.resolve().then(() =>
+      enqueue(rt, 'edit', async () => {
+        rt.switchQueued = false;
+        const pending = rt.pendingEdit;
+        if (pending === null || rt.removed || closing) return;
+        // back at work (a person typed), or starting: the next end of a turn applies it
+        if (rt.state === 'working' || rt.state === 'starting' || rt.redline !== null) return;
+        try {
+          await editOp(rt, { ...pending, switchNow: true });
+        } catch (error) {
+          const name = rt.record.name;
+          const what = `${name} could not switch to ${providerInfo(pending.provider).label}: ${errorMessage(error)}`;
+          log.warn(what);
+          io.notify?.('startup', what);
+          rt.pendingEdit = null;
+          if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
+          flush(rt);
+        }
+      }),
+    ).catch((error: unknown) => log.warn('the engine switch failed', error));
   }
 
   /** The effort for `--effort`: a level of EFFORTS, only for an engine that takes one. null or undefined is none. A bad value is 400, field effort. */
@@ -2458,12 +2531,34 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
   async function editOp(rt: Rt, request: EditRequest): Promise<AgentView> {
     assertOpen();
     if (rt.removed) throw new HubError('not_found', 'unknown agent');
-    const req = asObject(request, 'the request');
-    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'model', 'effort', 'keys'];
+    let req = asObject(request, 'the request');
+    if (req.switchNow !== undefined && typeof req.switchNow !== 'boolean') throw new HubError('bad_request', 'switchNow must be true or false', 'switchNow');
+    const fields = ['name', 'role', 'dir', 'mode', 'confirmBypass', 'position', 'command', 'payload', 'payloadOff', 'cleanRoom', 'worktree', 'remoteControl', 'permissions', 'autostart', 'coauthor', 'model', 'effort', 'keys', 'provider'];
+    if (req.switchNow === true && !fields.some((field) => req[field] !== undefined)) {
+      // switchNow alone: the pending engine switch, now
+      if (rt.pendingEdit === null) throw new HubError('bad_request', 'no engine switch is pending', 'switchNow');
+      req = { ...rt.pendingEdit, switchNow: true };
+    }
     if (!fields.some((field) => req[field] !== undefined)) {
-      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, payloadOff, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor, model, effort, keys');
+      throw new HubError('bad_request', 'nothing to change: send at least one of name, role, dir, mode, position, command, payload, payloadOff, cleanRoom, worktree, remoteControl, permissions, autostart, coauthor, model, effort, keys, provider');
     }
     const current = rt.record;
+    const from: Provider = current.provider ?? 'claude';
+    let engine: Provider = from;
+    if (req.provider !== undefined) {
+      engine = checkProvider(req.provider);
+      if (engine !== from && from === 'custom') throw new HubError('bad_request', 'a custom command has no engine to switch: hire an agent on that engine instead', 'provider');
+      if (engine !== from && engine === 'custom') throw new HubError('bad_request', 'an agent cannot become a custom command: hire one instead', 'provider');
+    }
+    const switching = engine !== from;
+    if (req.provider !== undefined && !switching && rt.pendingEdit !== null) {
+      // the engine it runs on: the pending switch is off, and the mail it held goes out
+      log.info(`${current.name}: the switch to ${providerInfo(rt.pendingEdit.provider).label} was cancelled`);
+      rt.pendingEdit = null;
+      if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
+      flush(rt);
+      if (!fields.some((field) => field !== 'provider' && req[field] !== undefined)) return buildView(rt);
+    }
     const next: AgentRecord = { ...current };
     let newName: string | null = null;
     let keyPatch: Record<string, string | null> | null = null;
@@ -2487,7 +2582,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       }
       if (req.role !== undefined) next.role = checkRole(req.role);
       // A CLI without permission modes keeps mode 'default' whatever the request says.
-      if (req.mode !== undefined && providerInfo(rt.record.provider).modes) next.mode = checkMode(req.mode);
+      if (req.mode !== undefined && providerInfo(engine).modes) next.mode = checkMode(req.mode);
       if (req.position !== undefined) setOptional(next, 'position', req.position === null ? undefined : checkPosition(req.position));
       if (req.command !== undefined) {
         if (!isCustom(rt)) throw new HubError('bad_request', 'only a custom agent has a command', 'command');
@@ -2495,19 +2590,19 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       }
       if (req.dir !== undefined) next.dir = await checkDir(req.dir);
       if (req.payload !== undefined) {
-        const payload = checkPayload(current.provider ?? 'claude', req.payload);
+        const payload = checkPayload(engine, req.payload);
         await checkSkills(payload);
         if (payload) next.payload = payload;
         else delete next.payload;
       }
       if (req.payloadOff !== undefined) {
-        const off = checkPayloadOff(current.provider ?? 'claude', req.payloadOff);
+        const off = checkPayloadOff(engine, req.payloadOff);
         if (off) next.payloadOff = off;
         else delete next.payloadOff;
       }
       if (req.cleanRoom !== undefined) {
         if (req.cleanRoom === null) delete next.cleanRoom;
-        else next.cleanRoom = await checkCleanRoom(current.provider ?? 'claude', req.cleanRoom, next.dir);
+        else next.cleanRoom = await checkCleanRoom(engine, req.cleanRoom, next.dir);
       }
       if (req.worktree !== undefined) {
         if (req.worktree === null) delete next.worktree;
@@ -2528,22 +2623,22 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       }
       if (req.remoteControl !== undefined) {
         if (req.remoteControl === null) delete next.remoteControl;
-        else next.remoteControl = checkRemoteControl(current.provider ?? 'claude', req.remoteControl, next.cleanRoom !== undefined);
+        else next.remoteControl = checkRemoteControl(engine, req.remoteControl, next.cleanRoom !== undefined);
       } else if (next.remoteControl !== undefined && next.cleanRoom !== undefined && req.cleanRoom !== undefined) {
         throw new HubError('bad_request', 'a Clean Room agent cannot use Remote Control: turn Remote Control off first', 'cleanRoom');
       }
       if (req.permissions !== undefined) {
-        const rules = req.permissions === null ? undefined : checkPermissions(current.provider ?? 'claude', req.permissions);
+        const rules = req.permissions === null ? undefined : checkPermissions(engine, req.permissions);
         if (rules) next.permissions = rules;
         else delete next.permissions;
       }
       if (req.model !== undefined) {
-        const model = checkModel(current.provider ?? 'claude', req.model);
+        const model = checkModel(engine, req.model);
         if (model) next.model = model;
         else delete next.model;
       }
       if (req.effort !== undefined) {
-        const effort = checkEffort(current.provider ?? 'claude', req.effort);
+        const effort = checkEffort(engine, req.effort);
         if (effort) next.effort = effort;
         else delete next.effort;
       }
@@ -2556,6 +2651,21 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (next.mode === 'bypassPermissions' && next.mode !== current.mode && req.confirmBypass !== true) {
         throw new HubError('bad_request', 'bypassPermissions needs confirmBypass: true', 'confirmBypass');
       }
+      const dropped = switching ? switchEngine(next, engine, req) : [];
+      if (switching && next.mode === 'bypassPermissions' && req.confirmBypass !== true) {
+        throw new HubError('bad_request', `bypassPermissions on ${providerInfo(engine).label} needs confirmBypass: true`, 'confirmBypass');
+      }
+      if (switching && rt.state === 'working' && req.switchNow !== true) {
+        // The whole edit waits for the end of the turn (checked again then): a running Claude Code must keep its record until it stops.
+        // Kept without switchNow (the one that was asked for now is applied now), and replacing one that was pending.
+        const pending: EditRequest = { ...(req as EditRequest) };
+        delete pending.switchNow;
+        rt.pendingEdit = pending;
+        log.info(`${current.name}: switches to ${providerInfo(engine).label} when its turn ends`);
+        flush(rt);
+        return buildView(rt);
+      }
+      if (switching) next.sessionId = io.newSessionId();
       if (newName !== null) {
         // The state may have changed during the directory check: look at it now.
         if (rt.state !== 'stopped' || rt.transition !== null) {
@@ -2577,7 +2687,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
         rulesKey(next) !== rulesKey(current) ||
         next.autostart !== current.autostart ||
         next.coauthor !== current.coauthor ||
-        engineKey(next) !== engineKey(current);
+        engineKey(next) !== engineKey(current) ||
+        switching;
       if (!changed) return buildView(rt);
 
       const oldName = current.name;
@@ -2620,6 +2731,16 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       }
       if (newName !== null) {
         emit({ t: 'agent-removed', name: oldName });
+      }
+      if (switching) {
+        rt.pendingEdit = null;
+        const label = providerInfo(engine).label;
+        log.info(`${next.name}: switched from ${providerInfo(from).label} to ${label}${dropped.length > 0 ? ` (dropped: ${dropped.join(', ')})` : ''}`);
+        if (dropped.length > 0) io.notify?.('startup', `${next.name} now runs ${label}; settings it does not take were dropped: ${dropped.join(', ')}.`);
+        // no gonogo tools on the new engine: what waits for it can never be read there
+        if (!mailable(rt)) undeliverUnread(rt, `${next.name} now runs ${label} without the gonogo tools; the message went to the user`);
+        if (rt.state !== 'stopped') return await restartOp(rt);
+        if (rt.queue.length > 0) scheduleDelivery(rt, DELIVERY_SETTLE_MS);
       }
       flush(rt);
       return buildView(rt);

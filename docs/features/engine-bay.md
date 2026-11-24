@@ -2,7 +2,7 @@
 
 <EngineBayMock class="doc-mock" />
 
-The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PATH` come first; the rest say `not installed`. Sign in to each CLI yourself. The engine cannot change after the hire. Design and limits: [`docs/engine-bay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/engine-bay-spec.md).
+The hire form's Engine select picks the CLI an agent runs. CLIs on gonogo's `PATH` come first; the rest say `not installed`. Sign in to each CLI yourself. To move a console to another engine later, see [Engine switch](./engine-switch.md). Design and limits: [`docs/engine-bay-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/engine-bay-spec.md).
 
 | Engine | Program | State from | Mail and votes | Role | Permission modes | How it was checked |
 |---|---|---|---|---|---|---|

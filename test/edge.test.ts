@@ -3258,6 +3258,19 @@ describe('web: REST', () => {
       expect(hubCalls.filter((c) => c.fn === 'edit' || c.fn === 'hire')).toEqual([]);
     });
 
+    it('passes an engine switch to the hub: a known provider and switchNow true or false', async () => {
+      const { port, hubCalls } = await startWeb();
+      expect((await api(port, 'PATCH', '/api/agents/ana', { provider: 'pi' })).status).toBe(200);
+      expect((await api(port, 'PATCH', '/api/agents/ana', { switchNow: true })).status).toBe(200);
+      expect((await api(port, 'PATCH', '/api/agents/flight', { provider: 'opencode', switchNow: false })).status).toBe(200);
+      expect(hubCalls.filter((c) => c.fn === 'edit').map((c) => c.args)).toStrictEqual([['ana', { provider: 'pi' }], ['ana', { switchNow: true }], ['flight', { provider: 'opencode', switchNow: false }]]);
+      for (const [body, field] of [[{ provider: 'nope' }, 'provider'], [{ provider: 3 }, 'provider'], [{ switchNow: 'yes' }, 'switchNow']] as const) {
+        const res = await api(port, 'PATCH', '/api/agents/ana', body);
+        expect(res.status).toBe(400);
+        expect(res.json()).toMatchObject({ code: 'bad_request', field });
+      }
+    });
+
     it('answers 400 with the field keys for keys the hub refuses, and the answer never holds the value', async () => {
       const secret = 'sk-test-the-secret-value';
       const { port } = await startWeb({}, { edit: async () => { throw new FakeHubError('bad_request', 'a key name uses capital letters, digits and _, starting with a letter (at most 64 characters)', 'keys'); } });

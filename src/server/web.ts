@@ -610,6 +610,14 @@ function parseEdit(o: Record<string, unknown>): Parsed<EditRequest> {
     if (!isRecord(o.keys)) return fieldError('keys', 'an object');
     value.keys = o.keys as Record<string, string | null>;
   }
+  if (o.provider !== undefined) {
+    if (!isProvider(o.provider)) return fieldError('provider', `one of ${PROVIDERS.join(', ')}`);
+    value.provider = o.provider;
+  }
+  if (o.switchNow !== undefined) {
+    if (typeof o.switchNow !== 'boolean') return fieldError('switchNow', 'true or false');
+    value.switchNow = o.switchNow;
+  }
   return { ok: true, value };
 }
 
