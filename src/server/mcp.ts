@@ -68,6 +68,8 @@ export interface McpDeps {
   board?: Pick<Board, 'get' | 'write'>;
   /** Livery; absent in tests that do not need it (the tool then answers that it is not available). */
   liveries?: Pick<Liveries, 'submit'>;
+  /** Auto-review: the tool exists only for the reviewer agent of a running job. */
+  autoReview?: { reviews(agent: string): boolean; /** Is this agent a reviewer of any job? Then it gets only pr_review_submit and read_messages. */ isReviewer(agent: string): boolean; submit(agent: string, input: unknown): Promise<{ accepted: number; dropped: string[] }> };
   /** Relief; absent in tests that do not need it (the tool then answers that it is not available). */
   relief?: Pick<Relief, 'request' | 'fire'>;
   /** Feature toggles: is a feature switched off? Its tools are then not listed and a call is refused. Default: nothing is off. */
@@ -120,10 +122,12 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
     // the server object is made for each request, so the list of tools is the one of the features that are on now; a tool that is off is
     // disabled, which leaves it out of tools/list and makes a call of it (an agent that cached the list) an error
     const off = new Set(Object.entries(FEATURE_TOOLS).flatMap(([id, names]) => (deps.featureOff?.(id) === true ? names : [])));
+    // an auto-review reviewer reads untrusted text: it gets its one answer and its mailbox, not the mail, the log, the Flight Plan or a vote (RSO R2)
+    const reviewer = deps.autoReview?.isReviewer(agent) === true;
     const register = server.registerTool.bind(server) as (name: string, ...rest: unknown[]) => { disable(): void };
     (server as { registerTool: unknown }).registerTool = (name: string, ...rest: unknown[]) => {
       const tool = register(name, ...rest);
-      if (off.has(name)) tool.disable();
+      if (off.has(name) || (reviewer && name !== 'read_messages' && name !== 'pr_review_submit')) tool.disable();
       return tool;
     };
 
@@ -565,6 +569,24 @@ export function createMcpHandler(deps: McpDeps): (req: IncomingMessage, res: Ser
           return toolResult({ ok: true, ...(await relief.fire({ agent, generation }, args)) }, false);
         }),
     );
+    if (deps.autoReview?.reviews(agent) === true) {
+      const review = deps.autoReview;
+      server.registerTool(
+        'pr_review_submit',
+        {
+          description: MCP_DESCRIPTIONS.pr_review_submit,
+          inputSchema: z.strictObject({
+            summary: z.string().min(1).max(4000),
+            findings: z.array(z.strictObject({ file: z.string().min(1).max(500), line: z.number().int().min(1).max(10_000_000), severity: z.enum(['info', 'low', 'medium', 'high']), text: z.string().min(1).max(2000) })).max(20),
+          }),
+        },
+        (args) =>
+          guarded('pr_review_submit', async () => {
+            const out = await review.submit(agent, args);
+            return toolResult({ ok: true, ...out }, false);
+          }),
+      );
+    }
 
     return server;
   };

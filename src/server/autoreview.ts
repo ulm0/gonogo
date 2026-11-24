@@ -111,13 +111,15 @@ const JSON_FIELDS = 'number,headRefOid,isDraft,isCrossRepository,author,headRepo
 /** The one place gh is called for reading: the argv is fixed, the repo and the author are checked first. */
 export type PrLister = (repo: string, author: string) => Promise<ListedPr[]>;
 
+export const ghEnv = (options: { dir: string; env: NodeJS.ProcessEnv }): NodeJS.ProcessEnv => ({ PATH: options.env.PATH, HOME: options.env.HOME, GH_CONFIG_DIR: options.env.GH_CONFIG_DIR?.trim() ? options.env.GH_CONFIG_DIR : join(options.dir, 'gh'), GH_PROMPT_DISABLED: '1', NO_COLOR: '1' });
+
 /** The real lister: `gh pr list`, with the room's own gh login. `author` is a login or `@me`. */
 export function ghLister(options: { dir: string; env: NodeJS.ProcessEnv; bin?: string }): PrLister {
   return (repo, author) =>
     new Promise((resolve, reject) => {
       if (!REPO_RE.test(repo)) return reject(new Error('not a repo name'));
       if (author !== '@me' && !LOGIN_RE.test(author)) return reject(new Error('not a login'));
-      const env: NodeJS.ProcessEnv = { PATH: options.env.PATH, HOME: options.env.HOME, GH_CONFIG_DIR: options.env.GH_CONFIG_DIR?.trim() ? options.env.GH_CONFIG_DIR : join(options.dir, 'gh'), GH_PROMPT_DISABLED: '1', NO_COLOR: '1' };
+      const env = ghEnv(options);
       execFile(options.bin ?? 'gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--author', author, '--limit', String(LIST_LIMIT), '--json', JSON_FIELDS], { env, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
         if (error) return reject(new Error(`gh pr list failed (${(error as NodeJS.ErrnoException).code ?? 'error'})`));
         try {
@@ -151,6 +153,10 @@ export interface AutoReviewOptions {
   list: PrLister;
   /** A job was made for a head (S2 starts the reviewers on it). */
   onJob?: (job: AutoReviewJob) => void;
+  /** After every poll: jobs that waited (the day's cap, a restart) get another try. */
+  onPolled?: () => void;
+  /** A job that had not finished was superseded by a new head: its reviewers must go. */
+  onSuperseded?: (job: AutoReviewJob) => void;
   /** Milliseconds between polls; tests give 0 to poll by hand only. */
   pollMs?: number;
 }
@@ -160,10 +166,14 @@ export interface AutoReview {
   view(): AutoReviewView;
   /** A settings patch (parseSettingsPatch has checked the shape): saves, and starts or stops the poller. */
   set(input: unknown): Promise<AutoReviewView>;
+  /** What the Director should be told after a start (Downlink): auto-review is on, and auto-post is off again until he turns it on in the browser. Read once. */
+  startupNotices(): string[];
   /** One poll now (the page's button and the tests). Resolves with the jobs made. */
   pollNow(): Promise<AutoReviewJob[]>;
   /** A job changes state (S2: running, done, posted). */
-  mark(id: string, change: Partial<Pick<AutoReviewJob, 'status' | 'reason' | 'task'>>): Promise<void>;
+  mark(id: string, change: Partial<Pick<AutoReviewJob, 'status' | 'reason' | 'task' | 'mission' | 'reviewers' | 'submitted' | 'url'>>): Promise<void>;
+  /** The jobs, oldest first (a live array: do not change it). */
+  jobs(): AutoReviewJob[];
   start(): void;
   close(): Promise<void>;
 }
@@ -178,6 +188,7 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
   let settings: AutoReviewSettings = { ...DEFAULT_SETTINGS };
   let jobs: AutoReviewJob[] = [];
   let seq = 0;
+  let notices: string[] = [];
   let timer: NodeJS.Timeout | null = null;
   let polling: Promise<AutoReviewJob[]> | null = null;
   let lastPoll: { at: number; error: string | null } | null = null;
@@ -206,6 +217,7 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
   const poll = async (): Promise<AutoReviewJob[]> => {
     if (!settings.enabled || settings.repos.length === 0) return [];
     const made: AutoReviewJob[] = [];
+    const superseded: AutoReviewJob[] = [];
     let failure: string | null = null;
     for (const repo of settings.repos) {
       const byDefault = settings.authors.length === 0;
@@ -241,7 +253,12 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
             continue;
           }
           // a new head supersedes the job of the older one that did not finish
-          for (const old of jobs) if (old.repo === repo && old.pr === pr.number && (old.status === 'queued' || old.status === 'running')) old.status = 'superseded';
+          for (const old of jobs) {
+            if (old.repo === repo && old.pr === pr.number && (old.status === 'queued' || old.status === 'running')) {
+              old.status = 'superseded';
+              superseded.push(old);
+            }
+          }
         }
         const job: AutoReviewJob = { id: `rv${(seq += 1)}`, key, repo, pr: pr.number, sha, title, status: reason === null ? 'queued' : 'skipped', ...(reason === null ? {} : { reason, gate: true }), at: now() };
         jobs.push(job);
@@ -251,7 +268,9 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
     if (jobs.length > JOBS_KEPT) jobs = jobs.slice(jobs.length - JOBS_KEPT);
     lastPoll = { at: now(), error: failure };
     await saveJobs().catch((error: unknown) => log.error('auto-review could not save its jobs', error));
+    for (const old of superseded) options.onSuperseded?.(old);
     for (const job of made) options.onJob?.(job);
+    options.onPolled?.();
     return made;
   };
 
@@ -273,6 +292,13 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
         const parsed = isRecord(saved) && saved.version === 1 ? parseSettingsPatch(Object.fromEntries(Object.entries(saved).filter(([k]) => k !== 'version'))) : null;
         if (parsed?.ok) settings = { ...DEFAULT_SETTINGS, ...parsed.patch };
         else throw new Error('not a version 1 auto-review file');
+        // a restart never carries auto-post over: a comment that posts itself under the Director's login needs his confirmation in the browser again (RSO m4027)
+        if (settings.enabled) notices.push(`Auto-review is on for ${settings.repos.length} repo${settings.repos.length === 1 ? '' : 's'}.`);
+        if (settings.autoPost) {
+          settings = { ...settings, autoPost: false };
+          await later(() => write(settingsPath, { version: 1, ...settings }));
+          notices.push('Auto-post was on before the restart and is off again: turn it on in Flight Rules, AUTO-REVIEW, to confirm it.');
+        }
       } catch (error) {
         // an unreadable file leaves it OFF: the safe side of a feature that posts under the Director's login
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') log.error(`${AUTO_REVIEW_FILE} could not be read; auto-review is off`, error instanceof SyntaxError ? 'not valid JSON' : error);
@@ -299,6 +325,11 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
       start();
       return view();
     },
+    startupNotices() {
+      const out = notices;
+      notices = [];
+      return out;
+    },
     pollNow() {
       polling ??= poll().finally(() => {
         polling = null;
@@ -311,6 +342,7 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
       Object.assign(job, change);
       await saveJobs();
     },
+    jobs: () => jobs,
     start,
     async close() {
       stop();

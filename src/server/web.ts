@@ -93,6 +93,7 @@ import { PRICE_PREFIX_PATTERN } from '../shared/prices.js';
 import type { Liveries } from './livery.js';
 import type { MassBudget } from './massbudget.js';
 import type { AutoReview } from './autoreview.js';
+import type { ReviewRunner } from './reviewjobs.js';
 import type { MissionLog } from './missionlog.js';
 import type { Propellant } from './propellant.js';
 import type { Recorder } from './recorder.js';
@@ -250,6 +251,8 @@ export interface WebOptions {
   egressSettings?: Pick<EgressSettingsStore, 'view' | 'set'>;
   /** Auto-review (docs/auto-review-spec.md): the setting, the jobs, one poll now. */
   autoReview?: Pick<AutoReview, 'view' | 'set' | 'pollNow'>;
+  /** Auto-review S2: the reviewers' tool, the draft, the post and the skip. */
+  autoReviewRunner?: Pick<ReviewRunner, 'reviews' | 'isReviewer' | 'submit' | 'draft' | 'post' | 'end'>;
   /** Telegram and several rooms: the key of this install and what to do with an update another room offers (telegramroute.ts). Absent outside a supervisor: the route answers 404. */
   telegramRoute?: { key: string; take(body: Record<string, unknown>): { claimed: boolean } };
   /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */
@@ -684,6 +687,7 @@ export function createWebServer(options: WebOptions): WebServer {
     board: options.board,
     liveries: options.liveries,
     relief: options.relief,
+    autoReview: options.autoReviewRunner,
     featureOff: (id) => options.features?.isOn(id) === false,
     log: log.child('mcp'),
     version: () => options.info().version,
@@ -1925,6 +1929,23 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!body) return;
           await global.store.set(body);
           sendJson(res, 200, await global.view());
+        },
+      };
+    }
+    if (s[1] === 'auto-review' && s[2] === 'jobs' && /^rv\d{1,9}$/.test(s[3] ?? '') && (s.length === 4 || (s.length === 5 && (s[4] === 'post' || s[4] === 'skip')))) {
+      const runner = options.autoReviewRunner;
+      const id = s[3] ?? '';
+      if (!runner) return null;
+      if (s.length === 4) return { allow: ['GET'], run: async (_req, res) => sendJson(res, 200, { draft: await runner.draft(id) }) };
+      // a click on the page: a key may not post or skip (the comment appears under the Director's own login)
+      return {
+        allow: ['POST'],
+        run: async (req, res) => {
+          if (s[4] === 'skip') {
+            await runner.end(id, 'skipped', 'skipped by the Director');
+            return sendJson(res, 200, { ok: true });
+          }
+          sendJson(res, 200, { job: await runner.post(id) });
         },
       };
     }

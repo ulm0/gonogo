@@ -81,6 +81,28 @@ describe('settings', () => {
   });
 });
 
+describe('a restart', () => {
+  it('tells that auto-review is on, and keeps auto-post OFF until the Director turns it on again (the file too)', async () => {
+    const r = await make();
+    await on(r, { autoPost: true, authors: ['ulm0'] });
+    expect(r.view().settings.autoPost).toBe(true);
+    const again = await make();
+    expect(again.view().settings).toMatchObject({ enabled: true, autoPost: false });
+    expect(again.startupNotices()).toEqual(['Auto-review is on for 1 repo.', 'Auto-post was on before the restart and is off again: turn it on in Flight Rules, AUTO-REVIEW, to confirm it.']);
+    expect(again.startupNotices()).toEqual([]);
+    expect(JSON.parse(await readFile(join(dir, 'auto-review.json'), 'utf8')).autoPost).toBe(false);
+    // off stays quiet
+    const off = await (async () => {
+      await rm(join(dir, 'auto-review.json'));
+      return make();
+    })();
+    expect(off.startupNotices()).toEqual([]);
+    // turning it on again is the confirmation
+    await on(off, { autoPost: true });
+    expect(off.view().settings.autoPost).toBe(true);
+  });
+});
+
 describe('the eligibility gate', () => {
   const base = { ...DEFAULT_SETTINGS, repos: ['ulm0/gonogo'], authors: ['ulm0'] };
   it('lets a same-repo, non-draft, small PR by a listed author through', () => {

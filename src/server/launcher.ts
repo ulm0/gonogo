@@ -121,6 +121,15 @@ export async function ownStatusLine(configDir: string): Promise<string | undefin
 }
 
 /** `none`: the Agent tool (and its old name Task) is denied, next to the Director's own deny rules. */
+/**
+ * What an auto-review reviewer may not do (docs/auto-review-spec.md R1): the tools that write, run, reach out or start others. Enforced by Claude Code's own deny
+ * rules (which win over every mode), with an MCP config that holds only gonogo's server, so the other servers have no tools to deny. It can still read what its user
+ * can: the secrets folders below are denied too, a list and not a wall (docs/features/auto-review.md says so).
+ */
+/** The only gonogo tools of a reviewer: its one answer and its own mail (a read). Not send_message, the Mission Log, the Flight Plan or a vote. */
+export const REVIEW_TOOLS = ['mcp__gonogo__pr_review_submit', 'mcp__gonogo__read_messages'];
+export const REVIEW_DENY = ['Bash', 'BashOutput', 'KillShell', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'Agent', 'SlashCommand', 'Read(//**/.ssh/**)', 'Read(//**/.aws/**)', 'Read(//**/.gnupg/**)', 'Read(//**/.config/gh/**)', 'Read(//**/.netrc)', 'Read(//**/.npmrc)', 'Read(//**/.claude.json)', 'Read(//**/.claude/**)', 'Read(//**/.env)', 'Read(//**/.env.*)', 'Read(//**/id_rsa*)', 'Read(//**/id_ed25519*)', 'Read(//**/*.pem)', 'Read(//**/*.key)'];
+
 export function withNoSubagents(rules: PermissionRules, setting: SubagentSettings): PermissionRules {
   return setting.mode === 'none' ? { ...rules, deny: [...new Set([...(rules.deny ?? []), 'Agent', 'Task'])] } : rules;
 }
@@ -212,6 +221,8 @@ export function buildArgv(input: {
   remoteControl?: string;
   /** Feature toggles: tool names (`mcp__gonogo__hire_agent`) of features that are off, left out of `--allowedTools`. */
   toolsOff?: readonly string[];
+  /** Auto-review's reviewer: exactly these tools are pre-approved, not the whole gonogo set. */
+  onlyTools?: readonly string[];
 }): string[] {
   return [
     input.flag === 'resume' ? '--resume' : '--session-id',
@@ -232,7 +243,7 @@ export function buildArgv(input: {
     '--system-prompt-snapshot',
     'off',
     '--allowedTools', // variadic, so it stays last
-    ...ALLOWED_TOOLS.filter((tool) => !input.toolsOff?.includes(tool)),
+    ...(input.onlyTools ?? ALLOWED_TOOLS.filter((tool) => !input.toolsOff?.includes(tool))),
   ];
 }
 
@@ -611,7 +622,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
   const plainWorktree = async (agent: AgentRecord, from: Record<string, string | undefined>): Promise<WorktreePlace | null> => (agent.worktree === undefined || agent.cleanRoom !== undefined ? null : prepareWorktree(agent, homeDir, from));
 
   /** The keys of an agent: the room's under its own (its own of the same name wins). A Clean Room agent gets only the room keys marked for it. */
-  const keysOf = (agent: AgentRecord): Record<string, string> => ({ ...options.roomKeys?.(agent.cleanRoom !== undefined), ...options.keys?.(agent.name) });
+  const keysOf = (agent: AgentRecord): Record<string, string> => agent.reviewOnly === true ? {} : ({ ...options.roomKeys?.(agent.cleanRoom !== undefined), ...options.keys?.(agent.name) });
 
   /**
    * The tool gate of an engine that enforces it (pi, opencode): what Claude Code gets in --permission-mode, settings.json and --allowedTools.
@@ -788,13 +799,13 @@ export function createLauncher(options: LauncherOptions): Launcher {
       const next = clean === null ? await ownStatusLine(ownConfig) : undefined;
       const statusLine = { node: clean === null ? process.execPath : 'node', ...(next === undefined ? {} : { next }) };
       const subagentSetting = options.subagents?.() ?? { mode: 'allow' as const, limit: 4 };
-      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), subagentSetting), statusLine, prFooter: options.coauthor?.().prFooter !== false });
+      const settings = buildSettings({ hubUrl: agentUrl, name, mode: agent.mode, memoryPath, apiKeyHelper: moveApiKey, rules: agent.reviewOnly === true ? { allow: [...REVIEW_TOOLS], deny: [...new Set([...(options.defaultPermissions?.()?.deny ?? []), ...REVIEW_DENY])] } : withNoSubagents(effectiveRules(agent.permissions, options.defaultPermissions?.()), subagentSetting), statusLine, prFooter: options.coauthor?.().prFooter !== false });
       await writeFileAtomic(settingsPath, JSON.stringify(settings, null, 2), FILE_MODE);
       // the servers of `claude mcp add --scope user` come first, then the room's defaults, then the agent's own; the later name wins, and the agent can switch a global one off
-      const globals = options.globalMcp?.enabled(clean !== null) === true ? await readGlobalMcp(join(hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : homedir(), CLAUDE_JSON), log.child('global mcp')) : {};
+      const globals = agent.reviewOnly !== true && options.globalMcp?.enabled(clean !== null) === true ? await readGlobalMcp(join(hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : homedir(), CLAUDE_JSON), log.child('global mcp')) : {};
       options.globalMcp?.saw?.(globalView(globals, () => null));
-      await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, mergeGlobal(globals, agent.payloadOff?.mcpServers, payloadOf(agent, 'claude')?.mcpServers)), null, 2), FILE_MODE);
-      const pluginDir = await writeSkillsPlugin(base, payloadOf(agent, 'claude')?.skills);
+      await writeFileAtomic(mcpPath, JSON.stringify(buildMcpConfig(agentUrl, agent.reviewOnly === true ? {} : mergeGlobal(globals, agent.payloadOff?.mcpServers, payloadOf(agent, 'claude')?.mcpServers)), null, 2), FILE_MODE);
+      const pluginDir = await writeSkillsPlugin(base, agent.reviewOnly === true ? undefined : payloadOf(agent, 'claude')?.skills);
 
       const configDir = hasText(env.CLAUDE_CONFIG_DIR) ? env.CLAUDE_CONFIG_DIR : null;
       const startDir = plain?.cwd ?? dir;
@@ -832,7 +843,7 @@ export function createLauncher(options: LauncherOptions): Launcher {
         log.warn(`${file} does not list --effort: the room's default effort is not passed to ${name}; update claude`);
         effort = undefined;
       }
-      const claudeArgs = buildArgv({ flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
+      const claudeArgs = buildArgv({ ...(agent.reviewOnly === true ? { onlyTools: REVIEW_TOOLS } : {}), flag, sessionId: agent.sessionId, mode: agent.mode, settingsPath, mcpPath, roleText, pluginDir, model: agent.model ?? options.defaultModel?.('claude', agent.position), remoteControl: agent.remoteControl === undefined ? undefined : remoteControlName(name), effort, toolsOff: options.toolsOff?.().map((tool) => `mcp__gonogo__${tool}`) });
       const childEnv = buildChildEnv({ base: env, token, seed, keys, gh: await ensureGh() });
       // Egress (egress.ts): the container holds a placeholder and a base URL, never the Anthropic API key (API-key mode: a subscription token is not swapped)
       let egressOn = false;

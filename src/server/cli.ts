@@ -108,6 +108,8 @@ import { createCoauthorStore, doctorLine, gitVersion } from './coauthor.js';
 import { createRules } from './rules.js';
 import { createEgress } from './egress.js';
 import { createAutoReview, ghLister } from './autoreview.js';
+import { createReviewRunner, ghReview } from './reviewjobs.js';
+import type { ReviewRunner } from './reviewjobs.js';
 import { createGlobalMcpStore, globalView, readGlobalMcp } from './globalmcp.js';
 import { createEgressSettings } from './egresssettings.js';
 import { runKnowledgeCli } from './knowledgecli.js';
@@ -763,7 +765,16 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     await startupStore.load();
     const coauthorStore = createCoauthorStore({ dir: home.dir, log: log.child('coauthor') });
     await coauthorStore.load();
-    const autoReview = createAutoReview({ dir: home.dir, now: () => Date.now(), log: log.child('auto review'), list: ghLister({ dir: home.dir, env }) });
+    let reviewRunner: ReviewRunner | undefined;
+    const autoReview = createAutoReview({
+      dir: home.dir,
+      now: () => Date.now(),
+      log: log.child('auto review'),
+      list: ghLister({ dir: home.dir, env }),
+      onJob: (job) => void reviewRunner?.run(job),
+      onSuperseded: (job) => void reviewRunner?.end(job.id, 'superseded', 'a new commit was pushed').catch(() => undefined),
+      onPolled: () => void reviewRunner?.drain(),
+    });
     await autoReview.load();
     autoReview.start();
     const globalMcp = createGlobalMcpStore({ dir: home.dir, log: log.child('global mcp') });
@@ -823,6 +834,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     let flightPlan: () => Task[] = () => [];
     /** Cost attribution: the mission and task of the agent's `doing` task now, if it has one. */
     const workingOn = (agent: string): { mission?: string; task?: string } => {
+      // an auto-review reviewer is attributed to its job's mission by its name (`rv3-rso`), from its first reply: its task is made a moment after it starts
+      const reviewJob = /^(rv\d+)-/.exec(agent)?.[1];
+      const mission = reviewJob === undefined ? undefined : autoReview.jobs().find((j) => j.id === reviewJob && autoReview.view().settings.positions.some((position) => agent === `${j.id}-${position}`))?.mission;
+      if (mission !== undefined) return { mission, ...(flightPlan().find((t) => t.assignee === agent && t.status === 'doing') === undefined ? {} : { task: flightPlan().find((t) => t.assignee === agent && t.status === 'doing')!.id }) };
       const doing = flightPlan().find((t) => t.assignee === agent && t.status === 'doing');
       return doing === undefined ? {} : { task: doing.id, ...(doing.missionId === undefined ? {} : { mission: doing.missionId }) };
     };
@@ -1528,6 +1543,55 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       if (kept !== null && (await portFree(kept, host))) listenPort = kept;
       else if (kept !== null) log.warn(`the port this room had (${kept}) is taken: using another; agents started before must be restarted to find the hub`);
     }
+    // Auto-review S2: the reviewers are agents of this room made for one job, read-only, with a mission that holds the per-PR cap
+    const reviewGh = ghReview({ dir: home.dir, env, ...(env.GONOGO_GH_BIN?.trim() ? { bin: env.GONOGO_GH_BIN } : {}) });
+    const reviewMissionUsd = (id: string | undefined): number => (id === undefined ? 0 : (propellant.view().cost.missions?.[id]?.usd ?? 0));
+    reviewRunner = createReviewRunner({
+      dir: home.dir,
+      now: () => Date.now(),
+      log: log.child('auto review'),
+      store: { settings: () => autoReview.view().settings, jobs: () => autoReview.jobs(), mark: (id, change) => autoReview.mark(id, change) },
+      ops: {
+        gh: reviewGh,
+        hire: async (spec) => {
+          await hubInstance.hire({ name: spec.name, role: spec.role, dir: spec.dir, mode: 'default', position: spec.position, provider: 'claude', autostart: false, coauthor: false, reviewOnly: true, ...(spec.model === null ? {} : { model: spec.model }) });
+        },
+        fire: async (name, settle) => {
+          if (settle) {
+            // let the reviewer end its turn (up to 90 s): its transcript is counted at the Stop hook, and the per-PR and per-day caps read that
+            const until = Date.now() + 90_000;
+            while (Date.now() < until && hubInstance.views().find((v) => v.name === name)?.state === 'working') await new Promise((r) => setTimeout(r, 1000));
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+          await hubInstance.remove(name).catch(() => undefined);
+        },
+        brief: async (name, subject, body) => void hubInstance.sendFromUser({ to: name, subject, body }),
+        mission: async (job, capUsd) => {
+          const mission = await missions.create({ kind: 'user' }, { name: `Review ${job.repo}#${job.pr} @ ${job.sha.slice(0, 7)}`.slice(0, 80), goal: `Review the pull request, read-only, and submit findings.` });
+          await propellant.setBudget({ missions: { [mission.id]: capUsd } });
+          return mission.id;
+        },
+        tasks: async (job, mission, reviewers) => {
+          if (mission === null) return null;
+          let first = '';
+          for (const r of reviewers) {
+            const task = await tasks.create({ kind: 'user' }, { title: `review of ${job.repo}#${job.pr} @ ${job.sha.slice(0, 7)} (${r.position})`.slice(0, 120), detail: 'Auto-review job: read diff.patch and call pr_review_submit.', assignee: r.name, missionId: mission });
+            await tasks.update({ kind: 'user' }, task.id, { status: 'doing' });
+            if (first === '') first = task.id;
+          }
+          return first === '' ? null : first;
+        },
+        close: async (job, how) => {
+          for (const t of tasks.list().filter((x) => x.missionId !== undefined && x.missionId === job.mission && x.status !== 'done')) await tasks.update({ kind: 'user' }, t.id, { status: 'done', note: how === 'done' ? 'review submitted' : 'job ended' }).catch(() => undefined);
+          if (job.mission !== undefined) await missions.update({ kind: 'user' }, job.mission, { status: how === 'done' ? 'done' : 'aborted' }).catch(() => undefined);
+        },
+        spent: (job) => reviewMissionUsd(job.mission),
+        // a job that is still running counts at its cap at least, so several started in one poll cannot overrun the day's cap
+        spentToday: () => autoReview.jobs().filter((j) => Date.now() - j.at < 24 * 3_600_000).reduce((s, j) => s + (j.status === 'running' ? Math.max(reviewMissionUsd(j.mission), autoReview.view().settings.maxUsdPerPr) : reviewMissionUsd(j.mission)), 0),
+      },
+    });
+    for (const text of autoReview.startupNotices()) downlink.post('startup', text);
+    void reviewRunner.drain();
     const webServer = createWebServer({
       statusLine: (name, body) => {
         reported.record(name, body);
@@ -1601,6 +1665,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       egress,
       egressSettings: audited(egressSettings, blackBox.record, EGRESS_AUDIT),
       autoReview: audited(autoReview, blackBox.record, AUTO_REVIEW_AUDIT),
+      autoReviewRunner: reviewRunner,
       globalMcp: {
         store: audited(globalMcp, blackBox.record, GLOBAL_MCP_AUDIT),
         view: async () => {

@@ -1321,6 +1321,8 @@ export function openAuth(options: AuthOptions): AuthStore {
 /** Whether a key may do this: the scopes of the spec (read: state and lists; act: read plus messages, answers, hold and resume; full: all but the account). */
 export function keyMayDo(scope: KeyScope, method: string, path: string): boolean {
   if (path.startsWith('/api/auth')) return false;
+  // the draft of a review and its POST are the Director's own: the comment appears under his login (docs/features/auto-review.md)
+  if (path.startsWith('/api/auto-review/jobs/')) return false;
   const get = method === 'GET' || method === 'HEAD';
   if (scope === 'full') return true;
   if (get) return !/^\/(?:api\/)?(?:terminal|clearance|keys|rules)/.test(path);

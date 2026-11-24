@@ -2136,6 +2136,12 @@ describe('the draft latch (4.6)', () => {
       expect(h.msg('m1')).toMatchObject({ status: 'queued', note: 'waiting: ana is working' });
     });
 
+    it('a review-only agent (auto-review) runs on Claude Code only: its read-only rules are written by that launcher alone, so another engine is refused', async () => {
+      const h = await started();
+      for (const provider of ['pi', 'opencode', 'gemini'] as const) await expect(h.hub.hire({ name: 'rv1-rso', role: 'r', dir: '/work/rv', mode: 'default', provider, reviewOnly: true })).rejects.toMatchObject({ code: 'bad_request', field: 'reviewOnly' });
+      await expect(h.hub.hire({ name: 'rv1-rso', role: 'r', dir: '/work/rv', mode: 'default', reviewOnly: true })).resolves.toMatchObject({ name: 'rv1-rso' });
+    });
+
     it.each(['pi', 'opencode'] as const)('%s: its input box is read from the screen too, so a draft that was erased frees the mail by itself (Gemini CLI is not read: its latch waits for Enter or the clock)', async (provider) => {
       const h = await started();
       await h.hub.hire({ name: 'peer', role: 'a peer', dir: '/work/peer', mode: 'default', provider });
