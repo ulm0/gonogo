@@ -106,10 +106,17 @@ describe('sessions that gonogo did not name (an older version): found by the fol
     const found = await readTranscript(side, { agentDir: join(tmp, 'agent'), cwd: '/w', piDir, until: NOW });
     expect(found?.path).toBe(newer);
     expect(found?.turns).toStrictEqual([{ role: 'user', text: 'second' }]);
+    // two agents of one folder cannot be told apart by folder and time: the file says so
+    expect(found?.guessed).toBe(true);
+    const text = handoffText({ name: 'ana', provider: 'pi', sessionId: 'x' }, { name: 'ana', sessionId: 'y' }, found ?? null, new Date(0));
+    expect(text).toContain('it may belong to another agent that works in the same folder');
+    expect(handoffText({ name: 'ana', provider: 'pi', sessionId: 'x' }, { name: 'ana', sessionId: 'y' }, { ...(found as NonNullable<typeof found>), guessed: false }, new Date(0))).not.toContain('may belong to another agent');
     // the session gonogo named wins over the guess
     await mkdir(join(tmp, 'agent', 'pi-sessions'), { recursive: true });
     await writeFile(join(tmp, 'agent', 'pi-sessions', '2026_not-in-the-agents-folder.jsonl'), [piLine('/w'), piMsg('named')].join('\n'));
-    expect((await readTranscript(side, { agentDir: join(tmp, 'agent'), cwd: '/w', piDir, until: NOW }))?.turns).toStrictEqual([{ role: 'user', text: 'named' }]);
+    const named = await readTranscript(side, { agentDir: join(tmp, 'agent'), cwd: '/w', piDir, until: NOW });
+    expect(named?.turns).toStrictEqual([{ role: 'user', text: 'named' }]);
+    expect(named?.guessed).toBeUndefined();
     // no working folder or no folder of pi's: nothing is guessed
     expect(await readTranscript({ ...side, sessionId: 'x' }, { agentDir: join(tmp, 'agent2'), piDir })).toBeNull();
   });
@@ -123,6 +130,7 @@ describe('sessions that gonogo did not name (an older version): found by the fol
     const found = await readTranscript({ name: 'ana', sessionId: 'unknown-id' }, { agentDir: tmp, claudeConfigDir: claude, cwd: '/w/proj', until: NOW });
     expect(found?.path).toBe(file);
     expect(found?.turns).toHaveLength(3);
+    expect(found?.guessed).toBe(true);
     expect(await readTranscript({ name: 'ana', sessionId: 'unknown-id' }, { agentDir: tmp, claudeConfigDir: claude, cwd: '/w/other', until: NOW })).toBeNull();
   });
 
@@ -140,7 +148,10 @@ describe('sessions that gonogo did not name (an older version): found by the fol
     const asked: string[] = [];
     const found = await readTranscript({ name: 'ana', provider: 'opencode', sessionId: 's' }, { agentDir: tmp, cwd: '/w', until: 5000, listOpencode: async () => listing, exportOpencode: async (id) => (asked.push(id), exported) });
     expect(found?.turns).toStrictEqual([{ role: 'user', text: 'hi' }]);
+    expect(found?.guessed).toBe(true);
     expect(asked).toStrictEqual(['ses_new']);
+    // a session id that gonogo recorded is not a guess
+    expect((await readTranscript({ name: 'ana', provider: 'opencode', sessionId: 's', engineSession: { for: 's', id: 'ses_known' } }, { agentDir: tmp, cwd: '/w', until: 5000, exportOpencode: async () => exported }))?.guessed).toBeUndefined();
   });
 });
 

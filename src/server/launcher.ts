@@ -927,7 +927,9 @@ export function createLauncher(options: LauncherOptions): Launcher {
         const own = { ...env, XDG_DATA_HOME: join(agentDir(from.name), OPENCODE_DATA_DIR) };
         const firstOwn = <T>(ask: (e: Record<string, string | undefined>) => Promise<T>, empty: (value: T) => boolean) => async (): Promise<T> => {
           const mine = await ask(own).catch(() => null);
-          return mine !== null && !empty(mine) ? mine : ask(env);
+          if (mine !== null && !empty(mine)) return mine;
+          // the agent has a database of its own: another agent's sessions in the shared one are not its old session; only an agent without one (an older gonogo) is looked for there
+          return existsSync(join(agentDir(from.name), OPENCODE_DATA_DIR, 'opencode', 'opencode.db')) && mine !== null ? mine : ask(env);
         };
         const exportOpencode = (id: string): Promise<string> => firstOwn((e) => opencodeExporter(e, from.dir)(id), (out) => !out.includes('{'))();
         const listOpencode = (): Promise<string> => firstOwn((e) => opencodeLister(e, from.dir)(), (out) => !out.includes('"id"'))();
