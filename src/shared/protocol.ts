@@ -2833,6 +2833,8 @@ export interface Launcher {
   writeHandoff(from: AgentRecord, to: AgentRecord): Promise<void>;
   /** Absolute path of agents/<name>/memory.md. */
   memoryPath(name: string): string;
+  /** Long text (shared/longtext.ts): writes agents/<name>/inbox-files/<id>-long-text.txt (0600; never through a link) and returns its absolute path. Throws when it cannot. */
+  saveLongText?(name: string, id: string, text: string): string;
 }
 
 /* ---- home ---- */
@@ -2938,6 +2940,11 @@ export interface HubIo {
    * the agent from it). Never deletes. A name with no folder gets an empty one. Rejects when it cannot. Absent: the hub refuses the boss's removal.
    */
   archiveAgentFiles?(name: string, record: AgentRecord, now: number): Promise<{ archived: string }>;
+  /**
+   * Long text (shared/longtext.ts): saves the whole of a Director's text that is too long for a message as a file in the agent's own folder,
+   * named after the message id, and returns its absolute path. Throws when it cannot. Absent: such a text is refused as too long.
+   */
+  saveLongText?(agent: string, id: string, text: string): string;
   /** Engine switch: the last turns of the old engine, written for the new session (Launcher.writeHandoff). Optional for fakes. Never rejects. */
   writeHandoff?(from: AgentRecord, to: AgentRecord): Promise<void>;
   /** Clearance: where the values of an agent's keys are kept. The hub holds names only. Optional for fakes: without it keys are refused. */

@@ -1032,6 +1032,10 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         terminalHost.rename(oldName, newName);
       },
       writeHandoff: (from, to) => launcher.writeHandoff(from, to),
+      saveLongText: (agent, id, text) => {
+        if (launcher.saveLongText === undefined) throw new Error('long texts are not saved here');
+        return launcher.saveLongText(agent, id, text);
+      },
       archiveAgentFiles: async (name, record, now) => {
         const done = await launcher.archiveAgentFiles(name, record, now);
         // the mirror of its console goes with the name: a later agent of that name starts clean

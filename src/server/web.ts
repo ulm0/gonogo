@@ -50,6 +50,7 @@ import {
   CLEAN_ROOM_HOST,
   MAX_COLS,
   MAX_REST_BODY_BYTES,
+  MAX_MESSAGE_BODY_BYTES,
   MAX_ROWS,
   MIN_COLS,
   MIN_ROWS,
@@ -960,7 +961,8 @@ export function createWebServer(options: WebOptions): WebServer {
       return {
         allow: ['POST'],
         run: async (req, res) => {
-          const body = await jsonObject(req, res);
+          // a long text (shared/longtext.ts) is up to a million characters: more room than any other form
+          const body = await jsonObject(req, res, MAX_MESSAGE_BODY_BYTES);
           if (!body) return;
           const parsed = parseUserMessage(body);
           if (!parsed.ok) sendApiError(res, 400, parsed.error, 'bad_request', parsed.field);

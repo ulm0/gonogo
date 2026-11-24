@@ -212,7 +212,7 @@ function expectedSettings(hubUrl: string, name: string, memoryPath: string, extr
     crossSessionInbound: 'refuse',
     permissions: {
       deny: ['SendMessage', 'ListAgents'],
-      allow: [`Read(//${memoryPath.slice(1)})`, `Edit(//${memoryPath.slice(1)})`, `Read(//${memoryPath.slice(1).replace(/memory.md$/, "handoff.md")})`],
+      allow: [`Read(//${memoryPath.slice(1)})`, `Edit(//${memoryPath.slice(1)})`, `Read(//${memoryPath.slice(1).replace(/memory.md$/, "handoff.md")})`, `Read(//${memoryPath.slice(1).replace(/memory.md$/, "inbox-files")}/**)`],
     },
     ...extra,
   };
@@ -612,7 +612,7 @@ describe('prepareStart', () => {
       settingsText.includes(
         '  },\n  "tui": "fullscreen",\n  "promptSuggestionEnabled": false,\n  "crossSessionInbound": "refuse",\n' +
           '  "permissions": {\n    "deny": [\n      "SendMessage",\n      "ListAgents"\n    ],\n    "allow": [\n' +
-          `      "Read(//${memory.slice(1)})",\n      "Edit(//${memory.slice(1)})",\n      "Read(//${memory.slice(1).replace(/memory.md$/, 'handoff.md')})"\n    ]\n  },\n`,
+          `      "Read(//${memory.slice(1)})",\n      "Edit(//${memory.slice(1)})",\n      "Read(//${memory.slice(1).replace(/memory.md$/, 'handoff.md')})",\n      "Read(//${memory.slice(1).replace(/memory.md$/, 'inbox-files')}/**)"\n    ]\n  },\n`,
       ),
     ).toBe(true);
     expect(await text(join(base, 'mcp.json'))).toBe(
@@ -1622,6 +1622,24 @@ describe('renameAgentFiles and memoryPath', () => {
     expect(l.memoryPath('ana')).toBe(join(home, 'agents', 'ana', 'memory.md'));
     expect(() => l.memoryPath('../ana')).toThrow(new Error('invalid agent name'));
     expect(() => l.memoryPath('')).toThrow(new Error('invalid agent name'));
+  });
+
+  it('saves a long text as agents/<name>/inbox-files/<id>-long-text.txt (0600 in a 0700 folder), never over one that is there, never through a link, and refuses a bad name or id', async () => {
+    const l = launcher();
+    const path = l.saveLongText?.('ana', 'm12', 'line one\nline two') ?? '';
+    expect(path).toBe(join(home, 'agents', 'ana', 'inbox-files', 'm12-long-text.txt'));
+    expect(await readFile(path, 'utf8')).toBe('line one\nline two\n');
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(join(home, 'agents', 'ana', 'inbox-files'))).mode & 0o777).toBe(0o700);
+    expect(() => l.saveLongText?.('ana', 'm12', 'again')).toThrow(/EEXIST/);
+    expect(() => l.saveLongText?.('../ana', 'm13', 'x')).toThrow(new Error('invalid agent name'));
+    expect(() => l.saveLongText?.('ana', '../m13', 'x')).toThrow(new Error('invalid message id'));
+    // an agent that made inbox-files a link to elsewhere gets nothing written there
+    await mkdir(join(tmp, 'elsewhere'));
+    await mkdir(join(home, 'agents', 'bob'), { recursive: true });
+    await symlink(join(tmp, 'elsewhere'), join(home, 'agents', 'bob', 'inbox-files'));
+    expect(() => l.saveLongText?.('bob', 'm14', 'x')).toThrow(/inbox-files is not a folder/);
+    expect(await readdir(join(tmp, 'elsewhere'))).toEqual([]);
   });
 });
 

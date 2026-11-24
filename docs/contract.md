@@ -549,7 +549,7 @@ not an object: 400. Unknown fields are ignored. Errors always have the shape `Ap
 | `POST /api/agents/:name/restart` | `200 AgentView` once the new process exists in the terminal host (state `starting`; a spawn that fails answers the view in state `stopped` with `exit.text`) | 404 |
 | `POST /api/agents/:name/stop` | `200 AgentView` after the process exited (up to 8 s); idempotent on a stopped agent | 404 |
 | `DELETE /api/agents/:name` | `204` after the process exited and the record was removed | 404; 409 `the boss cannot be removed` |
-| `POST /api/messages` `UserMessageRequest` | `201 SendResult` (the message is from `user`, hops 0) | 400 empty/too long body, subject too long, `to` is `user`; 404 unknown recipient (`field: "to"`) |
+| `POST /api/messages` `UserMessageRequest` (request up to 8 MiB) | `201 SendResult` (the message is from `user`, hops 0; a body over `BODY_MAX_CHARS` is saved to `agents/<name>/inbox-files/<id>-long-text.txt` and the message carries its path and first lines, `src/shared/longtext.ts`) | 400 empty body or one over 1,000,000 characters, subject too long, `to` is `user`; 404 unknown recipient (`field: "to"`) |
 
 Hire is create + save + start. A hire that cannot spawn (pty failure) still returns `201` with the agent in state `stopped` and
 `exit.text` explaining; the roster keeps it. Once the server is shutting down (`stop()`, 2.8 step 11) `POST /api/agents`, `PATCH`, `DELETE` and the stop and restart routes answer `409` `the server is shutting down`; `GET /api/state` and `POST /api/messages` keep working.

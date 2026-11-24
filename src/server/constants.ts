@@ -132,6 +132,8 @@ export const TRANSIENT_ERROR_PREFIXES = ['WS_ERR_'] as const;
 export const MAX_MCP_BODY_BYTES = 1024 * 1024;
 /** REST bodies: hire form, edit, a user message of up to 20,000 chars. */
 export const MAX_REST_BODY_BYTES = 256 * 1024;
+/** POST /api/messages: the Director's long text of up to LONG_TEXT_MAX_CHARS (1,000,000) characters, saved to a file (shared/longtext.ts), as JSON with room for escapes. */
+export const MAX_MESSAGE_BODY_BYTES = 8 * 1024 * 1024;
 export const WS_MAX_FRAME_BYTES = 256 * 1024; // the client splits a paste into WS_INPUT_CHUNK_CHARS pieces (protocol.ts), so only a misbehaving client sends more; bigger frames close the socket with 1009
 export const WS_MAX_BUFFERED_BYTES = 4 * 1024 * 1024; // slow reader: close with 1013 and let it reconnect with a fresh snapshot
 export const WS_PING_INTERVAL_MS = 20_000; // detects dead browsers behind NATs; two missed pongs close the socket

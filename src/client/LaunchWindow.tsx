@@ -145,12 +145,17 @@ function Editor({ schedule, onDone }: { schedule: ScheduleView | null; onDone():
             className="textarea win-body"
             rows={4}
             value={values.body}
-            maxLength={BODY_MAX_CHARS}
             aria-invalid={problemAt('body') !== undefined}
             aria-describedby={describedBy('body')}
             onChange={(e) => change({ body: e.target.value }, 'body')}
           />
           {error('body')}
+          {/* no maxLength: a paste over the limit is not cut without a word, it is said here and refused at Save */}
+          {problemAt('body') === undefined && values.body.length > BODY_MAX_CHARS && (
+            <p className="error">
+              {values.body.length.toLocaleString('en-US')} characters: a scheduled message holds at most {BODY_MAX_CHARS.toLocaleString('en-US')}.
+            </p>
+          )}
         </div>
         <div className="field">
           <label htmlFor={`${id}-rule`}>Rule</label>

@@ -493,6 +493,18 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
         await measure(page, group, `layout: ${density}`);
       }
     }
+    // long text (shared/longtext.ts): the line under the BRIEF box for a paste over a message, then one over the most; nothing is sent
+    const brief = page.locator('.brief-input').first();
+    await view(page, group, 'brief: a long text goes as a file', async () => {
+      await brief.fill(`A log from the other session\n${'2026-11-24 18:30:01 INFO a line of the log\n'.repeat(600)}`, { timeout: 5000 });
+      await page.locator('.brief-long:not(:empty)').waitFor({ timeout: 3000 });
+    }, true);
+    await measure(page, group, 'brief: a long text goes as a file', '.brief');
+    await view(page, group, 'brief: a text over the most is refused', async () => {
+      await brief.fill('x'.repeat(1_000_001), { timeout: 10_000 });
+      await page.locator('.brief-long.error').waitFor({ timeout: 3000 });
+    }, true);
+    await brief.fill('', { timeout: 5000 });
     await toolbarProofs(page, group);
     await page.reload();
     await page.locator('.topbar').waitFor({ timeout: 30_000 });
