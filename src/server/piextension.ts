@@ -149,7 +149,7 @@ export default function gonogo(pi: any): void {
     const u = m?.usage;
     if (m?.role !== "assistant" || u === undefined || u === null) return;
     const id = typeof m.responseId === "string" && m.responseId !== "" ? m.responseId : String(m.timestamp ?? Date.now()) + ":" + String(m.model ?? "");
-    usage.push({ id, at: typeof m.timestamp === "number" ? m.timestamp : Date.now(), model: typeof m.model === "string" ? m.model : null, i: u.input, cw: u.cacheWrite, o: u.output, cr: u.cacheRead });
+    usage.push({ id, at: typeof m.timestamp === "number" ? m.timestamp : Date.now(), model: typeof m.model === "string" ? m.model : null, provider: typeof m.provider === "string" ? m.provider : null, i: u.input, cw: u.cacheWrite, o: u.output, cr: u.cacheRead });
     if (usage.length > 500) usage.splice(0, usage.length - 500);
   });
 

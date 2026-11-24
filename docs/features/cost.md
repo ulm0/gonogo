@@ -19,6 +19,16 @@ The PRICES fold lists dollars per million tokens per model prefix (input, output
 - **Your own rows are prefixes**: the longest match wins and beats built-ins. RESET drops one. Editing a price prices the whole history again.
 - A model with no row is **unpriced**: its tokens show apart, never costed at zero.
 
+## By engine, provider and model
+
+The same model can come through different engines (Opus in Claude Code and in pi), and some models are free (opencode's `big-pickle`). Each new ledger line therefore carries the **engine** that ran the reply (`claude`, `pi`, `opencode`: the console's engine) and the **provider** as the engine reports it (`anthropic` for Claude Code; pi and opencode say their own, such as `anthropic`, `opencode`, `openai`). The wall's **BY ENGINE AND MODEL** fold (window buttons 5 h, day, week, month) and the Cost table of Flight Rules list one row per engine, provider and model with its tokens, the estimate, and which agents used it (hover the model). The last row is the room total: the sum of the rows, the same number as the meter.
+
+- **Free is not unpriced.** A price row of four zeros means the model costs nothing: it shows as **free** and adds $0. A model with no row at all shows **no price** with its tokens, and never counts as zero. Built-in free row: `big-pickle`. Opencode's other free models change often: add a row of your own.
+- **A price per provider.** A row named `<provider>/<model prefix>` (for example `bedrock/claude-opus-5-5`) is used for that provider's use first; without one the plain model row applies. So the same model id can cost different things through different providers.
+- **Counts against.** A row says **Claude plan** when it is Claude Code and the room has a [plan quota](quota.md) (a claude.ai login), and **API or other** otherwise: pi, opencode and API-key use never count against the plan. The quota itself stays Claude plan only.
+- **Old lines** (before this table) have no engine or provider and show **unknown**; they are not rewritten.
+- **Budgets** stay per room, agent, mission and link, in dollars of the sum. A budget per engine or provider was not built: it needs a rule for what a hold does to a mixed room (stopping only the pi agents, say), which is a decision for the Director.
+
 ## Reported cost (Claude Code)
 
 Claude Code's status line carries the session's dollars so far. gonogo keeps that **beside** the estimate, per agent and for the room, and **never adds it to the estimate or lets it move a budget**. The room figure sums the agents that have one ("1 of 2 agents") and says "at least" (the last seconds of a session can be lost). Other engines show the estimate only. On a claude.ai subscription it is what the use would cost at API prices, not a charge.
@@ -45,7 +55,7 @@ A reply is counted to the **mission and task the agent works on**: its Flight Pl
 
 | Item | Shape |
 |---|---|
-| `~/.gonogo/fuel.jsonl` | `{at, agent, model, i, cw, o, cr, tokens}` (input, cache write, output, cache read; `tokens` = i + cw + o); may carry `mission`, `task` ids |
+| `~/.gonogo/fuel.jsonl` | `{at, agent, model, i, cw, o, cr, tokens}` (input, cache write, output, cache read; `tokens` = i + cw + o); may carry `engine`, `provider`, `mission`, `task` |
 | `~/.gonogo/propellant.json` | `budget: { room, agents, missions }`, dollars in whole cents, 0.01 to 1,000,000 |
 | `~/.gonogo/prices.json` (0600) | `{ "version": 1, "currency": "USD", "models": { "<prefix>": { input, output, cacheWrite, cacheRead } } }`, 0 to 10,000 per million; `currency` is a label |
 | `~/.gonogo/reported.jsonl` | reported session totals; format in [`docs/cost-spec.md`](https://github.com/ulm0/gonogo/blob/main/docs/cost-spec.md); kept 31 days, 5,000 sessions per agent, 20,000 in all |
@@ -53,7 +63,7 @@ A reply is counted to the **mission and task the agent works on**: its Flight Pl
 | `GET /api/prices`, `PUT /api/prices`, `DELETE /api/prices/<prefix>` | PUT `{"models": {...}}` replaces your rows; unknown field is 400 |
 | `GET /api/cost?days=N` | N 1 to 31, default 14, else 400 |
 
-`GET /api/cost` returns `{ currency, estimate: true, dayBoundary: "local", from, to, room, agents, days, unpricedModels, partial, sessions, pricedSince, priceAsOf }`.
+`GET /api/cost` returns `{ currency, estimate: true, dayBoundary: "local", from, to, room, agents, days, unpricedModels, partial, sessions, pricedSince, priceAsOf, breakdown }`. `breakdown` is a list of `{ engine, provider, model, tokens, cacheRead, usd, unpriced, free, claudePlan, agents: { <name>: { tokens, usd, unpriced } } }` for the days asked; the live view (`cost.breakdown`) has the same rows per window `{ "5h", day, week, month }`.
 
 - **A day is the server's local calendar day.**
 - `room` and each agent: `usd`, `usdSplit` `{input, output, cacheWrite, cacheRead}`, `tokens` (same kinds), `unpriced` (tokens of an old line or unpriced model; `unpricedModels` names them).

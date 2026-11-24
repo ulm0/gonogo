@@ -873,6 +873,25 @@ export interface CostReport {
   pricedSince: number | null;
   /** When the default prices were copied; the owner's own rows win over them. */
   priceAsOf: string;
+  /** The days of the report by engine, provider and model, each with its agents. */
+  breakdown?: FuelBreakdownRow[];
+}
+/** One row of the use by engine, provider and model (an old ledger line says `unknown`). */
+export interface FuelBreakdownRow {
+  engine: string;
+  provider: string;
+  model: string;
+  /** Input + cache write + output tokens, and the cache reads on their own. */
+  tokens: number;
+  cacheRead: number;
+  /** Dollars of the priced use: an estimate at list prices. A free model is priced at 0. */
+  usd: number;
+  unpriced: number;
+  /** The model has a price row of zeros: free to use, which is not the same as unpriced. */
+  free: boolean;
+  /** Claude Code with a claude.ai plan quota in the room: this use counts against the plan. Everything else is API or another provider. */
+  claudePlan: boolean;
+  agents: Record<string, { tokens: number; usd: number; unpriced: number }>;
 }
 export interface CostView {
   room: CostGauge;
@@ -886,6 +905,8 @@ export interface CostView {
   days: DayCost[];
   /** Epoch ms of the oldest ledger line that carries a model, so it can be priced; null when none does. */
   pricedSince: number | null;
+  /** By window: the use by engine, provider and model, each with its agents. The room total is their sum. */
+  breakdown?: Record<FuelWindow, FuelBreakdownRow[]>;
 }
 
 /** The history of triggers (docs/features/triggers.md): what fired by itself or came in from outside. `uplink` is a webhook delivery, `telegram` an update read by long polling, `schedule` a Launch Window run, `docking` a hand-off to or a call from a station. */

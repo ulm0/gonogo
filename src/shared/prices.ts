@@ -65,10 +65,12 @@ export const DEFAULT_PRICES: PriceTable = {
   'claude-sonnet-4': p(3, 3.75, 0.3, 15),
   'claude-haiku-5-5': p(0.1, 0.125, 0.01, 0.5),
   'claude-haiku-4-5': p(1, 1.25, 0.1, 5),
+  // free to use, not unpriced: opencode's Zen free model (the others of its free list change often: add a row of your own, `opencode/<model>` or just `<model>`)
+  'big-pickle': p(0, 0, 0, 0),
 };
 
 /** A prefix as the table and the routes accept it. */
-export const PRICE_PREFIX_PATTERN = '^[A-Za-z0-9._-]{1,80}$';
+export const PRICE_PREFIX_PATTERN = '^(?=.{1,80}$)(?!.*\\.\\.)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?$';
 export const PRICE_MAX = 10_000;
 
 /** The default table, then the owner's rows over it. */
@@ -79,9 +81,16 @@ export function mergePrices(file: PriceTable = {}): Record<string, PriceRow> {
   return rows;
 }
 
-/** The price of a model by the longest matching prefix, or null (unpriced). */
-export function priceFor(table: Record<string, ModelPrice | PriceRow>, model: string | undefined): ModelPrice | null {
+/** A row of four zeros: the model costs nothing (a free tier), which is not the same as having no price. */
+export const isFree = (price: ModelPrice): boolean => price.input === 0 && price.output === 0 && price.cacheWrite === 0 && price.cacheRead === 0;
+
+/** The price of a model by the longest matching prefix, or null (unpriced). With a provider, a row `<provider>/<model prefix>` is tried first: one model id can cost different things through different providers. */
+export function priceFor(table: Record<string, ModelPrice | PriceRow>, model: string | undefined, provider?: string): ModelPrice | null {
   if (!model) return null;
+  if (provider) {
+    const own = priceFor(table, `${provider}/${model}`);
+    if (own !== null) return own;
+  }
   let best: string | null = null;
   for (const [prefix, row] of Object.entries(table)) {
     if (!model.startsWith(prefix)) continue;
