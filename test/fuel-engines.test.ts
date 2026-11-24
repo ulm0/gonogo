@@ -100,3 +100,56 @@ describe('the ledger carries the engine and the provider', () => {
     expect(p.report(7).breakdown?.map((r) => r.model)).toEqual(['big-pickle']);
   });
 });
+
+describe('budgets per engine and per provider', () => {
+  const makeB = async (): Promise<Propellant> => {
+    const p = createPropellant({ dir: join(root, 'home'), projectsRoot: join(root, 'projects'), now: () => NOW, log: quiet, engineOf: (a) => engines[a], plan: () => null });
+    made.push(p);
+    await p.load();
+    return p;
+  };
+  it('parses engines and providers, refuses a bad name, and an empty budget clears one', async () => {
+    const { parsePropellantRequest } = await import('../src/server/propellant.js');
+    expect(parsePropellantRequest({ budget: { engines: { pi: { day: 5 } }, providers: { openai: { week: 20 } } } })).toMatchObject({ ok: true, value: { budget: { engines: { pi: { day: 5 } }, providers: { openai: { week: 20 } } } } });
+    expect(parsePropellantRequest({ budget: { engines: { 'bad name': { day: 5 } } } })).toMatchObject({ ok: false, field: 'budget' });
+    expect(parsePropellantRequest({ budget: { engines: { pi: { day: -1 } } } })).toMatchObject({ ok: false });
+    const p = await makeB();
+    await p.setBudget({ engines: { pi: { day: 5 } } });
+    expect(Object.keys(p.view().cost.groups ?? {})).toEqual(['engine:pi']);
+    await p.setBudget({ engines: { pi: {} } });
+    expect(p.view().cost.groups).toEqual({});
+  });
+
+  it('an engine budget holds only that engine: its use counts, its agents stop, the others do not', async () => {
+    const p = await makeB();
+    await p.setBudget({ engines: { pi: { day: 0.01 } } });
+    await p.recordUsage('pip', [use('1', 'claude-opus-5-5', 'anthropic', 1_000_000, 0)]);
+    await p.recordUsage('ana', [use('2', 'claude-opus-5-5', 'anthropic', 1_000_000, 0)]);
+    expect(p.over('pip')).toMatchObject({ scope: 'group', group: 'engine:pi' });
+    expect(p.over('pip')?.reason).toContain('engine pi spent');
+    expect(p.over('ana')).toBeNull();
+    expect(p.inGroup('pip', 'engine:pi')).toBe(true);
+    expect(p.inGroup('ana', 'engine:pi')).toBe(false);
+    // only pi's own use counted: $4, not $8
+    expect(p.view().cost.groups?.['engine:pi']?.usd.day).toBeCloseTo(4, 6);
+  });
+
+  it('a provider budget counts that provider\'s use and holds the agents whose latest reply used it; a free model costs nothing', async () => {
+    const p = await makeB();
+    await p.setBudget({ providers: { openai: { day: 1 }, opencode: { day: 0.01 } } });
+    await p.recordUsage('ozzy', [use('1', 'big-pickle', 'opencode', 5_000_000, 0)]);
+    expect(p.over('ozzy')).toBeNull();
+    await p.recordUsage('pip', [{ ...use('2', 'gpt-x', 'openai', 1, 0), model: 'claude-opus-5-5', split: { i: 1_000_000, cw: 0, o: 0, cr: 0 } }]);
+    expect(p.over('pip')).toMatchObject({ scope: 'group', group: 'provider:openai' });
+    expect(p.inGroup('pip', 'provider:openai')).toBe(true);
+    expect(p.inGroup('ozzy', 'provider:openai')).toBe(false);
+  });
+
+  it('is kept across a restart, and old lines without an engine belong to no group', async () => {
+    const p = await makeB();
+    await p.setBudget({ engines: { claude: { day: 1 } } });
+    await p.close();
+    const again = await makeB();
+    expect(Object.keys(again.view().cost.groups ?? {})).toEqual(['engine:claude']);
+  });
+});
