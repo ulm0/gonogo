@@ -414,6 +414,73 @@ describe('removing an agent resets nothing (RSO R2)', () => {
   });
 });
 
+describe('autoscale: the rules and Relief staff and retire (PR5)', () => {
+  const BOSSID = { agent: 'flight', generation: 1 };
+
+  it('autoscale: on needs autoApprove; autoApprove off turns it off; the other rules are checked; STOP CREW turns it off', async () => {
+    await expect(rules.set({ autoscale: 'on' })).rejects.toMatchObject({ field: 'rules.autoscale' });
+    await expect(rules.set({ autoscale: 'maybe' })).rejects.toMatchObject({ field: 'rules.autoscale' });
+    await expect(rules.set({ scaleUpTodo: 0 })).rejects.toMatchObject({ field: 'rules.scaleUpTodo' });
+    await expect(rules.set({ idleStopMinutes: 1 })).rejects.toMatchObject({ field: 'rules.idleStopMinutes' });
+    await expect(rules.set({ removeStoppedHours: 'x' })).rejects.toMatchObject({ field: 'rules.removeStoppedHours' });
+    await on({ autoscale: 'on', idleStopMinutes: 30, removeStoppedHours: 12 });
+    expect(rules.view()).toMatchObject({ autoscale: 'on', idleStopMinutes: 30, removeStoppedHours: 12 });
+    await rules.set({ autoApprove: false });
+    expect(rules.view()).toMatchObject({ autoApprove: false, autoscale: 'off' });
+    await on({ autoscale: 'on' });
+    await rules.off();
+    expect(rules.view()).toMatchObject({ autoApprove: false, autoscale: 'off' });
+  });
+
+  it('only turning autoscale on, a lower threshold or a shorter removal is a raise; dry-run and off are not', () => {
+    const base = RELIEF_RULES_DEFAULT;
+    expect(raisesPower(base, { ...base, autoscale: 'on' })).toBe(true);
+    expect(raisesPower(base, { ...base, autoscale: 'dry-run' })).toBe(false);
+    expect(raisesPower(base, { ...base, scaleUpTodo: 1 })).toBe(true);
+    expect(raisesPower(base, { ...base, scaleUpTodo: 9 })).toBe(false);
+    expect(raisesPower(base, { ...base, removeStoppedHours: 5 })).toBe(true);
+    expect(raisesPower({ ...base, removeStoppedHours: 5 }, { ...base, removeStoppedHours: 9 })).toBe(false);
+    expect(raisesPower({ ...base, autoscale: 'on' }, { ...base, autoscale: 'off' })).toBe(false);
+  });
+
+  it('staff hires <position>-<n> by rule with the room mode capped by maxMode; it skips live names, waiting requests and removed names; a rule that says no is refused, never pending', async () => {
+    await on({ maxMode: 'default' });
+    const retired = new Set(['guido-2']);
+    const sr = createRelief({ hub: { views: () => views, hire: async (request, meta) => { hired.push({ request, ...(meta === undefined ? {} : { meta }) }); const v = agent(request.name, { dir: request.dir, desk: views.length, hiredBy: 'boss', hiredAt: now }); views.push(v); return v; }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }) }, rules, defaultMode: () => 'acceptEdits', nameRetired: (n) => retired.has(n), checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    views.push(agent('guido-1'));
+    const first = await sr.staff(BOSSID, 'guido', 'rules-only');
+    expect(first).toMatchObject({ status: 'hired', name: 'guido-3' });
+    // the room default is acceptEdits, maxMode is default: the cap wins, and it is never maxMode itself when the default is lower
+    expect(hired.at(-1)?.request.mode).toBe('default');
+    now += 11 * 60_000;
+    expect(await sr.staff(BOSSID, 'fido', 'dry')).toMatchObject({ status: 'dry', name: 'fido-1' });
+    expect(hired).toHaveLength(1);
+    await rules.set({ positions: ['fido'] });
+    now += 11 * 60_000;
+    expect(await sr.staff(BOSSID, 'guido', 'rules-only')).toMatchObject({ status: 'refused', note: expect.stringMatching(/position guido is not in the rules/) });
+    expect(sr.view().requests).toEqual([]);
+    await rules.set({ autoApprove: false });
+    expect(await sr.staff(BOSSID, 'fido', 'rules-only')).toMatchObject({ status: 'refused', note: 'automatic approval is off' });
+  });
+
+  it('retire (autoscale\'s stop or removal) only runs while autoscale is on, only on boss-hired agents, and respects mayStop and mayRemove', async () => {
+    views.push(agent('crew-1', { hiredBy: 'boss' }), agent('ana'));
+    const done: string[] = [];
+    const sr = createRelief({ hub: { views: () => views, hire: async () => { throw new Error('no'); }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }), fireAgent: async (n: string) => { done.push('fire:' + n); return agent(n); }, retireAgent: async (n: string) => { done.push('retire:' + n); return { archived: '' }; } }, rules, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    await expect(sr.retire(BOSSID, 'crew-1', 'stop', 'idle')).rejects.toMatchObject({ code: 'forbidden' });
+    await on({ autoscale: 'on', mayRemove: true });
+    await sr.retire(BOSSID, 'crew-1', 'stop', 'idle for 60 minutes');
+    await sr.retire(BOSSID, 'crew-1', 'remove', 'stopped for 24 hours');
+    await expect(sr.retire(BOSSID, 'ana', 'stop', 'x')).rejects.toMatchObject({ code: 'forbidden' });
+    expect(done).toEqual(['fire:crew-1', 'retire:crew-1']);
+    expect(events.map(([, t]) => t).join('\n')).toMatch(/autoscale stopped crew-1: idle for 60 minutes[\s\S]*autoscale removed crew-1/);
+    await rules.set({ mayRemove: false });
+    await expect(sr.retire(BOSSID, 'crew-1', 'remove', 'x')).rejects.toMatchObject({ code: 'forbidden' });
+    await rules.set({ mayStop: false });
+    await expect(sr.retire(BOSSID, 'crew-1', 'stop', 'x')).rejects.toMatchObject({ code: 'forbidden' });
+  });
+});
+
 describe('fire_agent through Relief', () => {
   const FIRE = { agent: 'flight', generation: 1 };
   function withFire(over: Partial<ReliefOptions> = {}, task = { id: 't7', assignee: 'g1', status: 'doing' }) {
