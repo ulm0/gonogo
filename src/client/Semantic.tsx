@@ -103,10 +103,10 @@ export function SemanticBlock(): ReactElement | null {
         <>
           <fieldset className="rules-keys" aria-label="Mode">
             <label>
-              <input type="radio" name={`${id}-mode`} checked={mode === 'managed'} disabled={managed === null || managed.state === 'unsupported'} onChange={() => setMode('managed')} /> Managed: gonogo runs Ollama
+              <input type="radio" className="radio" name={`${id}-mode`} checked={mode === 'managed'} disabled={managed === null || managed.state === 'unsupported'} onChange={() => setMode('managed')} /> Managed: gonogo runs Ollama
             </label>
             <label>
-              <input type="radio" name={`${id}-mode`} checked={mode === 'remote'} onChange={() => setMode('remote')} /> Remote: an Ollama you run
+              <input type="radio" className="radio" name={`${id}-mode`} checked={mode === 'remote'} onChange={() => setMode('remote')} /> Remote: an Ollama you run
             </label>
           </fieldset>
           {mode === 'managed' && managed !== null && (
@@ -151,7 +151,7 @@ export function SemanticBlock(): ReactElement | null {
               />
               {view.apiKeySet && (
                 <label>
-                  <input type="checkbox" checked={removeKey} onChange={(e) => setRemoveKey(e.target.checked)} /> Remove the saved key
+                  <input type="checkbox" className="check" checked={removeKey} onChange={(e) => setRemoveKey(e.target.checked)} /> Remove the saved key
                 </label>
               )}
             </>
