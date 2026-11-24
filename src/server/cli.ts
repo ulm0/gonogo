@@ -1586,6 +1586,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         spentToday: () => autoReview.jobs().filter((j) => Date.now() - j.at < 24 * 3_600_000).reduce((s, j) => s + reviewMissionUsd(j.mission), 0),
       },
     });
+    for (const text of autoReview.startupNotices()) downlink.post('startup', text);
     void reviewRunner.drain();
     const webServer = createWebServer({
       statusLine: (name, body) => {

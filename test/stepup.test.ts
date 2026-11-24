@@ -36,6 +36,13 @@ describe('global MCP servers', () => {
     expect(stepUpReason('PUT', '/api/global-mcp', { host: true })).not.toBeNull();
     expect(stepUpReason('PUT', '/api/global-mcp', { cleanRoom: true })).not.toBeNull();
     expect(stepUpReason('PUT', '/api/global-mcp', null)).not.toBeNull();
+    // auto-review: turning it on, auto-post or what it watches asks; turning it off does not
+    expect(stepUpReason('PUT', '/api/auto-review', { enabled: true })).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/auto-review', { autoPost: true })).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/auto-review', { repos: ['a/b'] })).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/auto-review', null)).not.toBeNull();
+    expect(stepUpReason('PUT', '/api/auto-review', { enabled: false })).toBeNull();
+    expect(stepUpReason('PUT', '/api/auto-review', { enabled: false, autoPost: false })).toBeNull();
     expect(stepUpReason('PUT', '/api/global-mcp', { host: false })).toBeNull();
     expect(stepUpReason('PUT', '/api/global-mcp', { cleanRoom: false })).toBeNull();
     expect(stepUpReason('GET', '/api/global-mcp', null)).toBeNull();

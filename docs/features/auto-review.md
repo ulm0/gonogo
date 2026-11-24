@@ -13,14 +13,14 @@ Off by default. `GET` / `PUT /api/auto-review` (the page's block comes in slice 
 | Field | Default | Meaning |
 |---|---|---|
 | `enabled` | `false` | the poller runs |
-| `autoPost` | `false` | post a finished review without your click (slice 2) |
+| `autoPost` | `false` | post a finished review without your click. **A restart turns it off again** (the Downlink says so): turn it on in the browser to confirm |
 | `repos` | `[]` | `owner/repo` of the repos to watch |
 | `authors` | `[]` | GitHub logins whose pull requests are reviewed; empty means **only the room's own `gh` login** |
-| `positions` | `rso`, `retro` | who reviews (slice 2) |
-| `model` | none | the model of the reviewers (slice 2) |
-| `maxUsdPerPr`, `maxUsdPerDay` | $2, $10 | spend caps (slice 2) |
+| `positions` | `rso`, `retro` | who reviews |
+| `model` | none | the model of the reviewers |
+| `maxUsdPerPr`, `maxUsdPerDay` | $2, $10 | spend caps |
 | `maxLines`, `maxFiles` | 1500, 40 | a larger pull request is skipped |
-| `focus`, `ignorePaths` | empty | extra instruction and paths left out of the diff (slice 2) |
+| `focus`, `ignorePaths` | empty | extra instruction and paths left out of the diff |
 
 ## What the poller does
 

@@ -166,6 +166,8 @@ export interface AutoReview {
   view(): AutoReviewView;
   /** A settings patch (parseSettingsPatch has checked the shape): saves, and starts or stops the poller. */
   set(input: unknown): Promise<AutoReviewView>;
+  /** What the Director should be told after a start (Downlink): auto-review is on, and auto-post is off again until he turns it on in the browser. Read once. */
+  startupNotices(): string[];
   /** One poll now (the page's button and the tests). Resolves with the jobs made. */
   pollNow(): Promise<AutoReviewJob[]>;
   /** A job changes state (S2: running, done, posted). */
@@ -186,6 +188,7 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
   let settings: AutoReviewSettings = { ...DEFAULT_SETTINGS };
   let jobs: AutoReviewJob[] = [];
   let seq = 0;
+  let notices: string[] = [];
   let timer: NodeJS.Timeout | null = null;
   let polling: Promise<AutoReviewJob[]> | null = null;
   let lastPoll: { at: number; error: string | null } | null = null;
@@ -289,6 +292,13 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
         const parsed = isRecord(saved) && saved.version === 1 ? parseSettingsPatch(Object.fromEntries(Object.entries(saved).filter(([k]) => k !== 'version'))) : null;
         if (parsed?.ok) settings = { ...DEFAULT_SETTINGS, ...parsed.patch };
         else throw new Error('not a version 1 auto-review file');
+        // a restart never carries auto-post over: a comment that posts itself under the Director's login needs his confirmation in the browser again (RSO m4027)
+        if (settings.enabled) notices.push(`Auto-review is on for ${settings.repos.length} repo${settings.repos.length === 1 ? '' : 's'}.`);
+        if (settings.autoPost) {
+          settings = { ...settings, autoPost: false };
+          await later(() => write(settingsPath, { version: 1, ...settings }));
+          notices.push('Auto-post was on before the restart and is off again: turn it on in Flight Rules, AUTO-REVIEW, to confirm it.');
+        }
       } catch (error) {
         // an unreadable file leaves it OFF: the safe side of a feature that posts under the Director's login
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') log.error(`${AUTO_REVIEW_FILE} could not be read; auto-review is off`, error instanceof SyntaxError ? 'not valid JSON' : error);
@@ -314,6 +324,11 @@ export function createAutoReview(options: AutoReviewOptions): AutoReview {
       }
       start();
       return view();
+    },
+    startupNotices() {
+      const out = notices;
+      notices = [];
+      return out;
     },
     pollNow() {
       polling ??= poll().finally(() => {
