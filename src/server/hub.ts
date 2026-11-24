@@ -761,6 +761,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       permissions: record.permissions ?? null,
       autostart: record.autostart !== false,
       coauthor: record.coauthor !== false,
+      ...(record.hiredBy === 'relief' ? { hiredBy: 'relief' as const } : {}),
       model: record.model ?? null,
       effort: record.effort ?? null,
       keys: { ...record.keys },
@@ -2367,7 +2368,7 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
     return desk;
   }
 
-  async function hire(request: HireRequest): Promise<AgentView> {
+  async function hire(request: HireRequest, meta?: { hiredBy: 'relief' }): Promise<AgentView> {
     assertOpen();
     const req = asObject(request, 'the request');
     const name = checkName(req.name);
@@ -2430,6 +2431,8 @@ export function createHub(io: HubIo, options: HubOptions): Hub {
       if (permissions) record.permissions = permissions;
       if (req.autostart === false) record.autostart = false;
       if (req.coauthor === false) record.coauthor = false;
+      // set by Relief's own call only (the second argument), never by a field of a request from the wire
+      if (meta?.hiredBy === 'relief') record.hiredBy = 'relief';
       if (model) record.model = model;
       if (effort) record.effort = effort;
       if (kept?.names) record.keys = kept.names;

@@ -14,12 +14,13 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { positionById, POSITION_IDS } from '../shared/positions.js';
-import { AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
-import type { AgentView, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
+import { AGENT_NAME_PATTERN, CLEAN_ROOM_FLAVORS, RELIEF_AUTO_MODES, DIR_MAX_CHARS, MAX_AGENTS, PERMISSION_MODES, PROVIDERS, RELIEF_MODES, RESERVED_NAMES, ROLE_MAX_CHARS } from '../shared/protocol.js';
+import type { ReliefSettings, AgentView, CleanRoomFlavor, DownlinkNotify, DownlinkRef, Hub, HireRequest, Logger, PermissionMode, Provider, ReliefRequest, ReliefView, ReliefFrame } from '../shared/protocol.js';
 import { providerInfo } from '../shared/protocol.js';
 import { RELIEF_PENDING_MAX, RELIEF_RATE_MAX, RELIEF_RATE_WINDOW_MS, RELIEF_TTL_MS } from './constants.js';
 import { isRecord } from './hooks.js';
 import { HubError } from './hub.js';
+import type { ReliefSettingsStore } from './reliefsettings.js';
 
 const NAME_RE = new RegExp(AGENT_NAME_PATTERN);
 const ID_RE = /^h[1-9]\d{0,9}$/;
@@ -38,7 +39,15 @@ export type ReliefActor = { kind: 'user' } | { kind: 'agent'; name: string };
 
 export interface ReliefOptions {
   /** The parts of the hub it uses: the room, the hire of the form, and the message that tells the boss. */
-  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser'>;
+  hub: Pick<Hub, 'views' | 'hire' | 'sendFromUser' | 'stop'>;
+  /** The room's Relief setting (relief.json). Without it every hire waits for the Director. */
+  settings?: Pick<ReliefSettingsStore, 'view' | 'manual'>;
+  /** What an automatic hire or STOP CREW writes to the Black Box (kind crew): names and counts. */
+  audit?(text: string): void;
+  /** Whether the room's egress setting is on: an automatic hire's Clean Room is not below it. */
+  egressDefault?(): boolean;
+  /** Dollars these agents spent today (the sum of their day), for the daily crew budget. */
+  crewSpentToday?(names: string[]): number;
   /** `HubIo.checkDirectory`: the check of the hire form (absolute, exists, a directory). */
   checkDirectory(path: string): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** `HubIo.checkWorktree`: null when `dir` is in a git repository a worktree can be made of, else why not. Without it the hire's own check is the only one. */
@@ -59,7 +68,8 @@ export interface ReliefOptions {
 
 export interface ReliefAsked {
   id: string;
-  status: 'pending';
+  /** `hired`: Relief is `auto` and the request was inside its limits, so the agent is staffed now. */
+  status: 'pending' | 'hired';
   note: string;
 }
 
@@ -67,6 +77,8 @@ export interface Relief {
   /** The boss asks. `by` comes from its token. Throws a HubError that says what to change. */
   request(by: { agent: string; generation: number }, input: unknown): Promise<ReliefAsked>;
   view(): ReliefView;
+  /** STOP CREW: every agent Relief hired is stopped (kept, not removed) and Relief goes back to manual. Needs no step-up: it only takes power away. */
+  stopCrew(): Promise<{ stopped: string[] }>;
   /** The Director's GO (the agent is hired, as the form does it) or NO-GO. Throws the HubError of the hire when it fails. */
   decide(id: string, verdict: ReliefVerdict, by: ReliefActor): Promise<ReliefView>;
   close(): void;
@@ -91,8 +103,13 @@ export function createRelief(options: ReliefOptions): Relief {
   /** When each request of the window was made, oldest first. */
   let made: number[] = [];
   let seq = 0;
+  /** Automatic hires: when each was made (for the rate), and the names being hired now (they count as crew before the hire answers). */
+  let autoMade: number[] = [];
+  const autoHiring = new Set<string>();
+  const crewNames = (): string[] => hub.views().filter((agent) => agent.hiredBy === 'relief').map((agent) => agent.name);
+  const modeRank = (mode: string): number => (RELIEF_AUTO_MODES as readonly string[]).indexOf(mode);
 
-  const view = (): ReliefView => ({ requests: [...pending.values()].map(({ request }) => ({ ...request, cleanRoom: request.cleanRoom === null ? null : { ...request.cleanRoom }, ...(request.worktree === undefined || request.worktree === null ? {} : { worktree: { ...request.worktree } }) })) });
+  const view = (): ReliefView => ({ ...((s) => (s === undefined ? {} : { settings: s, crew: crewNames() }))(options.settings?.view()), requests: [...pending.values()].map(({ request }) => ({ ...request, cleanRoom: request.cleanRoom === null ? null : { ...request.cleanRoom }, ...(request.worktree === undefined || request.worktree === null ? {} : { worktree: { ...request.worktree } }) })) });
   const changed = (): void => options.emit({ t: 'relief', relief: view() });
   const notify = (text: string, ref?: DownlinkRef): void => options.notify?.('relief', text, ref);
 
@@ -150,10 +167,64 @@ export function createRelief(options: ReliefOptions): Relief {
     return hire;
   };
 
+  /**
+   * The limit of `auto` that a request breaks, or null. Every limit is optional and unset by default: an unset one refuses nothing. Four things never depend on a
+   * setting: bypass is never granted (a request cannot ask for it and a room default of it is read as default), the wall is not below the room's (flavor, egress), only the
+   * boss asks, and the folder is the one the boss may name (a Clean Room boss: inside its own).
+   */
+  const autoLimit = (settings: ReliefSettings, request: ReliefRequest, egressBelow: boolean): string | null => {
+    const { limits } = settings;
+    if (request.mode === 'bypassPermissions') return 'mode: bypassPermissions is never granted without the Director';
+    if (limits.ratePerHour !== undefined) {
+      autoMade = autoMade.filter((at) => at > now() - 3_600_000);
+      if (autoMade.length >= limits.ratePerHour) return `rate: ${limits.ratePerHour} hires an hour`;
+    }
+    if (limits.maxCrew !== undefined) {
+      const crew = crewNames().length + autoHiring.size;
+      if (crew >= limits.maxCrew) return `crew: ${crew} of ${limits.maxCrew}`;
+    }
+    if (limits.dailyCrewBudget !== undefined && options.crewSpentToday !== undefined) {
+      const spent = options.crewSpentToday(crewNames());
+      if (spent >= limits.dailyCrewBudget) return `daily crew budget: $${spent.toFixed(2)} of $${limits.dailyCrewBudget.toFixed(2)}`;
+    }
+    if (limits.allowedPositions !== undefined) {
+      if (request.position === null) return 'position: only the positions the Director allowed, not a role written by the boss';
+      if (!limits.allowedPositions.includes(request.position)) return `position: ${request.position} is not allowed`;
+    }
+    const roomMode = options.defaultMode?.();
+    const ceiling = limits.maxMode ?? (roomMode === undefined || roomMode === 'bypassPermissions' ? 'default' : roomMode);
+    if (providerInfo(request.provider).modes && modeRank(request.mode) > modeRank(ceiling)) return `mode: ${request.mode} is above ${ceiling}`;
+    if (request.flavorBelowRoom === true) return "sandbox: below the room's default";
+    if (egressBelow) return "egress: below the room's default";
+    return null;
+  };
+
   /** Is the boss that asked still the boss, and is `dir` in its box when it is a Clean Room agent? */
   const confine = async (requester: AgentView, dir: string): Promise<void> => {
     if (requester.cleanRoom !== null && !(await insideRealpath(requester.dir, dir))) {
       throw new HubError('forbidden', 'a Clean Room agent can hire only inside its own project folder: leave dir out to use it', 'dir');
+    }
+  };
+
+  /** The hire of an `auto` request: the same call as the form's, marked hiredBy relief; the crew slot and the rate are taken before the hire waits (two requests at once cannot pass the same cap). */
+  const staffAuto = async (request: ReliefRequest, requester: AgentView): Promise<ReliefAsked> => {
+    autoHiring.add(request.name);
+    autoMade.push(now());
+    try {
+      const hired = await hub.hire(hireOf(request), { hiredBy: 'relief' });
+      const text = `Relief hired ${hired.name} on its own, asked by ${requester.name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${request.provider}, ${request.mode}, ${request.dir}`;
+      notify(text);
+      options.audit?.(text);
+      return { id: request.id, status: 'hired', note: `${hired.name} is hired (Relief is auto) and starting in ${hired.dir}. Brief it with send_message.` };
+    } catch (error) {
+      autoMade.pop();
+      const reason = error instanceof HubError ? error.message : 'an internal error';
+      if (!(error instanceof HubError)) log.error('automatic hire failed', error);
+      notify(`${request.name} could not be hired automatically: ${reason}`);
+      throw error;
+    } finally {
+      autoHiring.delete(request.name);
+      changed();
     }
   };
 
@@ -232,13 +303,42 @@ export function createRelief(options: ReliefOptions): Relief {
       const flavor = cleanRoom === null ? undefined : (cleanRoom.flavor ?? roomFlavor);
       const flavorBelowRoom = flavor !== undefined && CLEAN_ROOM_FLAVORS.indexOf(flavor) < CLEAN_ROOM_FLAVORS.indexOf(roomFlavor);
       const request: ReliefRequest = { id, by: requester.name, at, expiresAt: at + RELIEF_TTL_MS, name, position: typeof position === 'string' ? position : null, role: roleText, dir: checked.path, provider, mode, ...(modeFromRoom ? { modeFromRoom } : {}), cleanRoom, ...(flavor === undefined ? {} : { flavor }), ...(flavorBelowRoom ? { flavorBelowRoom } : {}), ...(wantsWorktree ? { worktree: {} } : {}) };
+      // Relief `auto`: a request inside the limits is staffed now; one that a limit refuses waits for the Director like any other, with the limit named
+      const settings = options.settings?.view();
+      if (settings?.mode === 'auto') {
+        const egressBelow = cleanRoom !== null && options.egressDefault?.() === true && cleanRoom.egress === false;
+        const declined = autoLimit(settings, request, egressBelow);
+        if (declined === null) {
+          made.pop();
+          return staffAuto(request, requester);
+        }
+        request.autoDeclined = declined;
+      }
       pending.set(id, { request, timer: options.setTimer(sweep, RELIEF_TTL_MS + 1) });
       changed();
       notify(`${requester.name} asks to hire ${name}${request.position === null ? '' : ` as ${request.position.toUpperCase()}`}: ${provider}, ${mode}${modeFromRoom ? " (the room's default)" : ''}, ${checked.path}${wantsWorktree ? ', in its own git worktree' : ''}${flavor === undefined ? '' : `, Clean Room sandbox ${flavor}${flavorBelowRoom ? " (below the room's default)" : ''}`}`, { kind: 'relief', id });
-      return { id, status: 'pending', note: `waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
+      return { id, status: 'pending', note: `${request.autoDeclined === undefined ? '' : `auto declined: ${request.autoDeclined}; `}waiting for the Director; you get a message with his answer, and the request expires after ${MINUTES(RELIEF_TTL_MS)} minutes` };
     },
 
     view,
+
+    async stopCrew() {
+      const stopped: string[] = [];
+      for (const name of crewNames()) {
+        try {
+          await hub.stop(name);
+          stopped.push(name);
+        } catch (error) {
+          log.warn(`could not stop ${name} (STOP CREW)`, error);
+        }
+      }
+      await options.settings?.manual();
+      const text = `STOP CREW: ${stopped.length === 0 ? 'no agent hired by Relief was running' : `stopped ${stopped.join(', ')}`}; Relief is manual again`;
+      notify(text);
+      options.audit?.(text);
+      changed();
+      return { stopped };
+    },
 
     async decide(idInput, verdict, by) {
       if (!by || by.kind !== 'user') throw new HubError('forbidden', 'only the Director answers a hire request');

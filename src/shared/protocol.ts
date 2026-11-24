@@ -578,6 +578,8 @@ export interface AgentRecord {
   autostart?: false;
   /** Absent follows the room's co-author setting; `false` keeps the co-author line off for this agent. */
   coauthor?: false;
+  /** Hired by Relief on its own (`auto`), not by the Director's hand or GO. */
+  hiredBy?: 'relief';
   /** The Director stopped this agent and it has not been started since: FLIGHT's `start_agent` is refused. Cleared by any start. */
   stoppedBy?: 'director';
   /** Engine Bay: the model passed as `--model` (MODEL_PATTERN); absent means the CLI's own default. Only for a provider with PROVIDER_INFO.model. */
@@ -640,6 +642,8 @@ export interface StateChange {
 
 /** What browsers see of an agent. The hub sends a whole AgentView in every AgentFrame. */
 export interface AgentView {
+  /** `relief` when the agent was hired by an automatic Relief hire. */
+  hiredBy?: 'relief';
   name: string;
   role: string;
   dir: string;
@@ -1709,11 +1713,36 @@ export interface ReliefRequest {
   /** The sandbox flavor the new Clean Room agent will run in (the boss's own, else the room's default), and whether that is a weaker wall than the room's default: the card says both. */
   flavor?: CleanRoomFlavor;
   flavorBelowRoom?: boolean;
+  /** Relief is `auto` and a limit refused this request: it waits for the Director's GO, and this is the limit ("crew: 3 of 3"). */
+  autoDeclined?: string;
   /** The boss asked for the new agent to start in its own git worktree (the form's "Own git worktree"): checked when it was asked, and again when the hire runs. Absent or null: its own folder. */
   worktree?: Worktree | null;
 }
+/** The most a hire without the Director may have for a permission mode, lowest first. `bypassPermissions` is never one of them. */
+export const RELIEF_AUTO_MODES = ['default', 'acceptEdits', 'auto'] as const;
+/** Limits of automatic hires (Relief `auto`). Each one is optional and unset by default: an unset limit does not refuse. What no setting changes: bypass is never granted, the wall is at least the room's, only the boss hires. */
+export interface ReliefLimits {
+  /** Agents hired by Relief that exist at once (running or stopped). */
+  maxCrew?: number;
+  /** Hires by Relief in the last hour. */
+  ratePerHour?: number;
+  /** Dollars the crew may spend in a day (the sum of the day's spend of the agents Relief hired). */
+  dailyCrewBudget?: number;
+  /** Positions an automatic hire may take (unset: any position, and a role written by the boss too). */
+  allowedPositions?: string[];
+  /** The highest permission mode of an automatic hire (unset: the room's default mode). */
+  maxMode?: (typeof RELIEF_AUTO_MODES)[number];
+}
+/** The room's Relief setting (relief.json): `manual` (default) leaves every hire to the Director's GO; `auto` staffs a boss's request inside the limits and falls back to a pending request when a limit refuses. */
+export interface ReliefSettings {
+  mode: 'manual' | 'auto';
+  limits: ReliefLimits;
+}
 export interface ReliefView {
   requests: ReliefRequest[];
+  /** The room's setting and the agents Relief hired (by name). Absent from an older server. */
+  settings?: ReliefSettings;
+  crew?: string[];
 }
 
 /* ---- REST bodies ---- */
@@ -2820,7 +2849,7 @@ export interface Hub {
    * exit.text "could not start: ..."). Once shutdown() has begun, hire, edit, restart, stop and remove reject with
    * HubError('conflict', 'the server is shutting down').
    */
-  hire(req: HireRequest): Promise<AgentView>;
+  hire(req: HireRequest, meta?: { hiredBy: 'relief' }): Promise<AgentView>;
   /**
    * Save changes (role, dir, mode apply at the next start). Rename only while stopped; a rename emits an
    * AgentRemovedFrame for the old name and then an AgentFrame for the new one.

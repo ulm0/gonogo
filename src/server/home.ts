@@ -387,6 +387,10 @@ function parseAgent(a: unknown): AgentRecord | string {
     if (a.stoppedBy !== 'director') return `${name}: stoppedBy is director or absent`;
     record.stoppedBy = 'director';
   }
+  if (a.hiredBy !== undefined) {
+    if (a.hiredBy !== 'relief') return `${name}: hiredBy is relief or absent`;
+    record.hiredBy = 'relief';
+  }
   if (coauthor !== undefined) {
     if (coauthor !== false) return `${name}: coauthor is false or absent`;
     record.coauthor = false;
