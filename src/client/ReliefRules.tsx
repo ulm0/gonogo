@@ -75,9 +75,10 @@ export function ReliefRulesBlock(): ReactElement {
       <div className="rules-grid">
         <label>Crew at most <input type="number" className="input" min={1} max={24} value={draft.maxCrew} onChange={(event) => set({ maxCrew: num(event.target.value, draft.maxCrew) })} /></label>
         <label>Hires per hour <input type="number" className="input" min={1} max={60} value={draft.ratePerHour} onChange={(event) => set({ ratePerHour: num(event.target.value, draft.ratePerHour) })} /></label>
-        <label>Crew budget, USD per day <input type="number" className="input" min={0.01} step={0.01} value={draft.crewBudgetUsd ?? ''} onChange={(event) => set({ crewBudgetUsd: event.target.value.trim() === '' ? null : num(event.target.value, draft.crewBudgetUsd ?? 1) })} /></label>
+        <label>Crew budget, USD per day (optional) <input type="number" className="input" min={0.01} step={0.01} value={draft.crewBudgetUsd ?? ''} onChange={(event) => set({ crewBudgetUsd: event.target.value.trim() === '' ? null : num(event.target.value, draft.crewBudgetUsd ?? 1) })} /></label>
         <label>Highest mode <select className="input" value={draft.maxMode} onChange={(event) => set({ maxMode: event.target.value as ReliefRules['maxMode'] })}>{RELIEF_MODES.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
       </div>
+      <p className="hint">Crew budget: empty = no daily ceiling; room budgets/Redline still apply if set.</p>
       <fieldset className="rules-set"><legend>Positions it may hire</legend>
         {POSITION_IDS.map((p) => <label key={p} className="staff-check"><input type="checkbox" className="check" checked={draft.positions.includes(p)} onChange={(event) => set({ positions: toggle(draft.positions, p, event.target.checked) })} />{p.toUpperCase()}</label>)}
       </fieldset>

@@ -22,7 +22,7 @@ By FIDO, 2026-11-24, task t131. Status: PR1 built (rules file and API with step-
 |---|---|---|
 | `autoApprove` | **off** (as today: every hire waits for a GO) | turning it on is the one step that changes who decides; needs step-up; a bad or missing file reads as off |
 | `maxCrew` | 3 | agents the boss hired by rule that exist now (running or stopped); hard ceiling `MAX_AGENTS` (24) |
-| `crewBudgetUsd` | **required when `autoApprove` is on** | one dollar ceiling for the whole boss-hired crew per day (Propellant already counts per agent); at the cap the **crew** is held, not the room |
+| `crewBudgetUsd` | optional (the Director, t148: empty = no daily ceiling; room budgets and Redline still apply) | one dollar ceiling for the whole boss-hired crew per day (Propellant already counts per agent); at the cap the **crew** is held, not the room |
 | `positions` | none until the Director picks | auto-approval is only for these roster positions; **a free-text `role` is never auto-approved** (an injected boss cannot write a persona), it asks the Director |
 | `engines` | the room default engine | custom commands and payloads are never auto-approved |
 | `models` | the room default | an allow-list of model names per engine; anything else asks |

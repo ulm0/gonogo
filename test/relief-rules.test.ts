@@ -7,7 +7,7 @@ import type { AgentView, CleanRoom, HireRequest, Logger, ReliefRules } from '../
 import { HubError } from '../src/server/hub.js';
 import { createRelief } from '../src/server/relief.js';
 import type { Relief, ReliefOptions } from '../src/server/relief.js';
-import { createReliefRules, raisesPower, readRules } from '../src/server/reliefrules.js';
+import { createReliefRules, readRules } from '../src/server/reliefrules.js';
 import type { ReliefRulesStore } from '../src/server/reliefrules.js';
 import { hireStepUpReason, stepUpReason } from '../src/server/stepup.js';
 
@@ -84,8 +84,9 @@ describe('the rules file', () => {
     expect(rules.view().autoApprove).toBe(false);
   });
 
-  it('autoApprove needs a daily crew budget; bypassPermissions is not a maxMode; unknown rules are refused', async () => {
-    await expect(rules.set({ autoApprove: true })).rejects.toMatchObject({ field: 'rules.crewBudgetUsd' });
+  it('autoApprove saves without a crew budget (it is optional); bypassPermissions is not a maxMode; unknown rules are refused', async () => {
+    expect((await rules.set({ autoApprove: true })).crewBudgetUsd).toBeNull();
+    await rules.set({ autoApprove: false });
     await expect(rules.set({ maxMode: 'bypassPermissions' })).rejects.toMatchObject({ field: 'rules.maxMode' });
     await expect(rules.set({ bypassInRoom: true })).rejects.toMatchObject({ field: 'rules.bypassInRoom' });
     await expect(rules.set({ engines: ['custom'] })).rejects.toBeInstanceOf(HubError);
@@ -117,13 +118,8 @@ describe('the rules file', () => {
     expect(rules.view().autoApprove).toBe(true);
   });
 
-  it('raisesPower: only a raise needs the step-up; lowering never does', async () => {
+  it('readRules keeps what a request leaves out', async () => {
     const base = RELIEF_RULES_DEFAULT;
-    expect(raisesPower(base, { ...base, autoApprove: true })).toBe(true);
-    expect(raisesPower(base, { ...base, maxMode: 'auto' })).toBe(true);
-    expect(raisesPower(base, { ...base, positions: ['guido'] })).toBe(true);
-    expect(raisesPower(base, { ...base, maxCrew: 5 })).toBe(true);
-    expect(raisesPower({ ...base, maxCrew: 5, positions: ['guido'], maxMode: 'auto', autoApprove: true, crewBudgetUsd: 9 }, base)).toBe(false);
     expect(readRules({ maxCrew: 2 }, { ...base, maxCrew: 9 }).maxCrew).toBe(2);
   });
 
@@ -322,14 +318,17 @@ describe('the crew budget and the models (PR3)', () => {
     await expect(rules.set({ models: { claude: [1] } })).rejects.toMatchObject({ field: 'rules.models' });
     await expect(rules.set({ models: 'x' })).rejects.toMatchObject({ field: 'rules.models' });
     const base = RELIEF_RULES_DEFAULT;
-    expect(raisesPower({ ...base, models: { claude: ['a'] } }, { ...base, models: { claude: ['a', 'b'] } })).toBe(true);
-    expect(raisesPower({ ...base, models: { claude: ['a', 'b'] } }, { ...base, models: { claude: ['a'] } })).toBe(false);
   });
 
-  it('a crew budget of none never approves (autoApprove needs one anyway)', async () => {
-    await on();
-    await rules.set({ crewBudgetUsd: null, autoApprove: false });
-    expect(rules.view().autoApprove).toBe(false);
+  it('with no crew budget (null) a rule hire is made, however much the crew spent; with one set, it still holds; the first ceiling is not a raise, lifting it is', async () => {
+    await on({ crewBudgetUsd: null });
+    expect(rules.view().crewBudgetUsd).toBeNull();
+    const make = (spent: number) => createRelief({ hub: { views: () => views, hire: async (request, meta) => { const v = agent(request.name, { dir: request.dir, desk: views.length, ...(meta?.hiredBy === 'boss' ? { hiredBy: 'boss', hiredAt: now } : {}) }); views.push(v); return v; }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }) }, rules, crewSpentToday: () => spent, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    expect(await make(9999).request(BOSS, { name: 'n1', position: 'guido', dir: project })).toMatchObject({ status: 'hired' });
+    now += 11 * 60_000;
+    await rules.set({ crewBudgetUsd: 5 });
+    expect((await make(9999).request(BOSS, { name: 'n2', position: 'guido', dir: project })).note).toMatch(/the crew budget is reached/);
+    const base = RELIEF_RULES_DEFAULT;
   });
 });
 
@@ -349,7 +348,6 @@ describe('remove and bypass by rule (PR4)', () => {
     const { r, calls } = withHub({});
     await expect(r.fire(FIRE, { name: 'ana', reason: 'idle', remove: true })).rejects.toMatchObject({ code: 'forbidden' });
     expect(calls).toEqual([]);
-    expect(raisesPower(RELIEF_RULES_DEFAULT, { ...RELIEF_RULES_DEFAULT, mayRemove: true })).toBe(true);
     await rules.set({ mayRemove: true });
     const done = await r.fire(FIRE, { name: 'ana', reason: 'idle', remove: true });
     expect(done).toMatchObject({ name: 'ana', removed: true });
@@ -386,7 +384,6 @@ describe('remove and bypass by rule (PR4)', () => {
     await rules.set({ bypassInCleanRoom: false });
     views[0] = agent('flight', { boss: true, desk: 0, dir: project, cleanRoom: CR });
     expect((await ask({ name: 'b5', mode: 'bypassPermissions' })).note).toMatch(/bypassInCleanRoom is off/);
-    expect(raisesPower({ ...RELIEF_RULES_DEFAULT, bypassInCleanRoom: false }, { ...RELIEF_RULES_DEFAULT, bypassInCleanRoom: true })).toBe(true);
   });
 });
 
@@ -430,17 +427,6 @@ describe('autoscale: the rules and Relief staff and retire (PR5)', () => {
     await on({ autoscale: 'on' });
     await rules.off();
     expect(rules.view()).toMatchObject({ autoApprove: false, autoscale: 'off' });
-  });
-
-  it('only turning autoscale on, a lower threshold or a shorter removal is a raise; dry-run and off are not', () => {
-    const base = RELIEF_RULES_DEFAULT;
-    expect(raisesPower(base, { ...base, autoscale: 'on' })).toBe(true);
-    expect(raisesPower(base, { ...base, autoscale: 'dry-run' })).toBe(false);
-    expect(raisesPower(base, { ...base, scaleUpTodo: 1 })).toBe(true);
-    expect(raisesPower(base, { ...base, scaleUpTodo: 9 })).toBe(false);
-    expect(raisesPower(base, { ...base, removeStoppedHours: 5 })).toBe(true);
-    expect(raisesPower({ ...base, removeStoppedHours: 5 }, { ...base, removeStoppedHours: 9 })).toBe(false);
-    expect(raisesPower({ ...base, autoscale: 'on' }, { ...base, autoscale: 'off' })).toBe(false);
   });
 
   it('staff hires <position>-<n> by rule with the room mode capped by maxMode; it skips live names, waiting requests and removed names; a rule that says no is refused, never pending', async () => {
@@ -534,8 +520,6 @@ describe('fire_agent through Relief', () => {
     const { r, fired } = withFire({ rules });
     await expect(r.fire(FIRE, { name: 'g1', reason: 'x' })).rejects.toMatchObject({ code: 'forbidden' });
     expect(fired).toEqual([]);
-    expect(raisesPower({ ...RELIEF_RULES_DEFAULT, mayStop: false }, { ...RELIEF_RULES_DEFAULT, mayStop: true })).toBe(true);
-    expect(raisesPower({ ...RELIEF_RULES_DEFAULT, mayStop: true }, { ...RELIEF_RULES_DEFAULT, mayStop: false })).toBe(false);
     await rules.set({ mayStop: true });
     expect((await r.fire(FIRE, { name: 'g1', reason: 'x' })).name).toBe('g1');
   });

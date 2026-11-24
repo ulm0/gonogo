@@ -1,0 +1,1 @@
+Hire on demand: the daily crew budget is optional. With automatic approval on and the budget left empty there is no daily ceiling for the agents FLIGHT hires (the room's budgets and Redline apply only if you set them; with none set, `maxCrew` and `ratePerHour` are the only bounds); with a budget set it holds the crew as before.

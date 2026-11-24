@@ -86,30 +86,7 @@ export function readRules(raw: unknown, base: ReliefRules = RELIEF_RULES_DEFAULT
     if (raw.autoscale === 'on') throw bad('autoscale on needs autoApprove on', 'rules.autoscale');
     out.autoscale = 'off';
   }
-  if (out.autoApprove && out.crewBudgetUsd === null) throw bad('crewBudgetUsd is needed when autoApprove is on: the dollars per day the boss-hired crew may spend', 'rules.crewBudgetUsd');
   return out;
-}
-
-/** Does `next` give the boss more than `now` does? Only that needs the Director's step-up (lowering a rule never does). */
-export function raisesPower(now: ReliefRules, next: ReliefRules): boolean {
-  const more = (a: readonly unknown[], b: readonly unknown[]): boolean => b.some((x) => !a.includes(x));
-  return (
-    (!now.autoApprove && next.autoApprove) ||
-    (!now.autoOnHost && next.autoOnHost) ||
-    (!now.mayStop && next.mayStop) ||
-    (!now.mayRemove && next.mayRemove) ||
-    (now.autoscale !== 'on' && next.autoscale === 'on') ||
-    next.scaleUpTodo < now.scaleUpTodo ||
-    (next.removeStoppedHours !== null && (now.removeStoppedHours === null || next.removeStoppedHours < now.removeStoppedHours)) ||
-    (!now.bypassInCleanRoom && next.bypassInCleanRoom) ||
-    next.maxCrew > now.maxCrew ||
-    next.ratePerHour > now.ratePerHour ||
-    (next.crewBudgetUsd !== null && (now.crewBudgetUsd === null || next.crewBudgetUsd > now.crewBudgetUsd)) ||
-    modeRank(next.maxMode) > modeRank(now.maxMode) ||
-    more(now.positions, next.positions) ||
-    more(now.engines, next.engines) ||
-    Object.entries(next.models).some(([engine, list]) => more(now.models[engine as Provider] ?? [], list))
-  );
 }
 
 export interface ReliefRulesStore {

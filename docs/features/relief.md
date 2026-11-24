@@ -39,7 +39,7 @@ Off by default: every hire waits for your GO, byte for byte as above. You can tu
 
 | Rule | Default | Meaning |
 |---|---|---|
-| `autoApprove` | off | needs `crewBudgetUsd` |
+| `autoApprove` | off | the password again to turn on |
 | `maxCrew` | 3 | boss-hired agents that exist now (running or stopped) |
 | `ratePerHour` | 3 | hires in the last hour |
 | `positions` | none | only these roster positions; a role the boss writes is always a request |
@@ -47,7 +47,7 @@ Off by default: every hire waits for your GO, byte for byte as above. You can tu
 | `maxMode` | `acceptEdits` | `default`, `acceptEdits` or `auto`; `bypassPermissions` is not a choice (see `bypassInCleanRoom`) |
 | `bypassInCleanRoom` | off | the only way a rule hire may run in `bypassPermissions`: it also needs a Clean Room hire with egress on and no global MCP server. In the Docker setup (`GONOGO_CLEANROOM_NETWORK=container:*`) a Clean Room shares gonogo's network and reaches every loopback service there (the managed Ollama, if you acknowledged it). A request for `bypassPermissions` without it waits for your GO, and the GO asks for the password. Turning it on asks for the password |
 | `autoOnHost` | off | without it `auto` by rule runs in a Clean Room only; a Clean Room hire in `auto` also needs egress on and no global MCP server |
-| `crewBudgetUsd` | none | required to turn `autoApprove` on: dollars per **local day** for the whole boss-hired crew together (a stopped member still counts, so fire and rehire does not reset it). At the ceiling Propellant **holds the crew** (not the room, not your own agents) with a Downlink line, and no hire by rule is made: the request waits for your GO and says so |
+| `crewBudgetUsd` | none | optional: empty is no daily ceiling for the boss-hired crew (the room's budgets and Redline apply only if you set them: with none set, automatic hires are bounded by `maxCrew` and `ratePerHour` alone). Set, it is the dollars per **local day** for the whole boss-hired crew together (a stopped member still counts, so fire and rehire does not reset it). At the ceiling Propellant **holds the crew** (not the room, not your own agents) with a Downlink line, and no hire by rule is made: the request waits for your GO and says so. Any change of the rules except turning automatic approval or `autoOnHost` off asks for the password |
 | `models` | none | per engine, the model names a rule hire may name; a hire with no model follows the default, one naming another model asks you. `hire_agent` takes a `model` for an engine that has one |
 
 Always a request, never by rule: a folder outside the boss's own, a Clean Room wall below the room's, a Clean Room that holds its own API key, and anything with keys, a payload, permissions, remote control or a command (the request cannot carry them; the same function that asks you for the password on the hire form judges it). Boss-hired agents cannot hire. Raising a rule needs the step-up; lowering never does. **STOP CREW** (`POST /api/relief/stop-crew`, no step-up: it only removes power) stops every boss-hired agent and turns `autoApprove` off. A hand edit of `relief.json` turns `autoApprove` off, renames the file `relief.json.bad` and raises a Downlink alarm. Design: docs/hire-fire-spec.md in the repository.
