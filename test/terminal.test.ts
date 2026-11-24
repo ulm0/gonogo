@@ -384,6 +384,14 @@ describe('analyzeScreen for pi and opencode (rows as the real engines drew them 
     expect(analyzeScreen(none, 100, 'pi').noModel).toBeUndefined();
   });
 
+  it('opencode: the same words in the transcript (a printed file, a diff) or typed in the box do not hold the agent (RSO on #308)', () => {
+    const transcript = (lines: string[]): string[] => // the dialog title only counts as a row of its own, with esc at the right (opencode's chrome)
+      pad(['  + const reason = "No provider selected";', '  Connect an integration esc', '    Connect an integration                           esc   // quoted', '', '             ┃', `             ┃  ${lines[0] ?? 'Ask anything…'}`, '             ┃', '             ┃  Build · Big Pickle OpenCode', '             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀', '             /tmp/w/a                   shift+tab agents  ctrl+p commands']);
+    expect(analyzeScreen(transcript([]), 100, 'opencode')).toMatchObject({ promptBox: true, noModel: false });
+    // a draft that says it, in the box
+    expect(analyzeScreen(transcript(['No provider selected']), 100, 'opencode')).toMatchObject({ promptBox: true, noModel: false });
+  });
+
   it('the text of the box is never read as a dialog', () => {
     expect(analyzeScreen(pi('Do you want to proceed?'), 100, 'pi').dialog).toBeNull();
     expect(analyzeScreen(opencode('1. Yes  2. No'), 100, 'opencode').dialog).toBeNull();

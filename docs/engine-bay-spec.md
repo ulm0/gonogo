@@ -260,7 +260,7 @@ without a word, so its work went to a third-party free model the Director never 
   the agent, or no model with no signed-in provider, then has no model at all instead of a free one. No model is still allowed: opencode
   picks among the providers the agent is signed in to.
 - What opencode 2.4.1 does then (seen in a real run): its input box says `Build · No provider selected`, a prompt opens its `Connect an
-  integration` dialog, and nothing is sent. `analyzeScreen` reads either as `noModel` for opencode, and the hub's sweep holds the agent at
+  integration` dialog, and nothing is sent. `analyzeScreen` reads either as `noModel` for opencode (only the agent line of its box, and the dialog's own title row with `esc` at the right: the same words in a printed file or a diff do not count), and the hub's sweep holds the agent at
   `needs_you` (kind `dialog`) with `NO_MODEL_ROUTE_REASON` (what to do: the provider's key, or an `opencode/` model); its mail waits. When the
   screen no longer says so it is idle again. A turn that fails with opencode's own error `provider.no-route` (`opencode run` gives it: "No
   model is available") is sent by the plugin as StopFailure `{ error: { type, message } }` and asks the Director the same way.
