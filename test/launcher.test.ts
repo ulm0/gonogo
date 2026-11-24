@@ -1553,6 +1553,16 @@ describe('archiveAgentFiles (the boss removes an agent)', () => {
     await expect(l.archiveAgentFiles('ana', agent(), 1700)).rejects.toThrow(/exists already/);
   });
 
+  it('does not follow a link planted at removed-record.json: the removal is refused and the target is untouched', async () => {
+    const l = launcher();
+    await l.prepareStart(agent(), START);
+    const target = join(home, 'relief.json');
+    await writeFile(target, 'precious');
+    await symlink(target, agentFile('ana', 'removed-record.json'));
+    await expect(l.archiveAgentFiles('ana', agent(), 77)).rejects.toThrow(/exists already in its folder/);
+    expect(await text(target)).toBe('precious');
+  });
+
   it('an agent that never started gets an archive with its record all the same', async () => {
     const l = launcher();
     const { archived } = await l.archiveAgentFiles('ana', agent(), 9);

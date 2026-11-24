@@ -390,6 +390,30 @@ describe('remove and bypass by rule (PR4)', () => {
   });
 });
 
+describe('removing an agent resets nothing (RSO R2)', () => {
+  it('hire, spend, remove, rehire: refused at the rate and at the budget, and the removed name is not used again', async () => {
+    await on({ ratePerHour: 2, maxCrew: 5, crewBudgetUsd: 1 });
+    const hiredNames: string[] = [];
+    let spentOn: string[] = [];
+    const ledger = { hired: async (n: string) => void hiredNames.push(n), hiresLastHour: () => hiredNames.length, recentNames: () => hiredNames };
+    const sr = createRelief({ hub: { views: () => views, hire: async (request, meta) => { const v = agent(request.name, { dir: request.dir, desk: views.length, ...(meta?.hiredBy === 'boss' ? { hiredBy: 'boss', hiredAt: now } : {}) }); views.push(v); return v; }, sendFromUser: () => ({ ok: true, id: 'm', to: 'x', status: 'queued', note: null }) }, rules, ledger, nameRetired: (n) => n === 'old-1', crewSpentToday: (names) => { spentOn = names; return names.includes('g1') ? 2 : 0; }, checkDirectory: async (p) => ({ ok: true, path: p }), now: () => now, setTimer: () => ({}), clearTimer: () => undefined, emit: () => undefined, notify: (k, t) => void events.push([k, t]), log: quiet });
+    const hire = (name: string) => sr.request(BOSS, { name, position: 'guido', dir: project });
+    expect(await hire('g1')).toMatchObject({ status: 'hired' });
+    now += 11 * 60_000;
+    // the agent is removed: it is no longer in views, but the ledger remembers it
+    views.splice(views.findIndex((v) => v.name === 'g1'), 1);
+    expect((await hire('g2')).note).toMatch(/the crew budget is reached \(\$2.00 of \$1.00 today\)/);
+    expect(spentOn).toContain('g1');
+    // the name of a removed agent is not used again, by the ledger or by its archive folder
+    await expect(hire('g1')).rejects.toMatchObject({ code: 'conflict', field: 'name' });
+    await expect(hire('old-1')).rejects.toMatchObject({ code: 'conflict', field: 'name' });
+    // the hourly rate counts the removed one too
+    await rules.set({ crewBudgetUsd: 50 });
+    ledger.hired('g9');
+    expect((await hire('g3')).note).toMatch(/ratePerHour is 2/);
+  });
+});
+
 describe('fire_agent through Relief', () => {
   const FIRE = { agent: 'flight', generation: 1 };
   function withFire(over: Partial<ReliefOptions> = {}, task = { id: 't7', assignee: 'g1', status: 'doing' }) {

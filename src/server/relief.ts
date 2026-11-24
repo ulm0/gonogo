@@ -46,6 +46,10 @@ export interface ReliefOptions {
   tasks?: { list(): Array<{ id: string; assignee: string | null; status: string }>; update(actor: { kind: 'agent'; name: string; generation: number }, id: string, input: unknown): Promise<unknown> };
   /** Whether an open T-minus poll waits for this agent's vote (it is not fired then). */
   voteWaitsFor?(name: string): boolean;
+  /** The boss's hires by rule of the last 24 hours (crew-ledger.json): the hourly rate, the crew's spend and the names are counted from it, so a removal resets nothing. Absent: from the agents that exist. */
+  ledger?: { hired(name: string): Promise<void>; hiresLastHour(): number; recentNames(): string[] };
+  /** True when a removed agent once had this name (an `agents/<name>.removed-*` folder): a name that is not used again. */
+  nameRetired?(name: string): boolean;
   /** Dollars the named agents (the boss-hired crew) spent today, from Propellant. Absent: 0, and the crew budget cannot hold. */
   crewSpentToday?(names: string[]): number;
   /** The room's rules (`relief.json`). Absent: no rule hires, every request waits for the Director, as before. */
@@ -158,6 +162,10 @@ export function createRelief(options: ReliefOptions): Relief {
     if (pending.size >= RELIEF_PENDING_MAX) {
       throw new HubError('conflict', `${RELIEF_PENDING_MAX} hire requests already wait for the Director: wait for his answer`);
     }
+    // a name an agent of the boss's hires had in the last 24 hours, or that a removed agent left a folder for, is not used again
+    if (options.nameRetired?.(name) === true || options.ledger?.recentNames().includes(name) === true) {
+      throw new HubError('conflict', `the name "${name}" belonged to an agent that was removed or hired a moment ago: choose another name`, 'name');
+    }
     if (hub.views().some((agent) => agent.name === name) || [...pending.values()].some(({ request }) => request.name === name)) {
       throw new HubError('conflict', `an agent or a request named "${name}" exists already: choose another name`, 'name');
     }
@@ -192,10 +200,11 @@ export function createRelief(options: ReliefOptions): Relief {
     if (crew.length + staffing.size >= rules.maxCrew) return `maxCrew is ${rules.maxCrew}`;
     // the dollars the crew spent today: at the ceiling no rule hire is made (and the crew already running is held by Propellant); a missing ceiling never approves
     if (rules.crewBudgetUsd === null) return 'crewBudgetUsd is not set';
-    const spent = options.crewSpentToday?.(crew.map((a) => a.name)) ?? 0;
+    const spent = options.crewSpentToday?.([...new Set([...crew.map((a) => a.name), ...(options.ledger?.recentNames() ?? [])])]) ?? 0;
     if (spent >= rules.crewBudgetUsd) return `the crew budget is reached ($${spent.toFixed(2)} of $${rules.crewBudgetUsd.toFixed(2)} today)`;
     const since = now() - HOUR_MS;
-    if (crew.filter((a) => (a.hiredAt ?? 0) > since).length + [...staffing].length >= rules.ratePerHour) return `ratePerHour is ${rules.ratePerHour}`;
+    const hiredLastHour = options.ledger?.hiresLastHour() ?? crew.filter((a) => (a.hiredAt ?? 0) > since).length;
+    if (hiredLastHour + [...staffing].length >= rules.ratePerHour) return `ratePerHour is ${rules.ratePerHour}`;
     if (r.free || r.position === null) return 'a role written by the boss is never approved by a rule';
     if (!rules.positions.includes(r.position)) return `the position ${r.position} is not in the rules`;
     const engines = rules.engines.length > 0 ? rules.engines : [options.defaultEngine?.() ?? 'claude'];
@@ -310,6 +319,7 @@ export function createRelief(options: ReliefOptions): Relief {
         if (wantsWorktree) hire.worktree = {};
         try {
           const hired = await hub.hire(hire, { hiredBy: 'boss' });
+          await options.ledger?.hired(hired.name);
           // the line says which rule decided and the counts, never the role text
           notify(`${hired.name} hired by ${requester.name} by rule: ${typeof position === 'string' ? position.toUpperCase() : ''} ${provider}, ${mode}, crew ${hub.views().filter((a) => a.hiredBy === 'boss').length} of ${rules.maxCrew}`.replace('  ', ' '));
           return { id: `hired:${hired.name}`, status: 'hired', name: hired.name, note: `hired at once, inside the Director's rules (crew ${hub.views().filter((a) => a.hiredBy === 'boss').length} of ${rules.maxCrew}); brief it with send_message` };

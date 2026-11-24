@@ -914,7 +914,13 @@ export function createLauncher(options: LauncherOptions): Launcher {
     else await mkdir(to, { recursive: true, mode: DIR_MODE });
     // what the Director needs to hire it again; never the keys, which are secrets that are not kept anywhere else
     const { keys: _keys, ...kept } = record;
-    await writeFile(join(to, 'removed-record.json'), JSON.stringify({ version: 1, removedAt: now, agent: kept }, null, 2), { mode: FILE_MODE });
+    // 'wx': an agent in a Clean Room can write its own folder, so removed-record.json may be a link planted to a file of the room; O_EXCL refuses any existing entry, links included
+    try {
+      await writeFile(join(to, 'removed-record.json'), JSON.stringify({ version: 1, removedAt: now, agent: kept }, null, 2), { mode: FILE_MODE, flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('removed-record.json exists already in its folder: only the Director removes this agent');
+      throw error;
+    }
     return { archived };
   };
 

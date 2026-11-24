@@ -97,7 +97,7 @@ export function ReliefRulesBlock(): ReactElement {
       </label>
       <label className="staff-check">
         <input type="checkbox" className="check" checked={draft.bypassInCleanRoom} onChange={(event) => set({ bypassInCleanRoom: event.target.checked })} />
-        Allow bypassPermissions by rule in a Clean Room (egress on, no global MCP; the agent runs every tool without asking)
+        Allow bypassPermissions by rule in a Clean Room (egress on, no global MCP; the agent runs every tool without asking). In the Docker setup (GONOGO_CLEANROOM_NETWORK=container:*) a Clean Room shares gonogo's network and reaches every loopback service there, the managed Ollama among them.
       </label>
       <label className="staff-check">
         <input type="checkbox" className="check" checked={draft.autoOnHost} onChange={(event) => set({ autoOnHost: event.target.checked })} />

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import net from 'node:net';
 import { stat } from 'node:fs/promises';
 import { homedir, hostname, networkInterfaces, userInfo } from 'node:os';
@@ -81,6 +81,7 @@ import { createPhone } from './phone.js';
 import type { Phone } from './phone.js';
 import { createRelief } from './relief.js';
 import { createReliefRules } from './reliefrules.js';
+import { createCrewLedger } from './crewledger.js';
 import { createMassBudget } from './massbudget.js';
 import { createAnchorChecker, knowledgeLine } from './anchors.js';
 import { createMissionLog } from './missionlog.js';
@@ -1320,6 +1321,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     // the rules of the boss's hires (docs/hire-fire-spec.md): off by default; the file is checked against the last change this process wrote, on every decision and on a timer
     const reliefRules = createReliefRules({ dir: home.dir, log: log.child('relief rules'), budgetEnforced: true, alarm: (text) => tell('relief', text) });
     await reliefRules.load();
+    const crewLedger = createCrewLedger({ dir: home.dir, now: () => Date.now(), log: log.child('crew ledger') });
+    await crewLedger.load();
     // the rules come back from disk: when they say automatic hires are ON, the Director is told at once (a file nobody of ours wrote would otherwise switch it on silently)
     if (reliefRules.view().autoApprove) {
       const r = reliefRules.view();
@@ -1330,7 +1333,8 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
       const rules = reliefRules.view();
       // whenever a ceiling is set and the crew is not empty: turning automatic hires off does not lift the ceiling of the agents already hired
       if (rules.crewBudgetUsd === null || !hub) return null;
-      const names = hub.views().filter((v) => v.hiredBy === 'boss').map((v) => v.name);
+      // the live crew and the ones hired in the last 24 hours: removing an agent does not give its dollars back
+      const names = [...new Set([...hub.views().filter((v) => v.hiredBy === 'boss').map((v) => v.name), ...crewLedger.recentNames()])];
       return names.length === 0 ? null : { names, budgetUsd: rules.crewBudgetUsd };
     };
     const reliefRulesTimer = setInterval(() => void reliefRules.check().catch((error: unknown) => log.error('relief rules check failed', error)), 30_000);
@@ -1338,6 +1342,14 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
     const relief = createRelief({
       hub: hubInstance,
       rules: reliefRules,
+      ledger: crewLedger,
+      nameRetired: (name) => {
+        try {
+          return readdirSync(join(home.dir, 'agents')).some((entry) => entry.startsWith(`${name}.removed-`));
+        } catch {
+          return false;
+        }
+      },
       crewSpentToday: (names) => names.reduce((sum, n) => sum + (propellant.view().cost.agents[n]?.usd.day ?? 0), 0),
       tasks: tasks,
       voteWaitsFor: (name) => {
@@ -1694,6 +1706,7 @@ export async function startGonogo(options: StartOptions = {}): Promise<Running> 
         clearInterval(reliefRulesTimer);
         relief.close();
         await reliefRules.close();
+        await crewLedger.close();
       });
       await step('telegram polling close', async () => telegramPoll?.stop());
       await step('relay close', () => relay.close());
