@@ -101,14 +101,14 @@ describe('settings.json of a Claude Code agent', () => {
   const base = { hubUrl: 'http://127.0.0.1:7777', name: 'ana', mode: 'default' as const, memoryPath: '/h/agents/ana/memory.md', apiKeyHelper: false };
 
   it('has gonogo\'s own rules alone when there are none', () => {
-    expect(buildSettings(base).permissions).toEqual({ deny: ['SendMessage', 'ListAgents'], allow: ['Read(//h/agents/ana/memory.md)', 'Edit(//h/agents/ana/memory.md)'] });
+    expect(buildSettings(base).permissions).toEqual({ deny: ['SendMessage', 'ListAgents'], allow: ["Read(//h/agents/ana/memory.md)", "Edit(//h/agents/ana/memory.md)", "Read(//h/agents/ana/handoff.md)"] });
   });
 
   it('adds the rules after gonogo\'s, never in place of them, and writes ask only when there is one', () => {
     const settings = buildSettings({ ...base, rules: { allow: ['Bash', 'Read(//h/agents/ana/memory.md)'], deny: ['WebFetch', 'SendMessage'], ask: ['Write'] } });
     expect(settings.permissions).toEqual({
       deny: ['SendMessage', 'ListAgents', 'WebFetch'],
-      allow: ['Read(//h/agents/ana/memory.md)', 'Edit(//h/agents/ana/memory.md)', 'Bash'],
+      allow: ["Read(//h/agents/ana/memory.md)", "Edit(//h/agents/ana/memory.md)", "Read(//h/agents/ana/handoff.md)", "Bash"],
       ask: ['Write'],
     });
     expect((buildSettings({ ...base, rules: { allow: ['Bash'] } }).permissions as Record<string, unknown>).ask).toBeUndefined();

@@ -22,6 +22,8 @@ export const OPENCODE_CONFIG_FILE = 'opencode.json';
 export const OPENCODE_SETTINGS_FILE = 'gonogo-opencode.json';
 export const OPENCODE_ROLE_FILE = 'opencode-role.md';
 export const OPENCODE_SETTINGS_ENV = 'GONOGO_OPENCODE_CONFIG';
+/** opencode keeps its database and its logins under $XDG_DATA_HOME/opencode: each agent gets its own folder for them (its sessions never share a database with the owner's opencode or another agent), with the owner's logins linked in. */
+export const OPENCODE_DATA_DIR = 'opencode-data';
 
 /** What the plugin reads from GONOGO_OPENCODE_CONFIG. */
 export interface OpencodeSettings {

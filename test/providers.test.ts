@@ -3,7 +3,7 @@
  * and the PATH check of the hire form. No agent CLI runs here.
  */
 import { spawn } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -109,6 +109,24 @@ describe('prepareStart for another agent CLI', () => {
     expect(spec.env.CODEX_HOME).toBeUndefined();
   });
 
+  it('opencode gets a data folder of its own in the agent folder (its database and sessions), with the owner\'s logins linked in; a session id recorded before that folder had a database is not resumed', async () => {
+    const owner = join(home, 'owner-data');
+    await mkdir(join(owner, 'opencode'), { recursive: true });
+    await writeFile(join(owner, 'opencode', 'auth.json'), '{"x":1}');
+    await writeFile(join(owner, 'opencode', 'opencode.db'), 'the owner database, never shared');
+    const l = createLauncher({ homeDir: home, hubUrl: () => HUB, seed: false, env: { PATH: '/usr/bin:/bin', HOME: join(tmp, 'user'), XDG_DATA_HOME: owner }, coauthor: () => ({ enabled: false, prFooter: false }) });
+    const recorded = agent('opencode', { engineSession: { for: SID, id: 'ses_old' } });
+    const first = await l.prepareStart(recorded, START);
+    expect(first.spec.env.XDG_DATA_HOME).toBe(join(agentDir(), 'opencode-data'));
+    expect(first.spec.args).toStrictEqual([]); // ses_old lived in the shared database
+    expect(await readFile(join(agentDir(), 'opencode-data', 'opencode', 'auth.json'), 'utf8')).toBe('{"x":1}');
+    expect((await lstat(join(agentDir(), 'opencode-data', 'opencode', 'auth.json'))).isSymbolicLink()).toBe(true);
+    expect(await readdir(join(agentDir(), 'opencode-data', 'opencode'))).toStrictEqual(['auth.json']);
+    // once the agent has a database of its own, the recorded session resumes
+    await writeFile(join(agentDir(), 'opencode-data', 'opencode', 'opencode.db'), 'its own');
+    expect((await l.prepareStart(recorded, START)).spec.args).toStrictEqual(['--session', 'ses_old']);
+  });
+
   it('opencode, kimi and copilot: a config file in the agent folder; kimi and copilot carry the token, mode 0600', async () => {
     const l = launcher();
     const open = await l.prepareStart(agent('opencode'), START);
@@ -129,6 +147,8 @@ describe('prepareStart for another agent CLI', () => {
     const settings = JSON.parse(await readFile(join(agentDir(), 'gonogo-opencode.json'), 'utf8'));
     expect(settings).toMatchObject({ hookUrl: `${HUB}/hook/ana/`, servers: ['gonogo'], policy: { mode: 'default', cwd: work } });
     // resumed: the session opencode reported for this sessionId
+    await mkdir(join(agentDir(), 'opencode-data', 'opencode'), { recursive: true });
+    await writeFile(join(agentDir(), 'opencode-data', 'opencode', 'opencode.db'), 'its own');
     const again = await l.prepareStart(agent('opencode', { engineSession: { for: SID, id: 'ses_abc' } }), START);
     expect(again.spec.args).toStrictEqual(['--session', 'ses_abc']);
     const stale = await l.prepareStart(agent('opencode', { engineSession: { for: 'another', id: 'ses_abc' } }), START);
