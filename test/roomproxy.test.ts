@@ -632,6 +632,13 @@ describe('rooms proxy: the login', () => {
     expect((await send({ cookie: 'gonogo-session=s1', origin: base, 'content-type': 'application/json' }, 'PUT', '/api/egress', { anthropic: false })).status).toBe(200);
   });
 
+  it('an API key may only switch auto-review off: turning it on, auto-post, or the repos it watches are refused; a read is not', async () => {
+    const key = { authorization: 'Bearer gnk_full', 'content-type': 'application/json' };
+    for (const body of [{ enabled: true }, { autoPost: true }, { repos: ['ulm0/gonogo'] }, {}, { enabled: false, repos: ['a/b'] }]) expect((await get('/api/auto-review', key, 'PUT', JSON.stringify(body))).status, JSON.stringify(body)).toBe(403);
+    for (const body of [{ enabled: false }, { autoPost: false }, { enabled: false, autoPost: false }]) expect((await get('/api/auto-review', key, 'PUT', JSON.stringify(body))).status, JSON.stringify(body)).toBe(200);
+    expect((await get('/api/auto-review', key)).status).toBe(200);
+  });
+
   it('an API key may not add the user\'s MCP servers to the agents (it carries no step-up): turning them on is refused, turning them off or a read is not', async () => {
     const key = { authorization: 'Bearer gnk_full', 'content-type': 'application/json' };
     for (const body of [{ host: true }, { cleanRoom: true }, { host: true, cleanRoom: false }]) expect((await get('/api/global-mcp', key, 'PUT', JSON.stringify(body))).status, JSON.stringify(body)).toBe(403);

@@ -92,6 +92,7 @@ import type { Prices } from './prices.js';
 import { PRICE_PREFIX_PATTERN } from '../shared/prices.js';
 import type { Liveries } from './livery.js';
 import type { MassBudget } from './massbudget.js';
+import type { AutoReview } from './autoreview.js';
 import type { MissionLog } from './missionlog.js';
 import type { Propellant } from './propellant.js';
 import type { Recorder } from './recorder.js';
@@ -247,6 +248,8 @@ export interface WebOptions {
   egress?: Pick<Egress, 'handle'>;
   /** The room's egress setting (egresssettings.ts); absent in tests that do not need it (the routes answer 404). Writing it needs a step-up. */
   egressSettings?: Pick<EgressSettingsStore, 'view' | 'set'>;
+  /** Auto-review (docs/auto-review-spec.md): the setting, the jobs, one poll now. */
+  autoReview?: Pick<AutoReview, 'view' | 'set' | 'pollNow'>;
   /** Telegram and several rooms: the key of this install and what to do with an update another room offers (telegramroute.ts). Absent outside a supervisor: the route answers 404. */
   telegramRoute?: { key: string; take(body: Record<string, unknown>): { claimed: boolean } };
   /** The rules of the room; absent in tests that do not need it (the routes answer 404). A change needs a step-up (stepup.ts). */
@@ -663,6 +666,8 @@ function rejectUpgrade(socket: Duplex, status: number, contentType: string, body
 }
 
 export function createWebServer(options: WebOptions): WebServer {
+  /** When the page last asked auto-review to look at GitHub by hand. */
+  let lastReviewLook = 0;
   const { hub, terminals, log } = options;
   const nameRe = new RegExp(AGENT_NAME_PATTERN);
   const tokenDigest = sha256(options.browserToken);
@@ -1920,6 +1925,30 @@ export function createWebServer(options: WebOptions): WebServer {
           if (!body) return;
           await global.store.set(body);
           sendJson(res, 200, await global.view());
+        },
+      };
+    }
+    if (s[1] === 'auto-review' && (s.length === 2 || (s.length === 3 && s[2] === 'poll'))) {
+      const review = options.autoReview;
+      if (!review) return null;
+      if (s.length === 3) {
+        return {
+          allow: ['POST'],
+          run: async (_req, res) => {
+            // a hand on the key cannot drain the GitHub API: one look every 30 s
+            if (Date.now() - lastReviewLook < 30_000) return sendApiError(res, 429, 'looked a moment ago: wait 30 seconds', 'rate_limited');
+            lastReviewLook = Date.now();
+            await review.pollNow();
+            sendJson(res, 200, review.view());
+          },
+        };
+      }
+      return {
+        allow: ['GET', 'PUT'],
+        run: async (req, res) => {
+          if (req.method === 'GET') return sendJson(res, 200, review.view());
+          const body = await jsonObject(req, res);
+          if (body) sendJson(res, 200, await review.set(body));
         },
       };
     }

@@ -34,6 +34,8 @@ export const COAUTHOR_FILE = 'coauthor.json';
 export const EGRESS_FILE = 'egress.json';
 /** Global MCP servers (docs/features/global-mcp.md): whether the user-scope servers of Claude Code are added to an agent's, host and Clean Room. */
 export const GLOBAL_MCP_FILE = 'global-mcp.json';
+export const AUTO_REVIEW_FILE = 'auto-review.json';
+export const AUTO_REVIEW_JOBS_FILE = 'auto-review-jobs.json';
 /** The rules of the room (docs/features/door.md): one text file in the room's home, at most this many bytes. */
 export const RULES_FILE = 'rules.md';
 export const RULES_MAX_BYTES = 8 * 1024;

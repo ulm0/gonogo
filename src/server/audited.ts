@@ -212,6 +212,10 @@ export const EGRESS_AUDIT: Table = {
 export const GLOBAL_MCP_AUDIT: Table = {
   set: ['config', (_args, result) => (isRecord(result) ? `Director set the global MCP servers: host agents ${result.host === true ? 'on' : 'off'}, Clean Room agents ${result.cleanRoom === true ? 'on' : 'off'}` : null)],
 };
+/** Auto-review: that it was switched, and which repos; never a pull request's text. */
+export const AUTO_REVIEW_AUDIT: Table = {
+  set: ['config', (args, result) => (isRecord(result) && isRecord(result.settings) ? `Director set auto-review: ${result.settings.enabled === true ? 'on' : 'off'}${result.settings.autoPost === true ? ', auto-post on' : ''}, ${Array.isArray(result.settings.repos) ? result.settings.repos.length : 0} repos` : 'Director changed auto-review')],
+};
 export const COAUTHOR_AUDIT: Table = { set: ['config', 'Director changed the co-author setting'] };
 export const SUBAGENTS_AUDIT: Table = { set: ['config', 'Director changed the subagent setting'] };
 export const AUTOUPDATE_AUDIT: Table = { set: ['config', 'Director changed auto-update'], skip: ['config', 'Director skipped a version for auto-update'] };

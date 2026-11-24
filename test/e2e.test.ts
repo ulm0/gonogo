@@ -2977,6 +2977,24 @@ describe('end to end with the stand-in agent', () => {
     await again.run.stop();
   }, 120_000);
 
+  it('Auto-review: off by default, saved by the API (0600), kept across a restart, in the Black Box as on or off with a count of repos, and out of an agent\'s reach', async () => {
+    const h = await startServer();
+    await waitState(h, 'flight', 'idle');
+    const first = (await api<{ settings: { enabled: boolean; autoPost: boolean; repos: string[] }; jobs: unknown[]; lastPoll: unknown }>(h, 'GET', '/api/auto-review')).body;
+    expect(first).toMatchObject({ settings: { enabled: false, autoPost: false, repos: [] }, jobs: [], lastPoll: null });
+    expect((await api(h, 'PUT', '/api/auto-review', { enabled: true, repos: ['ulm0/gonogo'], authors: ['ulm0'] })).body).toMatchObject({ settings: { enabled: true, repos: ['ulm0/gonogo'], authors: ['ulm0'] } });
+    expect((await stat(join(h.home, 'auto-review.json'))).mode & 0o777).toBe(0o600);
+    for (const bad of [{ repos: ['not a repo'] }, { enabled: 'yes' }, { more: true }]) expect((await api<ApiError>(h, 'PUT', '/api/auto-review', bad)).status, JSON.stringify(bad)).toBe(400);
+    const events = (await api<AuditView>(h, 'GET', '/api/black-box')).body.events.map((e) => e.text).join('\n');
+    expect(events).toContain('Director set auto-review: on, 1 repos');
+    const agentToken = await readToken(h, 'flight');
+    expect((await api(h, 'GET', '/api/auto-review', undefined, agentToken)).status).toBe(401);
+    await h.run.stop();
+    const again = await startServer({ home: h.home });
+    expect((await api(again, 'GET', '/api/auto-review')).body).toMatchObject({ settings: { enabled: true, repos: ['ulm0/gonogo'] } });
+    await again.run.stop();
+  }, 120_000);
+
   it('Clean Room egress: a switch, off by default, saved by the API, kept across a restart, in the Black Box as on or off, and out of an agent\'s reach', async () => {
     const h = await startServer();
     await waitState(h, 'flight', 'idle');

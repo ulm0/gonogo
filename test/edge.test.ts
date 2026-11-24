@@ -3033,6 +3033,16 @@ describe('mcp', () => {
     expect((await client.listTools()).tools).toHaveLength(MCP_TOOL_NAMES.length);
   });
 
+  it('the hand-made look at GitHub is limited to one every 30 seconds', async () => {
+    let looks = 0;
+    const view = { settings: {}, jobs: [], lastPoll: null };
+    const { port } = await startWeb({ autoReview: { view: () => view as never, set: async () => view as never, pollNow: async () => ((looks += 1), []) } });
+    expect((await api(port, 'POST', '/api/auto-review/poll')).status).toBe(200);
+    const again = await api(port, 'POST', '/api/auto-review/poll');
+    expect(again.status).toBe(429);
+    expect(looks).toBe(1);
+  });
+
   it('survives clients that reset the connection while a tool call is being answered', async () => {
     const { port, hubCalls } = await startWeb();
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'send_message', arguments: { to: 'ben', body: 'x'.repeat(5000) } } });
