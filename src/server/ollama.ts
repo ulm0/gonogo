@@ -105,6 +105,8 @@ export interface ManagedOptions {
   /** The archive URL for a version and a release CPU name (default: the GitHub release). */
   releaseUrl?: (version: string, arch: string) => string;
   sha256?: string;
+  /** The copy the Docker image carries (default IMAGE_OLLAMA_BIN). For tests, so a test run inside the image does not find the real one. */
+  imageBin?: string;
   fetch?: typeof fetch;
   /** Memory of a process group in MB (default: read from /proc). */
   rss?: (pgid: number) => Promise<number>;
@@ -234,7 +236,7 @@ export function createManagedOllama(options: ManagedOptions): ManagedOllama {
   async function findBin(): Promise<string | null> {
     const named = env.GONOGO_OLLAMA_BIN ?? '';
     if (named !== '' && (await stat(named).then((x) => x.isFile(), () => false))) return named;
-    for (const candidate of [IMAGE_OLLAMA_BIN, join(versionDir(), 'bin', 'ollama')]) {
+    for (const candidate of [options.imageBin ?? IMAGE_OLLAMA_BIN, join(versionDir(), 'bin', 'ollama')]) {
       if (!(await stat(candidate).then((x) => x.isFile(), () => false))) continue;
       if ((await versionOf(candidate)) === OLLAMA_VERSION) return candidate;
       log.warn(`${candidate} is not Ollama ${OLLAMA_VERSION}: it is not used`);
