@@ -132,6 +132,11 @@ interface Dock {
   since: number;
   /** What this station may do with this one; absent in a file of before Docking 2 (the defaults). */
   rules?: DockRules;
+  /**
+   * The address was changed by hand and nothing there has proved yet that it holds this dock's secret: until it does, only the roster is asked of it (a signed GET that carries
+   * nothing), and no message, task, link event or knowledge call goes. Saved, so a restart does not skip it.
+   */
+  unverified?: true;
 }
 
 const DEFAULT_RULES: DockRules = { handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false, ask: false };
@@ -440,7 +445,7 @@ export function createDocking(options: DockingOptions): Docking {
 
   const dockView = (dock: Dock): DockView => {
     const state = liveOf(dock);
-    return { id: dock.id, name: dock.name, url: dock.url, since: dock.since, status: state.status, seenAt: state.seenAt, error: state.error, agents: state.agents.map((a) => ({ ...a })), waiting: links.waiting(dock.id), rules: rulesOf(dock) };
+    return { id: dock.id, name: dock.name, url: dock.url, ...(dock.unverified === true ? { unverified: true } : {}), since: dock.since, status: state.status, seenAt: state.seenAt, error: state.error, agents: state.agents.map((a) => ({ ...a })), waiting: links.waiting(dock.id), rules: rulesOf(dock) };
   };
   const view = (): DockingView => ({ station: options.name, docks: docks.map(dockView) });
   /** Tells the browsers, unless nothing they show has changed since the last time. */
@@ -502,11 +507,14 @@ export function createDocking(options: DockingOptions): Docking {
   }
 
   /** A signed call to a docked station. */
-  function call(dock: Dock, method: 'GET' | 'POST', route: string, payload?: unknown, timeoutMs = DOCK_TIMEOUT_MS): Promise<Record<string, unknown>> {
+  function call(dock: Dock, method: 'GET' | 'POST', route: string, payload?: unknown, timeoutMs = DOCK_TIMEOUT_MS, sent?: { nonce?: string }): Promise<Record<string, unknown>> {
+    // a changed address gets nothing but the roster until it proves it holds the secret (the outbox waits and goes when it does)
+    if (dock.unverified === true && route !== 'roster') return Promise.reject(new HubError('unavailable', `the new address of ${dock.name} is not verified yet: nothing is sent there until it proves it holds this dock's secret`));
     const urlPath = `/dock/${route}`;
     const body = method === 'POST' ? JSON.stringify(payload ?? {}) : '';
     const timestamp = String(now());
     const nonce = random(16);
+    if (sent !== undefined) sent.nonce = nonce;
     const headers: Record<string, string> = {
       'x-gonogo-station': id,
       'x-gonogo-timestamp': timestamp,
@@ -538,7 +546,18 @@ export function createDocking(options: DockingOptions): Docking {
     if (state.pulling) return;
     state.pulling = true;
     try {
-      const answer = await call(dock, 'GET', 'roster');
+      const sent: { nonce?: string } = {};
+      const answer = await call(dock, 'GET', 'roster', undefined, DOCK_TIMEOUT_MS, sent);
+      // an address changed by hand is believed only when the station there answers our nonce with the secret: HMAC(secret, nonce, its id) (responses are not authenticated otherwise)
+      if (dock.unverified === true) {
+        const proof = typeof answer.proof === 'string' ? answer.proof : '';
+        if (sent.nonce === undefined || !sameText(proof, mac(dock.secret, 'roster-proof', sent.nonce, dock.id))) {
+          throw new HubError('conflict', `the station at the new address of ${dock.name} did not prove that it holds this dock's secret (an older gonogo cannot): check the address, or pair again. Nothing is sent there.`);
+        }
+        delete dock.unverified;
+        // a write that fails is logged by the chain; the next pull proves it again
+        await save().catch(() => undefined);
+      }
       void repairLinks(dock);
       const station = isRecord(answer.station) ? answer.station : {};
       if (station.id !== dock.id) throw new HubError('conflict', 'the station at this address is not the one that was docked');
@@ -967,7 +986,7 @@ export function createDocking(options: DockingOptions): Docking {
       for (const raw of isRecord(saved) && Array.isArray(saved.docks) ? saved.docks : []) {
         if (!isRecord(raw) || typeof raw.id !== 'string' || !HEX32_RE.test(raw.id) || typeof raw.name !== 'string' || !STATION_RE.test(raw.name)) continue;
         if (typeof raw.secret !== 'string' || !HEX64_RE.test(raw.secret) || typeof raw.url !== 'string' || docks.some((d) => d.id === raw.id || d.name === raw.name)) continue;
-        docks.push({ id: raw.id, name: raw.name, url: raw.url, secret: raw.secret, since: typeof raw.since === 'number' ? raw.since : now(), ...(isRecord(raw.rules) ? { rules: readRules(raw.rules) } : {}) });
+        docks.push({ id: raw.id, name: raw.name, url: raw.url, secret: raw.secret, since: typeof raw.since === 'number' ? raw.since : now(), ...(isRecord(raw.rules) ? { rules: readRules(raw.rules) } : {}), ...(raw.unverified === true ? { unverified: true as const } : {}) });
       }
       lastSig = JSON.stringify(view());
       await links.load();
@@ -1075,6 +1094,8 @@ export function createDocking(options: DockingOptions): Docking {
       const url = publicUrl(input.url, 'url');
       if (url !== dock.url) {
         dock.url = url;
+        // held back until the station at the new address proves it is the one that was docked: the next roster answer is that proof
+        dock.unverified = true;
         // what the old address said is not what the new one will say: the roster is asked again now, and what waited for the dock goes if it answers
         const state = liveOf(dock);
         state.status = 'new';
@@ -1329,7 +1350,8 @@ export function createDocking(options: DockingOptions): Docking {
       }
       switch (route) {
         case 'roster':
-          return { station: { id, name: options.name }, agents: options.roster() };
+          // the proof the caller asked for by its nonce: only a station that holds this dock's secret can make it
+          return { station: { id, name: options.name }, agents: options.roster(), proof: mac(dock.secret, 'roster-proof', typeof headers['x-gonogo-nonce'] === 'string' ? headers['x-gonogo-nonce'] : '', id) };
         case 'message':
           return traced(dock, 'a message', () => acceptMessage(dock, readObject(body)));
         case 'task':

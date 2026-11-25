@@ -976,6 +976,86 @@ describe('a dock in another room of a station, and its address', () => {
     await expect(a.docking.send('beta', { from: 'ana', to: 'bob', subject: '', body: 'hi', hops: 1 })).resolves.toMatchObject({ ok: true });
   });
 
+  it('a changed address is not believed until the station there proves it holds the secret: a real peer does at once, nothing is cleared before', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test/r/umbral');
+    const { aSees } = await pair(a, b);
+    expect(a.docking.view().docks[0]?.unverified).toBeUndefined();
+    const same = await a.docking.setAddress(aSees, { url: 'http://b.test/r/umbral' });
+    expect(same.unverified).toBeUndefined();
+    // the same station at another address (beta also answers at the machine's root alias): its roster answer carries the proof
+    w.stations.set('http://b.test', b);
+    const moved = await a.docking.setAddress(aSees, { url: 'http://b.test' });
+    expect(moved, JSON.stringify(moved)).toMatchObject({ url: 'http://b.test', status: 'ok', error: null });
+    expect(moved.unverified).toBeUndefined();
+    const file = JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')) as { docks: Array<Record<string, unknown>> };
+    expect(file.docks[0]?.unverified).toBeUndefined();
+  });
+
+  it('a host that answers 200 but cannot prove the secret gets the roster call and nothing else: no message, no task, no link event, no undock; it stays unverified after a restart', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees, bSees } = await pair(a, b);
+    // a typo'd or hostile host: it says it is beta, and cannot sign the nonce
+    const imp = await w.make('imp', 'http://imp.test');
+    const seen: string[] = [];
+    imp.docking.handle = async (route) => {
+      seen.push(route);
+      if (route === 'roster') return { station: { id: aSees === '' ? 'x' : bSees === '' ? 'y' : a.docking.view().docks[0]!.id, name: 'beta' }, agents: [{ name: 'fake', role: 'x', state: 'idle', boss: false }], proof: 'f'.repeat(64) };
+      return { ok: true, acked: {} };
+    };
+    const moved = await a.docking.setAddress(aSees, { url: 'http://imp.test' });
+    expect(moved.unverified).toBe(true);
+    expect(moved.status).toBe('down');
+    expect(moved.error).toContain('did not prove that it holds this dock');
+    // the roster the host made up is not taken
+    expect(moved.agents.map((x) => x.name)).not.toContain('fake');
+    await a.docking.pull();
+    // what would have left goes nowhere
+    expect(await a.docking.send('beta', { from: 'ana', to: 'bob', subject: '', body: 'secret text', hops: 1 })).toMatchObject({ ok: false });
+    await expect(a.docking.undock(aSees)).resolves.toEqual({ told: false });
+    expect(seen.every((route) => route === 'roster')).toBe(true);
+    expect(seen).not.toContain('message');
+  });
+
+  it('survives a restart as unverified, and the right address then clears it and lets the outbox go', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    const imp = await w.make('imp', 'http://imp.test');
+    imp.docking.handle = async () => ({ station: { id: aSees, name: 'beta' }, agents: [] });
+    expect((await a.docking.setAddress(aSees, { url: 'http://imp.test' })).unverified).toBe(true);
+    expect((JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')) as { docks: Array<{ unverified?: boolean }> }).docks[0]?.unverified).toBe(true);
+    const again = await w.make('alpha2', 'http://a2.test', { dir: a.dir });
+    expect(again.docking.view().docks[0]?.unverified).toBe(true);
+    // the address is put right: the real beta proves itself, the flag goes, and a message passes
+    const fixed = await a.docking.setAddress(aSees, { url: 'http://b.test' });
+    expect(fixed.unverified).toBeUndefined();
+    expect(fixed.status).toBe('ok');
+    await expect(a.docking.send('beta', { from: 'ana', to: 'bob', subject: '', body: 'now', hops: 1 })).resolves.toMatchObject({ ok: true });
+    expect(b.delivered).toHaveLength(1);
+  });
+
+  it('a peer that is an older gonogo (no proof in its roster) stays unverified with a message that says why', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    const real = b.docking.handle.bind(b.docking);
+    b.docking.handle = async (route, method, url, headers, body) => {
+      const answer = await real(route, method, url, headers, body);
+      if (route === 'roster') delete (answer as Record<string, unknown>).proof;
+      return answer;
+    };
+    w.stations.set('http://b2.test', b);
+    const moved = await a.docking.setAddress(aSees, { url: 'http://b2.test' });
+    expect(moved.unverified).toBe(true);
+    expect(moved.error).toContain('(an older gonogo cannot)');
+  });
+
   it('refuses a bad address, an unknown field and an unknown dock, and changes nothing', async () => {
     const w = world();
     const a = await w.make('alpha', 'http://a.test');
