@@ -116,7 +116,7 @@ function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; 
         </p>
       )}
       <p className="hint" id={`${id}-address-hint`}>
-        How the other station reaches this one. Its name has to be allowed here (--allow-host).{note === null ? '' : ` ${note}`}
+        How the other station reaches this one. Its name has to be allowed here (--allow-host). For a room other than main, end it with /r/<room>.{note === null ? '' : ` ${note}`}
       </p>
     </div>
   );
@@ -196,6 +196,9 @@ function CodePanel({ made, now, onDone, onNotice }: { made: DockCode; now: numbe
 function Row({ dock, now, onNotice }: { dock: DockView; now: number; onNotice(text: string): void }): ReactElement {
   const { busy, error, run } = useRun();
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [url, setUrl] = useState(dock.url);
+  const problem = editing ? addressProblem(url) : undefined;
   const keep = useRef<HTMLButtonElement | null>(null);
   const key = useRef<HTMLButtonElement | null>(null);
   const asked = useRef(false);
@@ -242,10 +245,40 @@ function Row({ dock, now, onNotice }: { dock: DockView; now: number; onNotice(te
       <OutboundBlock dock={dock} />
       <KnowledgeAsk dock={dock} />
       <div className="win-buttons">
+        <button type="button" className="btn" aria-label={`Change the address of ${dock.name}`} aria-disabled={busy || undefined} onClick={() => { setUrl(dock.url); setEditing(!editing); }}>
+          Change address
+        </button>
         <button type="button" ref={key} className="btn" data-kind="danger" aria-label={`Undock ${dock.name}`} aria-disabled={busy || undefined} onClick={() => setConfirming(true)}>
           Undock
         </button>
       </div>
+      {editing && (
+        <div className="win-confirm" role="group" aria-label={`Address of ${dock.name}`}>
+          <label htmlFor={`addr-${dock.id}`}>Address of {dock.name}</label>
+          <input id={`addr-${dock.id}`} className="input" value={url} spellCheck={false} aria-invalid={problem !== undefined} onChange={(e) => setUrl(e.target.value)} />
+          {problem !== undefined && <p className="error">{problem}</p>}
+          <p className="hint">Where this station calls {dock.name}. The dock stays: its name and its secret do not change. If it lives in another room of that station, end the address with /r/&lt;room&gt;. Its name has to be allowed there (--allow-host).</p>
+          <button type="button" className="btn" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-kind="primary"
+            aria-disabled={busy || problem !== undefined || url.trim() === dock.url || undefined}
+            onClick={() => {
+              if (problem !== undefined || url.trim() === dock.url) return;
+              run(async () => {
+                const changed = await api.setDockAddress(dock.id, url.trim());
+                setEditing(false);
+                onNotice(changed.status === 'ok' ? `${dock.name} answers at ${changed.url}.` : `Address of ${dock.name} changed to ${changed.url}; it does not answer yet${changed.error === null ? '' : `: ${changed.error}`}`);
+              });
+            }}
+          >
+            Save address
+          </button>
+        </div>
+      )}
       {confirming && (
         <div className="win-confirm flood" data-tone="nogo" role="group" aria-label={`Undock ${dock.name}?`}>
           <p>

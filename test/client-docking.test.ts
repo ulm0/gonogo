@@ -17,9 +17,9 @@ const task = (extra: Partial<Task> = {}): Task => ({ id: 't1', title: 'Fix it', 
 
 describe('addressProblem', () => {
   it('takes a web address with no path, and tells the rest what is wanted', () => {
-    for (const ok of ['https://gonogo.example.com', 'http://192.168.1.5:7777', ' http://localhost:7777/ ', 'https://[::1]:8443']) expect(addressProblem(ok), ok).toBeUndefined();
-    for (const bad of ['', 'gonogo', 'ftp://x.test', 'http://x.test/path', 'http://u:p@x.test', 'http://x.test/?a=1', 'http://x.test/#a', 'localhost:7777']) {
-      expect(addressProblem(bad), bad).toBe('Type a web address with no path, such as https://gonogo.example.com.');
+    for (const ok of ['https://gonogo.example.com', 'http://192.168.1.5:7777', ' http://localhost:7777/ ', 'https://[::1]:8443', 'http://192.168.86.173:7777/r/umbral', 'http://h:7777/r/umbral/']) expect(addressProblem(ok), ok).toBeUndefined();
+    for (const bad of ['', 'gonogo', 'ftp://x.test', 'http://x.test/path', 'http://x.test/r/', 'http://x.test/r/Umbral', 'http://x.test/r/a/dock', 'http://u:p@x.test', 'http://x.test/?a=1', 'http://x.test/#a', 'localhost:7777']) {
+      expect(addressProblem(bad), bad).toBe('Type a web address such as https://gonogo.example.com, with /r/<room> after it when the dock is in another room of that station.');
     }
   });
 });

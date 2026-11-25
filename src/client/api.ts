@@ -1089,6 +1089,13 @@ export async function pairDock(code: string, url: string): Promise<DockView> {
   return dock as unknown as DockView;
 }
 
+/** Changes the address a docked station is called at; the dock stays (its id, name and secret). The answer is the dock as the next call found it. */
+export async function setDockAddress(id: string, url: string): Promise<DockView> {
+  const dock = asRecord(await call('PATCH', `/docking/${encodeURIComponent(id)}`, { url }));
+  if (typeof dock?.id !== 'string' || typeof dock.name !== 'string') throw failure('The server sent an answer gonogo does not understand.');
+  return dock as unknown as DockView;
+}
+
 /** `told` is false when the other station could not be reached: it keeps the dock until it is undocked there too. */
 export async function undock(id: string): Promise<boolean> {
   return asRecord(await call('DELETE', `/docking/${encodeURIComponent(id)}`))?.told === true;

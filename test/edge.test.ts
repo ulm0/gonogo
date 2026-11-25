@@ -3973,6 +3973,11 @@ describe('web: REST', () => {
             calls.push(['pair', input]);
             return dockView as never;
           },
+          setAddress: async (id, input) => {
+            calls.push(['setAddress', id, input]);
+            known(id);
+            return dockView as never;
+          },
           undock: async (id) => {
             calls.push(['undock', id]);
             known(id);

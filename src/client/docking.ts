@@ -8,14 +8,14 @@ export const CODE_PREFIX = 'gonogo-dock:';
 
 /** The server's rule, so that a slip is told before the call: a web address with no path. Undefined when it is fine. */
 export function addressProblem(text: string): string | undefined {
-  const fail = 'Type a web address with no path, such as https://gonogo.example.com.';
+  const fail = 'Type a web address such as https://gonogo.example.com, with /r/<room> after it when the dock is in another room of that station.';
   let url: URL;
   try {
     url = new URL(text.trim());
   } catch {
     return fail;
   }
-  const plain = (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' && url.search === '' && url.hash === '' && url.pathname === '/';
+  const plain = (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' && url.search === '' && url.hash === '' && (url.pathname === '/' || /^\/r\/[a-z][a-z0-9-]{0,23}\/?$/.test(url.pathname));
   return plain ? undefined : fail;
 }
 

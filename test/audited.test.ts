@@ -295,7 +295,7 @@ describe('Uplink, and what the Director configures', () => {
       propellant: { setLimits: async (_r: unknown) => ({ room: {} }), setBudget: async (_b: unknown) => ({ room: {} }) },
       relay: { set: async (name: string, _b: unknown) => ({ name }), remove: async (name: string) => ({ name }), forward: async (_b: unknown) => ({}) },
       liveries: { select: async (_b: unknown) => ({}), remove: async (slug: string) => ({ slug }) },
-      docking: { createCode: (_b: unknown) => ({ code: SECRET }), pair: async (_b: unknown) => ({ id: 'd1' }), undock: async (id: string) => ({ id }) },
+      docking: { createCode: (_b: unknown) => ({ code: SECRET }), pair: async (_b: unknown) => ({ id: 'd1' }), setAddress: async (_id: string, _b: unknown) => ({ id: 'd1' }), undock: async (id: string) => ({ id }) },
     };
     const told: Told = [];
     const record = (kind: AuditKind, text: string): void => void told.push([kind, text]);
@@ -316,6 +316,7 @@ describe('Uplink, and what the Director configures', () => {
     await liveries.remove('dusk');
     docking.createCode({ url: SECRET });
     await docking.pair({ code: SECRET });
+    await docking.setAddress('d1', { url: SECRET });
     await docking.undock('d1');
     expect(told.map(([, text]) => text)).toEqual([
       'Director made a schedule s3',
@@ -330,6 +331,7 @@ describe('Uplink, and what the Director configures', () => {
       'Director removed livery dusk',
       'Director made a docking code',
       'Director paired a station d1',
+      'Director changed the address of dock d1',
       'Director undocked d1',
     ]);
     expect(JSON.stringify(told)).not.toContain(SECRET);
