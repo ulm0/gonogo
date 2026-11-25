@@ -17,6 +17,8 @@ import './loop.css';
 import './hangar.css';
 import { NativeSelect } from '@/ui/native-select.js';
 import { Input } from '@/ui/input.js';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowDown01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -116,7 +118,7 @@ function Tree({ path, depth, dirs, expanded, current, onToggle, onOpen }: TreePr
         <li key={entry.name}>
           <button type="button" className="hg-item" style={indent} aria-expanded={open} onClick={() => onToggle(full)}>
             <span className="hg-mark" aria-hidden="true">
-              <span className="icon" data-icon={open ? 'chevron-down' : 'chevron-right'} />
+              <HugeiconsIcon icon={open ? ArrowDown01Icon : ArrowRight01Icon} className="size-3" />
             </span>
             {entry.name}
           </button>

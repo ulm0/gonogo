@@ -52,6 +52,8 @@ import { summary as runtimeSummary } from './runtimeSettingsModel.js';
 import './loop.css';
 import './rules.css';
 import { NativeSelect } from '@/ui/native-select.js';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 
 /** The checklist's marks, shared by every place that shows or resets it in this tab. */
 let marks = loadMarks();
@@ -290,7 +292,7 @@ export function FlightRules(): ReactElement {
           FLIGHT RULES
         </h1>
         <button type="button" className="btn loop-room" data-kind="quiet" onClick={showRoom}>
-          ← Back to the room
+          <HugeiconsIcon icon={ArrowLeft01Icon} className="size-3.5" aria-hidden="true" /> Back to the room
         </button>
       </header>
       <nav className="lay-group-nav" aria-label="Groups of settings">

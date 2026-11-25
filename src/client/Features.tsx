@@ -9,6 +9,8 @@ import type { Feature, FeaturePlan } from '../shared/features.js';
 import * as api from './api.js';
 import { useStore } from './store.js';
 import { Switch } from '@/ui/checkbox.js';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { LockIcon } from '@hugeicons/core-free-icons';
 
 const nameOf = (id: string): string => featureById(id)?.label ?? id;
 const names = (ids: readonly string[]): string => ids.map(nameOf).join(', ');
@@ -74,7 +76,7 @@ export function FeaturesBlock(): ReactElement {
                 <li key={feature.id} className="feat-row" data-off={isOff ? '' : undefined}>
                   {feature.core !== undefined ? (
                     <span className="feat-lock" title={feature.core}>
-                      <span className="icon" data-icon="lock" aria-hidden="true" />
+                      <HugeiconsIcon icon={LockIcon} className="size-[1em] align-[-0.125em]" aria-hidden="true" />
                       <span className="sr-only">Core: </span>
                     </span>
                   ) : (

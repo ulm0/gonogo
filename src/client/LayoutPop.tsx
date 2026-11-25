@@ -4,6 +4,8 @@ import { EditRoomKey } from './EditRoomKey.js';
 import { Pop } from './Pop.js';
 import { DENSITIES, densityOf, PANELS, setRoomPrefs, useRoomPrefs } from './roomPrefs.js';
 import type { Density, PanelMode } from './roomPrefs.js';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowDown01Icon, Menu01Icon } from '@hugeicons/core-free-icons';
 
 const DENSITY_TEXT: Readonly<Record<Density, { name: string; line: string }>> = {
   focus: { name: 'Focus', line: 'Consoles and the terminal; the clock is the only chip.' },
@@ -22,7 +24,7 @@ export function LayoutPop({ icon = false }: { icon?: boolean }): ReactElement {
   const seats = useRoomPrefs((s) => s.seats);
   const density = densityOf(panels);
   return (
-    <Pop label={icon ? '≡' : 'Layout ▾'} name="Layout of the room" align="end" className="lay-layout">
+    <Pop label={icon ? <HugeiconsIcon icon={Menu01Icon} className="size-4" aria-hidden="true" /> : <>Layout <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" aria-hidden="true" /></>} name="Layout of the room" align="end" className="lay-layout">
       {(close) => (
         <div className="lay-layout-pop">
           <div className="lay-pop-head">

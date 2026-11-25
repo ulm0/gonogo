@@ -19,6 +19,11 @@
 @source './PatchPanel.tsx';
 @source './TerminalBar.tsx';
 @source '../shared/controls.ts';
+@source './LayoutPop.tsx';
+@source './Row.tsx';
+@source './Rules.tsx';
+@source './Hangar.tsx';
+@source './Features.tsx';
 
 @theme inline {
   --color-background: var(--body);
