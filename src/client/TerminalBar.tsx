@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Pop } from './Pop.js';
+import { Dialog, DialogContent, DialogTitle } from '@/ui/dialog.js';
 import { setRoomPrefs, useRoomPrefs } from './roomPrefs.js';
 import { panes } from './TerminalPane.js';
 import { copyText } from './uplink.js';
@@ -160,17 +161,21 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
           {said}
         </span>
       )}
-      {selectText !== null && (
-        <div className="lay-select module" role="dialog" aria-label="Select text">
+      <Dialog open={selectText !== null} onOpenChange={(open) => !open && setSelectText(null)}>
+        <DialogContent className="lay-select module top-3 right-3 bottom-3 left-3 flex w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-2 p-3 sm:max-w-none" aria-label="Select text" aria-describedby={undefined}>
           <div className="lay-pop-head">
-            <b>Last 300 lines</b>
+            <DialogTitle asChild>
+              <b>Last 300 lines</b>
+            </DialogTitle>
             <button type="button" className="btn" data-kind="quiet" onClick={() => setSelectText(null)}>
               Close
             </button>
           </div>
-          <pre tabIndex={0}>{selectText}</pre>
-        </div>
-      )}
+          <pre tabIndex={0} className="m-0 flex-1 overflow-auto text-[13px] whitespace-pre-wrap select-text wrap-anywhere">
+            {selectText}
+          </pre>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

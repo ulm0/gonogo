@@ -171,7 +171,7 @@ async function measureDuplicates(page: Page, group: string, title: string, scope
 
 /** A write asks for the password again when the last check is old: answer it if the dialog comes. */
 async function stepUpIfAsked(page: Page): Promise<void> {
-  const dialog = page.locator('dialog.stepup[open]');
+  const dialog = page.locator('.stepup[role=dialog]');
   if (await dialog.waitFor({ timeout: 2500 }).then(() => true, () => false)) {
     await dialog.getByLabel('Password').fill(PASSWORD);
     await dialog.locator('button[type=submit]').click();
