@@ -1,0 +1,76 @@
+/*
+ * shadcn/ui next to the Instrument CSS (docs/ui-library-assessment.md §3). Tailwind v4 brings only its theme and utility layers,
+ * never Preflight, so no existing element changes. Our CSS is unlayered and wins wherever both style the same element.
+ *
+ * Every shadcn colour is an alias of a Livery token, never a colour of its own: each livery (shipped, custom, Night Shift)
+ * recolours the components with no new code, and its contrast check (CONTRAST_PAIRS) covers each foreground/background pair.
+ * Tailwind reads --color-*, so shadcn's bare --muted is never declared and our --muted (a text colour) keeps its meaning.
+ * test/shadcn-css.test.ts holds both rules.
+ */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+/* source(none): classes come only from the shadcn files and the pages built on them, never from a word like `hidden` elsewhere */
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source './ui';
+@source './PartyLine.tsx';
+@source './TopBar.tsx';
+
+@theme inline {
+  --color-background: var(--body);
+  --color-foreground: var(--text);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--panel);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--text);
+  --color-primary-foreground: var(--panel);
+  --color-secondary: var(--key);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--well);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--you-tint);
+  --color-accent-foreground: var(--you-ink);
+  --color-destructive: var(--nogo-tint);
+  --color-destructive-foreground: var(--nogo-text);
+  --color-border: var(--edge);
+  --color-input: var(--edge);
+  --color-ring: var(--work);
+  --color-chart-1: var(--work);
+  --color-chart-2: var(--go);
+  --color-chart-3: var(--you);
+  --color-chart-4: var(--nogo);
+  --color-chart-5: var(--muted);
+  --font-sans: var(--font-ui);
+  /* the app's root is 13px, so rem sizes would come out small: the scale and the spacing are in px, on the Instrument's type */
+  --spacing: 4px;
+  --text-xs: 12px;
+  --text-xs--line-height: 1.45;
+  --text-sm: 13.5px;
+  --text-sm--line-height: 1.5;
+  --text-base: 14px;
+  --text-base--line-height: 1.5;
+  --radius-sm: var(--radius-key);
+  --radius-md: var(--radius-key);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius-module);
+}
+
+/* The little of Preflight that shadcn files need, only on their elements (every shadcn v4 element sets data-slot). */
+@layer base {
+  [data-slot],
+  [data-slot] * {
+    border: 0 solid;
+    font: inherit;
+    color: inherit;
+  }
+  button[data-slot],
+  [data-slot] button {
+    background: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  textarea[data-slot] {
+    margin: 0;
+    resize: none;
+  }
+}

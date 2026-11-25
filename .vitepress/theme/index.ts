@@ -10,6 +10,7 @@ import '@fontsource/geist-mono/600.css';
 // The app's own design system, the same files the app loads (docs/design-system.md shows them).
 import '../../src/client/tokens.css';
 import '../../src/client/primitives.css';
+import '../../src/client/shadcn.css';
 import './custom.css';
 import LiverySwitch from './LiverySwitch.vue';
 import NavVersion from './NavVersion.vue';

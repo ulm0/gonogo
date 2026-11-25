@@ -48,7 +48,8 @@ describe('the controls of the page', () => {
       return text.slice(m.index, end + 1);
     });
 
-  it.each(page.filter((f) => f.endsWith('.tsx')))('%s: every control wears a primitive', (file) => {
+  // the shadcn files (src/client/ui) wear shadcn's utilities over the Livery tokens instead (shadcn.css, test/shadcn-css.test.ts)
+  it.each(page.filter((f) => f.endsWith('.tsx') && !f.startsWith(join('src', 'client', 'ui'))))('%s: every control wears a primitive', (file) => {
     const text = readFileSync(file, 'utf8');
     for (const input of tags(text, 'input')) {
       if (/type="checkbox"/.test(input)) expect(input, file).toMatch(/className="(check|switch)"/);

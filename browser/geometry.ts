@@ -63,6 +63,127 @@ export async function geometry(page: Page, phone: boolean, scope = 'body'): Prom
   }, { min: phone ? 44 : 24, scope });
 }
 
+/** The kinds of problem `overlaps` reports; a screens run fails on any of them (the Director: "you still overlap components"). */
+export const OVERLAP_KINDS = ['text on text', 'off screen', 'under the bar'] as const;
+
+/**
+ * What covers what, measured in the page as drawn (the keys among themselves are in `geometry`):
+ * - text on text: two runs of text of the page drawn over each other (a chip or a badge on a word, a long name under its neighbour);
+ * - off screen: a popover, menu, tooltip or open dialog that does not fit the screen (cut at an edge, with no scroll to reach the rest);
+ * - under the bar: at the end of the page a bar fixed or sticky at the bottom still covers a key or text (the content has no room left below
+ *   it), or at the top of the page a bar at the top covers one.
+ * A box clipped by a scrolling parent counts only where it shows. Text a screen reader alone reads (1 px boxes) does not count.
+ */
+export async function overlaps(page: Page, scope = 'body'): Promise<string[]> {
+  return page.evaluate(async ({ scope }) => {
+    const problems: string[] = [];
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const inScope = (el: Element): boolean => scope === 'body' || el.closest(scope) !== null;
+    const label = (el: Element): string => `${el.tagName.toLowerCase()}${typeof el.className === 'string' && el.className ? '.' + el.className.split(' ')[0] : ''} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 30)}"`;
+    const POP = '.lay-pop, [role=dialog], [role=menu], [role=listbox], [role=tooltip], [data-radix-popper-content-wrapper], dialog[open]';
+    const pinned = (el: Element): HTMLElement | null => {
+      for (let e: Element | null = el; e !== null; e = e.parentElement) if (['fixed', 'sticky'].includes(getComputedStyle(e).position)) return e as HTMLElement;
+      return null;
+    };
+    const shown = (el: Element): boolean => {
+      // checkVisibility also sees the content of a closed <details> (laid out under content-visibility: hidden, all at one spot)
+      if (!el.checkVisibility({ contentVisibilityAuto: true, opacityProperty: true, visibilityProperty: true })) return false;
+      for (let e: Element | null = el; e !== null; e = e.parentElement) {
+        const s = getComputedStyle(e);
+        if (s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) === 0) return false;
+      }
+      return true;
+    };
+    type Box = { left: number; top: number; right: number; bottom: number };
+    const meet = (a: Box, b: Box): Box => ({ left: Math.max(a.left, b.left), top: Math.max(a.top, b.top), right: Math.min(a.right, b.right), bottom: Math.min(a.bottom, b.bottom) });
+    const area = (b: Box): [number, number] => [b.right - b.left, b.bottom - b.top];
+    /** The part of a box its clipping parents let show (each parent that hides or scrolls its overflow cuts it). */
+    const visible = (el: Element, box: Box): Box => {
+      let out = box;
+      for (let e: HTMLElement | null = el as HTMLElement; e !== null && e !== document.body; e = e.parentElement) {
+        const s = getComputedStyle(e);
+        if (s.overflowX !== 'visible' || s.overflowY !== 'visible') out = meet(out, e.getBoundingClientRect());
+      }
+      return out;
+    };
+
+    // off screen: every popover, menu, tooltip or dialog that is open fits the screen
+    for (const pop of document.querySelectorAll<HTMLElement>(POP)) {
+      if (!inScope(pop) || !shown(pop) || pop.parentElement?.closest(POP) != null) continue;
+      const r = pop.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) continue;
+      if (r.left < -1 || r.top < -1 || r.right > vw + 1 || r.bottom > vh + 1) problems.push(`off screen: ${label(pop)} at ${Math.round(r.left)},${Math.round(r.top)} to ${Math.round(r.right)},${Math.round(r.bottom)} on ${vw}x${vh}`);
+    }
+
+    // text on text: the drawn lines of every text node, two nodes never on each other
+    const lines: { el: HTMLElement; box: Box; pin: HTMLElement | null; pop: Element | null }[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+      const el = n.parentElement;
+      if (el === null || (n.textContent ?? '').trim() === '' || !inScope(el) || el.closest('.xterm, script, style, [aria-hidden=true] svg') !== null) continue;
+      if (el.clientHeight === 1 || el.closest('.sr-only') !== null || !shown(el)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) {
+        if (r.width < 2 || r.height < 2) continue;
+        const box = visible(el, r);
+        const [w, h] = area(box);
+        if (w > 2 && h > 2) lines.push({ el, box, pin: pinned(el), pop: el.closest(POP) });
+      }
+    }
+    lines.sort((a, b) => a.box.top - b.box.top);
+    const said = new Set<string>();
+    for (let i = 0; i < lines.length; i += 1) {
+      const a = lines[i];
+      for (let j = i + 1; j < lines.length && lines[j].box.top < a.box.bottom; j += 1) {
+        const b = lines[j];
+        if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        // a popover is over the page by design, and a pinned bar over what scrolls under it (the end of the page is checked below)
+        if (a.pop !== b.pop || a.pin !== b.pin) continue;
+        const [w, h] = area(meet(a.box, b.box));
+        if (w <= 3 || h <= 3) continue; // two line boxes may touch by a pixel or two; glyphs on glyphs are more
+        const text = `text on text: ${label(a.el)} and ${label(b.el)} (${Math.round(w)}x${Math.round(h)})`;
+        if (!said.has(text)) problems.push(text);
+        said.add(text);
+      }
+    }
+
+    // under the bar: at the top of the page a top bar, at the end of the page a bottom bar, covers nothing
+    const bars = [...document.querySelectorAll<HTMLElement>('body *')].filter((el) => {
+      const s = getComputedStyle(el);
+      if (!['fixed', 'sticky'].includes(s.position) || el.closest(POP) !== null || !shown(el)) return false;
+      const r = el.getBoundingClientRect();
+      // a full-screen layer (a dialog's backdrop, a drawer) is not a bar
+      return r.width > 40 && r.height > 8 && r.height < vh * 0.5 && pinned(el.parentElement ?? document.body) === null;
+    });
+    const things = [...document.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary, [role=button], p, h1, h2, h3, li, label, .chip')].filter(
+      (el) => inScope(el) && pinned(el) === null && el.closest(POP) === null && shown(el) && el.clientHeight !== 1,
+    );
+    const start = window.scrollY;
+    // the page and every box that scrolls inside it go to their top, then to their end
+    const scrollers = [...document.querySelectorAll<HTMLElement>('body *')].filter((el) => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight + 1);
+    const was = scrollers.map((el) => el.scrollTop);
+    for (const [where, y] of [['top', 0], ['end', document.documentElement.scrollHeight]] as const) {
+      window.scrollTo(0, y);
+      for (const el of scrollers) el.scrollTop = where === 'top' ? 0 : el.scrollHeight;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      for (const bar of bars) {
+        const b = bar.getBoundingClientRect();
+        if (where === 'top' ? b.top > vh / 2 : b.bottom < vh / 2) continue;
+        for (const el of things) {
+          const box = visible(el, el.getBoundingClientRect());
+          const [w, h] = area(meet(box, b));
+          if (w > 2 && h > 2) problems.push(`under the bar: at the ${where} of the page ${label(bar)} covers ${label(el)} (${Math.round(w)}x${Math.round(h)})`);
+        }
+      }
+    }
+    window.scrollTo(0, start);
+    scrollers.forEach((el, i) => (el.scrollTop = was[i] ?? 0));
+    return problems;
+  }, { scope });
+}
+
 /**
  * No control or label appears twice for the same thing on a view (the Director's "botones duplicados" on Flight Rules): among what is visible inside `scope`, two keys with the
  * same name, a heading with the name of a row, two headings with one name, and a value line that a row already shows. A 1 px label for a screen reader is not drawn, so it does not count.

@@ -1644,6 +1644,11 @@
     --bottom-bar: 68px;
   }
 
+  /* a field that takes focus (a reply box) is scrolled clear of the bottom bar, not under it (68 px + a gap) */
+  html {
+    scroll-padding-bottom: 76px;
+  }
+
   /* Wrap, never overflow: in a row that cannot fit (the link lamp spelling CONNECTING beside the logo, the version and three keys) a key goes to a second line instead of over its neighbour. */
   .topbar {
     flex-wrap: wrap;

@@ -12,7 +12,7 @@ import { createServer } from 'node:net';
 import { LINKS, OUTBOUND, TRAILS } from './linkFixtures.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { duplicates, geometry } from './geometry.js';
+import { duplicates, geometry, OVERLAP_KINDS, overlaps } from './geometry.js';
 import { type BrowserContext, type Locator, type Page, expect, test } from '@playwright/test';
 
 test.skip(process.env.SCREENS !== '1', 'screenshots are taken by hand (SCREENS=1)');
@@ -21,6 +21,7 @@ const OUT = 'screens';
 const PASSWORD = 'screens-password-1';
 const SIZES = [
   { name: 'desktop', width: 1280, height: 800 },
+  { name: 'tablet', width: 768, height: 1024 },
   { name: 'phone', width: 390, height: 844 },
 ] as const;
 const SCHEMES = [
@@ -80,13 +81,35 @@ async function waitFor<T>(what: string, read: () => Promise<T | undefined | fals
 
 const slug = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+/** Sticky elements drawn in the flow (`on`) for a full-page shot, then put back. Runs in the page. */
+function unstick(on: boolean): void {
+  if (on) {
+    for (const el of document.querySelectorAll<HTMLElement>('body *')) {
+      if (getComputedStyle(el).position !== 'sticky') continue;
+      el.dataset.shotUnstuck = el.style.position;
+      el.style.position = 'static';
+    }
+  } else {
+    for (const el of document.querySelectorAll<HTMLElement>('[data-shot-unstuck]')) {
+      el.style.position = el.dataset.shotUnstuck ?? '';
+      delete el.dataset.shotUnstuck;
+    }
+  }
+}
+
 /** One shot of the page as it is; a failure is written down, never thrown. */
 async function shoot(page: Page, group: string, title: string, fullPage = false): Promise<void> {
   n += 1;
   const file = `${group}/${String(n).padStart(3, '0')}-${slug(title)}.png`;
   try {
     await page.waitForTimeout(250);
+    // every shot is measured for overlap (text on text, a popover off the screen, content left under a bar): the run fails on any
+    for (const problem of await overlaps(page)) geo.push(`${group}: ${title}: ${problem}`);
+    // A full-page shot is taken at one scroll, so a sticky bar would be drawn where the first screen ends, over the middle of the page.
+    // It is drawn where it sits at the end of the page instead, which is what the eye meets when it scrolls there.
+    if (fullPage) await page.evaluate(unstick, true);
     await page.screenshot({ path: join(OUT, file), fullPage });
+    if (fullPage) await page.evaluate(unstick, false);
     shots.push({ group, file, title });
   } catch (error) {
     missed.push(`${group}: ${title}: ${(error as Error).message.split('\n')[0]}`);
@@ -477,6 +500,8 @@ test.afterAll(async () => {
     groups.map((g) => `<h2>${g}</h2><div class="g">${shots.filter((s) => s.group === g).map((s) => `<figure><a href="${s.file}"><img loading="lazy" src="${s.file}" alt=""></a><figcaption>${s.title}</figcaption></figure>`).join('')}</div>`).join('');
   await writeFile(join(OUT, 'index.html'), html);
   await writeFile(join(OUT, 'geometry.txt'), geo.length === 0 ? 'no geometry problems\n' : geo.join('\n') + '\n');
+  // overlap fails the run (the other geometry problems are written down for a person to read)
+  expect(geo.filter((g) => OVERLAP_KINDS.some((k) => g.includes(`: ${k}: `)) || g.includes(': overlap: '))).toEqual([]);
 });
 
 /** Every view of the app, in the order a person meets them. `full` is the pass after the seed. */
@@ -550,6 +575,13 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
   });
   await view(page, group, t('comms traffic'), () => page.getByRole('tab', { name: /traffic/i }).click({ timeout: 3000 }));
   await view(page, group, t('comms threads'), () => page.getByRole('tab', { name: /threads/i }).click({ timeout: 3000 }));
+  // the shadcn pilot: an open thread shows the Nexus Thread of Messages and the PromptInput reply box
+  if (full) {
+    await view(page, group, 'comms threads: one open', async () => {
+      await page.locator('[data-slot="thread-row"]').first().click({ timeout: 3000 });
+      await page.locator('[data-slot="prompt-input"], [data-slot="thread"]').first().waitFor({ timeout: 3000 });
+    }, true);
+  }
   await view(page, group, t('missions'), () => open(page, 'Missions'), true);
   await view(page, group, t('mission with a link'), async () => {
     await page.getByRole('button', { name: /Ship the release/ }).first().click({ timeout: 3000 });
@@ -708,7 +740,7 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
 }
 
 test('screens of the app and the docs', async ({ browser }) => {
-  test.setTimeout(480_000);
+  test.setTimeout(1_500_000); // three sizes, each shot measured for overlap
   // 1. before an account: the setup page; 2. the account; 3. the login page
   // a newcomer: the address gonogo prints (with the key in it), before any account exists, then the same address after the login was set up
   const printed = /#token=([0-9a-f]{64})/.exec(output)?.[1] ?? '';
@@ -728,14 +760,32 @@ test('screens of the app and the docs', async ({ browser }) => {
   await newcomer('before the login');
   const setupContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const setupPage = await setupContext.newPage();
-  await setupPage.goto(`${base}/setup`);
+  // waits for the form, not for `load`: on a slow host goto(/setup) lost its response object before load ("Object with guid response@… was not bound")
+  await setupPage.goto(`${base}/setup`, { waitUntil: 'commit' });
+  await setupPage.locator('input[name=token]').waitFor({ timeout: 10_000 });
   await shoot(setupPage, 'before-account', 'setup page');
   await setupPage.locator('input[name=token]').fill(readFileSync(join(home, 'gonogo', 'setup-token'), 'utf8').trim());
   await setupPage.locator('input[name=password]').fill(PASSWORD);
   await setupPage.locator('form button[type=submit], form input[type=submit]').first().click();
   await setupPage.waitForURL((url) => !url.pathname.startsWith('/setup'));
   await newcomer('after the login: the same address');
-  const state = await setupContext.storageState();
+  let state = await setupContext.storageState();
+  // a long run (three sizes, every shot measured) can outlive a session: a group of shots logs in again first when it has (only then, as
+  // each login is one more session in Flight Rules > Security)
+  const relogin = async (): Promise<void> => {
+    const check = await browser.newContext({ storageState: state });
+    const alive = (await check.request.get(`${base}/api/agents`, { maxRedirects: 0 })).status() === 200;
+    await check.close();
+    if (alive) return;
+    const ctx = await browser.newContext();
+    const login = await ctx.newPage();
+    await login.goto(`${base}/login`);
+    await login.locator('input[name=password]').fill(PASSWORD);
+    await login.locator('form button[type=submit], form input[type=submit]').first().click();
+    await login.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 10_000 });
+    state = await ctx.storageState();
+    await ctx.close();
+  };
 
   const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const loginPage = await fresh.newPage();
@@ -794,6 +844,7 @@ test('screens of the app and the docs', async ({ browser }) => {
     await api(chooser, 'PUT', '/api/livery', { slug: scheme.slug }).catch((error: Error) => void missed.push(`livery ${scheme.slug}: ${error.message.split('\n')[0]}`));
     await chooser.close();
     for (const size of SIZES) {
+      await relogin().catch((error: Error) => void missed.push(`relogin: ${error.message.split('\n')[0]}`));
       const group = `${scheme.name}-${size.name}`;
       const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height }, permissions: ['clipboard-read', 'clipboard-write'] });
       const page = await context.newPage();
@@ -824,6 +875,7 @@ test('screens of the app and the docs', async ({ browser }) => {
     await api(chooser, 'PUT', '/api/livery', { slug: look.slug }).catch((error: Error) => void missed.push(`livery ${look.slug}: ${error.message.split('\n')[0]}`));
     await chooser.close();
     for (const size of SIZES) {
+      await relogin().catch((error: Error) => void missed.push(`relogin: ${error.message.split('\n')[0]}`));
       const group = `${look.name}-${size.name}`;
       const context = await browser.newContext({ storageState: state, viewport: { width: size.width, height: size.height } });
       await app(await context.newPage(), group, false);
