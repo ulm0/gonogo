@@ -62,6 +62,8 @@ export interface ServiceHost {
   initDir: string;
   /** True when something accepts connections on host:port. */
   portInUse(host: string, port: number): boolean;
+  /** Waits this long (a test gives a fake clock; absent: launchd's unload is not waited for more than the polls themselves). */
+  sleep?(ms: number): void;
   /** Where a running systemd shows itself (root's way to tell systemd from OpenRC). */
   systemdRunDir: string;
 }
@@ -359,6 +361,45 @@ function isActive(host: ServiceHost, manager: Manager): boolean {
   return ranOk(host.run('rc-service', [SERVICE_NAME, 'status']));
 }
 
+/** How long launchd gets to finish unloading a job (bootout returns before it is gone), polled this often. */
+const UNLOAD_POLL_MS = 200;
+const UNLOAD_POLLS = 50;
+
+/**
+ * launchd: unload the job, wait until it is gone, load it again and start it. `bootout` returns while the job is still unloading, and `bootstrap` of a job that is still
+ * loaded fails with "Input/output error" (exit 5); so the job is polled with `launchctl print` until launchd says it does not know it. A job that is still loaded after
+ * about ten seconds is restarted in place (`kickstart -k`) instead of loaded. The same exit 5 comes from a label that was disabled (`launchctl disable`): that is
+ * enabled again once (it is the job this command was asked to run), and any other cause is named with what to look at. Returns null when the job runs.
+ */
+function launchdLoad(host: ServiceHost, lines: string[], domain: string, target: string): Result | null {
+  const label = `${domain}/${LAUNCHD_LABEL}`;
+  // a job that is not loaded cannot be booted out, and that is fine
+  host.run('launchctl', ['bootout', label]);
+  let gone = false;
+  for (let i = 0; i < UNLOAD_POLLS && !gone; i += 1) {
+    gone = !ranOk(host.run('launchctl', ['print', label]));
+    if (!gone) host.sleep?.(UNLOAD_POLL_MS);
+  }
+  if (!gone) {
+    lines.push('launchd still has the job loaded after 10 seconds: restarting it in place.');
+    return step(host, lines, 'launchctl', ['kickstart', '-k', label]);
+  }
+  let loaded = host.run('launchctl', ['bootstrap', domain, target]);
+  if (!ranOk(loaded) && loaded.code === 5) {
+    const disabled = host.run('launchctl', ['print-disabled', domain]).stdout.split('\n').some((row) => row.includes(`"${LAUNCHD_LABEL}"`) && /=>\s*(?:disabled|true)/.test(row));
+    if (disabled && ranOk(host.run('launchctl', ['enable', label]))) {
+      lines.push(`launchd had ${LAUNCHD_LABEL} disabled (launchctl disable): enabled it again.`);
+      loaded = host.run('launchctl', ['bootstrap', domain, target]);
+    }
+  }
+  if (!ranOk(loaded)) {
+    const log = join(host.userHome, 'Library', 'Logs', 'gonogo.log');
+    const hints = loaded.code === 5 ? [`exit 5 is launchd's "Input/output error": it is usually a plist it does not accept, a label that is disabled, or the job still unloading. Check:`, `  plutil -lint ${target}`, `  launchctl print-disabled ${domain}   (if ${LAUNCHD_LABEL} says disabled: launchctl enable ${label})`, `  lsof -iTCP:${pinnedPort(target)} -sTCP:LISTEN   (something else holding the port)`, `  ${log}   (what gonogo printed)`] : [];
+    return { code: 1, lines: [...lines, describeFailure(`launchctl bootstrap ${domain} ${target}`, loaded), ...hints] };
+  }
+  return step(host, lines, 'launchctl', ['kickstart', label]);
+}
+
 function step(host: ServiceHost, lines: string[], file: string, args: string[]): Result | null {
   const r = host.run(file, args);
   return ranOk(r) ? null : { code: 1, lines: [...lines, describeFailure(`${file} ${args.join(' ')}`, r)] };
@@ -439,11 +480,8 @@ export function serviceInstall(host: ServiceHost, options: ServiceOptions): Resu
     if (!start) return { code: 0, lines: [...lines, 'not started (--no-start). To start it now and at every login:', `  launchctl bootstrap ${domain} ${target}`, ...pty] };
     const wasActive = isActive(host, manager);
     if (!wasActive && host.portInUse(tryHost, port)) return { code: 1, lines: [...lines, ...portRefusal(port)] };
-    host.run('launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`]);
-    for (const args of [['bootstrap', domain, target], ['kickstart', `${domain}/${LAUNCHD_LABEL}`]]) {
-      const failed = step(host, lines, 'launchctl', args);
-      if (failed !== null) return failed;
-    }
+    const failed = launchdLoad(host, lines, domain, target);
+    if (failed !== null) return failed;
     lines.push(wasActive ? 'restarted (it starts again at every login).' : 'loaded and started (it starts again at every login).', ...pty);
     return { code: 0, lines };
   }
@@ -523,15 +561,13 @@ export function serviceControl(host: ServiceHost, action: 'start' | 'stop' | 're
       ? [['systemctl', ['--user', action, `${SERVICE_NAME}.service`]]]
       : manager === 'openrc'
         ? [['rc-service', [SERVICE_NAME, action]]]
-        : action === 'stop'
-          ? [['launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`]]]
-          : [['launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`]], ['launchctl', ['bootstrap', domain, target]], ['launchctl', ['kickstart', `${domain}/${LAUNCHD_LABEL}`]]];
+        : [['launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`]]];
+  // start and restart: the unload is waited for before the job is loaded again (launchdLoad)
+  if (manager === 'launchd' && action !== 'stop') {
+    const failed = launchdLoad(host, [], domain, target);
+    return failed ?? { code: 0, lines: [`${action === 'start' ? 'started' : 'restarted'} (launchd).`] };
+  }
   for (const [file, args] of calls) {
-    // booting out a service that is not loaded fails, and that is fine
-    if (manager === 'launchd' && args[0] === 'bootout' && action !== 'stop') {
-      host.run(file, args);
-      continue;
-    }
     const failed = step(host, [], file, args);
     if (failed !== null) return failed;
   }
@@ -593,6 +629,9 @@ export function realHost(kind: InstallKind, entry: string | undefined, env: Reco
     openrcRun: '/sbin/openrc-run',
     initDir: '/etc/init.d',
     systemdRunDir: '/run/systemd/system',
+    sleep(ms) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    },
     portInUse(addr, port) {
       const probe = "const s=require('net').connect({host:process.argv[1],port:Number(process.argv[2])});s.on('connect',()=>process.exit(0));s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000)";
       return spawnSync(process.execPath, ['-e', probe, addr, String(port)], { timeout: 5000 }).status === 0;

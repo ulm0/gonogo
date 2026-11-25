@@ -1,0 +1,1 @@
+macOS: `gonogo service install`, `start` and `restart` no longer fail with "Bootstrap failed: 5: Input/output error" when launchd is still unloading the old job: gonogo waits for it to be gone (up to ten seconds), restarts it in place if it never goes, enables the label again if it was disabled, and otherwise prints what to check (the plist, the disabled list, the port, the log).

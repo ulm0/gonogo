@@ -349,6 +349,104 @@ describe('gonogo service: launchd', () => {
   });
 });
 
+describe('gonogo service: launchd, "Bootstrap failed: 5: Input/output error"', () => {
+  const LABEL = 'gui/1000/com.ulm0.gonogo';
+  /** A machine where launchctl print says "loaded" for `loadedPolls` calls after the bootout (it unloads asynchronously), then "not found". */
+  function slow(opts: { loadedPolls: number; bootstrap?: Array<Partial<Ran>>; disabled?: boolean }): Fake & { slept: number[] } {
+    const f = fake({ platform: 'darwin' });
+    const slept: number[] = [];
+    let polls = 0;
+    let booted = false;
+    const bootstraps = [...(opts.bootstrap ?? [])];
+    f.host.sleep = (ms) => void slept.push(ms);
+    f.host.run = (file, args) => {
+      f.calls.push([file, args]);
+      if (file !== 'launchctl') return { code: 1, stdout: '', stderr: '' };
+      if (args[0] === 'bootout') {
+        booted = true;
+        polls = 0;
+        return { code: 0, stdout: '', stderr: '' };
+      }
+      if (args[0] === 'print') {
+        if (!booted) return { code: 1, stdout: '', stderr: '' };
+        polls += 1;
+        return polls <= opts.loadedPolls ? { code: 0, stdout: '\tstate = running\n', stderr: '' } : { code: 113, stdout: '', stderr: 'Could not find service' };
+      }
+      if (args[0] === 'print-disabled') return { code: 0, stdout: opts.disabled === true ? `disabled services = {\n\t"com.ulm0.gonogo" => disabled\n}\n` : 'disabled services = {\n}\n', stderr: '' };
+      if (args[0] === 'bootstrap') return { code: 0, stdout: '', stderr: '', ...(bootstraps.shift() ?? {}) };
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    return Object.assign(f, { slept });
+  }
+  /** The launchctl verbs from the bootout on (an install looks at the state first). */
+  const names = (f: Fake): string[] => {
+    const all = f.calls.filter(([file]) => file === 'launchctl').map(([, a]) => a[0] ?? '');
+    return all.slice(all.indexOf('bootout'));
+  };
+
+  it('waits until launchd has finished unloading before it bootstraps, on install, restart and start', () => {
+    for (const run of [(f: Fake) => serviceInstall(f.host, {}), (f: Fake) => serviceControl(f.host, 'restart', {}), (f: Fake) => serviceControl(f.host, 'start', {})]) {
+      const f = slow({ loadedPolls: 3 });
+      if (run.toString().includes('serviceControl')) serviceInstall(f.host, { noStart: true });
+      f.calls.length = 0;
+      const r = run(f);
+      expect(r.code).toBe(0);
+      expect(names(f)).toEqual(['bootout', 'print', 'print', 'print', 'print', 'bootstrap', 'kickstart']);
+      expect(f.slept).toEqual([200, 200, 200]);
+    }
+  });
+
+  it('a job that is still loaded after about ten seconds is restarted in place, not bootstrapped', () => {
+    const f = slow({ loadedPolls: 1000 });
+    const r = serviceInstall(f.host, {});
+    expect(r.code).toBe(0);
+    expect(names(f).filter((n) => n === 'print')).toHaveLength(50);
+    expect(f.slept).toHaveLength(50);
+    expect(f.calls.filter(([, a]) => a[0] === 'bootstrap')).toEqual([]);
+    expect(f.calls.at(-1)).toEqual(['launchctl', ['kickstart', '-k', LABEL]]);
+    expect(text(r)).toContain('restarting it in place');
+    const again = slow({ loadedPolls: 1000 });
+    serviceInstall(again.host, { noStart: true });
+    expect(serviceControl(again.host, 'restart', {}).code).toBe(0);
+    expect(again.calls.at(-1)).toEqual(['launchctl', ['kickstart', '-k', LABEL]]);
+  });
+
+  it('exit 5 from a disabled label: it is enabled once and bootstrapped again, and the output says so', () => {
+    const f = slow({ loadedPolls: 0, bootstrap: [{ code: 5, stderr: 'Bootstrap failed: 5: Input/output error' }], disabled: true });
+    const r = serviceInstall(f.host, {});
+    expect(r.code).toBe(0);
+    expect(names(f)).toEqual(['bootout', 'print', 'bootstrap', 'print-disabled', 'enable', 'bootstrap', 'kickstart']);
+    expect(f.calls.find(([, a]) => a[0] === 'enable')?.[1]).toEqual(['enable', LABEL]);
+    expect(text(r)).toContain('had com.ulm0.gonogo disabled');
+  });
+
+  it('exit 5 for any other reason fails once and says what to check, with the port and the log of this install', () => {
+    const f = slow({ loadedPolls: 0, bootstrap: [{ code: 5, stderr: 'Bootstrap failed: 5: Input/output error' }, { code: 5, stderr: 'Bootstrap failed: 5: Input/output error' }] });
+    const r = serviceInstall(f.host, { port: 7777 });
+    expect(r.code).toBe(1);
+    expect(f.calls.filter(([, a]) => a[0] === 'bootstrap')).toHaveLength(1);
+    const out = text(r);
+    expect(out).toMatch(/launchctl bootstrap gui\/1000 .* failed \(exit 5\): Bootstrap failed: 5: Input\/output error/);
+    expect(out).toContain('plutil -lint ');
+    expect(out).toContain('launchctl print-disabled gui/1000');
+    expect(out).toContain('lsof -iTCP:7777 -sTCP:LISTEN');
+    expect(out).toContain('Library/Logs/gonogo.log');
+    // a restart of the installed file says the same
+    const g = slow({ loadedPolls: 0, bootstrap: [{ code: 5 }, { code: 5 }] });
+    serviceInstall(g.host, { port: 7778, noStart: true });
+    const again = serviceControl(g.host, 'restart', {});
+    expect(again.code).toBe(1);
+    expect(text(again)).toContain('lsof -iTCP:7778 -sTCP:LISTEN');
+  });
+
+  it('a bootstrap that fails for another reason prints only the failure, as before', () => {
+    const f = slow({ loadedPolls: 0, bootstrap: [{ code: 1, stderr: 'nope' }] });
+    const r = serviceInstall(f.host, {});
+    expect(r.code).toBe(1);
+    expect(text(r)).not.toContain('plutil');
+  });
+});
+
 describe('gonogo service: OpenRC', () => {
   const withOpenrc = (over: Partial<ServiceHost> = {}, answers: Record<string, Partial<Ran>> = {}): Fake => {
     const f = fake(over, answers);
