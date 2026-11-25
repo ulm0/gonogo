@@ -49,6 +49,7 @@ export function listProblems(entries, serverModules) {
     'package/dist/shared/protocol.js',
     'package/dist/shared/positions.js',
     'package/dist/shared/fuel.js',
+    'package/dist/shared/controls.js',
     'package/dist/shared/cron.js',
     'package/dist/shared/details.js',
     'package/dist/shared/diff.js',
