@@ -256,6 +256,33 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     await page.keyboard.press('Escape');
   });
 
+  // 7c. Ctrl+B briefs FLIGHT over a screen that is not the room: Enter sends, Esc closes and gives the keyboard back; the Patch Panel's Brief FLIGHT line opens the same dialog
+  await test.step('ctrl+b opens the brief dialog from any screen', async () => {
+    const dialog = page.getByRole('dialog', { name: 'BRIEF FLIGHT' });
+    await page.goto(`${base}/r/main/`);
+    await page.locator('.topbar').getByRole('button', { name: 'Work', exact: true }).click();
+    await page.getByRole('group', { name: 'Work' }).getByRole('button', { name: 'Flight Plan', exact: true }).click();
+    const opener = page.locator('.topbar').getByRole('button', { name: 'Work', exact: true });
+    await opener.focus();
+    await page.keyboard.press('Control+b');
+    await expect(dialog.locator('.brief-input')).toBeFocused();
+    await page.keyboard.type('smoke brief');
+    await page.keyboard.press('Enter');
+    await expect(dialog.locator('.brief-note[role=status]')).toContainText('Sent.', { timeout: 15_000 });
+    await expect(dialog.locator('.brief-input')).toHaveValue('');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    // the Patch Panel's line
+    await page.keyboard.press('Control+k');
+    await page.locator('.patch-input').fill('Brief FLIGHT');
+    await page.keyboard.press('Enter');
+    await expect(dialog.locator('.brief-input')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(opener).toBeFocused();
+    expectClean('the brief dialog');
+  });
+
   // 8. a mission and its closing checklist
   await test.step('mission closing checklist', async () => {
     const made = await page.request.post(`${base}/api/missions`, { headers: { origin: base }, data: { name: 'Smoke mission' } });
