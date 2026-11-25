@@ -23,11 +23,12 @@ function subscribePhone(notify: () => void): () => void {
   return () => query.removeEventListener('change', notify);
 }
 
-/** The box that briefs FLIGHT. Its field has the class `brief-input`, so a screen can send the keyboard there. `onLeave` runs before Make this a mission changes the page (the Brief dialog closes then). */
-export function Brief({ boss, onLeave }: { boss: AgentView | null; onLeave?: () => void }): ReactElement {
+/** The box that briefs FLIGHT. Its field has the class `brief-input`, so a screen can send the keyboard there. `onLeave` runs before Make this a mission changes the page (the Brief dialog closes then). `draft` keeps the text outside the box, so the dialog's survives Esc. */
+export function Brief({ boss, onLeave, draft }: { boss: AgentView | null; onLeave?: () => void; draft?: [string, (text: string) => void] }): ReactElement {
   const id = useId();
   const phone = useSyncExternalStore(subscribePhone, onPhone, () => false);
-  const [text, setText] = useState('');
+  const own = useState('');
+  const [text, setText] = draft ?? own;
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ text: string; tone: 'ok' | 'danger' } | null>(null);
 

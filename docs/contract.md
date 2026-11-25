@@ -2308,4 +2308,9 @@ Client only; no server change. `ClientState.view` loses `loop`, `downlink` and `
 
 ### Brief dialog (2026-11-25)
 
-Client only; no route, frame or protocol type changed. `isBriefKey` in `shell.ts`; `BriefDialog.tsx` (the house Radix `Dialog` holding `Brief`) opened by Cmd/Ctrl+B on any screen and by the Patch Panel line Brief FLIGHT (which no longer goes to the room). `Office` keeps one dialog state for the panel and the brief. `Brief` gains `onLeave` and a note when the room has no boss. Spec: `docs/shell-spec.md`, section "Brief dialog". Tests: `test/client-shell.test.ts`.
+Brief FLIGHT in a dialog over any screen (spec `docs/shell-spec.md`, section "Brief dialog"). Client only: no route, frame, state file or protocol type changed.
+
+- 8 client: `isBriefKey` in `shell.ts` (Cmd/Ctrl+B); `BriefDialog.tsx`, the house Radix `Dialog` holding `Brief`, rendered by `Office` on every screen and holding the draft so it survives Esc; `Office` keeps one dialog state (`'panel' | 'brief' | null`), so a key while either is open does nothing; the Patch Panel line Brief FLIGHT opens the dialog (`onBrief`) instead of going to the room. `Brief` gains `onLeave`, `draft` and a note when the room has no boss.
+- Tests: `test/client-shell.test.ts` (`isBriefKey`); `browser/smoke.spec.ts` step 7c (Ctrl+B on the Flight Plan, send, Esc and focus back, the draft kept, the panel's line, no dialog from Ctrl+B with the panel open).
+
+Checked in Chromium (desk and 390 px phone console). Not run: Firefox, WebKit, a real IME, a screen reader, the StepUp dialog stacking.

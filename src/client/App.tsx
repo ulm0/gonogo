@@ -399,7 +399,7 @@ function Office(): ReactElement {
       const want = isPanelKey(e) ? 'panel' : isBriefKey(e) ? 'brief' : null;
       // a key that ends an input-method composition is not a shortcut
       if (want === null || e.isComposing) return;
-      // also keeps the browser's own Ctrl+B (Firefox: the bookmarks sidebar)
+      // also stops the browser's own Ctrl+B (Firefox: the bookmarks sidebar)
       e.preventDefault();
       setModal((m) => m ?? want);
     };

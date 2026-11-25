@@ -273,6 +273,20 @@ test('setup, login with a second factor, styles, a room with a live link and a c
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect(opener).toBeFocused();
+    // a text not sent survives Esc
+    await page.keyboard.press('Control+b');
+    await page.keyboard.type('kept draft');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await page.keyboard.press('Control+b');
+    await expect(dialog.locator('.brief-input')).toHaveValue('kept draft');
+    await page.keyboard.press('Escape');
+    await expect(opener).toBeFocused();
+    // one dialog at a time: Ctrl+B with the Patch Panel open does not stack the brief on it
+    await page.keyboard.press('Control+k');
+    await page.keyboard.press('Control+b');
+    await expect(dialog).toHaveCount(0);
+    await page.keyboard.press('Escape');
     // the Patch Panel's line
     await page.keyboard.press('Control+k');
     await page.locator('.patch-input').fill('Brief FLIGHT');

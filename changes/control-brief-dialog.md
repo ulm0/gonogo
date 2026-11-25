@@ -1,0 +1,1 @@
+- **Brief FLIGHT from any screen.** Cmd+B (Mac) or Ctrl+B opens the Brief FLIGHT box in a dialog over whatever is open, and the Patch Panel's Brief FLIGHT line opens the same dialog, so it works on a phone too. It sends to this room's FLIGHT without leaving the page, keeps a text not sent for the next open, and the brief box now says so when the room has no FLIGHT.
