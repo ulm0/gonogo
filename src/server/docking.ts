@@ -551,8 +551,11 @@ export function createDocking(options: DockingOptions): Docking {
       // an address changed by hand is believed only when the station there answers our nonce with the secret: HMAC(secret, nonce, its id) (responses are not authenticated otherwise)
       if (dock.unverified === true) {
         const proof = typeof answer.proof === 'string' ? answer.proof : '';
-        if (sent.nonce === undefined || !sameText(proof, mac(dock.secret, 'roster-proof', sent.nonce, dock.id))) {
-          throw new HubError('conflict', `the station at the new address of ${dock.name} did not prove that it holds this dock's secret (an older gonogo cannot): check the address, or pair again. Nothing is sent there.`);
+        // the address we called, as the station there must have been reached: host (with its port) and, for a room, its /r/<room>
+        const called = new URL(dock.url);
+        const expected = `${called.host}${called.pathname === '/' ? '' : called.pathname.replace(/\/$/, '')}`.toLowerCase();
+        if (sent.nonce === undefined || !sameText(proof, mac(dock.secret, 'roster-proof', sent.nonce, dock.id, expected))) {
+          throw new HubError('conflict', `the station at the new address of ${dock.name} did not prove that it holds this dock's secret at this address (an older gonogo cannot, and neither can a station that only relays the call): check the address, or pair again. Nothing is sent there.`);
         }
         delete dock.unverified;
         // a write that fails is logged by the chain; the next pull proves it again
@@ -1351,7 +1354,8 @@ export function createDocking(options: DockingOptions): Docking {
       switch (route) {
         case 'roster':
           // the proof the caller asked for by its nonce: only a station that holds this dock's secret can make it
-          return { station: { id, name: options.name }, agents: options.roster(), proof: mac(dock.secret, 'roster-proof', typeof headers['x-gonogo-nonce'] === 'string' ? headers['x-gonogo-nonce'] : '', id) };
+          // the nonce of the call and the address it was reached at (the caller checks it against the address it typed: a station that only relays our call is reached at another)
+          return { station: { id, name: options.name }, agents: options.roster(), proof: mac(dock.secret, 'roster-proof', typeof headers['x-gonogo-nonce'] === 'string' ? headers['x-gonogo-nonce'] : '', id, typeof headers['x-gonogo-reached'] === 'string' ? headers['x-gonogo-reached'] : '') };
         case 'message':
           return traced(dock, 'a message', () => acceptMessage(dock, readObject(body)));
         case 'task':

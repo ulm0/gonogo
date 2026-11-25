@@ -84,6 +84,8 @@ function world(): World {
     if (!target || target.down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
     const headers: IncomingHttpHeaders = {};
     for (const [key, value] of Object.entries((init?.headers ?? {}) as Record<string, string>)) headers[key.toLowerCase()] = value;
+    // what the proxy writes for a call: the address it was reached at
+    headers['x-gonogo-reached'] = url.host + (room === null ? '' : room[1]);
     try {
       const data = await target.docking.handle(url.pathname.split('/').slice(2).join('/'), init?.method ?? 'GET', url.pathname + url.search, headers, Buffer.from(String(init?.body ?? '')));
       return Response.json(data);
@@ -1039,6 +1041,44 @@ describe('a dock in another room of a station, and its address', () => {
     expect(b.delivered).toHaveLength(1);
   });
 
+  it('a relay: a host that forwards our signed roster call to the real peer cannot pass on its proof, because the proof names the address the peer was reached at', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    const relay = await w.make('relay', 'http://relay.test');
+    const forwarded: string[] = [];
+    // it forwards every call unchanged to the real beta, which must be reached at its own host (its allow-host), and returns what beta answered
+    relay.docking.handle = async (route, method, url, headers, body) => {
+      forwarded.push(route);
+      return b.docking.handle(route, method, url, { ...headers, 'x-gonogo-reached': 'b.test' }, body);
+    };
+    const moved = await a.docking.setAddress(aSees, { url: 'http://relay.test' });
+    expect(moved.unverified).toBe(true);
+    expect(moved.error).toContain('did not prove that it holds this dock');
+    expect(forwarded).toEqual(['roster']);
+    // asked again, and after a message, it is still held: the relay learns nothing but roster calls
+    await a.docking.pull();
+    await a.docking.send('beta', { from: 'ana', to: 'bob', subject: '', body: 'secret text', hops: 1 });
+    expect(new Set(forwarded)).toEqual(new Set(['roster']));
+    // the real address proves itself
+    expect((await a.docking.setAddress(aSees, { url: 'http://b.test' })).unverified).toBeUndefined();
+  });
+
+  it('the proof binds the room too: the same station reached at its root alias is not /r/<room>', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test/r/umbral');
+    const { aSees } = await pair(a, b);
+    w.stations.set('http://b.test', b);
+    // a calls the root alias but types it with a room that is not there: beta is reached at 'b.test', the caller expects 'b.test/r/umbral'
+    const real = b.docking.handle.bind(b.docking);
+    b.docking.handle = async (route, method, url, headers, body) => real(route, method, url, { ...headers, 'x-gonogo-reached': 'b.test' }, body);
+    expect((await a.docking.setAddress(aSees, { url: 'http://b.test' })).unverified).toBeUndefined();
+    const moved = await a.docking.setAddress(aSees, { url: 'http://b.test/r/umbral' });
+    expect(moved.unverified).toBe(true);
+  });
+
   it('a peer that is an older gonogo (no proof in its roster) stays unverified with a message that says why', async () => {
     const w = world();
     const a = await w.make('alpha', 'http://a.test');
@@ -1053,7 +1093,7 @@ describe('a dock in another room of a station, and its address', () => {
     w.stations.set('http://b2.test', b);
     const moved = await a.docking.setAddress(aSees, { url: 'http://b2.test' });
     expect(moved.unverified).toBe(true);
-    expect(moved.error).toContain('(an older gonogo cannot)');
+    expect(moved.error).toContain('an older gonogo cannot');
   });
 
   it('refuses a bad address, an unknown field and an unknown dock, and changes nothing', async () => {

@@ -361,14 +361,21 @@ describe('rooms proxy: HTTP', () => {
   it('passes the four headers of a signed station call or webhook to the room, and no other x-gonogo- header, anywhere', async () => {
     const signed = { 'x-gonogo-station': 'beta', 'x-gonogo-timestamp': '1795000000000', 'x-gonogo-nonce': 'ab'.repeat(16), 'x-gonogo-signature': 'cd'.repeat(32) };
     // a sender's own copy of what only the proxy may say: it must not reach the room
-    const forged = { 'x-gonogo-director': 'web', 'x-gonogo-actor': 'session', 'x-gonogo-other': '1' };
+    const forged = { 'x-gonogo-director': 'web', 'x-gonogo-actor': 'session', 'x-gonogo-other': '1', 'x-gonogo-reached': 'evil.example' };
     const lastOf = (room: Fake): Seen => room.seen[room.seen.length - 1]!;
     const only = (headers: http.IncomingHttpHeaders): string[] => Object.keys(headers).filter((name) => name.startsWith('x-gonogo-')).sort();
     for (const [path, room] of [['/dock/roster', main], ['/r/a/dock/roster', a], ['/uplink/u1', main], ['/r/a/uplink/u1', a]] as const) {
       const res = await get(path, { ...signed, ...forged }, path.includes('roster') ? 'GET' : 'POST', path.includes('roster') ? undefined : '{}');
       expect(res.status, path).toBe(200);
       const seen = lastOf(room);
-      expect(only(seen.headers), path).toEqual(Object.keys(signed).sort());
+      // a station call also carries the address it was reached at, written by the proxy (never the sender's own copy); a webhook does not
+      const dockCall = path.includes('/dock/');
+      expect(only(seen.headers), path).toEqual((dockCall ? [...Object.keys(signed), 'x-gonogo-reached'] : Object.keys(signed)).sort());
+      if (dockCall) {
+        expect(seen.headers['x-gonogo-reached'], path).not.toContain('evil.example');
+        expect(String(seen.headers['x-gonogo-reached']).endsWith('/r/a'), path).toBe(path.startsWith('/r/a/'));
+        expect(String(seen.headers['x-gonogo-reached']).startsWith('127.0.0.1:'), path).toBe(true);
+      }
       for (const [name, value] of Object.entries(signed)) expect(seen.headers[name], path + ' ' + name).toBe(value);
       expect(seen.headers.authorization, path).toBeUndefined();
     }
