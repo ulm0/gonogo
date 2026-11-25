@@ -63,13 +63,3 @@
   height: 16px;
   background: radial-gradient(circle, currentColor 2px, transparent 2.5px) 0 0 / 33.3% 33.3%;
 }
-
-/* The Brief dialog (BriefDialog.tsx) reuses the panel's frame; its title already says Brief FLIGHT, so the box's own label is kept for screen readers only. */
-.brief-dialog .brief-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}

@@ -17,6 +17,7 @@
 @source './Pop.tsx';
 @source './StepUpDialog.tsx';
 @source './PatchPanel.tsx';
+@source './BriefDialog.tsx';
 @source './TerminalBar.tsx';
 @source '../shared/controls.ts';
 @source './LayoutPop.tsx';

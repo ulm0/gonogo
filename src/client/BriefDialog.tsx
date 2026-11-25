@@ -37,7 +37,8 @@ export function BriefDialog({ open, onClose }: { open: boolean; onClose(): void 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
-        className="patch brief-dialog module top-[10vh] flex w-[min(560px,calc(100vw-24px))] max-w-none translate-y-0 flex-col gap-2.5 p-3.5 text-foreground sm:max-w-none max-[699px]:top-3"
+        // the title already says Brief FLIGHT: the box's own label is for screen readers only
+        className="patch brief-dialog module [&_.brief-label]:sr-only top-[10vh] flex w-[min(560px,calc(100vw-24px))] max-w-none translate-y-0 flex-col gap-2.5 p-3.5 text-foreground sm:max-w-none max-[699px]:top-3"
         aria-describedby={undefined}
         // the field, not the first key (Close); a disabled field (no FLIGHT, or stopped) leaves Radix to focus Close
         onOpenAutoFocus={(e) => {

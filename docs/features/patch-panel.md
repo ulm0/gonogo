@@ -13,8 +13,8 @@ One field that reaches every console, view and common action of the room from th
 
 ## Brief FLIGHT anywhere
 
-- **Open**: Cmd+B or Ctrl+B on any screen (the room, Comms, the Flight Plan, the Hangar, the hire form, a console on a phone), or the panel's Brief FLIGHT line (this is how a phone opens it). Ctrl+B inside a terminal stays in the terminal; Cmd+B opens the dialog there.
+- **Open**: Cmd+B or Ctrl+B on any screen (the room, Comms, the Flight Plan, the Hangar, the hire form, a console on a phone with a keyboard), or the panel's Brief FLIGHT line (this is how a touch screen opens it; a console open on a phone has no PATCH key, so leave it first). Ctrl+B inside a terminal stays in the terminal; Cmd+B opens the dialog there.
 - **Sends**: the same box as the room's: Enter sends to this room's FLIGHT, Shift+Enter is a new line, a long text goes as a file, Make this a mission closes the dialog and opens the draft. The page under it does not change.
 - **After a send**: the dialog stays open and shows the sent note. Esc or CLOSE shuts it and the keyboard goes back to where it was. A text not sent is still there the next time it opens.
 - **No FLIGHT, or FLIGHT stopped**: the box is off and says so, as in the room.
-- One dialog at a time: Cmd/Ctrl+B with the panel open, or Cmd/Ctrl+K with the brief open, does nothing.
+- One dialog at a time: Cmd/Ctrl+B or Cmd/Ctrl+K while any dialog is open (the panel, the brief, a password check, Select text) does nothing.

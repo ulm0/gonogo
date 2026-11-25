@@ -392,7 +392,7 @@ function Office(): ReactElement {
   const form = useStore((s) => s.form);
   const consoleOpen = useStore((s) => s.consoleOpen);
   const view = useStore((s) => s.view);
-  // one dialog at a time: a key pressed while either is open leaves it as it is (the Patch Panel has a Brief FLIGHT line)
+  // one dialog at a time: a key pressed while any dialog is open (these two, step-up, Select text) does nothing (the Patch Panel has a Brief FLIGHT line)
   const [modal, setModal] = useState<'panel' | 'brief' | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -401,7 +401,8 @@ function Office(): ReactElement {
       if (want === null || e.isComposing) return;
       // also stops the browser's own Ctrl+B (Firefox: the bookmarks sidebar)
       e.preventDefault();
-      setModal((m) => m ?? want);
+      // every house Dialog marks its content so; a Popover is role=dialog too, so that role is not asked
+      if (document.querySelector('[data-slot="dialog-content"]') === null) setModal(want);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
