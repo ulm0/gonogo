@@ -14,6 +14,7 @@
 @source './ui';
 @source './PartyLine.tsx';
 @source './TopBar.tsx';
+@source './Pop.tsx';
 
 @theme inline {
   --color-background: var(--body);

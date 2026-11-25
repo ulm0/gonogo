@@ -1,6 +1,7 @@
-/** A key that opens a small panel under (or over) it: the one primitive of the prototype's menus, popovers and strip chips. Closes on Escape, on a press outside and when asked. */
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+/** A key that opens a small panel under (or over) it: the one primitive of the prototype's menus, popovers and strip chips. Closes on Escape, on a press outside and when asked. Radix Popover places it: it flips to the side with room, moves in from an edge and is as tall as the room it has. */
+import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/ui/popover.js';
 
 interface Props {
   /** What the key says. */
@@ -19,61 +20,27 @@ interface Props {
 }
 
 export function Pop({ label, name, dialog, kind = 'quiet', up = false, align = 'start', className = '', children }: Props): ReactElement {
-  const id = useId();
   const [open, setOpen] = useState(false);
-  const root = useRef<HTMLSpanElement | null>(null);
-  const key = useRef<HTMLButtonElement | null>(null);
-  const panel = useRef<HTMLDivElement | null>(null);
-  // The panel fits the screen: it is as tall as the room below the key (above it when it opens up) and moves in from an edge it would cross.
-  // shortcut: measured when it opens, not on a scroll or resize while open; follow the key with a ResizeObserver if that is ever needed.
-  useLayoutEffect(() => {
-    const p = panel.current;
-    const k = key.current;
-    if (!open || p === null || k === null) return;
-    const margin = 16;
-    const kr = k.getBoundingClientRect();
-    const below = window.innerHeight - kr.bottom - 6 - margin;
-    const above = kr.top - 6 - margin;
-    // a key near the bottom of the screen opens its panel upward when the panel would not fit below and there is more room above
-    const flip = !up && below < Math.min(p.scrollHeight, 240) && above > below;
-    if (flip) p.dataset.up = '';
-    else if (!up) delete p.dataset.up;
-    const room = up || flip ? above : below;
-    p.style.setProperty('--pop-room', `${Math.max(120, Math.floor(room))}px`);
-    p.style.setProperty('--pop-shift', '0px');
-    const r = p.getBoundingClientRect();
-    const shift = r.right > window.innerWidth - margin ? window.innerWidth - margin - r.right : r.left < margin ? margin - r.left : 0;
-    p.style.setProperty('--pop-shift', `${Math.round(shift)}px`);
-  }, [open, up]);
-  useEffect(() => {
-    if (!open) return undefined;
-    const outside = (event: PointerEvent): void => {
-      if (root.current !== null && !root.current.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-        key.current?.focus();
-      }
-    };
-    document.addEventListener('pointerdown', outside);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [open]);
   return (
-    <span className={`lay-anchor ${className}`.trim()} ref={root}>
-      <button ref={key} type="button" className="btn" data-kind={kind} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} aria-label={name} onClick={() => setOpen(!open)}>
-        {label}
-      </button>
-      {open && <div className="lay-scrim" aria-hidden="true" onClick={() => setOpen(false)} />}
-      {open && (
-        <div ref={panel} id={id} className="lay-pop module" role="dialog" aria-label={dialog ?? name ?? (typeof label === 'string' ? label : undefined)} data-up={up || undefined} data-align={align}>
+    <span className={`lay-anchor ${className}`.trim()}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger className="btn" data-kind={kind} aria-label={name}>
+          {label}
+        </PopoverTrigger>
+        {open && <div className="lay-scrim" aria-hidden="true" onClick={() => setOpen(false)} />}
+        <PopoverContent
+          className="lay-pop module z-30 flex max-h-(--radix-popover-content-available-height) min-h-[120px] w-auto max-w-[min(380px,calc(100vw-32px))] min-w-[220px] flex-col gap-2 overflow-y-auto p-3 shadow-[0_8px_24px_rgb(0_0_0/0.25)]"
+          aria-label={dialog ?? name ?? (typeof label === 'string' ? label : undefined)}
+          side={up ? 'top' : 'bottom'}
+          align={align}
+          sideOffset={6}
+          collisionPadding={16}
+          // the key keeps the focus when the panel opens, as before: Tab goes on into the panel
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
           {children(() => setOpen(false))}
-        </div>
-      )}
+        </PopoverContent>
+      </Popover>
     </span>
   );
 }

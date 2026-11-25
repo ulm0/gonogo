@@ -1,0 +1,1 @@
+- The room's popovers and menus (Layout, Work, More, the strip's chips, the terminal's Copy and More keys, the version) open on Radix Popover from shadcn/ui: they flip to the side with room, stay in from the screen's edges and are as tall as the room they have, with the same keys and the same keyboard as before.
