@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { detectManager, flagsArgv, flagsText, renderLaunchd, renderOpenrc, renderSystemd, resolveSpec, serviceControl, serviceInstall, serviceStatus, serviceUninstall, systemdWord, xmlText, type Ran, type ServiceHost } from '../src/server/service.js';
+import { detectManager, stableBrewPath, flagsArgv, flagsText, renderLaunchd, renderOpenrc, renderSystemd, resolveSpec, serviceControl, serviceInstall, serviceStatus, serviceUninstall, systemdWord, xmlText, type Ran, type ServiceHost } from '../src/server/service.js';
 
 type Call = [string, string[]];
 
@@ -405,6 +405,188 @@ describe('gonogo service: launchd', () => {
     expect(serviceControl(f.host, 'stop', {}).lines).toEqual(['stopped (launchd).']);
     expect(serviceUninstall(f.host, {}).lines[0]).toMatch(/^stopped and removed /);
     expect(serviceStatus(f.host, {}).code).toBe(4);
+  });
+});
+
+describe('gonogo service: launchd, "Bootstrap failed: 5: Input/output error"', () => {
+  const LABEL = 'gui/1000/com.ulm0.gonogo';
+  /** A machine where launchctl print says "loaded" for `loadedPolls` calls after the bootout (it unloads asynchronously), then "not found". */
+  function slow(opts: { loadedPolls: number; bootstrap?: Array<Partial<Ran>>; disabled?: boolean }): Fake & { slept: number[] } {
+    const f = fake({ platform: 'darwin' });
+    const slept: number[] = [];
+    let polls = 0;
+    let booted = false;
+    const bootstraps = [...(opts.bootstrap ?? [])];
+    f.host.sleep = (ms) => void slept.push(ms);
+    f.host.run = (file, args) => {
+      f.calls.push([file, args]);
+      if (file !== 'launchctl') return { code: 1, stdout: '', stderr: '' };
+      if (args[0] === 'bootout') {
+        booted = true;
+        polls = 0;
+        return { code: 0, stdout: '', stderr: '' };
+      }
+      if (args[0] === 'print') {
+        if (!booted) return { code: 1, stdout: '', stderr: '' };
+        polls += 1;
+        return polls <= opts.loadedPolls ? { code: 0, stdout: '\tstate = running\n', stderr: '' } : { code: 113, stdout: '', stderr: 'Could not find service' };
+      }
+      if (args[0] === 'print-disabled') return { code: 0, stdout: opts.disabled === true ? `disabled services = {\n\t"com.ulm0.gonogo" => disabled\n}\n` : 'disabled services = {\n}\n', stderr: '' };
+      if (args[0] === 'bootstrap') return { code: 0, stdout: '', stderr: '', ...(bootstraps.shift() ?? {}) };
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    return Object.assign(f, { slept });
+  }
+  /** The launchctl verbs from the bootout on (an install looks at the state first). */
+  const names = (f: Fake): string[] => {
+    const all = f.calls.filter(([file]) => file === 'launchctl').map(([, a]) => a[0] ?? '');
+    return all.slice(all.indexOf('bootout'));
+  };
+
+  it('waits until launchd has finished unloading before it bootstraps, on install, restart and start', () => {
+    for (const run of [(f: Fake) => serviceInstall(f.host, {}), (f: Fake) => serviceControl(f.host, 'restart', {}), (f: Fake) => serviceControl(f.host, 'start', {})]) {
+      const f = slow({ loadedPolls: 3 });
+      if (run.toString().includes('serviceControl')) serviceInstall(f.host, { noStart: true });
+      f.calls.length = 0;
+      const r = run(f);
+      expect(r.code).toBe(0);
+      expect(names(f)).toEqual(['bootout', 'print', 'print', 'print', 'print', 'bootstrap', 'kickstart']);
+      expect(f.slept).toEqual([200, 200, 200]);
+    }
+  });
+
+  it('a job that is still loaded after about ten seconds is restarted in place, not bootstrapped', () => {
+    const f = slow({ loadedPolls: 1000 });
+    const r = serviceInstall(f.host, {});
+    expect(r.code).toBe(0);
+    expect(names(f).filter((n) => n === 'print')).toHaveLength(50);
+    expect(f.slept).toHaveLength(50);
+    expect(f.calls.filter(([, a]) => a[0] === 'bootstrap')).toEqual([]);
+    expect(f.calls.at(-1)).toEqual(['launchctl', ['kickstart', '-k', LABEL]]);
+    expect(text(r)).toContain('restarting it in place');
+    const again = slow({ loadedPolls: 1000 });
+    serviceInstall(again.host, { noStart: true });
+    expect(serviceControl(again.host, 'restart', {}).code).toBe(0);
+    expect(again.calls.at(-1)).toEqual(['launchctl', ['kickstart', '-k', LABEL]]);
+  });
+
+  it('exit 5 from a disabled label: it is enabled once and bootstrapped again, and the output says so', () => {
+    const f = slow({ loadedPolls: 0, bootstrap: [{ code: 5, stderr: 'Bootstrap failed: 5: Input/output error' }], disabled: true });
+    const r = serviceInstall(f.host, {});
+    expect(r.code).toBe(0);
+    expect(names(f)).toEqual(['bootout', 'print', 'bootstrap', 'print-disabled', 'enable', 'bootstrap', 'kickstart']);
+    expect(f.calls.find(([, a]) => a[0] === 'enable')?.[1]).toEqual(['enable', LABEL]);
+    expect(text(r)).toContain('had com.ulm0.gonogo disabled');
+  });
+
+  it('exit 5 for any other reason fails once and says what to check, with the port and the log of this install', () => {
+    const f = slow({ loadedPolls: 0, bootstrap: [{ code: 5, stderr: 'Bootstrap failed: 5: Input/output error' }, { code: 5, stderr: 'Bootstrap failed: 5: Input/output error' }] });
+    const r = serviceInstall(f.host, { port: 7777 });
+    expect(r.code).toBe(1);
+    expect(f.calls.filter(([, a]) => a[0] === 'bootstrap')).toHaveLength(1);
+    const out = text(r);
+    expect(out).toMatch(/launchctl bootstrap gui\/1000 .* failed \(exit 5\): Bootstrap failed: 5: Input\/output error/);
+    expect(out).toContain('plutil -lint ');
+    expect(out).toContain('launchctl print-disabled gui/1000');
+    expect(out).toContain('lsof -iTCP:7777 -sTCP:LISTEN');
+    expect(out).toContain('Library/Logs/gonogo.log');
+    // a restart of the installed file says the same
+    const g = slow({ loadedPolls: 0, bootstrap: [{ code: 5 }, { code: 5 }] });
+    serviceInstall(g.host, { port: 7778, noStart: true });
+    const again = serviceControl(g.host, 'restart', {});
+    expect(again.code).toBe(1);
+    expect(text(again)).toContain('lsof -iTCP:7778 -sTCP:LISTEN');
+  });
+
+  it('a bootstrap that fails for another reason prints only the failure, as before', () => {
+    const f = slow({ loadedPolls: 0, bootstrap: [{ code: 1, stderr: 'nope' }] });
+    const r = serviceInstall(f.host, {});
+    expect(r.code).toBe(1);
+    expect(text(r)).not.toContain('plutil');
+  });
+});
+
+describe('gonogo service: launchd, after a Homebrew upgrade and a gonogo outside launchd', () => {
+  const LABEL = 'gui/1000/com.ulm0.gonogo';
+  const plist = (f: Fake): string => join(f.host.userHome, 'Library/LaunchAgents/com.ulm0.gonogo.plist');
+
+  it('writes the stable Homebrew names, not the versioned Cellar folders a brew upgrade removes', () => {
+    const present = new Set(['/opt/homebrew/bin/node', '/opt/homebrew/bin/gonogo', '/opt/homebrew/opt/node@22/bin/node']);
+    const base = { platform: 'darwin' as const, exists: (p: string) => present.has(p) };
+    const a = fake({ ...base, node: '/opt/homebrew/Cellar/node/26.13.1_4/bin/node', entry: '/opt/homebrew/Cellar/gonogo/0.22.0/bin/gonogo' });
+    const spec = resolveSpec(a.host, {});
+    expect(spec.argv.slice(0, 2)).toEqual(['/opt/homebrew/bin/node', '/opt/homebrew/bin/gonogo']);
+    expect(spec.path.split(':')[0]).toBe('/opt/homebrew/bin');
+    const keg = fake({ ...base, node: '/opt/homebrew/Cellar/node@22/22.1.0/bin/node' });
+    expect(resolveSpec(keg.host, {}).argv[0]).toBe('/opt/homebrew/opt/node@22/bin/node');
+    // no stable name there, or not a Cellar path: unchanged
+    const none = fake({ platform: 'darwin', exists: () => false, node: '/opt/homebrew/Cellar/node/26.13.1_4/bin/node' });
+    expect(resolveSpec(none.host, {}).argv[0]).toBe('/opt/homebrew/Cellar/node/26.13.1_4/bin/node');
+    expect(stableBrewPath('/usr/local/bin/node', () => true)).toBe('/usr/local/bin/node');
+    expect(stableBrewPath('/usr/local/Cellar/node/22.1.0/bin/node', (p) => p === '/usr/local/bin/node')).toBe('/usr/local/bin/node');
+  });
+
+  /** A loaded job (print answers with the given state) on a machine where launchctl otherwise says yes. */
+  function loaded(state: 'running' | 'waiting' | null, extra: Partial<ServiceHost> = {}): Fake {
+    const f = fake({ platform: 'darwin', ...extra });
+    f.host.run = (file, args) => {
+      f.calls.push([file, args]);
+      if (file === 'launchctl' && args[0] === 'print') return state === null ? { code: 113, stdout: '', stderr: '' } : { code: 0, stdout: `\tstate = ${state}\n`, stderr: '' };
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    return f;
+  }
+  const verbs = (f: Fake): string[] => f.calls.filter(([file]) => file === 'launchctl').map(([, a]) => a[0] ?? '');
+
+  it('start on a job that is already running says so and loads nothing; loaded but not running it is kickstarted, never bootstrapped', () => {
+    const running = loaded('running');
+    serviceInstall(running.host, { noStart: true });
+    running.calls.length = 0;
+    expect(serviceControl(running.host, 'start', {})).toEqual({ code: 0, lines: ['already running (launchd).'] });
+    expect(verbs(running).filter((v) => v !== 'print')).toEqual([]);
+    const idle = loaded('waiting');
+    serviceInstall(idle.host, { noStart: true });
+    idle.calls.length = 0;
+    expect(serviceControl(idle.host, 'start', {}).lines).toEqual(['started (launchd).']);
+    expect(verbs(idle).filter((v) => v !== 'print')).toEqual(['kickstart']);
+    expect(idle.calls.at(-1)).toEqual(['launchctl', ['kickstart', LABEL]]);
+  });
+
+  it('a gonogo outside launchd that holds the lock: install, start and restart load nothing, say who holds it, and leave the plist as written', () => {
+    const f = loaded(null, { lockHolder: () => 92400 });
+    const r = serviceInstall(f.host, { home: join(f.root, 'gh') });
+    expect(r.code).toBe(1);
+    expect(text(r)).toContain(`another gonogo (pid 92400) holds ${join(f.root, 'gh', 'run', 'supervisor.lock')}, outside launchd: stop it (kill 92400)`);
+    expect(verbs(f)).not.toContain('bootstrap');
+    expect(existsSync(plist(f))).toBe(true);
+    for (const action of ['start', 'restart'] as const) {
+      f.calls.length = 0;
+      const c = serviceControl(f.host, action, {});
+      expect(c.code, action).toBe(1);
+      expect(text(c)).toContain('pid 92400');
+      expect(text(c)).toContain(join(f.root, 'gh', 'run', 'supervisor.lock'));
+      expect(verbs(f)).not.toContain('bootstrap');
+    }
+    expect(existsSync(plist(f))).toBe(true);
+  });
+
+  it('a failed bootstrap never removes the plist; status says when a gonogo outside launchd is why the service does not run', () => {
+    const f = loaded(null);
+    f.host.run = (file, args) => {
+      f.calls.push([file, args]);
+      if (file === 'launchctl' && args[0] === 'print') return { code: 113, stdout: '', stderr: '' };
+      if (file === 'launchctl' && args[0] === 'bootstrap') return { code: 5, stdout: '', stderr: 'Bootstrap failed: 5: Input/output error' };
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    expect(serviceInstall(f.host, {}).code).toBe(1);
+    expect(existsSync(plist(f))).toBe(true);
+    expect(serviceControl(f.host, 'restart', {}).code).toBe(1);
+    expect(existsSync(plist(f))).toBe(true);
+    f.host.lockHolder = () => 4242;
+    const status = serviceStatus(f.host, {});
+    expect(status.code).toBe(3);
+    expect(text(status)).toContain('a gonogo outside launchd (pid 4242) holds the lock of this home');
+    expect(text(status)).toContain('every few seconds');
   });
 });
 

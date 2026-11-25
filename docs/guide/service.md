@@ -64,7 +64,18 @@ stop the running gonogo first (Ctrl+C), then run gonogo service start
 
 ## macOS
 
-`install` writes the plist, boots it into your login session (`launchctl bootstrap gui/<uid> <plist>`) and kickstarts it. It starts again at every login.
+`install` writes the plist, boots it into your login session (`launchctl bootstrap gui/<uid> <plist>`) and kickstarts it. It starts again at every login. `install`, `start` and `restart` first boot the old job out and **wait until launchd has finished unloading it** (up to ten seconds; `bootout` returns before the job is gone, and loading a job that is still loaded fails with "Bootstrap failed: 5: Input/output error"). `start` of a job that is already running says "already running" and loads nothing (loading it again is the same exit 5). A job that is still loaded after that is restarted in place with `launchctl kickstart -k`. If the label was disabled (`launchctl disable`), gonogo enables it again once. Any other exit 5 prints what to check:
+
+Before it loads anything, `install`, `start` and `restart` look at the lock of the home (`<home>/run/supervisor.lock`): if a gonogo you started in a terminal holds it, nothing is loaded and the output names its pid, because the service would only exit at once. If that happens while the service is already installed (a terminal gonogo took the lock while it was stopped), launchd's `KeepAlive` starts it again every five seconds; each try prints "another gonogo supervisor is using ..." in `~/Library/Logs/gonogo.log` and exits, and `gonogo service status` says that a gonogo outside launchd holds the lock. Stop that one and the next try takes over; nothing else breaks, and the plist is never removed by a failed load.
+
+Under Homebrew the file names the **stable** `node` and `gonogo` (`/opt/homebrew/bin/node`, or `/opt/homebrew/opt/node@22/bin/node` for a versioned formula), never the versioned `Cellar/node/<version>` folder that `brew upgrade` removes. A service installed before this has the versioned path in its file: run `gonogo service install` again.
+
+```
+plutil -lint ~/Library/LaunchAgents/com.ulm0.gonogo.plist
+launchctl print-disabled gui/$(id -u)        # if com.ulm0.gonogo is disabled: launchctl enable gui/$(id -u)/com.ulm0.gonogo
+lsof -iTCP:7777 -sTCP:LISTEN                 # something else holding the port
+tail ~/Library/Logs/gonogo.log
+```
 
 ## OpenRC
 
@@ -80,4 +91,4 @@ The Update key (npm and pnpm installs) installs the new version and then reloads
 
 ## Not verified
 
-systemd was run on a GitHub runner and OpenRC in a Debian container (install, an agent surviving a reload, restart, stop, uninstall); launchd's file was only linted on macOS (a runner has no login session to load it into). Not run: a real boot, the polkit refusal of lingering and the `sudo` path on systemd, and a user whose home path has a space (a space in `--home` was run on systemd and OpenRC).
+systemd was run on a GitHub runner and OpenRC in a Debian container (install, an agent surviving a reload, restart, stop, uninstall); launchd's file was only linted on macOS (a runner has no login session to load it into), and the wait for the unload and the exit 5 hints are tested with a fake `launchctl` only. Not run: a real boot, the polkit refusal of lingering and the `sudo` path on systemd, and a user whose home path has a space (a space in `--home` was run on systemd and OpenRC).
