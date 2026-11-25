@@ -34,6 +34,8 @@ export interface ClientState {
   connection: 'connecting' | 'open' | 'reconnecting' | 'unauthorized';
   /** Consecutive failed reconnects; >= RECONNECT_SERVER_GONE_AFTER means "server gone". */
   failedAttempts: number;
+  /** The page itself threw while it took in the state or opened the socket (the server did answer): CLIENT ERROR, not LOSS OF SIGNAL. `details` is what Copy details copies. */
+  clientError: { message: string; details: string } | null;
   info: ServerInfo | null;
   /** Docking 2: the links of this station, from `GET /api/links` and the `links` frame. */
   links: LinkView[];
@@ -187,6 +189,7 @@ export function emptyState(): ClientState {
   return {
     connection: 'connecting',
     failedAttempts: 0,
+    clientError: null,
     info: null,
     links: [],
     agents: Object.create(null),
