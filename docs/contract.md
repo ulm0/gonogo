@@ -2313,4 +2313,4 @@ Brief FLIGHT in a dialog over any screen (spec `docs/shell-spec.md`, section "Br
 - 8 client: `isBriefKey` in `shell.ts` (Cmd/Ctrl+B); `BriefDialog.tsx`, the house Radix `Dialog` holding `Brief`, rendered by `Office` on every screen and holding the draft so it survives Esc; `Office` keeps one dialog state (`'panel' | 'brief' | null`), so a key while either is open does nothing; the Patch Panel line Brief FLIGHT opens the dialog (`onBrief`) instead of going to the room. `Brief` gains `onLeave`, `draft` and a note when the room has no boss.
 - Tests: `test/client-shell.test.ts` (`isBriefKey`); `browser/smoke.spec.ts` step 7c (Ctrl+B on the Flight Plan, send, Esc and focus back, the draft kept, the panel's line, no dialog from Ctrl+B with the panel open).
 
-Checked in Chromium (desk and 390 px phone console). Not run: Firefox, WebKit, a real IME, a screen reader, the StepUp dialog stacking.
+Checked in Chromium and Firefox (smoke); Chromium also at desk size and on a 390 px phone console. Not run: WebKit, a real IME, a screen reader, the StepUp dialog stacking.
