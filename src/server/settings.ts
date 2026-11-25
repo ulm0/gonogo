@@ -103,7 +103,7 @@ export const SETTING_KEYS: Record<SettingKey, KeyInfo> = {
   },
   station: {
     env: 'GONOGO_STATION',
-    scope: 'global',
+    scope: 'both',
     applies: 'restart',
     sensitive: false,
     check: (t) => {

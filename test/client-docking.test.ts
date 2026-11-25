@@ -97,6 +97,10 @@ describe('localNote in a container', () => {
 describe('suggestedAddress', () => {
   it('starts the Address box with a network address of the computer when the page was opened as localhost, and keeps the scheme and the port', () => {
     expect(suggestedAddress('http://127.0.0.1:7777', ['192.168.0.5'])).toBe('http://192.168.0.5:7777');
+    // the room of the page stays in the address: that is where the other station must call
+    expect(suggestedAddress('http://127.0.0.1:7777/r/umbral', ['192.168.0.5'])).toBe('http://192.168.0.5:7777/r/umbral');
+    expect(suggestedAddress('http://localhost:7777/r/main/', ['192.168.0.5'])).toBe('http://192.168.0.5:7777/r/main');
+    expect(suggestedAddress('https://g.example.com/r/umbral', ['192.168.0.5'])).toBe('https://g.example.com/r/umbral');
     expect(suggestedAddress('http://localhost:7777', ['192.168.0.5', '10.0.0.2'])).toBe('http://192.168.0.5:7777');
     expect(suggestedAddress('https://localhost', ['192.168.0.5'])).toBe('https://192.168.0.5');
     expect(suggestedAddress('http://127.0.0.1:7777', [])).toBe('http://127.0.0.1:7777');

@@ -28,7 +28,9 @@ export function suggestedAddress(origin: string, addresses: readonly string[]): 
     const url = new URL(origin);
     const here = url.hostname === 'localhost' || url.hostname === '[::1]' || url.hostname.startsWith('127.') || url.hostname === '0.0.0.0';
     const first = addresses[0];
-    return here && first !== undefined ? `${url.protocol}//${first}${url.port === '' ? '' : `:${url.port}`}` : origin;
+    // the room stays: a page of the room umbral is opened at /r/umbral, and that is where the other station must call
+    const room = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '');
+    return here && first !== undefined ? `${url.protocol}//${first}${url.port === '' ? '' : `:${url.port}`}${room}` : origin;
   } catch {
     return origin;
   }

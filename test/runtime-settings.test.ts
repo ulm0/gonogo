@@ -74,7 +74,9 @@ describe('the store', () => {
 
   it('a global-only key refuses the room scope; no supervisor means no global scope', () => {
     const s = make();
-    for (const key of ['logLevel', 'station', 'updateCheck'] as const) expect(() => s.set(key, 'room', key === 'station' ? 'x' : key === 'logLevel' ? 'info' : 'off')).toThrow(/every room/);
+    for (const key of ['logLevel', 'updateCheck'] as const) expect(() => s.set(key, 'room', key === 'logLevel' ? 'info' : 'off')).toThrow(/every room/);
+    // the station name may differ per room (rooms of one machine dock with each other by name)
+    expect(() => s.set('station', 'room', 'x')).not.toThrow();
     expect(() => make({}, null).set('maxHops', 'global', '3')).toThrow(/no supervisor/);
     expect(make({}, null).set('maxHops', 'room', '3').row.value).toBe('3');
   });
@@ -97,7 +99,6 @@ describe('the store', () => {
     expect(s.get('agentCmd')).toBeNull();
     expect(s.get('scrubEnv')).toBeNull();
     expect(s.row('logLevel')).toMatchObject({ value: 'debug', source: 'global' }); // the room file's copy of a global key is not read
-    expect(s.get('station')).toBeNull();
     expect(s.get('cleanRoomImage')).toBe('img:1');
     writeFileSync(globalPath, `{"values":{"maxHops":"2"},"pad":"${'x'.repeat(SETTINGS_MAX_BYTES)}"}`);
     s.reload();
