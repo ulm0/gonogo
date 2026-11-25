@@ -222,7 +222,7 @@ export interface WebOptions {
   /** The room's tool rules; absent in tests that do not need it (the routes answer 404). */
   permissions?: Pick<PermissionDefaultsStore, 'view' | 'set'>;
   /** Docking; absent in tests that do not need it (the snapshot then has no docks, the routes and /dock answer 404). It tells the browsers itself. */
-  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'handOff' | 'handle' | 'handOffMission' | 'askKnowledge' | 'suggest' | 'shares' | 'setShare' | 'linkViews' | 'linkTrail' | 'outbound' | 'rules' | 'setRules' | 'returnTask' | 'recallTask' | 'acceptDelivery' | 'asks' | 'answerAsk' | 'requestHandoff'>;
+  docking?: Pick<Docking, 'view' | 'hints' | 'createCode' | 'pair' | 'undock' | 'setAddress' | 'handOff' | 'handle' | 'handOffMission' | 'askKnowledge' | 'suggest' | 'shares' | 'setShare' | 'linkViews' | 'linkTrail' | 'outbound' | 'rules' | 'setRules' | 'returnTask' | 'recallTask' | 'acceptDelivery' | 'asks' | 'answerAsk' | 'requestHandoff'>;
   /** Hangar and Recorder; absent in tests that do not need them (the routes answer 404). The page asks again after each change; no frame. */
   hangar?: Hangar;
   /** Worktrees: the state of an agent's own worktree, and its deletion after the agent is removed. `has` is true for an agent with a plain worktree. */
@@ -1348,7 +1348,17 @@ export function createWebServer(options: WebOptions): WebServer {
         };
       }
       if (s.length === 3) {
-        return { allow: ['DELETE'], run: async (_req, res) => sendJson(res, 200, await docking.undock(id)) };
+        return {
+          allow: ['DELETE', 'PATCH'],
+          run: async (req, res) => {
+            if (req.method === 'DELETE') return sendJson(res, 200, await docking.undock(id));
+            // the address a dock is called at: the Director's own login, like pairing
+            const actorHeader = viaSocket.has(req) ? req.headers['x-gonogo-actor'] : undefined;
+            if (actorHeader !== 'session' && actorHeader !== 'token') return sendApiError(res, 403, "the address of a docked station is changed from the Director's own login", 'forbidden');
+            const body = await jsonObject(req, res);
+            if (body) sendJson(res, 200, await docking.setAddress(id, body));
+          },
+        };
       }
       if (s[3] !== 'handoff') return null;
       return {

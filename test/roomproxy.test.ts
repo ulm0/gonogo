@@ -345,6 +345,19 @@ describe('rooms proxy: HTTP', () => {
     expect(a.seen).toHaveLength(2);
   });
 
+  it('a docking call to /r/<room>/dock/* reaches that room as /dock/* (what the caller signed), and a bad or unknown room id is refused', async () => {
+    const before = a.seen.length;
+    expect((await get('/r/a/dock/roster', {}, 'GET')).status).toBe(200);
+    expect(a.seen[before]?.url).toBe('/dock/roster');
+    expect((await get('/r/a/dock/message?x=1', {}, 'POST', '{}')).status).toBe(200);
+    expect(a.seen[before + 1]?.url).toBe('/dock/message?x=1');
+    for (const path of ['/r/A/dock/roster', '/r/nosuch/dock/roster', '/r//dock/roster', '/r/a%2fb/dock/roster', '/r/a/%2e%2e/dock/roster']) {
+      const res = await get(path, {}, 'GET');
+      expect([400, 404], path).toContain(res.status);
+    }
+    expect(a.seen.length).toBe(before + 2);
+  });
+
   it('passes the four headers of a signed station call or webhook to the room, and no other x-gonogo- header, anywhere', async () => {
     const signed = { 'x-gonogo-station': 'beta', 'x-gonogo-timestamp': '1795000000000', 'x-gonogo-nonce': 'ab'.repeat(16), 'x-gonogo-signature': 'cd'.repeat(32) };
     // a sender's own copy of what only the proxy may say: it must not reach the room

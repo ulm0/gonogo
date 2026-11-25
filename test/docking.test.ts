@@ -7,7 +7,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DOCK_ROUTES, createDocking, lanAddresses, signCall, stationName } from '../src/server/docking.js';
+import { DOCK_ROUTES, createDocking, lanAddresses, publicUrl, signCall, stationName } from '../src/server/docking.js';
 import { readDeliverable, readDeliverables, readOffer } from '../src/server/links.js';
 import type { Docking } from '../src/server/docking.js';
 import { DOCK_CODE_TTL_MS, DOCK_PULL_MS, DOCK_RATE_MAX, DOCK_RATE_WINDOW_MS, DOCK_SKEW_MS, nullLogger } from '../src/server/constants.js';
@@ -77,7 +77,10 @@ function world(): World {
   const stations = new Map<string, Station>();
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
-    const target = stations.get(url.origin);
+    // a station may live in a room of its machine: its address is origin + /r/<room>, and the room sees the path without it (the front port strips it)
+    const room = /^(\/r\/[a-z][a-z0-9-]*)(\/dock\/.*)$/.exec(url.pathname);
+    if (room !== null) url.pathname = room[2] ?? '';
+    const target = stations.get(room === null ? url.origin : url.origin + room[1]);
     if (!target || target.down) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
     const headers: IncomingHttpHeaders = {};
     for (const [key, value] of Object.entries((init?.headers ?? {}) as Record<string, string>)) headers[key.toLowerCase()] = value;
@@ -247,7 +250,7 @@ describe('docking code', () => {
     expect(inside.u).toBe('https://gonogo.example.com');
     expect(inside.t).toMatch(/^[0-9a-f]{64}$/);
     for (const url of ['', 'gonogo', 'ftp://x.test', 'http://x.test/path', 'http://u:p@x.test', 'http://x.test/?a=1', 'http://x.test/#a', 42]) {
-      expect(() => a.docking.createCode({ url })).toThrow(/web address with no path/);
+      expect(() => a.docking.createCode({ url })).toThrow(/web address such as/);
     }
     expect(() => a.docking.createCode([])).toThrow(/JSON object/);
   });
@@ -315,7 +318,7 @@ describe('a code as people carry it', () => {
     expect(await refused('hello world, this is not it')).toMatch(/not a docking code/);
     expect(await refused('gonogo-dock:' + Buffer.from('{"u":"x"}').toString('base64url'))).toMatch(/not a docking code/);
     expect(await refused(hand('http://192.168.0.5:7777', 'zz'.repeat(32)))).toMatch(/token is wrong/);
-    expect(await refused(hand('ftp://x/'))).toMatch(/web address with no path/);
+    expect(await refused(hand('ftp://x/'))).toMatch(/web address such as/);
     for (const message of [await refused(whole.slice(0, 60))]) expect(message).toMatch(/Copy the whole code again/);
   });
 
@@ -773,7 +776,7 @@ describe('calls between docked stations', () => {
       throw hubError('unauthorized', 'the call is not signed by a docked station');
     };
     const result = await a.docking.send('beta', { from: 'ana', to: 'bob', subject: '', body: 'hi', hops: 1 });
-    expect(result).toEqual({ ok: false, note: 'beta refused: the call is not signed by a docked station' });
+    expect(result).toEqual({ ok: false, note: 'beta does not know this station at this address: the dock may be in another room there (/r/<room>) or was removed; change the address or pair again' });
   });
 });
 
@@ -931,6 +934,72 @@ describe('the roster', () => {
   });
 });
 
+describe('a dock in another room of a station, and its address', () => {
+  it('an address is an origin, or an origin with /r/<room>; nothing else in the path', () => {
+    expect(publicUrl('https://g.example.com', 'url')).toBe('https://g.example.com');
+    expect(publicUrl(' http://192.168.86.173:7777/ ', 'url')).toBe('http://192.168.86.173:7777');
+    expect(publicUrl('http://192.168.86.173:7777/r/umbral', 'url')).toBe('http://192.168.86.173:7777/r/umbral');
+    expect(publicUrl('http://h:7777/r/umbral/', 'url')).toBe('http://h:7777/r/umbral');
+    for (const bad of ['http://h/r/Umbral', 'http://h/r/', 'http://h/r', 'http://h/x', 'http://h/r/a/b', 'http://h/r/a/dock', 'http://h/r/1a', 'http://h/r/a?x=1', 'http://h/r/a#f', 'http://u:p@h/r/a', 'ftp://h/r/a', 'http://h/r/a%2fb', 'nope']) expect(() => publicUrl(bad, 'url'), bad).toThrow(/web address/);
+  });
+
+  it('two stations pair, call and answer through /r/<room> addresses: the calls are signed over /dock/<route> and the room is reached', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test/r/umbral');
+    const b = await w.make('beta', 'http://b.test/r/main');
+    await pair(a, b);
+    expect(a.docking.view().docks[0]).toMatchObject({ name: 'beta', url: 'http://b.test/r/main', status: 'ok' });
+    expect(b.docking.view().docks[0]).toMatchObject({ name: 'alpha', url: 'http://a.test/r/umbral', status: 'ok' });
+    await expect(a.docking.send('beta', { from: 'ana', to: 'bob', subject: '', body: 'hi', hops: 1 })).resolves.toMatchObject({ ok: true });
+    expect(b.delivered).toHaveLength(1);
+  });
+
+  it('change address: the dock stays (id, name, secret), the next call goes to the new address, and a wrong one says what to do', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    // beta lives in the room "umbral" of its machine, and a main room of that machine knows nothing of alpha
+    const b = await w.make('beta', 'http://b.test/r/umbral');
+    await w.make('beta-main', 'http://b.test', {});
+    const { aSees } = await pair(a, b);
+    const before = JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')) as { docks: Array<{ id: string; name: string; secret: string; url: string }> };
+    // docked at the machine's origin by mistake: the room at that address does not know this station
+    const dockA = a.docking.view().docks[0]!;
+    expect(dockA.url).toBe('http://b.test/r/umbral');
+    const moved = await a.docking.setAddress(aSees, { url: 'http://b.test' });
+    expect(moved).toMatchObject({ id: aSees, name: 'beta', url: 'http://b.test', status: 'down' });
+    expect(moved.error).toContain('does not know this station at this address: the dock may be in another room there (/r/<room>) or was removed; change the address or pair again');
+    const fixed = await a.docking.setAddress(aSees, { url: 'http://b.test/r/umbral/' });
+    expect(fixed).toMatchObject({ id: aSees, name: 'beta', url: 'http://b.test/r/umbral', status: 'ok', error: null });
+    const after = JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')) as typeof before;
+    expect(after.docks[0]).toMatchObject({ id: before.docks[0]?.id, name: 'beta', secret: before.docks[0]?.secret, url: 'http://b.test/r/umbral' });
+    expect(a.views.at(-1)?.docks[0]?.url).toBe('http://b.test/r/umbral');
+    await expect(a.docking.send('beta', { from: 'ana', to: 'bob', subject: '', body: 'hi', hops: 1 })).resolves.toMatchObject({ ok: true });
+  });
+
+  it('refuses a bad address, an unknown field and an unknown dock, and changes nothing', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    await expect(a.docking.setAddress(aSees, { url: 'http://b.test/x' })).rejects.toMatchObject({ code: 'bad_request', field: 'url' });
+    await expect(a.docking.setAddress(aSees, {})).rejects.toMatchObject({ code: 'bad_request', field: 'url' });
+    await expect(a.docking.setAddress(aSees, { url: 'http://b.test', secret: 'x' })).rejects.toMatchObject({ code: 'bad_request', field: 'secret' });
+    await expect(a.docking.setAddress(aSees, 'http://b.test')).rejects.toMatchObject({ code: 'bad_request' });
+    await expect(a.docking.setAddress('0'.repeat(32), { url: 'http://b.test' })).rejects.toMatchObject({ code: 'not_found' });
+    expect(a.docking.view().docks[0]).toMatchObject({ url: 'http://b.test', status: 'ok' });
+  });
+
+  it('the same address changes nothing and calls nobody', async () => {
+    const w = world();
+    const a = await w.make('alpha', 'http://a.test');
+    const b = await w.make('beta', 'http://b.test');
+    const { aSees } = await pair(a, b);
+    const seen = a.views.length;
+    expect(await a.docking.setAddress(aSees, { url: 'http://b.test/' })).toMatchObject({ url: 'http://b.test', status: 'ok' });
+    expect(a.views.length).toBe(seen);
+  });
+});
+
 describe('undock', () => {
   it('removes the dock on both sides, and what the other side signs afterwards is refused', async () => {
     const w = world();
@@ -965,7 +1034,7 @@ describe('undock', () => {
     // the station that was not told is refused by the one that undocked
     b.down = false;
     await b.docking.pull();
-    expect(b.docking.view().docks[0]).toMatchObject({ status: 'down', error: expect.stringContaining('alpha refused') });
+    expect(b.docking.view().docks[0]).toMatchObject({ status: 'down', error: expect.stringContaining('alpha does not know this station') });
     const result = await b.docking.send('alpha', { from: 'bob', to: 'ana', subject: '', body: 'hi', hops: 1 });
     expect(result.ok).toBe(false);
     expect(a.delivered).toEqual([]);

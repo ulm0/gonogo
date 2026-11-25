@@ -8,14 +8,14 @@ export const CODE_PREFIX = 'gonogo-dock:';
 
 /** The server's rule, so that a slip is told before the call: a web address with no path. Undefined when it is fine. */
 export function addressProblem(text: string): string | undefined {
-  const fail = 'Type a web address with no path, such as https://gonogo.example.com.';
+  const fail = 'Type a web address such as https://gonogo.example.com, with /r/<room> after it when the dock is in another room of that station.';
   let url: URL;
   try {
     url = new URL(text.trim());
   } catch {
     return fail;
   }
-  const plain = (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' && url.search === '' && url.hash === '' && url.pathname === '/';
+  const plain = (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' && url.search === '' && url.hash === '' && (url.pathname === '/' || /^\/r\/[a-z][a-z0-9-]{0,23}\/?$/.test(url.pathname));
   return plain ? undefined : fail;
 }
 
@@ -28,7 +28,9 @@ export function suggestedAddress(origin: string, addresses: readonly string[]): 
     const url = new URL(origin);
     const here = url.hostname === 'localhost' || url.hostname === '[::1]' || url.hostname.startsWith('127.') || url.hostname === '0.0.0.0';
     const first = addresses[0];
-    return here && first !== undefined ? `${url.protocol}//${first}${url.port === '' ? '' : `:${url.port}`}` : origin;
+    // the room stays: a page of the room umbral is opened at /r/umbral, and that is where the other station must call
+    const room = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '');
+    return here && first !== undefined ? `${url.protocol}//${first}${url.port === '' ? '' : `:${url.port}`}${room}` : origin;
   } catch {
     return origin;
   }

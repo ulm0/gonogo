@@ -17,9 +17,9 @@ const task = (extra: Partial<Task> = {}): Task => ({ id: 't1', title: 'Fix it', 
 
 describe('addressProblem', () => {
   it('takes a web address with no path, and tells the rest what is wanted', () => {
-    for (const ok of ['https://gonogo.example.com', 'http://192.168.1.5:7777', ' http://localhost:7777/ ', 'https://[::1]:8443']) expect(addressProblem(ok), ok).toBeUndefined();
-    for (const bad of ['', 'gonogo', 'ftp://x.test', 'http://x.test/path', 'http://u:p@x.test', 'http://x.test/?a=1', 'http://x.test/#a', 'localhost:7777']) {
-      expect(addressProblem(bad), bad).toBe('Type a web address with no path, such as https://gonogo.example.com.');
+    for (const ok of ['https://gonogo.example.com', 'http://192.168.1.5:7777', ' http://localhost:7777/ ', 'https://[::1]:8443', 'http://192.168.86.173:7777/r/umbral', 'http://h:7777/r/umbral/']) expect(addressProblem(ok), ok).toBeUndefined();
+    for (const bad of ['', 'gonogo', 'ftp://x.test', 'http://x.test/path', 'http://x.test/r/', 'http://x.test/r/Umbral', 'http://x.test/r/a/dock', 'http://u:p@x.test', 'http://x.test/?a=1', 'http://x.test/#a', 'localhost:7777']) {
+      expect(addressProblem(bad), bad).toBe('Type a web address such as https://gonogo.example.com, with /r/<room> after it when the dock is in another room of that station.');
     }
   });
 });
@@ -97,6 +97,10 @@ describe('localNote in a container', () => {
 describe('suggestedAddress', () => {
   it('starts the Address box with a network address of the computer when the page was opened as localhost, and keeps the scheme and the port', () => {
     expect(suggestedAddress('http://127.0.0.1:7777', ['192.168.0.5'])).toBe('http://192.168.0.5:7777');
+    // the room of the page stays in the address: that is where the other station must call
+    expect(suggestedAddress('http://127.0.0.1:7777/r/umbral', ['192.168.0.5'])).toBe('http://192.168.0.5:7777/r/umbral');
+    expect(suggestedAddress('http://localhost:7777/r/main/', ['192.168.0.5'])).toBe('http://192.168.0.5:7777/r/main');
+    expect(suggestedAddress('https://g.example.com/r/umbral', ['192.168.0.5'])).toBe('https://g.example.com/r/umbral');
     expect(suggestedAddress('http://localhost:7777', ['192.168.0.5', '10.0.0.2'])).toBe('http://192.168.0.5:7777');
     expect(suggestedAddress('https://localhost', ['192.168.0.5'])).toBe('https://192.168.0.5');
     expect(suggestedAddress('http://127.0.0.1:7777', [])).toBe('http://127.0.0.1:7777');

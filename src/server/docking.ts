@@ -220,6 +220,8 @@ export interface Docking extends DockLink {
   pair(input: unknown): Promise<DockView>;
   /** Removes the dock, here and (when the other side answers within a few seconds) there. `told` says whether it did. */
   undock(id: string): Promise<{ told: boolean }>;
+  /** Changes the address a dock is called at (`{ url }`, checked like the address of a pairing); its id, name and secret stay. The next call is made at once. */
+  setAddress(id: string, input: unknown): Promise<DockView>;
   handOff(id: string, input: unknown): Promise<Task>;
   /** Docking 2: a task that is bound to a link changed: its status and note become events of the link. */
   taskChanged(before: Task, after: Task, actor: Actor, note: string | undefined, attachments?: Deliverable[]): void;
@@ -260,17 +262,22 @@ export interface Docking extends DockLink {
   close(): Promise<void>;
 }
 
-/** A web address with no path: the origin of a station, as the other side will reach it. */
-function publicUrl(value: unknown, field: string): string {
-  const fail = bad(`${field} must be a web address with no path, such as https://gonogo.example.com`, field);
+/**
+ * A web address: the origin of a station, as the other side will reach it, and when the dock lives in another room of that station its path `/r/<room>` (the front port
+ * passes `/r/<room>/dock/*` to that room, which sees `/dock/*`: what is signed does not change). Nothing else in the path.
+ */
+export function publicUrl(value: unknown, field: string): string {
+  const fail = bad(`${field} must be a web address such as https://gonogo.example.com, with /r/<room> after it when the dock is in another room of that station`, field);
   let url: URL;
   try {
     url = new URL(typeof value === 'string' ? value.trim() : '');
   } catch {
     throw fail;
   }
-  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || url.pathname !== '/') throw fail;
-  return url.origin;
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') throw fail;
+  const room = /^\/r\/([a-z][a-z0-9-]{0,23})\/?$/.exec(url.pathname);
+  if (url.pathname !== '/' && room === null) throw fail;
+  return room === null ? url.origin : `${url.origin}/r/${room[1]}`;
 }
 
 /** The addresses of this computer that another computer on the network may reach, best first: not a container's, not a bridge or a virtual interface, not link-local; 192.168.x, then 10.x, then the rest, 172.16/12 last. */
@@ -349,6 +356,8 @@ function remoteError(label: string, status: number, data: unknown): HubError {
   const message = typeof info.error === 'string' ? clip(info.error) : `answered ${status}`;
   const code = (API_ERROR_CODES as readonly string[]).includes(String(info.code)) ? (info.code as ApiErrorCode) : 'unavailable';
   const field = typeof info.field === 'string' ? info.field : undefined;
+  // the one 401 a dock gets when it is not known at the address it calls: the dock is in another room there, or was removed
+  if (code === 'unauthorized' && /not signed by a docked station/.test(message)) return new HubError('conflict', `${label} does not know this station at this address: the dock may be in another room there (/r/<room>) or was removed; change the address or pair again`);
   if (code === 'unauthorized' || code === 'forbidden' || code === 'not_found') return new HubError('conflict', `${label} refused: ${message}`);
   return new HubError(code, `${label}: ${message}`, code === 'bad_request' ? field : undefined);
 }
@@ -1056,6 +1065,25 @@ export function createDocking(options: DockingOptions): Docking {
       await save();
       publish();
       void pullOne(dock).then(publish);
+      return dockView(dock);
+    },
+
+    async setAddress(dockId, input) {
+      const dock = find(dockId);
+      if (!isRecord(input)) throw bad('request body must be a JSON object');
+      for (const key of Object.keys(input)) if (key !== 'url') throw bad(`unknown field "${key}"`, key);
+      const url = publicUrl(input.url, 'url');
+      if (url !== dock.url) {
+        dock.url = url;
+        // what the old address said is not what the new one will say: the roster is asked again now, and what waited for the dock goes if it answers
+        const state = liveOf(dock);
+        state.status = 'new';
+        state.error = null;
+        repaired.delete(dock.id);
+        await save();
+        await pullOne(dock);
+        publish();
+      }
       return dockView(dock);
     },
 

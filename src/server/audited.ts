@@ -249,6 +249,8 @@ export const DOCKING_AUDIT: Table = {
   createCode: ['config', 'Director made a docking code'],
   pair: ['config', 'Director paired a station'],
   undock: ['config', 'Director undocked'],
+  // the dock, never its address
+  setAddress: ['config', (args) => `Director changed the address of dock ${plain(args[0]) ?? '?'}`],
 };
 
 /** What a Redline trip says to the Downlink is "<name>: <reason>", and the reason can hold a command line: the Black Box keeps the name and the rule. */
