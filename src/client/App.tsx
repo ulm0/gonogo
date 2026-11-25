@@ -110,6 +110,32 @@ function ServerGone(): ReactElement {
   );
 }
 
+/** The server answered, but this page threw while it took in the state: the error, not "the server stopped answering", so a report names the cause. */
+function ClientError({ error }: { error: { message: string; details: string } }): ReactElement {
+  const [copied, setCopied] = useState<boolean | null>(null);
+  return (
+    <main className="system" data-system="nogo">
+      <section className="system-slab module flood" data-tone="nogo" aria-label="Client error">
+        <p className="label system-label">
+          <span className="led" data-on="true" aria-hidden="true" />
+          CLIENT ERROR
+        </p>
+        <h1 className="disp system-word">NO-GO</h1>
+        <p className="system-lead" role="alert">{`CLIENT ERROR: ${error.message}`}</p>
+        <p className="system-text">The server answered, but this page failed to show it. Copy the details into a report.</p>
+        <p className="system-actions">
+          <button type="button" className="btn" data-kind="primary" onClick={() => void copyText(error.details).then(setCopied)}>
+            {copied === true ? 'Copied' : copied === false ? 'Copy failed' : 'Copy details'}
+          </button>{' '}
+          <button type="button" className="btn" data-kind="quiet" onClick={api.retryNow}>
+            Retry now
+          </button>
+        </p>
+      </section>
+    </main>
+  );
+}
+
 /** Known state, but the server has not answered for a while: the room stays (it is the last truth we have) and says so. */
 function GoneStrip(): ReactElement | null {
   const gone = useStore((s) => s.connection === 'reconnecting' && s.failedAttempts >= RECONNECT_SERVER_GONE_AFTER);
@@ -444,9 +470,10 @@ export function App(): ReactElement {
   const connection = useStore((s) => s.connection);
   const loading = useStore((s) => s.info === null);
   const gone = useStore((s) => s.failedAttempts >= RECONNECT_SERVER_GONE_AFTER);
+  const clientError = useStore((s) => s.clientError);
   return (
     <div className="app">
-      {connection === 'unauthorized' ? <Unauthorized /> : loading ? gone ? <ServerGone /> : <Standby /> : <Office />}
+      {clientError !== null ? <ClientError error={clientError} /> : connection === 'unauthorized' ? <Unauthorized /> : loading ? gone ? <ServerGone /> : <Standby /> : <Office />}
       <StepUpDialog />
     </div>
   );

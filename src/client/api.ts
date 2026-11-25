@@ -1588,6 +1588,7 @@ async function connect(): Promise<void> {
   if (attempting) return;
   attempting = true;
   clearTimeout(retryTimer);
+  let body: unknown;
   try {
     const response = await fetch(withBase(`${API_PREFIX}/state`), { headers: token === null ? {} : { Authorization: `Bearer ${token}` }, cache: 'no-store' });
     if (response.status === 401) {
@@ -1597,16 +1598,32 @@ async function connect(): Promise<void> {
       store.setState((s) => ({ ...s, connection: 'unauthorized' }));
       return;
     }
-    const body: unknown = response.ok ? await response.json() : null;
-    if (!isStateSnapshot(body)) {
-      lost(false);
-      return;
-    }
-    store.setState((s) => applyServerFrame(s, { t: 'state', state: body }, Date.now()));
-    openSocket();
+    body = response.ok ? await response.json() : null;
   } catch {
     lost(false);
+    return;
   }
+  if (!isStateSnapshot(body)) {
+    lost(false);
+    return;
+  }
+  // the server answered: an exception from here on is this page's own, never "the server stopped answering"
+  try {
+    store.setState((s) => applyServerFrame(s, { t: 'state', state: body }, Date.now()));
+    openSocket();
+  } catch (error) {
+    clientFailed(error, body.info.version);
+  }
+}
+
+/** The page threw while it took in the state or opened the socket: it says so with the error (no retry loop: the same state would throw again). */
+function clientFailed(error: unknown, version: unknown): void {
+  attempting = false;
+  console.error('gonogo client error', error);
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  const stack = error instanceof Error && typeof error.stack === 'string' ? error.stack : '';
+  const details = [`CLIENT ERROR: ${message}`, `gonogo ${typeof version === 'string' ? version : 'unknown'}`, `browser: ${typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent}`, `at: ${new Date().toISOString()}`, '', stack].join('\n');
+  store.setState((s) => ({ ...s, clientError: { message, details } }));
 }
 
 /** Reads the token, loads the state, opens the socket and keeps it open. Called once, by main.tsx. */
@@ -1629,6 +1646,7 @@ export function start(): void {
 
 /** The RETRY NOW button of the server-gone screen: connect() clears the wait timer itself and ignores a call while an attempt runs. */
 export function retryNow(): void {
+  store.setState((s) => (s.clientError === null ? s : { ...s, clientError: null }));
   void connect();
 }
 
