@@ -15,6 +15,9 @@
 @source './PartyLine.tsx';
 @source './TopBar.tsx';
 @source './Pop.tsx';
+@source './StepUpDialog.tsx';
+@source './PatchPanel.tsx';
+@source './TerminalBar.tsx';
 
 @theme inline {
   --color-background: var(--body);

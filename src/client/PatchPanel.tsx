@@ -1,9 +1,10 @@
 /**
  * Patch Panel, the command bar: Cmd/Ctrl+K, or its key in the top bar (the phone bar on a phone). One field that filters every
- * console, view and common action of the page; arrows choose, Enter runs, Esc closes. A modal <dialog>: the browser keeps the
+ * console, view and common action of the page; arrows choose, Enter runs, Esc closes. A modal dialog (Radix): it keeps the
  * keyboard inside it and the rest of the page out of reach of a screen reader while it is open.
  */
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { ROOMS_PATH } from './base.js';
 import type { KeyboardEvent, ReactElement } from 'react';
 import { DOCS_URL } from '../shared/protocol.js';
@@ -15,6 +16,7 @@ import { openConsole, openHire, showComms, showBlackBox, showBoard, showHangar, 
 import { restore } from '../shared/layout.js';
 import { startEditing } from './EditRoomKey.js';
 import { useRun } from './WallView.js';
+import { Dialog, DialogContent, DialogTitle } from '@/ui/dialog.js';
 import './patch.css';
 
 const SHOW: Record<View, () => void> = {
@@ -101,7 +103,6 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
 
 export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boolean; onClose(): void }): ReactElement {
   const id = useId();
-  const dialog = useRef<HTMLDialogElement | null>(null);
   const back = useRef<HTMLElement | null>(null);
   const ran = useRef(false);
   const field = useRef<HTMLInputElement | null>(null);
@@ -119,20 +120,13 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
   const shown = useMemo(() => matchCommands(all, query), [all, query]);
   const at = Math.min(active, shown.length - 1);
 
-  useEffect(() => {
-    const d = dialog.current;
-    if (d === null) return;
-    if (open && !d.open) {
-      back.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      ran.current = false;
-      setQuery('');
-      setActive(0);
-      d.showModal();
-      // the dialog would focus its first key (Close); the field is where the Director types
-      field.current?.focus();
-    } else if (!open && d.open) {
-      d.close();
-    }
+  // a layout effect: it runs before the dialog takes the focus, so it still sees the opener
+  useLayoutEffect(() => {
+    if (!open) return;
+    back.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    ran.current = false;
+    setQuery('');
+    setActive(0);
   }, [open]);
 
   // keep the chosen line in sight when the arrows move past the edge of the list
@@ -143,7 +137,8 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
   // Closed and the keyboard given back to the opener before the page changes, so that a view that opens can still take it to its title.
   const shut = (): void => {
     ran.current = true;
-    dialog.current?.close();
+    // closed now, not at the next render: while it is open its focus trap would pull the keyboard back in
+    flushSync(onClose);
     back.current?.focus();
   };
   const choose = (index: number): void => {
@@ -172,65 +167,68 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
   };
 
   return (
-    <dialog
-      ref={dialog}
-      className="patch module"
-      aria-labelledby={`${id}-title`}
-      // Esc and a close by the browser: tell the page, then give the keyboard back to where it was
-      onClose={() => {
-        onClose();
-        if (!ran.current) back.current?.focus();
-      }}
-      onClick={(e) => e.target === dialog.current && onClose()}
-    >
-      <div className="patch-head">
-        <h2 className="label patch-title" id={`${id}-title`}>
-          PATCH PANEL
-        </h2>
-        {/* a touch screen has no Esc */}
-        <button type="button" className="btn" data-kind="quiet" onClick={() => dialog.current?.close()}>
-          Close
-        </button>
-      </div>
-      <input
-        ref={field}
-        className="input patch-input"
-        type="text"
-        role="combobox"
-        aria-label="Console, view or action"
-        aria-expanded="true"
-        aria-controls={`${id}-list`}
-        aria-activedescendant={at >= 0 ? `${id}-${at}` : undefined}
-        aria-autocomplete="list"
-        autoComplete="off"
-        spellCheck={false}
-        placeholder="Type a console, a view or an action"
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setActive(0);
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        className="patch module top-[10vh] flex max-h-[min(70vh,560px)] w-[min(560px,calc(100vw-24px))] max-w-none translate-y-0 flex-col gap-2.5 p-3.5 text-foreground sm:max-w-none max-[699px]:top-3 max-[699px]:max-h-[calc(100dvh-24px)]"
+        aria-describedby={undefined}
+        // the dialog would focus its first key (Close); the field is where the Director types
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          field.current?.focus();
         }}
-        onKeyDown={onKey}
-      />
-      <ul className="patch-list" id={`${id}-list`} role="listbox" aria-label="Matches">
-        {shown.map((c, i) => (
-          // the field keeps the keyboard (aria-activedescendant), so a line is clicked, not focused
-          <li key={c.id} id={`${id}-${i}`} role="option" aria-selected={i === at} className="patch-option" onClick={() => choose(i)} onMouseMove={() => i !== at && setActive(i)}>
-            <span className="patch-label">{c.label}</span>
-            <span className="patch-group" aria-hidden="true">
-              {c.group}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className="hint patch-foot" role="status">
-        {error !== null ? '' : shown.length === 0 ? 'Nothing matches.' : busy ? 'Working…' : `${shown.length} ${shown.length === 1 ? 'match' : 'matches'}. Arrows choose, Enter runs, Esc closes.`}
-      </p>
-      {error !== null && (
-        <p className="error" role="alert">
-          {error}
+        // Esc, a press outside or Close: give the keyboard back to where it was (a line that ran has done so already)
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          if (!ran.current) back.current?.focus();
+        }}
+      >
+        <div className="patch-head">
+          <DialogTitle className="label patch-title leading-normal">PATCH PANEL</DialogTitle>
+          {/* a touch screen has no Esc */}
+          <button type="button" className="btn" data-kind="quiet" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <input
+          ref={field}
+          className="input patch-input"
+          type="text"
+          role="combobox"
+          aria-label="Console, view or action"
+          aria-expanded="true"
+          aria-controls={`${id}-list`}
+          aria-activedescendant={at >= 0 ? `${id}-${at}` : undefined}
+          aria-autocomplete="list"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="Type a console, a view or an action"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={onKey}
+        />
+        <ul className="patch-list" id={`${id}-list`} role="listbox" aria-label="Matches">
+          {shown.map((c, i) => (
+            // the field keeps the keyboard (aria-activedescendant), so a line is clicked, not focused
+            <li key={c.id} id={`${id}-${i}`} role="option" aria-selected={i === at} className="patch-option" onClick={() => choose(i)} onMouseMove={() => i !== at && setActive(i)}>
+              <span className="patch-label">{c.label}</span>
+              <span className="patch-group" aria-hidden="true">
+                {c.group}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="hint patch-foot" role="status">
+          {error !== null ? '' : shown.length === 0 ? 'Nothing matches.' : busy ? 'Working…' : `${shown.length} ${shown.length === 1 ? 'match' : 'matches'}. Arrows choose, Enter runs, Esc closes.`}
         </p>
-      )}
-    </dialog>
+        {error !== null && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

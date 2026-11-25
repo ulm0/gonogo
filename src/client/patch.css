@@ -1,25 +1,7 @@
 /*
- * Patch Panel: a modal <dialog> near the top of the screen, a field and the list of matches. The chosen line has a key's face and
+ * Patch Panel: a modal dialog near the top of the screen (PatchPanel.tsx places it), a field and the list of matches. The chosen line has a key's face and
  * an indigo bar at its left; every line is 44 px tall. Under 700 px it is the width of the screen less 12 px each side.
  */
-
-.patch {
-  width: min(560px, calc(100vw - 24px));
-  max-height: min(70vh, 560px);
-  margin: 10vh auto auto;
-  padding: 14px;
-  color: var(--text);
-  flex-direction: column;
-  gap: 10px;
-}
-
-.patch[open] {
-  display: flex;
-}
-
-.patch::backdrop {
-  background: rgb(0 0 0 / 35%);
-}
 
 .patch-head {
   display: flex;
@@ -80,11 +62,4 @@
   width: 16px;
   height: 16px;
   background: radial-gradient(circle, currentColor 2px, transparent 2.5px) 0 0 / 33.3% 33.3%;
-}
-
-@media (max-width: 699px) {
-  .patch {
-    margin-top: 12px;
-    max-height: calc(100dvh - 24px);
-  }
 }
