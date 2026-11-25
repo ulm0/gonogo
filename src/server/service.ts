@@ -31,6 +31,11 @@ export interface ServiceOptions {
   host?: string;
   port?: number;
   ptyHost?: boolean;
+  /** The network flags of the server (`--allow-host`, `--trusted-proxy`, `--public-url`, `--client-ip-header`), already validated by the caller: written into the unit as they are. */
+  allowedHosts?: string[];
+  trustedProxies?: string[];
+  publicUrl?: string;
+  clientIpHeader?: string;
   /** Write the file and do not start the service. */
   noStart?: boolean;
   manager?: Manager;
@@ -241,6 +246,10 @@ export function resolveSpec(host: ServiceHost, options: ServiceOptions): Spec {
   if (options.host !== undefined) flags.push('--host', options.host);
   if (options.port !== undefined) flags.push('--port', String(options.port));
   if (options.ptyHost === true) flags.push('--pty-host');
+  for (const name of options.allowedHosts ?? []) flags.push('--allow-host', name);
+  for (const address of options.trustedProxies ?? []) flags.push('--trusted-proxy', address);
+  if (options.publicUrl !== undefined) flags.push('--public-url', options.publicUrl);
+  if (options.clientIpHeader !== undefined) flags.push('--client-ip-header', options.clientIpHeader);
   const argv = [...program, ...flags].map((word, i) => checkText(i === 0 ? 'the program path' : 'an option', word));
   // node's own folder first, so the `node` a shim or a script asks for is the one that runs gonogo
   const dirs = [dirname(host.node), ...(host.env.PATH ?? '').split(':').filter((d) => d !== '')];
@@ -307,6 +316,10 @@ export function flagsArgv(options: ServiceOptions): string[] {
   if (options.host !== undefined) add('--host', options.host);
   if (options.port !== undefined) add('--port', options.port);
   if (options.ptyHost === true) add('--pty-host');
+  for (const name of options.allowedHosts ?? []) add('--allow-host', name);
+  for (const address of options.trustedProxies ?? []) add('--trusted-proxy', address);
+  if (options.publicUrl !== undefined) add('--public-url', options.publicUrl);
+  if (options.clientIpHeader !== undefined) add('--client-ip-header', options.clientIpHeader);
   if (options.noStart === true) add('--no-start');
   if (options.manager !== undefined) add('--manager', options.manager);
   if (options.user !== undefined) add('--user', options.user);

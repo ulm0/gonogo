@@ -23,7 +23,7 @@ DOCKING (Flight Rules, Automation and connections, the row Docking) links two go
 
 ## Dock
 
-1. Each station needs an address the other can reach: an HTTPS public name ([Reverse proxy](../reference/security.md#reverse-proxy)) or a private network such as Tailscale, allowed with `--allow-host`.
+1. Each station needs an address the other can reach: an HTTPS public name ([Reverse proxy](../reference/security.md#reverse-proxy)) or a private network such as Tailscale, allowed with `--allow-host` (under a service, `gonogo service install --allow-host <names>` puts it in the file the manager starts).
 2. On A: MAKE A CODE, enter A's address, send the code to B's Director (shown once, single use, 15 minutes).
 3. On B: PAIR, paste the code, enter B's address.
 
