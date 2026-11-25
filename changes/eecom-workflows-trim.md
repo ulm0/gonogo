@@ -1,1 +1,0 @@
-- **Fewer CI runs per pull request.** The Docker image is built on a pull request only when it touches the Dockerfile, `packaging/docker`, `package.json` or the lockfile (main and tags still build it every time), and the Docker self-update end-to-end test runs after a stable release's image build instead of on every run. No change for users.
