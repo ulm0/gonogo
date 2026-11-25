@@ -194,6 +194,20 @@ function world(): World {
   };
 }
 
+/** A write that docking.ts makes in the background (a fire-and-forget save) lands when the disk says so, not after a fixed number of ticks: the check is tried again until it holds (3 s at most). */
+const eventually = async (check: () => void, ms = 3000): Promise<void> => {
+  const end = Date.now() + ms;
+  for (;;) {
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (Date.now() > end) throw error;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+};
+
 const pair = async (a: Station, b: Station): Promise<{ aSees: string; bSees: string }> => {
   const { code } = a.docking.createCode({ url: a.origin });
   const dock = await b.docking.pair({ code, url: b.origin });
@@ -1314,7 +1328,7 @@ describe('links: the core', () => {
     expect(trailB.map((e) => [e.from, e.seq, e.kind, e.by])).toEqual([['them', 1, 'offer', 'director@alpha'], ['us', 1, 'accept', 'station@beta']]);
     expect(b.attached[0]).toMatchObject({ id: 't9', link });
     await settle();
-    expect(JSON.parse(readFileSync(join(a.dir, 'links.json'), 'utf8'))).toMatchObject({ version: 1, links: [{ id: link }] });
+    await eventually(() => expect(JSON.parse(readFileSync(join(a.dir, 'links.json'), 'utf8'))).toMatchObject({ version: 1, links: [{ id: link }] }));
     expect(statSync(join(a.dir, 'links.json')).mode & 0o777).toBe(0o600);
   });
 
@@ -1613,8 +1627,7 @@ describe('links: the flow', () => {
     expect(a.docking.view().docks[0]?.rules).toEqual({ handoff: 'ask', incoming: 'auto', autoAccept: false, staleHours: 24, reportCost: false, serve: false, ask: false });
     expect(a.docking.setRules(dock, { staleHours: 6, handoff: 'allow' })).toEqual({ handoff: 'allow', incoming: 'auto', autoAccept: false, staleHours: 6, reportCost: false, serve: false, ask: false });
     for (const bad of [{ handoff: 'sometimes' }, { incoming: 'ask' }, { autoAccept: 'yes' }, { staleHours: -1 }, { staleHours: 1.5 }, { staleHours: 721 }, { nope: 1 }]) expect(() => a.docking.setRules(dock, bad), JSON.stringify(bad)).toThrow();
-    await settle();
-    expect(JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')).docks[0].rules).toMatchObject({ handoff: 'allow', staleHours: 6 });
+    await eventually(() => expect(JSON.parse(readFileSync(join(a.dir, 'docking.json'), 'utf8')).docks[0].rules).toMatchObject({ handoff: 'allow', staleHours: 6 }));
   });
 
   it('with `ask` FLIGHT\'s hand-off waits for the Director with the whole text; no sends nothing; go sends; always sets allow; with `allow` it goes at once', async () => {
