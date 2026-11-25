@@ -69,7 +69,7 @@ export function listProblems(entries, serverModules) {
     /^package\/package\.json$/,
     /^package\/README\.md$/,
     /^package\/licen[cs]e(\.[^/]+)?$/i,
-    /^package\/dist\/shared\/(protocol|positions|fuel|cron|details|diff|layout|livery|longtext|prices|features|registry)\.js$/,
+    /^package\/dist\/shared\/(protocol|positions|fuel|controls|cron|details|diff|layout|livery|longtext|prices|features|registry)\.js$/,
     /^package\/dist\/client\/.+/,
   ];
   for (const e of entries) {
