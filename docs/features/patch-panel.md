@@ -10,3 +10,11 @@ One field that reaches every console, view and common action of the room from th
 - **Running**: a view or console opens at once and the panel closes. An action that asks the server (poll, Downlink, livery) keeps the panel open until it answers, so errors show there.
 - **Accessibility**: a modal dialog with a combobox; the keyboard stays inside; on close without running, focus returns.
 - Nothing is stored or sent until a line runs.
+
+## Brief FLIGHT anywhere
+
+- **Open**: Cmd+B or Ctrl+B on any screen (the room, Comms, the Flight Plan, the Hangar, the hire form, a console on a phone), or the panel's Brief FLIGHT line (this is how a phone opens it). Ctrl+B inside a terminal stays in the terminal; Cmd+B opens the dialog there.
+- **Sends**: the same box as the room's: Enter sends to this room's FLIGHT, Shift+Enter is a new line, a long text goes as a file, Make this a mission closes the dialog and opens the draft. The page under it does not change.
+- **After a send**: the dialog stays open and shows the sent note. Esc or CLOSE shuts it and the keyboard goes back to where it was.
+- **No FLIGHT, or FLIGHT stopped**: the box is off and says so, as in the room.
+- One dialog at a time: Cmd/Ctrl+B with the panel open, or Cmd/Ctrl+K with the brief open, does nothing.

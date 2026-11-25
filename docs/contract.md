@@ -2305,3 +2305,7 @@ Client only; no server change. `ClientState.view` loses `loop`, `downlink` and `
 ### Engine switch (0.18.0)
 
 `EditRequest.provider?` (any engine but `custom`, never from `custom`; 400 field `provider`) and `EditRequest.switchNow?` (400 field `switchNow`; alone: apply the pending switch, 400 when there is none). `AgentView.pendingEngine?` (`Provider | null`). The request is checked against the new engine; settings it did not name that the new engine does not take are dropped (Downlink `startup` event); a new `sessionId`; `bypassPermissions` carried to another engine needs `confirmBypass`. Stopped: saved. Not working: saved and restarted. Working: the whole edit is kept in memory (`Rt.pendingEdit`) and applied on the agent's queue when the turn ends; meanwhile no Stop block and no typed pointer (`waiting: <name> is switching to <engine>`). A new engine without the gonogo tools: the waiting mail is undelivered. Design: `docs/engine-switch-spec.md`.
+
+### Brief dialog (2026-11-25)
+
+Client only; no route, frame or protocol type changed. `isBriefKey` in `shell.ts`; `BriefDialog.tsx` (the house Radix `Dialog` holding `Brief`) opened by Cmd/Ctrl+B on any screen and by the Patch Panel line Brief FLIGHT (which no longer goes to the room). `Office` keeps one dialog state for the panel and the brief. `Brief` gains `onLeave` and a note when the room has no boss. Spec: `docs/shell-spec.md`, section "Brief dialog". Tests: `test/client-shell.test.ts`.

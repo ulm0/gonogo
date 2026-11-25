@@ -23,8 +23,8 @@ function subscribePhone(notify: () => void): () => void {
   return () => query.removeEventListener('change', notify);
 }
 
-/** The box that briefs FLIGHT. Its field has the class `brief-input`, so a screen can send the keyboard there. */
-export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
+/** The box that briefs FLIGHT. Its field has the class `brief-input`, so a screen can send the keyboard there. `onLeave` runs before Make this a mission changes the page (the Brief dialog closes then). */
+export function Brief({ boss, onLeave }: { boss: AgentView | null; onLeave?: () => void }): ReactElement {
   const id = useId();
   const phone = useSyncExternalStore(subscribePhone, onPhone, () => false);
   const [text, setText] = useState('');
@@ -69,7 +69,7 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
     }
   };
 
-  const note = stopped ? { text: 'FLIGHT is stopped. Start it to brief.', tone: 'ok' as const } : result;
+  const note = boss === null ? { text: 'This room has no FLIGHT to brief.', tone: 'ok' as const } : stopped ? { text: 'FLIGHT is stopped. Start it to brief.', tone: 'ok' as const } : result;
   return (
     <form className="brief" onSubmit={onSubmit}>
       <label className="brief-label" htmlFor={`${id}-text`}>
@@ -91,7 +91,11 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
         {busy ? 'Sending…' : 'Send'}
       </button>
       {body !== '' && (
-        <button type="button" className="btn brief-mission" data-kind="quiet" onClick={() => openNewMission(draftFromBrief(text, MISSION_NAME_MAX_CHARS))}>
+        <button type="button" className="btn brief-mission" data-kind="quiet" onClick={() => {
+            const draft = draftFromBrief(text, MISSION_NAME_MAX_CHARS);
+            onLeave?.();
+            openNewMission(draft);
+          }}>
           Make this a mission
         </button>
       )}
