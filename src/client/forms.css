@@ -79,13 +79,6 @@
   max-width: 640px;
 }
 
-/* The browser's grey placeholder is under 4.5:1 on a key. */
-.input::placeholder,
-.textarea::placeholder {
-  color: var(--muted);
-  opacity: 1;
-}
-
 /* ---- tile heads: LED, call sign, cell number ---- */
 
 .staff-tile-head {
@@ -254,7 +247,7 @@
 }
 
 /* A select matches :read-only, which greys a read-only name: the engine select keeps the look of a field you can change. */
-.staff .input.staff-engine {
+.staff [data-slot=native-select].staff-engine {
   background-color: var(--key);
   color: var(--text);
 }
@@ -334,7 +327,7 @@
   flex: 1 1 100%;
 }
 
-.staff-install .input {
+.staff-install :is([data-slot=input], [data-slot=native-select]) {
   flex: 1 1 220px;
   min-width: 0;
   min-height: 44px;
@@ -343,7 +336,7 @@
 }
 
 /* A read-only field would be greyed; this one is the thing to copy. */
-.staff .staff-install .input:read-only {
+.staff .staff-install :is([data-slot=input], [data-slot=native-select]):read-only {
   background: var(--key);
   color: var(--text);
 }
@@ -390,7 +383,7 @@
   min-width: 0;
 }
 
-.staff-key-row .input {
+.staff-key-row :is([data-slot=input], [data-slot=native-select]) {
   min-height: 44px;
 }
 

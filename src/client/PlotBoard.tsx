@@ -14,6 +14,7 @@ import { useRefresh } from './refresh.js';
 import { showRoom, useStore } from './store.js';
 import './loop.css';
 import './records.css';
+import { Textarea } from '@/ui/textarea.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -95,9 +96,9 @@ export function PlotBoard(): ReactElement {
       >
         <div className="field">
           <label htmlFor={`${titleId}-text`}>Plan</label>
-          <textarea
+          <Textarea variant="field"
             id={`${titleId}-text`}
-            className="textarea rec-text"
+            className="rec-text"
             rows={18}
             value={text}
             maxLength={BOARD_MAX_CHARS}

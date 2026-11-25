@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { INPUT_CLASS } from '../shared/controls.js';
 import { LIVERY_NAMES } from '../shared/livery.js';
 import { TOKEN_FRAGMENT_KEY, TOKEN_STORAGE_KEY } from '../shared/protocol.js';
 
@@ -38,7 +39,7 @@ body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px
 .version-mark{display:inline-flex;align-items:center;min-height:24px}
 .rl-keys .btn{flex:1 1 auto}
 .rl-keys .btn[data-kind=primary]{flex-grow:2}
-.rl-keys .input{flex:1 1 9em;min-width:0}
+.rl-keys input{flex:1 1 9em;min-width:0}
 .rl-new{align-items:flex-start;justify-content:center;min-height:120px}
 .rl-form,.rl-gate{display:grid;gap:12px;padding:14px;max-width:560px}
 .rl-form[hidden],.rl-gate[hidden],.rl-error[hidden]{display:none}
@@ -132,7 +133,7 @@ function card(r){
   led.dataset.on=String(kind!=='stopped');if(kind==='needs'||kind==='starting')led.dataset.blink='true';
   head.append(led);
   if(renaming===r.id){
-    const input=el('input','input');input.value=r.name;input.maxLength=40;input.dataset.f='name:'+r.id;input.setAttribute('aria-label','New name of '+name);
+    const input=el('input',${JSON.stringify(INPUT_CLASS)});input.value=r.name;input.maxLength=40;input.dataset.f='name:'+r.id;input.setAttribute('aria-label','New name of '+name);
     const save=async()=>{try{await call('PATCH','/api/rooms/'+encodeURIComponent(r.id),{name:input.value});renaming=null;clear();load()}catch(e){fail(e)}};
     input.addEventListener('keydown',e=>{if(e.key==='Enter')save();if(e.key==='Escape'){renaming=null;draw();focus('rename:'+r.id)}});
     const row=el('div','rl-keys');
@@ -262,9 +263,9 @@ function moveBox(){
   }
   if(ask){
     const st=el('div','rl-step');
-    const pw=el('input','input');pw.type='password';pw.name='password';pw.autocomplete='current-password';pw.dataset.f='step:password';pw.setAttribute('aria-label','Password');
+    const pw=el('input',${JSON.stringify(INPUT_CLASS)});pw.type='password';pw.name='password';pw.autocomplete='current-password';pw.dataset.f='step:password';pw.setAttribute('aria-label','Password');
     st.append(el('p','',ask.msg),pw);
-    if(ask.second){const c=el('input','input');c.name='code';c.inputMode='numeric';c.autocomplete='one-time-code';c.setAttribute('aria-label','Code');st.append(c)}
+    if(ask.second){const c=el('input',${JSON.stringify(INPUT_CLASS)});c.name='code';c.inputMode='numeric';c.autocomplete='one-time-code';c.setAttribute('aria-label','Code');st.append(c)}
     pw.addEventListener('keydown',e=>{if(e.key==='Enter')confirmStep()});
     st.append(key('CONFIRM','primary',confirmStep,'step:go'),key('CANCEL','',()=>{ask=null;seen='';draw()},'step:cancel'));
     box.append(st);
@@ -374,7 +375,7 @@ export const roomsPage = (stylesheet: string | null, version: string | null = nu
   `<div class="rl-head"><h2 id="title" class="label" tabindex="-1">Rooms</h2><span id="sum"></span><span id="live" class="sr-only" role="status"></span></div>` +
   `<section id="gate" class="module rl-gate" hidden><h2 class="label"></h2><p class="hint"></p></section>` +
   `<p id="loading" class="hint">Asking the rooms…</p>` +
-  `<form id="add" class="module rl-form" hidden><span class="label">NEW ROOM</span><div class="rl-fields"><label><span class="label">ID</span><input class="input" name="id" required maxlength="24" pattern="[a-z][a-z0-9-]{0,23}" aria-describedby="idhint" autocomplete="off" spellcheck="false"><span id="idhint" class="hint">Lowercase letters, digits and dashes, like team-a. It is the folder and the address.</span></label><label><span class="label">NAME (OPTIONAL)</span><input class="input" name="name" maxlength="40" autocomplete="off"></label><label><span class="label">PROJECT FOLDER (OPTIONAL)</span><input class="input" name="dir" maxlength="4096" autocomplete="off" spellcheck="false" aria-describedby="dirhint"><span id="dirhint" class="hint">Where its agents work, the whole path. Empty: the folder gonogo was started in. A folder asks for your password.</span><p id="dirnote" role="status" hidden></p></label></div><div class="rl-keys"><button class="btn" data-kind="primary" type="submit">ADD ROOM</button><button id="cancel" class="btn" type="button">CANCEL</button></div></form>` +
+  `<form id="add" class="module rl-form" hidden><span class="label">NEW ROOM</span><div class="rl-fields"><label><span class="label">ID</span><input class="${INPUT_CLASS}" data-slot="input" name="id" required maxlength="24" pattern="[a-z][a-z0-9-]{0,23}" aria-describedby="idhint" autocomplete="off" spellcheck="false"><span id="idhint" class="hint">Lowercase letters, digits and dashes, like team-a. It is the folder and the address.</span></label><label><span class="label">NAME (OPTIONAL)</span><input class="${INPUT_CLASS}" data-slot="input" name="name" maxlength="40" autocomplete="off"></label><label><span class="label">PROJECT FOLDER (OPTIONAL)</span><input class="${INPUT_CLASS}" data-slot="input" name="dir" maxlength="4096" autocomplete="off" spellcheck="false" aria-describedby="dirhint"><span id="dirhint" class="hint">Where its agents work, the whole path. Empty: the folder gonogo was started in. A folder asks for your password.</span><p id="dirnote" role="status" hidden></p></label></div><div class="rl-keys"><button class="btn" data-kind="primary" type="submit">ADD ROOM</button><button id="cancel" class="btn" type="button">CANCEL</button></div></form>` +
   `<p id="note" class="error rl-error" role="alert" hidden></p>` +
   `<div id="move" class="rl-move"></div>` +
   `<ul id="rooms" class="rl-cards" aria-labelledby="title"></ul>` +

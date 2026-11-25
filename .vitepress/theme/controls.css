@@ -1,0 +1,210 @@
+/*
+ * The form controls as plain classes (.input, .textarea, select.input, .check, .radio, .switch), for the docs mocks only: the app draws them
+ * with src/client/ui (input, native-select, textarea, checkbox), the same look in Tailwind utilities over the Livery tokens.
+ * shortcut: a second copy of the look until docs/design-system.md and the mocks are drawn from src/client/ui (plan PR 15); delete it then.
+ */
+
+.input,
+.textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.input {
+  height: 46px;
+}
+
+.textarea {
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.input[aria-invalid='true'],
+.textarea[aria-invalid='true'] {
+  border: 2px solid var(--nogo);
+}
+
+.input:read-only {
+  background: var(--well);
+  color: var(--muted);
+}
+
+/* A select: the field's look with its own chevron, which follows the livery (--text-2 is 4.5:1 or better on --key). The menu itself is the browser's. */
+select.input {
+  appearance: none;
+  padding-right: 40px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-2) 50%), linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* A select matches :read-only, which greys a read-only text field: a select is never read only. */
+select.input:read-only {
+  background-color: var(--key);
+  color: var(--text);
+}
+
+/* a select that sits in a line with other things takes the width of its longest option */
+.input[data-fit] {
+  width: auto;
+}
+
+select.input:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* The browser's grey placeholder is under 4.5:1 on a key. */
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* ---- check, radio and switch: native inputs (keyboard, screen reader and forms for free) drawn in the instrument's look ---- */
+
+.check,
+.radio,
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  margin: 0;
+  border: 2px solid var(--muted);
+  background: var(--key);
+  cursor: pointer;
+}
+
+.check,
+.radio {
+  width: 22px;
+  height: 22px;
+}
+
+.check {
+  border-radius: 5px;
+}
+
+.radio {
+  border-radius: 50%;
+}
+
+/* the mark is drawn in the key's colour on the dark of the checked box */
+.check::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 11px;
+  height: 5px;
+  border: solid var(--key);
+  border-width: 0 0 3px 3px;
+  opacity: 0;
+  transform: rotate(-45deg);
+}
+
+.radio::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--key);
+  opacity: 0;
+}
+
+.check:checked,
+.radio:checked {
+  border-color: var(--go-ink);
+  background: var(--go-ink);
+}
+
+.check:checked::after,
+.radio:checked::after {
+  opacity: 1;
+}
+
+.check:indeterminate::after {
+  top: 7px;
+  height: 0;
+  transform: none;
+  border-width: 0 0 3px;
+  width: 10px;
+  opacity: 1;
+}
+
+.switch {
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--well);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s;
+}
+
+.switch:checked {
+  border-color: var(--go-ink);
+  background: var(--go-ink);
+}
+
+.switch:checked::after {
+  background: var(--key);
+  transform: translateX(18px);
+}
+
+.check:disabled,
+.radio:disabled,
+.switch:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (forced-colors: active) {
+  select.input {
+    background-image: linear-gradient(45deg, transparent 50%, CanvasText 50%), linear-gradient(135deg, CanvasText 50%, transparent 50%);
+    background-color: Field;
+  }
+
+  .radio:checked::after,
+  .switch::after {
+    background: CanvasText;
+  }
+
+  .check:checked,
+  .radio:checked,
+  .switch:checked {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+  }
+
+  .check:checked::after {
+    border-color: Canvas;
+  }
+
+  .radio:checked::after,
+  .switch:checked::after {
+    background: Canvas;
+  }
+}

@@ -8,6 +8,7 @@ import { draftFromBrief } from './missionsModel.js';
 import { openNewMission } from './store.js';
 import { briefSentText } from './wording.js';
 import './loop.css';
+import { Textarea } from '@/ui/textarea.js';
 
 /** Enter sends, Shift+Enter makes a newline; Enter that confirms an input-method composition is not a send. Every box that sends on Enter asks this. */
 export const enterSends = (event: Pick<KeyboardEvent<HTMLTextAreaElement>, 'key' | 'shiftKey' | 'nativeEvent'>): boolean => event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing;
@@ -74,9 +75,9 @@ export function Brief({ boss }: { boss: AgentView | null }): ReactElement {
       <label className="brief-label" htmlFor={`${id}-text`}>
         Brief FLIGHT
       </label>
-      <textarea
+      <Textarea variant="field"
         id={`${id}-text`}
-        className="textarea brief-input"
+        className="brief-input"
         rows={1}
         value={text}
         placeholder={phone ? 'Brief FLIGHT' : 'What do you want done?'}

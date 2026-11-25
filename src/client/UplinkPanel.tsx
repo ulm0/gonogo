@@ -18,6 +18,9 @@ import { useRun } from './WallView.js';
 import './loop.css';
 import './launch.css';
 import './uplink.css';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Checkbox, Switch } from '@/ui/checkbox.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const isField = (name: unknown): name is Field => typeof name === 'string' && (FIELDS as readonly string[]).includes(name);
@@ -115,10 +118,9 @@ export function Editor({
       <fieldset className="win-fields" disabled={busy}>
         <div className="field" data-invalid={problems.name !== undefined ? '' : undefined}>
           <label htmlFor={`${id}-name`}>Name</label>
-          <input
+          <Input
             id={`${id}-name`}
             ref={first}
-            className="input"
             value={values.name}
             maxLength={UPLINK_NAME_MAX_CHARS}
             autoComplete="off"
@@ -133,22 +135,21 @@ export function Editor({
         </div>
         <div className="field">
           <label htmlFor={`${id}-to`}>Send to</label>
-          <select id={`${id}-to`} className="input" value={values.to} aria-describedby={describedBy('to')} onChange={(e) => change({ to: e.target.value }, 'to')}>
+          <NativeSelect id={`${id}-to`} value={values.to} aria-describedby={describedBy('to')} onChange={(e) => change({ to: e.target.value }, 'to')}>
             {options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           {error('to')}
         </div>
         {needsSecret(own) && (
           <div className="field" data-invalid={problems.secret !== undefined ? '' : undefined}>
             <label htmlFor={`${id}-secret`}>Signing secret</label>
-            <input
+            <Input
               id={`${id}-secret`}
               type="password"
-              className="input"
               value={secret}
               autoComplete="off"
               spellCheck={false}
@@ -167,7 +168,7 @@ export function Editor({
           </div>
         )}
         <div className="win-check">
-          <input id={`${id}-enabled`} type="checkbox" className="check" checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
+          <Checkbox id={`${id}-enabled`} checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
           <label htmlFor={`${id}-enabled`}>On: take deliveries</label>
         </div>
       </fieldset>
@@ -200,7 +201,7 @@ export function SecretPanel({ shown, onDone, onNotice }: { shown: Shown; onDone(
       <p>
         <strong>Secret of {shown.name}.</strong> It is shown once and gonogo will not show it again. Copy it into the sender now; if it is lost, rotate it.
       </p>
-      <input ref={field} readOnly className="input up-value" aria-label={`Secret of ${shown.name}`} value={shown.secret} spellCheck={false} onFocus={selectAll} />
+      <Input ref={field} readOnly className="up-value" aria-label={`Secret of ${shown.name}`} value={shown.secret} spellCheck={false} onFocus={selectAll} />
       <div className="up-keys">
         <button type="button" className="btn" onClick={() => void copyText(shown.secret).then((ok) => onNotice(ok ? 'Secret copied.' : 'Could not copy. Select the secret and copy it.'))}>
           Copy secret
@@ -242,7 +243,7 @@ function Row({ uplink, now, onEdit, onNotice, onSecret }: { uplink: UplinkView; 
         <p className="win-to">{uplink.kind}</p>
       </div>
       <div className="up-url">
-        <input readOnly className="input up-value" aria-label={`Address of ${name}`} value={url} spellCheck={false} onFocus={selectAll} />
+        <Input readOnly className="up-value" aria-label={`Address of ${name}`} value={url} spellCheck={false} onFocus={selectAll} />
         <button type="button" className="btn" aria-label={`Copy address of ${name}`} onClick={() => void copyText(url).then((ok) => onNotice(ok ? `Address of ${name} copied.` : 'Could not copy. Select the address and copy it.'))}>
           Copy
         </button>
@@ -271,8 +272,7 @@ function Row({ uplink, now, onEdit, onNotice, onSecret }: { uplink: UplinkView; 
       )}
       <div className="win-buttons">
         <label className="win-switch">
-          <input
-            type="checkbox" className="switch"
+          <Switch
             role="switch"
             checked={uplink.enabled}
             aria-label={`${name} enabled`}

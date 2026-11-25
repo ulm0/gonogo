@@ -4,6 +4,7 @@ import type { FormEvent, ReactElement } from 'react';
 import type { DockView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { useRun } from './WallView.js';
+import { Input } from '@/ui/input.js';
 
 export function KnowledgeAsk({ dock }: { dock: DockView }): ReactElement {
   const id = useId();
@@ -22,7 +23,7 @@ export function KnowledgeAsk({ dock }: { dock: DockView }): ReactElement {
       <form className="dk-handoff" onSubmit={submit}>
         <div className="field">
           <label htmlFor={`${id}-q`}>Question</label>
-          <input id={`${id}-q`} className="input" type="text" maxLength={300} value={query} autoComplete="off" onChange={(e) => setQuery(e.target.value)} />
+          <Input id={`${id}-q`} type="text" maxLength={300} value={query} autoComplete="off" onChange={(e) => setQuery(e.target.value)} />
         </div>
         <button type="submit" className="btn" data-kind="primary" aria-label={`Ask ${dock.name}`} aria-disabled={busy || query.trim() === '' || undefined}>
           {busy ? 'Asking…' : 'Ask'}

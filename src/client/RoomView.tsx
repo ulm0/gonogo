@@ -50,6 +50,8 @@ import { TerminalBar } from './TerminalBar.js';
 import { legendOf, sinceText } from './wall.js';
 import { stoppedCardDetail } from './wording.js';
 import { AgentTelemetry } from './TelemetryPanel.js';
+import { Checkbox } from '@/ui/checkbox.js';
+import { Input } from '@/ui/input.js';
 
 /* ---- helpers ---- */
 
@@ -447,7 +449,7 @@ function Remove({ agent, legend, onKeep, onRemove, busy }: { agent: AgentView; l
       <p id={`remove-${agent.name}`}>The console and its session go. Its notes stay on disk until you delete them.</p>
       {agent.worktree && (
         <div className="staff-check">
-          <input id={`remove-tree-${agent.name}`} type="checkbox" className="check" checked={deleteTree} onChange={(event) => setDeleteTree(event.target.checked)} />
+          <Checkbox id={`remove-tree-${agent.name}`} checked={deleteTree} onChange={(event) => setDeleteTree(event.target.checked)} />
           <label htmlFor={`remove-tree-${agent.name}`}>Also delete its worktree and branch (git keeps them when they hold unsaved or unmerged work)</label>
           {deleteTree && <p className="hint">Files that git ignores (.env, node_modules, build output) are deleted with the worktree.</p>}
         </div>
@@ -757,7 +759,7 @@ function PhoneConsole({ agent, legend, position, n }: { agent: AgentView; legend
         <label className="sr-only" htmlFor="phone-type">
           Type into the terminal of {legend}
         </label>
-        <input id="phone-type" className="input" type="text" value={text} placeholder={`Type into ${legend}'s terminal`} disabled={!live} autoComplete="off" autoCapitalize="off" onChange={(e) => setText(e.target.value)} />
+        <Input id="phone-type" type="text" value={text} placeholder={`Type into ${legend}'s terminal`} disabled={!live} autoComplete="off" autoCapitalize="off" onChange={(e) => setText(e.target.value)} />
         <button type="submit" className="btn" data-kind="quiet" disabled={!live}>
           Type
         </button>

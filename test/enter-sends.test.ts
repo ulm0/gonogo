@@ -16,8 +16,8 @@ describe('the reply box under a message', () => {
   const source = readFileSync('src/client/Activity.tsx', 'utf8');
   const reply = source.slice(source.indexOf('export function Reply'), source.indexOf('function Row'));
   it('is a text area (an input line has no new line) that asks the same rule as the Brief box', () => {
-    expect(reply).toContain('<textarea');
-    expect(reply).not.toContain('<input');
+    expect(reply).toContain('<Textarea');
+    expect(reply).not.toMatch(/<(input|Input)\b/);
     expect(reply).toContain('enterSends(event)');
   });
 });

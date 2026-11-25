@@ -1,4 +1,4 @@
-/** The design system: no emoji in the page or the docs mocks, and every native control wears the instrument's primitives. */
+/** The design system: no emoji in the page or the docs mocks, and every control of the page is a ui component (native elements in the Instrument's look). */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,7 +28,7 @@ describe('no emoji', () => {
 });
 
 describe('the primitives', () => {
-  it.each(['select.input', '.tabs', '.tab', '.check', '.radio', '.switch', ".icon[data-icon='lock']", ".icon[data-icon='chevron-right']", ".icon[data-icon='chevron-down']", ".icon[data-icon='half']"])('defines %s', (selector) => {
+  it.each(['.tabs', '.tab', ".icon[data-icon='lock']", ".icon[data-icon='chevron-right']", ".icon[data-icon='chevron-down']", ".icon[data-icon='half']"])('defines %s', (selector) => {
     expect(primitives).toContain(selector);
   });
 });
@@ -49,15 +49,12 @@ describe('the controls of the page', () => {
     });
 
   // the shadcn files (src/client/ui) wear shadcn's utilities over the Livery tokens instead (shadcn.css, test/shadcn-css.test.ts)
-  it.each(page.filter((f) => f.endsWith('.tsx') && !f.startsWith(join('src', 'client', 'ui'))))('%s: every control wears a primitive', (file) => {
+  // the controls are the native-element components of src/client/ui (Input, NativeSelect, Textarea, Checkbox, Radio, Switch); a raw element is left only for a surface of its own: the LCD field (lcd) and the Hangar's editor (hg-text)
+  it.each(page.filter((f) => f.endsWith('.tsx') && !f.startsWith(join('src', 'client', 'ui'))))('%s: every control is a ui component', (file) => {
     const text = readFileSync(file, 'utf8');
-    for (const input of tags(text, 'input')) {
-      if (/type="checkbox"/.test(input)) expect(input, file).toMatch(/className="(check|switch)"/);
-      else if (/type="radio"/.test(input)) expect(input, file).toMatch(/className="radio"/);
-      else expect(input, file).toMatch(/className=(\{[^}]*\binput\b|"[^"]*\b(input|lcd)\b)/);
-    }
-    for (const select of tags(text, 'select')) expect(select, file).toMatch(/className="[^"]*\binput\b/);
-    // the Hangar's editor is a code surface of its own (hg-text), not a form field
-    for (const area of tags(text, 'textarea').filter((a) => !/\bhg-text\b/.test(a))) expect(area, file).toMatch(/className=(\{[^}]*\btextarea\b|"[^"]*\btextarea\b)/);
+    for (const input of tags(text, 'input')) expect(input, file).toMatch(/className="[^"]*\blcd\b/);
+    expect(tags(text, 'select'), file).toEqual([]);
+    for (const area of tags(text, 'textarea')) expect(area, file).toMatch(/\bhg-text\b/);
+    for (const area of tags(text, 'Textarea')) expect(area, file).toMatch(/variant="field"/);
   });
 });

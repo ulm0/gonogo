@@ -13,6 +13,7 @@ import { refreshLinks } from './linksData.js';
 import { useNow, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './docking.css';
+import { Input } from '@/ui/input.js';
 
 const REASON_MAX = 200;
 
@@ -79,7 +80,7 @@ function Return({ link, label, onDone }: { link: LinkItem; label: string; onDone
     <form className="dk-return" onSubmit={submit}>
       <div className="field">
         <label htmlFor={`${id}-why`}>Reason</label>
-        <input id={`${id}-why`} className="input" type="text" maxLength={REASON_MAX} value={reason} autoComplete="off" onChange={(e) => setReason(e.target.value)} />
+        <Input id={`${id}-why`} type="text" maxLength={REASON_MAX} value={reason} autoComplete="off" onChange={(e) => setReason(e.target.value)} />
       </div>
       <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || undefined}>
         {label}

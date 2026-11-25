@@ -8,6 +8,7 @@ import { FEATURE_GROUPS, FEATURES, featureById } from '../shared/features.js';
 import type { Feature, FeaturePlan } from '../shared/features.js';
 import * as api from './api.js';
 import { useStore } from './store.js';
+import { Switch } from '@/ui/checkbox.js';
 
 const nameOf = (id: string): string => featureById(id)?.label ?? id;
 const names = (ids: readonly string[]): string => ids.map(nameOf).join(', ');
@@ -77,9 +78,8 @@ export function FeaturesBlock(): ReactElement {
                       <span className="sr-only">Core: </span>
                     </span>
                   ) : (
-                    <input
+                    <Switch
                       id={`${id}-${feature.id}`}
-                      type="checkbox" className="switch"
                       role="switch"
                       checked={!isOff}
                       disabled={!feature.wired && !isOff}

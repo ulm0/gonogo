@@ -8,6 +8,7 @@ import type { FormEvent, ReactElement } from 'react';
 import type { ProjectFolderCheck, ProjectFolderView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { bossNeedsRestart, sourceText } from './projectFolderModel.js';
+import { Input } from '@/ui/input.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -128,7 +129,7 @@ export function ProjectFolderBlock({ onChanged }: { onChanged?: (view: ProjectFo
           )}
           {editing ? (
             <form className="pf-editor" onSubmit={submit} aria-label="Change the project folder">
-              <input id={id} className="input" type="text" autoComplete="off" spellCheck={false} aria-label="Folder" placeholder="the whole path, e.g. /home/you/project" value={text} onChange={(e) => setText(e.target.value)} />
+              <Input id={id} type="text" autoComplete="off" spellCheck={false} aria-label="Folder" placeholder="the whole path, e.g. /home/you/project" value={text} onChange={(e) => setText(e.target.value)} />
               <div className="rules-keys">
                 <button type="submit" className="btn" data-kind="primary" aria-label="Set the project folder" aria-disabled={busy || text.trim() === '' || undefined}>
                   Set

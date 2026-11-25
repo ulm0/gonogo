@@ -16,6 +16,7 @@ import { useStore } from './store.js';
 import { budgetLevel, fuelLevel, withBudget, withLimit } from './wall.js';
 import type { FuelLevel } from './wall.js';
 import { useRun } from './WallView.js';
+import { Input } from '@/ui/input.js';
 
 const WINDOW_WORDS: Record<FuelWindow, string> = { '5h': '5 H', day: 'DAY', week: 'WEEK', month: 'MONTH' };
 /** The window to show first: the tightest one that has a limit, else 5 h. */
@@ -115,9 +116,9 @@ export function FuelMeter({
         <label className="sr-only" htmlFor={`fuel-${who}`}>
           {`${money ? 'Dollar budget' : 'Token limit'} for ${who} in ${WINDOW_WORDS[window].toLowerCase()}`}
         </label>
-        <input
+        <Input
           id={`fuel-${who}`}
-          className="input fuel-input"
+          className="fuel-input"
           inputMode="decimal"
           autoComplete="off"
           placeholder={limit === undefined ? (money ? 'e.g. $10' : 'e.g. 2M') : show(limit)}
@@ -457,13 +458,13 @@ export function PricesFold({ since }: { since: number | null }): ReactElement {
             <label className="sr-only" htmlFor="price-prefix">
               Model prefix
             </label>
-            <input id="price-prefix" className="input fuel-input" placeholder="claude-sonnet-5" autoComplete="off" required pattern="[A-Za-z0-9._\-]{1,80}" value={prefix} onChange={(e) => setPrefix(e.target.value)} />
+            <Input id="price-prefix" className="fuel-input" placeholder="claude-sonnet-5" autoComplete="off" required pattern="[A-Za-z0-9._\-]{1,80}" value={prefix} onChange={(e) => setPrefix(e.target.value)} />
             {PRICE_FIELDS.map(([k, label]) => (
               <span key={k} className="fuel-price-field">
                 <label className="sr-only" htmlFor={`price-${k}`}>
                   {label} dollars per million tokens
                 </label>
-                <input id={`price-${k}`} className="input fuel-input" inputMode="decimal" placeholder={label} autoComplete="off" required value={fields[k]} onChange={(e) => setFields({ ...fields, [k]: e.target.value })} />
+                <Input id={`price-${k}`} className="fuel-input" inputMode="decimal" placeholder={label} autoComplete="off" required value={fields[k]} onChange={(e) => setFields({ ...fields, [k]: e.target.value })} />
               </span>
             ))}
             <button type="submit" className="btn" aria-disabled={busy || undefined}>

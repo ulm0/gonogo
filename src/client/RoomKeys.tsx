@@ -9,6 +9,8 @@ import { KEY_NAME_PATTERN, keyWarning } from '../shared/protocol.js';
 import type { RoomKeysView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { useRun } from './WallView.js';
+import { Switch } from '@/ui/checkbox.js';
+import { Input } from '@/ui/input.js';
 
 const NAME_RE = new RegExp(KEY_NAME_PATTERN);
 
@@ -23,7 +25,7 @@ function Row({ entry, onSaved }: { entry: RoomKeysView['keys'][number]; onSaved(
         SET {new Date(entry.at).toLocaleDateString()}
       </span>
       <label htmlFor={id}>
-        <input id={id} type="checkbox" role="switch" className="switch" checked={entry.cleanRoom} disabled={busy} onChange={(event) => run(async () => onSaved(await api.setRoomKey(entry.name, { cleanRoom: event.target.checked })))} /> Also in a Clean Room
+        <Switch id={id} role="switch" checked={entry.cleanRoom} disabled={busy} onChange={(event) => run(async () => onSaved(await api.setRoomKey(entry.name, { cleanRoom: event.target.checked })))} /> Also in a Clean Room
       </label>
       <button type="button" className="btn" data-kind="danger" aria-label={`Remove ${entry.name}`} aria-disabled={busy || undefined} onClick={() => !busy && run(async () => onSaved(await api.removeRoomKey(entry.name)))}>
         Remove
@@ -86,13 +88,13 @@ export function RoomKeysBlock(): ReactElement {
             <label htmlFor={`${id}-name`} className="rules-call">
               Key name
             </label>
-            <input id={`${id}-name`} className="input" type="text" value={name} placeholder="AWS_REGION" autoComplete="off" autoCapitalize="characters" spellCheck={false} aria-invalid={bad || undefined} onChange={(event) => setName(event.target.value.trim())} />
+            <Input id={`${id}-name`} type="text" value={name} placeholder="AWS_REGION" autoComplete="off" autoCapitalize="characters" spellCheck={false} aria-invalid={bad || undefined} onChange={(event) => setName(event.target.value.trim())} />
             <label htmlFor={`${id}-value`} className="rules-call">
               Value
             </label>
-            <input id={`${id}-value`} className="input" type="password" value={value} autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setValue(event.target.value)} />
+            <Input id={`${id}-value`} type="password" value={value} autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setValue(event.target.value)} />
             <label>
-              <input type="checkbox" role="switch" className="switch" checked={clean} onChange={(event) => setClean(event.target.checked)} /> Also in a Clean Room
+              <Switch role="switch" checked={clean} onChange={(event) => setClean(event.target.checked)} /> Also in a Clean Room
             </label>
             <button
               type="button"

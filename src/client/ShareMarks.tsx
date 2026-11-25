@@ -8,6 +8,7 @@ import * as api from './api.js';
 import type { DockShare } from './api.js';
 import { useStore } from './store.js';
 import { useRun } from './WallView.js';
+import { Checkbox } from '@/ui/checkbox.js';
 
 /** One copy of the marks for every row of the page, read when a row opens and after each change. */
 let marks: DockShare[] | null = null;
@@ -46,10 +47,8 @@ export function ShareMarks({ kind, id, label }: { kind: DockShare['kind']; id: s
       <legend className="legend">{label}</legend>
       {docks.map((d) => (
         <div className="staff-check" key={d.id}>
-          <input
+          <Checkbox
             id={`${key}-${d.id}`}
-            type="checkbox"
-            className="check"
             checked={current.includes(d.id)}
             onChange={(e) => run(async () => { await api.setDockShare(kind, id, toggled(current, d.id, e.target.checked, order)); await refreshShares(); })}
           />

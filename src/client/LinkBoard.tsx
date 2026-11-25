@@ -5,6 +5,7 @@ import { LinkLine } from './LinkLines.js';
 import { boardRows, reviewCount, STATE_FILTERS } from './links.js';
 import { useLinks } from './linksData.js';
 import { useStore } from './store.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 export function LinkBoard(): ReactElement | null {
   const id = useId();
@@ -32,24 +33,24 @@ export function LinkBoard(): ReactElement | null {
         </div>
         <div className="field">
           <label htmlFor={`${id}-s`}>Station</label>
-          <select id={`${id}-s`} className="input" value={station} onChange={(e) => setStation(e.target.value)}>
+          <NativeSelect id={`${id}-s`} value={station} onChange={(e) => setStation(e.target.value)}>
             <option value="">All stations</option>
             {docks.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="field">
           <label htmlFor={`${id}-f`}>Show</label>
-          <select id={`${id}-f`} className="input" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
+          <NativeSelect id={`${id}-f`} value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
             {STATE_FILTERS.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       </div>
       {rows.length === 0 ? (

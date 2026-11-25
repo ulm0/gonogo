@@ -51,6 +51,7 @@ import { RuntimeSettingsBlock } from './RuntimeSettings.js';
 import { summary as runtimeSummary } from './runtimeSettingsModel.js';
 import './loop.css';
 import './rules.css';
+import { NativeSelect } from '@/ui/native-select.js';
 
 /** The checklist's marks, shared by every place that shows or resets it in this tab. */
 let marks = loadMarks();
@@ -104,8 +105,7 @@ function PhoneApprovals(): ReactElement {
       <h2 className="label" id={`${id}-phone`}>
         PHONE APPROVALS
       </h2>
-      <select
-        className="input"
+      <NativeSelect
         data-fit
         aria-label="Phone approvals"
         value={mode}
@@ -120,7 +120,7 @@ function PhoneApprovals(): ReactElement {
             {PHONE_TEXT[m]}
           </option>
         ))}
-      </select>
+      </NativeSelect>
       <p className="hint">{PHONE_HINT[mode]}</p>
       {error !== null && (
         <p className="error" role="alert">

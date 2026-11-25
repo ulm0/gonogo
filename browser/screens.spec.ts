@@ -691,6 +691,15 @@ async function app(page: Page, group: string, full: boolean): Promise<void> {
     await page.locator('.patch-input').waitFor({ timeout: 3000 });
   });
   await page.keyboard.press('Escape');
+  // the step-up check: the server is stood in to ask for the password again on the next livery change; Esc cancels it, so nothing changes
+  await page.route('**/api/livery', (route) => (route.request().method() === 'PUT' ? route.fulfill({ status: 403, json: { error: 'Confirm it is you: the password was checked more than five minutes ago.', stepUp: true, second: true } }) : route.fallback()));
+  await view(page, group, 'step-up check', async () => {
+    // the livery in use has its Apply key disabled: take another
+    await page.locator('button[aria-label^="Apply "]:not([aria-disabled])').first().click({ timeout: 3000 });
+    await page.locator('.stepup[role=dialog]').waitFor({ timeout: 3000 });
+  });
+  await page.keyboard.press('Escape');
+  await page.unroute('**/api/livery');
   // the banner of an insecure setup: the stand-in install has nothing open, so the list is stood in (the texts are the server's own kind: plain words, names and counts)
   const findings = [
     { id: 'public-name-no-mfa', severity: 'high', text: 'gonogo.example.org is a public address and the login has no second factor.', fix: 'Turn on the second factor (TOTP) in Flight Rules, LOGIN.' },

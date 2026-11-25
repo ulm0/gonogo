@@ -9,6 +9,7 @@ import type { RulesView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { asSaved, bytesOf, bytesText, rulesProblem } from './roomRulesModel.js';
 import { useRun } from './WallView.js';
+import { Textarea } from '@/ui/textarea.js';
 
 interface TextBlockProps {
   title: string;
@@ -69,9 +70,9 @@ function TextBlock({ title, hint, placeholder, label, trims, load, save: send }:
           <label htmlFor={`${id}-text`} className="rules-call">
             {label}
           </label>
-          <textarea
+          <Textarea variant="field"
             id={`${id}-text`}
-            className="textarea rules-text"
+            className="rules-text"
             value={text}
             placeholder={placeholder}
             autoComplete="off"

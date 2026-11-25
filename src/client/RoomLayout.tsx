@@ -19,6 +19,7 @@ import { setEditingRoom, store, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import { Wall, WALL_BLOCKS } from './WallView.js';
 import './room.css';
+import { NativeSelect } from '@/ui/native-select.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -313,9 +314,8 @@ function RoomEditor(): ReactElement {
               <div className="re-desks" onPointerDown={(e) => e.stopPropagation()}>
                 <div className="re-desks-bar">
                   <label htmlFor={`${id}-sort`}>Order of the consoles</label>
-                  <select
+                  <NativeSelect
                     id={`${id}-sort`}
-                    className="input"
                     value={draft.desks.sort}
                     onChange={(e) => {
                       const sort = e.target.value as DeskSort;
@@ -327,7 +327,7 @@ function RoomEditor(): ReactElement {
                         {SORT_LABELS[s]}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
                 {draft.desks.sort === 'state' && <p className="hint">This order follows the consoles: it reflows as they change.</p>}
                 <ol className="re-chips" aria-label="Consoles in the order they are shown">

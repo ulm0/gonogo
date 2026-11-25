@@ -12,6 +12,8 @@ import * as api from './api.js';
 import { EMBEDDING_MODELS, managedStatusText, semanticStatusText } from './semanticview.js';
 import { useFeature, useStore } from './store.js';
 import { useRun } from './WallView.js';
+import { Checkbox, Radio } from '@/ui/checkbox.js';
+import { Input } from '@/ui/input.js';
 
 type Mode = 'managed' | 'remote';
 
@@ -109,10 +111,10 @@ export function SemanticBlock(): ReactElement | null {
         <>
           <fieldset className="rules-keys" aria-label="Mode">
             <label>
-              <input type="radio" className="radio" name={`${id}-mode`} checked={mode === 'managed'} disabled={managed === null || managed.state === 'unsupported'} onChange={() => setMode('managed')} /> Managed: gonogo runs Ollama
+              <Radio name={`${id}-mode`} checked={mode === 'managed'} disabled={managed === null || managed.state === 'unsupported'} onChange={() => setMode('managed')} /> Managed: gonogo runs Ollama
             </label>
             <label>
-              <input type="radio" className="radio" name={`${id}-mode`} checked={mode === 'remote'} onChange={() => setMode('remote')} /> Remote: an Ollama you run
+              <Radio name={`${id}-mode`} checked={mode === 'remote'} onChange={() => setMode('remote')} /> Remote: an Ollama you run
             </label>
           </fieldset>
           {mode === 'managed' && managed !== null && (
@@ -128,7 +130,7 @@ export function SemanticBlock(): ReactElement | null {
                     pull or delete models, chat with it, and fill the disk, and a flaw in Ollama would be a way out of the Clean Room. Remote (an Ollama outside this container) does not have this problem.
                   </p>
                   <label>
-                    <input type="checkbox" className="check" checked={ack || view.acknowledged} disabled={view.acknowledged} onChange={(e) => setAck(e.target.checked)} /> I understand, and I want the managed Ollama anyway
+                    <Checkbox checked={ack || view.acknowledged} disabled={view.acknowledged} onChange={(e) => setAck(e.target.checked)} /> I understand, and I want the managed Ollama anyway
                   </label>
                 </div>
               )}
@@ -137,25 +139,24 @@ export function SemanticBlock(): ReactElement | null {
               </p>
               {percent !== null && <progress aria-label="Progress" max={100} value={percent} />}
               <label htmlFor={`${id}-keep`}>Keep the model in memory for</label>
-              <input id={`${id}-keep`} className="input" value={keepAlive} autoComplete="off" spellCheck={false} placeholder="5m" onChange={(e) => setKeepAlive(e.target.value)} />
+              <Input id={`${id}-keep`} value={keepAlive} autoComplete="off" spellCheck={false} placeholder="5m" onChange={(e) => setKeepAlive(e.target.value)} />
               <label htmlFor={`${id}-idle`}>Stop Ollama after this many minutes without a request (0: never)</label>
-              <input id={`${id}-idle`} className="input" inputMode="numeric" value={idle} autoComplete="off" onChange={(e) => setIdle(e.target.value)} />
+              <Input id={`${id}-idle`} inputMode="numeric" value={idle} autoComplete="off" onChange={(e) => setIdle(e.target.value)} />
               <label htmlFor={`${id}-threads`}>CPU threads for an embedding (0: Ollama chooses)</label>
-              <input id={`${id}-threads`} className="input" inputMode="numeric" value={threads} autoComplete="off" onChange={(e) => setThreads(e.target.value)} />
+              <Input id={`${id}-threads`} inputMode="numeric" value={threads} autoComplete="off" onChange={(e) => setThreads(e.target.value)} />
               <label htmlFor={`${id}-mem`}>Memory limit in MB (0: none; over it Ollama is stopped)</label>
-              <input id={`${id}-mem`} className="input" inputMode="numeric" value={memory} autoComplete="off" onChange={(e) => setMemory(e.target.value)} />
+              <Input id={`${id}-mem`} inputMode="numeric" value={memory} autoComplete="off" onChange={(e) => setMemory(e.target.value)} />
             </>
           )}
           {mode === 'remote' && (
             <>
               <label htmlFor={`${id}-endpoint`}>Endpoint</label>
-              <input id={`${id}-endpoint`} className="input" value={endpoint} autoComplete="off" spellCheck={false} onChange={(e) => setEndpoint(e.target.value)} />
+              <Input id={`${id}-endpoint`} value={endpoint} autoComplete="off" spellCheck={false} onChange={(e) => setEndpoint(e.target.value)} />
               <label htmlFor={`${id}-confirm`}>Send my notes to this host (only when it is not this machine)</label>
-              <input id={`${id}-confirm`} className="input" value={confirm} autoComplete="off" spellCheck={false} placeholder="the host name, as in the endpoint" onChange={(e) => setConfirm(e.target.value)} />
+              <Input id={`${id}-confirm`} value={confirm} autoComplete="off" spellCheck={false} placeholder="the host name, as in the endpoint" onChange={(e) => setConfirm(e.target.value)} />
               <label htmlFor={`${id}-key`}>API key (for an Ollama behind a proxy; sent as Authorization: Bearer, over https or to this machine only)</label>
-              <input
+              <Input
                 id={`${id}-key`}
-                className="input"
                 type="password"
                 value={key}
                 autoComplete="new-password"
@@ -168,13 +169,13 @@ export function SemanticBlock(): ReactElement | null {
               />
               {view.apiKeySet && (
                 <label>
-                  <input type="checkbox" className="check" checked={removeKey} onChange={(e) => setRemoveKey(e.target.checked)} /> Remove the saved key
+                  <Checkbox checked={removeKey} onChange={(e) => setRemoveKey(e.target.checked)} /> Remove the saved key
                 </label>
               )}
             </>
           )}
           <label htmlFor={`${id}-model`}>Model</label>
-          <input id={`${id}-model`} className="input" list={`${id}-models`} value={model} autoComplete="off" spellCheck={false} onChange={(e) => setModel(e.target.value)} />
+          <Input id={`${id}-model`} list={`${id}-models`} value={model} autoComplete="off" spellCheck={false} onChange={(e) => setModel(e.target.value)} />
           <datalist id={`${id}-models`}>
             {EMBEDDING_MODELS.map((m) => (
               <option key={m.name} value={m.name}>

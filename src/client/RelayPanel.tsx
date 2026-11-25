@@ -22,6 +22,8 @@ import './loop.css';
 import './launch.css';
 import './uplink.css';
 import './relay.css';
+import { Checkbox } from '@/ui/checkbox.js';
+import { Input } from '@/ui/input.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const selectAll = (event: { currentTarget: HTMLInputElement }): void => event.currentTarget.select();
@@ -42,9 +44,8 @@ function Forward({ view, setView, onNotice }: Shared): ReactElement {
       <legend className="label">Forwarded to the targets</legend>
       {RELAY_FORWARD_KINDS.map((kind) => (
         <div className="win-check" key={kind}>
-          <input
+          <Checkbox
             id={`${id}-${kind}`}
-            type="checkbox" className="check"
             checked={view?.forward.includes(kind) ?? false}
             aria-disabled={busy || undefined}
             onChange={(e) => {
@@ -117,10 +118,9 @@ function Target({ service, label, saved, setView, now, onNotice }: Acts & { serv
     <form className="rl-target" aria-label={`${label} target`} noValidate onSubmit={(e) => void submit(e)}>
       <div className="field" data-invalid={problems.token !== undefined ? '' : undefined}>
         <label htmlFor={`${id}-token`}>Bot token</label>
-        <input
+        <Input
           id={`${id}-token`}
           type="password"
-          className="input"
           value={token}
           placeholder={saved === null ? '' : 'Saved. Leave empty to keep it.'}
           autoComplete="off"
@@ -136,9 +136,8 @@ function Target({ service, label, saved, setView, now, onNotice }: Acts & { serv
       </div>
       <div className="field" data-invalid={problems.to !== undefined ? '' : undefined}>
         <label htmlFor={`${id}-to`}>{place.to}</label>
-        <input
+        <Input
           id={`${id}-to`}
-          className="input"
           value={to}
           autoComplete="off"
           spellCheck={false}
@@ -251,7 +250,7 @@ function Card({ info, ...shared }: Shared & { info: ServiceInfo }): ReactElement
               <li key={u.id}>
                 <h4 className="win-name">{u.name}</h4>
                 <div className="up-url">
-                  <input readOnly className="input up-value" aria-label={`Address of ${u.name}`} value={url} spellCheck={false} onFocus={selectAll} />
+                  <Input readOnly className="up-value" aria-label={`Address of ${u.name}`} value={url} spellCheck={false} onFocus={selectAll} />
                   <button type="button" className="btn" aria-label={`Copy address of ${u.name}`} onClick={() => void copyText(url).then((ok) => onNotice(ok ? `Address of ${u.name} copied.` : 'Could not copy. Select the address and copy it.'))}>
                     Copy
                   </button>

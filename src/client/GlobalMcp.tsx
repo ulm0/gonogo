@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { GlobalMcpView } from '../shared/protocol.js';
 import * as api from './api.js';
+import { Switch } from '@/ui/checkbox.js';
 
 /** Flight Rules: the MCP servers of `claude mcp add --scope user`, and whether the agents of this room get them (docs/features/global-mcp.md). Names, types and addresses only. */
 export function GlobalMcpBlock(): ReactElement {
@@ -30,11 +31,11 @@ export function GlobalMcpBlock(): ReactElement {
       {view !== null && (
         <>
           <label className="staff-check">
-            <input type="checkbox" className="switch" role="switch" checked={view.host} onChange={(event) => change({ host: event.target.checked })} />
+            <Switch role="switch" checked={view.host} onChange={(event) => change({ host: event.target.checked })} />
             Include them for the agents of this room
           </label>
           <label className="staff-check">
-            <input type="checkbox" className="switch" role="switch" checked={view.cleanRoom} onChange={(event) => change({ cleanRoom: event.target.checked })} />
+            <Switch role="switch" checked={view.cleanRoom} onChange={(event) => change({ cleanRoom: event.target.checked })} />
             Include them for Clean Room agents too
           </label>
           <p className="hint">

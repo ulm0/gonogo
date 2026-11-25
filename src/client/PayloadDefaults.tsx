@@ -10,6 +10,8 @@ import * as api from './api.js';
 import { asDefault } from './registry.js';
 import { RegistryPicker } from './RegistryPicker.js';
 import { useRun } from './WallView.js';
+import { Input } from '@/ui/input.js';
+import { Textarea } from '@/ui/textarea.js';
 
 const SERVER_EXAMPLE = '{"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]}';
 
@@ -119,13 +121,13 @@ export function PayloadDefaultsBlock(): ReactElement {
             <label htmlFor={`${id}-name`} className="rules-call">
               Server name
             </label>
-            <input id={`${id}-name`} className="input" type="text" value={name} placeholder="files" autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setName(event.target.value)} />
+            <Input id={`${id}-name`} type="text" value={name} placeholder="files" autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setName(event.target.value)} />
             <label htmlFor={`${id}-config`} className="rules-call">
               Server (JSON)
             </label>
-            <textarea
+            <Textarea variant="field"
               id={`${id}-config`}
-              className="textarea staff-servers"
+              className="staff-servers"
               value={config}
               placeholder={SERVER_EXAMPLE}
               autoComplete="off"

@@ -11,6 +11,8 @@ import { useStore } from './store.js';
 import { ShareMarks } from './ShareMarks.js';
 import './knowledge.css';
 import { anchorsText, atText, countsOf, folderOf, legText, plain, proposalsOrder, resultsOf, retryText, severityOf, shortId, sourceBadge, STATE_WORDS } from './knowledgeModel.js';
+import { Input } from '@/ui/input.js';
+import { Textarea } from '@/ui/textarea.js';
 
 /** One action at a time, with what failed: the message, and for a refused recheck or trial how long to wait (the server's `retryAfter`). */
 function useRun(): { busy: boolean; error: string | null; retry: number | undefined; run(action: () => Promise<unknown>): void } {
@@ -81,9 +83,9 @@ function ClaimForm({ repo, claim, onDone, onSaved }: { repo: KnowledgeRepo; clai
   return (
     <form className="know-form" onSubmit={submit} noValidate>
       <label htmlFor={`${id}-s`}>{claim === null ? 'New claim' : `Claim ${claim.id}`}</label>
-      <input id={`${id}-s`} className="input" value={statement} maxLength={400} autoComplete="off" placeholder="Money is always an integer number of cents" aria-invalid={(statement.trim() !== '' && !ready) || undefined} onChange={(e) => setStatement(e.target.value)} />
+      <Input id={`${id}-s`} value={statement} maxLength={400} autoComplete="off" placeholder="Money is always an integer number of cents" aria-invalid={(statement.trim() !== '' && !ready) || undefined} onChange={(e) => setStatement(e.target.value)} />
       <label htmlFor={`${id}-a`}>Anchors, one per line</label>
-      <textarea id={`${id}-a`} className="textarea know-anchors" value={anchors} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder={'src/**/*.ts !src/gen/** "parseFloat(" absent'} onChange={(e) => setAnchors(e.target.value)} />
+      <Textarea variant="field" id={`${id}-a`} className="know-anchors" value={anchors} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder={'src/**/*.ts !src/gen/** "parseFloat(" absent'} onChange={(e) => setAnchors(e.target.value)} />
       <p className="hint">A glob of tracked files (a leading ! leaves some out), then a pattern in /slashes/ or a fixed string in quotes, then present, absent, unique, count=N, each. A claim with no anchor is kept and never checked.</p>
       <div className="know-keys">
         <button type="submit" className="btn" data-kind="primary" aria-disabled={!ready || busy || undefined}>
@@ -238,7 +240,7 @@ function ProposalRow({ repo, proposal, onSaved }: { repo: KnowledgeRepo; proposa
             <label htmlFor={id} className="sr-only">
               Reason for rejecting {proposal.id} (optional)
             </label>
-            <input id={id} className="input know-reason" value={reason} maxLength={200} autoComplete="off" placeholder="Reason (optional)" onChange={(e) => setReason(e.target.value)} />
+            <Input id={id} className="know-reason" value={reason} maxLength={200} autoComplete="off" placeholder="Reason (optional)" onChange={(e) => setReason(e.target.value)} />
             <button type="button" className="btn" data-kind="danger" aria-label={`Reject ${proposal.id}`} aria-disabled={busy || undefined} onClick={() => !busy && run(async () => onSaved(await api.rejectProposal(repo.repoId, proposal.id, reason.trim())))}>
               Reject
             </button>

@@ -16,6 +16,8 @@ import { showRoom, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './loop.css';
 import './livery.css';
+import { Textarea } from '@/ui/textarea.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 function Row({ entry, current, onNotice, onGone }: { entry: LiveryEntry; current: boolean; onNotice(text: string): void; onGone(): void }): ReactElement {
   const agents = useStore((s) => s.agents);
@@ -144,10 +146,9 @@ function Design({ onNotice }: { onNotice(text: string): void }): ReactElement {
       </h2>
       <div className="field">
         <label htmlFor={`${id}-brief`}>What should it look like?</label>
-        <textarea
+        <Textarea variant="field"
           id={`${id}-brief`}
           ref={field}
-          className="textarea"
           rows={3}
           value={brief}
           maxLength={LIVERY_BRIEF_MAX_CHARS}
@@ -169,13 +170,13 @@ function Design({ onNotice }: { onNotice(text: string): void }): ReactElement {
       </div>
       <div className="field">
         <label htmlFor={`${id}-to`}>Ask</label>
-        <select id={`${id}-to`} className="input" value={to} onChange={(e) => setTo(e.target.value)}>
+        <NativeSelect id={`${id}-to`} value={to} onChange={(e) => setTo(e.target.value)}>
           {options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <div className="liv-actions">
         <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || undefined}>

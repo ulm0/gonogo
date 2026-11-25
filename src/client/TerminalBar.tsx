@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/ui/dialog.js';
 import { setRoomPrefs, useRoomPrefs } from './roomPrefs.js';
 import { panes } from './TerminalPane.js';
 import { copyText } from './uplink.js';
+import { Input } from '@/ui/input.js';
 
 const COPIES: ReadonlyArray<{ mode: 'selection' | 'last' | 'screen' | 'all'; label: string }> = [
   { mode: 'selection', label: 'Selection' },
@@ -147,7 +148,7 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
             find(false);
           }}
         >
-          <input className="input" aria-label="Find in the terminal" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find…" />
+          <Input aria-label="Find in the terminal" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find…" />
           <button type="button" className="btn" data-kind="quiet" aria-label="Previous match" onClick={() => find(true)}>
             ↑
           </button>

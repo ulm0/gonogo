@@ -24,6 +24,8 @@ import './loop.css';
 import './launch.css';
 import './uplink.css';
 import './docking.css';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const selectAll = (event: { currentTarget: HTMLInputElement }): void => event.currentTarget.select();
@@ -94,10 +96,9 @@ function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; 
   const addressField = (
     <div className="field" data-invalid={problems.address !== undefined ? '' : undefined}>
       <label htmlFor={`${id}-address`}>Address of this station</label>
-      <input
+      <Input
         id={`${id}-address`}
         ref={mode === 'code' ? first : undefined}
-        className="input"
         value={address}
         inputMode="url"
         autoComplete="off"
@@ -127,10 +128,9 @@ function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; 
         {mode === 'pair' && (
           <div className="field" data-invalid={problems.code !== undefined ? '' : undefined}>
             <label htmlFor={`${id}-code`}>Code from the other station</label>
-            <input
+            <Input
               id={`${id}-code`}
               ref={first}
-              className="input"
               value={code}
               autoComplete="off"
               spellCheck={false}
@@ -180,7 +180,7 @@ function CodePanel({ made, now, onDone, onNotice }: { made: DockCode; now: numbe
         <strong>Docking code.</strong> {expiresText(made.expiresAt, now)} Give it to the Director of the other station: they paste it under Pair, with the address of their own station. gonogo will not show it again.
       </p>
       {made.warning !== undefined && <p className="error">{made.warning}</p>}
-      <input ref={field} readOnly className="input up-value" aria-label="Docking code" value={made.code} spellCheck={false} onFocus={selectAll} />
+      <Input ref={field} readOnly className="up-value" aria-label="Docking code" value={made.code} spellCheck={false} onFocus={selectAll} />
       <div className="up-keys">
         <button type="button" className="btn" onClick={() => void copyText(made.code).then((ok) => onNotice(ok ? 'Code copied.' : 'Could not copy. Select the code and copy it.'))}>
           Copy code
@@ -255,7 +255,7 @@ function Row({ dock, now, onNotice }: { dock: DockView; now: number; onNotice(te
       {editing && (
         <div className="win-confirm" role="group" aria-label={`Address of ${dock.name}`}>
           <label htmlFor={`addr-${dock.id}`}>Address of {dock.name}</label>
-          <input id={`addr-${dock.id}`} className="input" value={url} spellCheck={false} aria-invalid={problem !== undefined} onChange={(e) => setUrl(e.target.value)} />
+          <Input id={`addr-${dock.id}`} value={url} spellCheck={false} aria-invalid={problem !== undefined} onChange={(e) => setUrl(e.target.value)} />
           {problem !== undefined && <p className="error">{problem}</p>}
           <p className="hint">Where this station calls {dock.name}. The dock stays: its name and its secret do not change. If it lives in another room of that station, end the address with /r/&lt;room&gt;. Its name has to be allowed there (--allow-host).</p>
           <button type="button" className="btn" onClick={() => setEditing(false)}>
@@ -412,10 +412,9 @@ export function HandOff({ task, willMove, onNotice, onClose }: { task: Task; wil
       {docks.length > 1 && (
         <div className="field">
           <label htmlFor={`${id}-station`}>Station</label>
-          <select
+          <NativeSelect
             id={`${id}-station`}
             ref={first}
-            className="input"
             value={dock.id}
             onChange={(e) => {
               setDockId(e.target.value);
@@ -427,18 +426,18 @@ export function HandOff({ task, willMove, onNotice, onClose }: { task: Task; wil
                 {d.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       )}
       <div className="field">
         <label htmlFor={`${id}-agent`}>{`Hand off to ${dock.name}`}</label>
-        <select id={`${id}-agent`} ref={docks.length > 1 ? undefined : first} className="input" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+        <NativeSelect id={`${id}-agent`} ref={docks.length > 1 ? undefined : first} value={assignee} onChange={(e) => setAssignee(e.target.value)}>
           {handoffChoices(dock).map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <OfferTermsFields id={id} station={dock.name} terms={terms} problems={problems} onChange={setTerms} />
       <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || undefined}>

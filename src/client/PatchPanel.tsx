@@ -18,6 +18,7 @@ import { startEditing } from './EditRoomKey.js';
 import { useRun } from './WallView.js';
 import { Dialog, DialogContent, DialogTitle } from '@/ui/dialog.js';
 import './patch.css';
+import { Input } from '@/ui/input.js';
 
 const SHOW: Record<View, () => void> = {
   room: showRoom,
@@ -189,9 +190,9 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
             Close
           </button>
         </div>
-        <input
+        <Input
           ref={field}
-          className="input patch-input"
+          className="patch-input"
           type="text"
           role="combobox"
           aria-label="Console, view or action"

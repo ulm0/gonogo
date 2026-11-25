@@ -250,7 +250,7 @@
   width: 100%;
 }
 
-.rules-tabname .input {
+.rules-tabname :is([data-slot=input], [data-slot=native-select]) {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -326,7 +326,7 @@
   gap: 8px;
 }
 
-.rules-row .input {
+.rules-row :is([data-slot=input], [data-slot=native-select]) {
   flex: 1 1 10em;
   min-width: 0;
 }
@@ -419,7 +419,7 @@
 
 /* a form whose fields have long placeholders: on a phone each field has the line to itself */
 @media (max-width: 700px) {
-  .rules-row-stack .input {
+  .rules-row-stack :is([data-slot=input], [data-slot=native-select]) {
     flex-basis: 100%;
   }
 }
@@ -435,7 +435,7 @@
 .rt-value { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .rt-item .hint { margin: 0; }
 .rt-editor { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; max-width: 560px; }
-.rt-editor .input:not([data-fit]) { width: 100%; box-sizing: border-box; }
+.rt-editor :is([data-slot=input], [data-slot=native-select]):not([data-fit]) { width: 100%; box-sizing: border-box; }
 .rt-scope { display: flex; flex-wrap: wrap; gap: 6px; }
 .rt-warning { margin: 0; padding: 8px 10px; }
 
@@ -444,6 +444,6 @@
 .pf-dir { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .pf-warning { margin: 0; padding: 8px 10px; }
 .pf-editor { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
-.pf-editor .input { width: 100%; box-sizing: border-box; }
+.pf-editor :is([data-slot=input], [data-slot=native-select]) { width: 100%; box-sizing: border-box; }
 .pf-restart { margin: 0; padding: 8px 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .pf-restart p { margin: 0; overflow-wrap: anywhere; }

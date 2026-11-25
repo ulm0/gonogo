@@ -20,6 +20,8 @@ import { useRun } from './WallView.js';
 import { ShareMarks } from './ShareMarks.js';
 import './loop.css';
 import './log.css';
+import { Input } from '@/ui/input.js';
+import { Textarea } from '@/ui/textarea.js';
 
 /** What the left column shows: the search and its rows, the Star Chart, or the Star Chart as lists. */
 type Lens = 'entries' | 'chart' | 'links';
@@ -116,10 +118,9 @@ function EntryForm({ entry, onDone }: { entry: LogEntry | null; onDone(saved: Lo
       <fieldset className="log-fields" disabled={busy}>
         <div className="field" data-invalid={problems.title !== undefined ? '' : undefined}>
           <label htmlFor={`${id}-title`}>Title</label>
-          <input
+          <Input
             id={`${id}-title`}
             ref={first}
-            className="input"
             value={values.title}
             maxLength={LOG_TITLE_MAX_CHARS}
             autoComplete="off"
@@ -131,9 +132,8 @@ function EntryForm({ entry, onDone }: { entry: LogEntry | null; onDone(saved: Lo
         </div>
         <div className="field">
           <label htmlFor={`${id}-tags`}>Tags</label>
-          <input
+          <Input
             id={`${id}-tags`}
-            className="input"
             value={values.tags}
             autoComplete="off"
             autoCapitalize="none"
@@ -148,9 +148,9 @@ function EntryForm({ entry, onDone }: { entry: LogEntry | null; onDone(saved: Lo
         </div>
         <div className="field">
           <label htmlFor={`${id}-body`}>Entry</label>
-          <textarea
+          <Textarea variant="field"
             id={`${id}-body`}
-            className="textarea log-body-input"
+            className="log-body-input"
             rows={10}
             value={values.body}
             maxLength={LOG_BODY_MAX_CHARS}
@@ -488,9 +488,8 @@ export function MissionLog(): ReactElement {
               >
                 <div className="field">
                   <label htmlFor={`${titleId}-q`}>Search the log</label>
-                  <input
+                  <Input
                     id={`${titleId}-q`}
-                    className="input"
                     type="search"
                     value={query}
                     maxLength={LOG_QUERY_MAX_CHARS}

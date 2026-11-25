@@ -2,6 +2,8 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { AutoReviewDraft, AutoReviewJob, AutoReviewSettings, AutoReviewView } from '../shared/protocol.js';
 import * as api from './api.js';
+import { Switch } from '@/ui/checkbox.js';
+import { Textarea } from '@/ui/textarea.js';
 
 const STATUS_TEXT: Record<AutoReviewJob['status'], string> = { queued: 'queued', running: 'reviewers working', done: 'draft ready', posted: 'posted', skipped: 'skipped', superseded: 'superseded by a new commit', failed: 'failed' };
 /** Lists are typed one per line or separated by commas. */
@@ -90,20 +92,20 @@ export function AutoReviewBlock(): ReactElement {
       {view !== null && (
         <>
           <label className="staff-check">
-            <input type="checkbox" className="switch" role="switch" checked={view.settings.enabled} disabled={busy} onChange={(e) => save({ enabled: e.target.checked })} />
+            <Switch role="switch" checked={view.settings.enabled} disabled={busy} onChange={(e) => save({ enabled: e.target.checked })} />
             Review pull requests of the linked repos
           </label>
           <label className="staff-check">
-            <input type="checkbox" className="switch" role="switch" checked={view.settings.autoPost} disabled={busy} onChange={(e) => save({ autoPost: e.target.checked })} />
+            <Switch role="switch" checked={view.settings.autoPost} disabled={busy} onChange={(e) => save({ autoPost: e.target.checked })} />
             Post the review without my click (comments appear as you)
           </label>
           <div className="field">
             <label htmlFor={`${id}-repos`}>Repos (owner/repo, one per line)</label>
-            <textarea id={`${id}-repos`} className="textarea" rows={2} value={repos} autoComplete="off" spellCheck={false} onChange={(e) => setRepos(e.target.value)} />
+            <Textarea variant="field" id={`${id}-repos`} rows={2} value={repos} autoComplete="off" spellCheck={false} onChange={(e) => setRepos(e.target.value)} />
           </div>
           <div className="field">
             <label htmlFor={`${id}-authors`}>Authors to review (GitHub logins; empty means only the login this room uses)</label>
-            <textarea id={`${id}-authors`} className="textarea" rows={2} value={authors} autoComplete="off" spellCheck={false} onChange={(e) => setAuthors(e.target.value)} />
+            <Textarea variant="field" id={`${id}-authors`} rows={2} value={authors} autoComplete="off" spellCheck={false} onChange={(e) => setAuthors(e.target.value)} />
           </div>
           <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => !busy && save({ repos: lines(repos), authors: lines(authors) })}>
             Save the lists

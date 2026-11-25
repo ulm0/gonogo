@@ -9,6 +9,8 @@ import type { FilterId } from './loop.js';
 import { useStore } from './store.js';
 import { briefSentText } from './wording.js';
 import './loop.css';
+import { Textarea } from '@/ui/textarea.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 /** The loop draws at most this many rows; the store keeps more. */
 const MAX_ROWS = 100;
@@ -70,9 +72,9 @@ export function Reply({
       <label className="legend" htmlFor={`${id}-reply`}>
         Reply to {to}
       </label>
-      <textarea
+      <Textarea variant="field"
         id={`${id}-reply`}
-        className="textarea loop-reply-input"
+        className="loop-reply-input"
         rows={1}
         value={text}
         autoComplete="off"
@@ -197,7 +199,7 @@ export function Loop({
         {onAgent !== undefined && (
           <label className="loop-agent">
             <span className="label">Agent</span>
-            <select className="input" value={agent ?? ''} onChange={(event) => onAgent(event.target.value === '' ? null : event.target.value)}>
+            <NativeSelect value={agent ?? ''} onChange={(event) => onAgent(event.target.value === '' ? null : event.target.value)}>
               <option value="">everyone</option>
               {agent !== null && !Object.hasOwn(agents, agent) && <option value={agent}>{agent}</option>}
               {Object.keys(agents).sort().map((name) => (
@@ -205,7 +207,7 @@ export function Loop({
                   {name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
         )}
         <button type="button" className="btn loop-room" data-kind="quiet" onClick={onClose}>

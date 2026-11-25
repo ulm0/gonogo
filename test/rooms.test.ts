@@ -790,7 +790,7 @@ describe('the supervisor', () => {
       const res = await api(s, '/rooms', null);
       const html = await res.text();
       expect(html).toContain('NEW ROOM');
-      expect(html).toMatch(/<input class="input" name="id"/);
+      expect(html).toMatch(/<input class="[^"]+" data-slot="input" name="id"/);
       const scripts = html.split('<script>').slice(1).map((part) => part.split('</script>')[0] ?? '');
       expect(scripts).toHaveLength(2);
       for (const script of scripts) {

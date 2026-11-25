@@ -1,0 +1,2 @@
+- Every text field, select, text area, check box, radio and switch is a component of `src/client/ui` (shadcn's Input, NativeSelect and Textarea, and Checkbox, Radio and Switch on native inputs). They stay native elements: the keyboard, a screen reader, a phone's own picker and form checks work as before, and they look as before.
+- A second password check asked while one is open now cancels the first, instead of leaving it waiting.

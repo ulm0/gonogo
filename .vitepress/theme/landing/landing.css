@@ -530,6 +530,12 @@
   color: var(--text-2);
 }
 
+/* a long "not run: ..." wraps inside its card instead of running into the next one */
+.lp-engines .chip {
+  max-width: 100%;
+  white-space: normal;
+}
+
 /* Livery */
 .lp-liveries {
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -18,6 +18,7 @@
 @source './StepUpDialog.tsx';
 @source './PatchPanel.tsx';
 @source './TerminalBar.tsx';
+@source '../shared/controls.ts';
 
 @theme inline {
   --color-background: var(--body);
