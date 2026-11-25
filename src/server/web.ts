@@ -2422,7 +2422,9 @@ export function createWebServer(options: WebOptions): WebServer {
       return;
     }
     try {
-      sendJson(res, 200, await docking.handle(repair ? `link/${segments[2]}` : route, req.method, req.url ?? '', req.headers, body.body));
+      // the address this call was reached at: the proxy says it (over the local socket); a call that arrived directly was reached at its own Host. A sender's own copy is never believed.
+      const reached = viaSocket.has(req) && typeof req.headers['x-gonogo-reached'] === 'string' ? req.headers['x-gonogo-reached'] : String(req.headers.host ?? '').toLowerCase();
+      sendJson(res, 200, await docking.handle(repair ? `link/${segments[2]}` : route, req.method, req.url ?? '', { ...req.headers, 'x-gonogo-reached': reached }, body.body));
     } catch (e) {
       sendHubError(res, e);
     }
