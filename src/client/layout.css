@@ -4,7 +4,9 @@
 .lay-anchor { position: relative; display: inline-flex; }
 .lay-scrim { position: fixed; inset: 0; z-index: 25; background: rgb(0 0 0 / 0.18); }
 .lay-pop {
-  position: absolute; top: calc(100% + 6px); z-index: 30; min-width: 220px; max-width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 240px); min-height: 120px; overflow-y: auto;
+  /* Pop.tsx sets --pop-room (the room below or above the key) and --pop-shift (in from an edge) when it opens */
+  --pop-room: calc(100vh - 240px); --pop-shift: 0px;
+  position: absolute; top: calc(100% + 6px); z-index: 30; min-width: 220px; max-width: min(380px, calc(100vw - 32px)); max-height: var(--pop-room); min-height: 120px; overflow-y: auto; translate: var(--pop-shift) 0;
   padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); background: var(--panel);
 }
 .lay-pop[data-align='start'] { left: 0; }
@@ -44,7 +46,7 @@
   .lay-strip-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
   .lay-strip-row::-webkit-scrollbar { display: none; }
   .lay-strip-row .lay-anchor { flex: none; }
-  .lay-pop, .lay-pop[data-up], .lay-pop[data-align] { position: fixed; left: 16px; right: 16px; top: auto; bottom: 72px; max-width: none; min-width: 0; width: auto; max-height: calc(100vh - 150px); }
+  .lay-pop, .lay-pop[data-up], .lay-pop[data-align] { position: fixed; left: 16px; right: 16px; top: auto; bottom: 72px; max-width: none; min-width: 0; width: auto; max-height: calc(100vh - 150px); translate: none; }
   .lay-chip .lay-pop { width: auto; }
   .lay-ops-head .btn { min-width: 44px; padding-inline: 10px; }
   .lay-room .matrix .room-tile { height: auto; min-height: 64px; }

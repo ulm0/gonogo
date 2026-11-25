@@ -11,6 +11,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { overlaps } from './geometry.js';
 
 const PASSWORD = 'smoke-test-password-1';
 let server: ChildProcess;
@@ -138,6 +139,22 @@ test('setup, login with a second factor, styles, a room with a live link and a c
   await expect(page.locator('.lamp')).toHaveAttribute('data-link', 'up', { timeout: 30_000 });
   await expectConsoleText(page);
   expectClean('/r/main/');
+
+  // 4b. nothing drawn over anything (browser/geometry.ts, overlaps) on the room and the threads, at a phone, a tablet and a desktop
+  await test.step('no overlap', async () => {
+    for (const size of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
+      await page.setViewportSize(size);
+      await page.goto(`${base}/r/main/`);
+      await expect(page.locator('.lamp')).toHaveAttribute('data-link', 'up', { timeout: 30_000 });
+      expect(await overlaps(page), `the room at ${size.width} px`).toEqual([]);
+      // the top bar's Comms key on a desktop, the bottom bar's on a phone
+      await page.getByRole('button', { name: /^comms/i }).first().click();
+      await page.getByRole('tab', { name: /threads/i }).click();
+      await page.locator('h1', { hasText: 'PARTY LINE' }).waitFor({ timeout: 10_000 });
+      expect(await overlaps(page), `the threads at ${size.width} px`).toEqual([]);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+  });
 
   // 5. the service worker registers and a reload still shows the page
   // WebKit under Playwright hangs the page once a service worker is installed (the project blocks them, see playwright.config.ts)
