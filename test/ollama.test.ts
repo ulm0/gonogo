@@ -149,6 +149,8 @@ describe('managed Ollama', () => {
     expect(alive(pid)).toBe(true);
     void url;
     await m.stop();
+    // SIGKILL lands at once, but the runner is a grandchild: it is gone only once its parent or init reaps it
+    for (let i = 0; i < 250 && alive(pid); i += 1) await new Promise((r) => setTimeout(r, 20));
     expect(alive(pid)).toBe(false);
   });
 
