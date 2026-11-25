@@ -1611,6 +1611,8 @@ async function connect(): Promise<void> {
   try {
     store.setState((s) => applyServerFrame(s, { t: 'state', state: body }, Date.now()));
     openSocket();
+    // a later attempt that works (the tab came back, Retry now) takes an earlier CLIENT ERROR away
+    store.setState((s) => (s.clientError === null ? s : { ...s, clientError: null }));
   } catch (error) {
     clientFailed(error, body.info.version);
   }
@@ -1620,8 +1622,10 @@ async function connect(): Promise<void> {
 function clientFailed(error: unknown, version: unknown): void {
   attempting = false;
   console.error('gonogo client error', error);
-  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  const stack = error instanceof Error && typeof error.stack === 'string' ? error.stack : '';
+  // the key never goes on the screen or into a copied report (a WebSocket subprotocol error quotes it)
+  const hide = (text: string): string => (token === null ? text : text.replaceAll(token, '[token]'));
+  const message = hide(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+  const stack = hide(error instanceof Error && typeof error.stack === 'string' ? error.stack : '');
   const details = [`CLIENT ERROR: ${message}`, `gonogo ${typeof version === 'string' ? version : 'unknown'}`, `browser: ${typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent}`, `at: ${new Date().toISOString()}`, '', stack].join('\n');
   store.setState((s) => ({ ...s, clientError: { message, details } }));
 }
