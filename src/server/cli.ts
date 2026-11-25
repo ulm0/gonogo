@@ -114,6 +114,9 @@ import { createGlobalMcpStore, globalView, readGlobalMcp } from './globalmcp.js'
 import { createEgressSettings } from './egresssettings.js';
 import { runKnowledgeCli } from './knowledgecli.js';
 import { doorTable } from './door.js';
+import { isIP } from 'node:net';
+import { splitAllowed } from './hosts.js';
+import { parsePublicUrl } from './exposure.js';
 import { MANAGERS, realHost, serviceControl, serviceInstall, serviceStatus, serviceUninstall, type Manager, type ServiceOptions } from './service.js';
 import { cachedLatest, createRollout, installKind, installNote, isNewer, updateCheckOff, updateCommand, updateText } from './rollout.js';
 import { verifyImage } from './attest.js';
@@ -211,7 +214,7 @@ export const USAGE = `Usage: gonogo [options]
        gonogo doctor
        gonogo update
        gonogo reload
-       gonogo service install [--no-start] [--home <dir>] [--host <addr>] [--port <n>] [--pty-host] | uninstall | start | stop | restart | status
+       gonogo service install [--no-start] [--home <dir>] [--host <addr>] [--port <n>] [--pty-host] [--allow-host <names>] [--trusted-proxy <ips>] [--public-url <url>] [--client-ip-header <h>] | uninstall | start | stop | restart | status
        gonogo tui [--room <id>] [--url <address>] [--token <token>] [--home <dir>]
        gonogo rooms add <id> [--name <text>] [--dir <project folder>] | list | remove <id> [--home <dir>]
       gonogo rooms migrate-main [--dry-run | --undo] [--home <dir>]
@@ -299,6 +302,13 @@ function serviceInstallKind(env: Env): InstallKind {
   return installKind({ file: fileURLToPath(import.meta.url), docker: false, clone: existsSync(fileURLToPath(new URL('../../.git', import.meta.url))) });
 }
 
+/** A flag value that may be one entry or a comma list (like the environment variables): the entries, trimmed, none empty. */
+const splitList = (value: string): string[] =>
+  value
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+
 /** `gonogo service install|uninstall|status` and the few flags of the unit it writes. */
 function parseService(rest: readonly string[]): ParsedArgs {
   const action = rest[0];
@@ -312,7 +322,7 @@ function parseService(rest: readonly string[]): ParsedArgs {
       else options.ptyHost = true;
       continue;
     }
-    if (!['--home', '--host', '--port', '--manager', '--user'].includes(flag)) return { kind: 'error', message: `unknown option ${flag} for service ${action}` };
+    if (!['--home', '--host', '--port', '--manager', '--user', '--allow-host', '--trusted-proxy', '--public-url', '--client-ip-header'].includes(flag)) return { kind: 'error', message: `unknown option ${flag} for service ${action}` };
     const value = rest[i + 1];
     if (value === undefined || value === '' || value.startsWith('-')) return { kind: 'error', message: `${flag} needs a value` };
     i += 1;
@@ -321,13 +331,31 @@ function parseService(rest: readonly string[]): ParsedArgs {
       else if (flag === '--host') options.host = value;
       else if (flag === '--user') options.user = value;
       else if (flag === '--port') options.port = parsePort(value, 'port');
+      // the network flags are checked as the server checks them, so a unit that could not start is never written
+      else if (flag === '--allow-host') {
+        const names = splitList(value);
+        const checked = splitAllowed(names);
+        if (typeof checked === 'string') return { kind: 'error', message: `--allow-host: ${checked}` };
+        options.allowedHosts = [...(options.allowedHosts ?? []), ...names];
+      } else if (flag === '--trusted-proxy') {
+        const bad = splitList(value).find((address) => isIP(address) === 0);
+        if (bad !== undefined) return { kind: 'error', message: `--trusted-proxy "${bad.slice(0, 80)}" is not an IP address` };
+        options.trustedProxies = [...(options.trustedProxies ?? []), ...splitList(value)];
+      } else if (flag === '--public-url') {
+        const parsed = parsePublicUrl(value);
+        if (typeof parsed === 'string') return { kind: 'error', message: parsed };
+        options.publicUrl = value.trim();
+      } else if (flag === '--client-ip-header') {
+        if (!(CLIENT_IP_HEADERS as readonly string[]).includes(value.trim().toLowerCase())) return { kind: 'error', message: `--client-ip-header is ${CLIENT_IP_HEADERS.join(' or ')}` };
+        options.clientIpHeader = value.trim().toLowerCase();
+      }
       else if ((MANAGERS as readonly string[]).includes(value)) options.manager = value as Manager;
       else return { kind: 'error', message: `--manager is ${MANAGERS.join(', ')}` };
     } catch (e) {
       return { kind: 'error', message: e instanceof Error ? e.message : String(e) };
     }
   }
-  if (action !== 'install' && (options.host !== undefined || options.port !== undefined || options.ptyHost === true || options.noStart === true)) return { kind: 'error', message: `service ${action} takes only --home, --manager and --user` };
+  if (action !== 'install' && (options.host !== undefined || options.port !== undefined || options.ptyHost === true || options.noStart === true || options.allowedHosts !== undefined || options.trustedProxies !== undefined || options.publicUrl !== undefined || options.clientIpHeader !== undefined)) return { kind: 'error', message: `service ${action} takes only --home, --manager and --user` };
   return { kind: 'service', action, options };
 }
 
@@ -474,11 +502,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
           break;
         case '--trusted-proxy':
           if (value.trim() === '') throw new Error('--trusted-proxy needs an address');
-          trustedProxies.push(value.trim());
+          trustedProxies.push(...splitList(value));
           break;
         default:
           if (value.trim() === '') throw new Error('--allow-host needs a host name');
-          allowedHosts.push(value.trim());
+          // one name, or a comma list as the environment variable takes it
+          allowedHosts.push(...splitList(value));
       }
     } catch (e) {
       return { kind: 'error', message: e instanceof Error ? e.message : String(e) };

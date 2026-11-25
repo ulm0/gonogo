@@ -78,6 +78,65 @@ describe('gonogo service: the arguments', () => {
   });
 });
 
+describe('gonogo service: the network flags (--allow-host, --trusted-proxy, --public-url, --client-ip-header)', () => {
+  const NET = ['service', 'install', '--host', '0.0.0.0', '--allow-host', '192.168.86.173,shitmini,shitmini.local', '--allow-host', 'dock.example.com:hooks', '--trusted-proxy', '10.0.0.2, ::1', '--public-url', 'https://gonogo.example.com', '--client-ip-header', 'CF-Connecting-IP'];
+
+  it('takes a comma list as typed and a repeated flag, validated as the server validates them', () => {
+    expect(parseArgs(NET)).toEqual({ kind: 'service', action: 'install', options: { host: '0.0.0.0', allowedHosts: ['192.168.86.173', 'shitmini', 'shitmini.local', 'dock.example.com:hooks'], trustedProxies: ['10.0.0.2', '::1'], publicUrl: 'https://gonogo.example.com', clientIpHeader: 'cf-connecting-ip' } });
+  });
+
+  it('refuses a bad host, proxy, address or header, and the flags on any action but install; nothing is written', () => {
+    const msg = (argv: string[]): string => {
+      const parsed = parseArgs(argv);
+      return parsed.kind === 'error' ? parsed.message : parsed.kind;
+    };
+    expect(msg(['service', 'install', '--allow-host', 'a b'])).toMatch(/--allow-host: "a b" is not a host name/);
+    expect(msg(['service', 'install', '--allow-host', 'ok.example.com,bad/host'])).toMatch(/not a host name/);
+    expect(msg(['service', 'install', '--trusted-proxy', 'proxy.local'])).toMatch(/--trusted-proxy "proxy.local" is not an IP address/);
+    expect(msg(['service', 'install', '--public-url', 'gonogo.example.com'])).toMatch(/--public-url/);
+    expect(msg(['service', 'install', '--public-url', 'https://x.example.com/path'])).toMatch(/address only/);
+    expect(msg(['service', 'install', '--client-ip-header', 'x-real-ip'])).toMatch(/--client-ip-header is x-forwarded-for or cf-connecting-ip/);
+    expect(msg(['service', 'install', '--allow-host'])).toMatch(/needs a value/);
+    expect(msg(['service', 'status', '--allow-host', 'a.example.com'])).toMatch(/service status takes only/);
+    expect(msg(['service', 'uninstall', '--public-url', 'https://a.example.com'])).toMatch(/service uninstall takes only/);
+  });
+
+  it('the server takes the same comma list on its own flag', () => {
+    expect(parseArgs(['--allow-host', 'a.example.com, b.example.com', '--trusted-proxy', '10.0.0.2,10.0.0.3'])).toMatchObject({ kind: 'run', options: { allowedHosts: ['a.example.com', 'b.example.com'], trustedProxies: ['10.0.0.2', '10.0.0.3'] } });
+  });
+
+  it('are written as arguments of the program, one flag one value each, and printed in the sudo command', () => {
+    const { host } = fake();
+    const parsed = parseArgs(NET);
+    if (parsed.kind !== 'service') throw new Error('not a service');
+    const spec = resolveSpec(host, parsed.options);
+    expect(spec.argv.slice(2)).toEqual(['--home', join(host.userHome, '.gonogo'), '--host', '0.0.0.0', '--allow-host', '192.168.86.173', '--allow-host', 'shitmini', '--allow-host', 'shitmini.local', '--allow-host', 'dock.example.com:hooks', '--trusted-proxy', '10.0.0.2', '--trusted-proxy', '::1', '--public-url', 'https://gonogo.example.com', '--client-ip-header', 'cf-connecting-ip']);
+    expect(flagsText(parsed.options)).toBe('--host 0.0.0.0 --allow-host 192.168.86.173 --allow-host shitmini --allow-host shitmini.local --allow-host dock.example.com:hooks --trusted-proxy 10.0.0.2 --trusted-proxy ::1 --public-url https://gonogo.example.com --client-ip-header cf-connecting-ip');
+  });
+
+  it('the generated systemd unit, launchd plist and OpenRC script each carry them; a value that would end a line is refused', () => {
+    const { host } = fake();
+    const options = { allowedHosts: ['shitmini.local', '192.168.86.173'], trustedProxies: ['10.0.0.2'], publicUrl: 'https://g.example.com', clientIpHeader: 'x-forwarded-for' };
+    const spec = resolveSpec(host, options);
+    expect(renderSystemd(spec)).toContain('--allow-host shitmini.local --allow-host 192.168.86.173 --trusted-proxy 10.0.0.2 --public-url https://g.example.com --client-ip-header x-forwarded-for\n');
+    const plist = renderLaunchd(spec, '/log');
+    for (const word of ['--allow-host', 'shitmini.local', '192.168.86.173', '--trusted-proxy', '10.0.0.2', '--public-url', 'https://g.example.com', '--client-ip-header', 'x-forwarded-for']) expect(plist).toContain(`<string>${word}</string>`);
+    expect(renderOpenrc(spec, 'ana', 'users')).toContain('--allow-host shitmini.local --allow-host 192.168.86.173 --trusted-proxy 10.0.0.2 --public-url https://g.example.com --client-ip-header x-forwarded-for');
+    expect(() => resolveSpec(host, { allowedHosts: ['a.example.com\n--host\n0.0.0.0'] })).toThrow(/control character/);
+  });
+
+  it('a reinstall replaces them: the file is written again from the flags given now', () => {
+    const { host } = fake({}, { ...SYSTEMD_UP, 'systemctl --user is-active gonogo.service': { code: 3 } });
+    const unit = join(host.userHome, '.config/systemd/user/gonogo.service');
+    serviceInstall(host, { allowedHosts: ['old.example.com'] });
+    expect(readFileSync(unit, 'utf8')).toContain('--allow-host old.example.com');
+    serviceInstall(host, { allowedHosts: ['new.example.com'] });
+    const now = readFileSync(unit, 'utf8');
+    expect(now).toContain('--allow-host new.example.com');
+    expect(now).not.toContain('old.example.com');
+  });
+});
+
 describe('gonogo service: the files', () => {
   const spec = { argv: ['/opt/node/bin/node', '/usr/local/bin/gonogo', '--home', '/home/ana/.gonogo', '--pty-host'], path: '/opt/node/bin:/usr/bin', home: '/home/ana/.gonogo', cwd: '/home/ana' };
 

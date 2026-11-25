@@ -35,7 +35,13 @@ with the flags you gave. Run it. Under `sudo` the service still runs as **you** 
 
 ## What goes in the file
 
-The flags you give to `service install`: `--home` (default `~/.gonogo`, written as an absolute path), `--host`, `--port`, `--pty-host`. Nothing else is pinned, and your shell's `GONOGO_*` variables are not read.
+The flags you give to `service install`: `--home` (default `~/.gonogo`, written as an absolute path), `--host`, `--port`, `--pty-host` and the network flags of the server: `--allow-host`, `--trusted-proxy`, `--public-url` and `--client-ip-header`. Nothing else is pinned, and your shell's `GONOGO_*` variables are not read, so a service that has to answer to a name needs the flag in the file:
+
+```
+gonogo service install --host 0.0.0.0 --allow-host 192.168.86.173,mini,mini.local
+```
+
+`--allow-host` takes one name, a comma list, or the flag again for each; `name:hooks` is a host that serves only the webhooks. The values are checked like the server checks them (a bad host name, a proxy that is not an IP address, a public URL that is not an address only, a header other than `x-forwarded-for` or `cf-connecting-ip`) and nothing is written when one is wrong. `service install` writes the whole file again, so an install **replaces** the flags of the one before: give them all each time. They open gonogo to more names, so read [Reverse proxy](../reference/security.md#reverse-proxy) before you add one.
 
 - **The program.** The absolute path of `node` and of the `gonogo` you ran, as it was installed (npm, Homebrew, a clone). A `pnpm dlx` run is refused (nothing is installed there). With pnpm's global install the unit uses `$PNPM_HOME/gonogo`, because pnpm's own folder carries the version and an update replaces it.
 - **The folder it runs in** is your home directory.
