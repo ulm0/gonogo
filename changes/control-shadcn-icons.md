@@ -1,2 +1,0 @@
-- The room's text glyphs that stood for icons are Hugeicons (free) now: the ▾ of Layout, Copy and Edit, the ⋯ of the terminal's keys, the ≡ of the phone's Layout key, the arrows of Find, Latest and Back to the room, and the Hangar's folder chevrons and the Features page's lock. Terminal key labels (↑ ↓ ⏎) and the ⌘K hint stay text.
-- A dialog (Patch Panel, the step-up check, Select text) washes the page behind it toward the livery's background, so the keys behind it no longer compete with it.
