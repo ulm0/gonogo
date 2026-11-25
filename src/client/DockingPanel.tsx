@@ -116,7 +116,7 @@ function Form({ mode, onDone, onMade, onNotice }: { mode: Mode; onDone(): void; 
         </p>
       )}
       <p className="hint" id={`${id}-address-hint`}>
-        How the other station reaches this one. Its name has to be allowed here (--allow-host). For a room other than main, end it with /r/<room>.{note === null ? '' : ` ${note}`}
+        How the other station reaches this one. Its name has to be allowed here (--allow-host). For a room other than main, end it with /r/&lt;room&gt;.{note === null ? '' : ` ${note}`}
       </p>
     </div>
   );
