@@ -305,6 +305,21 @@ export function roomLockAlive(dir: string): boolean {
   return lock !== null && (lock.pid !== process.pid || lock.stamp !== null) && lockOwnerAlive(lock, path);
 }
 
+/**
+ * The pid in the supervisor lock of this home when that process is alive, or null (no lock, or a pid that is gone). Reads only and answers at once: it is asked right after the service
+ * was booted out, when the file of the gonogo that just stopped is still fresh (the heartbeat test of lockOwnerAlive would wait 30 s to learn it is dead). A pid that another program
+ * reused is read as alive: the message names the pid, so the person can look.
+ */
+export function supervisorLockHolder(dir: string): number | null {
+  const path = join(resolve(dir), 'run', SUPERVISOR_LOCK_FILE);
+  try {
+    const lock = readLock(path);
+    return lock !== null && lock.pid !== process.pid && isProcessAlive(lock.pid) ? lock.pid : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The lock of the rooms supervisor of a home: `<home>/run/supervisor.lock`, the same rule as `server.lock` (a stale pid is taken over). Returns the release. */
 export function acquireSupervisorLock(dir: string): () => void {
   const root = resolve(dir);

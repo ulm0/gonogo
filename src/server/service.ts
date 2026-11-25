@@ -13,6 +13,7 @@
  * AbandonProcessGroup: the manager ends only the main process, and gonogo's own SIGTERM stops the agents and the host.
  */
 import { spawnSync } from 'node:child_process';
+import { supervisorLockHolder } from './home.js';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { InstallKind } from '../shared/protocol.js';
@@ -64,6 +65,10 @@ export interface ServiceHost {
   portInUse(host: string, port: number): boolean;
   /** Waits this long (a test gives a fake clock; absent: launchd's unload is not waited for more than the polls themselves). */
   sleep?(ms: number): void;
+  /** The pid of a live gonogo that holds the supervisor lock of this home (outside the manager when it is asked before the service starts), or null. */
+  lockHolder?(home: string): number | null;
+  /** True when this path exists (a test gives a fake machine's files). */
+  exists?(path: string): boolean;
   /** Where a running systemd shows itself (root's way to tell systemd from OpenRC). */
   systemdRunDir: string;
 }
@@ -223,6 +228,18 @@ export function renderOpenrc(spec: Spec, user: string, group: string): string {
 /* ---------------------------------------------------------------- the spec */
 
 /** The unit's command line from what this process is and the flags given; throws a sentence when this install cannot be a service. */
+/**
+ * A program under Homebrew's Cellar is in a folder named for its version, which `brew upgrade` removes: its stable name is `<prefix>/bin/<name>` (`<prefix>/opt/<formula>/bin/<name>` for
+ * a versioned formula such as node@22). Used when that name exists; any other path is returned as it is.
+ */
+export function stableBrewPath(path: string, exists: (p: string) => boolean = existsSync): string {
+  const m = /^(.*)\/Cellar\/([^/]+)\/[^/]+\/bin\/([^/]+)$/.exec(path);
+  if (m === null) return path;
+  const [, prefix = '', formula = '', name = ''] = m;
+  const stable = formula.includes('@') ? `${prefix}/opt/${formula}/bin/${name}` : `${prefix}/bin/${name}`;
+  return exists(stable) ? stable : path;
+}
+
 export function resolveSpec(host: ServiceHost, options: ServiceOptions): Spec {
   if (host.kind === 'docker') throw new Error('this gonogo runs in a container: the container is its service (restart: unless-stopped in compose.yaml). See Running in Docker.');
   if (host.kind === 'dlx') throw new Error('this gonogo was started by pnpm dlx, which keeps nothing installed: install it first (npm i -g @ulm0/gonogo@latest), then run gonogo service install from that one.');
@@ -236,7 +253,9 @@ export function resolveSpec(host: ServiceHost, options: ServiceOptions): Spec {
     if (shim === null || !existsSync(shim)) throw new Error('this gonogo runs from pnpm\'s versioned folder, which an update replaces, and the pnpm shim ($PNPM_HOME/gonogo) was not found: set PNPM_HOME, or install with npm (npm i -g @ulm0/gonogo@latest)');
     program = [shim];
   } else {
-    program = [host.node, entry];
+    // under Homebrew the versioned Cellar paths are replaced by their stable names: a brew upgrade of node would remove the one in the file
+    const has = host.exists ?? existsSync;
+    program = [stableBrewPath(host.node, has), stableBrewPath(entry, has)];
   }
   const home = resolve(options.home ?? join(host.userHome, DEFAULT_HOME_DIRNAME));
   const flags = ['--home', home];
@@ -245,7 +264,7 @@ export function resolveSpec(host: ServiceHost, options: ServiceOptions): Spec {
   if (options.ptyHost === true) flags.push('--pty-host');
   const argv = [...program, ...flags].map((word, i) => checkText(i === 0 ? 'the program path' : 'an option', word));
   // node's own folder first, so the `node` a shim or a script asks for is the one that runs gonogo
-  const dirs = [dirname(host.node), ...(host.env.PATH ?? '').split(':').filter((d) => d !== '')];
+  const dirs = [dirname(program[0] ?? host.node), ...(host.env.PATH ?? '').split(':').filter((d) => d !== '')];
   const path = checkText('PATH', [...new Set(dirs)].join(':'));
   return { argv, path, home, cwd: resolve(host.userHome) };
 }
@@ -342,6 +361,18 @@ function rootTarget(host: ServiceHost, options: ServiceOptions): { user: string;
 }
 
 /** The port the file pins (--port), else gonogo's default: what a foreground gonogo would be holding. */
+/** The `--home` the written file runs gonogo with (the default home when it cannot be read). */
+function pinnedHome(file: string, host: ServiceHost): string {
+  try {
+    const m = /--home(?:<\/string>\s*<string>|[\s=]+)(?:'([^']*)'|"([^"]*)"|([^\s<'"]+))/.exec(readFileSync(file, 'utf8'));
+    const found = m?.[1] ?? m?.[2] ?? m?.[3];
+    if (found !== undefined && found !== '') return found.replace(/&amp;/g, '&');
+  } catch {
+    // fall through to the default
+  }
+  return join(host.userHome, DEFAULT_HOME_DIRNAME);
+}
+
 function pinnedPort(file: string): number {
   try {
     const m = /--port(?:<\/string>\s*<string>|[\s=]+)(\d{1,5})/.exec(readFileSync(file, 'utf8'));
@@ -371,7 +402,7 @@ const UNLOAD_POLLS = 50;
  * about ten seconds is restarted in place (`kickstart -k`) instead of loaded. The same exit 5 comes from a label that was disabled (`launchctl disable`): that is
  * enabled again once (it is the job this command was asked to run), and any other cause is named with what to look at. Returns null when the job runs.
  */
-function launchdLoad(host: ServiceHost, lines: string[], domain: string, target: string): Result | null {
+function launchdLoad(host: ServiceHost, lines: string[], domain: string, target: string, home: string): Result | null {
   const label = `${domain}/${LAUNCHD_LABEL}`;
   // a job that is not loaded cannot be booted out, and that is fine
   host.run('launchctl', ['bootout', label]);
@@ -384,6 +415,9 @@ function launchdLoad(host: ServiceHost, lines: string[], domain: string, target:
     lines.push('launchd still has the job loaded after 10 seconds: restarting it in place.');
     return step(host, lines, 'launchctl', ['kickstart', '-k', label]);
   }
+  // a gonogo that was started in a terminal holds the lock of this home: the service would only exit at once, and launchd would start it again every few seconds
+  const holder = host.lockHolder?.(home) ?? null;
+  if (holder !== null) return { code: 1, lines: [...lines, `another gonogo (pid ${holder}) holds ${join(home, 'run', 'supervisor.lock')}, outside launchd: stop it (kill ${holder}), then run this again. Nothing was loaded; ${target} is as written.`] };
   let loaded = host.run('launchctl', ['bootstrap', domain, target]);
   if (!ranOk(loaded) && loaded.code === 5) {
     const disabled = host.run('launchctl', ['print-disabled', domain]).stdout.split('\n').some((row) => row.includes(`"${LAUNCHD_LABEL}"`) && /=>\s*(?:disabled|true)/.test(row));
@@ -480,7 +514,7 @@ export function serviceInstall(host: ServiceHost, options: ServiceOptions): Resu
     if (!start) return { code: 0, lines: [...lines, 'not started (--no-start). To start it now and at every login:', `  launchctl bootstrap ${domain} ${target}`, ...pty] };
     const wasActive = isActive(host, manager);
     if (!wasActive && host.portInUse(tryHost, port)) return { code: 1, lines: [...lines, ...portRefusal(port)] };
-    const failed = launchdLoad(host, lines, domain, target);
+    const failed = launchdLoad(host, lines, domain, target, spec.home);
     if (failed !== null) return failed;
     lines.push(wasActive ? 'restarted (it starts again at every login).' : 'loaded and started (it starts again at every login).', ...pty);
     return { code: 0, lines };
@@ -564,7 +598,16 @@ export function serviceControl(host: ServiceHost, action: 'start' | 'stop' | 're
         : [['launchctl', ['bootout', `${domain}/${LAUNCHD_LABEL}`]]];
   // start and restart: the unload is waited for before the job is loaded again (launchdLoad)
   if (manager === 'launchd' && action !== 'stop') {
-    const failed = launchdLoad(host, [], domain, target);
+    // start of a job that is already loaded: running is said, not loaded again (that is the Input/output error); loaded and not running is started
+    if (action === 'start') {
+      const now = host.run('launchctl', ['print', `${domain}/${LAUNCHD_LABEL}`]);
+      if (ranOk(now) && /state = running/.test(now.stdout)) return { code: 0, lines: ['already running (launchd).'] };
+      if (ranOk(now)) {
+        const failed = step(host, [], 'launchctl', ['kickstart', `${domain}/${LAUNCHD_LABEL}`]);
+        return failed ?? { code: 0, lines: ['started (launchd).'] };
+      }
+    }
+    const failed = launchdLoad(host, [], domain, target, pinnedHome(target, host));
     return failed ?? { code: 0, lines: [`${action === 'start' ? 'started' : 'restarted'} (launchd).`] };
   }
   for (const [file, args] of calls) {
@@ -597,6 +640,8 @@ export function serviceStatus(host: ServiceHost, options: ServiceOptions): Resul
     const r = host.run('launchctl', ['print', `gui/${host.uid}/${LAUNCHD_LABEL}`]);
     active = r.code === 0 && /state = running/.test(r.stdout);
     detail = r.code !== 0 ? 'not loaded' : /state = (\w+)/.exec(r.stdout)?.[1] ?? 'loaded';
+    const holder = active ? null : (host.lockHolder?.(pinnedHome(target, host)) ?? null);
+    if (holder !== null) lines.push(`note: a gonogo outside launchd (pid ${holder}) holds the lock of this home: the service exits at once and launchd starts it again every few seconds until that one is stopped, then it takes over.`);
   } else {
     const r = host.run('rc-service', [SERVICE_NAME, 'status']);
     active = r.code === 0;
@@ -629,6 +674,7 @@ export function realHost(kind: InstallKind, entry: string | undefined, env: Reco
     openrcRun: '/sbin/openrc-run',
     initDir: '/etc/init.d',
     systemdRunDir: '/run/systemd/system',
+    lockHolder: (home) => supervisorLockHolder(home),
     sleep(ms) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
     },

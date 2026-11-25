@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../src/server/cli.js';
-import { detectManager, flagsArgv, flagsText, renderLaunchd, renderOpenrc, renderSystemd, resolveSpec, serviceControl, serviceInstall, serviceStatus, serviceUninstall, systemdWord, xmlText, type Ran, type ServiceHost } from '../src/server/service.js';
+import { detectManager, stableBrewPath, flagsArgv, flagsText, renderLaunchd, renderOpenrc, renderSystemd, resolveSpec, serviceControl, serviceInstall, serviceStatus, serviceUninstall, systemdWord, xmlText, type Ran, type ServiceHost } from '../src/server/service.js';
 
 type Call = [string, string[]];
 
@@ -444,6 +444,90 @@ describe('gonogo service: launchd, "Bootstrap failed: 5: Input/output error"', (
     const r = serviceInstall(f.host, {});
     expect(r.code).toBe(1);
     expect(text(r)).not.toContain('plutil');
+  });
+});
+
+describe('gonogo service: launchd, after a Homebrew upgrade and a gonogo outside launchd', () => {
+  const LABEL = 'gui/1000/com.ulm0.gonogo';
+  const plist = (f: Fake): string => join(f.host.userHome, 'Library/LaunchAgents/com.ulm0.gonogo.plist');
+
+  it('writes the stable Homebrew names, not the versioned Cellar folders a brew upgrade removes', () => {
+    const present = new Set(['/opt/homebrew/bin/node', '/opt/homebrew/bin/gonogo', '/opt/homebrew/opt/node@22/bin/node']);
+    const base = { platform: 'darwin' as const, exists: (p: string) => present.has(p) };
+    const a = fake({ ...base, node: '/opt/homebrew/Cellar/node/26.13.1_4/bin/node', entry: '/opt/homebrew/Cellar/gonogo/0.22.0/bin/gonogo' });
+    const spec = resolveSpec(a.host, {});
+    expect(spec.argv.slice(0, 2)).toEqual(['/opt/homebrew/bin/node', '/opt/homebrew/bin/gonogo']);
+    expect(spec.path.split(':')[0]).toBe('/opt/homebrew/bin');
+    const keg = fake({ ...base, node: '/opt/homebrew/Cellar/node@22/22.1.0/bin/node' });
+    expect(resolveSpec(keg.host, {}).argv[0]).toBe('/opt/homebrew/opt/node@22/bin/node');
+    // no stable name there, or not a Cellar path: unchanged
+    const none = fake({ platform: 'darwin', exists: () => false, node: '/opt/homebrew/Cellar/node/26.13.1_4/bin/node' });
+    expect(resolveSpec(none.host, {}).argv[0]).toBe('/opt/homebrew/Cellar/node/26.13.1_4/bin/node');
+    expect(stableBrewPath('/usr/local/bin/node', () => true)).toBe('/usr/local/bin/node');
+    expect(stableBrewPath('/usr/local/Cellar/node/22.1.0/bin/node', (p) => p === '/usr/local/bin/node')).toBe('/usr/local/bin/node');
+  });
+
+  /** A loaded job (print answers with the given state) on a machine where launchctl otherwise says yes. */
+  function loaded(state: 'running' | 'waiting' | null, extra: Partial<ServiceHost> = {}): Fake {
+    const f = fake({ platform: 'darwin', ...extra });
+    f.host.run = (file, args) => {
+      f.calls.push([file, args]);
+      if (file === 'launchctl' && args[0] === 'print') return state === null ? { code: 113, stdout: '', stderr: '' } : { code: 0, stdout: `\tstate = ${state}\n`, stderr: '' };
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    return f;
+  }
+  const verbs = (f: Fake): string[] => f.calls.filter(([file]) => file === 'launchctl').map(([, a]) => a[0] ?? '');
+
+  it('start on a job that is already running says so and loads nothing; loaded but not running it is kickstarted, never bootstrapped', () => {
+    const running = loaded('running');
+    serviceInstall(running.host, { noStart: true });
+    running.calls.length = 0;
+    expect(serviceControl(running.host, 'start', {})).toEqual({ code: 0, lines: ['already running (launchd).'] });
+    expect(verbs(running).filter((v) => v !== 'print')).toEqual([]);
+    const idle = loaded('waiting');
+    serviceInstall(idle.host, { noStart: true });
+    idle.calls.length = 0;
+    expect(serviceControl(idle.host, 'start', {}).lines).toEqual(['started (launchd).']);
+    expect(verbs(idle).filter((v) => v !== 'print')).toEqual(['kickstart']);
+    expect(idle.calls.at(-1)).toEqual(['launchctl', ['kickstart', LABEL]]);
+  });
+
+  it('a gonogo outside launchd that holds the lock: install, start and restart load nothing, say who holds it, and leave the plist as written', () => {
+    const f = loaded(null, { lockHolder: () => 92400 });
+    const r = serviceInstall(f.host, { home: join(f.root, 'gh') });
+    expect(r.code).toBe(1);
+    expect(text(r)).toContain(`another gonogo (pid 92400) holds ${join(f.root, 'gh', 'run', 'supervisor.lock')}, outside launchd: stop it (kill 92400)`);
+    expect(verbs(f)).not.toContain('bootstrap');
+    expect(existsSync(plist(f))).toBe(true);
+    for (const action of ['start', 'restart'] as const) {
+      f.calls.length = 0;
+      const c = serviceControl(f.host, action, {});
+      expect(c.code, action).toBe(1);
+      expect(text(c)).toContain('pid 92400');
+      expect(text(c)).toContain(join(f.root, 'gh', 'run', 'supervisor.lock'));
+      expect(verbs(f)).not.toContain('bootstrap');
+    }
+    expect(existsSync(plist(f))).toBe(true);
+  });
+
+  it('a failed bootstrap never removes the plist; status says when a gonogo outside launchd is why the service does not run', () => {
+    const f = loaded(null);
+    f.host.run = (file, args) => {
+      f.calls.push([file, args]);
+      if (file === 'launchctl' && args[0] === 'print') return { code: 113, stdout: '', stderr: '' };
+      if (file === 'launchctl' && args[0] === 'bootstrap') return { code: 5, stdout: '', stderr: 'Bootstrap failed: 5: Input/output error' };
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    expect(serviceInstall(f.host, {}).code).toBe(1);
+    expect(existsSync(plist(f))).toBe(true);
+    expect(serviceControl(f.host, 'restart', {}).code).toBe(1);
+    expect(existsSync(plist(f))).toBe(true);
+    f.host.lockHolder = () => 4242;
+    const status = serviceStatus(f.host, {});
+    expect(status.code).toBe(3);
+    expect(text(status)).toContain('a gonogo outside launchd (pid 4242) holds the lock of this home');
+    expect(text(status)).toContain('every few seconds');
   });
 });
 
