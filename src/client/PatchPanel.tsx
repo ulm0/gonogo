@@ -12,7 +12,7 @@ import * as api from './api.js';
 import { useAgentList, useSeats } from './RoomView.js';
 import { commands, matchCommands, stepIndex } from './shell.js';
 import type { Act, View } from './shell.js';
-import { openConsole, openHire, showComms, showBlackBox, showBoard, showHangar, showLivery, showLog, showLoop, showMissions, openNewMission, showPlan, showRecorder, showRoom, showRules, showWindow, store, useStore } from './store.js';
+import { openConsole, openHire, showComms, showBlackBox, showBoard, showHangar, showLivery, showLog, showMissions, openNewMission, showPlan, showRecorder, showRoom, showRules, showWindow, store, useStore } from './store.js';
 import { restore } from '../shared/layout.js';
 import { startEditing } from './EditRoomKey.js';
 import { useRun } from './WallView.js';
@@ -36,7 +36,7 @@ const SHOW: Record<View, () => void> = {
 };
 
 /** Runs a line. A store change is at once; a request to the server keeps the panel open until it answers, so an error can show. */
-function perform(act: Act, phone: boolean): Promise<unknown> | null {
+function perform(act: Act, onBrief: () => void): Promise<unknown> | null {
   switch (act.kind) {
     case 'console':
       openConsole(act.name);
@@ -71,9 +71,8 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
       return room.layout === null ? Promise.resolve() : api.saveRoom({ rev: room.rev, blocks: restore(room.layout.blocks, act.block), desks: room.layout.desks });
     }
     case 'brief':
-      // the brief box is in the room on a desk and at the foot of the loop on a phone (its field has the class `brief-input`)
-      (phone ? showLoop : showRoom)();
-      requestAnimationFrame(() => document.querySelector<HTMLElement>('.brief-input')?.focus());
+      // the Brief dialog, over the page as it is (the panel has closed and given the keyboard back, so the dialog returns it there)
+      onBrief();
       return null;
     case 'poll':
       return api.startPoll({});
@@ -102,7 +101,7 @@ function perform(act: Act, phone: boolean): Promise<unknown> | null {
   }
 }
 
-export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boolean; onClose(): void }): ReactElement {
+export function PatchPanel({ open, onClose, onBrief }: { open: boolean; onClose(): void; onBrief(): void }): ReactElement {
   const id = useId();
   const back = useRef<HTMLElement | null>(null);
   const ran = useRef(false);
@@ -148,12 +147,12 @@ export function PatchPanel({ open, phone, onClose }: { open: boolean; phone: boo
     if (c.act.kind === 'poll' || c.act.kind === 'read' || c.act.kind === 'livery' || c.act.kind === 'edit-room' || c.act.kind === 'reset-room' || c.act.kind === 'show-block') {
       const act = c.act;
       run(async () => {
-        await perform(act, phone);
+        await perform(act, onBrief);
         shut();
       });
     } else {
       shut();
-      void perform(c.act, phone);
+      void perform(c.act, onBrief);
     }
   };
 

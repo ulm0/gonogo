@@ -2305,3 +2305,12 @@ Client only; no server change. `ClientState.view` loses `loop`, `downlink` and `
 ### Engine switch (0.18.0)
 
 `EditRequest.provider?` (any engine but `custom`, never from `custom`; 400 field `provider`) and `EditRequest.switchNow?` (400 field `switchNow`; alone: apply the pending switch, 400 when there is none). `AgentView.pendingEngine?` (`Provider | null`). The request is checked against the new engine; settings it did not name that the new engine does not take are dropped (Downlink `startup` event); a new `sessionId`; `bypassPermissions` carried to another engine needs `confirmBypass`. Stopped: saved. Not working: saved and restarted. Working: the whole edit is kept in memory (`Rt.pendingEdit`) and applied on the agent's queue when the turn ends; meanwhile no Stop block and no typed pointer (`waiting: <name> is switching to <engine>`). A new engine without the gonogo tools: the waiting mail is undelivered. Design: `docs/engine-switch-spec.md`.
+
+### Brief dialog (0.24.0)
+
+Brief FLIGHT in a dialog over any screen (spec `docs/shell-spec.md`, section "Brief dialog"). Client only: no route, frame, state file or protocol type changed.
+
+- 8 client: `isBriefKey` in `shell.ts` (Cmd/Ctrl+B); `BriefDialog.tsx`, the house Radix `Dialog` holding `Brief`, rendered by `Office` on every screen and holding the draft so it survives Esc; `Office` keeps one dialog state (`'panel' | 'brief' | null`) and opens nothing while any house dialog is open (`[data-slot="dialog-content"]`), so nothing stacks; the Patch Panel line Brief FLIGHT opens the dialog (`onBrief`) instead of going to the room. `Brief` gains `onLeave`, `draft` and a note when the room has no boss.
+- Tests: `test/client-shell.test.ts` (`isBriefKey`); `browser/smoke.spec.ts` step 7c (Ctrl+B on the Flight Plan, send, Esc and focus back, the draft kept, the panel's line, no dialog from Ctrl+B with the panel open).
+
+Checked in Chromium and Firefox (smoke); Chromium also at desk size and on a 390 px phone console. Not run: WebKit, a real IME, a screen reader, the StepUp dialog stacking.

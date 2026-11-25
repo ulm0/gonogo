@@ -160,6 +160,13 @@ export function matchCommands(list: readonly Command[], query: string): Command[
 export const isPanelKey = (e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }): boolean =>
   e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey;
 
+/**
+ * Cmd+B on a Mac, Ctrl+B elsewhere (both work everywhere): the Brief FLIGHT dialog, on any screen.
+ * shortcut: Ctrl+B typed in a terminal stays there (xterm takes it first; agents use it: Claude Code's background key, tmux's prefix), use Cmd+B or the Patch Panel's line; and on a Mac, Ctrl+B in a text field (Cocoa's back one character) is taken, as Ctrl+K is. Upgrade if people ask for either.
+ */
+export const isBriefKey = (e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }): boolean =>
+  e.key.toLowerCase() === 'b' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey;
+
 /** The next option for an arrow key, wrapping at both ends; -1 when there is none. */
 export function stepIndex(current: number, count: number, key: string): number {
   if (count === 0) return -1;

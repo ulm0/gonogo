@@ -14,8 +14,7 @@ feature.
 
 - `src/client/shell.ts` (pure, tested): `commands()` builds the lines from the room (consoles in room order by call sign, the eight
   views, then the actions); `fuzzyCost()` and `matchCommands()` filter and rank; `isPanelKey()` and `stepIndex()` are the keys.
-- Only actions that exist: `openConsole`, the `show*` views, `openHire`, the brief box (the same focus trick as the phone bar's
-  BRIEF), `api.startPoll`, `api.markAllRead`, `api.selectLivery`. A poll is listed only when `pollButtons` offers POLL and
+- Only actions that exist: `openConsole`, the `show*` views, `openHire`, the Brief dialog (`onBrief`), `api.startPoll`, `api.markAllRead`, `api.selectLivery`. A poll is listed only when `pollButtons` offers POLL and
   `pollTargets` is not empty; Mark read only with unread items; Apply livery only for liveries not in use.
 - Match: the letters of the query, spaces ignored, in order, any case. A letter right after the last costs 0, one at the start of a
   word 1, any other the letters skipped plus 2. A match in the hidden words (an agent's own name, `settings`, `hire`, `theme`)
@@ -26,6 +25,15 @@ feature.
   the opener, then the view takes it to its title. A request keeps the panel open until it answers and shows its error.
 - Open: Cmd+K or Ctrl+K on `window` (bubble phase: xterm takes Ctrl+K inside a terminal first), the round key in the top bar,
   PATCH in the phone bar (eight keys of 45 px at 390 px: the bar's gap went from 6 to 3 px and its side padding from 12 to 6).
+
+## Brief dialog (2026-11-25)
+
+- `isBriefKey()` in `shell.ts`: B with Cmd or Ctrl, no Alt or Shift. The `keydown` listener in `Office` (`App.tsx`, on `window`, bubble phase) handles both keys and keeps one state, `'panel' | 'brief' | null`. A key opens its dialog only when no dialog is open: it asks the page for `[data-slot="dialog-content"]`, which every house `Dialog` has (these two, the step-up check, Select text), so a press over any of them does nothing and nothing stacks. Not `role=dialog`: a Popover has that role too, and Cmd/Ctrl+K over an open popover still opens the panel. A key with `isComposing` (an input method) is ignored. `preventDefault` stops the browser's own Ctrl+B (Firefox's bookmarks).
+- `src/client/BriefDialog.tsx`: the house `Dialog` holding `Brief` unchanged (its own label `sr-only` there, by `[&_.brief-label]:sr-only`: the title says the same), so long text, `enterSends` and Make this a mission are the same code as the room's box. The field takes the focus (Close does when the field is off); Esc and CLOSE shut it and give the keyboard back to the opener. `Office` renders it on every screen, the phone console included (there only by a keyboard: that screen has no top bar or PATCH key, so a touch screen opens it from the Patch Panel elsewhere).
+- After a send it stays open with the sent note: the Director sees it went, and Esc is one key. The draft lives in `BriefDialog` (`Brief`'s `draft`), so a text not sent survives Esc and Close; a send clears it. Make this a mission closes it first (`Brief`'s `onLeave`) and gives the keyboard back, then opens the draft.
+- `Brief` now says `This room has no FLIGHT to brief.` when there is no boss (it was a silent disabled box).
+- The panel's Brief FLIGHT line opens the dialog (`onBrief`) instead of going to the room and focusing `.brief-input`; the panel no longer takes `phone`. The phone bar's BRIEF and Flight Rules' brief step still go to the box in the page.
+- shortcut: Ctrl+B typed in a terminal stays there (xterm takes it first, as with Ctrl+K; agents use it: Claude Code's background key, tmux's prefix); Cmd+B, or the panel, works there. On a Mac, Ctrl+B in a text field (Cocoa's back one character) is taken, as Ctrl+K is. Upgrade if people ask for either.
 
 ## Flight Rules
 

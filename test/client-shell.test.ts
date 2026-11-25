@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultView } from '../src/shared/livery.js';
 import type { AgentView, PollView } from '../src/shared/protocol.js';
-import { commands, commissioningSteps, fuzzyCost, isPanelKey, matchCommands, readMarks, showCommissioning, stepIndex, VIEW_NAMES } from '../src/client/shell.js';
+import { commands, commissioningSteps, fuzzyCost, isBriefKey, isPanelKey, matchCommands, readMarks, showCommissioning, stepIndex, VIEW_NAMES } from '../src/client/shell.js';
 import type { CommandInput } from '../src/client/shell.js';
 import { NO_PROPELLANT } from '../src/client/store.js';
 
@@ -73,6 +73,15 @@ describe('Patch Panel keys', () => {
     expect(isPanelKey(key('K', { ctrlKey: true }))).toBe(true);
     expect(isPanelKey(key('k', {}))).toBe(false);
     expect(isPanelKey(key('k', { ctrlKey: true, shiftKey: true }))).toBe(false);
+  });
+
+  it('knows the brief key: B with Cmd or Ctrl, no Alt or Shift', () => {
+    expect(isBriefKey(key('b', { metaKey: true }))).toBe(true);
+    expect(isBriefKey(key('B', { ctrlKey: true }))).toBe(true);
+    expect(isBriefKey(key('b', {}))).toBe(false);
+    expect(isBriefKey(key('b', { ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(isBriefKey(key('b', { metaKey: true, altKey: true }))).toBe(false);
+    expect(isBriefKey(key('k', { ctrlKey: true }))).toBe(false);
   });
 
   it('moves with the arrows and wraps', () => {

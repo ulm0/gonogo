@@ -20,8 +20,9 @@ import { MissionLog } from './MissionLog.js';
 import { Recorder } from './Recorder.js';
 import { PlotBoard } from './PlotBoard.js';
 import { PatchPanel } from './PatchPanel.js';
+import { BriefDialog } from './BriefDialog.js';
 import { FlightRules } from './Rules.js';
-import { isPanelKey, VIEW_FEATURE } from './shell.js';
+import { isBriefKey, isPanelKey, VIEW_FEATURE } from './shell.js';
 import { PhoneConsoleScreen, useAgentList, usePhone, useSeats } from './RoomView.js';
 import { createAnnouncer } from './room.js';
 import { useFeature, useStore } from './store.js';
@@ -391,17 +392,28 @@ function Office(): ReactElement {
   const form = useStore((s) => s.form);
   const consoleOpen = useStore((s) => s.consoleOpen);
   const view = useStore((s) => s.view);
-  const [panel, setPanel] = useState(false);
+  // one dialog at a time: a key pressed while any dialog is open (these two, step-up, Select text) does nothing (the Patch Panel has a Brief FLIGHT line)
+  const [modal, setModal] = useState<'panel' | 'brief' | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!isPanelKey(e)) return;
+      const want = isPanelKey(e) ? 'panel' : isBriefKey(e) ? 'brief' : null;
+      // a key that ends an input-method composition is not a shortcut
+      if (want === null || e.isComposing) return;
+      // also stops the browser's own Ctrl+B (Firefox: the bookmarks sidebar)
       e.preventDefault();
-      setPanel(true);
+      // every house Dialog marks its content so; a Popover is role=dialog too, so that role is not asked
+      if (document.querySelector('[data-slot="dialog-content"]') === null) setModal(want);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  const patch = <PatchPanel open={panel} phone={phone} onClose={() => setPanel(false)} />;
+  const close = (): void => setModal(null);
+  const patch = (
+    <>
+      <PatchPanel open={modal === 'panel'} onClose={close} onBrief={() => setModal('brief')} />
+      <BriefDialog open={modal === 'brief'} onClose={close} />
+    </>
+  );
   // A console open on a phone is a full screen with its own header and no bottom bar.
   if (phone && consoleOpen && form === null && view === 'room') {
     return (
@@ -414,7 +426,7 @@ function Office(): ReactElement {
   }
   return (
     <>
-      <TopBar phone={phone} onPanel={() => setPanel(true)} />
+      <TopBar phone={phone} onPanel={() => setModal('panel')} />
       <SetupStrip />
       <ExposureBanner />
       <GoneStrip />
