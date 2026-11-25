@@ -7,6 +7,8 @@ import { setRoomPrefs, useRoomPrefs } from './roomPrefs.js';
 import { panes } from './TerminalPane.js';
 import { copyText } from './uplink.js';
 import { Input } from '@/ui/input.js';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowDown01Icon, ArrowDown02Icon, ArrowUp01Icon, MoreHorizontalIcon } from '@hugeicons/core-free-icons';
 
 const COPIES: ReadonlyArray<{ mode: 'selection' | 'last' | 'screen' | 'all'; label: string }> = [
   { mode: 'selection', label: 'Selection' },
@@ -46,7 +48,7 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
     <div className="lay-termbar" role="toolbar" aria-label="Terminal" ref={box}>
       <span className="lay-termbar-title">Terminal</span>
       <span className="topbar-grow" />
-      <Pop label="Copy ▾" name="Copy" align="end">
+      <Pop label={<>Copy <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" aria-hidden="true" /></>} name="Copy" align="end">
         {(close) => (
           <div className="lay-menu" role="group" aria-label="Copy">
             {COPIES.map((c) => (
@@ -89,7 +91,7 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
       >
         {expanded ? (phone ? 'Back' : 'Back to the room') : 'Expand'}
       </button>
-      <Pop label="⋯" name="More terminal keys" align="end">
+      <Pop label={<HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" aria-hidden="true" />} name="More terminal keys" align="end">
         {(close) => (
           <div className="lay-menu" role="group" aria-label="More terminal keys">
             <span className="lay-modes">
@@ -109,7 +111,7 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
                 close();
               }}
             >
-              ↓ Latest
+              <HugeiconsIcon icon={ArrowDown02Icon} className="size-3.5" aria-hidden="true" /> Latest
             </button>
             {phone && (
               <button
@@ -150,10 +152,10 @@ export function TerminalBar({ phone = false }: { phone?: boolean }): ReactElemen
         >
           <Input aria-label="Find in the terminal" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find…" />
           <button type="button" className="btn" data-kind="quiet" aria-label="Previous match" onClick={() => find(true)}>
-            ↑
+            <HugeiconsIcon icon={ArrowUp01Icon} className="size-4" aria-hidden="true" />
           </button>
           <button type="submit" className="btn" data-kind="quiet" aria-label="Next match">
-            ↓
+            <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" aria-hidden="true" />
           </button>
         </form>
       )}

@@ -1,6 +1,8 @@
 /** A setting as a row (docs/ui-semantic.md, "Flight Rules"): its name, what it is now, and Edit ▾ that opens the existing block in place. */
 import { useEffect, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowDown01Icon } from '@hugeicons/core-free-icons';
 
 /** What a setting is now: asked once when the row is shown; null while it is on its way or if the answer failed. */
 export function useValue(ask: () => Promise<string>): string | null {
@@ -27,7 +29,7 @@ export function Row({ name, now, children }: { name: string; now: string | null;
         <span className="lay-row-name">{name}</span>
         <span className="lay-row-now">{now ?? '…'}</span>
         <span className="btn lay-row-edit" data-kind="quiet" aria-hidden="true">
-          Edit ▾
+          Edit <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" aria-hidden="true" />
         </span>
       </summary>
       <div className="lay-row-body">{children}</div>

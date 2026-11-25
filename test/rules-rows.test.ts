@@ -31,7 +31,7 @@ describe('Flight Rules says nothing twice', () => {
   const css = readFileSync('src/client/layout.css', 'utf8');
 
   it('the key back to the room is not named like a group (the index and the group headings are one pair, see rules-nav.test.ts)', () => {
-    expect(source).toMatch(/className="btn loop-room"[^>]*>\s*← Back to the room/);
+    expect(source).toMatch(/className="btn loop-room"[^>]*>\s*<HugeiconsIcon icon=\{ArrowLeft01Icon\}[^>]*\/> Back to the room/);
   });
 
   it('draws a block\'s own title and value line only for a screen reader when the block is in a row', () => {

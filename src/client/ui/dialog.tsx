@@ -1,4 +1,4 @@
-// From https://ui.shadcn.com/r/styles/new-york-v4/dialog.json (shadcn/ui, MIT). The animation classes (tw-animate-css), the header and footer and the corner close key are dropped (each dialog of ours has its own Close key), and the overlay is 35% black as the <dialog> backdrop was.
+// From https://ui.shadcn.com/r/styles/new-york-v4/dialog.json (shadcn/ui, MIT). The animation classes (tw-animate-css), the header and footer and the corner close key are dropped (each dialog of ours has its own Close key), and the overlay is the livery's page colour (--body) at 75%: it washes the page behind toward the background in every livery, dark keys too, where black at 35% left them at full contrast.
 import type { ComponentProps, ReactElement } from 'react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils.js';
@@ -12,7 +12,7 @@ function DialogClose(props: ComponentProps<typeof DialogPrimitive.Close>): React
 }
 
 function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrimitive.Overlay>): ReactElement {
-  return <DialogPrimitive.Overlay data-slot="dialog-overlay" className={cn('fixed inset-0 z-50 bg-black/35', className)} {...props} />;
+  return <DialogPrimitive.Overlay data-slot="dialog-overlay" className={cn('fixed inset-0 z-50 bg-background/75', className)} {...props} />;
 }
 
 function DialogContent({ className, children, ...props }: ComponentProps<typeof DialogPrimitive.Content>): ReactElement {
