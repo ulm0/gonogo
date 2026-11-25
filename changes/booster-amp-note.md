@@ -1,1 +1,0 @@
-- **Auto-review cleaning also escapes &.** An entity such as `&#64;user` can no longer turn into a mention or a reference on GitHub: the comment text is escaped before anything else.

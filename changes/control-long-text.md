@@ -1,1 +1,0 @@
-- **Long text to an agent.** The BRIEF box and the reply boxes no longer cut a paste at 20,000 characters without a word. A longer text, up to 1,000,000 characters, is saved as a file in the agent's folder and the message carries its path and first lines; the box says so before you send, and refuses (in red) a text over the most.
