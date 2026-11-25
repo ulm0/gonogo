@@ -86,6 +86,8 @@ const ROOT_ALIASES = /^\/(?:api|ws|uplink|dock|hook|mcp)(?:\/|$)|^\/(?:sw\.js|ma
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const DROPPED = new Set(['authorization', 'cookie', 'host', 'origin', 'forwarded', 'x-real-ip']);
 /** The only `x-gonogo-` headers that go on to a room, and only for `/dock/` and `/uplink/`: a docked station's signed call (docs/docking-spec.md) and a generic webhook's `X-Gonogo-Signature`. They prove themselves to the room, which checks them. */
+/** Written by the proxy for a /dock/ call: the address it was reached at. Never taken from a sender (every x-gonogo- header but the four signing ones is dropped above). */
+const REACHED_HEADER = 'x-gonogo-reached';
 const SIGNED_CALL = new Set(['x-gonogo-station', 'x-gonogo-timestamp', 'x-gonogo-nonce', 'x-gonogo-signature']);
 /** The one header the proxy adds for a room (docs/features/relay.md): "this POST /api/messages was made by a browser session that is signed in". Whatever a sender puts under any `x-gonogo-` name is dropped first, so only this code can say it. */
 export const DIRECTOR_HEADER = 'x-gonogo-director';
@@ -238,6 +240,8 @@ export function createRoomProxy(options: RoomProxyOptions): RoomProxy {
       if (upgrade && lower === 'sec-websocket-protocol') continue;
       out[lower] = value;
     }
+    // the address a station call was reached at (host and room prefix): the room cannot see it (its Host is the proxy's own), and a docked station's proof of its address binds it
+    if (target.kind === 'passthrough' && target.first === 'dock') out[REACHED_HEADER] = `${String(req.headers.host ?? '').toLowerCase()}${target.prefixed ? `/r/${target.id}` : ''}`;
     out.host = `127.0.0.1:${target.room.port}`;
     if (director) out[DIRECTOR_HEADER] = 'web';
     if (actor !== null) out[ACTOR_HEADER] = actor;

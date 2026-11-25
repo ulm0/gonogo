@@ -15,6 +15,17 @@ const now = at(2026, 11, 17, 15, 30);
 const dock = (extra: Partial<DockView> = {}): DockView => ({ id: 'a'.repeat(32), name: 'lab', url: 'http://lab.test', since: 1, status: 'ok', seenAt: at(2026, 11, 17, 15, 29), error: null, agents: [], ...extra });
 const task = (extra: Partial<Task> = {}): Task => ({ id: 't1', title: 'Fix it', detail: '', status: 'todo', assignee: null, createdBy: 'user', createdAt: 1, updatedAt: 1, notes: [], ...extra });
 
+describe('an address that has not proved itself', () => {
+  const dock = { id: 'd', name: 'beta', url: 'http://x', since: 1, status: 'down' as const, seenAt: null, error: 'it did not prove it', agents: [] };
+  it('says so in the chip, the tone and the row, and says nothing is sent', () => {
+    expect(wordOf({ ...dock, unverified: true })).toBe('UNVERIFIED ADDRESS');
+    expect(toneOf({ ...dock, unverified: true })).toBe('quiet');
+    expect(statusText({ ...dock, unverified: true }, 5)).toContain('nothing is sent to it until it does');
+    expect(statusText({ ...dock, unverified: true }, 5)).toContain('it did not prove it');
+    expect(wordOf(dock)).toBe('NO ANSWER');
+  });
+});
+
 describe('addressProblem', () => {
   it('takes a web address with no path, and tells the rest what is wanted', () => {
     for (const ok of ['https://gonogo.example.com', 'http://192.168.1.5:7777', ' http://localhost:7777/ ', 'https://[::1]:8443', 'http://192.168.86.173:7777/r/umbral', 'http://h:7777/r/umbral/']) expect(addressProblem(ok), ok).toBeUndefined();

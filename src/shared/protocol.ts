@@ -1151,6 +1151,8 @@ export interface DockView {
   /** What the other side calls itself: the part after the @ in "name@station". */
   name: string;
   url: string;
+  /** The address was changed and the station there has not yet proved it holds this dock's secret: nothing but the roster is asked of it. */
+  unverified?: boolean;
   since: number;
   /** `new` before the first pull, `ok` when the last pull answered, `down` when it did not. */
   status: 'new' | 'ok' | 'down';

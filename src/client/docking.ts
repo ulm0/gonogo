@@ -51,13 +51,14 @@ export function localNote(address: string, container = false): string | null {
     : 'This address works only on this computer. The other station needs one it can reach: this computer\'s address on your network, a public name or a VPN address.';
 }
 
-export const toneOf = (dock: DockView): 'go' | 'nogo' | 'quiet' => (dock.status === 'ok' ? 'go' : dock.status === 'down' ? 'nogo' : 'quiet');
+export const toneOf = (dock: DockView): 'go' | 'nogo' | 'quiet' => (dock.unverified === true ? 'quiet' : dock.status === 'ok' ? 'go' : dock.status === 'down' ? 'nogo' : 'quiet');
 
 /** The word of the chip of a dock: the colour is not the only thing that says it. */
-export const wordOf = (dock: DockView): string => (dock.status === 'ok' ? 'DOCKED' : dock.status === 'down' ? 'NO ANSWER' : 'WAITING');
+export const wordOf = (dock: DockView): string => (dock.unverified === true ? 'UNVERIFIED ADDRESS' : dock.status === 'ok' ? 'DOCKED' : dock.status === 'down' ? 'NO ANSWER' : 'WAITING');
 
 /** How the last pull went, for a dock's row. */
 export function statusText(dock: DockView, now: number): string {
+  if (dock.unverified === true) return `The address was changed and nothing there has proved yet that it is ${dock.name}: nothing is sent to it until it does.${dock.error === null ? '' : ` ${dock.error}`}`;
   if (dock.status === 'new') return 'Waiting for the first answer.';
   if (dock.status === 'ok') return `Answered at ${atText(dock.seenAt ?? now, now)}.`;
   return `Not answering${dock.seenAt === null ? '' : `, last seen ${atText(dock.seenAt, now)}`}: ${dock.error ?? 'no reason given'}`;
