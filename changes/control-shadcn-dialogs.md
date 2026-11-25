@@ -1,1 +1,0 @@
-- The Patch Panel, the step-up password check and the terminal's Select text panel open as shadcn/ui dialogs (Radix). The Patch Panel and the step-up check behave as before. Select text, on a phone, is now modal too: Esc and Close shut it, and the keyboard stays inside it while it is open.

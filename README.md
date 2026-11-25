@@ -21,7 +21,7 @@ pnpm install && pnpm build && pnpm start   # from a clone
 Docker, credential first (`claude setup-token` on a machine where `claude` is signed in; without it FLIGHT looks ready but is "Not logged in"). Set `VERSION` to the latest [release](https://github.com/ulm0/gonogo/releases) number; as root drop `sudo`; `claude setup-token` opens a browser on that machine and prints the token:
 
 ```
-VERSION=0.23.0
+VERSION=0.23.1
 export CLAUDE_CODE_OAUTH_TOKEN=PASTE_THE_TOKEN_HERE
 curl -fsSLO https://raw.githubusercontent.com/ulm0/gonogo/v$VERSION/compose.yaml
 docker compose up -d
