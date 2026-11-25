@@ -6,6 +6,7 @@ import * as api from './api.js';
 import { alwaysText, askRows, askText, askTitle } from './dockRules.js';
 import { refreshAsks } from './linksData.js';
 import { useRun } from './WallView.js';
+import { Checkbox } from '@/ui/checkbox.js';
 
 export function HandoffNeed({ ask, legend }: { ask: HandoffAsk; legend: string }): ReactElement {
   const id = useId();
@@ -37,7 +38,7 @@ export function HandoffNeed({ ask, legend }: { ask: HandoffAsk; legend: string }
           {askText(ask)}
         </p>
         <div className="staff-check dk-always">
-          <input id={`${id}-always`} type="checkbox" className="check" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+          <Checkbox id={`${id}-always`} checked={always} onChange={(e) => setAlways(e.target.checked)} />
           <label htmlFor={`${id}-always`}>{alwaysText(ask.dockName)}</label>
         </div>
         {error !== null && (

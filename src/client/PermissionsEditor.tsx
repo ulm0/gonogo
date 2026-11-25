@@ -6,6 +6,8 @@ import type { ReactElement } from 'react';
 import { PERMISSION_LISTS } from '../shared/protocol.js';
 import type { PermissionList } from '../shared/protocol.js';
 import { COMMON_TOOLS, setToolState, toolState } from './permissions.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Textarea } from '@/ui/textarea.js';
 
 const LABEL: Record<'' | PermissionList, string> = { '': 'Default', allow: 'Allow', ask: 'Ask', deny: 'Deny' };
 
@@ -16,13 +18,13 @@ export function PermissionsEditor({ id, value, onChange, error, inheritedDeny = 
         {COMMON_TOOLS.map((tool) => (
           <li key={tool}>
             <label htmlFor={`${id}-${tool}`}>{tool}</label>
-            <select id={`${id}-${tool}`} className="input" data-fit value={toolState(value, tool)} onChange={(event) => onChange(setToolState(value, tool, event.target.value as '' | PermissionList))}>
+            <NativeSelect id={`${id}-${tool}`} data-fit value={toolState(value, tool)} onChange={(event) => onChange(setToolState(value, tool, event.target.value as '' | PermissionList))}>
               {(['', ...PERMISSION_LISTS] as const).map((list) => (
                 <option key={list} value={list}>
                   {LABEL[list]}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </li>
         ))}
       </ul>
@@ -34,9 +36,9 @@ export function PermissionsEditor({ id, value, onChange, error, inheritedDeny = 
       <label htmlFor={`${id}-text`} className="label">
         RULES
       </label>
-      <textarea
+      <Textarea variant="field"
         id={`${id}-text`}
-        className="textarea perm-text"
+        className="perm-text"
         rows={4}
         spellCheck={false}
         value={value}

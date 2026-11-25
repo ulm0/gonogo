@@ -9,6 +9,7 @@ import { REGISTRY_STALE_DAYS, REGISTRY_WARNINGS } from '../shared/registry.js';
 import { checkedText, entriesFor, folderText, safeSource, serversOf, skillsOf } from './registry.js';
 import type { RegistryEntry, RegistryServer } from './registry.js';
 import { copyText } from './uplink.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 interface Props {
   /** What the engine takes: servers and skills, servers only. */
@@ -42,9 +43,8 @@ export function RegistryPicker({ payload, has, onAdd, only, now = Date.now(), fi
       <label htmlFor={id} className="rules-call">
         Add from the list
       </label>
-      <select
+      <NativeSelect
         id={id}
-        className="input"
         data-fit
         value={entry.id}
         onChange={(event) => {
@@ -70,7 +70,7 @@ export function RegistryPicker({ payload, has, onAdd, only, now = Date.now(), fi
             ))}
           </optgroup>
         )}
-      </select>
+      </NativeSelect>
       <p className="hint">
         {entry.summary} By {entry.publisher}. {entry.licence}
         {' · '}

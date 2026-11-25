@@ -23,6 +23,9 @@ import { useRun } from './WallView.js';
 import './loop.css';
 import './plan.css';
 import './docking.css';
+import { Input } from '@/ui/input.js';
+import { Textarea } from '@/ui/textarea.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const isField = (name: unknown): name is Field => typeof name === 'string' && (FIELDS as readonly string[]).includes(name);
@@ -90,10 +93,9 @@ function TaskForm({ onDone }: { onDone(): void }): ReactElement {
       <fieldset className="plan-fields" disabled={busy}>
         <div className="field" data-invalid={problems.title !== undefined ? '' : undefined}>
           <label htmlFor={`${id}-title`}>Title</label>
-          <input
+          <Input
             id={`${id}-title`}
             ref={first}
-            className="input"
             value={values.title}
             maxLength={TASK_TITLE_MAX_CHARS}
             autoComplete="off"
@@ -105,9 +107,9 @@ function TaskForm({ onDone }: { onDone(): void }): ReactElement {
         </div>
         <div className="field">
           <label htmlFor={`${id}-detail`}>Detail</label>
-          <textarea
+          <Textarea variant="field"
             id={`${id}-detail`}
-            className="textarea plan-detail-input"
+            className="plan-detail-input"
             rows={4}
             value={values.detail}
             maxLength={TASK_DETAIL_MAX_CHARS}
@@ -122,25 +124,25 @@ function TaskForm({ onDone }: { onDone(): void }): ReactElement {
         </div>
         <div className="field">
           <label htmlFor={`${id}-assignee`}>Give it to</label>
-          <select id={`${id}-assignee`} className="input" value={values.assignee} aria-describedby={describedBy('assignee')} onChange={(e) => change({ assignee: e.target.value }, 'assignee')}>
+          <NativeSelect id={`${id}-assignee`} value={values.assignee} aria-describedby={describedBy('assignee')} onChange={(e) => change({ assignee: e.target.value }, 'assignee')}>
             {options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           {error('assignee')}
         </div>
         {missions.length > 0 && (
           <div className="field">
             <label htmlFor={`${id}-missionId`}>Mission</label>
-            <select id={`${id}-missionId`} className="input" value={values.missionId} aria-describedby={describedBy('missionId')} onChange={(e) => change({ missionId: e.target.value }, 'missionId')}>
+            <NativeSelect id={`${id}-missionId`} value={values.missionId} aria-describedby={describedBy('missionId')} onChange={(e) => change({ missionId: e.target.value }, 'missionId')}>
               {missionChoices.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             {error('missionId')}
           </div>
         )}
@@ -258,9 +260,8 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
         </div>
         <div className="field plan-assign">
           <label htmlFor={`${id}-assign`}>Give it to</label>
-          <select
+          <NativeSelect
             id={`${id}-assign`}
-            className="input"
             aria-label={`Give it to (${task.id})`}
             value={task.assignee ?? ''}
             aria-disabled={busy || undefined}
@@ -277,14 +278,13 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
                 {o.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         {(missions.length > 0 || task.missionId !== undefined) && (
           <div className="field plan-assign">
             <label htmlFor={`${id}-mission`}>Mission</label>
-            <select
+            <NativeSelect
               id={`${id}-mission`}
-              className="input"
               aria-label={`Mission (${task.id})`}
               value={task.missionId ?? ''}
               aria-disabled={busy || undefined}
@@ -301,7 +301,7 @@ function Card({ task, willMove, onNotice }: CardProps): ReactElement {
                   {o.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         )}
         {canHandOff(task, docks) &&

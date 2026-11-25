@@ -18,7 +18,8 @@ const token = (value: string): string => /^var\((--[a-z0-9-]+)\)$/.exec(value)?.
 
 const uiFiles = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? uiFiles(join(dir, e.name)) : [join(dir, e.name)]));
-const ui = uiFiles(join(ROOT, 'src', 'client', 'ui')).map((f) => [f, readFileSync(f, 'utf8')] as const);
+// the class lists of the form controls (src/shared/controls.ts) are shadcn utilities too, shared with the server's own pages
+const ui = [...uiFiles(join(ROOT, 'src', 'client', 'ui')), join(ROOT, 'src', 'shared', 'controls.ts')].map((f) => [f, readFileSync(f, 'utf8')] as const);
 
 describe('shadcn.css', () => {
   it('maps the shadcn colours (the scan is not looking at nothing)', () => {

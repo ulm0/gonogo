@@ -22,6 +22,10 @@ import { selectMission, showPlan, showRoom, useStore } from './store.js';
 import { useRun } from './WallView.js';
 import './loop.css';
 import './missions.css';
+import { Input } from '@/ui/input.js';
+import { Checkbox } from '@/ui/checkbox.js';
+import { Textarea } from '@/ui/textarea.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -51,7 +55,7 @@ function RitualLine({ mission, item, index, count }: { mission: Mission; item: R
         <label htmlFor={id} className="sr-only">
           Words of closing item {index + 1}
         </label>
-        <input id={id} className="input" value={text} maxLength={RITUAL_ITEM_MAX_CHARS + 20} autoComplete="off" aria-invalid={problem !== null || undefined} onChange={(e) => setText(e.target.value)} />
+        <Input id={id} value={text} maxLength={RITUAL_ITEM_MAX_CHARS + 20} autoComplete="off" aria-invalid={problem !== null || undefined} onChange={(e) => setText(e.target.value)} />
         <button
           type="button"
           className="btn"
@@ -91,7 +95,7 @@ function RitualLine({ mission, item, index, count }: { mission: Mission; item: R
   return (
     <li>
       <label>
-        <input type="checkbox" className="check" checked={item.done} disabled={busy} onChange={(event) => run(() => api.setRitualItem(mission.id, index, { done: event.target.checked }))} />
+        <Checkbox checked={item.done} disabled={busy} onChange={(event) => run(() => api.setRitualItem(mission.id, index, { done: event.target.checked }))} />
         <span className="mis-ritual-text">{item.text}</span>
       </label>
       {source !== '' && (
@@ -149,7 +153,7 @@ function Ritual({ mission }: { mission: Mission }): ReactElement {
       {items.length < RITUAL_ITEMS_MAX && (
         <form className="mis-budget" onSubmit={add} noValidate>
           <label htmlFor={id}>New closing item</label>
-          <input id={id} className="input" value={text} autoComplete="off" placeholder="Tests pass on main" aria-invalid={problem !== null || undefined} onChange={(e) => setText(e.target.value)} />
+          <Input id={id} value={text} autoComplete="off" placeholder="Tests pass on main" aria-invalid={problem !== null || undefined} onChange={(e) => setText(e.target.value)} />
           <button type="submit" className="btn" aria-disabled={text.trim() === '' || problem !== null || busy || undefined}>
             Add
           </button>
@@ -194,7 +198,7 @@ function MissionCost({ mission }: { mission: Mission }): ReactElement {
       </p>
       <form className="mis-budget" onSubmit={submit} noValidate>
         <label htmlFor={id}>Budget in dollars</label>
-        <input id={id} className="input" value={text} inputMode="decimal" autoComplete="off" placeholder={spend?.budget === undefined ? 'no budget' : moneyText(spend.budget)} aria-invalid={invalid} onChange={(e) => setText(e.target.value)} />
+        <Input id={id} value={text} inputMode="decimal" autoComplete="off" placeholder={spend?.budget === undefined ? 'no budget' : moneyText(spend.budget)} aria-invalid={invalid} onChange={(e) => setText(e.target.value)} />
         <button type="submit" className="btn" aria-disabled={busy || undefined}>
           Set
         </button>
@@ -261,10 +265,9 @@ function MissionForm({ original, draft, onDone }: { original: Mission | null; dr
       <fieldset className="mis-fields" disabled={busy}>
         <div className="field" data-invalid={problems.name !== undefined ? '' : undefined}>
           <label htmlFor={`${id}-name`}>Name</label>
-          <input
+          <Input
             id={`${id}-name`}
             ref={first}
-            className="input"
             value={values.name}
             maxLength={MISSION_NAME_MAX_CHARS}
             autoComplete="off"
@@ -280,9 +283,9 @@ function MissionForm({ original, draft, onDone }: { original: Mission | null; dr
         </div>
         <div className="field" data-invalid={problems.goal !== undefined ? '' : undefined}>
           <label htmlFor={`${id}-goal`}>Goal</label>
-          <textarea
+          <Textarea variant="field"
             id={`${id}-goal`}
-            className="textarea mis-goal-input"
+            className="mis-goal-input"
             rows={4}
             value={values.goal}
             maxLength={MISSION_GOAL_MAX_CHARS}
@@ -301,7 +304,7 @@ function MissionForm({ original, draft, onDone }: { original: Mission | null; dr
         </div>
         <div className="field">
           <label htmlFor={`${id}-lead`}>Lead</label>
-          <select id={`${id}-lead`} className="input" value={values.lead} onChange={(e) => setValues((v) => ({ ...v, lead: e.target.value }))}>
+          <NativeSelect id={`${id}-lead`} value={values.lead} onChange={(e) => setValues((v) => ({ ...v, lead: e.target.value }))}>
             <option value="">{original === null ? 'FLIGHT, the boss' : 'Nobody'}</option>
             {leads.map((a) => (
               <option key={a.name} value={a.name}>
@@ -309,7 +312,7 @@ function MissionForm({ original, draft, onDone }: { original: Mission | null; dr
               </option>
             ))}
             {values.lead !== '' && !leads.some((a) => a.name === values.lead) && <option value={values.lead}>{`${values.lead} (${Object.hasOwn(agents, values.lead) ? 'cannot read mail' : 'not in the room'})`}</option>}
-          </select>
+          </NativeSelect>
         </div>
       </fieldset>
       {topError !== null && (

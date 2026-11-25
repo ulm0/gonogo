@@ -9,6 +9,7 @@ import * as api from './api.js';
 import { tabTitle } from '../shared/protocol.js';
 import { useStore } from './store.js';
 import { useRun } from './WallView.js';
+import { Input } from '@/ui/input.js';
 
 export function TabNameBlock(): ReactElement {
   const id = useId();
@@ -31,9 +32,8 @@ export function TabNameBlock(): ReactElement {
         <label htmlFor={`${id}-name`} className="sr-only">
           Tab name
         </label>
-        <input
+        <Input
           id={`${id}-name`}
-          className="input"
           value={text}
           maxLength={TAB_NAME_MAX_CHARS}
           placeholder={view.fallback ?? 'gonogo'}

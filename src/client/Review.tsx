@@ -42,6 +42,8 @@ import {
 } from './reviewModel.js';
 import type { Filter, NoteValues, Thread } from './reviewModel.js';
 import './review.css';
+import { Textarea } from '@/ui/textarea.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 /** The console whose diff is under review: the pieces below read it instead of being passed it through every level. */
 const AgentContext = createContext('');
@@ -80,10 +82,9 @@ function NoteForm({ place, label, onSave, onCancel }: { place: Place; label: str
       <label htmlFor={`${id}-body`} className="sr-only">
         {label}
       </label>
-      <textarea
+      <Textarea variant="field"
         id={`${id}-body`}
         ref={first}
-        className="textarea"
         rows={2}
         value={values.body}
         maxLength={REVIEW_BODY_MAX_CHARS}
@@ -99,13 +100,13 @@ function NoteForm({ place, label, onSave, onCancel }: { place: Place; label: str
             <label htmlFor={`${id}-tone`} className="rv-tone-label">
               Tone
             </label>
-            <select id={`${id}-tone`} className="input" value={values.tone} disabled={busy} onChange={(e) => setValues((v) => ({ ...v, tone: e.target.value as ReviewTone }))}>
+            <NativeSelect id={`${id}-tone`} value={values.tone} disabled={busy} onChange={(e) => setValues((v) => ({ ...v, tone: e.target.value as ReviewTone }))}>
               {REVIEW_TONES.map((t) => (
                 <option key={t} value={t}>
                   {TONE_LABELS[t].toLowerCase()}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </>
         )}
         <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || undefined}>
@@ -408,14 +409,14 @@ export function Review({ agent }: { agent: string }): ReactElement {
           <label htmlFor={`${id}-peer`} className="sr-only">
             Agent to review this diff
           </label>
-          <select id={`${id}-peer`} className="input rv-peer" value={reviewer} onChange={(e) => setReviewer(e.target.value)}>
+          <NativeSelect id={`${id}-peer`} className="rv-peer" value={reviewer} onChange={(e) => setReviewer(e.target.value)}>
             <option value="">Pick a reviewer…</option>
             {peers.map((a) => (
               <option key={a.name} value={a.name}>
                 {a.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           <button type="button" className="btn" aria-disabled={busy || reviewer === '' || problems.ask !== null || undefined} onClick={() => reviewer !== '' && problems.ask === null && run(async () => (await api.reviewAsk(agent, { kind: 'peer', reviewer }), `Asked ${reviewer} to review ${agent}'s diff.`))}>
             PEER REVIEW
           </button>

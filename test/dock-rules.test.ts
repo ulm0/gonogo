@@ -47,7 +47,8 @@ describe('the GO on a handoff', () => {
     const html = renderToString(createElement(HandoffNeed, { ask, legend: 'FLIGHT' }));
     expect(html).toContain('The token expires too early.');
     expect(html).toContain('Always for lab: FLIGHT can then send tasks, and what it writes in them, to lab without asking you.');
-    expect(html).not.toContain('checked');
+    // the box is not checked (its classes name checked: states, so the attribute is looked for)
+    expect(html).not.toMatch(/\schecked=/);
     expect(html).toContain('GO: send this task to lab');
     expect(html).toContain('NO-GO: do not send this task to lab');
   });

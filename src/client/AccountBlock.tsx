@@ -8,6 +8,9 @@ import * as api from './api.js';
 import type { AccountView } from './api.js';
 import { passkeysSupported } from './passkey.js';
 import { exposureText } from './exposure.js';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Checkbox } from '@/ui/checkbox.js';
 
 const when = (at: number | null): string => (at === null ? 'never' : new Date(at).toISOString().slice(0, 16).replace('T', ' '));
 const fail = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -115,7 +118,7 @@ export function AccountBlock(): ReactElement {
             <div className="flood rules-confirm" data-tone="nogo" role="alert">
               <p>gonogo saw its account file change outside gonogo. Remote logins are paused until you confirm with your password.</p>
               <div className="rules-row">
-                <input className="input" type="password" autoComplete="current-password" aria-label="Password to confirm" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+                <Input type="password" autoComplete="current-password" aria-label="Password to confirm" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
                 <button type="button" className="btn" data-kind="primary" onClick={() => run(() => api.authConfirm(confirm), () => setConfirm(''))}>
                   CONFIRM
                 </button>
@@ -176,15 +179,15 @@ export function AccountBlock(): ReactElement {
             ))}
           </ul>
           <form className="rules-row" onSubmit={submitKey}>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Key name" aria-label="Key name" maxLength={60} required />
-            <select className="input" value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Key scope">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Key name" aria-label="Key name" maxLength={60} required />
+            <NativeSelect value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Key scope">
               <option value="read">read</option>
               <option value="act">act (messages, answers, hold, resume)</option>
               <option value="full">full</option>
-            </select>
-            <input className="input" value={days} onChange={(e) => setDays(e.target.value)} inputMode="numeric" aria-label="Days until it expires" size={4} />
+            </NativeSelect>
+            <Input value={days} onChange={(e) => setDays(e.target.value)} inputMode="numeric" aria-label="Days until it expires" size={4} />
             <label className="staff-check">
-              <input type="checkbox" className="check" checked={remote} onChange={(e) => setRemote(e.target.checked)} />
+              <Checkbox checked={remote} onChange={(e) => setRemote(e.target.checked)} />
               usable from a public name
             </label>
             <button type="submit" className="btn" data-kind="primary">
@@ -227,7 +230,7 @@ export function AccountBlock(): ReactElement {
               <p className="lcd">{secret.secret}</p>
               <p className="lcd">{secret.uri}</p>
               <div className="rules-row">
-                <input className="input" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" aria-label="First code" placeholder="123456" required />
+                <Input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" aria-label="First code" placeholder="123456" required />
                 <button type="submit" className="btn" data-kind="primary">
                   CONFIRM
                 </button>
@@ -256,8 +259,8 @@ export function AccountBlock(): ReactElement {
                   });
                 }}
               >
-                <input className="input" type="password" autoComplete="current-password" value={offPassword} onChange={(e) => setOffPassword(e.target.value)} placeholder="Password" aria-label="Password" required />
-                <input className="input" value={offCode} onChange={(e) => setOffCode(e.target.value)} placeholder="Code or recovery code" aria-label="Code or recovery code" autoComplete="one-time-code" required />
+                <Input type="password" autoComplete="current-password" value={offPassword} onChange={(e) => setOffPassword(e.target.value)} placeholder="Password" aria-label="Password" required />
+                <Input value={offCode} onChange={(e) => setOffCode(e.target.value)} placeholder="Code or recovery code" aria-label="Code or recovery code" autoComplete="one-time-code" required />
                 <button type="submit" className="btn">
                   NEW RECOVERY CODES
                 </button>
@@ -304,7 +307,7 @@ export function AccountBlock(): ReactElement {
                 run(() => api.authPasskeyAdd(passkeyName.trim() || 'passkey'), () => setPasskeyName(''));
               }}
             >
-              <input className="input" value={passkeyName} onChange={(e) => setPasskeyName(e.target.value)} placeholder="Name (this laptop, my phone)" aria-label="Passkey name" maxLength={60} />
+              <Input value={passkeyName} onChange={(e) => setPasskeyName(e.target.value)} placeholder="Name (this laptop, my phone)" aria-label="Passkey name" maxLength={60} />
               <button type="submit" className="btn">
                 ADD A PASSKEY FOR {account.passkeyHere}
               </button>
@@ -314,8 +317,8 @@ export function AccountBlock(): ReactElement {
           )}
           <h3 className="label">PASSWORD</h3>
           <form className="rules-row rules-row-stack" onSubmit={submitPassword}>
-            <input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="Current password" aria-label="Current password" required />
-            <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password" aria-label="New password, 12 characters or more" minLength={12} required />
+            <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="Current password" aria-label="Current password" required />
+            <Input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password" aria-label="New password, 12 characters or more" minLength={12} required />
             <button type="submit" className="btn">
               CHANGE PASSWORD
             </button>

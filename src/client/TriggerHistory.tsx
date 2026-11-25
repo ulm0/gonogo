@@ -10,6 +10,7 @@ import * as api from './api.js';
 import { setHistoryFilter, useNow, useStore } from './store.js';
 import { KIND_LABEL, lineOf, NO_FILTER, OUTCOMES, queryOf, sourcesOf, toneOf } from './triggers.js';
 import { atText } from './uplink.js';
+import { NativeSelect } from '@/ui/native-select.js';
 
 const REFRESH_MS = 10_000;
 
@@ -61,16 +62,16 @@ export function TriggerHistory(): ReactElement {
       <p className="hint">Everything that fired by itself or came in from outside: webhooks, Telegram messages read by polling, schedule runs and Docking calls. Newest first. The payload is kept as one cut line with secrets replaced; the whole body is not.</p>
       <div className="trg-filters" role="group" aria-label="Filter the history">
         <label htmlFor={`${id}-kind`}>Kind</label>
-        <select id={`${id}-kind`} className="input" data-fit="" value={filter.kind} onChange={(e) => setHistoryFilter({ kind: e.target.value as TriggerKind | '' })}>
+        <NativeSelect id={`${id}-kind`} data-fit="" value={filter.kind} onChange={(e) => setHistoryFilter({ kind: e.target.value as TriggerKind | '' })}>
           <option value="">All kinds</option>
           {TRIGGER_KINDS.map((k) => (
             <option key={k} value={k}>
               {KIND_LABEL[k]}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         <label htmlFor={`${id}-source`}>Source</label>
-        <select id={`${id}-source`} className="input" data-fit="" value={filter.source} onChange={(e) => setHistoryFilter({ source: e.target.value })}>
+        <NativeSelect id={`${id}-source`} data-fit="" value={filter.source} onChange={(e) => setHistoryFilter({ source: e.target.value })}>
           <option value="">All sources</option>
           {filter.source !== '' && !sources.some((s) => s.id === filter.source) && <option value={filter.source}>{filter.source}</option>}
           {sources.map((s) => (
@@ -78,16 +79,16 @@ export function TriggerHistory(): ReactElement {
               {s.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         <label htmlFor={`${id}-outcome`}>Outcome</label>
-        <select id={`${id}-outcome`} className="input" data-fit="" value={filter.outcome} onChange={(e) => setHistoryFilter({ outcome: e.target.value })}>
+        <NativeSelect id={`${id}-outcome`} data-fit="" value={filter.outcome} onChange={(e) => setHistoryFilter({ outcome: e.target.value })}>
           <option value="">Any outcome</option>
           {OUTCOMES.map((o) => (
             <option key={o} value={o}>
               {o}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         <button type="button" className="btn" data-kind="quiet" aria-disabled={!filtered || undefined} onClick={() => filtered && setHistoryFilter(NO_FILTER)}>
           Clear filters
         </button>

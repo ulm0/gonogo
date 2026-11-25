@@ -45,7 +45,7 @@ describe('long placeholders and selects are not cut', () => {
     const account = readFileSync('src/client/AccountBlock.tsx', 'utf8');
     expect(account).toContain('rules-row rules-row-stack');
     expect(account).not.toContain('placeholder="New password (12 or more)"');
-    expect(readFileSync('src/client/rules.css', 'utf8')).toMatch(/\.rules-row-stack \.input \{\s*flex-basis: 100%;/);
+    expect(readFileSync('src/client/rules.css', 'utf8')).toMatch(/\.rules-row-stack :is\(\[data-slot=input\], \[data-slot=native-select\]\) \{\s*flex-basis: 100%;/);
   });
 
   it('a tool of the permissions grid has room for its name and its select', () => {

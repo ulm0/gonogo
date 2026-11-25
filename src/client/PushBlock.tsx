@@ -8,6 +8,7 @@ import type { ReactElement } from 'react';
 import { pushTest } from './api.js';
 import { PUSH_TEXT } from './push.js';
 import { disablePush, enablePush, removeDevice, usePushStatus } from './push-browser.js';
+import { Checkbox } from '@/ui/checkbox.js';
 
 export function PushBlock(): ReactElement {
   const id = useId();
@@ -24,7 +25,7 @@ export function PushBlock(): ReactElement {
         {PUSH_TEXT[status]}
       </p>
       <div className="check-row">
-        <input id={`${id}-snippet`} type="checkbox" className="check" checked={snippet} disabled={on || blocked} onChange={(e) => setSnippet(e.target.checked)} />
+        <Checkbox id={`${id}-snippet`} checked={snippet} disabled={on || blocked} onChange={(e) => setSnippet(e.target.checked)} />
         <label htmlFor={`${id}-snippet`}>Show who it is from and the first words on the lock screen</label>
       </div>
       <button

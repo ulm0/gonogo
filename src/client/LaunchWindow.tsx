@@ -15,6 +15,10 @@ import { TriggerHistory } from './TriggerHistory.js';
 import { useRun } from './WallView.js';
 import './loop.css';
 import './launch.css';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Textarea } from '@/ui/textarea.js';
+import { Checkbox, Switch } from '@/ui/checkbox.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 /** The zone of this browser; `fallback` when it cannot tell, which leaves no note. */
@@ -97,10 +101,9 @@ function Editor({ schedule, onDone }: { schedule: ScheduleView | null; onDone():
       <fieldset className="win-fields" disabled={busy}>
         <div className="field" data-invalid={problemAt('name') !== undefined ? '' : undefined}>
           <label htmlFor={`${id}-name`}>Name</label>
-          <input
+          <Input
             id={`${id}-name`}
             ref={first}
-            className="input"
             value={values.name}
             maxLength={SCHEDULE_NAME_MAX_CHARS}
             autoComplete="off"
@@ -112,20 +115,19 @@ function Editor({ schedule, onDone }: { schedule: ScheduleView | null; onDone():
         </div>
         <div className="field">
           <label htmlFor={`${id}-to`}>Send to</label>
-          <select id={`${id}-to`} className="input" value={values.to} aria-describedby={describedBy('to')} onChange={(e) => change({ to: e.target.value }, 'to')}>
+          <NativeSelect id={`${id}-to`} value={values.to} aria-describedby={describedBy('to')} onChange={(e) => change({ to: e.target.value }, 'to')}>
             {options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           {error('to')}
         </div>
         <div className="field">
           <label htmlFor={`${id}-subject`}>Subject</label>
-          <input
+          <Input
             id={`${id}-subject`}
-            className="input"
             value={values.subject}
             autoComplete="off"
             aria-invalid={problemAt('subject') !== undefined}
@@ -140,9 +142,9 @@ function Editor({ schedule, onDone }: { schedule: ScheduleView | null; onDone():
         </div>
         <div className="field">
           <label htmlFor={`${id}-body`}>Message</label>
-          <textarea
+          <Textarea variant="field"
             id={`${id}-body`}
-            className="textarea win-body"
+            className="win-body"
             rows={4}
             value={values.body}
             aria-invalid={problemAt('body') !== undefined}
@@ -159,9 +161,9 @@ function Editor({ schedule, onDone }: { schedule: ScheduleView | null; onDone():
         </div>
         <div className="field">
           <label htmlFor={`${id}-rule`}>Rule</label>
-          <input
+          <Input
             id={`${id}-rule`}
-            className="input win-rule-input"
+            className="win-rule-input"
             value={values.rule}
             maxLength={CRON_MAX_CHARS}
             placeholder="0 9 * * mon-fri"
@@ -194,7 +196,7 @@ function Editor({ schedule, onDone }: { schedule: ScheduleView | null; onDone():
           </div>
         </div>
         <div className="win-check">
-          <input id={`${id}-enabled`} type="checkbox" className="check" checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
+          <Checkbox id={`${id}-enabled`} checked={values.enabled} onChange={(e) => change({ enabled: e.target.checked })} />
           <label htmlFor={`${id}-enabled`}>On: send it by itself</label>
         </div>
       </fieldset>
@@ -249,8 +251,7 @@ function Row({ schedule, now, onEdit, onNotice }: { schedule: ScheduleView; now:
       </p>
       <div className="win-buttons">
         <label className="win-switch">
-          <input
-            type="checkbox" className="switch"
+          <Switch
             role="switch"
             checked={schedule.enabled}
             aria-label={`${name} enabled`}

@@ -32,6 +32,7 @@ import { PromptInput, PromptInputActions, PromptInputTextarea } from '@/ui/nexus
 import { Thread, ThreadContent, ThreadScrollToBottom } from '@/ui/nexus/thread.js';
 import { TextShimmer } from '@/ui/motion/text-shimmer.js';
 import './loop.css';
+import { NativeSelect } from '@/ui/native-select.js';
 
 /** The page draws at most this many threads; the store keeps the newest 200 messages, so it is rarely reached. */
 const MAX_ROWS = 100;
@@ -165,13 +166,13 @@ function Open({ thread, agents, now }: { thread: ThreadData; agents: Readonly<Re
               <label className="legend" htmlFor={`${id}-to`}>
                 Send to
               </label>
-              <select id={`${id}-to`} className="input" value={to} onChange={(event) => setChosen(event.target.value)}>
+              <NativeSelect id={`${id}-to`} value={to} onChange={(event) => setChosen(event.target.value)}>
                 {who.map((name) => (
                   <option key={name} value={name}>
                     {legendOf(name, agents)}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           )}
           {/* a new box for each agent, so that text typed for one is not sent to another */}

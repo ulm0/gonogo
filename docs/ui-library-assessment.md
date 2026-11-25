@@ -137,7 +137,7 @@ fill in, Hugeicons supply the icons, and motion-primitives `TextShimmer` shows "
 | 2 | **Pilot:** Party Line on Nexus Thread/Message/PromptInput + shadcn + Hugeicons + TextShimmer, lazy tab, delete its CSS | M | real screenshots under every shipped livery and on a phone (l80); bundle numbers; **Director go/no-go before PR 3** |
 | 3 | `Pop.tsx` on shadcn Popover/DropdownMenu (5 callers: TopBar, StatusStrip, TerminalBar, RoomView, LayoutPop) | M | keep the props of `Pop`, so the callers don't change |
 | 4 | Dialogs: `StepUpDialog`, PatchPanel/TerminalBar dialogs on shadcn Dialog/AlertDialog | S | keyboard and Escape tests stay green |
-| 5 | Form controls (`forms.css`, 824 lines): Input, Select, Switch, Checkbox, Label | M | `CONTROL_PAIRS` (`--go-ink` on `--key`) is the check mark's colour |
+| 5 | Form controls: Input, NativeSelect, Textarea, Checkbox, Radio, Switch as **native** elements (see *PR 5: native controls* below) | M | `CONTROL_PAIRS` (`--go-ink` on `--key`) is the check mark's colour |
 | 6 | Icons: Hugeicons in place of text glyphs and the 2 inline SVGs | S | `currentColor` |
 | 7–13 | One per area: top bar + status strip; rest of COMMS (Inbox, Traffic); Flight Plan; Mission Log + Knowledge; Rules pages; Hangar + Docking; Settings + Livery page | M each | each deletes the CSS it replaced |
 | 14 | `shell.css` (2,225 lines): layout to utilities; remove dead CSS files | M | |
@@ -145,6 +145,17 @@ fill in, Hugeicons supply the icons, and motion-primitives `TextShimmer` shows "
 
 The terminal (xterm), the LCD and the Doto type stay ours. They are the Instrument look, and shadcn has nothing in their
 place.
+
+### PR 5: native controls, a departure from this plan
+
+shadcn's Checkbox, Switch and Select are Radix buttons and popovers, not native inputs. The app had 188 native controls (fields, selects,
+text areas, checks, radios and switches), chosen native for the keyboard, the screen reader, `required` and form submission. Radix would
+have taken the phone's own select picker away, changed every `onChange` (`e.target.checked`) to `onCheckedChange` and cost about
+10-15 KB gzip for Select alone. So PR 5 (flight, m4513) keeps the elements native and moves their look into `src/client/ui`: `Input`,
+shadcn's `NativeSelect` (without its wrapper, the chevron is a background), the `field` variant of `Textarea`, and `Checkbox`,
+`Radio` and `Switch` drawn on native inputs. The sizes stay the Instrument's (46 px fields, 22 px boxes), which are touch targets,
+not shadcn's 36 px. `.field` and its label stay in primitives.css: they are the layout of a field, and go with the area PRs. The
+docs mocks keep the old classes in `.vitepress/theme/controls.css` until PR 15 draws them from `src/client/ui`.
 
 ### Guards for every PR
 

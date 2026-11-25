@@ -9,6 +9,8 @@ import type { ApiFailure } from './api.js';
 import * as api from './api.js';
 import type { RuntimeSettingRow, RuntimeSettingScope } from '../shared/protocol.js';
 import { APPLIES_TEXT, canReset, layerValue, refusalText, SETTING_TEXT, SOURCE_TEXT, startScope, valueText } from './runtimeSettingsModel.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Input } from '@/ui/input.js';
 
 /** The editor of one setting: for this room or for all rooms, a field (or a choice), SET, RESET of the layer, CANCEL. */
 function Editor({ row, onSaved, onClose }: { row: RuntimeSettingRow; onSaved(next: RuntimeSettingRow): void; onClose(): void }): ReactElement {
@@ -52,16 +54,16 @@ function Editor({ row, onSaved, onClose }: { row: RuntimeSettingRow; onSaved(nex
         <p className="hint">All rooms: this is one setting for every room.</p>
       )}
       {text.input.kind === 'choice' ? (
-        <select id={id} className="input" data-fit aria-label={`${text.label} value`} value={value} onChange={(e) => setValue(e.target.value)}>
+        <NativeSelect id={id} data-fit aria-label={`${text.label} value`} value={value} onChange={(e) => setValue(e.target.value)}>
           <option value="">Choose…</option>
           {text.input.options.map((o) => (
             <option key={o} value={o}>
               {o}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       ) : (
-        <input id={id} className="input" type="text" autoComplete="off" spellCheck={false} aria-label={`${text.label} value`} placeholder={text.input.placeholder} value={value} onChange={(e) => setValue(e.target.value)} />
+        <Input id={id} type="text" autoComplete="off" spellCheck={false} aria-label={`${text.label} value`} placeholder={text.input.placeholder} value={value} onChange={(e) => setValue(e.target.value)} />
       )}
       {text.warning !== undefined && (
         <p className="flood rt-warning" data-tone="amber" role="note">

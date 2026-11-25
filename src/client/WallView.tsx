@@ -24,6 +24,7 @@ import {
 } from './wall.js';
 import { RoomFuel } from './Propellant.js';
 import type { PollButton } from './wall.js';
+import { Input } from '@/ui/input.js';
 
 const BUTTON_LABELS: Record<PollButton, string> = { poll: 'Poll the room', hold: 'Hold', abort: 'Abort', clear: 'Clear' };
 const BUTTON_TITLES: Record<PollButton, string> = {
@@ -227,8 +228,7 @@ export function TMinus(): ReactElement {
             if (crew.length > 0 && subject.trim() !== '') run(() => api.startPoll({ subject }).then(() => setSubject('')));
           }}
         >
-          <input
-            className="input"
+          <Input
             type="text"
             value={subject}
             maxLength={SUBJECT_MAX_CHARS - 'Static fire: '.length}

@@ -16,6 +16,8 @@ import { commitProblem, diffLines, fileLabels, shortHash, stagedCount } from './
 import './loop.css';
 import './hangar.css';
 import './recorder.css';
+import { Textarea } from '@/ui/textarea.js';
+import { Radio } from '@/ui/checkbox.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -191,16 +193,16 @@ function Git({ agent }: { agent: string }): ReactElement {
           <h2 className="label">Commit</h2>
           <div className="field">
             <label htmlFor={`${id}-message`}>Message</label>
-            <textarea id={`${id}-message`} className="textarea" rows={3} value={message} maxLength={RECORDER_MESSAGE_MAX_CHARS} autoComplete="off" onChange={(e) => setMessage(e.target.value)} />
+            <Textarea variant="field" id={`${id}-message`} rows={3} value={message} maxLength={RECORDER_MESSAGE_MAX_CHARS} autoComplete="off" onChange={(e) => setMessage(e.target.value)} />
           </div>
           <fieldset className="field rc-scope">
             <legend>What to commit</legend>
             <label className="rc-radio">
-              <input type="radio" className="radio" name={`${id}-scope`} checked={scope === 'all'} onChange={() => setScope('all')} />
+              <Radio name={`${id}-scope`} checked={scope === 'all'} onChange={() => setScope('all')} />
               {`All changes (${files.length}): git adds them first`}
             </label>
             <label className="rc-radio">
-              <input type="radio" className="radio" name={`${id}-scope`} checked={scope === 'staged'} onChange={() => setScope('staged')} />
+              <Radio name={`${id}-scope`} checked={scope === 'staged'} onChange={() => setScope('staged')} />
               {`Only what is staged (${stagedCount(files)})`}
             </label>
           </fieldset>

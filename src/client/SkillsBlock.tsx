@@ -13,6 +13,7 @@ import { RegistryPicker } from './RegistryPicker.js';
 import { skillRows } from './registry.js';
 import { openEdit, useStore } from './store.js';
 import { useRun } from './WallView.js';
+import { Input } from '@/ui/input.js';
 
 export function SkillsBlock(): ReactElement {
   const id = useId();
@@ -73,7 +74,7 @@ export function SkillsBlock(): ReactElement {
             <label htmlFor={`${id}-folder`} className="rules-call">
               Skill folder
             </label>
-            <input id={`${id}-folder`} className="input" type="text" value={folder} placeholder="/Users/you/skills/my-skill" autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setFolder(event.target.value)} />
+            <Input id={`${id}-folder`} type="text" value={folder} placeholder="/Users/you/skills/my-skill" autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setFolder(event.target.value)} />
             <button
               type="button"
               className="btn"

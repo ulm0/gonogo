@@ -5,6 +5,10 @@ import { POSITION_IDS } from '../shared/positions.js';
 import { PROVIDERS, RELIEF_MODES, RELIEF_RULES_DEFAULT } from '../shared/protocol.js';
 import type { ReliefRules, ReliefView } from '../shared/protocol.js';
 import * as api from './api.js';
+import { Checkbox, Switch } from '@/ui/checkbox.js';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Textarea } from '@/ui/textarea.js';
 
 const ENGINES = PROVIDERS.filter((p) => p !== 'custom');
 const text = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -68,46 +72,46 @@ export function ReliefRulesBlock(): ReactElement {
         HIRE ON DEMAND
       </h2>
       <label className="staff-check">
-        <input type="checkbox" className="switch" role="switch" checked={draft.autoApprove} onChange={(event) => set({ autoApprove: event.target.checked })} />
+        <Switch role="switch" checked={draft.autoApprove} onChange={(event) => set({ autoApprove: event.target.checked })} />
         FLIGHT may hire by rule, without asking you each time
       </label>
       <p className="hint">Off (the default): every hire waits for your GO. On: a request that fits every rule below is hired at once and its tile says "hired by flight"; any other becomes a request that names the rule. A role the boss writes itself, a custom command, keys, a payload, permissions and a folder outside its own always ask you.</p>
       <div className="rules-grid">
-        <label>Crew at most <input type="number" className="input" min={1} max={24} value={draft.maxCrew} onChange={(event) => set({ maxCrew: num(event.target.value, draft.maxCrew) })} /></label>
-        <label>Hires per hour <input type="number" className="input" min={1} max={60} value={draft.ratePerHour} onChange={(event) => set({ ratePerHour: num(event.target.value, draft.ratePerHour) })} /></label>
-        <label>Crew budget, USD per day (optional) <input type="number" className="input" min={0.01} step={0.01} value={draft.crewBudgetUsd ?? ''} onChange={(event) => set({ crewBudgetUsd: event.target.value.trim() === '' ? null : num(event.target.value, draft.crewBudgetUsd ?? 1) })} /></label>
-        <label>Highest mode <select className="input" value={draft.maxMode} onChange={(event) => set({ maxMode: event.target.value as ReliefRules['maxMode'] })}>{RELIEF_MODES.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
+        <label>Crew at most <Input type="number" min={1} max={24} value={draft.maxCrew} onChange={(event) => set({ maxCrew: num(event.target.value, draft.maxCrew) })} /></label>
+        <label>Hires per hour <Input type="number" min={1} max={60} value={draft.ratePerHour} onChange={(event) => set({ ratePerHour: num(event.target.value, draft.ratePerHour) })} /></label>
+        <label>Crew budget, USD per day (optional) <Input type="number" min={0.01} step={0.01} value={draft.crewBudgetUsd ?? ''} onChange={(event) => set({ crewBudgetUsd: event.target.value.trim() === '' ? null : num(event.target.value, draft.crewBudgetUsd ?? 1) })} /></label>
+        <label>Highest mode <NativeSelect value={draft.maxMode} onChange={(event) => set({ maxMode: event.target.value as ReliefRules['maxMode'] })}>{RELIEF_MODES.map((m) => <option key={m} value={m}>{m}</option>)}</NativeSelect></label>
       </div>
       <p className="hint">Crew budget: empty = no daily ceiling; room budgets/Redline still apply if set.</p>
       <fieldset className="rules-set"><legend>Positions it may hire</legend>
-        {POSITION_IDS.map((p) => <label key={p} className="staff-check"><input type="checkbox" className="check" checked={draft.positions.includes(p)} onChange={(event) => set({ positions: toggle(draft.positions, p, event.target.checked) })} />{p.toUpperCase()}</label>)}
+        {POSITION_IDS.map((p) => <label key={p} className="staff-check"><Checkbox checked={draft.positions.includes(p)} onChange={(event) => set({ positions: toggle(draft.positions, p, event.target.checked) })} />{p.toUpperCase()}</label>)}
       </fieldset>
       <fieldset className="rules-set"><legend>Engines (none checked: the room's default engine)</legend>
-        {ENGINES.map((p) => <label key={p} className="staff-check"><input type="checkbox" className="check" checked={draft.engines.includes(p)} onChange={(event) => set({ engines: toggle(draft.engines, p, event.target.checked) })} />{p}</label>)}
+        {ENGINES.map((p) => <label key={p} className="staff-check"><Checkbox checked={draft.engines.includes(p)} onChange={(event) => set({ engines: toggle(draft.engines, p, event.target.checked) })} />{p}</label>)}
       </fieldset>
       <fieldset className="rules-set"><legend>Autoscale (the crew follows the Flight Plan; needs automatic hires on)</legend>
-        <label>Mode <select className="input" value={draft.autoscale} onChange={(event) => set({ autoscale: event.target.value as ReliefRules['autoscale'] })}><option value="off">off</option><option value="dry-run">dry run: only says what it would do</option><option value="on">on</option></select></label>
-        <label>Hire when unassigned todo tasks for a position reach <input type="number" className="input" min={1} max={50} value={draft.scaleUpTodo} onChange={(event) => set({ scaleUpTodo: num(event.target.value, draft.scaleUpTodo) })} /></label>
-        <label>Stop an agent idle with no task for (minutes, empty: never) <input type="number" className="input" min={5} max={1440} value={draft.idleStopMinutes ?? ''} onChange={(event) => set({ idleStopMinutes: event.target.value.trim() === '' ? null : num(event.target.value, draft.idleStopMinutes ?? 60) })} /></label>
-        <label>Remove an agent stopped for (hours, empty: never) <input type="number" className="input" min={1} max={720} value={draft.removeStoppedHours ?? ''} onChange={(event) => set({ removeStoppedHours: event.target.value.trim() === '' ? null : num(event.target.value, draft.removeStoppedHours ?? 24) })} /></label>
+        <label>Mode <NativeSelect value={draft.autoscale} onChange={(event) => set({ autoscale: event.target.value as ReliefRules['autoscale'] })}><option value="off">off</option><option value="dry-run">dry run: only says what it would do</option><option value="on">on</option></NativeSelect></label>
+        <label>Hire when unassigned todo tasks for a position reach <Input type="number" min={1} max={50} value={draft.scaleUpTodo} onChange={(event) => set({ scaleUpTodo: num(event.target.value, draft.scaleUpTodo) })} /></label>
+        <label>Stop an agent idle with no task for (minutes, empty: never) <Input type="number" min={5} max={1440} value={draft.idleStopMinutes ?? ''} onChange={(event) => set({ idleStopMinutes: event.target.value.trim() === '' ? null : num(event.target.value, draft.idleStopMinutes ?? 60) })} /></label>
+        <label>Remove an agent stopped for (hours, empty: never) <Input type="number" min={1} max={720} value={draft.removeStoppedHours ?? ''} onChange={(event) => set({ removeStoppedHours: event.target.value.trim() === '' ? null : num(event.target.value, draft.removeStoppedHours ?? 24) })} /></label>
       </fieldset>
       <label>Models it may name (one line per engine, for example <code>claude: opus, sonnet</code>; none listed: only the engine's default)
-        <textarea className="textarea" rows={3} aria-label="Models a rule hire may name" value={modelsDraft} onChange={(event) => { setModelsDraft(event.target.value); set({ models: modelsOf(event.target.value) }); }} />
+        <Textarea variant="field" rows={3} aria-label="Models a rule hire may name" value={modelsDraft} onChange={(event) => { setModelsDraft(event.target.value); set({ models: modelsOf(event.target.value) }); }} />
       </label>
       <label className="staff-check">
-        <input type="checkbox" className="check" checked={draft.mayStop} onChange={(event) => set({ mayStop: event.target.checked })} />
+        <Checkbox checked={draft.mayStop} onChange={(event) => set({ mayStop: event.target.checked })} />
         FLIGHT may stop agents with fire_agent (not itself, and not the ones you protect). Protect the consoles that gate your work, a reviewer for one, in their Edit form.
       </label>
       <label className="staff-check">
-        <input type="checkbox" className="check" checked={draft.mayRemove} onChange={(event) => set({ mayRemove: event.target.checked })} />
+        <Checkbox checked={draft.mayRemove} onChange={(event) => set({ mayRemove: event.target.checked })} />
         FLIGHT may also remove agents (their record goes; their folder is kept renamed, and an agent with keys of its own is never removed)
       </label>
       <label className="staff-check">
-        <input type="checkbox" className="check" checked={draft.bypassInCleanRoom} onChange={(event) => set({ bypassInCleanRoom: event.target.checked })} />
+        <Checkbox checked={draft.bypassInCleanRoom} onChange={(event) => set({ bypassInCleanRoom: event.target.checked })} />
         Allow bypassPermissions by rule in a Clean Room (egress on, no global MCP; the agent runs every tool without asking). In the Docker setup (GONOGO_CLEANROOM_NETWORK=container:*) a Clean Room shares gonogo's network and reaches every loopback service there, the managed Ollama among them.
       </label>
       <label className="staff-check">
-        <input type="checkbox" className="check" checked={draft.autoOnHost} onChange={(event) => set({ autoOnHost: event.target.checked })} />
+        <Checkbox checked={draft.autoOnHost} onChange={(event) => set({ autoOnHost: event.target.checked })} />
         Allow auto mode outside a Clean Room (agents the boss hires can then change anything your user can, without asking)
       </label>
       <div className="rules-buttons">

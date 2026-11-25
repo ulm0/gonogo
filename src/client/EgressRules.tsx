@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import * as api from './api.js';
+import { Switch } from '@/ui/checkbox.js';
 
 /** Flight Rules: whether a Clean Room agent holds the Anthropic API key (docs/features/egress.md). Saving asks for the password again. */
 export function EgressBlock(): ReactElement {
@@ -21,8 +22,8 @@ export function EgressBlock(): ReactElement {
       </h2>
       {on !== null && (
         <label className="staff-check">
-          <input
-            type="checkbox" className="switch" role="switch"
+          <Switch
+ role="switch"
             checked={on}
             onChange={(event) => {
               setProblem(null);

@@ -2,6 +2,9 @@
 import type { ReactElement } from 'react';
 import type { LinkPriority } from '../shared/protocol.js';
 import type { OfferTerms } from './docking.js';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Checkbox } from '@/ui/checkbox.js';
 
 const PRIORITIES: ReadonlyArray<{ value: '' | LinkPriority; label: string }> = [
   { value: '', label: 'Normal' },
@@ -16,7 +19,7 @@ export function OfferTermsFields({ id, station, terms, problems, onChange }: { i
       <div className="dk-handoff">
         <div className="field">
           <label htmlFor={`${id}-due`}>Due</label>
-          <input id={`${id}-due`} className="input" type="text" placeholder="YYYY-MM-DD" value={terms.due} aria-invalid={problems.due !== undefined} aria-describedby={problems.due === undefined ? undefined : `${id}-due-e`} onChange={(e) => onChange({ ...terms, due: e.target.value })} />
+          <Input id={`${id}-due`} type="text" placeholder="YYYY-MM-DD" value={terms.due} aria-invalid={problems.due !== undefined} aria-describedby={problems.due === undefined ? undefined : `${id}-due-e`} onChange={(e) => onChange({ ...terms, due: e.target.value })} />
           {problems.due !== undefined && (
             <p className="error" id={`${id}-due-e`}>
               {problems.due}
@@ -25,23 +28,23 @@ export function OfferTermsFields({ id, station, terms, problems, onChange }: { i
         </div>
         <div className="field">
           <label htmlFor={`${id}-prio`}>Priority</label>
-          <select id={`${id}-prio`} className="input" value={terms.priority} onChange={(e) => onChange({ ...terms, priority: e.target.value as OfferTerms['priority'] })}>
+          <NativeSelect id={`${id}-prio`} value={terms.priority} onChange={(e) => onChange({ ...terms, priority: e.target.value as OfferTerms['priority'] })}>
             {PRIORITIES.map((p) => (
               <option key={p.value} value={p.value}>
                 {p.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div className="field">
           <label htmlFor={`${id}-budget`}>Most it may spend (dollars)</label>
-          <input id={`${id}-budget`} className="input" type="text" inputMode="decimal" value={terms.budget} aria-invalid={problems.budget !== undefined} aria-describedby={`${id}-budget-h`} onChange={(e) => onChange({ ...terms, budget: e.target.value })} />
+          <Input id={`${id}-budget`} type="text" inputMode="decimal" value={terms.budget} aria-invalid={problems.budget !== undefined} aria-describedby={`${id}-budget-h`} onChange={(e) => onChange({ ...terms, budget: e.target.value })} />
           <p className={problems.budget === undefined ? 'hint' : 'error'} id={`${id}-budget-h`}>
             {problems.budget ?? `${station} enforces it with its own Propellant, and tells you the cost only if it has that rule on. An estimate, never a bill.`}
           </p>
         </div>
         <div className="staff-check">
-          <input id={`${id}-onward`} type="checkbox" className="check" checked={terms.onward} onChange={(e) => onChange({ ...terms, onward: e.target.checked })} />
+          <Checkbox id={`${id}-onward`} checked={terms.onward} onChange={(e) => onChange({ ...terms, onward: e.target.checked })} />
           <label htmlFor={`${id}-onward`}>{station} may pass it on to another station, with this text</label>
         </div>
       </div>

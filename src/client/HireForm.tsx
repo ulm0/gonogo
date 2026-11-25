@@ -41,6 +41,10 @@ import { store, useStore } from './store.js';
 import { copyText } from './uplink.js';
 import type { ClientState } from './store.js';
 import './forms.css';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Textarea } from '@/ui/textarea.js';
+import { Checkbox, Switch } from '@/ui/checkbox.js';
 
 const MODES: ReadonlyArray<{ value: PermissionMode; label: string; hint: string }> = [
   { value: 'default', label: 'ASK', hint: 'Asks you for a go before a tool runs' },
@@ -160,7 +164,7 @@ function EngineNoteView({ note, id }: { note: EngineNote; id: string }): ReactEl
           <label htmlFor={`${id}-cmd`} className="label">
             Install command
           </label>
-          <input ref={field} id={`${id}-cmd`} className="input" type="text" readOnly value={install} spellCheck={false} onFocus={(event) => event.currentTarget.select()} />
+          <Input ref={field} id={`${id}-cmd`} type="text" readOnly value={install} spellCheck={false} onFocus={(event) => event.currentTarget.select()} />
           <button type="button" className="btn" onClick={copy}>
             {copied === null ? 'Copy' : copied ? 'Copied' : 'Not copied'}
           </button>
@@ -492,9 +496,8 @@ function Staff({ form }: { form: Target }): ReactElement {
       hint={nameLocked ? 'Stop the console to rename it.' : 'A short name. You and the other agents reach this console by it: lowercase letters, digits and hyphens.'}
       error={nameError}
     >
-      <input
+      <Input
         id={`${id}-name`}
-        className="input"
         type="text"
         value={values.name}
         readOnly={nameLocked}
@@ -524,9 +527,8 @@ function Staff({ form }: { form: Target }): ReactElement {
       }
       error={dirError}
     >
-      <input
+      <Input
         id={`${id}-dir`}
-        className="input"
         type="text"
         value={values.dir}
         autoComplete="off"
@@ -546,9 +548,8 @@ function Staff({ form }: { form: Target }): ReactElement {
       hint={'Words split on spaces, or a JSON array when an argument has spaces. No shell: pipes and quotes need the array form, for example ["sh","-c","make watch"].'}
       error={commandError}
     >
-      <input
+      <Input
         id={`${id}-command`}
-        className="input"
         type="text"
         value={values.command}
         placeholder={'htop   or   ["node","server.js"]'}
@@ -565,9 +566,9 @@ function Staff({ form }: { form: Target }): ReactElement {
   const engineField = !custom && (
     <>
       <Control id={`${id}-engine`} label="Engine" hint={engineHint(values.provider)}>
-        <select
+        <NativeSelect
           id={`${id}-engine`}
-          className="input staff-engine"
+          className="staff-engine"
           value={values.provider}
           aria-describedby={`${id}-engine-hint ${id}-engine-note`}
           onChange={(event) => pick((v) => (editing ? chooseEngineAgain(v, event.target.value as Provider, opened) : chooseEngine(v, event.target.value as Provider)))}
@@ -577,7 +578,7 @@ function Staff({ form }: { form: Target }): ReactElement {
               {option.text}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </Control>
       <EngineNoteView key={values.provider} id={`${id}-engine-note`} note={engineNote(values.provider, info?.installed ?? [], checks.find((c) => c.provider === values.provider))} />
     </>
@@ -594,9 +595,8 @@ function Staff({ form }: { form: Target }): ReactElement {
       }
       error={modelError}
     >
-      <input
+      <Input
         id={`${id}-model`}
-        className="input"
         type="text"
         list={`${id}-models`}
         value={values.model}
@@ -631,7 +631,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const EFFORT_FLAG: Partial<Record<Provider, string>> = { claude: '--effort', pi: '--thinking', opencode: 'the variant of its model (only with a model set)' };
   const effortField = takesEffort(values.provider) && (
     <Control id={`${id}-effort`} label="Effort" hint={`Passed to ${providerInfo(values.provider).label} as ${EFFORT_FLAG[values.provider] ?? '--effort'}. ${roomEffort === null ? 'Empty uses its own.' : `Empty: the room's default ${roomEffort.level} applies.`} A setting changed inside the console only changes that session.`} error={undefined}>
-      <select id={`${id}-effort`} className="input" value={values.effort} onChange={(event) => change({ effort: event.target.value }, 'effort')}>
+      <NativeSelect id={`${id}-effort`} value={values.effort} onChange={(event) => change({ effort: event.target.value }, 'effort')}>
         <option value="">{roomEffort === null ? 'its own' : `room default (${roomEffort.level})`}</option>
         {/* a stored level this page does not know (a newer server) stays selected instead of falling back to blank, which a save would clear */}
         {values.effort !== '' && !(EFFORTS as readonly string[]).includes(values.effort) && <option value={values.effort}>{values.effort}</option>}
@@ -640,7 +640,7 @@ function Staff({ form }: { form: Target }): ReactElement {
             {level}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </Control>
   );
   const roleField = !custom && (
@@ -650,9 +650,9 @@ function Staff({ form }: { form: Target }): ReactElement {
       hint={`${position !== null && !editing ? `The default for ${position.callSign}. Yours to rewrite. ` : ''}${roleLength} / ${ROLE_MAX_CHARS}`}
       error={roleError}
     >
-      <textarea
+      <Textarea variant="field"
         id={`${id}-role`}
-        className="textarea staff-role"
+        className="staff-role"
         value={values.role}
         aria-invalid={roleError !== undefined}
         aria-describedby={describedBy(`${id}-role`, true, roleError !== undefined)}
@@ -700,10 +700,9 @@ function Staff({ form }: { form: Target }): ReactElement {
         {call === 'A CONSOLE' ? 'This console' : call} will run every tool without asking: shell commands, file edits, the network. It runs as you, with your {providerInfo(values.provider).label} login.
       </p>
       <div className="staff-check">
-        <input
+        <Checkbox
           id={`${id}-ok`}
           ref={confirmBox}
-          type="checkbox" className="check"
           checked={values.confirm}
           aria-invalid={confirmError !== undefined}
           aria-describedby={confirmError !== undefined ? `${id}-ok-error` : undefined}
@@ -724,7 +723,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   );
   const sandboxSelect = values.cleanRoom && (
     <Control id={`${id}-sandbox`} label="Sandbox" hint={`How the container is walled off. Docker is the default wall; gVisor and a microVM need their runtime installed in Docker (docker info lists it). The room's default is ${FLAVOR_TEXT[roomModels?.sandbox ?? 'docker']}. gVisor with gonogo's container network is not verified yet. The microVM cannot start yet: it needs a network mode gonogo does not have.`}>
-      <select id={`${id}-sandbox`} className="input" value={values.sandbox} onChange={(event) => change({ sandbox: event.target.value as Values['sandbox'] }, 'cleanRoom')}>
+      <NativeSelect id={`${id}-sandbox`} value={values.sandbox} onChange={(event) => change({ sandbox: event.target.value as Values['sandbox'] }, 'cleanRoom')}>
         <option value="">Room default ({FLAVOR_TEXT[roomModels?.sandbox ?? 'docker']})</option>
         {CLEAN_ROOM_FLAVORS.map((flavor) => {
           const missing = flavors !== null && !flavors.available[flavor];
@@ -735,15 +734,14 @@ function Staff({ form }: { form: Target }): ReactElement {
             </option>
           );
         })}
-      </select>
+      </NativeSelect>
     </Control>
   );
   const cleanRoomBox = takesCleanRoom(values.provider) && (
     <div className="staff-clean" data-invalid={cleanError !== undefined ? '' : undefined}>
       <div className="staff-check">
-        <input
+        <Checkbox
           id={`${id}-clean`}
-          type="checkbox" className="check"
           checked={values.cleanRoom}
           aria-invalid={cleanError !== undefined}
           aria-describedby={describedBy(`${id}-clean`, true, cleanError !== undefined)}
@@ -759,11 +757,11 @@ function Staff({ form }: { form: Target }): ReactElement {
       {values.cleanRoom && (
         <div className="field">
           <label htmlFor={`${id}-clean-egress`}>Anthropic API key</label>
-          <select id={`${id}-clean-egress`} className="input" value={values.egress} onChange={(event) => change({ egress: event.target.value as Values['egress'] }, 'cleanRoom')}>
+          <NativeSelect id={`${id}-clean-egress`} value={values.egress} onChange={(event) => change({ egress: event.target.value as Values['egress'] }, 'cleanRoom')}>
             <option value="">Follow the room's setting</option>
             <option value="on">Keep it out of the container (a proxy holds it)</option>
             <option value="off">Leave it in the container</option>
-          </select>
+          </NativeSelect>
         </div>
       )}
       <p className="hint" id={`${id}-clean-hint`}>
@@ -777,9 +775,8 @@ function Staff({ form }: { form: Target }): ReactElement {
   const worktreeBox = !(takesCleanRoom(values.provider) && values.cleanRoom) && (
     <div className="staff-clean" data-invalid={worktreeError !== undefined ? '' : undefined}>
       <div className="staff-check">
-        <input
+        <Checkbox
           id={`${id}-worktree`}
-          type="checkbox" className="check"
           checked={values.worktree}
           aria-invalid={worktreeError !== undefined}
           aria-describedby={describedBy(`${id}-worktree`, true, worktreeError !== undefined)}
@@ -800,7 +797,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const autostartBox = (startsAgain || !values.autostart) && (
     <div className="staff-clean">
       <div className="staff-check">
-        <input id={`${id}-autostart`} type="checkbox" className="check" checked={values.autostart} onChange={(event) => change({ autostart: event.target.checked }, 'autostart')} aria-describedby={`${id}-autostart-hint`} />
+        <Checkbox id={`${id}-autostart`} checked={values.autostart} onChange={(event) => change({ autostart: event.target.checked }, 'autostart')} aria-describedby={`${id}-autostart-hint`} />
         <label htmlFor={`${id}-autostart`}>Start with gonogo</label>
       </div>
       <p className="hint" id={`${id}-autostart-hint`}>
@@ -812,7 +809,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const coauthorBox = !values.cleanRoom && (
     <div className="staff-clean">
       <div className="staff-check">
-        <input id={`${id}-coauthor`} type="checkbox" className="check" checked={values.coauthor} onChange={(event) => change({ coauthor: event.target.checked }, 'coauthor')} aria-describedby={`${id}-coauthor-hint`} />
+        <Checkbox id={`${id}-coauthor`} checked={values.coauthor} onChange={(event) => change({ coauthor: event.target.checked }, 'coauthor')} aria-describedby={`${id}-coauthor-hint`} />
         <label htmlFor={`${id}-coauthor`}>Co-author line in its commits</label>
       </div>
       <p className="hint" id={`${id}-coauthor-hint`}>
@@ -823,7 +820,7 @@ function Staff({ form }: { form: Target }): ReactElement {
   const protectBox = editing && original !== null && !original.boss && (
     <div className="staff-clean">
       <div className="staff-check">
-        <input id={`${id}-protected`} type="checkbox" className="check" checked={values.protectedAgent} onChange={(event) => change({ protectedAgent: event.target.checked }, 'coauthor')} aria-describedby={`${id}-protected-hint`} />
+        <Checkbox id={`${id}-protected`} checked={values.protectedAgent} onChange={(event) => change({ protectedAgent: event.target.checked }, 'coauthor')} aria-describedby={`${id}-protected-hint`} />
         <label htmlFor={`${id}-protected`}>Protect it from FLIGHT's fire_agent</label>
       </div>
       <p className="hint" id={`${id}-protected-hint`}>
@@ -834,9 +831,8 @@ function Staff({ form }: { form: Target }): ReactElement {
   const remoteBox = values.provider === 'claude' && !values.cleanRoom && (values.remoteControl || phoneMode === 'remote-control' || phoneMode === 'both') && (
     <div className="staff-clean" data-invalid={remoteError !== undefined ? '' : undefined}>
       <div className="staff-check">
-        <input
+        <Checkbox
           id={`${id}-remote`}
-          type="checkbox" className="check"
           checked={values.remoteControl}
           aria-invalid={remoteError !== undefined}
           aria-describedby={describedBy(`${id}-remote`, true, remoteError !== undefined)}
@@ -881,7 +877,7 @@ function Staff({ form }: { form: Target }): ReactElement {
           <li key={`${row.from}-${row.kind}-${row.name}`}>
             {row.from !== 'agent' ? (
               <label>
-                <input type="checkbox" role="switch" className="switch" checked={row.on} disabled={!row.canSwitch} onChange={(event) => toggle(row, event.target.checked)} /> {row.name}
+                <Switch role="switch" checked={row.on} disabled={!row.canSwitch} onChange={(event) => toggle(row, event.target.checked)} /> {row.name}
               </label>
             ) : (
               <span>{row.name}</span>
@@ -907,9 +903,9 @@ function Staff({ form }: { form: Target }): ReactElement {
           hint="One JSON object: a server name, then its command, args and env, or type http or sse with url and headers. The values are saved in plain text, keys and tokens included. Their tools are not allowed in advance: the permission mode decides."
           error={serversError}
         >
-          <textarea
+          <Textarea variant="field"
             id={`${id}-servers`}
-            className="textarea staff-servers"
+            className="staff-servers"
             value={values.servers}
             placeholder={SERVERS_EXAMPLE}
             autoComplete="off"
@@ -937,9 +933,9 @@ function Staff({ form }: { form: Target }): ReactElement {
             hint={`One absolute folder per line, each with a SKILL.md. ${providerInfo(values.provider).label} loads them for this console only.`}
             error={skillsError}
           >
-            <textarea
+            <Textarea variant="field"
               id={`${id}-skills`}
-              className="textarea staff-skills"
+              className="staff-skills"
               value={values.skills}
               placeholder="/Users/you/skills/my-skill"
               autoComplete="off"
@@ -985,9 +981,8 @@ function Staff({ form }: { form: Target }): ReactElement {
           <div className="staff-key-row" key={i}>
             <div className="field">
               <label htmlFor={`${id}-key-name-${i}`}>Key name</label>
-              <input
+              <Input
                 id={`${id}-key-name-${i}`}
-                className="input"
                 type="text"
                 list={`${id}-key-names`}
                 value={row.name}
@@ -1003,9 +998,8 @@ function Staff({ form }: { form: Target }): ReactElement {
             </div>
             <div className="field">
               <label htmlFor={`${id}-key-value-${i}`}>Value</label>
-              <input
+              <Input
                 id={`${id}-key-value-${i}`}
-                className="input"
                 type="password"
                 value={row.value}
                 autoComplete="new-password"

@@ -3,6 +3,8 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { AutoUpdateView, AutoUpdateWindow } from '../shared/protocol.js';
 import * as api from './api.js';
+import { Checkbox } from '@/ui/checkbox.js';
+import { Input } from '@/ui/input.js';
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -63,14 +65,14 @@ export function AutoUpdateBlock(): ReactElement | null {
         AUTO-UPDATE
       </h2>
       <label className="staff-check">
-        <input type="checkbox" className="check" checked={view.enabled} disabled={view.source === 'env' || !view.available} onChange={(event) => apply(api.setAutoUpdate({ enabled: event.target.checked }))} />
+        <Checkbox checked={view.enabled} disabled={view.source === 'env' || !view.available} onChange={(event) => apply(api.setAutoUpdate({ enabled: event.target.checked }))} />
         Update gonogo by itself, in the window below
       </label>
       {view.source === 'env' && <p className="hint">GONOGO_AUTO_UPDATE sets this switch: change the environment of the container.</p>}
       {!view.available && <p className="hint">Not available here: {view.unavailable}.</p>}
       <label className="field">
         <span className="label">WINDOWS (24 HOURS, LOCAL TIME)</span>
-        <input className="input" aria-label="Auto-update windows" value={windows} onChange={(event) => setWindows(event.target.value)} onBlur={() => parsed !== null && windowsText(view.windows) !== windowsText(parsed) && apply(api.setAutoUpdate({ windows: parsed }))} />
+        <Input aria-label="Auto-update windows" value={windows} onChange={(event) => setWindows(event.target.value)} onBlur={() => parsed !== null && windowsText(view.windows) !== windowsText(parsed) && apply(api.setAutoUpdate({ windows: parsed }))} />
       </label>
       {parsed === null && <p className="error">Windows look like 02:00-05:00, with commas between up to four; an end before the start runs over midnight.</p>}
       <p className="hint">

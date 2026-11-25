@@ -15,6 +15,8 @@ import type { Edit, Eol } from './editor.js';
 import { selectConsole, showHangar, showRecorder, showRoom, useFeature, useStore } from './store.js';
 import './loop.css';
 import './hangar.css';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Input } from '@/ui/input.js';
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -30,14 +32,14 @@ export function WorkspaceHead({ title, current, id, heading }: { title: string; 
       </h1>
       <div className="field hg-agent">
         <label htmlFor={`${id}-agent`}>Agent</label>
-        <select id={`${id}-agent`} className="input" value={selected !== null && order.includes(selected) ? selected : ''} onChange={(e) => selectConsole(e.target.value)}>
+        <NativeSelect id={`${id}-agent`} value={selected !== null && order.includes(selected) ? selected : ''} onChange={(e) => selectConsole(e.target.value)}>
           {(selected === null || !order.includes(selected)) && <option value="">Pick an agent</option>}
           {order.map((name) => (
             <option key={name} value={name}>
               {name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <nav className="hg-tabs" aria-label="Files and git">
         <button type="button" className="btn" data-kind={current === 'hangar' ? 'primary' : 'quiet'} aria-current={current === 'hangar' ? 'page' : undefined} onClick={showHangar}>
@@ -369,9 +371,8 @@ function Files({ agent }: { agent: string }): ReactElement {
           >
             <div className="field" data-invalid={createProblem !== null ? '' : undefined}>
               <label htmlFor={`${id}-new`}>Path of the new file</label>
-              <input
+              <Input
                 id={`${id}-new`}
-                className="input"
                 value={creating}
                 autoFocus
                 autoComplete="off"

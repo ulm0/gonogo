@@ -5,6 +5,8 @@ import type { DockRules, DockView } from '../shared/protocol.js';
 import * as api from './api.js';
 import { patchOf, RULE_FIELDS, STALE_HELP, staleProblem, valueOf } from './dockRules.js';
 import { useRun } from './WallView.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Input } from '@/ui/input.js';
 
 export function DockRulesBlock({ dock }: { dock: DockView }): ReactElement {
   const id = useId();
@@ -53,13 +55,13 @@ export function DockRulesBlock({ dock }: { dock: DockView }): ReactElement {
           {RULE_FIELDS.map((f) => (
             <div className="field" key={f.key}>
               <label htmlFor={`${id}-${f.key}`}>{f.label}</label>
-              <select id={`${id}-${f.key}`} className="input" value={valueOf(rules, f.key)} aria-disabled={busy || undefined} aria-describedby={`${id}-${f.key}-h`} onChange={(e) => save(patchOf(f.key, e.target.value))}>
+              <NativeSelect id={`${id}-${f.key}`} value={valueOf(rules, f.key)} aria-disabled={busy || undefined} aria-describedby={`${id}-${f.key}-h`} onChange={(e) => save(patchOf(f.key, e.target.value))}>
                 {f.options.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               <p className="hint" id={`${id}-${f.key}-h`}>
                 {f.help(dock.name)}
               </p>
@@ -68,7 +70,7 @@ export function DockRulesBlock({ dock }: { dock: DockView }): ReactElement {
           <form className="field dk-stale" onSubmit={submitStale} noValidate>
             <label htmlFor={`${id}-stale`}>Tell my boss when a task is quiet for (hours)</label>
             <div className="dk-handoff">
-              <input id={`${id}-stale`} className="input" type="text" inputMode="numeric" value={stale} aria-invalid={staleError !== undefined} aria-describedby={`${id}-stale-h`} onChange={(e) => setStale(e.target.value)} />
+              <Input id={`${id}-stale`} type="text" inputMode="numeric" value={stale} aria-invalid={staleError !== undefined} aria-describedby={`${id}-stale-h`} onChange={(e) => setStale(e.target.value)} />
               <button type="submit" className="btn" aria-label={`Set the quiet time for ${dock.name}`} aria-disabled={busy || undefined}>
                 Set
               </button>

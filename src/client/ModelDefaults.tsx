@@ -11,6 +11,9 @@ import * as api from './api.js';
 import { FLAVOR_TEXT, MODEL_PROVIDERS, modelNames, publishModelDefaults, useEngineModels } from './models.js';
 import { ModelListStatus } from './EngineModelList.js';
 import { useRun } from './WallView.js';
+import { Input } from '@/ui/input.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Checkbox } from '@/ui/checkbox.js';
 
 const MODEL_RE = new RegExp(MODEL_PATTERN);
 
@@ -31,9 +34,8 @@ function Row({ label, names, saved, set, onSaved, status, provider }: { label: s
       <label htmlFor={id} className="rules-call">
         {label}
       </label>
-      <input
+      <Input
         id={id}
-        className="input"
         type="text"
         list={`${id}-names`}
         value={text}
@@ -85,14 +87,14 @@ function Pick({ label, saved, options, empty, set, onSaved }: { label: string; s
       <label htmlFor={id} className="rules-call">
         {label}
       </label>
-      <select id={id} className="input" data-fit value={saved} disabled={busy} onChange={(event) => run(async () => onSaved(await set(event.target.value === '' ? null : event.target.value)))}>
+      <NativeSelect id={id} data-fit value={saved} disabled={busy} onChange={(event) => run(async () => onSaved(await set(event.target.value === '' ? null : event.target.value)))}>
         <option value="">{empty}</option>
         {options.map((o) => (
           <option key={o.value} value={o.value} disabled={o.disabled}>
             {o.text}
           </option>
         ))}
-      </select>
+      </NativeSelect>
       {error !== null && (
         <p className="error" role="alert">
           {error}
@@ -113,9 +115,8 @@ function ModePick({ saved, onSaved }: { saved: PermissionMode | undefined; onSav
       <label htmlFor={id} className="rules-call">
         Permission mode
       </label>
-      <select
+      <NativeSelect
         id={id}
-        className="input"
         data-fit
         value={asking ? 'bypassPermissions' : (saved ?? '')}
         disabled={busy}
@@ -130,10 +131,10 @@ function ModePick({ saved, onSaved }: { saved: PermissionMode | undefined; onSav
         <option value="acceptEdits">Accept edits</option>
         <option value="auto">Auto</option>
         <option value="bypassPermissions">Bypass</option>
-      </select>
+      </NativeSelect>
       {asking && (
         <div className="staff-check" role="group" aria-label="Confirm bypass">
-          <input id={`${id}-ok`} type="checkbox" className="check" checked={ok} onChange={(event) => setOk(event.target.checked)} />
+          <Checkbox id={`${id}-ok`} checked={ok} onChange={(event) => setOk(event.target.checked)} />
           <label htmlFor={`${id}-ok`}>Hires from the form start in bypass: every tool runs without asking. Agents that hire (hire_agent, Relief) never get bypass from this.</label>
           <button type="button" className="btn" aria-disabled={!ok || busy || undefined} onClick={() => ok && !busy && run(async () => { onSaved(await api.setDefaultMode('bypassPermissions', true)); setAsking(false); })}>
             Set
@@ -177,13 +178,13 @@ function PositionEngine({ value, onChange }: { value: Provider; onChange: (provi
       <label className="label" htmlFor={id}>
         ENGINE
       </label>{' '}
-      <select id={id} className="input" value={value} onChange={(event) => onChange(event.target.value as Provider)}>
+      <NativeSelect id={id} value={value} onChange={(event) => onChange(event.target.value as Provider)}>
         {MODEL_PROVIDERS.map((provider) => (
           <option key={provider} value={provider}>
             {providerInfo(provider).label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </p>
   );
 }

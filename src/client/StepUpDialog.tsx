@@ -9,6 +9,7 @@ import * as api from './api.js';
 import type { StepUpAnswer } from './api.js';
 import { passkeysSupported } from './passkey.js';
 import { Dialog, DialogContent, DialogTitle } from '@/ui/dialog.js';
+import { Input } from '@/ui/input.js';
 
 interface Asking {
   needsCode: boolean;
@@ -23,7 +24,20 @@ export function StepUpDialog(): ReactElement {
   const [code, setCode] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => api.onStepUp((needsCode, message, passkey) => new Promise<StepUpAnswer | null>((resolve) => setAsking({ needsCode, passkey: passkey && passkeysSupported(), message, resolve }))), []);
+  useEffect(
+    () =>
+      api.onStepUp(
+        (needsCode, message, passkey) =>
+          new Promise<StepUpAnswer | null>((resolve) =>
+            setAsking((old) => {
+              // a second ask while one is open: the first one is cancelled, so its call does not wait for ever
+              old?.resolve(null);
+              return { needsCode, passkey: passkey && passkeysSupported(), message, resolve };
+            }),
+          ),
+      ),
+    [],
+  );
 
   const finish = (answer: StepUpAnswer | null): void => {
     asking?.resolve(answer);
@@ -59,8 +73,8 @@ export function StepUpDialog(): ReactElement {
               {problem}
             </p>
           )}
-          <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" placeholder="Password" autoFocus={asking?.passkey !== true} required />
-          {asking?.needsCode === true && <input className="input" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Code from your authenticator, or a recovery code" placeholder="Code or recovery code" autoComplete="one-time-code" required spellCheck={false} />}
+          <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" placeholder="Password" autoFocus={asking?.passkey !== true} required />
+          {asking?.needsCode === true && <Input value={code} onChange={(e) => setCode(e.target.value)} aria-label="Code from your authenticator, or a recovery code" placeholder="Code or recovery code" autoComplete="one-time-code" required spellCheck={false} />}
           <div className="flex justify-end gap-2">
             <button type="button" className="btn" onClick={() => finish(null)}>
               CANCEL

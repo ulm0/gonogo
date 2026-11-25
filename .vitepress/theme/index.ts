@@ -11,6 +11,8 @@ import '@fontsource/geist-mono/600.css';
 import '../../src/client/tokens.css';
 import '../../src/client/primitives.css';
 import '../../src/client/shadcn.css';
+// the controls as plain classes for the mocks (the app draws them with src/client/ui)
+import './controls.css';
 import './custom.css';
 import LiverySwitch from './LiverySwitch.vue';
 import NavVersion from './NavVersion.vue';

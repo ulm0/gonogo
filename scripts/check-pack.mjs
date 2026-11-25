@@ -49,6 +49,7 @@ export function listProblems(entries, serverModules) {
     'package/dist/shared/protocol.js',
     'package/dist/shared/positions.js',
     'package/dist/shared/fuel.js',
+    'package/dist/shared/controls.js',
     'package/dist/shared/cron.js',
     'package/dist/shared/details.js',
     'package/dist/shared/diff.js',
@@ -68,7 +69,7 @@ export function listProblems(entries, serverModules) {
     /^package\/package\.json$/,
     /^package\/README\.md$/,
     /^package\/licen[cs]e(\.[^/]+)?$/i,
-    /^package\/dist\/shared\/(protocol|positions|fuel|cron|details|diff|layout|livery|longtext|prices|features|registry)\.js$/,
+    /^package\/dist\/shared\/(protocol|positions|fuel|controls|cron|details|diff|layout|livery|longtext|prices|features|registry)\.js$/,
     /^package\/dist\/client\/.+/,
   ];
   for (const e of entries) {

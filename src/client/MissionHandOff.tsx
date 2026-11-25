@@ -8,6 +8,8 @@ import type { OfferTerms } from './docking.js';
 import { refreshLinks } from './linksData.js';
 import { useStore } from './store.js';
 import { useRun } from './WallView.js';
+import { NativeSelect } from '@/ui/native-select.js';
+import { Input } from '@/ui/input.js';
 
 const PRIORITIES: ReadonlyArray<{ value: '' | LinkPriority; label: string }> = [
   { value: '', label: 'Normal' },
@@ -55,27 +57,27 @@ export function MissionHandOff({ mission }: { mission: Mission }): ReactElement 
     <form className="dk-handoff" aria-label={`Hand off ${mission.name}`} onSubmit={submit}>
       <div className="field">
         <label htmlFor={`${id}-s`}>Station</label>
-        <select id={`${id}-s`} className="input" value={dock.id} onChange={(e) => setDockId(e.target.value)}>
+        <NativeSelect id={`${id}-s`} value={dock.id} onChange={(e) => setDockId(e.target.value)}>
           {docks.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <div className="field">
         <label htmlFor={`${id}-d`}>Due (optional)</label>
-        <input id={`${id}-d`} className="input" type="text" placeholder="YYYY-MM-DD" value={terms.due} aria-invalid={problems.due !== undefined} onChange={(e) => setTerms({ ...terms, due: e.target.value })} />
+        <Input id={`${id}-d`} type="text" placeholder="YYYY-MM-DD" value={terms.due} aria-invalid={problems.due !== undefined} onChange={(e) => setTerms({ ...terms, due: e.target.value })} />
       </div>
       <div className="field">
         <label htmlFor={`${id}-p`}>Priority</label>
-        <select id={`${id}-p`} className="input" value={terms.priority} onChange={(e) => setTerms({ ...terms, priority: e.target.value as OfferTerms['priority'] })}>
+        <NativeSelect id={`${id}-p`} value={terms.priority} onChange={(e) => setTerms({ ...terms, priority: e.target.value as OfferTerms['priority'] })}>
           {PRIORITIES.map((p) => (
             <option key={p.value} value={p.value}>
               {p.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
       <button type="submit" className="btn" data-kind="primary" aria-disabled={busy || undefined}>
         {busy ? 'Handing off…' : 'Hand off'}

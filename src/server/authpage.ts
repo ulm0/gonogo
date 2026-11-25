@@ -3,6 +3,7 @@
  * page needs no inline-script exception and works with the strictest CSP. Dressed with the built client's stylesheet when there is one.
  */
 import { createHash } from 'node:crypto';
+import { INPUT_CLASS } from '../shared/controls.js';
 
 const STYLE = `
 body{margin:0;background:var(--body,#e4e2dc);color:var(--text,#1b1b1a);font:15px/1.4 var(--font-ui,system-ui,sans-serif)}
@@ -74,8 +75,8 @@ export function authPage(input: AuthPageInput): string {
     return (
       `${head}<form class="module lg-form" method="post" action="/login/device" autocomplete="off"><h2 class="label">SIGN IN A TERMINAL</h2>` +
       `<p>Type the code your terminal shows. <strong>A link or a message cannot carry it</strong>: if somebody else is asking you for this code, do not give it.</p>` +
-      `<label><span class="label">CODE</span><input class="input" name="code" autocomplete="off" required maxlength="12" spellcheck="false" autocapitalize="characters" autofocus></label>` +
-      (input.stepUp === undefined ? '' : `<p class="hint">It is more than five minutes since you gave your password: give it again.</p><label><span class="label">PASSWORD</span><input class="input" name="password" type="password" autocomplete="current-password" required maxlength="256"></label>${input.stepUp.code ? '<label><span class="label">CODE FROM YOUR AUTHENTICATOR</span><input class="input" name="totp" autocomplete="one-time-code" required maxlength="20" spellcheck="false"></label>' : ''}`) +
+      `<label><span class="label">CODE</span><input class="${INPUT_CLASS}" data-slot="input" name="code" autocomplete="off" required maxlength="12" spellcheck="false" autocapitalize="characters" autofocus></label>` +
+      (input.stepUp === undefined ? '' : `<p class="hint">It is more than five minutes since you gave your password: give it again.</p><label><span class="label">PASSWORD</span><input class="${INPUT_CLASS}" data-slot="input" name="password" type="password" autocomplete="current-password" required maxlength="256"></label>${input.stepUp.code ? '<label><span class="label">CODE FROM YOUR AUTHENTICATOR</span><input class="${INPUT_CLASS}" data-slot="input" name="totp" autocomplete="one-time-code" required maxlength="20" spellcheck="false"></label>' : ''}`) +
       `${error}<button class="btn" data-kind="primary" type="submit">FIND IT</button></form>${tail}`
     );
   }
@@ -99,7 +100,7 @@ export function authPage(input: AuthPageInput): string {
       `${head}<form class="module lg-form" method="post" action="/api/auth/second" autocomplete="off"><h2 class="label">SECOND FACTOR</h2>` +
       `<p>Give the six-digit code of your authenticator, or one of your recovery codes.</p>` +
       `<input type="hidden" name="pending" value="${esc(input.pending ?? '')}">` +
-      `<label><span class="label">CODE</span><input class="input" name="code" inputmode="text" autocomplete="one-time-code" required maxlength="20" autofocus spellcheck="false"></label>` +
+      `<label><span class="label">CODE</span><input class="${INPUT_CLASS}" data-slot="input" name="code" inputmode="text" autocomplete="one-time-code" required maxlength="20" autofocus spellcheck="false"></label>` +
       `${error}${plain}<button class="btn" data-kind="primary" type="submit">CONTINUE</button></form>${tail}`
     );
   }
@@ -107,17 +108,17 @@ export function authPage(input: AuthPageInput): string {
     return (
       `${head}<form class="module lg-form" method="post" action="/api/auth/setup" autocomplete="on"><h2 class="label">SET UP THE LOGIN</h2>` +
       `<p>One account, for the Director. <strong>A logged-in session can run anything on this machine</strong>: it can type into every agent's terminal. Use a long password and keep this page off the internet unless you need it there.</p>` +
-      `<label><span class="label">SETUP TOKEN</span><input class="input" name="token" type="password" autocomplete="off" required spellcheck="false" aria-describedby="t"></label>` +
+      `<label><span class="label">SETUP TOKEN</span><input class="${INPUT_CLASS}" data-slot="input" name="token" type="password" autocomplete="off" required spellcheck="false" aria-describedby="t"></label>` +
       `<p id="t" class="hint">It is in the file <code>setup-token</code> in gonogo's home folder (valid for one hour, used once), or the old browser token of this install.</p>` +
-      `<label><span class="label">NAME</span><input class="input" name="user" value="${esc(input.user ?? 'director')}" autocomplete="username" required maxlength="64"></label>` +
-      `<label><span class="label">PASSWORD (12 CHARACTERS OR MORE)</span><input class="input" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>` +
+      `<label><span class="label">NAME</span><input class="${INPUT_CLASS}" data-slot="input" name="user" value="${esc(input.user ?? 'director')}" autocomplete="username" required maxlength="64"></label>` +
+      `<label><span class="label">PASSWORD (12 CHARACTERS OR MORE)</span><input class="${INPUT_CLASS}" data-slot="input" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>` +
       `${error}${plain}<button class="btn" data-kind="primary" type="submit">CREATE ACCOUNT</button></form>${tail}`
     );
   }
   return (
     `${head}<form class="module lg-form" method="post" action="/api/auth/login" autocomplete="on"><h2 class="label">LOG IN</h2>` +
-    `<label><span class="label">NAME</span><input class="input" name="user" value="${esc(input.user ?? 'director')}" autocomplete="username" required maxlength="64"></label>` +
-    `<label><span class="label">PASSWORD</span><input class="input" name="password" type="password" autocomplete="current-password" required maxlength="256" autofocus></label>` +
+    `<label><span class="label">NAME</span><input class="${INPUT_CLASS}" data-slot="input" name="user" value="${esc(input.user ?? 'director')}" autocomplete="username" required maxlength="64"></label>` +
+    `<label><span class="label">PASSWORD</span><input class="${INPUT_CLASS}" data-slot="input" name="password" type="password" autocomplete="current-password" required maxlength="256" autofocus></label>` +
     `${error}${plain}<button class="btn" data-kind="primary" type="submit">LOG IN</button>${input.passkey === true ? '<button class="btn" type="button" id="pk" hidden>LOG IN WITH A PASSKEY</button><p id="pkmsg" class="error lg-warn" role="alert" hidden></p>' : ''}</form>${input.passkey === true ? '<script src="/login/passkey.js" defer></script>' : ''}${tail}`
   );
 }
